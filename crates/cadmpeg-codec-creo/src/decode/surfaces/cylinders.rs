@@ -76,9 +76,10 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
     tables
         .iter()
         .filter_map(|table| {
-            let feature_id = table.feature_id?;
+            let feature_id = table.feature_id;
             round_feature_ids.contains(&feature_id).then_some(())?;
-            let [first, second, rowless, cylinder] = table.entry_ids.as_slice() else {
+            let entry_ids = table.entry_ids();
+            let [first, second, rowless, cylinder] = entry_ids.as_slice() else {
                 return None;
             };
             crate::surface::unique_surface_row(rows, *first)
@@ -1018,8 +1019,8 @@ pub(in super::super) fn transfer_positional_cylinders(
                 .features
                 .entity_tables
                 .iter()
-                .filter(|table| table.feature_id == Some(row.feature_id))
-                .flat_map(|table| table.entry_ids.iter().copied())
+                .filter(|table| table.feature_id == row.feature_id)
+                .flat_map(|table| table.entry_ids())
                 .collect::<BTreeSet<_>>();
             let circles = scan
                 .references

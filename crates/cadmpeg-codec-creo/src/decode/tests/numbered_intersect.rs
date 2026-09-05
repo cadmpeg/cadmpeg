@@ -43,14 +43,17 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn numbered_intersect_name_identifies_section_shape_feature() {
-    let table = || crate::feature::FeatureEntityTable {
-        feature_id: Some(50),
-        table_class_id: 29,
-        entry_ids: vec![61, 75],
-        entries: Vec::new(),
-        surface_ids: vec![61, 75],
-        non_surface_entity_ids: Vec::new(),
-        offset: 0,
+    let table = || {
+        crate::feature::FeatureEntityTable {
+            feature_id: 50,
+            table_class_id: 29,
+            entries: vec![
+                crate::feature::dummy_table_entry(61, true),
+                crate::feature::dummy_table_entry(75, true),
+            ],
+            offset: 0,
+        }
+        .with_surface_ids([61, 75])
     };
     let surface = |id, feature_id| crate::surface::SurfaceRow {
         id,
@@ -106,7 +109,9 @@ fn numbered_intersect_name_identifies_section_shape_feature() {
     );
 
     let mut duplicate_surface_id = valid_scan();
-    duplicate_surface_id.features.entity_tables[0].surface_ids = vec![61, 61];
+    duplicate_surface_id.features.entity_tables[0]
+        .entries
+        .push(crate::feature::dummy_table_entry(61, true));
     assert_eq!(
         surface_intersect_feature_definition(&duplicate_surface_id, 50, "Intersect 1"),
         None
@@ -669,19 +674,18 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         prefixed: true,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let table = |feature_id: u32,
                  table_class_id: u32,
                  entries: Vec<crate::feature::FeatureEntityTableEntry>| {
         crate::feature::FeatureEntityTable {
-            feature_id: Some(feature_id),
+            feature_id: feature_id,
             table_class_id,
-            entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
             entries,
-            surface_ids: Vec::new(),
-            non_surface_entity_ids: Vec::new(),
             offset: 0,
         }
+        .with_surface_ids([])
     };
     let producer = table(175, 67, vec![entry(192, 200, Some(175))]);
     let consumer = table(416, 100, vec![entry(192, 98, None)]);
@@ -805,17 +809,16 @@ fn owned_output_entity_depends_on_its_prior_surface_target() {
         prefixed: true,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
         crate::feature::FeatureEntityTable {
-            feature_id: Some(2976),
+            feature_id: 2976,
             table_class_id,
-            entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
             entries,
-            surface_ids: Vec::new(),
-            non_surface_entity_ids: Vec::new(),
             offset: 0,
         }
+        .with_surface_ids([])
     };
     let tables = vec![
         table(67, vec![entry(2997, 200, Some(2976))]),
@@ -853,15 +856,16 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         prefixed: true,
         offset,
         end_offset: offset + 1,
+        is_surface: false,
     };
-    let producer = |feature_id, entity_id, offset| crate::feature::FeatureEntityTable {
-        feature_id: Some(feature_id),
-        table_class_id: 67,
-        entry_ids: vec![entity_id],
-        entries: vec![entry(entity_id, offset + 1)],
-        surface_ids: Vec::new(),
-        non_surface_entity_ids: vec![entity_id],
-        offset,
+    let producer = |feature_id, entity_id, offset| {
+        crate::feature::FeatureEntityTable {
+            feature_id: feature_id,
+            table_class_id: 67,
+            entries: vec![entry(entity_id, offset + 1)],
+            offset,
+        }
+        .with_surface_ids([])
     };
     let replay = crate::feature::FeatureSurfaceMergeAffectedIds {
         feature_id: 416,
@@ -888,9 +892,8 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         Some([103, 192, 329].as_slice())
     );
     let wrong_class = crate::feature::FeatureEntityTable {
-        feature_id: Some(175),
+        feature_id: 175,
         table_class_id: 67,
-        entry_ids: vec![192],
         entries: vec![crate::feature::FeatureEntityTableEntry {
             entity_id: 192,
             class_id: 201,
@@ -900,11 +903,11 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
             prefixed: true,
             offset: 20,
             end_offset: 0,
+            is_surface: false,
         }],
-        surface_ids: Vec::new(),
-        non_surface_entity_ids: vec![192],
         offset: 20,
-    };
+    }
+    .with_surface_ids([]);
     assert_eq!(
         surface_merge_entity_dependencies(
             &[],
@@ -1003,16 +1006,15 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(97),
+        feature_id: 97,
         table_class_id: 29,
-        entry_ids: vec![98, 145],
         entries: vec![entry(98, 200, Some(1)), entry(145, 203, None)],
-        surface_ids: vec![98, 145],
-        non_surface_entity_ids: Vec::new(),
         offset: 0,
-    };
+    }
+    .with_surface_ids([98, 145]);
     let rows = [row(98, 97), row(145, 97)];
     let curve_rows = [crate::curve::CurveTopologyRow {
         id: 77,
@@ -1050,26 +1052,23 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
     );
 
     let mut duplicate = table.clone();
-    duplicate.entry_ids.push(98);
-    duplicate.entries.push(entry(98, 204, None));
-    duplicate.surface_ids.push(98);
+    let mut extra = entry(98, 204, None);
+    extra.is_surface = true;
+    duplicate.entries.push(extra);
     assert!(feature_result_surface_ids(&[duplicate], &rows, 97).is_none());
 
     let mut missing = table;
-    missing.entry_ids[1] = 146;
     missing.entries[1] = entry(146, 203, None);
-    missing.surface_ids[1] = 146;
+    missing.entries[1].is_surface = true;
     assert!(feature_result_surface_ids(&[missing], &rows, 97).is_none());
 
     let foreign = crate::feature::FeatureEntityTable {
-        feature_id: Some(97),
+        feature_id: 97,
         table_class_id: 29,
-        entry_ids: vec![145],
         entries: vec![entry(145, 203, None)],
-        surface_ids: vec![145],
-        non_surface_entity_ids: Vec::new(),
         offset: 0,
-    };
+    }
+    .with_surface_ids([145]);
     assert!(feature_result_surface_ids(&[foreign], &[row(145, 144)], 97).is_none());
 }
 
@@ -1134,20 +1133,19 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
             prefixed: true,
             offset,
             end_offset: offset + 1,
+            is_surface: false,
         };
     let table = |feature_id: u32,
                  table_class_id: u32,
                  entries: Vec<crate::feature::FeatureEntityTableEntry>,
                  offset: usize| {
         crate::feature::FeatureEntityTable {
-            feature_id: Some(feature_id),
+            feature_id: feature_id,
             table_class_id,
-            entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
             entries,
-            surface_ids: Vec::new(),
-            non_surface_entity_ids: Vec::new(),
             offset,
         }
+        .with_surface_ids([])
     };
     let row = |id, feature_id| crate::surface::SurfaceRow {
         id,

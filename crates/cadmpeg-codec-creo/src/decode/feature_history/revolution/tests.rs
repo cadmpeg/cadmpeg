@@ -166,12 +166,10 @@ fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
         next_surface: 0,
         offset: 0,
     });
-    scan.features
-        .entity_tables
-        .push(crate::feature::FeatureEntityTable {
-            feature_id: Some(40),
+    scan.features.entity_tables.push(
+        crate::feature::FeatureEntityTable {
+            feature_id: 40,
             table_class_id: 29,
-            entry_ids: vec![20],
             entries: vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 20,
                 class_id: 200,
@@ -181,11 +179,12 @@ fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
                 prefixed: false,
                 offset: 0,
                 end_offset: 0,
+                is_surface: false,
             }],
-            surface_ids: vec![20],
-            non_surface_entity_ids: Vec::new(),
             offset: 0,
-        });
+        }
+        .with_surface_ids([20]),
+    );
 
     let mut ir = CadIr::empty();
     ir.model

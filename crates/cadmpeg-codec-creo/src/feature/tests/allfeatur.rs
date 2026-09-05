@@ -46,9 +46,9 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
 
     assert_eq!(scan.features.entity_tables.len(), 1);
     let table = &scan.features.entity_tables[0];
-    assert_eq!(table.feature_id, Some(4));
+    assert_eq!(table.feature_id, 4);
     assert_eq!(table.table_class_id, 29);
-    assert_eq!(table.entry_ids, vec![7, 9]);
+    assert_eq!(table.entry_ids(), vec![7, 9]);
     assert_eq!(table.entries.len(), 2);
     assert!(!table.entries[0].prefixed);
     assert!(table.entries[1].prefixed);
@@ -59,8 +59,8 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     assert_eq!(table.entries[0].source_entity_id, Some(1));
     assert_eq!(table.entries[1].source_entity_id, Some(2));
     assert_eq!(table.entries[0].end_offset, table.entries[1].offset - 2);
-    assert_eq!(table.surface_ids, vec![7]);
-    assert_eq!(table.non_surface_entity_ids, vec![9]);
+    assert_eq!(table.surface_ids(), vec![7]);
+    assert_eq!(table.non_surface_entity_ids(), vec![9]);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -129,7 +129,7 @@ fn scan_decodes_source_entity_id_whose_compact_tail_is_e3() {
     let [table] = scan.features.entity_tables.as_slice() else {
         panic!("expected one generated-entity table");
     };
-    assert_eq!(table.entry_ids, vec![7, 8]);
+    assert_eq!(table.entry_ids(), vec![7, 8]);
     assert_eq!(table.entries[0].class_id, 200);
     assert_eq!(table.entries[0].source_entity_id, Some(227));
     assert_eq!(table.entries[1].source_entity_id, Some(3));
@@ -152,10 +152,10 @@ fn scan_accepts_large_structurally_bounded_feature_entity_tables() {
     let [table] = scan.features.entity_tables.as_slice() else {
         panic!("expected one large generated-entity table");
     };
-    assert_eq!(table.feature_id, Some(4));
-    assert_eq!(table.entry_ids.len(), 65);
-    assert_eq!(table.surface_ids, vec![7]);
-    assert_eq!(table.non_surface_entity_ids.len(), 64);
+    assert_eq!(table.feature_id, 4);
+    assert_eq!(table.entry_ids().len(), 65);
+    assert_eq!(table.surface_ids(), vec![7]);
+    assert_eq!(table.non_surface_entity_ids().len(), 64);
 }
 
 #[test]

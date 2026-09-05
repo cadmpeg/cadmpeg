@@ -468,13 +468,13 @@ fn resolves_generated_section_from_declared_cap_pair() {
             prefixed: false,
             offset: usize::try_from(entity_id).expect("fixture id fits usize"),
             end_offset: usize::try_from(entity_id + 1).expect("fixture id fits usize"),
+            is_surface: false,
         }
     });
     let entity_tables = [
         FeatureEntityTable {
-            feature_id: Some(40),
+            feature_id: 40,
             table_class_id: 80,
-            entry_ids: vec![700],
             entries: vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 700,
                 class_id: 7,
@@ -484,20 +484,18 @@ fn resolves_generated_section_from_declared_cap_pair() {
                 prefixed: false,
                 offset: 60,
                 end_offset: 61,
+                is_surface: false,
             }],
-            surface_ids: Vec::new(),
-            non_surface_entity_ids: vec![700],
             offset: 50,
-        },
+        }
+        .with_surface_ids([]),
         FeatureEntityTable {
-            feature_id: Some(40),
+            feature_id: 40,
             table_class_id: 80,
-            entry_ids: vec![43, 92],
             entries: entries.to_vec(),
-            surface_ids: vec![43, 92],
-            non_surface_entity_ids: Vec::new(),
             offset: 70,
-        },
+        }
+        .with_surface_ids([43, 92]),
     ];
 
     assert_eq!(
@@ -1023,16 +1021,15 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         prefixed: false,
         offset,
         end_offset: offset + 1,
+        is_surface: false,
     };
     let tables = [FeatureEntityTable {
-        feature_id: Some(40),
+        feature_id: 40,
         table_class_id: 2,
-        entry_ids: vec![819, 822],
         entries: vec![entry(819, 252, 300), entry(822, 255, 310)],
-        surface_ids: vec![819, 822],
-        non_surface_entity_ids: Vec::new(),
         offset: 290,
-    }];
+    }
+    .with_surface_ids([819, 822])];
     let sources = PlacementSources {
         datums: &[],
         surface_rows: &rows,
@@ -1081,7 +1078,14 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     wrong_class[0].entries[0].class_id = 201;
     assert!(generated_cylinder_section_transform(&definition, &sources, &wrong_class).is_none());
     let mut non_surface = tables;
-    non_surface[0].surface_ids.pop();
+    if let Some(entry) = non_surface[0]
+        .entries
+        .iter_mut()
+        .rev()
+        .find(|entry| entry.is_surface)
+    {
+        entry.is_surface = false;
+    }
     assert!(generated_cylinder_section_transform(&definition, &sources, &non_surface).is_none());
 }
 
@@ -1190,11 +1194,11 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         prefixed: false,
         offset: entity_id as usize,
         end_offset: entity_id as usize + 1,
+        is_surface: false,
     };
     let tables = [FeatureEntityTable {
-        feature_id: Some(10),
+        feature_id: 10,
         table_class_id: 79,
-        entry_ids: vec![13, 18, 23, 25, 27, 29],
         entries: vec![
             entry(13, 204, None),
             entry(18, 203, None),
@@ -1203,10 +1207,9 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
             entry(27, 200, Some(6)),
             entry(29, 200, Some(7)),
         ],
-        surface_ids: vec![13, 18, 23, 25, 27, 29],
-        non_surface_entity_ids: Vec::new(),
         offset: 200,
-    }];
+    }
+    .with_surface_ids([13, 18, 23, 25, 27, 29])];
     let sources = PlacementSources {
         datums: &[],
         surface_rows: &[],

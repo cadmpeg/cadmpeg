@@ -59,7 +59,7 @@ pub fn counterbore_dimensions(
 ) -> Option<(f64, f64, f64)> {
     let table = counterbore_entity_table(scan, feature_id)?;
     let generated_cylinders = table
-        .surface_ids
+        .surface_ids()
         .iter()
         .copied()
         .filter(|surface_id| {
@@ -376,7 +376,7 @@ pub fn counterbore_cylinder_sources(
     let table = counterbore_entity_table(scan, feature_id)?;
     let mut cylinders_by_source = BTreeMap::<u32, Vec<u32>>::new();
     for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
-        if !table.surface_ids.contains(&entry.entity_id) {
+        if !table.surface_ids().contains(&entry.entity_id) {
             continue;
         }
         let source_id = entry.source_entity_id?;
@@ -428,12 +428,12 @@ pub fn counterbore_entity_table<'a>(
         .features
         .entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
+        .filter(|table| table.feature_id == feature_id && table.table_class_id == 29)
         .filter(|table| {
             table.entries.iter().any(|entry| {
                 entry.class_id == 200
                     && entry.source_entity_id.is_some()
-                    && table.surface_ids.contains(&entry.entity_id)
+                    && table.surface_ids().contains(&entry.entity_id)
                     && crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
                         .is_some_and(|row| {
                             row.feature_id == feature_id
@@ -479,9 +479,9 @@ pub fn counterbore_support_axis_placement(
     rows: &[crate::surface::SurfaceRow],
     frames: &[crate::surface::PlaneLocalSystem],
 ) -> Option<cadmpeg_ir::features::HolePlacement> {
-    (table.feature_id == Some(feature_id)).then_some(())?;
+    (table.feature_id == feature_id).then_some(())?;
     let plane_ids = table
-        .surface_ids
+        .surface_ids()
         .iter()
         .copied()
         .filter(|surface_id| {

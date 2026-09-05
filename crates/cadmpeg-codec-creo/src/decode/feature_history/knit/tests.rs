@@ -3,12 +3,10 @@
 #[test]
 fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
     let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features
-        .entity_tables
-        .push(crate::feature::FeatureEntityTable {
-            feature_id: Some(225),
+    scan.features.entity_tables.push(
+        crate::feature::FeatureEntityTable {
+            feature_id: 225,
             table_class_id: 29,
-            entry_ids: vec![226],
             entries: vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 226,
                 class_id: 209,
@@ -18,11 +16,12 @@ fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
                 prefixed: true,
                 offset: 0,
                 end_offset: 0,
+                is_surface: false,
             }],
-            surface_ids: vec![226],
-            non_surface_entity_ids: Vec::new(),
             offset: 0,
-        });
+        }
+        .with_surface_ids([226]),
+    );
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 226,
         type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
@@ -39,7 +38,9 @@ fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
         cadmpeg_ir::features::FaceSelection::Native("creo:visibgeom:surface#226".to_string())
     );
 
-    scan.features.entity_tables[0].surface_ids.push(226);
+    scan.features.entity_tables[0]
+        .entries
+        .push(crate::feature::dummy_table_entry(226, true));
     assert_eq!(
         super::draft_neutral_plane_selection(&scan, 225),
         cadmpeg_ir::features::FaceSelection::Unresolved
@@ -57,16 +58,15 @@ fn feature_surface_transitions_reject_duplicate_output_roster_entry() {
         prefixed: true,
         offset: entity_id as usize,
         end_offset: entity_id as usize,
+        is_surface: false,
     };
     let mut table = crate::feature::FeatureEntityTable {
-        feature_id: Some(17),
+        feature_id: 17,
         table_class_id: 80,
-        entry_ids: vec![101, 201],
         entries: vec![entry(101, 214, Some(11)), entry(201, 210, Some(101))],
-        surface_ids: vec![201],
-        non_surface_entity_ids: vec![101],
         offset: 0,
-    };
+    }
+    .with_surface_ids([201]);
     let rows = vec![
         crate::surface::SurfaceRow {
             id: 11,
@@ -95,7 +95,12 @@ fn feature_surface_transitions_reject_duplicate_output_roster_entry() {
         Some(vec![(11, 201)])
     );
 
-    table.surface_ids.push(201);
+    table.entries.push(entry(201, 210, Some(101)));
+    table
+        .entries
+        .last_mut()
+        .expect("duplicate roster")
+        .is_surface = true;
     assert_eq!(
         super::feature_surface_transitions(17, std::slice::from_ref(&table), &rows),
         None

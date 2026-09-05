@@ -806,18 +806,17 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
         prefixed: false,
         offset: entity_id as usize,
         end_offset: entity_id as usize + 1,
+        is_surface: false,
     };
-    scan.features
-        .entity_tables
-        .push(crate::feature::FeatureEntityTable {
-            feature_id: Some(42),
+    scan.features.entity_tables.push(
+        crate::feature::FeatureEntityTable {
+            feature_id: 42,
             table_class_id: 29,
-            entry_ids: vec![1, 2, 3, 4],
             entries: vec![entry(1, 100), entry(2, 100), entry(3, 101), entry(4, 101)],
-            surface_ids: vec![1, 2, 3, 4],
-            non_surface_entity_ids: Vec::new(),
             offset: 0,
-        });
+        }
+        .with_surface_ids([1, 2, 3, 4]),
+    );
     scan
 }
 
@@ -939,17 +938,20 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
         row(11, crate::surface::SurfaceKind::Plane),
         row(13, crate::surface::SurfaceKind::Cylinder),
     ];
-    scan.features
-        .entity_tables
-        .push(crate::feature::FeatureEntityTable {
-            feature_id: Some(23),
+    scan.features.entity_tables.push(
+        crate::feature::FeatureEntityTable {
+            feature_id: 23,
             table_class_id: 80,
-            entry_ids: vec![10, 11, 12, 13],
-            entries: Vec::new(),
-            surface_ids: vec![10, 11, 13],
-            non_surface_entity_ids: vec![12],
+            entries: vec![
+                crate::feature::dummy_table_entry(10, true),
+                crate::feature::dummy_table_entry(11, true),
+                crate::feature::dummy_table_entry(12, false),
+                crate::feature::dummy_table_entry(13, true),
+            ],
             offset: 47,
-        });
+        }
+        .with_surface_ids([10, 11, 13]),
+    );
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model
         .surfaces
@@ -979,14 +981,17 @@ fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
         offset: 0,
     };
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(23),
+        feature_id: 23,
         table_class_id: 80,
-        entry_ids: vec![10, 11, 12, 13],
-        entries: Vec::new(),
-        surface_ids: vec![10, 11, 13],
-        non_surface_entity_ids: vec![12],
+        entries: vec![
+            crate::feature::dummy_table_entry(10, true),
+            crate::feature::dummy_table_entry(11, true),
+            crate::feature::dummy_table_entry(12, false),
+            crate::feature::dummy_table_entry(13, true),
+        ],
         offset: 47,
-    };
+    }
+    .with_surface_ids([10, 11, 13]);
     let rows = vec![
         row(10, crate::surface::SurfaceKind::Plane),
         row(11, crate::surface::SurfaceKind::Plane),

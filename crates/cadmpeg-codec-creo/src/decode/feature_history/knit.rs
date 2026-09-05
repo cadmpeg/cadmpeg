@@ -60,7 +60,7 @@ pub(in super::super) fn class_100_operand_producers(
     let consumer_tables = tables
         .iter()
         .enumerate()
-        .filter(|(_, table)| table.feature_id == Some(feature_id) && table.table_class_id == 100)
+        .filter(|(_, table)| table.feature_id == feature_id && table.table_class_id == 100)
         .collect::<Vec<_>>();
     let consumers = consumer_tables
         .iter()
@@ -94,9 +94,7 @@ pub(in super::super) fn class_100_operand_producers(
                 .iter()
                 .enumerate()
                 .flat_map(|(table_index, table)| {
-                    let Some(owner) = table.feature_id else {
-                        return Vec::new();
-                    };
+                    let owner = table.feature_id;
                     if owner == feature_id {
                         return Vec::new();
                     }
@@ -183,7 +181,7 @@ pub(in super::super) fn knit_operand_surface_ids(
                 .entity_tables
                 .iter()
                 .filter(|table| {
-                    table.feature_id == Some(*producer)
+                    table.feature_id == *producer
                         && table.table_class_id == 100
                         && table.offset < consumer_offset
                 })
@@ -256,7 +254,7 @@ pub(in super::super) fn draft_neutral_plane_selection(
         scan.features
             .entity_tables
             .iter()
-            .filter(|table| table.feature_id == Some(feature_id))
+            .filter(|table| table.feature_id == feature_id)
             .flat_map(|table| {
                 table
                     .entries
@@ -268,7 +266,7 @@ pub(in super::super) fn draft_neutral_plane_selection(
         return FaceSelection::Unresolved;
     };
     if table
-        .surface_ids
+        .surface_ids()
         .iter()
         .filter(|surface_id| **surface_id == entry.entity_id)
         .count()
@@ -293,7 +291,7 @@ pub(in super::super) fn feature_surface_transitions(
 ) -> Option<Vec<(u32, u32)>> {
     let owned = tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
         .collect::<Vec<_>>();
     let outputs = owned
         .iter()
@@ -325,7 +323,7 @@ pub(in super::super) fn feature_surface_transitions(
         let intermediate_id = output.related_entity_id?;
         if output.related_entity_state != Some(0)
             || output_table
-                .surface_ids
+                .surface_ids()
                 .iter()
                 .filter(|surface_id| **surface_id == output.entity_id)
                 .count()
@@ -342,7 +340,7 @@ pub(in super::super) fn feature_surface_transitions(
                 && predecessor.entity_id == intermediate_id
                 && predecessor.related_entity_state == Some(0)
                 && output_table
-                    .non_surface_entity_ids
+                    .non_surface_entity_ids()
                     .contains(&predecessor.entity_id)
                 && crate::surface::unique_surface_row(surface_rows, predecessor.entity_id).is_none()
         });
@@ -445,11 +443,8 @@ pub(in super::super) fn feature_result_surface_ids(
 ) -> Option<Vec<u32>> {
     let mut surface_ids = Vec::new();
     let mut seen = BTreeSet::new();
-    for table in tables
-        .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
-    {
-        for &surface_id in &table.surface_ids {
+    for table in tables.iter().filter(|table| table.feature_id == feature_id) {
+        for &surface_id in &table.surface_ids() {
             let row = crate::surface::unique_surface_row(rows, surface_id)?;
             if row.feature_id != feature_id || !seen.insert(surface_id) {
                 return None;
@@ -466,7 +461,7 @@ pub(in super::super) fn feature_result_surface_ids_by_feature(
 ) -> BTreeMap<u32, Vec<u32>> {
     tables
         .iter()
-        .filter_map(|table| table.feature_id)
+        .map(|table| table.feature_id)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter_map(|feature_id| {

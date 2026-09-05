@@ -11,21 +11,20 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(107),
+        feature_id: 107,
         table_class_id: 29,
-        entry_ids: vec![109, 112, 115, 117],
         entries: vec![
             entry(109, 204, None),
             entry(112, 203, None),
             entry(115, 200, Some(0)),
             entry(117, 200, None),
         ],
-        surface_ids: vec![117],
-        non_surface_entity_ids: Vec::new(),
         offset: 0,
-    };
+    }
+    .with_surface_ids([117]);
     let row = crate::surface::SurfaceRow {
         id: 117,
         type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
@@ -47,7 +46,9 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
     );
 
     let mut duplicate = table;
-    duplicate.surface_ids.push(117);
+    duplicate
+        .entries
+        .push(crate::feature::dummy_table_entry(117, true));
     assert_eq!(
         super::compact_simple_hole_cylinder_id(
             107,
@@ -61,14 +62,15 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
 #[test]
 fn circular_sweep_requires_an_exact_materialized_surface_roster() {
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(40),
+        feature_id: 40,
         table_class_id: 29,
-        entry_ids: Vec::new(),
-        entries: Vec::new(),
-        surface_ids: vec![46, 51],
-        non_surface_entity_ids: Vec::new(),
+        entries: vec![
+            crate::feature::dummy_table_entry(46, true),
+            crate::feature::dummy_table_entry(51, true),
+        ],
         offset: 0,
-    };
+    }
+    .with_surface_ids([46, 51]);
 
     assert!(super::has_exact_materialized_surface_roster(
         &table,
@@ -76,14 +78,18 @@ fn circular_sweep_requires_an_exact_materialized_surface_roster() {
     ));
 
     let mut duplicate = table.clone();
-    duplicate.surface_ids.push(51);
+    duplicate
+        .entries
+        .push(crate::feature::dummy_table_entry(51, true));
     assert!(!super::has_exact_materialized_surface_roster(
         &duplicate,
         [46, 51]
     ));
 
     let mut extra = table;
-    extra.surface_ids.push(54);
+    extra
+        .entries
+        .push(crate::feature::dummy_table_entry(54, true));
     assert!(!super::has_exact_materialized_surface_roster(
         &extra,
         [46, 51]

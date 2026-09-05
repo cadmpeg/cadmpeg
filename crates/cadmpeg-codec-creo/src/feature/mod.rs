@@ -37,6 +37,8 @@ pub use definitions::{
     FeatureSectionReferencePlane, FeatureTrimBucket, FeatureTrimEntityTable, FeatureTrimVertex,
     FeatureTrimVertexTable,
 };
+#[cfg(test)]
+pub(crate) use entity::dummy_table_entry;
 pub use entity::{
     entity_graph, entity_tables, FeatureEntity, FeatureEntityReference, FeatureEntityTable,
     FeatureEntityTableEntry,

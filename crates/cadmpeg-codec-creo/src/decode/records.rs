@@ -732,9 +732,9 @@ pub(super) fn feature_entity_table_records(
         .iter()
         .map(|table| CreoFeatureEntityTableRecord {
             id: format!("creo:allfeatur:entity_table#{}", table.offset),
-            owner_feature_id: table.feature_id,
+            owner_feature_id: Some(table.feature_id),
             table_class_id: table.table_class_id,
-            entry_ids: table.entry_ids.clone(),
+            entry_ids: table.entry_ids(),
             entries: table
                 .entries
                 .iter()
@@ -749,8 +749,8 @@ pub(super) fn feature_entity_table_records(
                     end_offset: entry.end_offset,
                 })
                 .collect(),
-            surface_ids: table.surface_ids.clone(),
-            non_surface_entity_ids: table.non_surface_entity_ids.clone(),
+            surface_ids: table.surface_ids(),
+            non_surface_entity_ids: table.non_surface_entity_ids(),
             offset: table.offset,
         })
         .collect()
