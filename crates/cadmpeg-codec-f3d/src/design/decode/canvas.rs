@@ -297,44 +297,11 @@ pub(crate) fn canvas_mirroring(segments: [[Point2; 2]; 2]) -> Option<(bool, bool
 #[cfg(test)]
 mod tests {
     use super::{
-        canvas_mirroring, DesignCanvasGeometryPayload,
+        canvas_mirroring,
     };
-    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::math::Point2;
 
-    #[test]
-    fn canvas_geometry_payload_decodes_opacity_and_plane_frame() {
-        let mut payload = [0; 77];
-        payload[..4].copy_from_slice(&0.75f32.to_le_bytes());
-        for (offset, value) in [
-            (5, 1.0f64),
-            (13, 2.0),
-            (21, 3.0),
-            (29, 1.0),
-            (37, 0.0),
-            (45, 0.0),
-            (53, 0.0),
-            (61, 0.0),
-            (69, 1.0),
-        ] {
-            payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-        }
 
-        assert_eq!(
-            DesignCanvasGeometryPayload::try_from(payload.as_slice()).ok().map(|payload| payload.decoded()),
-            Some((
-                0.75,
-                Point3::new(10.0, 20.0, 30.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-            ))
-        );
-
-        payload[4] = 1;
-        assert!(DesignCanvasGeometryPayload::try_from(payload.as_slice()).is_err());
-        payload[4] = 0;
-        payload[53..61].copy_from_slice(&1.0f64.to_le_bytes());
-        assert!(DesignCanvasGeometryPayload::try_from(payload.as_slice()).is_err());
-    }
 
     #[test]
     fn canvas_bounds_decode_u_and_v_mirroring_from_endpoint_order() {

@@ -2986,3 +2986,40 @@ fn canvas_image_wire_derives_visibility_and_geometry_values() {
         assert!(error.contains(field));
     }
 }
+
+#[test]
+fn canvas_geometry_payload_decodes_opacity_and_plane_frame() {
+    use super::DesignCanvasGeometryPayload;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let mut payload = [0; 77];
+    payload[..4].copy_from_slice(&0.75f32.to_le_bytes());
+    for (offset, value) in [
+        (5, 1.0f64),
+        (13, 2.0),
+        (21, 3.0),
+        (29, 1.0),
+        (37, 0.0),
+        (45, 0.0),
+        (53, 0.0),
+        (61, 0.0),
+        (69, 1.0),
+    ] {
+        payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+
+    assert_eq!(
+        DesignCanvasGeometryPayload::try_from(payload.as_slice()).ok().map(|payload| payload.decoded()),
+        Some((
+            0.75,
+            Point3::new(10.0, 20.0, 30.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ))
+    );
+
+    payload[4] = 1;
+    assert!(DesignCanvasGeometryPayload::try_from(payload.as_slice()).is_err());
+    payload[4] = 0;
+    payload[53..61].copy_from_slice(&1.0f64.to_le_bytes());
+    assert!(DesignCanvasGeometryPayload::try_from(payload.as_slice()).is_err());
+}
