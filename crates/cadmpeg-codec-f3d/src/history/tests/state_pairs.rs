@@ -43,8 +43,7 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
     let history = |id: &str, current| AsmHistory {
         id: id.into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![state(id, current, Some(2)), state(id, 2, None)],
@@ -117,8 +116,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         AsmHistory {
             id: id.clone(),
             byte_offset: 0,
-            stream_size: None,
-            history_entry_count: None,
+            preamble: None,
             record_table_binding_budget_exceeded: false,
             projection_finalized: false,
             states: vec![state(&id, 9, Some(2)), state(&id, 2, None)],
@@ -225,8 +223,7 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
     let history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![
@@ -482,8 +479,7 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
     let history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![AsmDeltaState {
@@ -590,8 +586,7 @@ fn snapshot_edge_identity_requires_one_edge_record_and_positive_revision() {
     let history = |records| AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![AsmDeltaState {
@@ -917,8 +912,7 @@ fn bound_state_pair_keeps_repeated_numeric_ids_in_one_history() {
     let history = |id: &str| AsmHistory {
         id: id.into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![
@@ -1024,8 +1018,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
     let history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![state(2, active.clone()), state(3, active)],
@@ -1531,8 +1524,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
     let history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![
@@ -1638,8 +1630,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
     let duplicate_state_history = AsmHistory {
         id: "duplicate-state-history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![state(
@@ -1669,8 +1660,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
     let ambiguous = AsmHistory {
         id: "other-history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![state(
@@ -1715,8 +1705,7 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
     let history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![AsmDeltaState {

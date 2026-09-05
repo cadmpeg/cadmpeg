@@ -28,8 +28,7 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
     let mut histories = [AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![AsmDeltaState {
@@ -146,8 +145,7 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
     let history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![AsmDeltaState {
@@ -263,8 +261,7 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
     let history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![AsmDeltaState {

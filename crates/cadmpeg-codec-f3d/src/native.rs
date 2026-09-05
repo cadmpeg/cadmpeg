@@ -182,8 +182,8 @@ impl<'a> From<&'a AsmHistory> for FlatAsmHistory<'a> {
         Self {
             id: &history.id,
             byte_offset: history.byte_offset,
-            stream_size: history.stream_size,
-            history_entry_count: history.history_entry_count,
+            stream_size: history.stream_size(),
+            history_entry_count: history.history_entry_count(),
             record_table_binding_budget_exceeded: history.record_table_binding_budget_exceeded,
             projection_finalized: history.projection_finalized,
             states: &[],

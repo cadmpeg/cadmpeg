@@ -91,8 +91,7 @@ fn move_body_selection_uses_unique_owning_history() {
     let history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: true,
         states: vec![
@@ -103,8 +102,7 @@ fn move_body_selection_uses_unique_owning_history() {
     let unrelated_history = AsmHistory {
         id: "unrelated-history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: true,
         states: vec![state(41, "unrelated-history", None)],

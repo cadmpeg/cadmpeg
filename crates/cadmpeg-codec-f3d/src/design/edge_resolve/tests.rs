@@ -416,8 +416,7 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
     let history = AsmHistory {
         id: "f3d:test:history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![state],

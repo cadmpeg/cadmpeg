@@ -36,8 +36,7 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
     let history = |id: &str, state| AsmHistory {
         id: id.into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![state],
@@ -136,8 +135,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
     let history = AsmHistory {
         id: "selected".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![state],
@@ -297,8 +295,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
     let history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![current, previous],
@@ -1485,8 +1482,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     let history = AsmHistory {
         id: "f3d:history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![previous, current],
@@ -1644,8 +1640,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     let history = crate::history_records::AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![
@@ -1842,8 +1837,7 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
     let mut history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![state(2, topology()), state(1, topology())],

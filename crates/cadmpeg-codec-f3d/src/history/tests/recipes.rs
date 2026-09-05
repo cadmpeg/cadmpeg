@@ -193,8 +193,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     let history = AsmHistory {
         id: "f3d:history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![AsmDeltaState {
@@ -310,8 +309,7 @@ fn feature_input_topology_projects_historical_vertices() {
     let history = AsmHistory {
         id: "f3d:history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![AsmDeltaState {
@@ -808,8 +806,7 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
     let history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![current, previous],
@@ -1088,8 +1085,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     let move_history = crate::history_records::AsmHistory {
         id: "f3d:history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: true,
         states: Vec::new(),
@@ -1284,8 +1280,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
     let history = AsmHistory {
         id: "f3d:history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![
@@ -1469,8 +1464,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     let history = AsmHistory {
         id: "f3d:history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![
@@ -1932,8 +1926,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     let history = AsmHistory {
         id: "f3d:history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![

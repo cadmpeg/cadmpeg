@@ -15,7 +15,7 @@ use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder, AsmHistoricalEdge,
     AsmHistoricalEntityDelta, AsmHistoricalOptionalCarrierBinding, AsmHistoricalPoint,
     AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
-    AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
+    AsmHistoricalTransition, AsmHistory, AsmHistoryRecord, AsmPreamble,
 };
 use crate::records::{
     AsmHistoricalEntityKind, DesignBodyBinding, DesignComponentNamingSpace,
@@ -45,9 +45,7 @@ const HOLE_SUPPORT_NORMAL_TOLERANCE: f64 = 1.0e-9;
 const HOLE_SUPPORT_POINT_TOLERANCE: f64 = 1.0e-8;
 
 pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
-    if history.states.is_empty()
-        || history.stream_size.is_some() != history.history_entry_count.is_some()
-    {
+    if history.states.is_empty() {
         return false;
     }
     let by_index = history
@@ -76,8 +74,8 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
     if heads.len() != 1 || tails != 1 {
         return false;
     }
-    if let (Some(size), Some(entry_count)) = (history.stream_size, history.history_entry_count) {
-        if heads[0].state_id != size || entry_count < 0 {
+    if let Some(preamble) = history.preamble {
+        if heads[0].state_id != preamble.stream_size || preamble.history_entry_count < 0 {
             return false;
         }
     }
@@ -198,15 +196,17 @@ pub(crate) fn decode(
         return None;
     }
 
-    let (stream_size, history_entry_count) = preamble_offset
+    let preamble = preamble_offset
         .and_then(|offset| decode_preamble(bytes, offset + PREAMBLE.len(), width))
-        .map_or((None, None), |(size, high)| (Some(size), Some(high)));
+        .map(|(stream_size, history_entry_count)| AsmPreamble {
+            stream_size,
+            history_entry_count,
+        });
     let offset = history_offset;
     Some(AsmHistory {
         id: history_id,
         byte_offset: offset as u64,
-        stream_size,
-        history_entry_count,
+        preamble,
         record_table_binding_budget_exceeded,
         projection_finalized: false,
         states,

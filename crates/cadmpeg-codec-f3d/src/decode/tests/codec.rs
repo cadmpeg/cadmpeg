@@ -317,8 +317,8 @@ fn decode_retains_generated_asm_history_graph() {
 
     assert_eq!(f3d_native(result.ir()).asm_histories.len(), 1);
     let history = &f3d_native(result.ir()).asm_histories[0];
-    assert_eq!(history.stream_size, Some(2));
-    assert_eq!(history.history_entry_count, Some(99));
+    assert_eq!(history.stream_size(), Some(2));
+    assert_eq!(history.history_entry_count(), Some(99));
     assert_eq!(history.states.len(), 2);
     assert_eq!(history.states[0].state_id, 2);
     assert_eq!(history.states[0].next_ref, Some(1));
@@ -349,8 +349,10 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
         let history = &mut native.asm_histories[0];
         assert!(history.byte_offset > 0);
         assert!(history.states[0].byte_offset > 0);
-        history.stream_size = Some(8);
-        history.history_entry_count = Some(120);
+        history.preamble = Some(crate::history_records::AsmPreamble {
+            stream_size: 8,
+            history_entry_count: 120,
+        });
         history.states[0].state_id = 8;
         history.states[0].version_flag = 4;
         history.states[0].state_flag = 6;
@@ -376,11 +378,11 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
         .expect("regenerated history decode");
     let state = &f3d_native(round_trip.ir()).asm_histories[0].states[0];
     assert_eq!(
-        f3d_native(round_trip.ir()).asm_histories[0].stream_size,
+        f3d_native(round_trip.ir()).asm_histories[0].stream_size(),
         Some(8)
     );
     assert_eq!(
-        f3d_native(round_trip.ir()).asm_histories[0].history_entry_count,
+        f3d_native(round_trip.ir()).asm_histories[0].history_entry_count(),
         Some(120)
     );
     assert_eq!(state.state_id, 8);
