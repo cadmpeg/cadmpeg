@@ -93,8 +93,8 @@ fn placement() -> DesignSketchPlacement {
     DesignSketchPlacement {
         id: "stream:placement".into(),
         scope_record_index: Some(7),
-        entity_id: "Sketch_42".into(),
-        entity_suffix: 42,
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned()).expect("valid entity ID"),
+
         visibility: None,
         byte_offset: 0,
         class_tag: "277".into(),
@@ -605,7 +605,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         class_tag: "300".into(),
         asset_id: "asset".into(),
         asset_id_offset: 0,
-        entity_id: crate::records::DesignEntityId::try_from(placement.entity_id.clone()).expect("valid entity identity"),
+        entity_id: placement.entity_id.clone(),
         entity_reference_offset: 0,
         region_selection: Some(DesignSketchProfileRegionSelection {
             record_index: 13,
@@ -1015,9 +1015,9 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         record_index: 10,
         byte_offset: 0,
         class_tag: "300".into(),
-        asset_id: placement.entity_id.clone(),
+        asset_id: placement.entity_id.as_str().to_owned(),
         asset_id_offset: 0,
-        entity_id: crate::records::DesignEntityId::try_from(placement.entity_id).expect("valid entity identity"),
+        entity_id: placement.entity_id,
         entity_reference_offset: 0,
         region_selection: Some(DesignSketchProfileRegionSelection {
             record_index: 11,

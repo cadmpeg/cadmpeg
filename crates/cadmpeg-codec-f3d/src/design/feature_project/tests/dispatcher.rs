@@ -613,8 +613,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     let placement = DesignSketchPlacement {
         id: format!("{stream}:placement#7"),
         scope_record_index: None,
-        entity_id: "Sketch_7".into(),
-        entity_suffix: 7,
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_7".to_owned()).expect("valid entity ID"),
+
         visibility: None,
         byte_offset: 0,
         class_tag: "264".into(),

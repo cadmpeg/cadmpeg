@@ -169,8 +169,8 @@ fn occurrence_merge_remaps_and_retains_native_records() {
     let placement = DesignSketchPlacement {
         id: "f3d:Design/BulkStream.dat:design-sketch-placement#42".into(),
         scope_record_index: None,
-        entity_id: "Sketch_1".into(),
-        entity_suffix: 1,
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_1".to_owned()).expect("valid entity ID"),
+
         visibility: None,
         byte_offset: 42,
         class_tag: "001".into(),

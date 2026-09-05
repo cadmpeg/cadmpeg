@@ -389,7 +389,7 @@ pub(crate) fn neutral_spatial_sketch_id(
 /// identical between the planar and spatial variants.
 fn sketch_placement_id(segment: &str, placement: &DesignSketchPlacement) -> String {
     let stream = identity_key_component(native_stream(&placement.id).unwrap_or(DEFAULT_STREAM));
-    format!("f3d:model:{segment}#{stream}@{}", placement.entity_suffix)
+    format!("f3d:model:{segment}#{stream}@{}", placement.entity_id.suffix())
 }
 
 /// The neutral planar-sketch point-entity key under `sketch`.

@@ -607,8 +607,8 @@ pub(super) fn continue_fixed_kind_operations(
         member_run_head: false,
         id: "stream:indexed-axis-placement".into(),
         scope_record_index: Some(10),
-        entity_id: "Sketch_100".into(),
-        entity_suffix: 100,
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_100".to_owned()).expect("valid entity ID"),
+
         visibility: None,
         byte_offset: 0,
         class_tag: "305".into(),

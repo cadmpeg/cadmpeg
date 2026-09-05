@@ -130,7 +130,7 @@ pub fn project_sketch_design(
             Some((
                 (
                     native_stream(&placement.id)?,
-                    u32::try_from(placement.entity_suffix).ok()?,
+                    u32::try_from(placement.entity_id.suffix()).ok()?,
                 ),
                 placement,
             ))
@@ -148,14 +148,14 @@ pub fn project_sketch_design(
     let mut sketches = placements
         .iter()
         .filter(|placement| {
-            !u32::try_from(placement.entity_suffix).is_ok_and(|owner| {
+            !u32::try_from(placement.entity_id.suffix()).is_ok_and(|owner| {
                 native_stream(&placement.id)
                     .is_some_and(|scope| spatial_owners.contains(&(scope.to_owned(), owner)))
             })
         })
         .map(|placement| Sketch {
             id: neutral_sketch_id(placement),
-            name: Some(placement.entity_id.clone()),
+            name: Some(placement.entity_id.as_str().to_owned()),
             configuration: None,
             visible: placement
                 .visibility
@@ -356,7 +356,7 @@ pub fn project_spatial_sketch_design(
             Some((
                 (
                     native_stream(&placement.id)?,
-                    u32::try_from(placement.entity_suffix).ok()?,
+                    u32::try_from(placement.entity_id.suffix()).ok()?,
                 ),
                 placement,
             ))
@@ -630,7 +630,7 @@ pub fn project_spatial_sketch_design(
             SpatialSketch {
                 profiles: closed_spatial_sketch_profiles(&id, &entities, linear_tolerance),
                 id,
-                name: Some(placement.entity_id.clone()),
+                name: Some(placement.entity_id.as_str().to_owned()),
                 configuration: None,
                 visible: placement
                     .visibility
@@ -669,7 +669,7 @@ pub fn project_spatial_sketch_constraints(
             spatial_sketches.contains(&id).then_some((
                 (
                     native_stream(&placement.id)?,
-                    u32::try_from(placement.entity_suffix).ok()?,
+                    u32::try_from(placement.entity_id.suffix()).ok()?,
                 ),
                 (id, placement),
             ))

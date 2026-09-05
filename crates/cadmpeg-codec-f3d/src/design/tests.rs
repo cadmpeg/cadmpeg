@@ -215,8 +215,8 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         member_run_head: false,
         id: format!("f3d:{stream}:design-sketch-placement#0"),
         scope_record_index: Some(10),
-        entity_id: format!("{stream}_100"),
-        entity_suffix: 100,
+        entity_id: crate::records::DesignEntityId::try_from(format!("{stream}_100")).expect("valid entity ID"),
+
         visibility: None,
         byte_offset: 0,
         class_tag: "356".into(),

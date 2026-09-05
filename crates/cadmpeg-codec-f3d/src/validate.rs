@@ -7624,7 +7624,7 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 && placement.transform_offset == Some(placement.byte_offset.saturating_add(22)));
         let visibility_valid = placement.visibility.as_ref().is_none_or(|visibility| {
             ctx.entities_by_suffix
-                .get(&(native_stream, placement.entity_suffix))
+                .get(&(native_stream, placement.entity_id.suffix()))
                 .is_some_and(|entity| visibility.stream_ordinal_offset > entity.byte_offset)
                 && visibility.stream_ordinal != 0
                 && visibility.visible_offset == visibility.stream_ordinal_offset.saturating_add(5)
@@ -7647,8 +7647,7 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     design::design_feature_family(&scope.kind())
                         == Some(design::DesignFeatureFamily::Sketch)
                         && scope.sketch_entity().is_some_and(|binding| {
-                            binding.entity_id.as_str() == placement.entity_id
-                                && binding.entity_id.suffix() == placement.entity_suffix
+                            binding.entity_id == placement.entity_id
                         })
                 })
         };
@@ -8172,7 +8171,7 @@ fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>
         .iter()
         .filter_map(|placement| {
             Some((
-                (design_stream(&placement.id), placement.entity_suffix),
+                (design_stream(&placement.id), placement.entity_id.suffix()),
                 placement.scope_record_index?,
             ))
         })
@@ -8862,7 +8861,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .and_then(|parameter_owner| {
                 placements_by_scope.get(&(native_stream, parameter_owner.scope_record_index))
             })
-            .and_then(|placement| u32::try_from(placement.entity_suffix).ok());
+            .and_then(|placement| u32::try_from(placement.entity_id.suffix()).ok());
         let Some(owner) = owner else {
             continue;
         };
@@ -8914,7 +8913,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .and_then(|parameter_owner| {
                 placements_by_scope.get(&(native_stream, parameter_owner.scope_record_index))
             })
-            .and_then(|placement| u32::try_from(placement.entity_suffix).ok());
+            .and_then(|placement| u32::try_from(placement.entity_id.suffix()).ok());
         let Some(owner) = owner else {
             continue;
         };

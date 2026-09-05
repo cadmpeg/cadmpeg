@@ -2249,3 +2249,21 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
     mismatch["entity_suffix"] = 18.into();
     assert!(serde_json::from_value::<super::DesignSketchProfileOperand>(mismatch).expect_err("mismatched profile suffix").to_string().contains("entity_suffix"));
 }
+
+#[test]
+fn sketch_placement_preserves_identity_wire_and_rejects_suffix_mismatch() {
+    let wire = serde_json::json!({
+        "id": "placement", "entity_id": "Sketch_+0007", "entity_suffix": 7,
+        "byte_offset": 10, "class_tag": "300", "record_index": 1,
+        "frame_length": 201,
+        "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
+                      [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+        "paired_class_tag": "301", "paired_byte_offset": 211
+    });
+    let placement: super::DesignSketchPlacement = serde_json::from_value(wire.clone()).expect("matching identity");
+    assert_eq!(placement.entity_id.suffix(), 7);
+    assert_eq!(serde_json::to_value(placement).unwrap(), wire);
+    let mut mismatch = wire;
+    mismatch["entity_suffix"] = 8.into();
+    assert!(serde_json::from_value::<super::DesignSketchPlacement>(mismatch).expect_err("mismatched suffix").to_string().contains("entity_suffix"));
+}

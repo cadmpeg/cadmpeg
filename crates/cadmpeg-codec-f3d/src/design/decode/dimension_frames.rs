@@ -1408,7 +1408,7 @@ pub fn decode_dimension_presentation_frames(
         .iter()
         .filter_map(|placement| {
             Some((
-                (native_stream(&placement.id)?, placement.entity_suffix),
+                (native_stream(&placement.id)?, placement.entity_id.suffix()),
                 placement.scope_record_index?,
             ))
         })

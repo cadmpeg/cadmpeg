@@ -130,8 +130,7 @@ pub fn decode_sketch_placements(
         let Some(binding) = scope.sketch_entity() else {
             continue;
         };
-        let entity_id = binding.entity_id.as_str();
-        let entity_suffix = binding.entity_id.suffix();
+        let entity_id = &binding.entity_id;
         let entry = scan.entries.iter().find(|entry| {
             scan.is_design_stream(entry, ContainerRole::Bulkstream)
                 && scope.id.starts_with(&ids::native_scope_prefix(&entry.name))
@@ -168,7 +167,6 @@ pub fn decode_sketch_placements(
                 bytes,
                 scope.record_index,
                 entity_id,
-                entity_suffix,
                 record_index,
                 records,
             ));
@@ -192,7 +190,7 @@ pub fn decode_sketch_placements(
         .filter_map(|placement| {
             Some((
                 native_stream(&placement.id)?.to_owned(),
-                placement.entity_suffix,
+                placement.entity_id.suffix(),
             ))
         })
         .collect::<std::collections::HashSet<_>>();
@@ -242,7 +240,7 @@ pub fn decode_sketch_placements(
             continue;
         };
         placement.visibility = visibilities
-            .get(&(stream.to_owned(), placement.entity_suffix))
+            .get(&(stream.to_owned(), placement.entity_id.suffix()))
             .cloned();
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -458,8 +456,8 @@ pub(crate) fn parse_member_run_head_placement(
     Some(DesignSketchPlacement {
         id: String::new(),
         scope_record_index: None,
-        entity_id: entity.entity_id.clone(),
-        entity_suffix: entity.entity_suffix,
+        entity_id: crate::records::DesignEntityId::try_from(entity.entity_id.clone()).ok()?,
+
         visibility: None,
         byte_offset: head_at as u64,
         class_tag,
@@ -476,8 +474,7 @@ pub(crate) fn parse_member_run_head_placement(
 pub(crate) fn parse_sketch_placement_candidates(
     bytes: &[u8],
     scope_record_index: u32,
-    entity_id: &str,
-    entity_suffix: u64,
+    entity_id: &crate::records::DesignEntityId,
     record_index: u32,
     records: &IndexedRecordOffsets,
 ) -> Vec<DesignSketchPlacement> {
@@ -572,8 +569,8 @@ pub(crate) fn parse_sketch_placement_candidates(
         out.push(DesignSketchPlacement {
             id: String::new(),
             scope_record_index: Some(scope_record_index),
-            entity_id: entity_id.to_owned(),
-            entity_suffix,
+            entity_id: entity_id.clone(),
+
             visibility: None,
             byte_offset: start as u64,
             class_tag,
