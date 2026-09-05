@@ -4,6 +4,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Read};
+use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, View};
@@ -96,10 +97,28 @@ pub struct CompoundStreamEntry {
     id: CompoundStreamId,
     snapshot_id: u64,
     path: String,
-    logical_size: u64,
-    start_sector: u32,
-    allocation: CompoundAllocation,
-    chain: Vec<u32>,
+    data: StreamData,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum EmptyStreamStart {
+    EndOfChain,
+    FreeSector,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SectorChain {
+    first: u32,
+    rest: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum StreamData {
+    Empty(EmptyStreamStart),
+    Allocated {
+        logical_size: NonZeroU64,
+        chain: SectorChain,
+    },
 }
 
 impl CompoundStreamEntry {
@@ -115,17 +134,36 @@ impl CompoundStreamEntry {
 
     /// Returns the logical stream size without allocation padding.
     pub const fn logical_size(&self) -> u64 {
-        self.logical_size
+        match &self.data {
+            StreamData::Empty(_) => 0,
+            StreamData::Allocated { logical_size, .. } => logical_size.get(),
+        }
     }
 
-    /// Returns the first regular or mini sector identifier.
+    /// Returns the first sector or the source marker for an empty stream.
     pub const fn start_sector(&self) -> u32 {
-        self.start_sector
+        match &self.data {
+            StreamData::Empty(EmptyStreamStart::EndOfChain) => END_OF_CHAIN,
+            StreamData::Empty(EmptyStreamStart::FreeSector) => FREE_SECTOR,
+            StreamData::Allocated { chain, .. } => chain.first,
+        }
     }
 
     /// Returns the stream allocation mechanism.
     pub const fn allocation(&self) -> CompoundAllocation {
-        self.allocation
+        if self.logical_size() < MINI_STREAM_CUTOFF {
+            CompoundAllocation::Mini
+        } else {
+            CompoundAllocation::Regular
+        }
+    }
+
+    fn sectors(&self) -> impl Iterator<Item = &u32> {
+        let (first, rest): (Option<&u32>, &[u32]) = match &self.data {
+            StreamData::Empty(_) => (None, &[]),
+            StreamData::Allocated { chain, .. } => (Some(&chain.first), &chain.rest),
+        };
+        first.into_iter().chain(rest)
     }
 }
 
@@ -201,12 +239,7 @@ impl<'a> CompoundSnapshot<'a> {
     pub fn new(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
         let parsed = CompoundState::parse(ctx, root.window())?;
         let snapshot_id = NEXT_COMPOUND_SNAPSHOT_ID.fetch_add(1, AtomicOrdering::Relaxed);
-        let mut entries = parsed.build_entries(ctx)?;
-        for entry in &mut entries {
-            if let CompoundEntry::Stream(stream) = entry {
-                stream.snapshot_id = snapshot_id;
-            }
-        }
+        let entries = parsed.build_entries(ctx, snapshot_id)?;
         parsed.validate_sector_ownership(&entries)?;
         let mut by_path = BTreeMap::new();
         let mut streams_by_id = BTreeMap::new();
@@ -298,32 +331,35 @@ impl<'a> CompoundSnapshot<'a> {
         ctx: &DecodeContext<'a>,
         entry: &CompoundStreamEntry,
     ) -> Result<View<'a>, CodecError> {
-        if entry.snapshot_id != self.snapshot_id || self.stream_by_id(entry.id()).is_none() {
+        if entry.snapshot_id != self.snapshot_id {
             return malformed("CFB stream handle does not belong to this snapshot");
         }
-        if entry.logical_size == 0 {
+        let StreamData::Allocated {
+            logical_size,
+            chain,
+        } = &entry.data
+        else {
             return ctx.register_slice(self.root, ByteRange { start: 0, end: 0 });
-        }
-        let logical_size = usize::try_from(entry.logical_size)
-            .map_err(|_| CodecError::Malformed("CFB stream size does not fit memory".into()))?;
-        let views = match entry.allocation {
-            CompoundAllocation::Regular => entry
-                .chain
-                .iter()
-                .map(|&sector| self.regular_sector_view(sector))
-                .collect::<Result<Vec<_>, _>>()?,
-            CompoundAllocation::Mini => entry
-                .chain
-                .iter()
-                .map(|&sector| self.mini_sector_view(sector))
-                .collect::<Result<Vec<_>, _>>()?,
         };
-        let mut opened = if physically_contiguous(&views) {
-            let first = views.first().ok_or_else(|| {
-                CodecError::malformed(format_args!("empty allocation chain for {}", entry.path))
-            })?;
-            let last = views.last().expect("non-empty chain");
-            self.root.child(first.start(), last.end()).ok_or_else(|| {
+        let logical_size = usize::try_from(logical_size.get())
+            .map_err(|_| CodecError::Malformed("CFB stream size does not fit memory".into()))?;
+        let sector_view = |sector| match entry.allocation() {
+            CompoundAllocation::Regular => self.regular_sector_view(sector),
+            CompoundAllocation::Mini => self.mini_sector_view(sector),
+        };
+        let first = sector_view(chain.first)?;
+        let mut views = Vec::with_capacity(chain.rest.len() + 1);
+        views.push(first);
+        let mut end = first.end();
+        let mut contiguous = true;
+        for &sector in &chain.rest {
+            let view = sector_view(sector)?;
+            contiguous &= view.start() == end;
+            end = view.end();
+            views.push(view);
+        }
+        let mut opened = if contiguous {
+            self.root.child(first.start(), end).ok_or_else(|| {
                 CodecError::Malformed("CFB contiguous stream range escapes input".into())
             })?
         } else {
@@ -360,14 +396,14 @@ impl<'a> CompoundSnapshot<'a> {
                         attributes,
                     },
                     CompoundEntry::Stream(stream) => {
-                        attributes.insert("allocation".into(), stream.allocation.label().into());
-                        attributes.insert("start_sector".into(), stream.start_sector.to_string());
+                        attributes.insert("allocation".into(), stream.allocation().label().into());
+                        attributes.insert("start_sector".into(), stream.start_sector().to_string());
                         ContainerEntry {
                             name: stream.path.clone(),
                             role: classify(entry).into(),
                             compression: "stored".into(),
-                            compressed_size: stream.logical_size,
-                            uncompressed_size: stream.logical_size,
+                            compressed_size: stream.logical_size(),
+                            uncompressed_size: stream.logical_size(),
                             attributes,
                         }
                     }
@@ -397,15 +433,15 @@ impl<'a> CompoundSnapshot<'a> {
             let CompoundEntry::Stream(stream) = entry else {
                 continue;
             };
-            let width = match stream.allocation {
+            let width = match stream.allocation() {
                 CompoundAllocation::Regular => self.parsed.sector_size,
                 CompoundAllocation::Mini => MINI_SECTOR_SIZE,
             };
-            let mut remaining = stream.logical_size;
-            for &sector in &stream.chain {
+            let mut remaining = stream.logical_size();
+            for &sector in stream.sectors() {
                 let payload = remaining.min(width as u64) as usize;
                 remaining = remaining.saturating_sub(payload as u64);
-                match stream.allocation {
+                match stream.allocation() {
                     CompoundAllocation::Regular => {
                         regular.insert(sector, (stream.path.clone(), payload));
                     }
@@ -858,7 +894,11 @@ impl CompoundState {
         })
     }
 
-    fn build_entries(&self, ctx: &DecodeContext<'_>) -> Result<Vec<CompoundEntry>, CodecError> {
+    fn build_entries(
+        &self,
+        ctx: &DecodeContext<'_>,
+        snapshot_id: u64,
+    ) -> Result<Vec<CompoundEntry>, CodecError> {
         let scratch_bytes = self
             .directory
             .len()
@@ -869,7 +909,14 @@ impl CompoundState {
         let _scratch = ctx.reserve_scoped(scratch_bytes as u64, "traverse CFB directory", None)?;
         let mut output = Vec::new();
         let mut reached = BTreeSet::new();
-        self.walk_tree(ctx, self.directory[0].child, "", &mut reached, &mut output)?;
+        self.walk_tree(
+            ctx,
+            snapshot_id,
+            self.directory[0].child,
+            "",
+            &mut reached,
+            &mut output,
+        )?;
         if self
             .directory
             .iter()
@@ -885,6 +932,7 @@ impl CompoundState {
     fn walk_tree(
         &self,
         ctx: &DecodeContext<'_>,
+        snapshot_id: u64,
         root: u32,
         parent: &str,
         reached: &mut BTreeSet<u32>,
@@ -940,32 +988,25 @@ impl CompoundState {
                         id: CompoundStorageId(id),
                         path: path.clone(),
                     }));
-                    self.walk_tree(ctx, entry.child, &path, reached, output)?;
+                    self.walk_tree(ctx, snapshot_id, entry.child, &path, reached, output)?;
                 }
                 2 => {
-                    let allocation = if entry.size < MINI_STREAM_CUTOFF {
-                        CompoundAllocation::Mini
-                    } else {
-                        CompoundAllocation::Regular
-                    };
-                    let sector_size = match allocation {
-                        CompoundAllocation::Regular => self.sector_size,
-                        CompoundAllocation::Mini => MINI_SECTOR_SIZE,
-                    };
-                    let expected = usize::try_from(entry.size)
-                        .map_err(|_| {
-                            CodecError::Malformed("CFB stream size does not fit memory".into())
-                        })?
-                        .div_ceil(sector_size);
-                    let chain = if entry.size == 0 {
-                        if !matches!(entry.start_sector, END_OF_CHAIN | FREE_SECTOR) {
-                            return malformed(format!(
-                                "empty CFB stream {path} has an invalid start sector"
-                            ));
-                        }
-                        Vec::new()
-                    } else {
-                        match allocation {
+                    let data = if let Some(logical_size) = NonZeroU64::new(entry.size) {
+                        let allocation = if entry.size < MINI_STREAM_CUTOFF {
+                            CompoundAllocation::Mini
+                        } else {
+                            CompoundAllocation::Regular
+                        };
+                        let sector_size = match allocation {
+                            CompoundAllocation::Regular => self.sector_size,
+                            CompoundAllocation::Mini => MINI_SECTOR_SIZE,
+                        };
+                        let expected = usize::try_from(entry.size)
+                            .map_err(|_| {
+                                CodecError::Malformed("CFB stream size does not fit memory".into())
+                            })?
+                            .div_ceil(sector_size);
+                        let mut sectors = match allocation {
                             CompoundAllocation::Regular => chain(
                                 Some(ctx),
                                 &self.fat,
@@ -982,16 +1023,32 @@ impl CompoundState {
                                 Some(expected),
                                 "mini stream",
                             )?,
+                        };
+                        let first = sectors.remove(0);
+                        StreamData::Allocated {
+                            logical_size,
+                            chain: SectorChain {
+                                first,
+                                rest: sectors,
+                            },
                         }
+                    } else {
+                        let start = match entry.start_sector {
+                            END_OF_CHAIN => EmptyStreamStart::EndOfChain,
+                            FREE_SECTOR => EmptyStreamStart::FreeSector,
+                            _ => {
+                                return malformed(format!(
+                                    "empty CFB stream {path} has an invalid start sector"
+                                ))
+                            }
+                        };
+                        StreamData::Empty(start)
                     };
                     output.push(CompoundEntry::Stream(CompoundStreamEntry {
                         id: CompoundStreamId(id),
-                        snapshot_id: 0,
+                        snapshot_id,
                         path,
-                        logical_size: entry.size,
-                        start_sector: entry.start_sector,
-                        allocation,
-                        chain,
+                        data,
                     }));
                 }
                 _ => return malformed("root or empty object appears in a storage child tree"),
@@ -1028,16 +1085,16 @@ impl CompoundState {
             .div_ceil(MINI_SECTOR_SIZE);
         for entry in entries {
             if let CompoundEntry::Stream(stream) = entry {
-                let target = if stream.allocation == CompoundAllocation::Regular {
+                let target = if stream.allocation() == CompoundAllocation::Regular {
                     &mut used
                 } else {
                     &mut mini_used
                 };
-                let mut remaining = stream.logical_size;
-                for &sector in &stream.chain {
+                let mut remaining = stream.logical_size();
+                for &sector in stream.sectors() {
                     let payload = remaining.min(MINI_SECTOR_SIZE as u64);
                     remaining = remaining.saturating_sub(payload);
-                    if stream.allocation == CompoundAllocation::Mini
+                    if stream.allocation() == CompoundAllocation::Mini
                         && (sector as usize >= mini_capacity
                             || u64::from(sector)
                                 .saturating_mul(MINI_SECTOR_SIZE as u64)
@@ -1654,12 +1711,6 @@ fn join_sectors(
     Ok(output)
 }
 
-fn physically_contiguous(views: &[View<'_>]) -> bool {
-    views
-        .windows(2)
-        .all(|pair| pair[0].end() == pair[1].start())
-}
-
 fn push_span(spans: &mut Vec<PhysicalSpan>, start: u64, length: usize, role: SpanRole) {
     if length == 0 {
         return;
@@ -1795,6 +1846,44 @@ mod tests {
                 .end,
             file.len() as u64
         );
+    }
+
+    #[test]
+    fn empty_streams_preserve_both_admitted_start_markers() {
+        for marker in [END_OF_CHAIN, FREE_SECTOR] {
+            let mut file = fixture();
+            directory_entry(
+                sector_mut(&mut file, 0),
+                1,
+                "Small",
+                2,
+                NO_STREAM,
+                2,
+                NO_STREAM,
+                marker,
+                0,
+            );
+            put_u32(sector_mut(&mut file, 10), 0, FREE_SECTOR);
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::default();
+            let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
+                .expect("empty stream fixture fits policy");
+            let snapshot = CompoundSnapshot::new(&ctx, root).expect("empty stream parses");
+            let stream = snapshot.stream("Small").expect("empty stream exists");
+            assert_eq!(stream.start_sector(), marker);
+            assert_eq!(stream.logical_size(), 0);
+            assert!(snapshot
+                .open(&ctx, stream)
+                .expect("empty stream opens")
+                .window()
+                .is_empty());
+            let summary = snapshot.container_entries(|_| "payload");
+            let entry = summary
+                .iter()
+                .find(|entry| entry.name == "Small")
+                .expect("stream summary");
+            assert_eq!(entry.attributes["start_sector"], marker.to_string());
+        }
     }
 
     #[test]
