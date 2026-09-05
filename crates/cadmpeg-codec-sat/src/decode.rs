@@ -23,10 +23,10 @@ use crate::FORMAT;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
     match classify(bytes) {
-        StreamKind::AsmBinary => decode_asm_binary(ctx, bytes),
-        StreamKind::Text => decode_text(ctx, bytes),
-        StreamKind::AcisBinary => decode_acis_binary(ctx, bytes),
-        StreamKind::Unknown => Err(CodecError::WrongFormat(
+        Some(StreamKind::AsmBinary) => decode_asm_binary(ctx, bytes),
+        Some(StreamKind::Text) => decode_text(ctx, bytes),
+        Some(StreamKind::AcisBinary) => decode_acis_binary(ctx, bytes),
+        None => Err(CodecError::WrongFormat(
             "not an ASM stream: no binary magic and no text header lines".to_string(),
         )),
     }
