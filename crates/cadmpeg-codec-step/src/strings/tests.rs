@@ -14,7 +14,8 @@ use crate::StepCodec;
 
 #[test]
 pub(crate) fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode() {
-    use crate::strings::{decode, decode_utf8, encode};
+    use crate::parse::implementation_level::ImplementationLevel;
+    use crate::strings::{decode, decode_with_level, encode};
 
     assert_eq!(decode(b"it''s").unwrap(), "it's");
     assert_eq!(decode(b"a\\\\b").unwrap(), "a\\b");
@@ -32,13 +33,22 @@ pub(crate) fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unico
     assert_eq!(decode(b"\\PH\\\\S\\`").unwrap(), "א");
     assert_eq!(decode(b"\\PI\\\\S\\P").unwrap(), "Ğ");
     assert_eq!(decode(b"line\\N\\text\\F\\tail").unwrap(), "linetexttail");
-    assert_eq!(decode_utf8(b"caf\xC3\xA9").unwrap(), "café");
     assert_eq!(
-        decode_utf8(b"caf\xC3\xA9\\X2\\03A9\\X0\\").unwrap(),
+        decode_with_level(b"caf\xC3\xA9", ImplementationLevel::Edition3Class1).unwrap(),
+        "café"
+    );
+    assert_eq!(
+        decode_with_level(
+            b"caf\xC3\xA9\\X2\\03A9\\X0\\",
+            ImplementationLevel::Edition3Class1
+        )
+        .unwrap(),
         "caféΩ"
     );
     assert_eq!(
-        decode_utf8(b"caf\xE9").unwrap_err().message,
+        decode_with_level(b"caf\xE9", ImplementationLevel::Edition3Class1)
+            .unwrap_err()
+            .message,
         "invalid UTF-8 direct string bytes"
     );
 

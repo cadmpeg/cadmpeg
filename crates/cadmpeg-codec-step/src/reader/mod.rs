@@ -1112,20 +1112,6 @@ fn schema_name(exchange: &Exchange) -> String {
     exchange.schema_identifiers().join(",")
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StringEncoding {
-    Iso8859_1,
-    Utf8,
-}
-
-fn string_encoding(exchange: &Exchange) -> StringEncoding {
-    if exchange.uses_utf8_strings() {
-        StringEncoding::Utf8
-    } else {
-        StringEncoding::Iso8859_1
-    }
-}
-
 pub(super) fn decode_text(
     exchange: &Exchange,
     value: &Value,
@@ -1137,11 +1123,7 @@ pub(super) fn decode_text(
     let Value::String(bytes) = value else {
         return None;
     };
-    let decoded = match string_encoding(exchange) {
-        StringEncoding::Iso8859_1 => crate::strings::decode(bytes),
-        StringEncoding::Utf8 => crate::strings::decode_utf8(bytes),
-    };
-    match decoded {
+    match exchange.decode_string(bytes) {
         Ok(text) => Some(text),
         Err(error) => {
             losses.push(code.note(format!(
