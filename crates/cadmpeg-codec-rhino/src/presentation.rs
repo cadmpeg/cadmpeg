@@ -657,7 +657,7 @@ fn curve_piping_record(
         segments: curve_piping.segments,
         faceted: curve_piping.faceted,
         accuracy: curve_piping.accuracy,
-        cap_type: curve_piping.cap_type.clone(),
+        cap_type: curve_piping.cap_type.as_str().to_string(),
     }
 }
 
