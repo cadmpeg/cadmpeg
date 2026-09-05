@@ -342,5 +342,5 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
         .expect("localized Sketch scope");
     assert_eq!(scope.kind, "Esquisse");
     assert_eq!(scope.reference_members, [55, 56]);
-    assert!(scope.entity_id.is_none());
+    assert!(scope.sketch_entity.is_none());
 }

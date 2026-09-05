@@ -3116,19 +3116,26 @@ pub struct DesignParameterScope {
     /// Sketch-profile operand carried by a `BaseFlange` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_flange_profile: Option<DesignSketchProfileOperand>,
-    /// Full Design entity id of a sketch scope.
+    /// Sketch-module entity bound to this sketch scope.
+    #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entity_id: Option<String>,
-    /// Numeric suffix of `entity_id`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entity_suffix: Option<u64>,
-    /// Byte offset of the sketch entity suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entity_reference_offset: Option<u64>,
+    pub sketch_entity: Option<DesignSketchEntityBinding>,
     /// Per-file dynamic class tag of the paired header.
     pub paired_class_tag: String,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
+}
+
+/// Sketch-module entity named by a sketch parameter scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignSketchEntityBinding {
+    /// Full Design entity id of a sketch scope.
+    pub entity_id: String,
+    /// Numeric suffix of `entity_id`.
+    pub entity_suffix: u64,
+    /// Byte offset of the sketch entity suffix.
+    pub entity_reference_offset: u64,
 }
 
 /// Fixed operation records named by a `SurfaceStitch` scope.
@@ -3632,9 +3639,7 @@ impl DesignParameterScope {
             extrude_profile: None,
             sweep_profile: None,
             base_flange_profile: None,
-            entity_id: None,
-            entity_suffix: None,
-            entity_reference_offset: None,
+            sketch_entity: None,
             paired_class_tag: String::new(),
             paired_byte_offset: 0,
         }

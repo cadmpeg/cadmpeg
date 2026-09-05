@@ -2244,23 +2244,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
     for scope in &native.design_parameter_scopes {
         let native_stream = design_stream(&scope.id);
         let unique_index = scope_indices.insert((native_stream, scope.record_index));
-        let entity_link = match (
-            scope.entity_id.as_deref(),
-            scope.entity_suffix,
-            scope.entity_reference_offset,
-        ) {
-            (None, None, None) => None,
-            (Some(entity_id), Some(entity_suffix), Some(offset)) => Some(
-                entities_by_suffix
-                    .get(&(native_stream, entity_suffix))
-                    .is_some_and(|entity| {
-                        entity.entity_id == entity_id
-                            && offset > scope.byte_offset
-                            && offset < scope.paired_byte_offset
-                    }),
-            ),
-            _ => Some(false),
-        };
+        let entity_link = scope.sketch_entity.as_ref().map(|binding| {
+            entities_by_suffix
+                .get(&(native_stream, binding.entity_suffix))
+                .is_some_and(|entity| {
+                    entity.entity_id == binding.entity_id
+                        && binding.entity_reference_offset > scope.byte_offset
+                        && binding.entity_reference_offset < scope.paired_byte_offset
+                })
+        });
         let valid_sketch_profile = |profile: &records::DesignSketchProfileOperand| {
             let header = records_by_index.get(&(native_stream, profile.record_index));
             let entity = entities_by_suffix.get(&(native_stream, profile.entity_suffix));
@@ -8226,8 +8218,10 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 && scope.is_some_and(|scope| {
                     design::design_feature_family(&scope.kind)
                         == Some(design::DesignFeatureFamily::Sketch)
-                        && scope.entity_id.as_deref() == Some(placement.entity_id.as_str())
-                        && scope.entity_suffix == Some(placement.entity_suffix)
+                        && scope.sketch_entity.as_ref().is_some_and(|binding| {
+                            binding.entity_id == placement.entity_id
+                                && binding.entity_suffix == placement.entity_suffix
+                        })
                 })
         };
         let valid = placement.class_tag.len() == 3

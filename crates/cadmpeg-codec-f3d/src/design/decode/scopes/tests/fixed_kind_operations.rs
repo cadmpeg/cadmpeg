@@ -1689,8 +1689,11 @@ pub(super) fn continue_fixed_kind_operations(
 
     companion.payload_byte_length = 0;
     companion.owned_recipe_ids.clear();
-    scope.entity_id = Some("Sketch_99".into());
-    scope.entity_suffix = Some(99);
+    scope.sketch_entity = Some(crate::records::DesignSketchEntityBinding {
+        entity_id: "Sketch_99".into(),
+        entity_suffix: 99,
+        entity_reference_offset: 0,
+    });
     let entity = crate::records::DesignEntityHeader {
         id: "f3d:native:design-entity-header#70".into(),
         byte_offset: 70,

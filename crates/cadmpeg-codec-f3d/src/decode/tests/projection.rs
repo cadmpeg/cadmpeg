@@ -1420,9 +1420,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
-        entity_id: None,
-        entity_suffix: None,
-        entity_reference_offset: None,
+        sketch_entity: None,
         paired_class_tag: "001".into(),
         paired_byte_offset: 1,
     });
@@ -1639,9 +1637,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
-        entity_id: None,
-        entity_suffix: None,
-        entity_reference_offset: None,
+        sketch_entity: None,
         paired_class_tag: "001".into(),
         paired_byte_offset: u64::from(record_index) + 1,
     };

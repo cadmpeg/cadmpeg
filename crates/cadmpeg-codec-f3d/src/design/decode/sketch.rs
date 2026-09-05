@@ -125,11 +125,11 @@ pub fn decode_sketch_placements(
         .iter()
         .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch))
     {
-        let (Some(entity_id), Some(entity_suffix)) =
-            (scope.entity_id.as_deref(), scope.entity_suffix)
-        else {
+        let Some(binding) = scope.sketch_entity.as_ref() else {
             continue;
         };
+        let entity_id = binding.entity_id.as_str();
+        let entity_suffix = binding.entity_suffix;
         let entry = scan.entries.iter().find(|entry| {
             scan.is_design_stream(entry, role::BULKSTREAM)
                 && scope.id.starts_with(&ids::native_scope_prefix(&entry.name))
