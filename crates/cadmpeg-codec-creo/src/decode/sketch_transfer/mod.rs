@@ -19,7 +19,7 @@ pub(super) use recipe::{
     feature_recipe_effect, feature_revolution_extent, feature_row_schema_classes,
     feature_schema_class, feature_section_sweep_semantics_conflict,
     first_material_feature_by_definition_order, resolved_feature_schema_class_from_classes,
-    row_feature_schema_classes, unique_feature_revolution_extent_kind,
+    row_feature_schema_classes, unique_feature_revolution_extent,
 };
 
 #[allow(unused_imports)]

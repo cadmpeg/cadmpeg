@@ -9,7 +9,7 @@ use super::super::sketch::{
 use super::super::sketch_ids::model_sketch_id;
 use super::super::sketch_transfer::{
     feature_recipe, feature_revolution_extent, semantic_saved_section_entities,
-    unique_feature_revolution_extent_kind,
+    unique_feature_revolution_extent,
 };
 use super::super::sweep::{
     connected_sketch_profile_vertices, extruded_section_line, revolved_nurbs_surface,
@@ -54,8 +54,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Revolve) {
             continue;
         }
-        if unique_feature_revolution_extent_kind(&scan.features.revolution_extents, feature_id)
-            .is_none()
+        if unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id).is_none()
         {
             continue;
         }

@@ -950,7 +950,6 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         .revolution_extents
         .push(crate::feature::FeatureRevolutionExtent {
             feature_id: 822,
-            kind: crate::feature::FeatureRevolutionExtentKind::FullTurn,
             offset: 1,
         });
     assert!(matches!(

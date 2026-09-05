@@ -195,25 +195,20 @@ pub(in super::super) fn feature_revolution_extent(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<RevolveExtent> {
-    unique_feature_revolution_extent_kind(&scan.features.revolution_extents, feature_id).map(
-        |kind| match kind {
-            crate::feature::FeatureRevolutionExtentKind::FullTurn => RevolveExtent::OneSided {
-                termination: AngularTermination::Angle {
-                    angle: Angle(std::f64::consts::TAU),
-                },
+    unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id).map(|_| {
+        RevolveExtent::OneSided {
+            termination: AngularTermination::Angle {
+                angle: Angle(std::f64::consts::TAU),
             },
-        },
-    )
+        }
+    })
 }
 
-pub(in super::super) fn unique_feature_revolution_extent_kind(
+pub(in super::super) fn unique_feature_revolution_extent(
     records: &[crate::feature::FeatureRevolutionExtent],
     feature_id: u32,
-) -> Option<crate::feature::FeatureRevolutionExtentKind> {
-    let mut kinds = records
+) -> Option<&crate::feature::FeatureRevolutionExtent> {
+    records
         .iter()
-        .filter(|record| record.feature_id == feature_id)
-        .map(|record| record.kind);
-    let kind = kinds.next()?;
-    kinds.all(|candidate| candidate == kind).then_some(kind)
+        .find(|record| record.feature_id == feature_id)
 }

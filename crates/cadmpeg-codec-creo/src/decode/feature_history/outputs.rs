@@ -4,7 +4,7 @@
 use super::super::sketch_ids::model_sketch_id;
 use super::super::sketch_transfer::{
     current_feature_operation, current_feature_recipe, feature_recipe, feature_row_schema_classes,
-    feature_schema_class, unique_feature_revolution_extent_kind,
+    feature_schema_class, unique_feature_revolution_extent,
 };
 use super::super::uniqueness::{exactly_one, unique_feature_definition_for_transform};
 use super::dependencies::feature_generated_dependencies;
@@ -499,16 +499,8 @@ pub(in super::super) fn feature_parameters(
             direction.value.to_string(),
         );
     }
-    if let Some(extent) =
-        unique_feature_revolution_extent_kind(&scan.features.revolution_extents, feature_id)
-    {
-        parameters.insert(
-            "revolution_extent".to_string(),
-            match extent {
-                crate::feature::FeatureRevolutionExtentKind::FullTurn => "full_turn",
-            }
-            .to_string(),
-        );
+    if unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id).is_some() {
+        parameters.insert("revolution_extent".to_string(), "full_turn".to_string());
     }
     for table in scan
         .features

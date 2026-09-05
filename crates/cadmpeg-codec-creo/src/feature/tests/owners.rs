@@ -390,7 +390,6 @@ fn decodes_owned_depdb_full_turn_for_rotational_recipe() {
 
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].feature_id, 247);
-    assert_eq!(decoded[0].kind, FeatureRevolutionExtentKind::FullTurn);
     assert_eq!(decoded[0].offset, 106);
 
     let extrude = operation(247, Some(FeatureRecipe::ProtrudeExtrude), 10);
@@ -417,9 +416,6 @@ fn preserves_repeated_identical_depdb_full_turn_states() {
     assert_eq!(decoded.len(), 2);
     assert_eq!(decoded[0].offset, 106);
     assert_eq!(decoded[1].offset, 127);
-    assert!(decoded
-        .iter()
-        .all(|extent| extent.kind == FeatureRevolutionExtentKind::FullTurn));
 }
 
 #[test]

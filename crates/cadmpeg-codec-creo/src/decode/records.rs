@@ -906,9 +906,7 @@ pub(super) fn feature_revolution_extent_records(
         .map(|record| CreoFeatureRevolutionExtentRecord {
             id: format!("creo:feature:revolution_extent#{}", record.offset),
             owner_feature_id: record.feature_id,
-            kind: match record.kind {
-                crate::feature::FeatureRevolutionExtentKind::FullTurn => "full_turn",
-            },
+            kind: "full_turn",
             angle_radians: std::f64::consts::TAU,
             offset: record.offset,
             source_section: source_section(scan, record.offset),

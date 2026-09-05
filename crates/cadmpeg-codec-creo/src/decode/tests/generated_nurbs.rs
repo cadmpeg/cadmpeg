@@ -17,7 +17,7 @@ use crate::decode::sketch_transfer::{
     feature_is_first_material_operation, first_material_feature_by_definition_order,
     reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
     resolved_feature_schema_class_from_classes, row_feature_schema_classes,
-    section_equation_same_coordinate_constraints, unique_feature_revolution_extent_kind,
+    section_equation_same_coordinate_constraints, unique_feature_revolution_extent,
 };
 use crate::decode::sweep::{generated_nurbs_translation_extent, nurbs_translation_span};
 use crate::decode::uniqueness::{
@@ -1713,17 +1713,14 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
         BTreeSet::from([913, 914])
     );
-    let extent = |feature_id, offset| crate::feature::FeatureRevolutionExtent {
-        feature_id,
-        kind: crate::feature::FeatureRevolutionExtentKind::FullTurn,
-        offset,
-    };
+    let extent =
+        |feature_id, offset| crate::feature::FeatureRevolutionExtent { feature_id, offset };
     assert_eq!(
-        unique_feature_revolution_extent_kind(&[extent(6, 40), extent(6, 50)], 6),
-        Some(crate::feature::FeatureRevolutionExtentKind::FullTurn)
+        unique_feature_revolution_extent(&[extent(6, 40), extent(6, 50)], 6).map(|e| e.feature_id),
+        Some(6)
     );
     assert_eq!(
-        unique_feature_revolution_extent_kind(&[extent(7, 40)], 6),
+        unique_feature_revolution_extent(&[extent(7, 40)], 6).map(|e| e.feature_id),
         None
     );
     let transform = crate::placement::FeatureSectionTransform {
