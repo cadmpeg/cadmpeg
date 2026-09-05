@@ -183,7 +183,9 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         crate::records::DesignFeatureKind::Hole,
         42,
     );
-    scope.set_hole_construction(Some(construction));
+    if let crate::records::DesignScopePayload::Hole(slot) = &mut scope.payload {
+        *slot = Some(construction);
+    }
 
     bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]);
 
@@ -586,18 +588,20 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         crate::records::DesignFeatureKind::Combine,
         10,
     );
-    scope.set_combine_operation(Some(crate::records::DesignCombineOperation {
-        form: crate::records::DesignCombineForm::ExtendedReference,
-        operation: crate::records::DesignExtrudeOperation::Join,
-        operation_offset: 0,
-        keep_tools: false,
-        keep_tools_offset: 0,
-        target: crate::records::DesignCombineBodySelection {
-            record_index: 11,
-            external_identity: None,
-        },
-        tools: vec![tool(12, 500), tool(13, 501)],
-    }));
+    if let crate::records::DesignScopePayload::Combine(slot) = &mut scope.payload {
+        *slot = Some(crate::records::DesignCombineOperation {
+            form: crate::records::DesignCombineForm::ExtendedReference,
+            operation: crate::records::DesignExtrudeOperation::Join,
+            operation_offset: 0,
+            keep_tools: false,
+            keep_tools_offset: 0,
+            target: crate::records::DesignCombineBodySelection {
+                record_index: 11,
+                external_identity: None,
+            },
+            tools: vec![tool(12, 500), tool(13, 501)],
+        });
+    }
     let BodySelection::Local { bodies, native } =
         super::super::combine_external_local_tools(&scope).expect("complete local tool identity")
     else {
@@ -1597,16 +1601,20 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     );
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
-    scope.set_mirror_construction(Some(
-        serde_json::from_value(serde_json::json!({
-            "count": 2, "count_record_index": 11, "count_offset": 0,
-            "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
-            "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
-            "plane_group_record_index": 30, "plane_selection_record_index": 40,
-            "plane_origin": null, "plane_normal": null
-        }))
-        .expect("mirror construction"),
-    ));
+    if let crate::records::DesignScopePayload::Mirror(slot)
+    | crate::records::DesignScopePayload::SymetrieMiroir(slot) = &mut scope.payload
+    {
+        *slot = Some(
+            serde_json::from_value(serde_json::json!({
+                "count": 2, "count_record_index": 11, "count_offset": 0,
+                "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
+                "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
+                "plane_group_record_index": 30, "plane_selection_record_index": 40,
+                "plane_origin": null, "plane_normal": null
+            }))
+            .expect("mirror construction"),
+        );
+    }
     let group: crate::records::DesignConstructionOperandGroup =
         serde_json::from_value(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:group#30", "scope_record_index": 42,

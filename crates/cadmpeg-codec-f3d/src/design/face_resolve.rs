@@ -248,7 +248,7 @@ pub(crate) fn resolved_body_recipe_shape(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignBodyRecipeOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
-    if crate::design::design_feature_family(&scope.kind)
+    if crate::design::design_feature_family(&scope.kind())
         != Some(crate::design::DesignFeatureFamily::Extrude)
         || group.role != 0x0000_0005_0000_0000
     {
@@ -595,7 +595,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignEdgeOperand],
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
-    if scope.kind != crate::records::DesignFeatureKind::Loft
+    if scope.kind() != crate::records::DesignFeatureKind::Loft
         || !matches!(group.role, 0x41_0000_0000 | 0x43_0000_0000)
         || group.members.is_empty()
         || !group.lost_edge_references.is_empty()
@@ -871,7 +871,7 @@ pub(crate) fn resolved_historical_split_face_target_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
-    if scope.kind != crate::records::DesignFeatureKind::SplitFace
+    if scope.kind() != crate::records::DesignFeatureKind::SplitFace
         || group.role != 0x0000_0010_0000_0000
     {
         return None;
@@ -895,7 +895,7 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
     operands: &[DesignFaceOperand],
     updated_face_slots: &[i64],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
-    if scope.kind != crate::records::DesignFeatureKind::SplitFace
+    if scope.kind() != crate::records::DesignFeatureKind::SplitFace
         || group.role != 0x0000_0010_0000_0000
     {
         return None;
@@ -912,7 +912,7 @@ fn split_face_updated_target_slots(
     operands: &[DesignFaceOperand],
     updated_face_slots: &[i64],
 ) -> Option<Vec<i64>> {
-    if scope.kind != crate::records::DesignFeatureKind::SplitFace
+    if scope.kind() != crate::records::DesignFeatureKind::SplitFace
         || group.role != 0x0000_0010_0000_0000
         || updated_face_slots.is_empty()
         || updated_face_slots.len() != group.members.len()

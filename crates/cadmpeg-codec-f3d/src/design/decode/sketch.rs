@@ -4,22 +4,23 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::{
-    Reference, f64s_at, lp_ascii_filtered, lp_utf16_bounded, take_reference, utf16le_at,
+    f64s_at, lp_ascii_filtered, lp_utf16_bounded, take_reference, utf16le_at, Reference,
 };
 use crate::container::ContainerScan;
-use crate::design::{DesignFeatureFamily, design_feature_family};
+use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
 use crate::records::{
-    DESIGN_MODULE_SKETCH, DesignEntityHeader, DesignParameterScope, DesignRecordHeader,
-    DesignSketchPlacement, DesignSketchVisibility, LostEdgeReference, PersistentReference,
-    PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-    SketchPoint, SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
+    DesignEntityHeader, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+    DesignSketchVisibility, LostEdgeReference, PersistentReference, PersistentReferenceKind,
+    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+    SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
     SketchPointRecordForm, SketchRelation, SketchRelationOperand, SketchSurface, SketchText,
+    DESIGN_MODULE_SKETCH,
 };
-use cadmpeg_core::CodecError;
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Color;
@@ -124,7 +125,7 @@ pub fn decode_sketch_placements(
     }
     for scope in scopes
         .iter()
-        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch))
+        .filter(|scope| design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch))
     {
         let Some(binding) = scope.sketch_entity() else {
             continue;
@@ -224,7 +225,7 @@ pub fn decode_sketch_placements(
         let matching_scopes = scopes
             .iter()
             .filter(|scope| {
-                design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch)
+                design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch)
                     && native_stream(&scope.id) == Some(stream)
                     && scope.byte_offset > entity.byte_offset
                     && next_entity_offset.is_none_or(|end| scope.byte_offset < end)
@@ -2283,7 +2284,11 @@ pub(crate) fn decode_sketch_text_record(
                         }
                     }
                 }
-                if ambiguous { None } else { closed }
+                if ambiguous {
+                    None
+                } else {
+                    closed
+                }
             }
             SketchTextIdentity::TxtTag { rotation } => {
                 decode_txt_tag_sketch_text_tail(payload, head.cursor, class_version, rotation)

@@ -321,18 +321,20 @@ mod tests {
             crate::records::DesignFeatureKind::CopyPaste,
             10,
         );
-        scope.set_copy_paste_component_operation(Some(DesignCopyPasteComponentOperation {
-            relation_record_index: 20,
-            source_occurrence_record_index: 100,
-            copied_occurrence_record_index: 101,
-            component_guid: COMPONENT.into(),
-            source_occurrence_guid: SOURCE.into(),
-            copied_occurrence_guid: COPY.into(),
-            source_transform: identity_matrix(),
-            source_transform_offset: 0,
-            copied_transform: identity_matrix(),
-            copied_transform_offset: 0,
-        }));
+        if let crate::records::DesignScopePayload::CopyPaste(slot) = &mut scope.payload {
+            *slot = Some(DesignCopyPasteComponentOperation {
+                relation_record_index: 20,
+                source_occurrence_record_index: 100,
+                copied_occurrence_record_index: 101,
+                component_guid: COMPONENT.into(),
+                source_occurrence_guid: SOURCE.into(),
+                copied_occurrence_guid: COPY.into(),
+                source_transform: identity_matrix(),
+                source_transform_offset: 0,
+                copied_transform: identity_matrix(),
+                copied_transform_offset: 0,
+            });
+        }
 
         let (definitions, occurrences) =
             super::project_local_components(&[scope], &native_occurrences);
@@ -355,15 +357,17 @@ mod tests {
             crate::records::DesignFeatureKind::DerivedInstance,
             385,
         );
-        scope.set_derived_instance_construction(Some(DesignDerivedInstanceConstruction {
-            reference_record_index: 305,
-            relation_record_index: 383,
-            carrier_record_index: 382,
-            component_guid: COMPONENT.into(),
-            occurrence_guid: OCCURRENCE.into(),
-            transform: identity_matrix(),
-            transform_offset: 473,
-        }));
+        if let crate::records::DesignScopePayload::DerivedInstance(slot) = &mut scope.payload {
+            *slot = Some(DesignDerivedInstanceConstruction {
+                reference_record_index: 305,
+                relation_record_index: 383,
+                carrier_record_index: 382,
+                component_guid: COMPONENT.into(),
+                occurrence_guid: OCCURRENCE.into(),
+                transform: identity_matrix(),
+                transform_offset: 473,
+            });
+        }
         let native_occurrence = DesignComponentOccurrence {
             id: "f3d:Design/BulkStream.dat:design-component-occurrence#382".into(),
             class_tag: "380".into(),

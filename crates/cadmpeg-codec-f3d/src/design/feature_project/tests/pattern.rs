@@ -61,15 +61,19 @@ fn rectangular_scope() -> DesignParameterScope {
         crate::records::DesignFeatureKind::RPattern,
         10,
     );
-    scope.set_rectangular_pattern_construction(Some(DesignRectangularPatternConstruction {
-        u_count: 3,
-        v_count: 1,
-        u_extent: 10.0,
-        v_extent: 0.0,
-        owner_record_indices: [11, 12, 13, 14],
-        value_offsets: [101, 102, 103, 104],
-        instances: None,
-    }));
+    if let crate::records::DesignScopePayload::RPattern(slot)
+    | crate::records::DesignScopePayload::RectangularPattern(slot) = &mut scope.payload
+    {
+        *slot = Some(DesignRectangularPatternConstruction {
+            u_count: 3,
+            v_count: 1,
+            u_extent: 10.0,
+            v_extent: 0.0,
+            owner_record_indices: [11, 12, 13, 14],
+            value_offsets: [101, 102, 103, 104],
+            instances: None,
+        });
+    }
     scope
 }
 

@@ -23,9 +23,8 @@ use crate::native::F3dNative;
 use crate::records::{
     DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
     DesignDimensionRecipeRecord, DesignFeatureTimeline, DesignParameter, DesignParameterCompanion,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignScopePayload,
-    DesignSketchPlacement, LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
-    SketchRelationKind,
+    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignSketchPlacement,
+    LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationKind,
 };
 
 #[test]
@@ -1353,7 +1352,6 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         class_tag: "000".into(),
         record_index: 3,
         frame_length: 1,
-        kind: crate::records::DesignFeatureKind::Native("Unsupported".into()),
         kind_offset: 0,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
@@ -1364,7 +1362,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         reference_count_offset: 0,
         reference_members: Vec::new(),
         reference_member_offsets: Vec::new(),
-        payload: DesignScopePayload::Empty,
+        payload: crate::records::DesignFeatureKind::Native("Unsupported".into()).into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "001".into(),
         paired_byte_offset: 1,
@@ -1514,7 +1512,6 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         class_tag: "000".into(),
         record_index,
         frame_length: 1,
-        kind: crate::records::DesignFeatureKind::Native("Unsupported".into()),
         kind_offset: 0,
         feature_ordinal: record_index,
         feature_ordinal_offset: 0,
@@ -1525,7 +1522,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         reference_count_offset: 0,
         reference_members: Vec::new(),
         reference_member_offsets: Vec::new(),
-        payload: DesignScopePayload::Empty,
+        payload: crate::records::DesignFeatureKind::Native("Unsupported".into()).into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "001".into(),
         paired_byte_offset: u64::from(record_index) + 1,

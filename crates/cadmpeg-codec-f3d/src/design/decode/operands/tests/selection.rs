@@ -454,7 +454,6 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         class_tag: "301".into(),
         record_index: 12,
         frame_length: 200,
-        kind: crate::records::DesignFeatureKind::Extrude,
         kind_offset: 1100,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
@@ -465,7 +464,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         reference_count_offset: 1080,
         reference_members: vec![100],
         reference_member_offsets: vec![1085],
-        payload: DesignScopePayload::Empty,
+        payload: crate::records::DesignFeatureKind::Extrude.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: 1200,
@@ -622,20 +621,26 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     );
     assert_eq!(member.operand_identity_ids, [identity.id]);
     let mut owning_scope = scope;
-    owning_scope.ensure_extrude().extrude_profile = Some(DesignSketchProfileOperand {
-        scope_reference_ordinal: 1,
-        record_index: 300,
-        byte_offset: 3000,
-        class_tag: "308".into(),
-        asset_id: "df9087bd-02a6-4a3f-a132-7e69990f323c".into(),
-        asset_id_offset: 3040,
-        entity_id: "0_172".into(),
-        entity_suffix: 172,
-        entity_reference_offset: 3120,
-        region_selection: None,
-        paired_class_tag: "259".into(),
-        paired_byte_offset: 3200,
-    });
+    if let crate::records::DesignScopePayload::Extrude(slot)
+    | crate::records::DesignScopePayload::Extrusion(slot)
+    | crate::records::DesignScopePayload::Extrusao(slot) = &mut owning_scope.payload
+    {
+        slot.get_or_insert_with(Default::default).extrude_profile =
+            Some(DesignSketchProfileOperand {
+                scope_reference_ordinal: 1,
+                record_index: 300,
+                byte_offset: 3000,
+                class_tag: "308".into(),
+                asset_id: "df9087bd-02a6-4a3f-a132-7e69990f323c".into(),
+                asset_id_offset: 3040,
+                entity_id: "0_172".into(),
+                entity_suffix: 172,
+                entity_reference_offset: 3120,
+                region_selection: None,
+                paired_class_tag: "259".into(),
+                paired_byte_offset: 3200,
+            });
+    }
     let curve = SketchCurveIdentity {
         id: "f3d:Design/BulkStream.dat:sketch-curve#400".into(),
         record_index: 400,

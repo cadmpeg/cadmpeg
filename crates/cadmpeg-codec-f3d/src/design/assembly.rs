@@ -474,7 +474,7 @@ fn unique_scope<'a>(
     let mut matches = scopes.iter().filter(|scope| {
         native_stream(&scope.id) == Some(stream)
             && scope.record_index == record_index
-            && scope.kind == *kind
+            && scope.kind() == *kind
     });
     let scope = matches.next()?;
     matches.next().is_none().then_some(scope)

@@ -41,7 +41,7 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
         &scope.class_tag,
         &scope.paired_class_tag,
     )?;
-    if scope.kind != crate::records::DesignFeatureKind::AsBuilt
+    if scope.kind() != crate::records::DesignFeatureKind::AsBuilt
         || lanes.len() != 6
         || scope.reference_members.len() != 11
     {
@@ -157,7 +157,7 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
         &scope.class_tag,
         &scope.paired_class_tag,
     )?;
-    if scope.kind != crate::records::DesignFeatureKind::AsBuilt
+    if scope.kind() != crate::records::DesignFeatureKind::AsBuilt
         || scope.reference_members.len() != 11
         || scope.reference_member_offsets.len() != 11
     {
@@ -256,7 +256,7 @@ pub(crate) fn exact_legacy_as_built_421_operands(
         &scope.class_tag,
         &scope.paired_class_tag,
     )?;
-    if scope.kind != crate::records::DesignFeatureKind::AsBuilt
+    if scope.kind() != crate::records::DesignFeatureKind::AsBuilt
         || scope.reference_members.len() != 11
         || scope.reference_member_offsets.len() != 11
         || solved_frame.reference_record_index != *scope.reference_members.get(8)?
@@ -269,7 +269,7 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     let second_selection_record_index = *scope.reference_members.get(3)?;
     let point = exact_point_data_construction(bytes, records, &[point_record_index], stream_types)?;
     let mut hole_scope = scope.clone();
-    hole_scope.kind = crate::records::DesignFeatureKind::Hole;
+    hole_scope.payload = crate::records::DesignFeatureKind::Hole.into();
     let hole = exact_hole_construction(bytes, records, &hole_scope, stream_types)?;
     if hole.point_record_index != hole_record_index
         || hole.input_record_indices.as_slice() != [second_selection_record_index]

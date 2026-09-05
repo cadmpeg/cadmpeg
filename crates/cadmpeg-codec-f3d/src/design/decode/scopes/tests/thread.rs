@@ -356,7 +356,7 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
 
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("localized Sketch scope");
-    assert_eq!(scope.kind, crate::records::DesignFeatureKind::Esquisse);
+    assert_eq!(scope.kind(), crate::records::DesignFeatureKind::Esquisse);
     assert_eq!(scope.reference_members, [55, 56]);
     assert!(scope.sketch_entity().is_none());
 }

@@ -174,7 +174,6 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         class_tag: "291".into(),
         record_index: scope_record_index,
         frame_length: 329,
-        kind: crate::records::DesignFeatureKind::CPattern,
         kind_offset: 0,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
@@ -190,7 +189,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             selection_record_index,
         ],
         reference_member_offsets: vec![0; 4],
-        payload: DesignScopePayload::Empty,
+        payload: crate::records::DesignFeatureKind::CPattern.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "258".into(),
         paired_byte_offset: 329,
@@ -328,7 +327,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         None
     );
 
-    scope.kind = crate::records::DesignFeatureKind::RPattern;
+    scope.payload = crate::records::DesignFeatureKind::RPattern.into();
     let rectangular_owners = [
         owner(50, 0, 3.0, 501),
         owner(51, 1, 1.0, 502),
@@ -411,7 +410,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         None
     );
 
-    scope.kind = crate::records::DesignFeatureKind::Assemble;
+    scope.payload = crate::records::DesignFeatureKind::Assemble.into();
     scope.frame_length = 627;
     scope.reference_members = vec![50, 51, 52, 53];
     let alignment = exact_assembly_alignment(
@@ -667,13 +666,17 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(short_axial_frames[1].transform_offset, 178);
 
     let mut first_joint_origin = scope.clone();
-    first_joint_origin.kind = crate::records::DesignFeatureKind::JointOrigin;
+    first_joint_origin.payload = crate::records::DesignFeatureKind::JointOrigin.into();
     first_joint_origin.record_index = 70;
     first_joint_origin.reference_members.clear();
     let mut second_joint_origin = first_joint_origin.clone();
     second_joint_origin.record_index = 80;
     let mut linked_assembly = axial_assembly_scope.clone();
-    linked_assembly.set_assembly_alignment(Some(axial_alignment.clone()));
+    if let crate::records::DesignScopePayload::Assemble(slot)
+    | crate::records::DesignScopePayload::AsBuilt(slot) = &mut linked_assembly.payload
+    {
+        *slot = Some(axial_alignment.clone());
+    }
     let mut linked_scopes = [linked_assembly, first_joint_origin, second_joint_origin];
     bind_joint_origin_frames_from_assemblies(&axial_assembly_bytes, &mut linked_scopes);
     assert_eq!(linked_scopes[1].joint_origin_transform_offset(), Some(39));
@@ -710,9 +713,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .iter()
         .map(|owner| owner.record_index)
         .collect();
-    single_frame_assembly.set_assembly_alignment(Some(datum_envelope_alignment));
+    if let crate::records::DesignScopePayload::Assemble(slot)
+    | crate::records::DesignScopePayload::AsBuilt(slot) = &mut single_frame_assembly.payload
+    {
+        *slot = Some(datum_envelope_alignment);
+    }
     let mut single_frame_joint_origin = scope.clone();
-    single_frame_joint_origin.kind = crate::records::DesignFeatureKind::JointOrigin;
+    single_frame_joint_origin.payload = crate::records::DesignFeatureKind::JointOrigin.into();
     single_frame_joint_origin.record_index = 91;
     single_frame_joint_origin.reference_members.clear();
     let mut single_frame_scopes = [single_frame_assembly, single_frame_joint_origin];
@@ -758,7 +765,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
 
     single_frame_bytes[175..179].copy_from_slice(&2_u32.to_le_bytes());
     let mut invalid_joint_origin = single_frame_scopes[1].clone();
-    invalid_joint_origin.set_joint_origin_frame(None);
+    if let crate::records::DesignScopePayload::JointOrigin(slot) = &mut invalid_joint_origin.payload
+    {
+        *slot = None;
+    }
     let mut invalid_single_frame_scopes = [single_frame_scopes[0].clone(), invalid_joint_origin];
     bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut invalid_single_frame_scopes);
     assert_eq!(

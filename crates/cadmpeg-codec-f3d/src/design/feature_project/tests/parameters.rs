@@ -206,9 +206,8 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         class_tag: "301".into(),
         record_index: 12,
         frame_length: 200,
-        kind: crate::records::DesignFeatureKind::Extrude,
         kind_offset: 210,
-        payload: DesignScopePayload::Extrude(crate::records::DesignExtrudeScope {
+        payload: DesignScopePayload::Extrude(Some(crate::records::DesignExtrudeScope {
             extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation: DesignExtrudeOperation::NewBody,
@@ -227,7 +226,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
                 start_offset: 142,
             }),
             ..crate::records::DesignExtrudeScope::default()
-        }),
+        })),
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: None,
@@ -356,7 +355,6 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         class_tag: "301".into(),
         record_index,
         frame_length: 100,
-        kind: crate::records::DesignFeatureKind::CustomFeature,
         kind_offset: 0,
         feature_ordinal: record_index,
         feature_ordinal_offset: 0,
@@ -367,7 +365,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         reference_count_offset: 0,
         reference_members: Vec::new(),
         reference_member_offsets: Vec::new(),
-        payload: DesignScopePayload::Empty,
+        payload: crate::records::DesignFeatureKind::CustomFeature.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "302".into(),
         paired_byte_offset: u64::from(record_index) + 100,
@@ -494,7 +492,6 @@ fn parameter_expressions_project_feature_dependencies() {
         class_tag: "301".into(),
         record_index,
         frame_length: 200,
-        kind: kind.to_owned().into(),
         kind_offset: byte_offset + 100,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
@@ -505,7 +502,7 @@ fn parameter_expressions_project_feature_dependencies() {
         reference_count_offset: byte_offset + 80,
         reference_members: vec![record_index + 1],
         reference_member_offsets: vec![byte_offset + 85],
-        payload: DesignScopePayload::Empty,
+        payload: crate::records::DesignFeatureKind::from(kind.to_owned()).into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: byte_offset + 200,

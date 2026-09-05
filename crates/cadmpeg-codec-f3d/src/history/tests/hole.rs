@@ -149,7 +149,9 @@ fn hole_scope() -> crate::records::DesignParameterScope {
     );
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
-    scope.set_hole_construction(Some(construction));
+    if let crate::records::DesignScopePayload::Hole(slot) = &mut scope.payload {
+        *slot = Some(construction);
+    }
     scope
 }
 

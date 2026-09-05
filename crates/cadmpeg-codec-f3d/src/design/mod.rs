@@ -107,7 +107,11 @@ pub(crate) fn design_feature_family(
         Kind::Thread => Some(DesignFeatureFamily::Thread),
         Kind::EdgeFlange => Some(DesignFeatureFamily::SheetMetalEdgeFlange),
         Kind::Hem => Some(DesignFeatureFamily::SheetMetalHem),
-        Kind::Native(_)
+        Kind::SpherePrimitive
+        | Kind::TorusPrimitive
+        | Kind::BoxPrimitive
+        | Kind::CylinderPrimitive
+        | Kind::Native(_)
         | Kind::Canvas
         | Kind::Decal
         | Kind::BaseMeshFeature
