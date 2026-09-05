@@ -1835,10 +1835,7 @@ fn body_recipe_link_candidate(
     let selector = i64::from(recipe.design_selector?.value);
     let mut matching_bodies = Vec::new();
     for link in persistent_design_links.iter().filter(|link| {
-        link.entity_kind == 3
-            && link.is_current
-            && link.design_id == design_id
-            && link.design_reference == selector
+        link.is_current && link.design_id == design_id && link.design_reference == selector
     }) {
         let cadmpeg_ir::attributes::AttributeTarget::Body(body) = &link.target else {
             continue;

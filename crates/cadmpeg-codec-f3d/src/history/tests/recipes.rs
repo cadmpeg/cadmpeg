@@ -1002,7 +1002,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         id: "link".into(),
         target: cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
         design_id: "301".into(),
-        entity_kind: 3,
+        entity_kind: (),
         design_reference: 9,
         ordinal: 0,
         is_current: true,

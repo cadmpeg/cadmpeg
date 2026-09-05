@@ -135,7 +135,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             id: "generated:persistent-design-link#0".into(),
             target: AttributeTarget::Body(body_id.clone()),
             design_id: "311".into(),
-            entity_kind: 3,
+            entity_kind: (),
             design_reference: 7,
             ordinal: 0,
             is_current: false,
@@ -144,7 +144,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             id: "generated:persistent-design-link#1".into(),
             target: AttributeTarget::Body(body_id.clone()),
             design_id: "322".into(),
-            entity_kind: 3,
+            entity_kind: (),
             design_reference: 8,
             ordinal: 1,
             is_current: true,
@@ -297,7 +297,6 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     let native = f3d_native(round_trip.ir());
     assert_eq!(native.persistent_design_links.len(), 2);
     assert_eq!(native.persistent_design_links[0].design_id, "311");
-    assert_eq!(native.persistent_design_links[0].entity_kind, 3);
     assert_eq!(native.persistent_design_links[0].design_reference, 7);
     assert_eq!(native.persistent_design_links[1].design_id, "322");
     assert_eq!(native.persistent_design_links[1].design_reference, 8);
@@ -362,7 +361,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
         id: "generated:persistent-design-link#0".into(),
         target: AttributeTarget::Body(body),
         design_id: "311".into(),
-        entity_kind: 3,
+        entity_kind: (),
         design_reference: 7,
         ordinal: 1,
         is_current: false,

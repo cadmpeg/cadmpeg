@@ -32,6 +32,22 @@ fn serialize_u8_0<S: Serializer>(_: &(), serializer: S) -> Result<S::Ok, S::Erro
     serializer.serialize_u8(0)
 }
 
+fn serialize_i64_3<S: Serializer>(_: &(), serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_i64(3)
+}
+
+fn deserialize_i64_3<'de, D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+    let value = i64::deserialize(deserializer)?;
+    if value == 3 {
+        Ok(())
+    } else {
+        Err(serde::de::Error::invalid_value(
+            serde::de::Unexpected::Signed(value),
+            &"entity_kind 3",
+        ))
+    }
+}
+
 fn serialize_absent_u64_offset<S: Serializer>(
     value: &Option<u64>,
     serializer: S,
@@ -99,8 +115,14 @@ pub struct PersistentDesignLink {
     pub target: AttributeTarget,
     /// Fusion persistent design-entity id string, stable across regeneration.
     pub design_id: String,
-    /// Native entity-class discriminator: body `3`, face `2`, or edge `1`.
-    pub entity_kind: i64,
+    /// CADIR `entity_kind`. Always body `3` on the wire; the producer keeps only
+    /// body groups.
+    #[serde(
+        serialize_with = "serialize_i64_3",
+        deserialize_with = "deserialize_i64_3"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "i64"))]
+    pub entity_kind: (),
     /// Design-stream reference paired with this persistent identifier.
     pub design_reference: i64,
     /// Position of this id in the entity's persistent-id history, in assignment order.

@@ -471,14 +471,14 @@ pub(crate) fn persistent_design_links(attribute: &SourceAttribute) -> Vec<Persis
         .into_iter()
         .enumerate()
         .map(
-            |(ordinal, (entity_kind, design_id, design_reference))| PersistentDesignLink {
+            |(ordinal, (_, design_id, design_reference))| PersistentDesignLink {
                 id: format!(
                     "f3d:design:persistent-design-link#{}:{ordinal}",
                     attribute_key(attribute)
                 ),
                 target: attribute.target.clone(),
                 design_id,
-                entity_kind,
+                entity_kind: (),
                 design_reference,
                 ordinal: ordinal as u32,
                 is_current: ordinal == last,
@@ -938,7 +938,7 @@ mod tests {
                     id: "design-retained".into(),
                     target: target(1),
                     design_id: "301".into(),
-                    entity_kind: 3,
+                    entity_kind: (),
                     design_reference: 1,
                     ordinal: 0,
                     is_current: true,
@@ -947,7 +947,7 @@ mod tests {
                     id: "design-dropped".into(),
                     target: target(3),
                     design_id: "303".into(),
-                    entity_kind: 3,
+                    entity_kind: (),
                     design_reference: 3,
                     ordinal: 0,
                     is_current: true,

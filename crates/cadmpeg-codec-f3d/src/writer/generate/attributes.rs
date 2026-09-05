@@ -819,13 +819,7 @@ fn native_persistent_design_attribute(
             .map_err(|_| CodecError::NotImplemented("too many persistent body IDs".into()))?,
     );
     for link in links {
-        if link.entity_kind != kind {
-            return Err(CodecError::malformed(format_args!(
-                "persistent design link {} has entity kind {}, expected {kind}",
-                link.id, link.entity_kind
-            )));
-        }
-        native_i64(records, link.entity_kind);
+        native_i64(records, kind);
         native_string(records, &link.design_id)?;
         for value in [link.design_reference, 0, 0] {
             native_i64(records, value);
