@@ -637,17 +637,17 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         TokenValue::Integer(1),
         TokenValue::Integer(3),
     ];
-    let record = ParameterRecord {
-        directory_sequence: 5,
-        line_range: 1..2,
-        bytes: Vec::new(),
-        parameter_end: record_values.len(),
-        tokens: record_values
+    let record = ParameterRecord::from_test_tokens(
+        5,
+        1..2,
+        Vec::new(),
+        record_values.len(),
+        record_values
             .into_iter()
             .map(|value| Token { value, span: 0..0 })
             .collect(),
-        comment: Vec::new(),
-    };
+        Vec::new(),
+    );
     assert!(sectioned_area_valid(
         &ir,
         &record,
@@ -745,17 +745,17 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
             TokenValue::Integer(island_count),
             TokenValue::Integer(3),
         ];
-        ParameterRecord {
-            directory_sequence: 5,
-            line_range: 1..2,
-            bytes: Vec::new(),
-            parameter_end: if island_count == 0 { 9 } else { values.len() },
-            tokens: values
+        ParameterRecord::from_test_tokens(
+            5,
+            1..2,
+            Vec::new(),
+            if island_count == 0 { 9 } else { values.len() },
+            values
                 .into_iter()
                 .map(|value| Token { value, span: 0..0 })
                 .collect(),
-            comment: Vec::new(),
-        }
+            Vec::new(),
+        )
     };
 
     assert!(sectioned_area_valid(
@@ -814,17 +814,17 @@ fn leader_record(arrowhead_height: f64, arrowhead_width: f64) -> ParameterRecord
         TokenValue::Real(4.0),
         TokenValue::Real(5.0),
     ];
-    ParameterRecord {
-        directory_sequence: 1,
-        line_range: 1..2,
-        bytes: Vec::new(),
-        parameter_end: values.len(),
-        tokens: values
+    ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        Vec::new(),
+        values.len(),
+        values
             .into_iter()
             .map(|value| Token { value, span: 0..0 })
             .collect(),
-        comment: Vec::new(),
-    }
+        Vec::new(),
+    )
 }
 
 fn leader_entry(form: i64) -> DirectoryEntry {
@@ -887,20 +887,20 @@ fn leader_arrow_dimensions_follow_the_declared_dialect() {
 
 #[test]
 fn general_symbol_zero_note_pointer_follows_the_declared_dialect() {
-    let record = ParameterRecord {
-        directory_sequence: 1,
-        line_range: 1..2,
-        bytes: Vec::new(),
-        tokens: [228, 0, 1, 0]
+    let record = ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        Vec::new(),
+        4,
+        [228, 0, 1, 0]
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
             .collect(),
-        parameter_end: 4,
-        comment: Vec::new(),
-    };
+        Vec::new(),
+    );
     let entries = BTreeMap::new();
     let records = BTreeMap::new();
 

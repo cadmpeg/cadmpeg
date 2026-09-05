@@ -65,14 +65,7 @@ fn numeric_record(values: &[(usize, f64)]) -> ParameterRecord {
         tokens[*index].value = TokenValue::Real(*value);
     }
     let parameter_end = tokens.len();
-    ParameterRecord {
-        directory_sequence: 1,
-        line_range: 1..2,
-        bytes: Vec::new(),
-        tokens,
-        parameter_end,
-        comment: Vec::new(),
-    }
+    ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), parameter_end, tokens, Vec::new())
 }
 
 #[test]
