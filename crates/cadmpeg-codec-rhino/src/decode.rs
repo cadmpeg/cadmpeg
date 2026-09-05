@@ -24,6 +24,7 @@ use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroUsize;
 
 use crate::chunks::ArchiveVersion;
 use crate::container::{OpaqueRecord, Scan};
@@ -39,8 +40,7 @@ pub(crate) const RETAINED_DOCUMENT_CAP: usize = 256 * 1024 * 1024;
 struct ClassOutcome {
     decoded: usize,
     retained: usize,
-    native_retained: usize,
-    native_code: Option<RhinoLossCode>,
+    native: Option<(RhinoLossCode, NonZeroUsize)>,
     attribute_degraded: usize,
     failed_framed: usize,
     first_offset: u64,
@@ -738,7 +738,14 @@ impl<'a> DecodeContext<'a> {
         }
         let class = self.scan.objects[source_order].class_uuid().to_string();
         let outcome = self.outcomes.get_mut(&class).expect("status class exists");
-        outcome.native_code = Some(code);
+        let count = outcome
+            .native
+            .as_ref()
+            .map_or(1, |(_, count)| count.get().saturating_add(1));
+        outcome.native = Some((
+            code,
+            NonZeroUsize::new(count).expect("native retained count is nonzero"),
+        ));
         true
     }
 
@@ -2429,14 +2436,12 @@ impl<'a> DecodeContext<'a> {
                         .with_provenance(loss_provenance(class, outcome)),
                 );
             }
-            // `native_code` is set only by a transition that also incremented
-            // `native_retained`, so the count is nonzero whenever it is `Some`.
-            if let Some(code) = outcome.native_code {
+            if let Some((code, count)) = outcome.native {
                 omissions.push(
                     code.note(format!(
                         "framed and read {} object record(s) for class {class}; construction \
                          state is retained as native passthrough",
-                        outcome.native_retained
+                        count.get()
                     ))
                     .with_provenance(loss_provenance(class, outcome)),
                 );
@@ -3443,7 +3448,7 @@ impl<'a> DecodeContext<'a> {
         }
         match next {
             GeometryStatus::Retained => outcome.retained += 1,
-            GeometryStatus::NativeRetained => outcome.native_retained += 1,
+            GeometryStatus::NativeRetained => {}
             GeometryStatus::Decoded => outcome.decoded += 1,
             GeometryStatus::Failed => outcome.failed_framed += 1,
         }
