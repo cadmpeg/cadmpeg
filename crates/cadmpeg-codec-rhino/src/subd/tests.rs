@@ -453,7 +453,7 @@ fn proxy_userdata(
     let payload_start = bytes.len();
     bytes.extend_from_slice(&anonymous(&body));
     let payload_range = payload_start..bytes.len();
-    let descriptor = UserdataDescriptor {
+    let descriptor = UserdataDescriptor::Known {
         range: payload_range.clone(),
         version: (2, 2),
         class_uuid: SUBD_MESH_PROXY_USERDATA,
@@ -465,7 +465,6 @@ fn proxy_userdata(
         archive_version: Some(50),
         writer_version: Some(202_401_010),
         payload_range,
-        unknown_version: false,
     };
     (bytes, descriptor)
 }

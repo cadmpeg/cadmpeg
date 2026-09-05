@@ -875,8 +875,8 @@ fn parse_idef_alternative_path(
 ) -> Result<(String, bool), FramingError> {
     let mut reader = BoundedReader::new(
         data,
-        userdata.payload_range.start,
-        userdata.payload_range.end,
+        userdata.payload_range().start,
+        userdata.payload_range().end,
     )?;
     let (_chunk, mut payload, version) = anonymous_versioned(
         data,
@@ -915,10 +915,10 @@ fn apply_idef_alternative_path(
 
     let mut degraded = false;
     for item in userdata.iter().filter(|item| {
-        item.class_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
-            && item.item_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
-            && (item.application_uuid.is_none()
-                || item.application_uuid == Some(OPENNURBS5_APPLICATION))
+        item.class_uuid() == IDEF_ALTERNATIVE_PATH_USERDATA
+            && item.item_uuid() == IDEF_ALTERNATIVE_PATH_USERDATA
+            && (item.application_uuid().is_none()
+                || item.application_uuid() == Some(OPENNURBS5_APPLICATION))
     }) {
         let (path, relative) = match parse_idef_alternative_path(data, item, archive, warnings) {
             Ok(value) => value,
@@ -926,7 +926,7 @@ fn apply_idef_alternative_path(
                 degraded = true;
                 warnings.push(format!(
                     "instance-definition alternate-path userdata at offset {} was dropped: {error}",
-                    item.range.start
+                    item.range().start
                 ));
                 continue;
             }

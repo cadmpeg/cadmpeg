@@ -890,8 +890,8 @@ impl<'a> DecodeContext<'a> {
                             .userdata
                             .iter()
                             .find(|extra| {
-                                extra.class_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
-                                    && extra.item_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
+                                extra.class_uuid() == crate::subd::SUBD_MESH_PROXY_USERDATA
+                                    && extra.item_uuid() == crate::subd::SUBD_MESH_PROXY_USERDATA
                             })
                             .cloned();
                         let mut proxy_transferred = false;
@@ -3466,7 +3466,7 @@ fn duplicate_userdata_count(
 ) -> usize {
     userdata
         .iter()
-        .filter(|value| value.class_uuid == class)
+        .filter(|value| value.class_uuid() == class)
         .count()
 }
 

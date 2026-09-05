@@ -153,7 +153,7 @@ fn parse_v5_text_extra(
     extra: &UserdataDescriptor,
     archive: ArchiveVersion,
 ) -> Result<V5TextExtraRecord, FramingError> {
-    let mut reader = anonymous(data, extra.payload_range.clone(), archive, 0)?;
+    let mut reader = anonymous(data, extra.payload_range().clone(), archive, 0)?;
     let parent_text_uuid = uuid(&mut reader)?;
     let draw_mask = reader.bool()?;
     let mask_color_source = reader.i32()?;
@@ -474,14 +474,14 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
         let mut v5_text_extra = None;
         if matches!(object.class_uuid, TEXT | LEGACY_TEXT) {
             if let Some(extra) = object.userdata.iter().find(|userdata| {
-                userdata.class_uuid == V5_TEXT_EXTRA && userdata.item_uuid == V5_TEXT_EXTRA
+                userdata.class_uuid() == V5_TEXT_EXTRA && userdata.item_uuid() == V5_TEXT_EXTRA
             }) {
                 match parse_v5_text_extra(scan.data, extra, scan.archive) {
                     Ok(value) => v5_text_extra = Some(value),
                     Err(error) => {
                         losses.push(RhinoLossCode::AnnotationUserdataDropped.note(format!(
                             "V5 text-extra userdata at offset {} could not be transferred: {error}",
-                            extra.range.start
+                            extra.range().start
                         )));
                     }
                 }
@@ -1082,7 +1082,7 @@ mod tests {
         payload.extend(0.375_f64.to_le_bytes());
         payload.extend([0xaa, 0xbb]);
         let bytes = anonymous(0, &payload);
-        let descriptor = UserdataDescriptor {
+        let descriptor = UserdataDescriptor::Known {
             range: 0..bytes.len(),
             version: (2, 2),
             class_uuid: V5_TEXT_EXTRA,
@@ -1094,7 +1094,6 @@ mod tests {
             archive_version: None,
             writer_version: None,
             payload_range: 0..bytes.len(),
-            unknown_version: false,
         };
         let value = parse_v5_text_extra(&bytes, &descriptor, ArchiveVersion::V8)
             .expect("valid V5 text extra");

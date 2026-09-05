@@ -277,7 +277,7 @@ pub(crate) fn apply_userdata(
     let mut first_gradient = None;
     for extra in userdata
         .iter()
-        .filter(|value| value.class_uuid == V5_HATCH_EXTRA && value.item_uuid == V5_HATCH_EXTRA)
+        .filter(|value| value.class_uuid() == V5_HATCH_EXTRA && value.item_uuid() == V5_HATCH_EXTRA)
     {
         match parse_userdata(data, extra, archive, scale) {
             Ok(basepoint) => last_basepoint = Some(basepoint),
@@ -288,7 +288,7 @@ pub(crate) fn apply_userdata(
     }
     for extra in userdata
         .iter()
-        .filter(|value| value.class_uuid == GRADIENT_COLOR_DATA)
+        .filter(|value| value.class_uuid() == GRADIENT_COLOR_DATA)
     {
         match parse_gradient_userdata(data, extra, scale, archive) {
             Ok(gradient) => {
@@ -321,8 +321,8 @@ fn parse_gradient_userdata(
 ) -> Result<Gradient, GeometryError> {
     let outer = chunk_at(
         data,
-        extra.payload_range.start,
-        extra.payload_range.end,
+        extra.payload_range().start,
+        extra.payload_range().end,
         archive,
         false,
     )?;
@@ -466,8 +466,8 @@ fn parse_userdata(
 ) -> Result<[f64; 2], GeometryError> {
     let payload = chunk_at(
         data,
-        extra.payload_range.start,
-        extra.payload_range.end,
+        extra.payload_range().start,
+        extra.payload_range().end,
         archive,
         false,
     )?;
@@ -571,7 +571,7 @@ pub(crate) mod tests {
     }
 
     fn gradient_descriptor(payload: &[u8]) -> UserdataDescriptor {
-        UserdataDescriptor {
+        UserdataDescriptor::Known {
             range: 0..payload.len(),
             version: (2, 2),
             class_uuid: GRADIENT_COLOR_DATA,
@@ -583,7 +583,6 @@ pub(crate) mod tests {
             archive_version: None,
             writer_version: None,
             payload_range: 0..payload.len(),
-            unknown_version: false,
         }
     }
 
@@ -601,7 +600,7 @@ pub(crate) mod tests {
             body.extend(3.0_f64.to_le_bytes());
             let extra =
                 crate::test_support::test_dump::anonymous_chunk(ArchiveVersion::V5, 0, &body);
-            let descriptor = UserdataDescriptor {
+            let descriptor = UserdataDescriptor::Known {
                 range: 0..extra.len(),
                 version: (2, 2),
                 class_uuid: V5_HATCH_EXTRA,
@@ -613,7 +612,6 @@ pub(crate) mod tests {
                 archive_version: None,
                 writer_version: None,
                 payload_range: 0..extra.len(),
-                unknown_version: false,
             };
             apply_userdata(
                 &extra,
@@ -626,7 +624,12 @@ pub(crate) mod tests {
             assert_eq!(hatch.basepoint, [20.0, 30.0]);
 
             let mut wrong_item_descriptor = descriptor.clone();
-            wrong_item_descriptor.item_uuid = Uuid::nil();
+            let crate::objects::UserdataDescriptor::Known { item_uuid, .. } =
+                &mut wrong_item_descriptor
+            else {
+                panic!("expected known userdata");
+            };
+            *item_uuid = Uuid::nil();
             let mut wrong_item_hatch =
                 decode(expand, 0..payload.len(), 1.0, ArchiveVersion::V5).expect("hatch");
             apply_userdata(
@@ -652,8 +655,16 @@ pub(crate) mod tests {
             let mut combined = extra.clone();
             combined.extend(second);
             let mut second_descriptor = descriptor.clone();
-            second_descriptor.range = second_start..combined.len();
-            second_descriptor.payload_range = second_start..combined.len();
+            let crate::objects::UserdataDescriptor::Known {
+                range,
+                payload_range,
+                ..
+            } = &mut second_descriptor
+            else {
+                panic!("expected known userdata");
+            };
+            *range = second_start..combined.len();
+            *payload_range = second_start..combined.len();
             apply_userdata(
                 &combined,
                 &[descriptor, second_descriptor],

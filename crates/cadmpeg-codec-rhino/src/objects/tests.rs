@@ -646,8 +646,8 @@ pub(crate) fn attribute_userdata_recovers_after_malformed_bounded_record() {
         &mut warnings,
     );
     assert_eq!(descriptors.len(), 1);
-    assert!(descriptors[0].known);
-    assert!(descriptors[0].range.start > 0);
+    assert!(descriptors[0].is_known());
+    assert!(descriptors[0].range().start > 0);
     assert!(!warnings.is_empty());
 }
 
@@ -693,7 +693,7 @@ fn obsolete_custom_mesh_userdata_transfers_to_object_attributes() {
         let object = &scan.objects[0];
         assert_eq!(object.attributes_userdata.len(), 1);
         assert_eq!(
-            object.attributes_userdata[0].class_uuid,
+            object.attributes_userdata[0].class_uuid(),
             Some(crate::objects::OBSOLETE_CUSTOM_MESH_USERDATA)
         );
         let mesh = object
@@ -802,7 +802,7 @@ fn per_object_mesh_userdata_transfers_nested_parameters_to_object_attributes() {
         let object = &scan.objects[0];
         assert_eq!(object.attributes_userdata.len(), 1);
         assert_eq!(
-            object.attributes_userdata[0].class_uuid,
+            object.attributes_userdata[0].class_uuid(),
             Some(crate::objects::PER_OBJECT_MESH_PARAMETERS_USERDATA)
         );
         let mesh = object
