@@ -33,8 +33,7 @@ pub(crate) fn is_supported_feature_timeline_type(design_type: &SegmentType) -> b
     FEATURE_TIMELINE_TYPE_VERSIONS.contains(&design_type.version)
         && design_type.module == DESIGN_MODULE_FUSION
         && design_type
-            .base_type_guid
-            .as_deref()
+            .base_type_guid.as_ref().map(|field| field.value.as_str())
             .is_some_and(|base| base.eq_ignore_ascii_case(FEATURE_TIMELINE_BASE_TYPE_GUID))
 }
 
@@ -97,7 +96,7 @@ pub fn decode_component_naming_spaces(
             .iter()
             .filter(|design_type| {
                 design_type.module == COMPONENT_MODULE
-                    && design_type.base_type_guid.as_deref().is_some_and(|base| {
+                    && design_type.base_type_guid.as_ref().map(|field| field.value.as_str()).is_some_and(|base| {
                         base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                     })
             })
@@ -159,7 +158,7 @@ pub fn decode_component_naming_spaces(
                 || reference.link_name.is_some()
                 || !meta.types.iter().any(|design_type| {
                     design_type.module == COMPONENT_MODULE
-                        && design_type.base_type_guid.as_deref().is_some_and(|base| {
+                        && design_type.base_type_guid.as_ref().map(|field| field.value.as_str()).is_some_and(|base| {
                             base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                         })
                         && design_type.type_guid.eq_ignore_ascii_case(inline_type_guid)

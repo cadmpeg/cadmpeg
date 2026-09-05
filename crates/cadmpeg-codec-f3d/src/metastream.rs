@@ -365,9 +365,10 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             byte_offset: entry_at as u64,
             type_guid,
             type_guid_offset: type_guid_offset as u64,
-            base_type_guid_offset: (!base_type_guid.is_empty())
-                .then_some(base_type_guid_offset as u64),
-            base_type_guid: (!base_type_guid.is_empty()).then_some(base_type_guid),
+            base_type_guid: (!base_type_guid.is_empty()).then_some(crate::records::RecordedValue {
+                value: base_type_guid,
+                offset: Some(base_type_guid_offset as u64),
+            }),
             version,
             version_offset: version_offset as u64,
             module,
@@ -689,20 +690,20 @@ mod tests {
 
         // Every field of an entry belongs to that entry, not to its successor.
         assert_eq!(types[0].type_guid, first);
-        assert_eq!(types[0].base_type_guid.as_deref(), Some(base));
+        assert_eq!(types[0].base_type_guid.as_ref().map(|field| field.value.as_str()), Some(base));
         assert_eq!(types[0].version, 3);
         assert_eq!(types[0].module, "Fusion");
         assert_eq!(types[0].entity_ids, [10, 11]);
 
         assert_eq!(types[1].type_guid, second);
         assert_eq!(types[1].base_type_guid, None);
-        assert_eq!(types[1].base_type_guid_offset, None);
+
         assert_eq!(types[1].version, 7);
         assert_eq!(types[1].module, crate::records::DESIGN_MODULE_SKETCH);
         assert_eq!(types[1].entity_ids, [20]);
 
         assert_eq!(types[2].type_guid, third);
-        assert_eq!(types[2].base_type_guid.as_deref(), Some(second));
+        assert_eq!(types[2].base_type_guid.as_ref().map(|field| field.value.as_str()), Some(second));
         assert_eq!(types[2].version, 11);
         assert_eq!(types[2].module, crate::records::DESIGN_MODULE_BODY);
         assert_eq!(types[2].entity_ids, [30, 31, 32]);
@@ -727,11 +728,8 @@ mod tests {
                 design_type.type_guid
             );
             assert_eq!(u32_at(design_type.version_offset), design_type.version);
-            if let (Some(base), Some(offset)) = (
-                &design_type.base_type_guid,
-                design_type.base_type_guid_offset,
-            ) {
-                assert_eq!(&string_at(offset, 36), base);
+            if let Some(base) = &design_type.base_type_guid {
+                assert_eq!(string_at(base.offset.expect("parsed base location"), 36), base.value);
             }
             for (entity_id, offset) in design_type
                 .entity_ids

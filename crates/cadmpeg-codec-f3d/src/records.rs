@@ -10018,7 +10018,42 @@ pub enum DesignConfigurationKind {
 /// carry it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SegmentTypeWire", into = "SegmentTypeWire")]
 pub struct SegmentType {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Byte offset of this type-table entry in its `MetaStream`.
+    pub byte_offset: u64,
+    /// GUID naming this entry's record type. Class tags are segment-local, so
+    /// this GUID is the only discriminator that is stable across files.
+    pub type_guid: String,
+    /// Byte offset of the type-GUID bytes in the `MetaStream`.
+    pub type_guid_offset: u64,
+    /// GUID of this type's base type; `None` for a root type, whose stored base
+    /// GUID is the empty string.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_type_guid: Option<RecordedValue<String>>,
+    /// Record version of this type.
+    pub version: u32,
+    /// Byte offset of `version` in the Design `MetaStream`.
+    pub version_offset: u64,
+    /// Add-in module that registers this type, e.g. `Fusion`, `MSketch`, or
+    /// `Body`. Every type a module registers repeats the module name, so it
+    /// classifies a type but does not identify one. Some types record no module.
+    pub module: String,
+    /// Entity ids whose records carry this type, in source `MetaStream` order;
+    /// a count rather than a fixed-arity list, so length varies per entry.
+    pub entity_ids: Vec<u64>,
+    /// Byte offsets parallel to `entity_ids`.
+    pub entity_id_offsets: Vec<u64>,
+}
+
+/// One type-table entry from a `MetaStream` segment header. The entry registers
+/// a record type and lists the entities whose sibling `BulkStream` records
+/// carry it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SegmentTypeWire {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// Byte offset of this type-table entry in its `MetaStream`.
@@ -10048,6 +10083,42 @@ pub struct SegmentType {
     pub entity_ids: Vec<u64>,
     /// Byte offsets parallel to `entity_ids`.
     pub entity_id_offsets: Vec<u64>,
+}
+
+impl TryFrom<SegmentTypeWire> for SegmentType {
+    type Error = String;
+    fn try_from(wire: SegmentTypeWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            type_guid: wire.type_guid,
+            type_guid_offset: wire.type_guid_offset,
+            version: wire.version,
+            version_offset: wire.version_offset,
+            module: wire.module,
+            entity_ids: wire.entity_ids,
+            entity_id_offsets: wire.entity_id_offsets,
+            base_type_guid: RecordedValue::from_wire(wire.base_type_guid, wire.base_type_guid_offset, "base_type_guid")?,
+        })
+    }
+}
+
+impl From<SegmentType> for SegmentTypeWire {
+    fn from(value: SegmentType) -> Self {
+        Self {
+            id: value.id,
+            byte_offset: value.byte_offset,
+            type_guid: value.type_guid,
+            type_guid_offset: value.type_guid_offset,
+            version: value.version,
+            version_offset: value.version_offset,
+            module: value.module,
+            entity_ids: value.entity_ids,
+            entity_id_offsets: value.entity_id_offsets,
+            base_type_guid_offset: value.base_type_guid.as_ref().and_then(|field| field.offset),
+            base_type_guid: value.base_type_guid.map(|field| field.value),
+        }
+    }
 }
 
 /// Counted Design timeline-item list that carries authored feature order.

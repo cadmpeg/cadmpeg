@@ -465,7 +465,7 @@ pub(crate) fn snapshot_body_map_records(
             )));
         }
         if design_type.module != DESIGN_MODULE_BODY
-            || !design_type.base_type_guid.as_deref().is_some_and(|base| {
+            || !design_type.base_type_guid.as_ref().map(|field| field.value.as_str()).is_some_and(|base| {
                 base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
             })
         {
@@ -670,7 +670,7 @@ fn body_map_records(
             )));
         }
         if design_type.module != DESIGN_MODULE_BODY
-            || !design_type.base_type_guid.as_deref().is_some_and(|base| {
+            || !design_type.base_type_guid.as_ref().map(|field| field.value.as_str()).is_some_and(|base| {
                 base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
             })
         {
@@ -1241,8 +1241,7 @@ mod tests {
             byte_offset: 0,
             type_guid: type_guid.into(),
             type_guid_offset: 0,
-            base_type_guid: base_type_guid.map(str::to_owned),
-            base_type_guid_offset: base_type_guid.map(|_| 0),
+            base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue { value: value.to_owned(), offset: Some(0) }),
             version,
             version_offset: 0,
             module: module.into(),
@@ -1305,10 +1304,7 @@ mod tests {
                     byte_offset: 0,
                     type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID.into(),
                     type_guid_offset: 0,
-                    base_type_guid: Some(
-                        crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(),
-                    ),
-                    base_type_guid_offset: Some(0),
+                    base_type_guid: Some(crate::records::RecordedValue { value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(), offset: Some(0) }),
                     version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
                     version_offset: 0,
                     module: DESIGN_MODULE_BODY.into(),

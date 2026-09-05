@@ -80,8 +80,7 @@ pub(crate) fn browser_node_records(
         if frame.design_type.module != DESIGN_MODULE_FUSION
             || !frame
                 .design_type
-                .base_type_guid
-                .as_deref()
+                .base_type_guid.as_ref().map(|field| field.value.as_str())
                 .is_some_and(|base| base.eq_ignore_ascii_case(BROWSER_NODE_BASE_TYPE_GUID))
         {
             return Err(CodecError::malformed(format_args!(
@@ -157,8 +156,7 @@ pub(crate) fn body_presentations(
         if frame.design_type.module != DESIGN_MODULE_BODY
             || !frame
                 .design_type
-                .base_type_guid
-                .as_deref()
+                .base_type_guid.as_ref().map(|field| field.value.as_str())
                 .is_some_and(|base| base.eq_ignore_ascii_case(BODY_PRESENTATION_BASE_TYPE_GUID))
         {
             return Err(CodecError::malformed(format_args!(
@@ -627,8 +625,7 @@ mod tests {
             byte_offset: 0,
             type_guid: type_guid.into(),
             type_guid_offset: 0,
-            base_type_guid: base_type_guid.map(str::to_owned),
-            base_type_guid_offset: base_type_guid.map(|_| 0),
+            base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue { value: value.to_owned(), offset: Some(0) }),
             version,
             version_offset: 0,
             module: module.into(),
