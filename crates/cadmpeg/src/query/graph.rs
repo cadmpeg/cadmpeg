@@ -99,7 +99,7 @@ pub fn run(args: &GraphArgs, output: Output<'_>) -> Result<()> {
     let doc = CadirDocument::load(&args.file, "graph")?;
     let target = ArenaTarget::parse(&args.arena)?;
     let arena_idx = doc.arena_index(&target)?;
-    let arena = &doc.arenas[arena_idx];
+    let arena = &doc.arenas()[arena_idx];
     let (starts, errors) = select_records(arena, &args.ids, args.head);
     let start_nodes: Vec<NodeRef> = starts
         .into_iter()
@@ -204,12 +204,12 @@ fn result_value(doc: &CadirDocument, start: &NodeRef, path: &[Value], node: Node
     json!({
         "start": doc.locator(start.arena, start.rec),
         "path": path,
-        "record": doc.arenas[node.arena].records[node.rec],
+        "record": doc.arenas()[node.arena].records[node.rec],
     })
 }
 
 fn empty_adj(doc: &CadirDocument) -> Vec<Vec<Vec<AdjEdge>>> {
-    doc.arenas
+    doc.arenas()
         .iter()
         .map(|arena| {
             let mut row = Vec::with_capacity(arena.records.len());
@@ -230,7 +230,7 @@ fn build_adj(
         follow.map(|paths| paths.iter().map(String::as_str).collect());
     let mut fwd = empty_adj(doc);
 
-    for (ai, arena) in doc.arenas.iter().enumerate() {
+    for (ai, arena) in doc.arenas().iter().enumerate() {
         for (ri, rec) in arena.records.iter().enumerate() {
             let from = NodeRef { arena: ai, rec: ri };
             let mut edges = Vec::new();
@@ -298,7 +298,7 @@ fn collect_edges(
             if path.is_empty() {
                 return;
             }
-            let Some(hits) = doc.by_id.get(s) else {
+            let Some(hits) = doc.id_locations(s) else {
                 return;
             };
             for &(arena, rec) in hits {
@@ -322,7 +322,7 @@ mod tests {
         let target = ArenaTarget::parse(arena).unwrap();
         let arena_idx = document.arena_index(&target).unwrap();
         let ids: Vec<String> = ids.iter().map(|s| (*s).to_owned()).collect();
-        let (recs, errors) = select_records(&document.arenas[arena_idx], &ids, None);
+        let (recs, errors) = select_records(&document.arenas()[arena_idx], &ids, None);
         assert!(errors.is_empty(), "{errors:?}");
         recs.into_iter()
             .map(|rec| NodeRef {

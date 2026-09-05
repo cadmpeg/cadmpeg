@@ -17,17 +17,16 @@ use super::{detect, read_input, Artifact};
 /// One addressable JSON-array arena and its records.
 #[derive(Debug, Clone)]
 pub(crate) struct Arena {
-    pub dotted: String,
+    pub target: ArenaTarget,
     pub records: Vec<Value>,
 }
 
 /// Indexed CADIR document: arenas, addressable names, and id lookup.
 #[derive(Debug, Clone)]
 pub(crate) struct CadirDocument {
-    pub arenas: Vec<Arena>,
+    arenas: Vec<Arena>,
     /// Exact id → every `(arena_index, record_index)` that carries it.
-    pub by_id: BTreeMap<String, Vec<(usize, usize)>>,
-    pub addressable: Vec<(String, u64)>,
+    by_id: BTreeMap<String, Vec<(usize, usize)>>,
 }
 
 impl CadirDocument {
@@ -50,7 +49,9 @@ impl CadirDocument {
             for (name, value) in model {
                 if let Some(arr) = value.as_array() {
                     arenas.push(Arena {
-                        dotted: format!("model.{name}"),
+                        target: ArenaTarget::Model {
+                            arena: name.clone(),
+                        },
                         records: arr.clone(),
                     });
                 }
@@ -64,7 +65,10 @@ impl CadirDocument {
                 for (name, value) in native_arenas {
                     if let Some(arr) = value.as_array() {
                         arenas.push(Arena {
-                            dotted: format!("native.{codec}.{name}"),
+                            target: ArenaTarget::Native {
+                                codec: codec.clone(),
+                                arena: name.clone(),
+                            },
                             records: arr.clone(),
                         });
                     }
@@ -81,32 +85,36 @@ impl CadirDocument {
             }
         }
 
-        let addressable = arenas
-            .iter()
-            .map(|arena| (arena.dotted.clone(), arena.records.len() as u64))
-            .collect();
+        Self { arenas, by_id }
+    }
 
-        Self {
-            arenas,
-            by_id,
-            addressable,
-        }
+    pub(crate) fn arenas(&self) -> &[Arena] {
+        &self.arenas
+    }
+
+    pub(crate) fn id_locations(&self, id: &str) -> Option<&[(usize, usize)]> {
+        self.by_id.get(id).map(Vec::as_slice)
+    }
+
+    pub(crate) fn addressable(&self) -> Vec<(String, u64)> {
+        self.arenas
+            .iter()
+            .map(|arena| (arena.target.dotted(), arena.records.len() as u64))
+            .collect()
     }
 
     pub(crate) fn require_arena(&self, target: &ArenaTarget) -> Result<&Arena> {
-        let dotted = target.dotted();
         self.arenas
             .iter()
-            .find(|arena| arena.dotted == dotted)
-            .ok_or_else(|| anyhow::anyhow!(unknown_arena_message(target, &self.addressable)))
+            .find(|arena| &arena.target == target)
+            .ok_or_else(|| anyhow::anyhow!(unknown_arena_message(target, &self.addressable())))
     }
 
     pub(crate) fn arena_index(&self, target: &ArenaTarget) -> Result<usize> {
-        let dotted = target.dotted();
         self.arenas
             .iter()
-            .position(|arena| arena.dotted == dotted)
-            .ok_or_else(|| anyhow::anyhow!(unknown_arena_message(target, &self.addressable)))
+            .position(|arena| &arena.target == target)
+            .ok_or_else(|| anyhow::anyhow!(unknown_arena_message(target, &self.addressable())))
     }
 
     pub(crate) fn all_ids(&self) -> std::collections::BTreeSet<String> {
@@ -116,8 +124,8 @@ impl CadirDocument {
     pub(crate) fn locator(&self, arena: usize, rec: usize) -> String {
         let arena = &self.arenas[arena];
         match record_id(&arena.records[rec]) {
-            Some(id) => format!("{}#{id}", arena.dotted),
-            None => format!("{}#{rec}", arena.dotted),
+            Some(id) => format!("{}#{id}", arena.target.dotted()),
+            None => format!("{}#{rec}", arena.target.dotted()),
         }
     }
 }
@@ -159,11 +167,11 @@ pub(crate) fn select_records(
         match resolve_one(request, &indexed) {
             Ok(i) => indices.push(i),
             Err(ResolveError::Ambiguous(matches)) => {
-                errors.push(ambiguous_message(request, &arena.dotted, &matches));
+                errors.push(ambiguous_message(request, &arena.target.dotted(), &matches));
             }
             Err(ResolveError::Missing) => {
                 errors.push(miss_id_message(
-                    &arena.dotted,
+                    &arena.target.dotted(),
                     request,
                     arena.records.len() as u64,
                     &all_ids,
@@ -239,13 +247,13 @@ mod tests {
                 "rhino": {"arenas": {"unknowns": [{"id": "n1"}]}}
             }
         }));
-        let names: Vec<&str> = doc.arenas.iter().map(|a| a.dotted.as_str()).collect();
-        assert!(names.contains(&"model.faces"));
-        assert!(names.contains(&"model.empty"));
-        assert!(names.contains(&"native.rhino.unknowns"));
+        let names: Vec<String> = doc.arenas.iter().map(|a| a.target.dotted()).collect();
+        assert!(names.contains(&"model.faces".to_owned()));
+        assert!(names.contains(&"model.empty".to_owned()));
+        assert!(names.contains(&"native.rhino.unknowns".to_owned()));
         assert!(!names.iter().any(|n| n.contains("null")));
         let (ai, ri) = doc.by_id["f1"][0];
-        assert_eq!(doc.arenas[ai].dotted, "model.faces");
+        assert_eq!(doc.arenas[ai].target.dotted(), "model.faces");
         assert_eq!(ri, 0);
         assert_eq!(doc.locator(ai, ri), "model.faces#f1");
     }

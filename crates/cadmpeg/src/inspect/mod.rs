@@ -110,18 +110,6 @@ impl FileArg {
     }
 }
 
-/// Rejects `--json` on inspect tools that have no JSON form.
-///
-/// The teaching text is pinned by `json_on_a_tool_without_a_json_form_teaches_where_json_lives`.
-fn reject_inspect_json(_: &str) -> Result<std::convert::Infallible, String> {
-    Err(
-        "this inspect tool has no JSON form; JSON lives on `inspect FILE --json` \
-         (the container summary), `inspect container --json`, and `inspect \
-         find --json`"
-            .into(),
-    )
-}
-
 /// Arguments for `cadmpeg inspect hex`.
 #[derive(Debug, Args)]
 pub struct HexArgs {
@@ -136,15 +124,8 @@ pub struct HexArgs {
     /// Bytes per output line.
     #[arg(long, default_value_t = 16)]
     pub width: usize,
-    /// Rejected placeholder: this tool has no JSON form.
-    #[arg(
-        long,
-        hide = true,
-        num_args = 0,
-        default_missing_value = "true",
-        value_parser = reject_inspect_json
-    )]
-    pub json: Option<std::convert::Infallible>,
+    #[command(flatten)]
+    _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Arguments for `cadmpeg inspect read`.
@@ -166,15 +147,8 @@ pub struct ReadArgs {
     pub stride: Option<u64>,
     #[command(flatten)]
     pub endian: EndianArgs,
-    /// Rejected placeholder: this tool has no JSON form.
-    #[arg(
-        long,
-        hide = true,
-        num_args = 0,
-        default_missing_value = "true",
-        value_parser = reject_inspect_json
-    )]
-    pub json: Option<std::convert::Infallible>,
+    #[command(flatten)]
+    _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Arguments for `cadmpeg inspect find`.
@@ -288,15 +262,8 @@ pub struct StringsArgs {
     /// Which encodings to scan for.
     #[arg(long, value_enum, default_value_t = search::StringScan::Ascii)]
     pub encoding: search::StringScan,
-    /// Rejected placeholder: this tool has no JSON form.
-    #[arg(
-        long,
-        hide = true,
-        num_args = 0,
-        default_missing_value = "true",
-        value_parser = reject_inspect_json
-    )]
-    pub json: Option<std::convert::Infallible>,
+    #[command(flatten)]
+    _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Arguments for `cadmpeg inspect struct`.
@@ -313,15 +280,8 @@ pub struct StructArgs {
     /// How many consecutive records to decode.
     #[arg(short = 'n', long, default_value_t = 1)]
     pub count: u64,
-    /// Rejected placeholder: this tool has no JSON form.
-    #[arg(
-        long,
-        hide = true,
-        num_args = 0,
-        default_missing_value = "true",
-        value_parser = reject_inspect_json
-    )]
-    pub json: Option<std::convert::Infallible>,
+    #[command(flatten)]
+    _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Arguments for `cadmpeg inspect container`.
@@ -354,15 +314,8 @@ pub struct ExtractArgs {
     /// Resource-limit profile applied while reading the archive.
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
     pub limits: LimitProfile,
-    /// Rejected placeholder: this tool has no JSON form.
-    #[arg(
-        long,
-        hide = true,
-        num_args = 0,
-        default_missing_value = "true",
-        value_parser = reject_inspect_json
-    )]
-    pub json: Option<std::convert::Infallible>,
+    #[command(flatten)]
+    _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Arguments for `cadmpeg inspect cmp`.
@@ -381,15 +334,8 @@ pub struct CmpArgs {
     /// Bytes of context dumped on each side of the first difference.
     #[arg(long, default_value = "32", value_parser = parse_offset)]
     pub context: u64,
-    /// Rejected placeholder: this tool has no JSON form.
-    #[arg(
-        long,
-        hide = true,
-        num_args = 0,
-        default_missing_value = "true",
-        value_parser = reject_inspect_json
-    )]
-    pub json: Option<std::convert::Infallible>,
+    #[command(flatten)]
+    _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Runs one byte subcommand.
@@ -594,7 +540,7 @@ fn structure(args: &StructArgs) -> Result<()> {
     }
     let file_path = args.file.path();
     let size = file_len(file_path)?;
-    let record_size = layout.size as u64;
+    let record_size = layout.size() as u64;
     let span = record_size
         .checked_mul(args.count)
         .and_then(|total| args.offset.checked_add(total))
@@ -609,15 +555,10 @@ fn structure(args: &StructArgs) -> Result<()> {
         );
     }
     let bytes = read_window(file_path, args.offset, span - args.offset)?;
-    let name_width = layout
-        .fields
-        .iter()
-        .map(|field| field.name.len())
-        .max()
-        .unwrap_or(1);
+    let name_width = layout.names().map(str::len).max().unwrap_or(1);
     for index in 0..args.count {
         let start = (index * record_size) as usize;
-        let record = &bytes[start..start + layout.size];
+        let record = &bytes[start..start + layout.size()];
         let base = args.offset + index * record_size;
         println!("record {index} @ 0x{base:08x} ({record_size} bytes)");
         for field in layout.decode(record) {
@@ -684,38 +625,38 @@ fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
     println!(
         "a: {} ({} bytes)\nb: {} ({} bytes)",
         args.a.display(),
-        summary.len_a,
+        summary.len_a(),
         args.b.display(),
-        summary.len_b
+        summary.len_b()
     );
     if summary.identical() {
         println!("identical");
         return Ok(ExitCode::SUCCESS);
     }
-    if summary.len_a != summary.len_b {
+    if summary.len_a() != summary.len_b() {
         println!(
             "length differs by {} bytes; only the first {} bytes are compared",
-            summary.len_a.abs_diff(summary.len_b),
-            summary.compared
+            summary.len_a().abs_diff(summary.len_b()),
+            summary.compared()
         );
     }
-    let Some(first) = summary.first else {
+    let Some(first) = summary.first() else {
         println!("the common prefix is identical");
         return Ok(ExitCode::from(1));
     };
     println!(
         "first difference: 0x{first:08x} ({first})\ndiffering bytes: {} of {}\nruns (gap {}): {}",
-        summary.differing,
-        summary.compared,
+        summary.differing(),
+        summary.compared(),
         args.gap,
-        summary.runs.len()
+        summary.runs().len()
     );
     let shown = if args.max_runs == 0 {
-        summary.runs.len()
+        summary.runs().len()
     } else {
-        args.max_runs.min(summary.runs.len())
+        args.max_runs.min(summary.runs().len())
     };
-    for run in &summary.runs[..shown] {
+    for run in &summary.runs()[..shown] {
         println!(
             "  0x{:08x}..0x{:08x}  {} bytes",
             run.start,
@@ -723,10 +664,10 @@ fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
             run.len
         );
     }
-    if shown < summary.runs.len() {
+    if shown < summary.runs().len() {
         println!(
             "  … {} more runs (raise --max-runs)",
-            summary.runs.len() - shown
+            summary.runs().len() - shown
         );
     }
     if args.context > 0 {

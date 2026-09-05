@@ -87,8 +87,7 @@ struct JoinSpec<'a> {
     left_arena: &'a str,
     right_arena: &'a str,
     mode: JoinMode,
-    left_file: Option<&'a str>,
-    right_file: Option<&'a str>,
+    files: Option<(&'a str, &'a str)>,
 }
 
 /// Runs `query join` against one or two CADIR documents.
@@ -100,7 +99,7 @@ pub fn run(args: &JoinArgs, output: Output<'_>) -> Result<()> {
     {
         let left_arena = left_doc.require_arena(&left_target)?;
         left_records = left_arena.records.clone();
-        left_dotted = left_arena.dotted.clone();
+        left_dotted = left_arena.target.dotted();
     }
 
     let (right_records, right_dotted, files) = match &args.right_file {
@@ -110,7 +109,7 @@ pub fn run(args: &JoinArgs, output: Output<'_>) -> Result<()> {
             let right_arena = right_doc.require_arena(&right_target)?;
             (
                 right_arena.records.clone(),
-                right_arena.dotted.clone(),
+                right_arena.target.dotted(),
                 Some((
                     args.file.display().to_string(),
                     right_path.display().to_string(),
@@ -122,7 +121,7 @@ pub fn run(args: &JoinArgs, output: Output<'_>) -> Result<()> {
             let right_arena = left_doc.require_arena(&right_target)?;
             (
                 right_arena.records.clone(),
-                right_arena.dotted.clone(),
+                right_arena.target.dotted(),
                 None,
             )
         }
@@ -136,8 +135,9 @@ pub fn run(args: &JoinArgs, output: Output<'_>) -> Result<()> {
         left_arena: &left_dotted,
         right_arena: &right_dotted,
         mode: args.mode,
-        left_file: files.as_ref().map(|(l, _)| l.as_str()),
-        right_file: files.as_ref().map(|(_, r)| r.as_str()),
+        files: files
+            .as_ref()
+            .map(|(left, right)| (left.as_str(), right.as_str())),
     };
     let mut rows = join_records(&spec);
     if let Some(n) = args.head {
@@ -235,7 +235,7 @@ fn row_all(spec: &JoinSpec<'_>, left: &Value, rights: Vec<Value>) -> Value {
 }
 
 fn attach_files(map: &mut Map<String, Value>, spec: &JoinSpec<'_>) {
-    if let (Some(left_file), Some(right_file)) = (spec.left_file, spec.right_file) {
+    if let Some((left_file, right_file)) = spec.files {
         map.insert("left_file".to_owned(), Value::String(left_file.to_owned()));
         map.insert(
             "right_file".to_owned(),
@@ -311,8 +311,7 @@ mod tests {
             left_arena: "model.features",
             right_arena: "native.rhino.unknowns",
             mode,
-            left_file: files.map(|(l, _)| l),
-            right_file: files.map(|(_, r)| r),
+            files,
         }
     }
 

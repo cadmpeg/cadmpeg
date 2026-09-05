@@ -217,7 +217,10 @@ impl ArtifactStore {
     ) -> Result<SidecarPersistOutcome> {
         let path = Self::sidecar_path(cadir_path);
         match origin {
-            LoadOrigin::Decoded { report, fidelity } => {
+            LoadOrigin::Decoded {
+                report, fidelity, ..
+            }
+            | LoadOrigin::Restored { report, fidelity } => {
                 let sidecar =
                     DecodeSidecar::bind_sha256(cadir_sha256, report.clone(), fidelity.clone());
                 let mut bytes = sidecar.to_canonical_json()?.into_bytes();
