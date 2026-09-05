@@ -233,12 +233,12 @@ fn native_catalog_emits_bounded_operation_state_messages() {
 
     let messages = operation_state_messages(&container);
     assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].text, "state warning");
-    assert_eq!(messages[0].value_marker, 0xaa);
-    assert_eq!(messages[0].value, 0x000a_606b);
-    assert_eq!(messages[0].count_or_severity, 0x0100);
+    assert_eq!(messages[0].body.text, "state warning");
+    assert_eq!(messages[0].body.value_marker, 0xaa);
+    assert_eq!(messages[0].body.value, 0x000a_606b);
+    assert_eq!(messages[0].body.count_or_severity, 0x0100);
     assert_eq!(
-        messages[0].severity,
+        messages[0].body.severity(),
         Some(OmOperationStateMessageSeverity::Alert)
     );
 
