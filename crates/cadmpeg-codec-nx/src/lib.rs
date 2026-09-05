@@ -100,7 +100,9 @@ mod vec3_at;
 pub mod fuzz;
 
 #[doc(hidden)]
-pub use evaluation::{saved_body_census_evidence, BodyCensusEvidence};
+pub use evaluation::{
+    saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, UnsupportedBodyCensusReason,
+};
 
 use std::collections::BTreeMap;
 

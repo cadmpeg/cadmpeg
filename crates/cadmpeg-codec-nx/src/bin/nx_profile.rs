@@ -11,7 +11,7 @@ use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use cadmpeg_codec_nx::{saved_body_census_evidence, BodyCensusEvidence, NxCodec};
+use cadmpeg_codec_nx::{saved_body_census_evidence, BodyCensusEvaluation, NxCodec};
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::LossCategory;
@@ -579,27 +579,40 @@ fn normalized_color(color: Color) -> bool {
 
 /// Evaluate the admitted exact body-identity effects of neutral NX history.
 fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<RederivationBoundary>) {
-    let BodyCensusEvidence {
-        verified,
-        reason,
-        feature,
-        feature_name,
-        feature_family,
-        feature_ordinal,
-    } = saved_body_census_evidence(ir);
-    if verified {
-        (VerificationStatus::Verified, None)
-    } else {
-        (
+    match saved_body_census_evidence(ir) {
+        BodyCensusEvaluation::Verified { .. } => (VerificationStatus::Verified, None),
+        BodyCensusEvaluation::Mismatch { .. } => (
             VerificationStatus::Missing,
             Some(RederivationBoundary {
-                feature,
-                feature_name,
-                feature_family,
-                feature_ordinal,
-                reason: reason.unwrap_or_else(|| "unknown_evaluation_boundary".to_string()),
+                feature: None,
+                feature_name: None,
+                feature_family: None,
+                feature_ordinal: None,
+                reason: "saved_body_census_mismatch".to_string(),
             }),
-        )
+        ),
+        BodyCensusEvaluation::Unsupported { feature, reason } => (
+            VerificationStatus::Missing,
+            Some(RederivationBoundary {
+                feature: feature.as_ref().map(|boundary| boundary.id.0.clone()),
+                feature_name: feature.as_ref().and_then(|boundary| boundary.name.clone()),
+                feature_family: feature
+                    .as_ref()
+                    .and_then(|boundary| boundary.family.clone()),
+                feature_ordinal: feature.as_ref().map(|boundary| boundary.ordinal),
+                reason: reason.as_str().to_string(),
+            }),
+        ),
+        _ => (
+            VerificationStatus::Missing,
+            Some(RederivationBoundary {
+                feature: None,
+                feature_name: None,
+                feature_family: None,
+                feature_ordinal: None,
+                reason: "unknown_evaluation_boundary".to_string(),
+            }),
+        ),
     }
 }
 
