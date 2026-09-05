@@ -9,11 +9,11 @@ use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sat;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::codec::Confidence;
+use cadmpeg_ir::ContainerSummary;
 use std::collections::BTreeMap;
 
-use crate::dialect::{StreamEvidence, TextEvidence, terminator_line};
+use crate::dialect::{terminator_line, Family, StreamEvidence, TextEvidence};
 
 /// The stream encoding a byte prefix selects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,7 +71,7 @@ pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
 
 pub(crate) fn header_attributes(
     header: &KernelHeader,
-    family: &str,
+    family: Family,
     attributes: &mut BTreeMap<String, String>,
 ) {
     if let Some(version) = header.save_format_version {
@@ -92,7 +92,7 @@ pub(crate) fn header_attributes(
     if let Some(date) = &header.save_date {
         attributes.insert("save_date".to_string(), date.clone());
     }
-    attributes.insert("kernel_family".to_string(), family.to_string());
+    attributes.insert("kernel_family".to_string(), family.as_str().to_string());
 }
 
 pub(crate) fn inspect(
@@ -114,7 +114,7 @@ pub(crate) fn inspect(
             let header = asm_header::parse(bytes)
                 .expect("StreamKind::AsmBinary guarantees the ASM header magic");
             let framed = asm_header::record_stream_start_with_header(bytes, &header).is_some();
-            header_attributes(&header, "asm", &mut attributes);
+            header_attributes(&header, Family::Asm, &mut attributes);
             if header.has_history_partition() {
                 notes.push(
                     "the stream declares a construction-history partition; decode reads \
@@ -122,10 +122,10 @@ pub(crate) fn inspect(
                         .to_string(),
                 );
             }
-            let evidence = if framed {
-                StreamEvidence::AsmBinary(&header)
-            } else {
-                StreamEvidence::UnframedAsmBinary(&header)
+            let evidence = StreamEvidence::Binary {
+                family: Family::Asm,
+                header: &header,
+                framed,
             };
             crate::dialect::layers(&evidence)
         }
@@ -133,12 +133,12 @@ pub(crate) fn inspect(
             let header = acis_header::parse(bytes)
                 .expect("StreamKind::AcisBinary guarantees the ACIS header magic");
             let framed = acis_header::record_stream_start_with_header(bytes, &header).is_some();
-            let evidence = if framed {
-                StreamEvidence::AcisBinary(&header)
-            } else {
-                StreamEvidence::UnframedAcisBinary(&header)
+            let evidence = StreamEvidence::Binary {
+                family: Family::Acis,
+                header: &header,
+                framed,
             };
-            header_attributes(&header, "acis", &mut attributes);
+            header_attributes(&header, Family::Acis, &mut attributes);
             if header.has_history_partition() {
                 notes.push(
                     "the stream declares a construction-history partition; decode reads \
@@ -154,11 +154,7 @@ pub(crate) fn inspect(
             let parsed = sat::parse(bytes).map(|stream| (stream.header.as_kernel_header(), stream));
             let text = match &parsed {
                 Ok((kernel, stream)) => {
-                    let family = match stream.terminator {
-                        sat::Terminator::Asm => "asm",
-                        sat::Terminator::Acis => "acis",
-                    };
-                    header_attributes(kernel, family, &mut attributes);
+                    header_attributes(kernel, stream.terminator.into(), &mut attributes);
                     attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
                     attributes.insert("records".to_string(), stream.records.len().to_string());
                     attributes.insert(
