@@ -338,7 +338,7 @@ pub(crate) fn canvas_mirroring(segments: [[Point2; 2]; 2]) -> Option<(bool, bool
 #[cfg(test)]
 mod tests {
     use super::{
-        canvas_mirroring, decode_geometry_payload, DesignCanvasPrologue,
+        canvas_mirroring, decode_geometry_payload,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -440,25 +440,5 @@ mod tests {
         );
     }
 
-    #[test]
-    fn canvas_geometry_prologue_decodes_visibility_in_both_forms() {
-        let mut expanded = [0; 15];
-        expanded[14] = 1;
-        assert!(DesignCanvasPrologue::try_from(expanded).is_ok());
-        assert_eq!(DesignCanvasPrologue::try_from(expanded).ok().map(DesignCanvasPrologue::visible), Some(true));
 
-        expanded[14] = 0;
-        assert_eq!(DesignCanvasPrologue::try_from(expanded).ok().map(DesignCanvasPrologue::visible), Some(false));
-
-        let mut compact = [0; 15];
-        compact[10] = 1;
-        assert!(DesignCanvasPrologue::try_from(compact).is_ok());
-        assert_eq!(DesignCanvasPrologue::try_from(compact).ok().map(DesignCanvasPrologue::visible), Some(false));
-
-        compact[14] = 1;
-        assert_eq!(DesignCanvasPrologue::try_from(compact).ok().map(DesignCanvasPrologue::visible), Some(true));
-
-        compact[11] = 1;
-        assert!(DesignCanvasPrologue::try_from(compact).is_err());
-    }
 }

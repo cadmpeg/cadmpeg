@@ -2892,3 +2892,26 @@ fn canvas_prologue_reconstructs_both_flags_and_fixed_zero_bytes() {
         assert!(super::DesignCanvasPrologue::try_from(bytes).is_err());
     }
 }
+
+#[test]
+fn canvas_geometry_prologue_decodes_visibility_in_both_forms() {
+    use super::DesignCanvasPrologue;
+    let mut expanded = [0; 15];
+    expanded[14] = 1;
+    assert!(DesignCanvasPrologue::try_from(expanded).is_ok());
+    assert_eq!(DesignCanvasPrologue::try_from(expanded).ok().map(DesignCanvasPrologue::visible), Some(true));
+
+    expanded[14] = 0;
+    assert_eq!(DesignCanvasPrologue::try_from(expanded).ok().map(DesignCanvasPrologue::visible), Some(false));
+
+    let mut compact = [0; 15];
+    compact[10] = 1;
+    assert!(DesignCanvasPrologue::try_from(compact).is_ok());
+    assert_eq!(DesignCanvasPrologue::try_from(compact).ok().map(DesignCanvasPrologue::visible), Some(false));
+
+    compact[14] = 1;
+    assert_eq!(DesignCanvasPrologue::try_from(compact).ok().map(DesignCanvasPrologue::visible), Some(true));
+
+    compact[11] = 1;
+    assert!(DesignCanvasPrologue::try_from(compact).is_err());
+}
