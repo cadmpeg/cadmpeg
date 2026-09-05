@@ -84,9 +84,11 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
         entity_selection_face_candidates(18044, &[unrelated, selected]),
         [crate::records::DesignEntitySelectionFaceCandidate {
             history_id: "selected".into(),
-            historical_entity_kind: AsmHistoricalEntityKind::Pcurve,
-            historical_entity_ref: 18044,
-            historical_state_ids: vec![2],
+            historical: crate::records::HistoricalBinding {
+                kind: AsmHistoricalEntityKind::Pcurve,
+                entity_ref: 18044,
+                state_ids: vec![2],
+            },
             face_slot: 30,
         }]
     );
@@ -191,9 +193,11 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         Some(
             &[crate::records::DesignEntitySelectionFaceCandidate {
                 history_id: "selected".into(),
-                historical_entity_kind: AsmHistoricalEntityKind::Pcurve,
-                historical_entity_ref: 18044,
-                historical_state_ids: vec![2],
+                historical: crate::records::HistoricalBinding {
+                    kind: AsmHistoricalEntityKind::Pcurve,
+                    entity_ref: 18044,
+                    state_ids: vec![2],
+                },
                 face_slot: 30,
             }][..]
         )
@@ -1537,9 +1541,11 @@ fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent
     let candidate =
         |history_id: &str, face_slot| crate::records::DesignEntitySelectionFaceCandidate {
             history_id: history_id.into(),
-            historical_entity_kind: crate::records::AsmHistoricalEntityKind::Loop,
-            historical_entity_ref: face_slot + 100,
-            historical_state_ids: vec![2, 1],
+            historical: crate::records::HistoricalBinding {
+                kind: crate::records::AsmHistoricalEntityKind::Loop,
+                entity_ref: face_slot + 100,
+                state_ids: vec![2, 1],
+            },
             face_slot,
         };
     let primary = candidate("history-a", 10);
@@ -1826,9 +1832,11 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
     };
     let candidate = crate::records::DesignEntitySelectionFaceCandidate {
         history_id: "history".into(),
-        historical_entity_kind: AsmHistoricalEntityKind::Face,
-        historical_entity_ref: 69,
-        historical_state_ids: vec![2, 1],
+        historical: crate::records::HistoricalBinding {
+            kind: AsmHistoricalEntityKind::Face,
+            entity_ref: 69,
+            state_ids: vec![2, 1],
+        },
         face_slot: 27,
     };
     let mut history = AsmHistory {

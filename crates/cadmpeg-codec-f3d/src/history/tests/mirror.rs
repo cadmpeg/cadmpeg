@@ -289,9 +289,11 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
     };
     let candidate = crate::records::DesignEntitySelectionFaceCandidate {
         history_id: "history".into(),
-        historical_entity_kind: AsmHistoricalEntityKind::Coedge,
-        historical_entity_ref: 30,
-        historical_state_ids: vec![1],
+        historical: crate::records::HistoricalBinding {
+            kind: AsmHistoricalEntityKind::Coedge,
+            entity_ref: 30,
+            state_ids: vec![1],
+        },
         face_slot: 10,
     };
     let dispatched = historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history))

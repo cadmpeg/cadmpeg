@@ -686,9 +686,11 @@ pub(super) fn continue_fixed_kind_operations(
     axis_selection.historical_face_candidates =
         vec![crate::records::DesignEntitySelectionFaceCandidate {
             history_id: "history".into(),
-            historical_entity_kind: crate::records::AsmHistoricalEntityKind::Face,
-            historical_entity_ref: 40,
-            historical_state_ids: vec![1],
+            historical: crate::records::HistoricalBinding {
+                kind: crate::records::AsmHistoricalEntityKind::Face,
+                entity_ref: 40,
+                state_ids: vec![1],
+            },
             face_slot: 40,
         }];
     let historical_definition =

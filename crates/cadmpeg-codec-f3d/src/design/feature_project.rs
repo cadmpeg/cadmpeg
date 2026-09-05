@@ -2977,7 +2977,7 @@ fn selected_historical_face_selection(
     let mut face_slots = selection
         .historical_face_candidates
         .iter()
-        .filter(|candidate| candidate.historical_state_ids.contains(&previous_state_id))
+        .filter(|candidate| candidate.historical.state_ids.contains(&previous_state_id))
         .map(|candidate| candidate.face_slot);
     let face_slot = face_slots.next()?;
     if face_slots.any(|candidate| candidate != face_slot) {

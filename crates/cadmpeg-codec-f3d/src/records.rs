@@ -6626,6 +6626,22 @@ pub enum DesignFilletRadiusLaw {
     },
 }
 
+/// ASM history family, entity slot, and states for one selected identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct HistoricalBinding {
+    /// Stable ASM family containing the selected identity.
+    #[serde(rename = "historical_entity_kind")]
+    pub kind: AsmHistoricalEntityKind,
+    /// Stable ASM entity slot after record-revision normalization.
+    #[serde(rename = "historical_entity_ref")]
+    pub entity_ref: i64,
+    /// ASM history states containing the identity, in history arena order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "historical_state_ids")]
+    pub state_ids: Vec<i64>,
+}
+
 /// One fixed-width member named by an Extrude selection group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6667,22 +6683,31 @@ pub struct DesignExtrudeSelectionMember {
     /// Construction-operand identity chains that terminate at this member.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub operand_identity_ids: Vec<String>,
-    /// Stable ASM history family carrying `local_id`, when family membership
-    /// is unambiguous across every decoded state.
+    /// Stable ASM history family, entity slot, and states carrying `local_id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub historical_entity_kind: Option<AsmHistoricalEntityKind>,
-    /// Stable ASM entity slot carrying `local_id` after record-revision
-    /// identities are normalized.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub historical_entity_ref: Option<i64>,
-    /// ASM history states containing `local_id` in `historical_entity_kind`, in
-    /// history arena order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub historical_state_ids: Vec<i64>,
+    #[serde(flatten)]
+    pub historical: Option<HistoricalBinding>,
     /// Identity of the indexed record immediately following this member.
     pub next_record_index: u32,
     /// Byte offset of the indexed record immediately following this member.
     pub next_byte_offset: u64,
+}
+
+impl DesignExtrudeSelectionMember {
+    pub(crate) fn historical_entity_kind(&self) -> Option<AsmHistoricalEntityKind> {
+        self.historical.as_ref().map(|binding| binding.kind)
+    }
+
+    pub(crate) fn historical_entity_ref(&self) -> Option<i64> {
+        self.historical.as_ref().map(|binding| binding.entity_ref)
+    }
+
+    pub(crate) fn historical_state_ids(&self) -> &[i64] {
+        self.historical
+            .as_ref()
+            .map(|binding| binding.state_ids.as_slice())
+            .unwrap_or(&[])
+    }
 }
 
 /// Persistent Design entity selected through a nested indexed-record frame.
@@ -6754,12 +6779,9 @@ pub struct DesignEntitySelectionOperand {
 pub struct DesignEntitySelectionFaceCandidate {
     /// Native ASM history containing the selected identity.
     pub history_id: String,
-    /// Stable ASM family containing the selected identity.
-    pub historical_entity_kind: AsmHistoricalEntityKind,
-    /// Stable ASM entity slot after record-revision normalization.
-    pub historical_entity_ref: i64,
-    /// States in this history that contain the selected identity revision.
-    pub historical_state_ids: Vec<i64>,
+    /// Stable ASM family, entity slot, and states containing the selected identity.
+    #[serde(flatten)]
+    pub historical: HistoricalBinding,
     /// Face incident to the identity in every listed state.
     pub face_slot: i64,
 }
@@ -7038,15 +7060,10 @@ pub struct DesignEdgeIdentityOperand {
     pub context_id: String,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
-    /// Stable ASM history family carrying `local_id`.
+    /// Stable ASM history family, entity slot, and states carrying `local_id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub historical_entity_kind: Option<AsmHistoricalEntityKind>,
-    /// Stable ASM entity slot carrying `local_id`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub historical_entity_ref: Option<i64>,
-    /// ASM history states containing the identity, in history arena order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub historical_state_ids: Vec<i64>,
+    #[serde(flatten)]
+    pub historical: Option<HistoricalBinding>,
     /// Complete radius-qualified deleted source-edge set proved by the owning
     /// feature transition. The transition-scoped set repeats on each operand.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -7066,6 +7083,23 @@ pub struct DesignEdgeIdentityOperand {
     /// edge selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolution_identity_id: Option<String>,
+}
+
+impl DesignEdgeIdentityOperand {
+    pub(crate) fn historical_entity_kind(&self) -> Option<AsmHistoricalEntityKind> {
+        self.historical.as_ref().map(|binding| binding.kind)
+    }
+
+    pub(crate) fn historical_entity_ref(&self) -> Option<i64> {
+        self.historical.as_ref().map(|binding| binding.entity_ref)
+    }
+
+    pub(crate) fn historical_state_ids(&self) -> &[i64] {
+        self.historical
+            .as_ref()
+            .map(|binding| binding.state_ids.as_slice())
+            .unwrap_or(&[])
+    }
 }
 
 /// Edge-selection operand owned by an edge-selecting parameter scope.
