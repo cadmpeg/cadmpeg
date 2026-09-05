@@ -54,7 +54,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: None,
-        history_state_id_offset: 0,
+
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: byte_offset + 80,
@@ -875,7 +875,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: None,
-        history_state_id_offset: 0,
+
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 180,

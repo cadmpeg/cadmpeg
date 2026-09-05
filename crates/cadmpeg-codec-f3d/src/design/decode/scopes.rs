@@ -5774,7 +5774,6 @@ fn exact_base_feature_body_snapshot(
         || scope.reference_members.offsets().next().copied()
             != Some(u64::try_from(reference_marker + 1).ok()?)
         || scope.kind_offset != u64::try_from(kind_at + 4).ok()?
-        || scope.history_state_id_offset != u64::try_from(state_at).ok()?
     {
         return None;
     }
@@ -6089,21 +6088,18 @@ fn exact_shifted_cylinder_primitive_prologue(
     let absolute = |relative_offset: usize| u64::try_from(start.checked_add(relative_offset)?).ok();
     let (
         reference_count_offset,
-        history_state_id_offset,
         kind_offset,
         feature_ordinal_offset,
         previous_history_state_id_offset,
     ) = match scope.frame_length {
         352 => (
             shifted_cylinder_352::REFERENCE_COUNT,
-            shifted_cylinder_352::HISTORY_STATE_ID,
             shifted_cylinder_352::KIND,
             shifted_cylinder_352::FEATURE_ORDINAL,
             shifted_cylinder_352::PREVIOUS_HISTORY_STATE_ID,
         ),
         502 => (
             shifted_cylinder_502::REFERENCE_COUNT,
-            shifted_cylinder_502::HISTORY_STATE_ID,
             shifted_cylinder_502::KIND,
             shifted_cylinder_502::FEATURE_ORDINAL,
             shifted_cylinder_502::PREVIOUS_HISTORY_STATE_ID,
@@ -6111,7 +6107,6 @@ fn exact_shifted_cylinder_primitive_prologue(
         _ => return None,
     };
     if scope.reference_count_offset != absolute(reference_count_offset)?
-        || scope.history_state_id_offset != absolute(history_state_id_offset)?
         || scope.kind_offset != absolute(kind_offset)?
         || scope.feature_ordinal_offset != absolute(feature_ordinal_offset)?
         || scope.previous_history_state_id_offset
@@ -8969,7 +8964,7 @@ pub(crate) fn parse_parameter_scope(
         feature_ordinal,
         feature_ordinal_offset: u64::try_from(kind_end).ok()?,
         history_state_id,
-        history_state_id_offset: u64::try_from(history_state_id_offset).ok()?,
+
         previous_history_state_id,
         previous_history_state_id_offset: previous_history_state_id_offset
             .and_then(|offset| u64::try_from(offset).ok())

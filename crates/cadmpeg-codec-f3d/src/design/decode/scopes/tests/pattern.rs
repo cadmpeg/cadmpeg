@@ -177,7 +177,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: Some(2),
-        history_state_id_offset: 0,
+
         previous_history_state_id: Some(1),
         previous_history_state_id_offset: None,
         reference_count_offset: 0,

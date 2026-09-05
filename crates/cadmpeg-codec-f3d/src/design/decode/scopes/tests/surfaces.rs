@@ -147,7 +147,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: Some(2),
-        history_state_id_offset: 0,
+
         previous_history_state_id: Some(2),
         previous_history_state_id_offset: None,
         reference_count_offset: 0,
@@ -315,7 +315,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     snapshot_scope.kind_offset = 373;
     snapshot_scope.feature_ordinal_offset = 397;
     snapshot_scope.history_state_id = Some(7);
-    snapshot_scope.history_state_id_offset = 365;
+
     snapshot_scope.previous_history_state_id = None;
     snapshot_scope.previous_history_state_id_offset = None;
     snapshot_scope.reference_count_offset = 350;
@@ -885,7 +885,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     scope.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     scope.feature_ordinal_offset = class_377::FEATURE_ORDINAL as u64;
     scope.history_state_id = Some(20);
-    scope.history_state_id_offset = class_377::HISTORY_STATE_ID as u64;
+
     scope.previous_history_state_id = Some(19);
     scope.previous_history_state_id_offset = Some(class_377::PREVIOUS_HISTORY_STATE_ID as u64);
     scope.reference_count_offset = class_377::REFERENCE_COUNT as u64;
@@ -1041,7 +1041,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         scope.reference_count_offset = reference_count as u64;
         scope.reference_members = crate::records::ReferenceRun::from_columns(scope.reference_members.values().copied().collect(), vec![generic_record as u64], "reference_members").unwrap();
         scope.history_state_id = Some(i64::from(current_state));
-        scope.history_state_id_offset = history_state_id as u64;
+
         scope.previous_history_state_id = Some(i64::from(previous_state));
         scope.previous_history_state_id_offset = None;
         scope.kind_offset = kind as u64;
@@ -1103,7 +1103,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     compact_scope.reference_count_offset = compact::REFERENCE_COUNT as u64;
     compact_scope.reference_members = crate::records::ReferenceRun::from_columns(compact_scope.reference_members.values().copied().collect(), vec![compact::GENERIC_SCOPE_REFERENCE_RECORD as u64], "reference_members").unwrap();
     compact_scope.history_state_id = Some(20);
-    compact_scope.history_state_id_offset = compact::HISTORY_STATE_ID as u64;
+
     compact_scope.previous_history_state_id = Some(19);
     compact_scope.previous_history_state_id_offset =
         Some(compact::PREVIOUS_HISTORY_STATE_ID as u64);
@@ -1250,7 +1250,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     expanded_scope.paired_byte_offset = expanded::LEN as u64;
     expanded_scope.reference_count_offset = expanded::REFERENCE_COUNT as u64;
     expanded_scope.reference_members = crate::records::ReferenceRun::from_columns(expanded_scope.reference_members.values().copied().collect(), vec![expanded::GENERIC_SCOPE_REFERENCE_RECORD as u64], "reference_members").unwrap();
-    expanded_scope.history_state_id_offset = expanded::HISTORY_STATE_ID as u64;
+
     expanded_scope.previous_history_state_id_offset =
         Some(expanded::PREVIOUS_HISTORY_STATE_ID as u64);
     expanded_scope.kind_offset = expanded::KIND as u64;

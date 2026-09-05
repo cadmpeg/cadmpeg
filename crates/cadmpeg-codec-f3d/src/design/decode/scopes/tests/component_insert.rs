@@ -67,7 +67,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: None,
-        history_state_id_offset: 0,
+
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 0,
