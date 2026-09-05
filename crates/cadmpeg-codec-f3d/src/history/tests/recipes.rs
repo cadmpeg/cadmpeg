@@ -1867,9 +1867,11 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             curve_secondary_identity_offset: None,
             historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
                 history_id: "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#2".into(),
-                historical_entity_kind: AsmHistoricalEntityKind::Pcurve,
-                historical_entity_ref: 18044,
-                historical_state_ids: vec![1],
+                historical: crate::records::HistoricalBinding {
+                    kind: AsmHistoricalEntityKind::Pcurve,
+                    entity_ref: 18044,
+                    state_ids: vec![1],
+                },
                 face_slot: 30,
             }],
             next_record_index: 104,

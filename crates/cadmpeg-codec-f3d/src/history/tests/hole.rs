@@ -165,9 +165,11 @@ fn edge_backed_hole_selection_uses_the_oriented_updated_support_plane() {
         Some(
             &[crate::records::DesignEntitySelectionFaceCandidate {
                 history_id: "history".into(),
-                historical_entity_kind: AsmHistoricalEntityKind::Edge,
-                historical_entity_ref: 7,
-                historical_state_ids: vec![1],
+                historical: crate::records::HistoricalBinding {
+                    kind: AsmHistoricalEntityKind::Edge,
+                    entity_ref: 7,
+                    state_ids: vec![1],
+                },
                 face_slot: 20,
             }][..]
         )

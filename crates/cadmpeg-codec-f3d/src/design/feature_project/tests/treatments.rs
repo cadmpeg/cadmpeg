@@ -641,9 +641,11 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
             history_id: "history".into(),
-            historical_entity_kind: AsmHistoricalEntityKind::Coedge,
-            historical_entity_ref: 225,
-            historical_state_ids: vec![7, 6],
+            historical: crate::records::HistoricalBinding {
+                kind: AsmHistoricalEntityKind::Coedge,
+                entity_ref: 225,
+                state_ids: vec![7, 6],
+            },
             face_slot: 158,
         }],
         resolved_edge_slot: None,
@@ -734,9 +736,11 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         .historical_face_candidates
         .push(DesignEntitySelectionFaceCandidate {
             history_id: "other-history".into(),
-            historical_entity_kind: AsmHistoricalEntityKind::Coedge,
-            historical_entity_ref: 225,
-            historical_state_ids: vec![7],
+            historical: crate::records::HistoricalBinding {
+                kind: AsmHistoricalEntityKind::Coedge,
+                entity_ref: 225,
+                state_ids: vec![7],
+            },
             face_slot: 159,
         });
     let (features, _) = project(&selection);
@@ -1336,9 +1340,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             asset_id_offset: 0,
             context_id: "context".into(),
             context_id_offset: 0,
-            historical_entity_kind: None,
-            historical_entity_ref: None,
-            historical_state_ids: Vec::new(),
+            historical: None,
             treatment_radius_candidates: Vec::new(),
             transition_edge_candidates: Vec::new(),
             resolved_edge_slots: Vec::new(),

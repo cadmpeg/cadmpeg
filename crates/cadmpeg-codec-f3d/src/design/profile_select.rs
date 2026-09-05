@@ -653,16 +653,16 @@ fn historical_face_profile_selection(
         }
         let mut candidates = None::<HashSet<i64>>;
         for member in group_members {
-            if !member.historical_state_ids.is_empty()
-                && !member.historical_state_ids.contains(&previous_state_id)
+            if !member.historical_state_ids().is_empty()
+                && !member.historical_state_ids().contains(&previous_state_id)
             {
                 return None;
             }
             let entity_ref = member
-                .historical_entity_ref
+                .historical_entity_ref()
                 .or_else(|| i64::try_from(member.local_id).ok())?;
             let member_faces = historical_profile_face_candidates(
-                member.historical_entity_kind,
+                member.historical_entity_kind(),
                 entity_ref,
                 topology,
             );
@@ -1480,12 +1480,12 @@ fn historical_selection_regions(
     }
     let mut state_ids = members
         .first()?
-        .historical_state_ids
+        .historical_state_ids()
         .iter()
         .copied()
         .collect::<HashSet<_>>();
     for member in &members[1..] {
-        state_ids.retain(|state_id| member.historical_state_ids.contains(state_id));
+        state_ids.retain(|state_id| member.historical_state_ids().contains(state_id));
     }
     let mut state_ids = state_ids.into_iter().collect::<Vec<_>>();
     state_ids.sort_unstable();

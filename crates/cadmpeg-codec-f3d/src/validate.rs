@@ -7051,15 +7051,15 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
             &native.asm_histories,
         );
         let history_matches = if history::projection_was_finalized(&native.asm_histories) {
-            member.historical_entity_kind.is_some() == member.historical_entity_ref.is_some()
+            member.historical_entity_kind().is_some() == member.historical_entity_ref().is_some()
                 && member
-                    .historical_state_ids
+                    .historical_state_ids()
                     .iter()
                     .copied()
                     .collect::<HashSet<_>>()
                     .len()
-                    == member.historical_state_ids.len()
-                && member.historical_state_ids.iter().all(|state_id| {
+                    == member.historical_state_ids().len()
+                && member.historical_state_ids().iter().all(|state_id| {
                     native
                         .asm_histories
                         .iter()
@@ -7067,16 +7067,16 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .any(|state| state.state_id == *state_id)
                 })
         } else {
-            expected_history.as_ref().map(|(kind, _, _)| *kind) == member.historical_entity_kind
+            expected_history.as_ref().map(|(kind, _, _)| *kind) == member.historical_entity_kind()
                 && expected_history
                     .as_ref()
                     .map(|(_, entity_ref, _)| *entity_ref)
-                    == member.historical_entity_ref
+                    == member.historical_entity_ref()
                 && expected_history
                     .as_ref()
                     .map(|(_, _, states)| states.as_slice())
                     .unwrap_or_default()
-                    == member.historical_state_ids.as_slice()
+                    == member.historical_state_ids()
         };
         let terminal_next = member.next_record_index == 0
             && member.next_byte_offset == member.byte_offset.saturating_add(190)

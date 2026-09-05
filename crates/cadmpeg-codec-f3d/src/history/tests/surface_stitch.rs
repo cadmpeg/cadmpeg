@@ -88,9 +88,11 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
             history_id: history_id.clone(),
-            historical_entity_kind: AsmHistoricalEntityKind::Coedge,
-            historical_entity_ref: face_slot,
-            historical_state_ids: vec![1],
+            historical: crate::records::HistoricalBinding {
+                kind: AsmHistoricalEntityKind::Coedge,
+                entity_ref: face_slot,
+                state_ids: vec![1],
+            },
             face_slot,
         }],
         resolved_edge_slot: None,
@@ -163,9 +165,11 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         .historical_face_candidates
         .push(DesignEntitySelectionFaceCandidate {
             history_id: "other-history/BREP.other:asm-1".into(),
-            historical_entity_kind: AsmHistoricalEntityKind::Coedge,
-            historical_entity_ref: 99,
-            historical_state_ids: vec![1],
+            historical: crate::records::HistoricalBinding {
+                kind: AsmHistoricalEntityKind::Coedge,
+                entity_ref: 99,
+                state_ids: vec![1],
+            },
             face_slot: 99,
         });
     let mut ambiguous_topologies = input_topologies.clone();

@@ -2409,7 +2409,7 @@ pub(crate) fn historical_member_points_in_state(
 
     let kind =
         member
-            .historical_entity_kind
+            .historical_entity_kind()
             .or_else(|| match member.resolved_geometry.as_ref()? {
                 SketchRelationOperand::Point { .. } => Some(AsmHistoricalEntityKind::Point),
                 SketchRelationOperand::Curve { .. } => Some(AsmHistoricalEntityKind::Curve),
@@ -2418,7 +2418,7 @@ pub(crate) fn historical_member_points_in_state(
                 }
             })?;
     let entity_ref = member
-        .historical_entity_ref
+        .historical_entity_ref()
         .or_else(|| i64::try_from(member.local_id).ok())?;
     historical_entity_positions(kind, entity_ref, topology)
 }

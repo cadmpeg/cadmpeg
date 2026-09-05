@@ -2302,7 +2302,7 @@ fn bind_entity_face_groups(
                 return;
             }
             let local = candidate.history_id == operation_history_id
-                && candidate.historical_state_ids.contains(&previous_state_id);
+                && candidate.historical.state_ids.contains(&previous_state_id);
             let Some(source) = historical_brep_source(&candidate.history_id) else {
                 return;
             };
@@ -2370,7 +2370,7 @@ fn bind_hole_face_selection(
         return;
     };
     let local = candidate.history_id == operation_history_id
-        && candidate.historical_state_ids.contains(&previous_state_id);
+        && candidate.historical.state_ids.contains(&previous_state_id);
     let Some(source) = historical_brep_source(&candidate.history_id) else {
         return;
     };
@@ -6801,18 +6801,18 @@ pub(crate) fn bind_extrude_selection_history(
     histories: &[AsmHistory],
 ) {
     for member in members {
-        member.historical_entity_kind = None;
-        member.historical_entity_ref = None;
-        member.historical_state_ids.clear();
+        member.historical = None;
         if let Some((kind, entity_ref, states)) = historical_extrude_selection_identity_kind(
             member,
             naming_spaces,
             body_bindings,
             histories,
         ) {
-            member.historical_entity_kind = Some(kind);
-            member.historical_entity_ref = Some(entity_ref);
-            member.historical_state_ids = states;
+            member.historical = Some(crate::records::HistoricalBinding {
+                kind,
+                entity_ref,
+                state_ids: states,
+            });
         }
     }
 }
@@ -7059,9 +7059,11 @@ fn hole_transition_face_candidate(
     };
     Some(DesignEntitySelectionFaceCandidate {
         history_id: history.id.clone(),
-        historical_entity_kind: kind,
-        historical_entity_ref: entity_ref,
-        historical_state_ids: vec![previous_state_id],
+        historical: crate::records::HistoricalBinding {
+            kind: kind,
+            entity_ref: entity_ref,
+            state_ids: vec![previous_state_id],
+        },
         face_slot: *face_slot,
     })
 }
@@ -7503,11 +7505,11 @@ fn historical_mirror_plane(
     preferred_state_id: i64,
     histories: &[AsmHistory],
 ) -> Option<HistoricalMirrorPlane> {
-    if candidate.historical_state_ids.contains(&preferred_state_id) {
+    if candidate.historical.state_ids.contains(&preferred_state_id) {
         return historical_mirror_plane_in_state(candidate, preferred_state_id, histories);
     }
     let mut resolved = None;
-    for state_id in &candidate.historical_state_ids {
+    for state_id in &candidate.historical.state_ids {
         let plane = historical_mirror_plane_in_state(candidate, *state_id, histories)?;
         if resolved
             .as_ref()
@@ -7548,12 +7550,12 @@ fn historical_mirror_plane_in_state(
         return None;
     }
     let topology = state.topology.as_ref()?;
-    match candidate.historical_entity_kind {
+    match candidate.historical.kind {
         AsmHistoricalEntityKind::Coedge => {
-            historical_mirror_coedge_plane(candidate.historical_entity_ref, topology)
+            historical_mirror_coedge_plane(candidate.historical.entity_ref, topology)
         }
         AsmHistoricalEntityKind::Loop => {
-            historical_loop_plane(candidate.historical_entity_ref, topology)
+            historical_loop_plane(candidate.historical.entity_ref, topology)
         }
         _ => historical_mirror_plane_for_face_slot_in_topology(candidate.face_slot, topology),
     }
@@ -7805,9 +7807,11 @@ fn entity_selection_face_candidates(
             }
             Some(DesignEntitySelectionFaceCandidate {
                 history_id: history.id.clone(),
-                historical_entity_kind: kind,
-                historical_entity_ref: entity_ref,
-                historical_state_ids: state_ids,
+                historical: crate::records::HistoricalBinding {
+                    kind: kind,
+                    entity_ref: entity_ref,
+                    state_ids: state_ids,
+                },
                 face_slot: face_slot?,
             })
         })
@@ -7917,9 +7921,7 @@ pub(crate) fn bind_edge_identity_history(
     let mut treatment_candidates_by_transition =
         HashMap::<(String, i64, i64), EdgeTreatmentTransitionCandidates>::new();
     for operand in operands {
-        operand.historical_entity_kind = None;
-        operand.historical_entity_ref = None;
-        operand.historical_state_ids.clear();
+        operand.historical = None;
         operand.treatment_radius_candidates.clear();
         operand.transition_edge_candidates.clear();
         operand.resolved_edge_slots.clear();
@@ -7950,9 +7952,11 @@ pub(crate) fn bind_edge_identity_history(
             .selection_identity_kind(operand.local_id)
             .filter(|(_, _, states)| states.contains(&previous_state_id))
         {
-            operand.historical_entity_kind = Some(kind);
-            operand.historical_entity_ref = Some(entity_ref);
-            operand.historical_state_ids = states;
+            operand.historical = Some(crate::records::HistoricalBinding {
+                kind,
+                entity_ref,
+                state_ids: states,
+            });
         }
         let Some(history) = bound_history else {
             continue;
@@ -8052,9 +8056,9 @@ pub(crate) fn bind_edge_identity_history(
             }
         }
         let direct = operand
-            .historical_entity_kind
-            .zip(operand.historical_entity_ref)
-            .filter(|_| operand.historical_state_ids.contains(&previous_state_id))
+            .historical_entity_kind()
+            .zip(operand.historical_entity_ref())
+            .filter(|_| operand.historical_state_ids().contains(&previous_state_id))
             .and_then(|(kind, entity_ref)| historical_identity_edge(kind, entity_ref, topology));
         if let Some(edge) = direct {
             operand.resolved_edge_slot = Some(edge);

@@ -252,9 +252,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
             secondary_id: 0,
         }),
         operand_identity_ids: Vec::new(),
-        historical_entity_kind: None,
-        historical_entity_ref: None,
-        historical_state_ids: Vec::new(),
+        historical: None,
         next_record_index: 11,
         next_byte_offset: 0,
     };

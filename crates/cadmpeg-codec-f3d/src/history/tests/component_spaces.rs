@@ -106,9 +106,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
         tail_slot_offset: 581,
         resolved_geometry: None,
         operand_identity_ids: Vec::new(),
-        historical_entity_kind: None,
-        historical_entity_ref: None,
-        historical_state_ids: Vec::new(),
+        historical: None,
         next_record_index: 3,
         next_byte_offset: 590,
     }];
@@ -116,11 +114,11 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
     bind_extrude_selection_history(&mut members, &naming_spaces, &body_bindings, &histories);
 
     assert_eq!(
-        members[0].historical_entity_kind,
+        members[0].historical_entity_kind(),
         Some(AsmHistoricalEntityKind::Loop)
     );
-    assert_eq!(members[0].historical_entity_ref, Some(42));
-    assert_eq!(members[0].historical_state_ids, [2]);
+    assert_eq!(members[0].historical_entity_ref(), Some(42));
+    assert_eq!(members[0].historical_state_ids(), [2]);
 }
 
 #[test]
