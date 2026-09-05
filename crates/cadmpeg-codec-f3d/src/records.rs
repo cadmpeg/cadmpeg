@@ -9814,7 +9814,36 @@ pub struct LostEdgeReference {
 /// One Design `BulkStream` material assignment joining a design entity to visual assets.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignMaterialAssignmentWire", into = "DesignMaterialAssignmentWire")]
 pub struct DesignMaterialAssignment {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// ASM body key resolved through the Design body map.
+    pub asm_body_key: u64,
+    /// Byte offset of the body-map ASM key.
+    pub asm_body_key_offset: u64,
+    /// Numeric suffix of `entity_id`.
+    pub entity_suffix: u64,
+    /// Byte offset of the body-map entity suffix.
+    pub entity_suffix_offset: u64,
+    /// UTF-16 design-entity id.
+    pub entity_id: String,
+    /// Byte offset of the UTF-16 entity-id code units.
+    pub entity_id_offset: u64,
+    /// Complete serialized visual token.
+    pub visual_guid: String,
+    /// Byte offset of the UTF-16 visual-token code units.
+    pub visual_guid_offset: u64,
+    /// Physical-material token, when present.
+    pub physical_token: Option<RecordedValue<String>>,
+    /// Visual preset name, when present.
+    pub visual_preset: Option<RecordedValue<String>>,
+}
+
+/// One Design `BulkStream` material assignment joining a design entity to visual assets.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignMaterialAssignmentWire {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// ASM body key resolved through the Design body map.
@@ -9845,6 +9874,45 @@ pub struct DesignMaterialAssignment {
     /// Byte offset of the UTF-16 preset name, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visual_preset_offset: Option<u64>,
+}
+
+impl TryFrom<DesignMaterialAssignmentWire> for DesignMaterialAssignment {
+    type Error = String;
+    fn try_from(wire: DesignMaterialAssignmentWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            asm_body_key: wire.asm_body_key,
+            asm_body_key_offset: wire.asm_body_key_offset,
+            entity_suffix: wire.entity_suffix,
+            entity_suffix_offset: wire.entity_suffix_offset,
+            entity_id: wire.entity_id,
+            entity_id_offset: wire.entity_id_offset,
+            visual_guid: wire.visual_guid,
+            visual_guid_offset: wire.visual_guid_offset,
+            physical_token: RecordedValue::from_wire(wire.physical_token, wire.physical_token_offset, "physical_token")?,
+            visual_preset: RecordedValue::from_wire(wire.visual_preset, wire.visual_preset_offset, "visual_preset")?,
+        })
+    }
+}
+
+impl From<DesignMaterialAssignment> for DesignMaterialAssignmentWire {
+    fn from(value: DesignMaterialAssignment) -> Self {
+        Self {
+            id: value.id,
+            asm_body_key: value.asm_body_key,
+            asm_body_key_offset: value.asm_body_key_offset,
+            entity_suffix: value.entity_suffix,
+            entity_suffix_offset: value.entity_suffix_offset,
+            entity_id: value.entity_id,
+            entity_id_offset: value.entity_id_offset,
+            visual_guid: value.visual_guid,
+            visual_guid_offset: value.visual_guid_offset,
+            physical_token_offset: value.physical_token.as_ref().and_then(|field| field.offset),
+            physical_token: value.physical_token.map(|field| field.value),
+            visual_preset_offset: value.visual_preset.as_ref().and_then(|field| field.offset),
+            visual_preset: value.visual_preset.map(|field| field.value),
+        }
+    }
 }
 
 /// Add-in module that registers the Design sketch types.

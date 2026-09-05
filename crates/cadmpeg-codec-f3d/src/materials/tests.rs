@@ -272,9 +272,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         visual_guid: visual_guid.into(),
         visual_guid_offset: 600,
         physical_token: None,
-        physical_token_offset: None,
         visual_preset: None,
-        visual_preset_offset: None,
     };
     let projected = super::bind_bodies(
         &[appearance],
@@ -321,9 +319,7 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         visual_guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
         visual_guid_offset: 600,
         physical_token: None,
-        physical_token_offset: None,
         visual_preset: None,
-        visual_preset_offset: None,
     };
 
     assert!(
@@ -340,7 +336,7 @@ fn presetless_assignment_matches_only_its_visual_guid() {
     );
 
     assignment.visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
-    assignment.visual_preset = Some("Prism-017".into());
+    assignment.visual_preset = Some(crate::records::RecordedValue { value: "Prism-017".into(), offset: None });
     appearance.name = Some("Prism-017".into());
     assert!(
         super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)

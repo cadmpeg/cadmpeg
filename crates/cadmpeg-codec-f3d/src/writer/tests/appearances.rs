@@ -106,10 +106,8 @@ fn generated_source_less_rejects_material_assignment_without_presentation_graph(
         entity_id_offset: 0,
         visual_guid: "11111111-2222-3333-4444-555555555555".into(),
         visual_guid_offset: 0,
-        physical_token: Some("PrismMaterial-Generated".into()),
-        physical_token_offset: None,
+        physical_token: Some(crate::records::RecordedValue { value: "PrismMaterial-Generated".into(), offset: None }),
         visual_preset: None,
-        visual_preset_offset: None,
     }];
 
     let error = F3dCodec
@@ -158,7 +156,7 @@ fn generated_f3d_rejects_material_assignment_divergence() {
         .expect("generated material decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     update_f3d_native(&mut edited, |native| {
-        native.design_material_assignments[0].physical_token = Some("PrismMaterial-019".into());
+        native.design_material_assignments[0].physical_token.as_mut().expect("material field").value = "PrismMaterial-019".into();
     });
 
     let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())

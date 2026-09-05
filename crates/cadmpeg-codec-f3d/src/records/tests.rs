@@ -396,3 +396,30 @@ fn coil_values_preserve_optional_locations_and_reject_orphan_offsets() {
         assert!(error.contains(&format!("{field}_offset")));
     }
 }
+
+#[test]
+fn material_assignment_preserves_located_and_authored_token_wire() {
+    let prefix = r#"{"id":"material#0","asm_body_key":42,"asm_body_key_offset":10,"entity_suffix":985,"entity_suffix_offset":20,"entity_id":"0_985","entity_id_offset":30,"visual_guid":"Prism-001","visual_guid_offset":40"#;
+    for field in ["physical_token", "visual_preset"] {
+        for value in ["\"\"", "\"Prism-002\""] {
+            for offset in [None, Some(0), Some(50)] {
+                let mut wire = format!("{prefix},\"{field}\":{value}");
+                if let Some(offset) = offset {
+                    wire.push_str(&format!(",\"{field}_offset\":{offset}"));
+                }
+                wire.push('}');
+                let parsed: super::DesignMaterialAssignment = serde_json::from_str(&wire).expect("material token");
+                assert_eq!(serde_json::to_string(&parsed).expect("material wire"), wire);
+            }
+        }
+        let wire = format!("{prefix},\"{field}_offset\":50}}");
+        let error = serde_json::from_str::<super::DesignMaterialAssignment>(&wire)
+            .expect_err("orphan material offset")
+            .to_string();
+        assert!(error.contains(field));
+        assert!(error.contains(&format!("{field}_offset")));
+    }
+    let wire = format!("{prefix}}}");
+    let parsed: super::DesignMaterialAssignment = serde_json::from_str(&wire).expect("absent tokens");
+    assert_eq!(serde_json::to_string(&parsed).expect("material wire"), wire);
+}
