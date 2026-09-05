@@ -425,7 +425,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         type_code,
         form,
         label: "TEST",
-        status: "00000000",
+        status: super::EntityStatus::Independent,
         parameters: Vec::new(),
         transform: None,
     };
@@ -476,7 +476,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         type_code: 102,
         form: 0,
         label: "TEST",
-        status: "00000000",
+        status: super::EntityStatus::Independent,
         parameters: b"102,1,@R0@;".to_vec(),
         transform: None,
     };

@@ -51,9 +51,25 @@ const NURBS_CLOSEDNESS_TOLERANCE: f64 = EPS_WRITE_DEGENERATE;
 // as an IGES tolerance and never supplies a normal for a non-unique plane.
 const NURBS_PLANE_COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 const WRITER_ENDPOINT_RELATIVE_TOLERANCE: f64 = EPS_WRITE_POSITION;
-const PHYSICALLY_DEPENDENT_STATUS: &str = "00010000";
-const PHYSICALLY_DEPENDENT_EDGE_LIST_STATUS: &str = "00010001";
-const PARAMETER_CURVE_STATUS: &str = "00010500";
+#[derive(Clone, Copy)]
+enum EntityStatus {
+    Independent,
+    PhysicallyDependent,
+    PhysicallyDependentEdgeList,
+    ParameterCurve,
+}
+
+impl EntityStatus {
+    const fn as_field(self) -> &'static str {
+        match self {
+            Self::Independent => "00000000",
+            Self::PhysicallyDependent => "00010000",
+            Self::PhysicallyDependentEdgeList => "00010001",
+            Self::ParameterCurve => "00010500",
+        }
+    }
+}
+
 const BOUNDARY_PREFERENCE_MODEL_CURVES: i32 = 1;
 const CURVE_ON_SURFACE_CREATION_UNSPECIFIED: i32 = 0;
 const CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE: i32 = 2;
@@ -191,7 +207,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                     geometry: &geometry,
                     span: Some(&span),
                     sense: Sense::Forward,
-                    status: "00000000",
+                    status: EntityStatus::Independent,
                     reference_offset: 0,
                 },
             )?;
@@ -216,7 +232,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                     geometry: &geometry,
                     span: None,
                     sense: Sense::Forward,
-                    status: "00000000",
+                    status: EntityStatus::Independent,
                     reference_offset: 0,
                 },
             )?;
@@ -1141,7 +1157,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                 geometry: &geometry,
                 span: Some(&span),
                 sense: Sense::Forward,
-                status: "00000000",
+                status: EntityStatus::Independent,
                 reference_offset: 0,
             },
         )?;
@@ -1167,7 +1183,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                 geometry: &geometry,
                 span: None,
                 sense: Sense::Forward,
-                status: "00000000",
+                status: EntityStatus::Independent,
                 reference_offset: 0,
             },
         )?;
@@ -1322,7 +1338,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
             type_code: 502,
             form: 1,
             label: "VERTICES",
-            status: PHYSICALLY_DEPENDENT_STATUS,
+            status: EntityStatus::PhysicallyDependent,
             parameters: parameters.into_bytes(),
             transform: None,
         });
@@ -1365,7 +1381,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                 type_code: 504,
                 form: 1,
                 label: "EDGES",
-                status: PHYSICALLY_DEPENDENT_EDGE_LIST_STATUS,
+                status: EntityStatus::PhysicallyDependentEdgeList,
                 parameters: parameters.into_bytes(),
                 transform: None,
             });
@@ -1539,7 +1555,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                 type_code: 508,
                 form: 1,
                 label: "LOOP",
-                status: PHYSICALLY_DEPENDENT_STATUS,
+                status: EntityStatus::PhysicallyDependent,
                 parameters: parameters.into_bytes(),
                 transform: None,
             });
@@ -1577,7 +1593,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                 type_code: 510,
                 form: 1,
                 label: "FACE",
-                status: PHYSICALLY_DEPENDENT_STATUS,
+                status: EntityStatus::PhysicallyDependent,
                 parameters: parameters.into_bytes(),
                 transform: None,
             });
@@ -1613,9 +1629,9 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                 form: if body.kind == BodyKind::Solid { 1 } else { 2 },
                 label: "SHELL",
                 status: if body.kind == BodyKind::Solid {
-                    PHYSICALLY_DEPENDENT_STATUS
+                    EntityStatus::PhysicallyDependent
                 } else {
-                    "00000000"
+                    EntityStatus::Independent
                 },
                 parameters: parameters.into_bytes(),
                 transform: None,
@@ -1641,7 +1657,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                 type_code: 186,
                 form: 0,
                 label: "SOLID",
-                status: "00000000",
+                status: EntityStatus::Independent,
                 parameters: parameters.into_bytes(),
                 transform: None,
             });
@@ -1912,7 +1928,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
                 geometry: &geometry,
                 span: Some(&span),
                 sense: Sense::Forward,
-                status: PHYSICALLY_DEPENDENT_STATUS,
+                status: EntityStatus::PhysicallyDependent,
                 reference_offset: 0,
             },
         )?;
@@ -1940,7 +1956,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
                 geometry: &geometry,
                 span: None,
                 sense: Sense::Forward,
-                status: "00000000",
+                status: EntityStatus::Independent,
                 reference_offset: 0,
             },
         )?;
@@ -2097,7 +2113,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
             type_code: if bounded { 143 } else { 144 },
             form: 0,
             label: if bounded { "BOUNDED" } else { "TRIMMED" },
-            status: "00000000",
+            status: EntityStatus::Independent,
             parameters: parameters.into_bytes(),
             transform: None,
         });
@@ -2673,7 +2689,7 @@ fn boundary_entity(
         type_code: 141,
         form: 0,
         label: "BOUNDARY",
-        status: PHYSICALLY_DEPENDENT_STATUS,
+        status: EntityStatus::PhysicallyDependent,
         parameters: parameters.into_bytes(),
         transform: None,
     })
@@ -2763,7 +2779,7 @@ fn curve_on_surface_entity(
                     geometry: &geometry,
                     span: Some(&span),
                     sense: coedge.sense,
-                    status: PHYSICALLY_DEPENDENT_STATUS,
+                    status: EntityStatus::PhysicallyDependent,
                     reference_offset: 0,
                 },
             )?
@@ -2797,19 +2813,24 @@ fn curve_on_surface_entity(
             entities,
             &model_children,
             "MODEL",
-            PHYSICALLY_DEPENDENT_STATUS,
+            EntityStatus::PhysicallyDependent,
         )?
     };
     let parameter_curve = if pcurve_children.len() == 1 {
         pcurve_children[0]
     } else {
-        push_composite_entity(entities, &pcurve_children, "PCURVE", PARAMETER_CURVE_STATUS)?
+        push_composite_entity(
+            entities,
+            &pcurve_children,
+            "PCURVE",
+            EntityStatus::ParameterCurve,
+        )?
     };
     Ok(Entity {
         type_code: 142,
         form: 0,
         label: "CURVSURF",
-        status: PHYSICALLY_DEPENDENT_STATUS,
+        status: EntityStatus::PhysicallyDependent,
         parameters: format!(
             "142,{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE};",
             reference_marker(surface_index),
@@ -2825,7 +2846,7 @@ fn push_composite_entity(
     entities: &mut Vec<Entity>,
     children: &[usize],
     label: &'static str,
-    status: &'static str,
+    status: EntityStatus,
 ) -> Result<usize, CodecError> {
     push_composite_entity_with_reference_offset(entities, children, label, status, 0)
 }
@@ -2834,7 +2855,7 @@ fn push_composite_entity_with_reference_offset(
     entities: &mut Vec<Entity>,
     children: &[usize],
     label: &'static str,
-    status: &'static str,
+    status: EntityStatus,
     reference_offset: usize,
 ) -> Result<usize, CodecError> {
     let children = flatten_composite_children(entities, children)?;
@@ -2962,7 +2983,7 @@ fn oriented_curve_entity(
 ) -> Result<Entity, CodecError> {
     if sense == Sense::Forward {
         let mut entity = curve_entity(geometry, Some(span), version)?;
-        entity.status = PHYSICALLY_DEPENDENT_STATUS;
+        entity.status = EntityStatus::PhysicallyDependent;
         return Ok(entity);
     }
     let reversed_span = CurveSpan {
@@ -3131,7 +3152,7 @@ fn oriented_curve_entity(
             )))
         }
     };
-    entity.status = PHYSICALLY_DEPENDENT_STATUS;
+    entity.status = EntityStatus::PhysicallyDependent;
     Ok(entity)
 }
 
@@ -4205,10 +4226,10 @@ fn construction_carrier_interval(
 }
 
 fn point_entity(position: Point3) -> Entity {
-    point_entity_with_status(position, "00000000")
+    point_entity_with_status(position, EntityStatus::Independent)
 }
 
-fn point_entity_with_status(position: Point3, status: &'static str) -> Entity {
+fn point_entity_with_status(position: Point3, status: EntityStatus) -> Entity {
     Entity {
         type_code: 116,
         form: 0,
@@ -4231,7 +4252,7 @@ fn direction_entity(direction: Vector3) -> Result<Entity, CodecError> {
         type_code: 123,
         form: 0,
         label: "DIRECTN",
-        status: PHYSICALLY_DEPENDENT_STATUS,
+        status: EntityStatus::PhysicallyDependent,
         parameters: format!(
             "123,{},{},{};",
             number(direction.x),
@@ -4264,7 +4285,7 @@ fn pointer_surface_support(
         .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
     Ok((
         vec![
-            point_entity_with_status(location, PHYSICALLY_DEPENDENT_STATUS),
+            point_entity_with_status(location, EntityStatus::PhysicallyDependent),
             direction_entity(axis)?,
             direction_entity(reference)?,
         ],
@@ -4483,7 +4504,7 @@ fn extrusion_surface_entities(
             geometry: &geometry,
             span: Some(&directrix_span),
             sense: Sense::Forward,
-            status: PHYSICALLY_DEPENDENT_STATUS,
+            status: EntityStatus::PhysicallyDependent,
             reference_offset: base_index,
         },
     )?;
@@ -4494,7 +4515,7 @@ fn extrusion_surface_entities(
         type_code: 122,
         form: 0,
         label: "TABULATE",
-        status: "00000000",
+        status: EntityStatus::Independent,
         parameters: format!(
             "122,{},{},{},{};",
             reference_marker(directrix_index),
@@ -4627,7 +4648,7 @@ fn revolution_surface_entities(
             type_code: 120,
             form: 0,
             label: "REVOLVE",
-            status: "00000000",
+            status: EntityStatus::Independent,
             parameters: format!(
                 "120,{},{},{},{};",
                 reference_marker(base_index),
@@ -4665,7 +4686,7 @@ fn surface_entities(
                     type_code: 108,
                     form: 0,
                     label: "PLANE",
-                    status: "00000000",
+                    status: EntityStatus::Independent,
                     parameters: b"108,0,0,1,0,0,0,0,0,0;".to_vec(),
                     transform: Some(placement(*origin, u_axis, v_axis, normal)?),
                 }]);
@@ -4678,7 +4699,7 @@ fn surface_entities(
                 })?,
                 form: 1,
                 label: "PLANE",
-                status: PHYSICALLY_DEPENDENT_STATUS,
+                status: EntityStatus::PhysicallyDependent,
                 parameters: format!(
                     "190,{},{},{};",
                     reference_marker(location),
@@ -4710,7 +4731,7 @@ fn surface_entities(
                 })?,
                 form: 1,
                 label: "CYLINDER",
-                status: "00000000",
+                status: EntityStatus::Independent,
                 parameters: format!(
                     "192,{},{},{},{};",
                     reference_marker(location),
@@ -4758,7 +4779,7 @@ fn surface_entities(
                 })?,
                 form: 1,
                 label: "CONE",
-                status: "00000000",
+                status: EntityStatus::Independent,
                 parameters: format!(
                     "194,{},{},{},{},{};",
                     reference_marker(location),
@@ -4792,7 +4813,7 @@ fn surface_entities(
                 })?,
                 form: 1,
                 label: "SPHERE",
-                status: "00000000",
+                status: EntityStatus::Independent,
                 parameters: format!(
                     "196,{},{},{},{};",
                     reference_marker(location),
@@ -4830,7 +4851,7 @@ fn surface_entities(
                 })?,
                 form: 1,
                 label: "TORUS",
-                status: "00000000",
+                status: EntityStatus::Independent,
                 parameters: format!(
                     "198,{},{},{},{},{};",
                     reference_marker(location),
@@ -4944,7 +4965,7 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
         type_code: 128,
         form: 0,
         label: "NURBS",
-        status: "00000000",
+        status: EntityStatus::Independent,
         parameters: parameters.into_bytes(),
         transform: None,
     })
@@ -5027,7 +5048,7 @@ struct CurveEntityRequest<'a> {
     geometry: &'a CurveGeometry,
     span: Option<&'a CurveSpan>,
     sense: Sense,
-    status: &'static str,
+    status: EntityStatus,
     reference_offset: usize,
 }
 
@@ -5075,7 +5096,7 @@ impl CurveEntityEmitter<'_> {
         geometry: &CurveGeometry,
         span: Option<&CurveSpan>,
         sense: Sense,
-        status: &'static str,
+        status: EntityStatus,
     ) -> Result<usize, CodecError> {
         if !self.active.insert(curve_id.clone()) {
             return Err(CodecError::malformed(format_args!(
@@ -5175,7 +5196,7 @@ impl CurveEntityEmitter<'_> {
                     &child_geometry,
                     Some(&child_span),
                     child_sense,
-                    PHYSICALLY_DEPENDENT_STATUS,
+                    EntityStatus::PhysicallyDependent,
                 )?);
             }
         }
@@ -5536,7 +5557,7 @@ fn curve_entity(
                 type_code: 110,
                 form: 0,
                 label: "LINE",
-                status: "00000000",
+                status: EntityStatus::Independent,
                 parameters: format!(
                     "110,{},{},{},{},{},{};",
                     number(span.start.x),
@@ -5574,7 +5595,7 @@ fn curve_entity(
                 type_code: 100,
                 form: 0,
                 label: "ARC",
-                status: "00000000",
+                status: EntityStatus::Independent,
                 parameters: format!(
                     "100,0,0,0,{},{},{},{};",
                     number(start_xy[0]),
@@ -5619,7 +5640,7 @@ fn curve_entity(
                 type_code: 104,
                 form,
                 label: "CONIC",
-                status: "00000000",
+                status: EntityStatus::Independent,
                 parameters: format!(
                     "104,{},0,{},0,0,-1,0,{},{},{},{};",
                     number(1.0 / (major_radius * major_radius)),
@@ -5652,7 +5673,7 @@ fn curve_entity(
                 type_code: 104,
                 form: 3,
                 label: "CONIC",
-                status: "00000000",
+                status: EntityStatus::Independent,
                 parameters: format!(
                     "104,1,0,0,0,{},0,0,{},{},{},{};",
                     number(-4.0 * focal_distance),
@@ -5690,7 +5711,7 @@ fn curve_entity(
                 type_code: 104,
                 form: 2,
                 label: "CONIC",
-                status: "00000000",
+                status: EntityStatus::Independent,
                 parameters: format!(
                     "104,{},0,{},0,0,-1,0,{},{},{},{};",
                     number(1.0 / (major_radius * major_radius)),
@@ -5813,9 +5834,9 @@ fn encode_nurbs(
     }
     parameters.push(';');
     let status = if label == "PCURVE" {
-        PARAMETER_CURVE_STATUS
+        EntityStatus::ParameterCurve
     } else {
-        "00000000"
+        EntityStatus::Independent
     };
     Ok(Entity {
         type_code: 126,
@@ -6175,7 +6196,7 @@ struct Entity {
     type_code: u32,
     form: i64,
     label: &'static str,
-    status: &'static str,
+    status: EntityStatus,
     parameters: Vec<u8>,
     transform: Option<Placement>,
 }
@@ -6210,7 +6231,7 @@ fn encode_file(
                     type_code: 124,
                     form: 0,
                     label: "XFORM",
-                    status: "00000000",
+                    status: EntityStatus::Independent,
                     parameters: format!("124,{transform_parameters};").into_bytes(),
                     transform: None,
                 },
@@ -6252,7 +6273,7 @@ fn encode_file(
                 "0".into(),
                 transform_sequence.to_string(),
                 "0".into(),
-                entity.status.into(),
+                entity.status.as_field().into(),
             ],
             directory_sequence,
         )?);
