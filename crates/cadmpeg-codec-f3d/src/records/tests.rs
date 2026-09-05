@@ -469,3 +469,26 @@ fn segment_base_guid_preserves_source_and_authored_wire() {
     let error = serde_json::from_str::<super::SegmentType>(&wire).expect_err("orphan base GUID offset").to_string();
     assert!(error.contains("base_type_guid_offset"));
 }
+
+#[test]
+fn parameter_unit_preserves_source_and_authored_wire() {
+    let prefix = r#"{"id":"parameter","byte_offset":0,"class_tag":"123","record_index":1,"source_ordinal":0,"owner_record_index":2,"expression":"1","expression_offset":40,"source_kind":"Distance","source_kind_offset":60,"kind":"feature""#;
+    let suffix = r#","name":"d1","name_offset":80,"evaluated_value":1.0,"evaluated_value_offset":90}"#;
+    for value in ["\"\"", "\"mm\""] {
+        for offset in [None, Some(0), Some(70)] {
+            let mut wire = format!("{prefix},\"unit\":{value}");
+            if let Some(offset) = offset {
+                wire.push_str(&format!(",\"unit_offset\":{offset}"));
+            }
+            wire.push_str(suffix);
+            let parsed: super::DesignParameter = serde_json::from_str(&wire).expect("parameter unit");
+            assert_eq!(serde_json::to_string(&parsed).expect("parameter wire"), wire);
+        }
+    }
+    let wire = format!("{prefix}{suffix}");
+    let parsed: super::DesignParameter = serde_json::from_str(&wire).expect("dimensionless parameter");
+    assert_eq!(serde_json::to_string(&parsed).expect("parameter wire"), wire);
+    let wire = format!("{prefix},\"unit_offset\":70{suffix}");
+    let error = serde_json::from_str::<super::DesignParameter>(&wire).expect_err("orphan unit offset").to_string();
+    assert!(error.contains("unit_offset"));
+}

@@ -430,10 +430,7 @@ pub struct DesignParameter {
     pub source_kind_offset: u64,
     /// Declared unit token; absent for dimensionless and Boolean parameters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unit: Option<String>,
-    /// Byte offset of the unit's UTF-16LE code units.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unit_offset: Option<u64>,
+    pub unit: Option<RecordedValue<String>>,
     /// Source parameter name or dimension identifier.
     pub name: String,
     /// Byte offset of the name's UTF-16LE code units.
@@ -525,8 +522,7 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
             expression_offset: wire.expression_offset,
             source_kind: wire.source_kind,
             source_kind_offset: wire.source_kind_offset,
-            unit: wire.unit,
-            unit_offset: wire.unit_offset,
+            unit: RecordedValue::from_wire(wire.unit, wire.unit_offset, "unit")?,
             name: wire.name,
             name_offset: wire.name_offset,
             evaluated_value: wire.evaluated_value,
@@ -553,8 +549,8 @@ impl From<DesignParameter> for DesignParameterSerde {
             source_kind: parameter.source_kind,
             source_kind_offset: parameter.source_kind_offset,
             kind,
-            unit: parameter.unit,
-            unit_offset: parameter.unit_offset,
+            unit_offset: parameter.unit.as_ref().and_then(|field| field.offset),
+            unit: parameter.unit.map(|field| field.value),
             name: parameter.name,
             name_offset: parameter.name_offset,
             evaluated_value: parameter.evaluated_value,

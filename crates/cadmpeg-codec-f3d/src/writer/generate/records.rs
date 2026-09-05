@@ -429,7 +429,7 @@ fn encode_document_parameter(
     native_lp_utf16(out, &parameter.source_kind)?;
     out.extend_from_slice(&0u32.to_le_bytes());
     if let Some(unit) = &parameter.unit {
-        native_lp_utf16(out, unit)?;
+        native_lp_utf16(out, &unit.value)?;
     } else {
         out.extend_from_slice(&0u32.to_le_bytes());
     }

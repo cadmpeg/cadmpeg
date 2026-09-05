@@ -1511,7 +1511,7 @@ pub fn project_parameter_design_with_edge_identities(
             if let (Some(owner_record_index), None) = (parameter.owner_record_index(), owner) {
                 properties.insert("owner_record_index".into(), owner_record_index.to_string());
             }
-            let value = match parameter.unit.as_deref() {
+            let value = match parameter.unit.as_ref().map(|field| field.value.as_str()) {
                 Some(unit) if design_length_unit(unit) => Some(ParameterValue::Length(Length(
                     parameter.evaluated_value * 10.0,
                 ))),
@@ -5066,7 +5066,7 @@ fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignPa
 }
 
 pub(crate) fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Length> {
-    (parameter.unit.as_deref().is_some_and(design_length_unit)
+    (parameter.unit.as_ref().map(|field| field.value.as_str()).is_some_and(design_length_unit)
         && parameter.evaluated_value.is_finite())
     .then_some(cadmpeg_ir::features::Length(
         parameter.evaluated_value * 10.0,
@@ -5082,7 +5082,7 @@ pub(crate) fn design_angle_unit(unit: &str) -> bool {
 }
 
 pub(crate) fn design_dimension_unit(parameter: &DesignParameter) -> bool {
-    let unit = parameter.unit.as_deref();
+    let unit = parameter.unit.as_ref().map(|field| field.value.as_str());
     if parameter.source_kind.starts_with("Linear Dimension")
         || parameter.source_kind.starts_with("Radius Dimension")
         || parameter.source_kind.starts_with("Radial Dimension")
@@ -5261,8 +5261,7 @@ pub(crate) fn untyped_parameter_unit_count(parameters: &[DesignParameter]) -> us
         .iter()
         .filter(|parameter| {
             parameter
-                .unit
-                .as_deref()
+                .unit.as_ref().map(|field| field.value.as_str())
                 .is_some_and(|unit| !design_length_unit(unit) && !design_angle_unit(unit))
         })
         .count()

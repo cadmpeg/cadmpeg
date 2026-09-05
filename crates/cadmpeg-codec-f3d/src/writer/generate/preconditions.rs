@@ -593,7 +593,7 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         }
         if parameter.expression.is_empty()
             || parameter.name.is_empty()
-            || parameter.unit.as_ref().is_some_and(String::is_empty)
+            || parameter.unit.as_ref().is_some_and(|field| field.value.is_empty())
             || !parameter.evaluated_value.is_finite()
         {
             return Err(CodecError::InvalidInput(format!(

@@ -1057,8 +1057,7 @@ mod tests {
             source_kind: "R-Pattern1-distance".into(),
             source_kind_offset: 0,
 
-            unit: Some("mm".into()),
-            unit_offset: Some(0),
+            unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
             name: format!("d{record_index}"),
             name_offset: 0,
             evaluated_value: value,

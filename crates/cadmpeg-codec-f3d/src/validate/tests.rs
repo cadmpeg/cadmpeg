@@ -824,8 +824,7 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
         source_kind: "User Parameter".into(),
         source_kind_offset: 166,
 
-        unit: Some("mm".into()),
-        unit_offset: Some(210),
+        unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(210) }),
         name: "Width".into(),
         name_offset: 220,
         evaluated_value: 6.0,
@@ -893,8 +892,7 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         source_kind: "Feature Input".into(),
         source_kind_offset: 1_100,
 
-        unit: Some("cm".into()),
-        unit_offset: Some(1_120),
+        unit: Some(crate::records::RecordedValue { value: "cm".into(), offset: Some(1_120) }),
         name: "Length".into(),
         name_offset: 1_130,
         evaluated_value: 6.0,
@@ -944,7 +942,6 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         source_kind_offset: 1_470,
 
         unit: None,
-        unit_offset: None,
         name: "OffsetX".into(),
         name_offset: 1_490,
         evaluated_value: 0.0,
