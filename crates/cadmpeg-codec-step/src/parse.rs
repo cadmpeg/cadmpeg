@@ -1220,10 +1220,7 @@ impl Parser<'_, '_, '_> {
                     value.shrink_to_fit();
                     Value::String(value)
                 }
-                TokenKind::Binary(mut value) => {
-                    value.data.shrink_to_fit();
-                    Value::Binary(value)
-                }
+                TokenKind::Binary(value) => Value::Binary(value),
                 TokenKind::Resource(mut value) => {
                     value.shrink_to_fit();
                     Value::Resource(value)
@@ -1400,7 +1397,7 @@ fn value_node_storage_bytes(value: &Value) -> u64 {
         | Value::Enumeration(value)
         | Value::Resource(value) => value.capacity(),
         Value::String(value) => value.capacity(),
-        Value::Binary(value) => value.data.len(),
+        Value::Binary(value) => value.data().len(),
         Value::List(values) => values.capacity().saturating_mul(size_of::<Value>()),
         Value::Typed(name, _) => name.capacity().saturating_add(size_of::<Value>()),
         Value::Reference(_)

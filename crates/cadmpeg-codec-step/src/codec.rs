@@ -118,8 +118,11 @@ fn inspect_exchange(
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
     let (mut exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
-    let (decoded, opaque_offsets) =
-        reader::analyze_exchange(bytes, &mut exchange, &diagnostics, ctx)?;
+    let reader::AnalyzedExchange {
+        decoded,
+        matched,
+        opaque_offsets,
+    } = reader::analyze_exchange(bytes, &mut exchange, &diagnostics, ctx)?;
     let mut entries = vec![ContainerEntry {
         name: "HEADER".into(),
         role: "metadata".into(),
@@ -236,13 +239,6 @@ fn inspect_exchange(
     } else {
         identifiers.join(",")
     };
-    let matched = decoded
-        .ir
-        .source
-        .as_ref()
-        .and_then(cadmpeg_ir::SourceMeta::dialect)
-        .cloned()
-        .expect("the STEP decode session always authors classified source metadata");
     let dialect = matched.dialect();
     let mut notes = vec![format!("schema {schema}; dialect {dialect}")];
     notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));

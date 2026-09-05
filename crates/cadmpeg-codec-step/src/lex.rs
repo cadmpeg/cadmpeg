@@ -67,10 +67,19 @@ pub enum TokenKind {
 /// Binary literal payload packed most-significant nibble first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BinaryValue {
-    /// Number of significant payload bits.
-    pub bit_len: usize,
-    /// Packed bytes; unused low-order bits in the final byte are zero.
-    pub data: Vec<u8>,
+    /// Unused low-order bits in the final byte, including nibble padding.
+    unused_bits: u8,
+    data: Box<[u8]>,
+}
+
+impl BinaryValue {
+    pub fn bit_len(&self) -> usize {
+        self.data.len() * 8 - usize::from(self.unused_bits)
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
 }
 
 /// Lexical failure with a stable byte position.
@@ -664,9 +673,12 @@ impl<'a> Lexer<'a> {
         for chunk in nibbles.chunks(2) {
             data.push((chunk[0] << 4) | chunk.get(1).copied().unwrap_or(0));
         }
-        let bit_len = digits.len() * 4 - usize::from(unused_bits);
+        let unused_bits = unused_bits + if digits.len() % 2 == 1 { 4 } else { 0 };
         self.at += 1;
-        Ok(TokenKind::Binary(BinaryValue { bit_len, data }))
+        Ok(TokenKind::Binary(BinaryValue {
+            unused_bits,
+            data: data.into_boxed_slice(),
+        }))
     }
 
     fn resource(&mut self) -> Result<TokenKind, LexError> {
