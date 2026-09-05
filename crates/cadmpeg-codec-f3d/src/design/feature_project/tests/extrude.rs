@@ -204,7 +204,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
         visibility: None,
         byte_offset: 600,
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         record_index: 200,
         frame_length: 329,
         transform: [
@@ -214,7 +214,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             [0.0, 0.0, 0.0, 1.0],
         ],
         transform_offset: Some(655),
-        paired_class_tag: "260".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
         paired_byte_offset: 929,
     };
     let along = parameter("AlongDistance", "mm", 0.55);

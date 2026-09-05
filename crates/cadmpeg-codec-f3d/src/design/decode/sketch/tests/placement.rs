@@ -179,7 +179,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
 
         visibility: None,
         byte_offset: 0,
-        class_tag: "293".into(),
+        class_tag: crate::records::DesignClassTag::try_from("293".to_owned()).unwrap(),
         record_index: 11,
         frame_length,
         transform: [
@@ -189,7 +189,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
             [0.0, 0.0, 0.0, 1.0],
         ],
         transform_offset: Some(66),
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 341,
     };
     let point = SketchPoint {

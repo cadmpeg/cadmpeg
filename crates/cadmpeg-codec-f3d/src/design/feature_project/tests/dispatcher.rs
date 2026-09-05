@@ -617,12 +617,12 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
 
         visibility: None,
         byte_offset: 0,
-        class_tag: "264".into(),
+        class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
         record_index: 700,
         frame_length: 0,
         transform: identity_matrix(),
         transform_offset: None,
-        paired_class_tag: "264".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
         paired_byte_offset: 0,
         member_run_head: false,
     };

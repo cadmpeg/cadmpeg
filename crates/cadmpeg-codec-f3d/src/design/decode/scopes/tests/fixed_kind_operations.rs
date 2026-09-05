@@ -611,7 +611,7 @@ pub(super) fn continue_fixed_kind_operations(
 
         visibility: None,
         byte_offset: 0,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 904,
         frame_length: 201,
         transform: [
@@ -621,7 +621,7 @@ pub(super) fn continue_fixed_kind_operations(
             [0.0, 0.0, 0.0, 1.0],
         ],
         transform_offset: Some(0),
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let axis_curve = SketchCurveIdentity {
