@@ -20,6 +20,8 @@ const NO_STREAM: u32 = 0xffff_ffff;
 const V3_MAX_FILE_SIZE: u64 = 0x8000_0000;
 const RANGE_LOCK_START: u64 = 0x7fff_ff00;
 const RANGE_LOCK_END: u64 = 0x8000_0000;
+const MINI_SECTOR_SIZE: usize = 64;
+const MINI_STREAM_CUTOFF: u64 = 4096;
 
 static NEXT_COMPOUND_SNAPSHOT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -192,8 +194,6 @@ struct DirectoryEntry {
 struct CompoundState {
     major_version: u16,
     sector_size: usize,
-    mini_sector_size: usize,
-    mini_stream_cutoff: u64,
     sector_count: usize,
     fat: Vec<u32>,
     mini_fat: Vec<u32>,
@@ -421,7 +421,7 @@ impl<'a> CompoundSnapshot<'a> {
             };
             let width = match stream.allocation {
                 CompoundAllocation::Regular => self.parsed.sector_size,
-                CompoundAllocation::Mini => self.parsed.mini_sector_size,
+                CompoundAllocation::Mini => MINI_SECTOR_SIZE,
             };
             let mut remaining = stream.logical_size;
             for &sector in &stream.chain {
@@ -493,18 +493,17 @@ impl<'a> CompoundSnapshot<'a> {
                     SpanRole::CfbEntryPadding(entry.clone()),
                 );
             } else if let Some(root_ordinal) = root_sectors.get(&sector) {
-                for mini_ordinal in 0..sector_length.div_ceil(self.parsed.mini_sector_size) {
+                for mini_ordinal in 0..sector_length.div_ceil(MINI_SECTOR_SIZE) {
                     let logical_mini = root_ordinal
-                        .checked_mul(self.parsed.sector_size / self.parsed.mini_sector_size)
+                        .checked_mul(self.parsed.sector_size / MINI_SECTOR_SIZE)
                         .and_then(|base| base.checked_add(mini_ordinal))
                         .ok_or_else(|| {
                             CodecError::Malformed("CFB mini-sector id overflow".into())
                         })?;
-                    let mini_offset = mini_ordinal * self.parsed.mini_sector_size;
-                    let mini_length =
-                        (sector_length - mini_offset).min(self.parsed.mini_sector_size);
+                    let mini_offset = mini_ordinal * MINI_SECTOR_SIZE;
+                    let mini_length = (sector_length - mini_offset).min(MINI_SECTOR_SIZE);
                     let mini_start = start + mini_offset as u64;
-                    let root_offset = (logical_mini * self.parsed.mini_sector_size) as u64;
+                    let root_offset = (logical_mini * MINI_SECTOR_SIZE) as u64;
                     let mapped = root_size
                         .saturating_sub(root_offset)
                         .min(mini_length as u64) as usize;
@@ -579,7 +578,7 @@ impl<'a> CompoundSnapshot<'a> {
     fn mini_sector_view(&self, mini_sector: u32) -> Result<View<'a>, CodecError> {
         let offset = usize::try_from(mini_sector)
             .ok()
-            .and_then(|id| id.checked_mul(self.parsed.mini_sector_size))
+            .and_then(|id| id.checked_mul(MINI_SECTOR_SIZE))
             .ok_or_else(|| CodecError::Malformed("CFB mini-sector offset overflow".into()))?;
         let regular_ordinal = offset / self.parsed.sector_size;
         let within = offset % self.parsed.sector_size;
@@ -594,7 +593,7 @@ impl<'a> CompoundSnapshot<'a> {
         sector
             .child(
                 sector.start() + within,
-                sector.start() + within + self.parsed.mini_sector_size,
+                sector.start() + within + MINI_SECTOR_SIZE,
             )
             .ok_or_else(|| {
                 CodecError::Malformed("CFB mini sector crosses a regular-sector boundary".into())
@@ -660,7 +659,7 @@ impl CompoundState {
             .map_err(|_| CodecError::Malformed("CFB DIFAT count does not fit memory".into()))?;
         if (major_version == 3 && directory_sector_count != 0)
             || (major_version == 4 && directory_sector_count == 0)
-            || mini_stream_cutoff != 4096
+            || mini_stream_cutoff != MINI_STREAM_CUTOFF
             || fat_count == 0
             || fat_count > sector_count
             || difat_count > sector_count
@@ -864,8 +863,6 @@ impl CompoundState {
         Ok(Self {
             major_version,
             sector_size,
-            mini_sector_size: 64,
-            mini_stream_cutoff,
             sector_count,
             fat,
             mini_fat,
@@ -964,14 +961,14 @@ impl CompoundState {
                     self.walk_tree(ctx, entry.child, &path, reached, output)?;
                 }
                 2 => {
-                    let allocation = if entry.size < self.mini_stream_cutoff {
+                    let allocation = if entry.size < MINI_STREAM_CUTOFF {
                         CompoundAllocation::Mini
                     } else {
                         CompoundAllocation::Regular
                     };
                     let sector_size = match allocation {
                         CompoundAllocation::Regular => self.sector_size,
-                        CompoundAllocation::Mini => self.mini_sector_size,
+                        CompoundAllocation::Mini => MINI_SECTOR_SIZE,
                     };
                     let expected = usize::try_from(entry.size)
                         .map_err(|_| {
@@ -1046,7 +1043,7 @@ impl CompoundState {
             .map_err(|_| {
                 CodecError::Malformed("CFB root mini-stream size does not fit memory".into())
             })?
-            .div_ceil(self.mini_sector_size);
+            .div_ceil(MINI_SECTOR_SIZE);
         for entry in entries {
             if let CompoundEntry::Stream(stream) = entry {
                 let target = if stream.allocation == CompoundAllocation::Regular {
@@ -1056,12 +1053,12 @@ impl CompoundState {
                 };
                 let mut remaining = stream.logical_size;
                 for &sector in &stream.chain {
-                    let payload = remaining.min(self.mini_sector_size as u64);
+                    let payload = remaining.min(MINI_SECTOR_SIZE as u64);
                     remaining = remaining.saturating_sub(payload);
                     if stream.allocation == CompoundAllocation::Mini
                         && (sector as usize >= mini_capacity
                             || u64::from(sector)
-                                .saturating_mul(self.mini_sector_size as u64)
+                                .saturating_mul(MINI_SECTOR_SIZE as u64)
                                 .saturating_add(payload)
                                 > self.directory[0].size)
                     {
