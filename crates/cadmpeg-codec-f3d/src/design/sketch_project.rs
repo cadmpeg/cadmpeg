@@ -313,17 +313,18 @@ pub fn project_sketch_design(
                     // The record's `0` does not scale glyph advance to zero, so it
                     // is not a neutral horizontal scale of zero; only a positive
                     // factor carries one.
-                    width_factor: text.width_factor.filter(|factor| *factor > 0.0),
-                    placement: text.anchor.zip(text.rotation).map(|(anchor, rotation)| {
-                        cadmpeg_ir::sketches::TextPlacement {
+                    width_factor: text.width_factor().filter(|factor| *factor > 0.0),
+                    placement: text
+                        .anchor()
+                        .zip(text.rotation())
+                        .map(|(anchor, rotation)| cadmpeg_ir::sketches::TextPlacement {
                             anchor,
                             rotation: cadmpeg_ir::features::Angle(rotation),
-                        }
-                    }),
+                        }),
                     horizontal_alignment: sketch_text_horizontal_alignment(
-                        text.horizontal_alignment,
+                        text.horizontal_alignment(),
                     ),
-                    vertical_alignment: sketch_text_vertical_alignment(text.vertical_alignment),
+                    vertical_alignment: sketch_text_vertical_alignment(text.vertical_alignment()),
                 },
             )
             .with_native_ref(Some(text.id.clone())),

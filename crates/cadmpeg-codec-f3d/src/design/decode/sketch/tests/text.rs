@@ -22,9 +22,9 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
         assert_eq!(text.font_family, "Arial");
         assert_eq!(text.font_weight, 400);
         assert_eq!(text.height, 6.0);
-        assert_eq!(text.width_factor, Some(1.0));
-        assert_eq!(text.horizontal_alignment, Some(3));
-        assert_eq!(text.vertical_alignment, Some(3));
+        assert_eq!(text.width_factor(), Some(1.0));
+        assert_eq!(text.horizontal_alignment(), Some(3));
+        assert_eq!(text.vertical_alignment(), Some(3));
         assert_eq!(
             text.color,
             cadmpeg_ir::topology::Color {
@@ -34,10 +34,10 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
                 a: 1.0,
             }
         );
-        assert_eq!(text.anchor, None);
-        assert_eq!(text.rotation, None);
-        assert_eq!(text.first_reference, Some(319));
-        assert_eq!(text.second_reference, Some(322));
+        assert_eq!(text.anchor(), None);
+        assert_eq!(text.rotation(), None);
+        assert_eq!(text.first_reference(), Some(319));
+        assert_eq!(text.second_reference(), Some(322));
         assert_eq!(text.raw_bytes, bytes);
     }
 }
@@ -347,9 +347,9 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
     // The height is the field after the font family, in centimetres; the width
     // factor is the field before it.
     assert_eq!(text.height, 10.0);
-    assert_eq!(text.width_factor, Some(0.8));
-    assert_eq!(text.horizontal_alignment, Some(3));
-    assert_eq!(text.vertical_alignment, Some(3));
+    assert_eq!(text.width_factor(), Some(0.8));
+    assert_eq!(text.horizontal_alignment(), Some(3));
+    assert_eq!(text.vertical_alignment(), Some(3));
     // The four f32 after the width factor are red, green, blue, and alpha in
     // that order.
     assert_eq!(
@@ -361,8 +361,8 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
             a: 1.0,
         }
     );
-    assert_eq!(text.first_reference, Some(307));
-    assert_eq!(text.second_reference, Some(310));
+    assert_eq!(text.first_reference(), Some(307));
+    assert_eq!(text.second_reference(), Some(310));
 }
 
 #[test]
@@ -391,10 +391,10 @@ fn sketch_text_record_decodes_without_the_optional_property_keys() {
     assert_eq!(text.entity_genesis, None);
     assert_eq!(text.base_id, None);
     assert_eq!(text.persistent_id, Some(109));
-    assert_eq!(text.first_reference, None);
-    assert_eq!(text.second_reference, None);
+    assert_eq!(text.first_reference(), None);
+    assert_eq!(text.second_reference(), None);
     assert_eq!(text.height, 10.0);
-    assert_eq!(text.width_factor, Some(0.8));
+    assert_eq!(text.width_factor(), Some(0.8));
 }
 
 #[test]
@@ -411,10 +411,10 @@ fn frame_sketch_text_record_takes_its_anchor_and_rotation_from_the_transform() {
     // The anchor is the transform's last column in centimetres and the
     // rotation is the angle of its first basis column.
     assert_eq!(
-        text.anchor,
+        text.anchor(),
         Some(cadmpeg_ir::math::Point2::new(21.75, -5.0))
     );
-    assert!((text.rotation.expect("rotation") - rotation).abs() < 1.0e-12);
+    assert!((text.rotation().expect("rotation") - rotation).abs() < 1.0e-12);
     // Frame text stores 128 more bytes than path text.
     assert_eq!(
         text.raw_bytes.len(),
@@ -436,8 +436,8 @@ fn path_sketch_text_record_stores_neither_anchor_nor_rotation() {
         None,
     ))
     .expect("sketch text record");
-    assert_eq!(text.anchor, None);
-    assert_eq!(text.rotation, None);
+    assert_eq!(text.anchor(), None);
+    assert_eq!(text.rotation(), None);
 }
 
 #[test]
@@ -489,14 +489,17 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
     assert_eq!(text.text, "sketch text");
     assert_eq!(text.font_family, "Arial");
     assert_eq!(text.font_weight, 400);
-    assert_eq!(text.rotation, Some(0.0));
+    assert_eq!(text.rotation(), Some(0.0));
     assert_eq!(text.height, 5.0);
     // The form stores no width factor, and the anchor is the field pair the
     // other form omits.
-    assert_eq!(text.width_factor, None);
-    assert_eq!(text.horizontal_alignment, None);
-    assert_eq!(text.vertical_alignment, None);
-    assert_eq!(text.anchor, Some(cadmpeg_ir::math::Point2::new(2.5, -15.0)));
+    assert_eq!(text.width_factor(), None);
+    assert_eq!(text.horizontal_alignment(), None);
+    assert_eq!(text.vertical_alignment(), None);
+    assert_eq!(
+        text.anchor(),
+        Some(cadmpeg_ir::math::Point2::new(2.5, -15.0))
+    );
     // The colour closes the twenty-nine-byte run in the same component order
     // as the other form.
     assert_eq!(
@@ -508,8 +511,8 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
             a: 1.0,
         }
     );
-    assert_eq!(text.first_reference, None);
-    assert_eq!(text.second_reference, None);
+    assert_eq!(text.first_reference(), None);
+    assert_eq!(text.second_reference(), None);
 }
 
 #[test]
@@ -524,9 +527,9 @@ fn txt_tag_sketch_text_record_decodes_stored_rotation() {
         stored_rotation,
     ))
     .expect("rotated txt_tag");
-    assert_eq!(text.rotation, Some(stored_rotation));
+    assert_eq!(text.rotation(), Some(stored_rotation));
     assert_eq!(
-        text.anchor,
+        text.anchor(),
         Some(Point2::new(8.114_737_226_243_502, -14.340_080_595_768_365,))
     );
 }
@@ -541,7 +544,7 @@ fn txt_tag_sketch_text_record_decodes_an_empty_reference_run() {
     ))
     .expect("sketch text record");
     assert_eq!(text.base_id, Some(305));
-    assert_eq!(text.anchor, Some(cadmpeg_ir::math::Point2::new(0.0, 0.0)));
+    assert_eq!(text.anchor(), Some(cadmpeg_ir::math::Point2::new(0.0, 0.0)));
 }
 
 #[test]
@@ -579,7 +582,10 @@ fn a_txt_tag_sketch_text_record_below_the_identity_key_version_stores_no_identit
     assert_eq!(text.persistent_id, None);
     assert_eq!(text.base_id, Some(300));
     assert_eq!(text.text, "sketch text");
-    assert_eq!(text.anchor, Some(cadmpeg_ir::math::Point2::new(2.5, -15.0)));
+    assert_eq!(
+        text.anchor(),
+        Some(cadmpeg_ir::math::Point2::new(2.5, -15.0))
+    );
 }
 
 #[test]

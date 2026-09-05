@@ -8790,6 +8790,8 @@ pub struct SketchPatternDirection {
 /// One text entity in a Fusion sketch coordinate system.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "SketchTextSerde"))]
+#[serde(try_from = "SketchTextSerde", into = "SketchTextSerde")]
 pub struct SketchText {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -8822,49 +8824,231 @@ pub struct SketchText {
     pub font_weight: i32,
     /// Nominal text height in millimetres.
     pub height: f64,
-    /// Horizontal width factor stored ahead of the font-family name, absent in
-    /// the `txt_tag` identity form, which stores none. The field takes `0` and
-    /// `1`; a `0` does not scale glyph advance to zero, so what a `0` selects
-    /// is not established.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub width_factor: Option<f64>,
     /// Display colour of the glyphs. Both identity forms store it, so it is
     /// never absent. `SketchGeometry` carries no display attribute on any
     /// variant, so the colour stays on the native record.
     pub color: Color,
-    /// Text anchor point in the sketch frame in millimetres. The `txt_tag`
-    /// identity form stores it directly; the legacy `textex_tag` form stores
-    /// it as the last column of its placement transform. Indexed Design
-    /// `textex_tag` records carry no neutral anchor. Path text stores neither.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub anchor: Option<Point2>,
-    /// Rotation of the text about its anchor in radians. The `txt_tag` identity
-    /// form stores the angle directly after the property block. The legacy
-    /// frame form of `textex_tag` derives it from the placement transform's
-    /// 2×2 basis. Indexed Design `textex_tag` records carry no neutral
-    /// rotation; path text stores none.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rotation: Option<f64>,
-    /// Horizontal alignment enum carried by the `textex_tag` class. The
-    /// `txt_tag` class stores no alignment enum.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub horizontal_alignment: Option<u32>,
-    /// Vertical alignment enum carried by the `textex_tag` class. The
-    /// `txt_tag` class stores no alignment enum.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub vertical_alignment: Option<u32>,
-    /// Parameter record driving the height, absent when the record omits the
-    /// member or writes it null.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub first_reference: Option<u32>,
-    /// Parameter record driving the text content, absent when the record omits
-    /// the member or writes it null.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub second_reference: Option<u32>,
+    /// Identity-form layout: `txt_tag` placement or `textex_tag` width, alignment,
+    /// and parameter references.
+    pub layout: SketchTextLayout,
     /// Complete source record bytes for native replay and rewrite.
     #[serde(with = "cadmpeg_ir::bytes")]
     #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub raw_bytes: Vec<u8>,
+}
+
+/// `txt_tag` versus `textex_tag` member layout of one sketch-text record.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SketchTextLayout {
+    TxtTag {
+        anchor: Point2,
+        rotation: f64,
+    },
+    TextexTag {
+        width_factor: f64,
+        horizontal_alignment: Option<u32>,
+        vertical_alignment: Option<u32>,
+        first_reference: Option<u32>,
+        second_reference: Option<u32>,
+        anchor: Option<Point2>,
+        rotation: Option<f64>,
+    },
+}
+
+impl SketchText {
+    pub(crate) fn width_factor(&self) -> Option<f64> {
+        match self.layout {
+            SketchTextLayout::TxtTag { .. } => None,
+            SketchTextLayout::TextexTag { width_factor, .. } => Some(width_factor),
+        }
+    }
+
+    pub(crate) fn anchor(&self) -> Option<Point2> {
+        match self.layout {
+            SketchTextLayout::TxtTag { anchor, .. } => Some(anchor),
+            SketchTextLayout::TextexTag { anchor, .. } => anchor,
+        }
+    }
+
+    pub(crate) fn rotation(&self) -> Option<f64> {
+        match self.layout {
+            SketchTextLayout::TxtTag { rotation, .. } => Some(rotation),
+            SketchTextLayout::TextexTag { rotation, .. } => rotation,
+        }
+    }
+
+    pub(crate) fn horizontal_alignment(&self) -> Option<u32> {
+        match self.layout {
+            SketchTextLayout::TxtTag { .. } => None,
+            SketchTextLayout::TextexTag {
+                horizontal_alignment,
+                ..
+            } => horizontal_alignment,
+        }
+    }
+
+    pub(crate) fn vertical_alignment(&self) -> Option<u32> {
+        match self.layout {
+            SketchTextLayout::TxtTag { .. } => None,
+            SketchTextLayout::TextexTag {
+                vertical_alignment, ..
+            } => vertical_alignment,
+        }
+    }
+
+    pub(crate) fn first_reference(&self) -> Option<u32> {
+        match self.layout {
+            SketchTextLayout::TxtTag { .. } => None,
+            SketchTextLayout::TextexTag {
+                first_reference, ..
+            } => first_reference,
+        }
+    }
+
+    pub(crate) fn second_reference(&self) -> Option<u32> {
+        match self.layout {
+            SketchTextLayout::TxtTag { .. } => None,
+            SketchTextLayout::TextexTag {
+                second_reference, ..
+            } => second_reference,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchTextSerde {
+    id: String,
+    record_index: u32,
+    owner_reference: u32,
+    class_tag: String,
+    class_version: u32,
+    byte_offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    entity_genesis: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    persistent_id: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base_id: Option<u64>,
+    text: String,
+    font_family: String,
+    font_weight: i32,
+    height: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    width_factor: Option<f64>,
+    color: Color,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    anchor: Option<Point2>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rotation: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    horizontal_alignment: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    vertical_alignment: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    first_reference: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    second_reference: Option<u32>,
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
+    raw_bytes: Vec<u8>,
+}
+
+impl TryFrom<SketchTextSerde> for SketchText {
+    type Error = String;
+
+    fn try_from(wire: SketchTextSerde) -> Result<Self, Self::Error> {
+        let layout = match (
+            wire.width_factor,
+            wire.horizontal_alignment,
+            wire.vertical_alignment,
+            wire.first_reference,
+            wire.second_reference,
+            wire.anchor,
+            wire.rotation,
+        ) {
+            (None, None, None, None, None, Some(anchor), Some(rotation)) => {
+                SketchTextLayout::TxtTag { anchor, rotation }
+            }
+            (
+                Some(width_factor),
+                horizontal_alignment,
+                vertical_alignment,
+                first_reference,
+                second_reference,
+                anchor,
+                rotation,
+            ) => SketchTextLayout::TextexTag {
+                width_factor,
+                horizontal_alignment,
+                vertical_alignment,
+                first_reference,
+                second_reference,
+                anchor,
+                rotation,
+            },
+            _ => {
+                return Err(
+                    "sketch text layout disagrees with width_factor, alignment, and placement"
+                        .into(),
+                );
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            record_index: wire.record_index,
+            owner_reference: wire.owner_reference,
+            class_tag: wire.class_tag,
+            class_version: wire.class_version,
+            byte_offset: wire.byte_offset,
+            entity_genesis: wire.entity_genesis,
+            persistent_id: wire.persistent_id,
+            base_id: wire.base_id,
+            text: wire.text,
+            font_family: wire.font_family,
+            font_weight: wire.font_weight,
+            height: wire.height,
+            color: wire.color,
+            layout,
+            raw_bytes: wire.raw_bytes,
+        })
+    }
+}
+
+impl From<SketchText> for SketchTextSerde {
+    fn from(text: SketchText) -> Self {
+        let width_factor = text.width_factor();
+        let anchor = text.anchor();
+        let rotation = text.rotation();
+        let horizontal_alignment = text.horizontal_alignment();
+        let vertical_alignment = text.vertical_alignment();
+        let first_reference = text.first_reference();
+        let second_reference = text.second_reference();
+        Self {
+            id: text.id,
+            record_index: text.record_index,
+            owner_reference: text.owner_reference,
+            class_tag: text.class_tag,
+            class_version: text.class_version,
+            byte_offset: text.byte_offset,
+            entity_genesis: text.entity_genesis,
+            persistent_id: text.persistent_id,
+            base_id: text.base_id,
+            text: text.text,
+            font_family: text.font_family,
+            font_weight: text.font_weight,
+            height: text.height,
+            width_factor,
+            color: text.color,
+            anchor,
+            rotation,
+            horizontal_alignment,
+            vertical_alignment,
+            first_reference,
+            second_reference,
+            raw_bytes: text.raw_bytes,
+        }
+    }
 }
 
 /// Selector and state following a three-coordinate sketch point payload.
