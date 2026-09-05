@@ -165,14 +165,16 @@ pub(crate) fn checked_knot_layout(
     })
 }
 
-/// Read a knot table of `n` `(knot, multiplicity)` pairs, returning the expanded
-/// clamped knot vector and pole count `sum(mult) - (degree - 1)`.
-pub(crate) struct KnotLayout {
-    pub(crate) value_offsets: Vec<usize>,
-    pub(crate) multiplicity_offsets: Vec<usize>,
-    pub(crate) expanded_run_lengths: Vec<usize>,
+/// Unique native knot payload offsets.
+pub struct KnotLayout {
+    /// Payload offsets for unique knot values.
+    pub value_offsets: Vec<usize>,
+    /// Payload offsets for stored multiplicities.
+    pub multiplicity_offsets: Vec<usize>,
 }
 
+/// Read a knot table of `n` `(knot, multiplicity)` pairs, returning the expanded
+/// clamped knot vector and pole count `sum(mult) - (degree - 1)`.
 pub(crate) fn read_knots(
     b: &[u8],
     pos: &mut usize,
@@ -207,7 +209,6 @@ pub(crate) fn read_knots(
         KnotLayout {
             value_offsets,
             multiplicity_offsets,
-            expanded_run_lengths: expansion.expanded_run_lengths,
         },
     ))
 }

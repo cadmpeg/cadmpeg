@@ -370,36 +370,15 @@ pub struct SurfacePatchLayout {
     /// Pole count in the v direction.
     pub v_count: usize,
     /// Native payload offsets and expanded run lengths for U knots.
-    pub u_knots: KnotPatchLayout,
+    pub u_knots: KnotLayout,
     /// Native payload offsets and expanded run lengths for V knots.
-    pub v_knots: KnotPatchLayout,
+    pub v_knots: KnotLayout,
     /// Offset immediately after the final control component.
     pub end: usize,
     /// Payload offsets for the U/V closure enums.
     pub periodic_value_offsets: [usize; 2],
     /// Payload offsets for the U/V degree integers.
     pub degree_value_offsets: [usize; 2],
-}
-
-/// Unique native knot payload offsets.
-pub struct KnotPatchLayout {
-    /// Payload offsets for unique knot values.
-    pub value_offsets: Vec<usize>,
-    /// Payload offsets for stored multiplicities.
-    pub multiplicity_offsets: Vec<usize>,
-    /// Repetition count of each unique value in the expanded IR vector.
-    #[expect(dead_code)]
-    pub(crate) expanded_run_lengths: Vec<usize>,
-}
-
-impl From<KnotLayout> for KnotPatchLayout {
-    fn from(value: KnotLayout) -> Self {
-        Self {
-            value_offsets: value.value_offsets,
-            multiplicity_offsets: value.multiplicity_offsets,
-            expanded_run_lengths: value.expanded_run_lengths,
-        }
-    }
 }
 
 /// Locate the final valid `nubs`/`nurbs` surface block at the stream's known
@@ -415,8 +394,8 @@ pub fn final_surface_patch_layout(record: &[u8], int_width: usize) -> Option<Sur
         rational: decoded.rational,
         u_count: decoded.surface.u_count() as usize,
         v_count: decoded.surface.v_count() as usize,
-        u_knots: decoded.u_knot_layout.into(),
-        v_knots: decoded.v_knot_layout.into(),
+        u_knots: decoded.u_knot_layout,
+        v_knots: decoded.v_knot_layout,
         end: decoded.end,
         periodic_value_offsets: decoded.periodic_value_offsets,
         degree_value_offsets: decoded.degree_value_offsets,
@@ -440,8 +419,8 @@ pub fn surface_patch_layout_at(
         rational: decoded.rational,
         u_count: decoded.surface.u_count() as usize,
         v_count: decoded.surface.v_count() as usize,
-        u_knots: decoded.u_knot_layout.into(),
-        v_knots: decoded.v_knot_layout.into(),
+        u_knots: decoded.u_knot_layout,
+        v_knots: decoded.v_knot_layout,
         end: decoded.end,
         periodic_value_offsets: decoded.periodic_value_offsets,
         degree_value_offsets: decoded.degree_value_offsets,
@@ -519,7 +498,7 @@ pub struct CurvePatchLayout {
     /// Number of control points.
     pub control_count: usize,
     /// Native unique-knot payloads and expanded run lengths.
-    pub knots: KnotPatchLayout,
+    pub knots: KnotLayout,
     /// Offset immediately after the final control component.
     pub end: usize,
     /// Payload offset for the closure enum.
@@ -538,7 +517,7 @@ pub fn first_curve_patch_layout(record: &[u8], int_width: usize) -> Option<Curve
         control_count: decoded.curve.control_points().len(),
         control_value_offsets: decoded.control_value_offsets,
         rational: decoded.rational,
-        knots: decoded.knot_layout.into(),
+        knots: decoded.knot_layout,
         end: decoded.end,
         periodic_value_offset: decoded.periodic_value_offset,
         degree_value_offset: decoded.degree_value_offset,
@@ -556,7 +535,7 @@ pub fn final_curve_patch_layout(record: &[u8], int_width: usize) -> Option<Curve
         control_count: decoded.curve.control_points().len(),
         control_value_offsets: decoded.control_value_offsets,
         rational: decoded.rational,
-        knots: decoded.knot_layout.into(),
+        knots: decoded.knot_layout,
         end: decoded.end,
         periodic_value_offset: decoded.periodic_value_offset,
         degree_value_offset: decoded.degree_value_offset,

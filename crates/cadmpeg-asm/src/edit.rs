@@ -9,7 +9,7 @@ use cadmpeg_ir::transform::Transform;
 
 use crate::asm_header;
 use crate::asm_header::stream_ref_width;
-use crate::nurbs::core::KnotPatchLayout;
+use crate::nurbs::reader::KnotLayout;
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{self, Record};
 
@@ -477,7 +477,7 @@ impl AsmEditSet {
     pub fn patch_knot_structure(
         bytes: &mut [u8],
         record_offset: usize,
-        layout: &KnotPatchLayout,
+        layout: &KnotLayout,
         knots: &[f64],
         int_width: usize,
     ) -> Result<(), CodecError> {

@@ -4208,3 +4208,31 @@ crate = "cadmpeg-codec-nx"
 kind = "variant"
 item = "cadmpeg_codec_nx::BodyCensusEvaluation::Unsupported"
 reason = "an unsupported census boundary carries FeatureBoundary so feature identity cannot exist without name family and ordinal"
+
+[[change]]
+commit = "1d0c62e76c1c5dfad04ef703c9218634e08947e3"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::core::KnotPatchLayout"
+reason = "knot patch offsets are KnotLayout so a second struct cannot drop expanded run lengths independently"
+
+[[change]]
+commit = "1d0c62e76c1c5dfad04ef703c9218634e08947e3"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::core::SurfacePatchLayout::{u_knots,v_knots}"
+reason = "surface patch knot lanes are KnotLayout so a copy type cannot omit the expanded run lengths"
+
+[[change]]
+commit = "1d0c62e76c1c5dfad04ef703c9218634e08947e3"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::core::CurvePatchLayout::knots"
+reason = "curve patch knot lanes are KnotLayout so a copy type cannot omit the expanded run lengths"
+
+[[change]]
+commit = "1d0c62e76c1c5dfad04ef703c9218634e08947e3"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::knots"
+reason = "pcurve patch knot lanes are KnotLayout so a copy type cannot omit the expanded run lengths"
