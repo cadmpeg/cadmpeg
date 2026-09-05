@@ -21,6 +21,8 @@ pub mod attributes;
 mod emit;
 pub mod geometry;
 pub mod records;
+pub mod stats;
+use stats::Stats;
 mod topology;
 pub mod transfer;
 
@@ -152,47 +154,6 @@ pub struct AnnotationRecord {
     pub derived_fields: Vec<&'static str>,
 }
 
-/// Counts used to construct the B-rep loss report.
-#[derive(Default, Serialize, Deserialize)]
-pub struct Stats {
-    /// Faces omitted because their required surface reference is null or dangling.
-    pub missing_face_surfaces: usize,
-    /// Omitted face counts by null/dangling surface-reference condition.
-    pub missing_face_surface_kinds: std::collections::BTreeMap<String, usize>,
-    /// Faces resting on a spline/procedural surface whose shape was not decoded
-    /// into a typed carrier; emitted with an unknown-geometry surface.
-    pub unknown_surface_faces: usize,
-    /// Undecoded face-surface counts by owned native construction kind, or by
-    /// record head when the record owns no construction subtype.
-    pub unknown_surface_kinds: std::collections::BTreeMap<String, usize>,
-    /// Faces whose surface record explicitly delegates shape to mesh attributes.
-    pub mesh_surface_faces: usize,
-    /// Spline surface records whose cached B-spline block was decoded into a
-    /// NURBS carrier.
-    pub nurbs_surfaces: usize,
-    /// Procedural curve records whose cached 3D B-spline block was decoded into
-    /// a NURBS carrier.
-    pub nurbs_curves: usize,
-    /// Edges whose 3D curve is a procedural carrier (emitted with no curve).
-    pub procedural_curve_edges: usize,
-    /// Undecoded edge-curve counts by full native record name.
-    pub procedural_curve_kinds: std::collections::BTreeMap<String, usize>,
-    /// Coedges that carried an explicit UV pcurve ref with no decodable 2D
-    /// carrier on the face surface's parameterization (undecodable bytes, or
-    /// UV values on the exact procedural parameterization rather than the
-    /// solved cache's).
-    pub undecoded_pcurve_refs: usize,
-    /// Undecoded coedge-pcurve counts by full native record name.
-    pub undecoded_pcurve_kinds: std::collections::BTreeMap<String, usize>,
-    /// Procedural blends for which only one of two support families resolved.
-    pub partial_procedural_supports: usize,
-    /// Record names in the active slice that were neither topology nor a
-    /// decoded/preserved carrier (attributes, transforms, refinements, …).
-    pub other_records: usize,
-    /// Residual record counts by full record name.
-    pub other_record_kinds: std::collections::BTreeMap<String, usize>,
-}
-
 impl AsmBrep {
     /// Append a disjoint, already-qualified ASM graph.
     pub fn append(&mut self, mut other: Self) {
@@ -235,47 +196,6 @@ impl AsmBrep {
         self.body_keys.extend(other.body_keys);
         self.face_keys.extend(other.face_keys);
         self.stats.merge(other.stats);
-    }
-}
-
-impl Stats {
-    fn merge(&mut self, other: Self) {
-        macro_rules! add_counts {
-            ($($field:ident),+ $(,)?) => {
-                $(self.$field += other.$field;)+
-            };
-        }
-        add_counts!(
-            missing_face_surfaces,
-            unknown_surface_faces,
-            mesh_surface_faces,
-            nurbs_surfaces,
-            nurbs_curves,
-            procedural_curve_edges,
-            undecoded_pcurve_refs,
-            partial_procedural_supports,
-            other_records,
-        );
-        for (target, source) in [
-            (
-                &mut self.missing_face_surface_kinds,
-                other.missing_face_surface_kinds,
-            ),
-            (&mut self.unknown_surface_kinds, other.unknown_surface_kinds),
-            (
-                &mut self.procedural_curve_kinds,
-                other.procedural_curve_kinds,
-            ),
-            (
-                &mut self.undecoded_pcurve_kinds,
-                other.undecoded_pcurve_kinds,
-            ),
-            (&mut self.other_record_kinds, other.other_record_kinds),
-        ] {
-            for (kind, count) in source {
-                *target.entry(kind).or_default() += count;
-            }
-        }
     }
 }
 

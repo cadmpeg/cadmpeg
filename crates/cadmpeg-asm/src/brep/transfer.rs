@@ -10,7 +10,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::unknown::UnknownRecord;
 
-use super::{AnnotationRecord, AsmBrep, Stats};
+use super::stats::Stats;
+use super::{AnnotationRecord, AsmBrep};
 
 const ASM_NATIVE_ARENAS: [&str; 12] = [
     "edge_continuities",

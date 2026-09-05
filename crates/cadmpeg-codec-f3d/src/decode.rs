@@ -4900,14 +4900,14 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::LossNote> {
             s.nurbs_curves
         )));
     }
-    if s.missing_face_surfaces > 0 {
+    if s.missing_face_surfaces() > 0 {
         losses.push(F3dLossCode::FaceSurfaceReferenceDangling.note(format!(
             "{} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {}.",
-            s.missing_face_surfaces,
+            s.missing_face_surfaces(),
             format_kind_counts(&s.missing_face_surface_kinds)
         )));
     }
-    if s.unknown_surface_faces > 0 {
+    if s.unknown_surface_faces() > 0 {
         losses.push(F3dLossCode::SurfaceShapeNotDecoded.note(format!(
             "{} face(s) rest on spline/procedural surfaces whose shape was not decoded into a \
              typed carrier (no inline cached B-spline block: the cache is reached through a \
@@ -4915,7 +4915,7 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::LossNote> {
              evaluate); the face, its loops, and trims are emitted with an unknown-geometry \
              surface linking to the preserved record bytes. Topology is transferred; the \
              underlying surface shape is not. Native kinds: {}.",
-            s.unknown_surface_faces,
+            s.unknown_surface_faces(),
             format_kind_counts(&s.unknown_surface_kinds)
         )));
     }
@@ -4925,21 +4925,21 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::LossNote> {
             s.mesh_surface_faces
         )));
     }
-    if s.procedural_curve_edges > 0 {
+    if s.procedural_curve_edges() > 0 {
         losses.push(F3dLossCode::ProceduralCurveUndecoded.note(format!(
             "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable inline \
              B-spline cache; the edge was emitted with its vertices and parameter range but no \
              attributed curve carrier. Native kinds: {}.",
-            s.procedural_curve_edges,
+            s.procedural_curve_edges(),
             format_kind_counts(&s.procedural_curve_kinds)
         )));
     }
-    if s.undecoded_pcurve_refs > 0 {
+    if s.undecoded_pcurve_refs() > 0 {
         losses.push(F3dLossCode::PcurveUndecoded.note(format!(
             "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
              carrier on the face surface's parameterization; those coedges were emitted \
              without a pcurve. Native kinds: {}.",
-            s.undecoded_pcurve_refs,
+            s.undecoded_pcurve_refs(),
             format_kind_counts(&s.undecoded_pcurve_kinds)
         )));
     }
@@ -4949,10 +4949,10 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::LossNote> {
             s.partial_procedural_supports
         )));
     }
-    if s.other_records > 0 {
+    if s.other_records() > 0 {
         losses.push(F3dLossCode::SolvedRecordUntyped.note(format!(
             "{} solved-record application/refinement record(s) were not transferred: {}.",
-            s.other_records,
+            s.other_records(),
             s.other_record_kinds
                 .iter()
                 .map(|(name, count)| format!("{name}={count}"))
