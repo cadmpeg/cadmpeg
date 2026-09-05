@@ -7,12 +7,12 @@ use crate::nurbs::blend::{
     var_blend_spl_sur, vertex_blend_spl_sur,
 };
 use crate::nurbs::core::{curve_block, surface_block};
-use crate::nurbs::pcurve::{decode_pcurve_block_with_end, pcurve_block_with_end, NurbsPcurve};
+use crate::nurbs::pcurve::{NurbsPcurve, decode_pcurve_block_with_end, pcurve_block_with_end};
 use crate::nurbs::proc_curve::{
     embedded_base_curve_resolving_refs, embedded_surface, embedded_surface_with_ranges,
     optional_embedded_surface_with_bounds, optional_helix_revision,
 };
-use crate::nurbs::reader::{normalized, take_native_ident, Nullable, LEN_TO_MM};
+use crate::nurbs::reader::{LEN_TO_MM, Nullable, normalized, take_native_ident};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_core::decode::bounded_len;
@@ -395,14 +395,6 @@ pub struct EmbeddedVertexBlend {
     pub fit_tolerance: f64,
 }
 
-/// The radius selector of an embedded rolling-ball blend.
-pub enum EmbeddedRollingBallRadiusSelector {
-    /// No selector value is serialized.
-    None,
-    /// The serialized selector value.
-    Value(f64),
-}
-
 /// Embedded native rolling-ball graph before stable IR ids are assigned.
 pub struct EmbeddedRollingBall {
     /// The subtype-table index of the record's own definition.
@@ -416,7 +408,7 @@ pub struct EmbeddedRollingBall {
     /// Two side offsets in document length units.
     pub offsets: [f64; 2],
     /// The radius selector of the blend.
-    pub radius_selector: EmbeddedRollingBallRadiusSelector,
+    pub radius_selector: Option<f64>,
     /// Support-side parameter interval `(T0, T1)`.
     pub u_range: [Option<f64>; 2],
     /// Second interval; `None` marks an unbounded end.
@@ -456,12 +448,7 @@ pub struct EmbeddedG2Side {
 /// The shape block serialized after a G2 blend's first side.
 pub enum EmbeddedG2FirstShape {
     /// The full form: an optional surface cache and tolerance.
-    Full {
-        /// The embedded shape surface, when serialized.
-        surface: Option<NurbsSurface>,
-        /// The fit tolerance, when serialized.
-        tolerance: Option<f64>,
-    },
+    Full(Option<(NurbsSurface, f64)>),
     /// The reduced form: nine coefficients and a tolerance.
     None {
         /// Nine shape coefficients.
@@ -654,18 +641,12 @@ fn g2_blend_spl_sur(
     let first_shape = if cur.peek().is_some_and(Token::is_payload_ident) {
         let saved = cur.pos();
         if cur.take_ident() == Some("nullbs") {
-            EmbeddedG2FirstShape::Full {
-                surface: None,
-                tolerance: None,
-            }
+            EmbeddedG2FirstShape::Full(None)
         } else {
             cur.set_pos(saved);
             let (surface, surface_end) = surface_block(span, cur.pos())?;
             cur.set_pos(surface_end);
-            EmbeddedG2FirstShape::Full {
-                surface: Some(surface),
-                tolerance: Some(cur.take_f64()? * LEN_TO_MM),
-            }
+            EmbeddedG2FirstShape::Full(Some((surface, cur.take_f64()? * LEN_TO_MM)))
         }
     } else {
         let mut coefficients = [0.0; 9];
@@ -4414,11 +4395,13 @@ mod sweep_law_tests {
         let formula = law_formula_resolving(&mut cur, None).expect("rail formula");
 
         assert_eq!(formula.name(), "ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)");
-        let [EmbeddedLawExpression::TransformVec {
-            vectors: actual_vectors,
-            scale,
-            flags,
-        }] = formula.variables()
+        let [
+            EmbeddedLawExpression::TransformVec {
+                vectors: actual_vectors,
+                scale,
+                flags,
+            },
+        ] = formula.variables()
         else {
             panic!("expected one vector transform binding");
         };
