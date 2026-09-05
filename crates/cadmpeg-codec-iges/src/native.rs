@@ -176,38 +176,100 @@ struct NativeColorDefinition {
     fallback_color_number: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 struct NativeDisplayAttributes {
     id: String,
     source_entity: String,
     visible: bool,
-    line_font_number: i64,
-    line_font_definition: Option<String>,
-    level_number: i64,
-    level_definition: Option<String>,
+    line_font: DisplayRef,
+    level: DisplayRef,
     view: i64,
     line_weight_number: i64,
     line_weight_mm: Option<f64>,
-    color_number: i64,
-    color_definition: Option<String>,
+    color: DisplayRef,
 }
 
-fn resolved_display_definition(
+#[derive(Debug, Clone, PartialEq)]
+enum DisplayRef {
+    Number(u64),
+    Definition {
+        pointer: i64,
+        target: Option<String>,
+    },
+}
+
+impl DisplayRef {
+    fn definition(&self) -> Option<&str> {
+        match self {
+            Self::Number(_) => None,
+            Self::Definition { target, .. } => target.as_deref(),
+        }
+    }
+}
+
+impl Serialize for DisplayRef {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Number(number) => serializer.serialize_u64(*number),
+            Self::Definition { pointer, .. } => serializer.serialize_i64(*pointer),
+        }
+    }
+}
+
+impl Serialize for NativeDisplayAttributes {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            id: &'a str,
+            source_entity: &'a str,
+            visible: bool,
+            line_font_number: &'a DisplayRef,
+            line_font_definition: Option<&'a str>,
+            level_number: &'a DisplayRef,
+            level_definition: Option<&'a str>,
+            view: i64,
+            line_weight_number: i64,
+            line_weight_mm: Option<f64>,
+            color_number: &'a DisplayRef,
+            color_definition: Option<&'a str>,
+        }
+        Wire {
+            id: &self.id,
+            source_entity: &self.source_entity,
+            visible: self.visible,
+            line_font_number: &self.line_font,
+            line_font_definition: self.line_font.definition(),
+            level_number: &self.level,
+            level_definition: self.level.definition(),
+            view: self.view,
+            line_weight_number: self.line_weight_number,
+            line_weight_mm: self.line_weight_mm,
+            color_number: &self.color,
+            color_definition: self.color.definition(),
+        }
+        .serialize(serializer)
+    }
+}
+
+fn resolve_display_ref(
     references: &BTreeMap<u32, Vec<ReferenceEdge>>,
     source_sequence: u32,
     pointer: i64,
     kind: ReferenceKind,
     arena: &str,
-) -> Option<String> {
-    (pointer < 0)
-        .then(|| {
+) -> DisplayRef {
+    if pointer >= 0 {
+        return DisplayRef::Number(pointer as u64);
+    }
+    let target = references
+        .get(&source_sequence)
+        .and_then(|references| {
             references
-                .get(&source_sequence)?
                 .iter()
                 .find_map(|reference| reference.resolved_target_sequence_for(kind))
         })
-        .flatten()
-        .map(|sequence| format!("iges:presentation:{arena}#D{sequence}"))
+        .map(|sequence| format!("iges:presentation:{arena}#D{sequence}"));
+    DisplayRef::Definition { pointer, target }
 }
 
 fn resolved_label_display_definition(
@@ -1142,10 +1204,51 @@ struct NativeView {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeViewDisplay {
     view: Option<String>,
-    line_font: Option<i64>,
-    line_font_definition: Option<String>,
-    color: Option<i64>,
-    line_weight: Option<i64>,
+    #[serde(flatten)]
+    style: ViewDisplayStyle,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ViewDisplayStyle {
+    Inherited,
+    Overrides {
+        line_font: Option<i64>,
+        line_font_definition: Option<String>,
+        color: Option<i64>,
+        line_weight: Option<i64>,
+    },
+}
+
+impl Serialize for ViewDisplayStyle {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            line_font: Option<i64>,
+            line_font_definition: Option<&'a str>,
+            color: Option<i64>,
+            line_weight: Option<i64>,
+        }
+        let wire = match self {
+            Self::Inherited => Wire {
+                line_font: None,
+                line_font_definition: None,
+                color: None,
+                line_weight: None,
+            },
+            Self::Overrides {
+                line_font,
+                line_font_definition,
+                color,
+                line_weight,
+            } => Wire {
+                line_font: *line_font,
+                line_font_definition: line_font_definition.as_deref(),
+                color: *color,
+                line_weight: *line_weight,
+            },
+        };
+        wire.serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1988,16 +2091,14 @@ pub(crate) fn store(
             id: format!("iges:presentation:display-attributes#D{}", entry.sequence),
             source_entity: format!("iges:entity:directory#{}", entry.sequence),
             visible: entry.status.blank == 0,
-            line_font_number: entry.line_font,
-            line_font_definition: resolved_display_definition(
+            line_font: resolve_display_ref(
                 references,
                 entry.sequence,
                 entry.line_font,
                 ReferenceKind::LineFont,
                 "line-font",
             ),
-            level_number: entry.level,
-            level_definition: resolved_display_definition(
+            level: resolve_display_ref(
                 references,
                 entry.sequence,
                 entry.level,
@@ -2009,8 +2110,7 @@ pub(crate) fn store(
             line_weight_mm: global
                 .length_context()
                 .and_then(|context| context.line_weight_mm(entry.line_weight)),
-            color_number: entry.color,
-            color_definition: resolved_display_definition(
+            color: resolve_display_ref(
                 references,
                 entry.sequence,
                 entry.color,
@@ -4472,29 +4572,31 @@ pub(crate) fn store(
                                     )
                                 })
                                 .map(|sequence| format!("iges:presentation:view#D{sequence}")),
-                            line_font: (entry.form == 4)
-                                .then(|| record.and_then(|record| record.integer(start + 1)))
-                                .flatten(),
-                            line_font_definition: (entry.form == 4)
-                                .then(|| record.and_then(|record| record.integer(start + 2)))
-                                .flatten()
-                                .filter(|sequence| *sequence != 0)
-                                .and_then(|sequence| {
-                                    parameter_resolver.resolve_type(
-                                        entry.sequence,
-                                        start + 2,
-                                        sequence,
-                                        304,
-                                        &[1, 2],
-                                    )
-                                })
-                                .map(|sequence| format!("iges:presentation:line-font#D{sequence}")),
-                            color: (entry.form == 4)
-                                .then(|| record.and_then(|record| record.integer(start + 3)))
-                                .flatten(),
-                            line_weight: (entry.form == 4)
-                                .then(|| record.and_then(|record| record.integer(start + 4)))
-                                .flatten(),
+                            style: if entry.form == 4 {
+                                ViewDisplayStyle::Overrides {
+                                    line_font: record.and_then(|record| record.integer(start + 1)),
+                                    line_font_definition: record
+                                        .and_then(|record| record.integer(start + 2))
+                                        .filter(|sequence| *sequence != 0)
+                                        .and_then(|sequence| {
+                                            parameter_resolver.resolve_type(
+                                                entry.sequence,
+                                                start + 2,
+                                                sequence,
+                                                304,
+                                                &[1, 2],
+                                            )
+                                        })
+                                        .map(|sequence| {
+                                            format!("iges:presentation:line-font#D{sequence}")
+                                        }),
+                                    color: record.and_then(|record| record.integer(start + 3)),
+                                    line_weight: record
+                                        .and_then(|record| record.integer(start + 4)),
+                                }
+                            } else {
+                                ViewDisplayStyle::Inherited
+                            },
                         }
                     })
                     .collect(),
