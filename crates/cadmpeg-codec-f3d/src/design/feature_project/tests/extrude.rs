@@ -197,25 +197,24 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         paired_byte_offset: 300,
     };
     let placement = DesignSketchPlacement {
-        member_run_head: false,
+        frame: crate::records::DesignSketchFrame::new(600, crate::records::DesignSketchFrameForm::ScopeExplicit(crate::records::SketchPlacementMatrix::try_from([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, -1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]).unwrap())).unwrap(),
+
         id: "f3d:Design/BulkStream.dat:placement#200".into(),
         scope_record_index: Some(11),
         entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned()).expect("valid entity ID"),
 
         visibility: None,
-        byte_offset: 600,
+
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         record_index: 200,
-        frame_length: 329,
-        transform: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, -1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-        transform_offset: Some(655),
+
         paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
-        paired_byte_offset: 929,
+
     };
     let along = parameter("AlongDistance", "mm", 0.55);
     let taper = parameter("TaperAngle", "deg", 0.2);

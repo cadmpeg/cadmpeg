@@ -611,20 +611,18 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         group(70, 0, 701, &[702], 0x0000_0010_0000_0000),
     ];
     let placement = DesignSketchPlacement {
+        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
         id: format!("{stream}:placement#7"),
         scope_record_index: None,
         entity_id: crate::records::DesignEntityId::try_from("Sketch_7".to_owned()).expect("valid entity ID"),
 
         visibility: None,
-        byte_offset: 0,
+
         class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
         record_index: 700,
-        frame_length: 0,
-        transform: identity_matrix(),
-        transform_offset: None,
+
         paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-        member_run_head: false,
+
     };
     let (features, _) = project_parameter_design(
         &[],

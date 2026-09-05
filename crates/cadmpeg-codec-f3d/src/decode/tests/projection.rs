@@ -1247,20 +1247,19 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 
     let mut native = F3dNative::default();
     native.design_sketch_placements.push(DesignSketchPlacement {
-        member_run_head: false,
+        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
+
         id: "native:sketch-placement".into(),
         scope_record_index: Some(10),
         entity_id: crate::records::DesignEntityId::try_from("Sketch_1".to_owned()).expect("valid entity ID"),
 
         visibility: None,
-        byte_offset: 0,
+
         class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         record_index: 10,
-        frame_length: 1,
-        transform: [[0.0; 4]; 4],
-        transform_offset: None,
+
         paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
-        paired_byte_offset: 1,
+
     });
     native.sketch_points.push(SketchPoint {
         id: "native:sketch-point".into(),

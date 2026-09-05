@@ -163,19 +163,19 @@ pub fn project_sketch_design(
                 .map(|visibility| visibility.visible),
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(
-                    placement.transform[0][3] * placement_origin_scale(placement),
-                    placement.transform[1][3] * placement_origin_scale(placement),
-                    placement.transform[2][3] * placement_origin_scale(placement),
+                    placement.transform()[0][3] * placement_origin_scale(placement),
+                    placement.transform()[1][3] * placement_origin_scale(placement),
+                    placement.transform()[2][3] * placement_origin_scale(placement),
                 ),
                 normal: Vector3::new(
-                    placement.transform[0][2],
-                    placement.transform[1][2],
-                    placement.transform[2][2],
+                    placement.transform()[0][2],
+                    placement.transform()[1][2],
+                    placement.transform()[2][2],
                 ),
                 u_axis: Vector3::new(
-                    placement.transform[0][0],
-                    placement.transform[1][0],
-                    placement.transform[2][0],
+                    placement.transform()[0][0],
+                    placement.transform()[1][0],
+                    placement.transform()[2][0],
                 ),
             },
             profiles: Vec::new(),
@@ -446,31 +446,31 @@ pub fn project_spatial_sketch_design(
     let transform_point = |placement: &DesignSketchPlacement, point: &Point3| {
         let origin_scale = placement_origin_scale(placement);
         Point3::new(
-            placement.transform[0][0] * point.x
-                + placement.transform[0][1] * point.y
-                + placement.transform[0][2] * point.z
-                + placement.transform[0][3] * origin_scale,
-            placement.transform[1][0] * point.x
-                + placement.transform[1][1] * point.y
-                + placement.transform[1][2] * point.z
-                + placement.transform[1][3] * origin_scale,
-            placement.transform[2][0] * point.x
-                + placement.transform[2][1] * point.y
-                + placement.transform[2][2] * point.z
-                + placement.transform[2][3] * origin_scale,
+            placement.transform()[0][0] * point.x
+                + placement.transform()[0][1] * point.y
+                + placement.transform()[0][2] * point.z
+                + placement.transform()[0][3] * origin_scale,
+            placement.transform()[1][0] * point.x
+                + placement.transform()[1][1] * point.y
+                + placement.transform()[1][2] * point.z
+                + placement.transform()[1][3] * origin_scale,
+            placement.transform()[2][0] * point.x
+                + placement.transform()[2][1] * point.y
+                + placement.transform()[2][2] * point.z
+                + placement.transform()[2][3] * origin_scale,
         )
     };
     let transform_vector = |placement: &DesignSketchPlacement, vector: &Vector3| {
         Vector3::new(
-            placement.transform[0][0] * vector.x
-                + placement.transform[0][1] * vector.y
-                + placement.transform[0][2] * vector.z,
-            placement.transform[1][0] * vector.x
-                + placement.transform[1][1] * vector.y
-                + placement.transform[1][2] * vector.z,
-            placement.transform[2][0] * vector.x
-                + placement.transform[2][1] * vector.y
-                + placement.transform[2][2] * vector.z,
+            placement.transform()[0][0] * vector.x
+                + placement.transform()[0][1] * vector.y
+                + placement.transform()[0][2] * vector.z,
+            placement.transform()[1][0] * vector.x
+                + placement.transform()[1][1] * vector.y
+                + placement.transform()[1][2] * vector.z,
+            placement.transform()[2][0] * vector.x
+                + placement.transform()[2][1] * vector.y
+                + placement.transform()[2][2] * vector.z,
         )
     };
 
@@ -849,14 +849,14 @@ pub fn project_spatial_sketch_constraints(
                     };
                     let direction = match relation.constraint_kinds()[0] {
                         SketchConstraintKind::Horizontal => Vector3::new(
-                            placement.transform[0][0],
-                            placement.transform[1][0],
-                            placement.transform[2][0],
+                            placement.transform()[0][0],
+                            placement.transform()[1][0],
+                            placement.transform()[2][0],
                         ),
                         SketchConstraintKind::Vertical => Vector3::new(
-                            placement.transform[0][1],
-                            placement.transform[1][1],
-                            placement.transform[2][1],
+                            placement.transform()[0][1],
+                            placement.transform()[1][1],
+                            placement.transform()[2][1],
                         ),
                         _ => unreachable!(),
                     };

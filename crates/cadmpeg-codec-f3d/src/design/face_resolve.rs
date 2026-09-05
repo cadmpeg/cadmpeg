@@ -2107,10 +2107,16 @@ pub(crate) fn valid_chamfer_spec(spec: &cadmpeg_ir::features::ChamferSpec) -> bo
 /// and curve records carry values ten times the centimetre value, so the
 /// origin scales by ten to stay commensurate with the entities.
 pub(crate) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
-    if placement.member_run_head || matches!(placement.frame_length, 213 | 341) {
-        10.0
-    } else {
-        1.0
+    use crate::records::DesignSketchFrameForm;
+    match placement.frame.form() {
+        DesignSketchFrameForm::ScopeGenesisCompact
+        | DesignSketchFrameForm::ScopeGenesisExplicit(_)
+        | DesignSketchFrameForm::MemberCompact { .. }
+        | DesignSketchFrameForm::MemberExplicit { .. } => 10.0,
+        DesignSketchFrameForm::ScopeCompact
+        | DesignSketchFrameForm::ScopeLegacy305(_)
+        | DesignSketchFrameForm::ScopeLegacy325(_)
+        | DesignSketchFrameForm::ScopeExplicit(_) => 1.0,
     }
 }
 

@@ -757,20 +757,19 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
 fn counted_angular_group_projects_unique_point_selected_line() {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
-        member_run_head: false,
+        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
+
         id: format!("{stream}:design-sketch-placement#0"),
         scope_record_index: Some(10),
         entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned()).expect("valid entity ID"),
 
         visibility: None,
-        byte_offset: 0,
+
         class_tag: crate::records::DesignClassTag::try_from("356".to_owned()).unwrap(),
         record_index: 11,
-        frame_length: 201,
-        transform: identity_matrix(),
-        transform_offset: None,
+
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        paired_byte_offset: 201,
+
     };
     let parameter = DesignParameter {
         id: format!("{stream}:design-parameter#20"),

@@ -167,25 +167,18 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
 #[test]
 fn occurrence_merge_remaps_and_retains_native_records() {
     let placement = DesignSketchPlacement {
+        frame: crate::records::DesignSketchFrame::new(42, crate::records::DesignSketchFrameForm::MemberCompact { paired_byte_offset: 76 }).unwrap(),
         id: "f3d:Design/BulkStream.dat:design-sketch-placement#42".into(),
         scope_record_index: None,
         entity_id: crate::records::DesignEntityId::try_from("Sketch_1".to_owned()).expect("valid entity ID"),
 
         visibility: None,
-        byte_offset: 42,
+
         class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
         record_index: 7,
-        frame_length: 34,
-        transform: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-        transform_offset: None,
+
         paired_class_tag: crate::records::DesignClassTag::try_from("002".to_owned()).unwrap(),
-        paired_byte_offset: 76,
-        member_run_head: true,
+
     };
     let mut component = Native::default();
     component
