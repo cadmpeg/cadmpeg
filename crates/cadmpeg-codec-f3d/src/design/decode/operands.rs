@@ -440,8 +440,7 @@ pub fn bind_work_plane_constructions(
         else {
             continue;
         };
-        if scope.work_plane_transform.is_none() || scope.work_plane_reference != Some(*extra_offset)
-        {
+        if scope.work_plane_frame.is_none() || scope.work_plane_reference != Some(*extra_offset) {
             continue;
         }
         let Some(owner) = owners.iter().find(|owner| {

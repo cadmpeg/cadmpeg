@@ -3068,11 +3068,9 @@ pub struct DesignParameterScope {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_feature_construction: Option<DesignBaseFeatureConstruction>,
     /// Exact row-major local-to-model frame carried by a `WorkPlane` scope.
+    #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work_plane_transform: Option<[[f64; 4]; 4]>,
-    /// Byte offset of the `WorkPlane` frame's explicit 16-f64 matrix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work_plane_transform_offset: Option<u64>,
+    pub work_plane_frame: Option<DesignWorkPlaneTransform>,
     /// Construction record referenced by the `WorkPlane` frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_reference: Option<u32>,
@@ -3136,6 +3134,16 @@ pub struct DesignSketchEntityBinding {
     pub entity_suffix: u64,
     /// Byte offset of the sketch entity suffix.
     pub entity_reference_offset: u64,
+}
+
+/// Explicit 16-f64 frame carried by a `WorkPlane` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignWorkPlaneTransform {
+    /// Exact row-major local-to-model frame.
+    pub work_plane_transform: [[f64; 4]; 4],
+    /// Byte offset of the explicit 16-f64 matrix.
+    pub work_plane_transform_offset: u64,
 }
 
 /// Fixed operation records named by a `SurfaceStitch` scope.
@@ -3561,9 +3569,25 @@ pub enum DesignEdgeFlangeWidthParameterSource {
     EdgeOffset,
 }
 
+impl DesignParameterScope {
+    /// The WorkPlane frame matrix, when the scope carries one.
+    pub(crate) fn work_plane_transform(&self) -> Option<[[f64; 4]; 4]> {
+        self.work_plane_frame
+            .as_ref()
+            .map(|frame| frame.work_plane_transform)
+    }
+}
+
 #[cfg(test)]
 impl DesignParameterScope {
     /// Build a scope carrying only its identity, kind, and record index.
+    pub(crate) fn with_work_plane_transform(&mut self, transform: [[f64; 4]; 4]) {
+        self.work_plane_frame = Some(DesignWorkPlaneTransform {
+            work_plane_transform: transform,
+            work_plane_transform_offset: 0,
+        });
+    }
+
     pub(crate) fn empty(id: &str, kind: &str, record_index: u32) -> Self {
         Self {
             id: id.to_string(),
@@ -3623,8 +3647,7 @@ impl DesignParameterScope {
             mirror_construction: None,
             copy_paste_bodies_operation: None,
             base_feature_construction: None,
-            work_plane_transform: None,
-            work_plane_transform_offset: None,
+            work_plane_frame: None,
             work_plane_reference: None,
             work_plane_reference_offset: None,
             work_plane_construction: None,
