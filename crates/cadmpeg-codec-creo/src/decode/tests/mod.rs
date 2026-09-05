@@ -81,11 +81,10 @@ pub(super) fn class_911_surface_row(
 
 pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::FeatureEntityTable {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,

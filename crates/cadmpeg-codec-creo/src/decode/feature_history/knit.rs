@@ -309,7 +309,7 @@ pub(in super::super) fn feature_surface_transitions(
     let predecessors = owned
         .iter()
         .flat_map(|table| table.entries.iter())
-        .filter(|entry| entry.class_id == 214 && entry.related_entity_id.is_some())
+        .filter(|entry| entry.class_id == 214 && entry.related_entity_id().is_some())
         .count();
     if predecessors != outputs.len() {
         return None;
@@ -320,8 +320,8 @@ pub(in super::super) fn feature_surface_transitions(
     let mut source_ids = BTreeSet::new();
     let mut transitions = Vec::with_capacity(outputs.len());
     for (output_table, output) in outputs {
-        let intermediate_id = output.related_entity_id?;
-        if output.related_entity_state != Some(0)
+        let intermediate_id = output.related_entity_id()?;
+        if output.related_entity_state() != Some(0)
             || output_table
                 .surface_ids()
                 .iter()
@@ -338,7 +338,7 @@ pub(in super::super) fn feature_surface_transitions(
         let mut matches = output_table.entries.iter().filter(|predecessor| {
             predecessor.class_id == 214
                 && predecessor.entity_id == intermediate_id
-                && predecessor.related_entity_state == Some(0)
+                && predecessor.related_entity_state() == Some(0)
                 && output_table
                     .non_surface_entity_ids()
                     .contains(&predecessor.entity_id)
@@ -348,7 +348,7 @@ pub(in super::super) fn feature_surface_transitions(
         if matches.next().is_some() {
             return None;
         }
-        let source_id = predecessor.related_entity_id?;
+        let source_id = predecessor.related_entity_id()?;
         if crate::surface::unique_surface_row(surface_rows, source_id)
             .is_none_or(|row| row.feature_id == feature_id)
             || !source_ids.insert(source_id)

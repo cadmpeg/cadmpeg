@@ -175,7 +175,7 @@ pub(in super::super) fn generated_arc_cylinder_extent(
             entry.class_id == 200 && table.surface_ids().contains(&entry.entity_id)
         })
     {
-        let Some(source_id) = entry.source_entity_id else {
+        let Some(source_id) = entry.source_entity_id() else {
             continue;
         };
         let Some(segment) = definition.segments.as_ref()?.segment(source_id) else {
@@ -332,7 +332,7 @@ pub(in super::super) fn generated_cap_plane_extent(
     let mut end_id = None;
     let mut side_count = 0_usize;
     for entry in &table.entries {
-        match (entry.class_id, entry.source_entity_id) {
+        match (entry.class_id, entry.source_entity_id()) {
             (204, None) if start_id.replace(entry.entity_id).is_none() => {}
             (203, None) if end_id.replace(entry.entity_id).is_none() => {}
             (200, Some(_)) => side_count += 1,

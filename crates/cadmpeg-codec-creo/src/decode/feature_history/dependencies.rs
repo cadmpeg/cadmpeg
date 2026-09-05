@@ -88,7 +88,7 @@ pub(in super::super) fn feature_output_surface_dependencies(
         .iter()
         .filter(|table| table.feature_id == feature_id && table.table_class_id == 67)
         .flat_map(|table| &table.entries)
-        .filter(|entry| entry.class_id == 200 && entry.source_entity_id == Some(feature_id))
+        .filter(|entry| entry.class_id == 200 && entry.source_entity_id() == Some(feature_id))
         .map(|entry| entry.entity_id)
         .collect::<BTreeSet<_>>();
     tables

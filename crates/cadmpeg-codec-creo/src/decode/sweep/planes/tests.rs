@@ -73,11 +73,10 @@ fn cylinder_surface(id: u32, origin: Point3, axis: Vector3) -> Surface {
 #[test]
 fn generated_table_cap_classes_use_placed_cap_planes() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -224,9 +223,7 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
     let entry = crate::feature::FeatureEntityTableEntry {
         entity_id: 33,
         class_id: 200,
-        source_entity_id: Some(11),
-        related_entity_id: None,
-        related_entity_state: None,
+        payload: crate::feature::entry_payload(200, Some(11), None, None),
         prefixed: false,
         offset: 0,
         end_offset: 0,

@@ -165,9 +165,9 @@ fn final_generated_entry_may_terminate_at_the_table_separator() {
     let entries = read_entries(&payload, 0, 2).expect("complete generated table");
 
     assert_eq!(entries.len(), 2);
-    assert_eq!(entries[0].source_entity_id, Some(4));
+    assert_eq!(entries[0].source_entity_id(), Some(4));
     assert_eq!(entries[0].end_offset, 6);
-    assert_eq!(entries[1].source_entity_id, Some(7));
+    assert_eq!(entries[1].source_entity_id(), Some(7));
     assert_eq!(entries[1].end_offset, 11);
 }
 
@@ -181,7 +181,7 @@ fn generated_table_prototype_uses_its_prefixed_entry_class() {
     assert!(entries[0].prefixed);
     assert_eq!(entries[0].end_offset, 5);
     assert_eq!(entries[1].class_id, 200);
-    assert_eq!(entries[1].source_entity_id, Some(7));
+    assert_eq!(entries[1].source_entity_id(), Some(7));
 
     let misplaced = [10, 30, 0, 0xe3, 0xf7, 31, 20, 0xe4, 0xe3];
     assert!(read_entries(&misplaced, 0, 2).is_none());
@@ -194,9 +194,9 @@ fn class_219_generated_entry_retains_its_related_entity() {
 
     assert_eq!(entries[0].entity_id, 1466);
     assert_eq!(entries[0].class_id, 219);
-    assert_eq!(entries[0].source_entity_id, None);
-    assert_eq!(entries[0].related_entity_id, Some(1175));
-    assert_eq!(entries[0].related_entity_state, Some(0));
+    assert_eq!(entries[0].source_entity_id(), None);
+    assert_eq!(entries[0].related_entity_id(), Some(1175));
+    assert_eq!(entries[0].related_entity_state(), Some(0));
     assert_eq!(entries[0].end_offset, payload.len());
 }
 
@@ -205,7 +205,7 @@ fn final_class_219_entry_may_terminate_at_the_table_separator() {
     let payload = [0x85, 0xba, 0x80, 0xdb, 0x84, 0x97, 0, 0xf2, 0xf7];
     let entries = read_entries(&payload, 0, 1).expect("terminal class-219 entry");
 
-    assert_eq!(entries[0].related_entity_id, Some(1175));
+    assert_eq!(entries[0].related_entity_id(), Some(1175));
     assert_eq!(entries[0].end_offset, 7);
 }
 
@@ -216,8 +216,8 @@ fn class_2017_generated_entry_retains_related_entity_and_state() {
 
     assert_eq!(entries[0].entity_id, 4694);
     assert_eq!(entries[0].class_id, 2017);
-    assert_eq!(entries[0].related_entity_id, Some(4680));
-    assert_eq!(entries[0].related_entity_state, Some(1));
+    assert_eq!(entries[0].related_entity_id(), Some(4680));
+    assert_eq!(entries[0].related_entity_state(), Some(1));
     assert_eq!(entries[0].end_offset, payload.len());
 }
 
@@ -226,8 +226,8 @@ fn final_class_2017_entry_may_terminate_at_the_table_separator() {
     let payload = [0x94, 0x92, 0x87, 0xe1, 0x94, 0x90, 1, 0xf2, 0xf7];
     let entries = read_entries(&payload, 0, 1).expect("terminal class-2017 entry");
 
-    assert_eq!(entries[0].related_entity_id, Some(5264));
-    assert_eq!(entries[0].related_entity_state, Some(1));
+    assert_eq!(entries[0].related_entity_id(), Some(5264));
+    assert_eq!(entries[0].related_entity_state(), Some(1));
     assert_eq!(entries[0].end_offset, 7);
 }
 
@@ -238,8 +238,8 @@ fn class_210_generated_entry_retains_its_nonvisible_entity_link() {
 
     assert_eq!(entries[0].entity_id, 1463);
     assert_eq!(entries[0].class_id, 210);
-    assert_eq!(entries[0].related_entity_id, Some(1369));
-    assert_eq!(entries[0].related_entity_state, Some(0));
+    assert_eq!(entries[0].related_entity_id(), Some(1369));
+    assert_eq!(entries[0].related_entity_state(), Some(0));
 }
 
 #[test]
@@ -249,8 +249,8 @@ fn class_214_generated_entry_retains_its_related_entity() {
 
     assert_eq!(entries[0].entity_id, 1353);
     assert_eq!(entries[0].class_id, 214);
-    assert_eq!(entries[0].related_entity_id, Some(184));
-    assert_eq!(entries[0].related_entity_state, Some(0));
+    assert_eq!(entries[0].related_entity_id(), Some(184));
+    assert_eq!(entries[0].related_entity_state(), Some(0));
 }
 
 #[test]

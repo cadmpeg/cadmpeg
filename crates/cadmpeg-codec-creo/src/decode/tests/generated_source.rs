@@ -62,9 +62,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             crate::feature::FeatureEntityTableEntry {
                 entity_id: 42,
                 class_id: 200,
-                source_entity_id: Some(10),
-                related_entity_id: None,
-                related_entity_state: None,
+                payload: crate::feature::entry_payload(200, Some(10), None, None),
                 prefixed: false,
                 offset: 0,
                 end_offset: 0,
@@ -73,9 +71,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             crate::feature::FeatureEntityTableEntry {
                 entity_id: 41,
                 class_id: 200,
-                source_entity_id: Some(8),
-                related_entity_id: None,
-                related_entity_state: None,
+                payload: crate::feature::entry_payload(200, Some(8), None, None),
                 prefixed: false,
                 offset: 0,
                 end_offset: 0,
@@ -84,9 +80,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             crate::feature::FeatureEntityTableEntry {
                 entity_id: 43,
                 class_id: 200,
-                source_entity_id: Some(9),
-                related_entity_id: None,
-                related_entity_state: None,
+                payload: crate::feature::entry_payload(200, Some(9), None, None),
                 prefixed: false,
                 offset: 0,
                 end_offset: 0,
@@ -196,7 +190,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         generated_surface_id_for_feature(&[first_table.clone(), second_table], 17, 9),
         Some(43)
     );
-    first_table.entries[0].source_entity_id = Some(9);
+    first_table.entries[0].payload = crate::feature::EntryPayload::Source { entity: Some(9) };
     assert_eq!(
         generated_surface_id_for_feature(&[first_table, table.clone()], 17, 9),
         None
@@ -296,11 +290,10 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
 #[test]
 fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -367,11 +360,10 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
 #[test]
 fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -458,7 +450,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     let mut extended = table.clone();
     let mut extra = extended.entries[3].clone();
     extra.entity_id = 26;
-    extra.source_entity_id = Some(5);
+    extra.payload = crate::feature::EntryPayload::Source { entity: Some(5) };
     extended.entries.insert(7, extra.clone());
     extra.entity_id = 27;
     extended.entries.insert(14, extra);
@@ -470,7 +462,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     let mut unknown_family = extended;
     let mut extra = unknown_family.entries[7].clone();
     extra.entity_id = 28;
-    extra.source_entity_id = Some(6);
+    extra.payload = crate::feature::EntryPayload::Source { entity: Some(6) };
     unknown_family.entries.insert(8, extra.clone());
     extra.entity_id = 29;
     unknown_family.entries.insert(16, extra);
@@ -478,7 +470,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
 
     let mut bottom = table.entries[2].clone();
     bottom.entity_id = 20;
-    bottom.source_entity_id = Some(0);
+    bottom.payload = crate::feature::EntryPayload::Source { entity: Some(0) };
     table.entries.insert(2, bottom.clone());
     assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows).is_some());
     bottom.entity_id = 25;
@@ -825,11 +817,10 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
 
     let compact_entry =
         |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+            payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
             entity_id,
             class_id,
-            source_entity_id,
-            related_entity_id: None,
-            related_entity_state: None,
             prefixed: false,
             offset: 0,
             end_offset: 0,
@@ -873,9 +864,7 @@ fn counterbore_sources_require_materialized_table_membership() {
     let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
         class_id: 200,
-        source_entity_id: Some(source_entity_id),
-        related_entity_id: None,
-        related_entity_state: None,
+        payload: crate::feature::entry_payload(200, Some(source_entity_id), None, None),
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -909,9 +898,7 @@ fn counterbore_sources_require_materialized_table_membership() {
             entries: vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 99,
                 class_id: 0,
-                source_entity_id: None,
-                related_entity_id: None,
-                related_entity_state: None,
+                payload: crate::feature::entry_payload(0, None, None, None),
                 prefixed: true,
                 offset: 1,
                 end_offset: 2,

@@ -460,11 +460,10 @@ fn resolves_generated_section_from_declared_cap_pair() {
     }];
     let entries = [(43, 204), (92, 203)].map(|(entity_id, class_id)| {
         crate::feature::FeatureEntityTableEntry {
+            payload: crate::feature::entry_payload(class_id, None, None, None),
+
             entity_id,
             class_id,
-            source_entity_id: None,
-            related_entity_id: None,
-            related_entity_state: None,
             prefixed: false,
             offset: usize::try_from(entity_id).expect("fixture id fits usize"),
             end_offset: usize::try_from(entity_id + 1).expect("fixture id fits usize"),
@@ -478,9 +477,7 @@ fn resolves_generated_section_from_declared_cap_pair() {
             entries: vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 700,
                 class_id: 7,
-                source_entity_id: None,
-                related_entity_id: None,
-                related_entity_state: None,
+                payload: crate::feature::entry_payload(7, None, None, None),
                 prefixed: false,
                 offset: 60,
                 end_offset: 61,
@@ -1015,9 +1012,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     let entry = |entity_id, source_entity_id, offset| FeatureEntityTableEntry {
         entity_id,
         class_id: 200,
-        source_entity_id: Some(source_entity_id),
-        related_entity_id: None,
-        related_entity_state: None,
+        payload: crate::feature::entry_payload(200, Some(source_entity_id), None, None),
         prefixed: false,
         offset,
         end_offset: offset + 1,
@@ -1186,11 +1181,10 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         outline(29, [-20.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ];
     let entry = |entity_id, class_id, source_entity_id| FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: entity_id as usize,
         end_offset: entity_id as usize + 1,

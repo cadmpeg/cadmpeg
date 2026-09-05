@@ -121,8 +121,8 @@ pub fn compact_simple_hole_cylinder_id(
                     };
                     (class_204.class_id == 204
                         && class_203.class_id == 203
-                        && class_204.source_entity_id.is_none()
-                        && class_203.source_entity_id.is_none())
+                        && class_204.source_entity_id().is_none()
+                        && class_203.source_entity_id().is_none())
                     .then_some(())?;
                     let planes = pair
                         .iter()
@@ -163,7 +163,7 @@ pub fn compact_simple_hole_cylinder_id(
                 .enumerate()
                 .filter(|(_, candidate)| {
                     candidate.class_id == 200
-                        && candidate.source_entity_id == Some(0)
+                        && candidate.source_entity_id() == Some(0)
                         && !table.surface_ids().contains(&candidate.entity_id)
                         && !rows.iter().any(|row| row.id == candidate.entity_id)
                 })
@@ -177,7 +177,7 @@ pub fn compact_simple_hole_cylinder_id(
                 .enumerate()
                 .filter(|(_, candidate)| {
                     candidate.class_id == 200
-                        && candidate.source_entity_id.is_none()
+                        && candidate.source_entity_id().is_none()
                         && table.surface_ids().contains(&candidate.entity_id)
                         && rows
                             .iter()
@@ -317,8 +317,8 @@ pub fn single_cap_circular_sweep_geometry(
         profile_id.class_id,
         cylinder_id.class_id,
     ] != [204, 203, 200, 200]
-        || profile_id.source_entity_id.is_none()
-        || cylinder_id.source_entity_id.is_some()
+        || profile_id.source_entity_id().is_none()
+        || cylinder_id.source_entity_id().is_some()
         || !has_exact_materialized_surface_roster(table, [cap_id.entity_id, cylinder_id.entity_id])
         || !table
             .non_surface_entity_ids()
@@ -437,10 +437,10 @@ pub fn two_cap_circular_sweep_geometry(
             profile_entry.class_id,
             cylinder_entry.class_id,
         ] != [204, 203, 200, 200]
-        || first_plane_entry.source_entity_id.is_some()
-        || second_plane_entry.source_entity_id.is_some()
-        || profile_entry.source_entity_id.is_none()
-        || cylinder_entry.source_entity_id.is_some()
+        || first_plane_entry.source_entity_id().is_some()
+        || second_plane_entry.source_entity_id().is_some()
+        || profile_entry.source_entity_id().is_none()
+        || cylinder_entry.source_entity_id().is_some()
         || !has_exact_materialized_surface_roster(
             table,
             [
