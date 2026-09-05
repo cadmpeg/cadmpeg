@@ -180,3 +180,38 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
         }
     }
 }
+
+#[test]
+fn extrude_prefixes_preserve_wire_and_reject_partial_locations() {
+    let reference = r#"{"record_index":2,"record_index_offset":26,"trailing_zero_count":7"#;
+    for fields in ["", ",\"operation_prefix_marker\":1,\"operation_prefix_marker_offset\":37"] {
+        let wire = format!("{reference}{fields}}}");
+        let value: super::DesignExtrudePrologueReference = serde_json::from_str(&wire).expect("prologue reference");
+        assert_eq!(serde_json::to_string(&value).expect("prologue reference wire"), wire);
+    }
+    for field in ["operation_prefix_marker", "operation_prefix_marker_offset"] {
+        let error = serde_json::from_str::<super::DesignExtrudePrologueReference>(&format!("{reference},\"{field}\":1}}"))
+            .expect_err("partial prologue reference marker");
+        assert!(error.to_string().contains(field));
+    }
+    for (layout, field, suffix) in [
+        ("legacy_distance", "prefix_value", r#","operation":"join","operation_offset":25,"extent_kind":2,"extent_kind_offset":29,"direction_reversed":false,"direction_reversed_offset":33,"geometry_kind":1,"geometry_kind_offset":34}"#),
+        ("legacy_shifted", "operation_prefix_marker", r#","operation":"join","operation_offset":28,"direction_face_extend_values":[1,0],"side_extent_discriminators":[1,0],"side_extent_discriminator_offsets":[105,109],"direction_face_extend_offsets":[32,36],"direction_reversed":false,"direction_reversed_offset":40,"solid_operation":true,"solid_operation_offset":41,"start":"profile_plane","start_offset":42}"#),
+    ] {
+        for value in [None, Some(if layout == "legacy_distance" { 0 } else { 1 })] {
+            let fields = match value {
+                Some(value) => format!(",\"{field}\":{value},\"{field}_offset\":21"),
+                None if layout == "legacy_distance" => format!(",\"{field}\":null,\"{field}_offset\":null"),
+                None => String::new(),
+            };
+            let wire = format!("{{\"layout\":\"{layout}\"{fields}{suffix}");
+            let value: super::DesignExtrudePrologue = serde_json::from_str(&wire).expect("extrude prologue");
+            assert_eq!(serde_json::to_string(&value).expect("extrude prologue wire"), wire);
+        }
+        for partial_field in [field.to_owned(), format!("{field}_offset")] {
+            let wire = format!("{{\"layout\":\"{layout}\",\"{partial_field}\":1{suffix}");
+            let error = serde_json::from_str::<super::DesignExtrudePrologue>(&wire).expect_err("partial prologue prefix");
+            assert!(error.to_string().contains(field));
+        }
+    }
+}

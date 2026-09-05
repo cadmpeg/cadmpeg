@@ -3676,7 +3676,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && match scope.extrude_prologue() {
                 Some(records::DesignExtrudePrologue::LegacyDistance {
                     prefix_value,
-                    prefix_value_offset,
                     operation_offset,
                     extent_kind,
                     extent_kind_offset,
@@ -3686,13 +3685,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     ..
                 }) => {
                     let marker_offset = scope.byte_offset.saturating_add(20);
-                    let prefix_valid = match (prefix_value, prefix_value_offset) {
-                        (None, None) => {
+                    let prefix_valid = match prefix_value {
+                        None => {
                             operation_offset == marker_offset.saturating_add(1)
                                 && scope.reference_count_offset
                                     == scope.byte_offset.saturating_add(208)
                         }
-                        (Some(0), Some(offset)) => {
+                        Some(records::Located { value: 0, offset }) => {
                             offset == marker_offset.saturating_add(1)
                                 && operation_offset == offset.saturating_add(4)
                                 && scope.reference_count_offset
@@ -3827,12 +3826,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 .record_index_offset
                                 .saturating_add(4)
                                 .saturating_add(u64::from(reference.trailing_zero_count));
-                            let marker_valid = match (
-                                reference.operation_prefix_marker,
-                                reference.operation_prefix_marker_offset,
-                            ) {
-                                (None, None) => operation_offset == padding_end,
-                                (Some(1), Some(marker_offset)) => {
+                            let marker_valid = match reference.operation_prefix_marker {
+                                None => operation_offset == padding_end,
+                                Some(records::Located { value: 1, offset: marker_offset }) => {
                                     marker_offset == padding_end
                                         && operation_offset == marker_offset.saturating_add(1)
                                 }
@@ -3990,7 +3986,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 }
                 Some(records::DesignExtrudePrologue::LegacyShifted {
                     operation_prefix_marker,
-                    operation_prefix_marker_offset,
                     operation_offset,
                     direction_face_extend_values,
                     side_extent_discriminators,
@@ -4003,13 +3998,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     ..
                 }) => {
                     let field_shift =
-                        match (operation_prefix_marker, operation_prefix_marker_offset) {
-                            (None, None)
+                        match operation_prefix_marker {
+                            None
                                 if operation_offset == scope.byte_offset.saturating_add(27) =>
                             {
                                 Some(0)
                             }
-                            (Some(1), Some(marker_offset))
+                            Some(records::Located { value: 1, offset: marker_offset })
                                 if marker_offset == scope.byte_offset.saturating_add(27)
                                     && operation_offset == marker_offset.saturating_add(1) =>
                             {
@@ -4017,10 +4012,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             }
                             _ => None,
                         };
-                    let compact_extent_offsets = if (
-                        operation_prefix_marker,
-                        operation_prefix_marker_offset,
-                    ) == (None, None)
+                    let compact_extent_offsets = if operation_prefix_marker.is_none()
                         && operation_offset == scope.byte_offset.saturating_add(26)
                     {
                         scope

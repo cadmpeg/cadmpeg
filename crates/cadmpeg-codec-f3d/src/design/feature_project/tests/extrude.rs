@@ -277,7 +277,6 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::LegacyShifted {
                 operation_prefix_marker: None,
-                operation_prefix_marker_offset: None,
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 127,
                 direction_face_extend_values: [3, 2],

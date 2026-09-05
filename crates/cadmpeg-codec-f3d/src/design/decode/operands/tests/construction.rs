@@ -1095,7 +1095,6 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::LegacyShifted {
                 operation_prefix_marker: None,
-                operation_prefix_marker_offset: None,
                 operation: DesignExtrudeOperation::Join,
                 operation_offset: 1026,
                 direction_face_extend_values: [2, 2],
