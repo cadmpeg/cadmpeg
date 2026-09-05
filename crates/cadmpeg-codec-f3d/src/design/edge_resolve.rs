@@ -375,16 +375,13 @@ pub(crate) fn resolved_edge_treatment_group_with_corners(
                 edge_group.members.push(member);
             }
             (0, Some(corner)) => {
-                let (Some(state), Some(vertex)) = (
-                    corner.recipe.recipe_state_id,
-                    corner.recipe.resolved_vertex_slot,
-                ) else {
+                let Some(resolution) = corner.recipe.resolution else {
                     return EdgeSelection::Native(group.id.clone());
                 };
-                if Some(state) != previous_state_id {
+                if Some(resolution.state_id) != previous_state_id {
                     return EdgeSelection::Native(group.id.clone());
                 }
-                corner_slots.push(vertex);
+                corner_slots.push(resolution.vertex_slot());
             }
             _ => return EdgeSelection::Native(group.id.clone()),
         }

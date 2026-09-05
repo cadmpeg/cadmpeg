@@ -493,7 +493,7 @@ pub fn bind_work_plane_constructions(
         };
         let placement_record_index = *placement_record_index;
         if let Some(frame) = scope.work_plane_frame_mut() {
-            frame.work_plane_construction = Some(DesignWorkPlaneConstruction::ThreePoint {
+            frame.work_plane_construction = Some(DesignWorkPlaneConstruction {
                 placement_record_index,
                 inputs: Box::new(inputs),
             });
@@ -509,7 +509,7 @@ pub fn bind_vertex_recipe_candidates(
 ) {
     for scope in scopes {
         let scope_id = scope.id.clone();
-        if let Some(DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
+        if let Some(DesignWorkPlaneConstruction { inputs, .. }) =
             scope.work_plane_construction_mut()
         {
             for recipe in inputs.iter_mut() {
@@ -4278,8 +4278,7 @@ pub(crate) fn parse_vertex_recipe(
         recipe_references: parsed.recipe_references,
         recipe_program_offset: parsed.recipe_program_offset,
         recipe_program: parsed.recipe_program,
-        recipe_state_id: None,
-        resolved_vertex_slot: None,
+        resolution: None,
         next_record_index: parsed.next_record_index,
         next_byte_offset: parsed.next_byte_offset,
     })

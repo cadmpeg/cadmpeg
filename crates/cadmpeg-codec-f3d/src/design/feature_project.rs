@@ -1789,7 +1789,7 @@ pub(crate) fn work_point_input_history_state_id(
             work_point_edge_operand(scope, input, edge_operands)?.recipe_state_id
         }
         crate::records::DesignWorkPointInputCarrier::VertexRecipe { recipe } => {
-            recipe.resolved_vertex_slot.and(recipe.recipe_state_id)
+            recipe.resolution.map(|resolution| resolution.state_id)
         }
         crate::records::DesignWorkPointInputCarrier::WorkPlane { .. }
         | crate::records::DesignWorkPointInputCarrier::SketchPoint { .. } => None,
@@ -1811,13 +1811,13 @@ pub(crate) fn work_point_recipe_state_id(
 }
 
 pub(crate) fn work_plane_recipe_state_id(scope: &DesignParameterScope) -> Option<i64> {
-    let crate::records::DesignWorkPlaneConstruction::ThreePoint { inputs, .. } =
+    let crate::records::DesignWorkPlaneConstruction { inputs, .. } =
         scope.work_plane_construction()?;
-    let state = inputs[0].recipe_state_id?;
+    let state = inputs[0].resolution?.state_id;
     inputs
         .iter()
         .all(|recipe| {
-            recipe.recipe_state_id == Some(state) && recipe.resolved_vertex_slot.is_some()
+            recipe.resolution.is_some_and(|resolution| resolution.state_id == state)
         })
         .then_some(state)
 }
@@ -1885,11 +1885,12 @@ fn project_work_point_construction(
                 return None;
             };
             let vertex = recipe
-                .recipe_state_id
-                .zip(recipe.resolved_vertex_slot)
+                .resolution
                 .map_or_else(
                     || VertexSelection::Native(recipe.recipe_id.clone()),
-                    |(state_id, vertex_slot)| {
+                    |resolution| {
+                        let state_id = resolution.state_id;
+                        let vertex_slot = resolution.vertex_slot();
                         let feature_id = neutral_feature_id(scope);
                         let feature_key = feature_id
                             .0
@@ -1943,7 +1944,7 @@ fn project_work_plane(
     );
     let normal = Vector3::new(transform[0][2], transform[1][2], transform[2][2]);
     let u_axis = Vector3::new(transform[0][0], transform[1][0], transform[2][0]);
-    let Some(DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
+    let Some(DesignWorkPlaneConstruction { inputs, .. }) =
         scope.work_plane_construction()
     else {
         return FeatureDefinition::DatumPlane {
@@ -1966,7 +1967,7 @@ fn project_work_plane(
         .map(|recipe| {
             Some(VertexSelection::Historical {
                 state: feature_input_topology_id(&feature_id, state_id),
-                vertex: ids::history_input_vertex_id(&prefix, recipe.resolved_vertex_slot?),
+                vertex: ids::history_input_vertex_id(&prefix, recipe.resolution?.vertex_slot()),
                 native: recipe.recipe_id.clone(),
             })
         })
