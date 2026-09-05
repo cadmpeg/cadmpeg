@@ -782,3 +782,54 @@ fn segment_entity_runs_preserve_authored_and_located_wire() {
         assert!(error.contains("entity_ids/entity_id_offsets"));
     }
 }
+
+#[test]
+fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
+    let identity = serde_json::json!({
+        "class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 200
+    });
+    let body = serde_json::json!({
+        "body_record": identity, "entry_name_record": identity, "guid_record": identity,
+        "wrapper_record": identity, "scene_state_record": identity, "scene_node_record": identity,
+        "scene_auxiliary_record": identity, "owner_record": identity,
+        "entry_name": "mesh.paramesh", "entry_name_offset": 120,
+        "fusion_uuid": "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", "fusion_uuid_offset": 130,
+        "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
+        "transform_offsets": [140, 160], "scope_reference_offset": 170,
+        "wrapper_reference_offset": 180, "owner_reference_offset": 190,
+        "guid_reference_offset": 200, "scene_node_reference_offset": 210,
+        "collection_reference_offset": 220, "wrapper_body_reference_offset": 230,
+        "entry_guid_reference_offset": 240, "guid_entry_reference_offset": 250,
+        "scene_state_reference_offset": 260, "scene_auxiliary_reference_offset": 270
+    });
+    let base = serde_json::json!({
+        "id": "mesh-feature", "scope_record": identity, "scope_base_record": identity,
+        "collection_record": identity, "collection_base_record": identity,
+        "texture_table_record": identity, "body_count_offsets": [21, 31, 41],
+        "body_record_indices": [104, 104], "scope_body_reference_offsets": [25, 36],
+        "collection_body_reference_offsets": [62, 73], "texture_table_reference_offset": 52,
+        "collection_owner_record": identity, "collection_owner_reference_offset": 84,
+        "collection_owner_backlink_offset": 94, "scope_owner_record_index": 109,
+        "scope_owner_reference_offset": 105, "texture_flags_count_offset": 115,
+        "texture_filename_count_offset": 125, "bodies": [body, body], "textures": []
+    });
+    for count in 0..=2 {
+        let mut value = base.clone();
+        for field in ["bodies", "body_record_indices", "scope_body_reference_offsets", "collection_body_reference_offsets"] {
+            value[field].as_array_mut().expect("wire array").truncate(count);
+        }
+        let wire: super::DesignMeshFeatureWire = serde_json::from_value(value).expect("mesh wire");
+        let expected = serde_json::to_string(&wire).expect("original mesh wire");
+        let feature: super::DesignMeshFeature = serde_json::from_str(&expected).expect("mesh body rows");
+        assert_eq!(serde_json::to_string(&feature).expect("mesh wire"), expected);
+    }
+    for field in ["body_record_indices", "scope_body_reference_offsets", "collection_body_reference_offsets", "bodies"] {
+        let mut value = base.clone();
+        value[field].as_array_mut().expect("wire array").pop();
+        assert!(serde_json::from_value::<super::DesignMeshFeature>(value).is_err());
+    }
+    let mut changed_identity = base;
+    changed_identity["body_record_indices"][0] = serde_json::json!(105);
+    let error = serde_json::from_value::<super::DesignMeshFeature>(changed_identity).expect_err("conflicting body identity").to_string();
+    assert!(error.contains("body_record_indices"));
+}
