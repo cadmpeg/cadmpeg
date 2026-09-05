@@ -2825,13 +2825,11 @@ pub(crate) fn parse_extrude_selection_group(
         return None;
     }
     let mut members = Vec::with_capacity(member_count);
-    let mut member_offsets = Vec::with_capacity(member_count);
     for _ in 0..member_count {
         if bytes.get(position) != Some(&1) || bytes.get(position + 5..position + 11)? != [0; 6] {
             return None;
         }
-        members.push(View::u32_le_at(bytes, position + 1)?);
-        member_offsets.push(u64::try_from(position + 1).ok()?);
+        members.push(crate::records::Located { value: View::u32_le_at(bytes, position + 1)?, offset: u64::try_from(position + 1).ok()? });
         position = position.checked_add(11)?;
     }
     let opaque_index = View::u32_le_at(bytes, position)?;
@@ -2869,7 +2867,6 @@ pub(crate) fn parse_extrude_selection_group(
         class_tag: header.class_tag.clone(),
         member_count_offset: u64::try_from(start + 32).ok()?,
         members,
-        member_offsets,
         opaque_index,
         opaque_index_offset: u64::try_from(position).ok()?,
         opaque_scalar,
@@ -2900,7 +2897,7 @@ pub fn decode_extrude_selection_members(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+        for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };

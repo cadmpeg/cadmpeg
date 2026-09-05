@@ -649,7 +649,7 @@ fn historical_face_profile_selection(
             || group_members
                 .iter()
                 .zip(&group.members)
-                .any(|(member, record_index)| member.record_index != *record_index)
+                .any(|(member, record_index)| member.record_index != record_index.value)
         {
             return None;
         }
@@ -878,7 +878,7 @@ pub(crate) fn resolved_extrude_profile_selection(
         && selection_members
             .iter()
             .zip(&group.members)
-            .all(|(member, record_index)| member.record_index == *record_index);
+            .all(|(member, record_index)| member.record_index == record_index.value);
     let resolved_profiles = exact_member_run.then(|| {
         let mut selected = Vec::new();
         for member in &selection_members {
@@ -1128,7 +1128,7 @@ fn resolved_spatial_extrude_profile_selection(
         && group_members
             .iter()
             .zip(&group.members)
-            .all(|(member, record_index)| member.record_index == *record_index);
+            .all(|(member, record_index)| member.record_index == record_index.value);
     let exact_selection = (|| {
         if !exact_member_run {
             return ExactSelection::Unavailable;

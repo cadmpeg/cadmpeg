@@ -609,3 +609,16 @@ fn direct_base_feature_emits_its_single_body_reference_views() {
         assert!(error.contains(field));
     }
 }
+
+#[test]
+fn extrude_selection_group_members_preserve_wire_and_reject_unequal_offsets() {
+    let wire = r#"{"id":"group","scope_record_index":7,"scope_reference_ordinal":0,"record_index":9,"byte_offset":0,"class_tag":"277","member_count_offset":32,"members":[10,11],"member_offsets":[37,48],"opaque_index":1,"opaque_index_offset":58,"opaque_scalar":0.0,"opaque_scalar_offset":62,"variant":false,"paired_class_tag":"259","paired_byte_offset":111}"#;
+    let group: super::DesignExtrudeSelectionGroup = serde_json::from_str(wire).expect("selection group");
+    assert_eq!(serde_json::to_string(&group).expect("selection wire"), wire);
+    for offsets in ["[]", "[37]", "[37,48,59]"] {
+        let invalid = wire.replace("\"member_offsets\":[37,48]", &format!("\"member_offsets\":{offsets}"));
+        let error = serde_json::from_str::<super::DesignExtrudeSelectionGroup>(&invalid).expect_err("unequal member arrays").to_string();
+        assert!(error.contains("members"));
+        assert!(error.contains("member_offsets"));
+    }
+}

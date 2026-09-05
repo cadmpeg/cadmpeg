@@ -504,7 +504,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
 
     let mut group = parse_extrude_selection_group(&group_bytes, &scope, 0, &record)
         .expect("counted Extrude selection group");
-    assert_eq!(group.members, [200, 201]);
+    assert_eq!(group.members.iter().map(|member| member.value).collect::<Vec<_>>(), [200, 201]);
     assert_eq!(group.opaque_index, 180);
     assert_eq!(group.opaque_scalar, 0.25);
     assert!(group.variant);
@@ -667,7 +667,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         })
     ));
 
-    group.members.truncate(1);
+    let remaining_members = group.members.split_off(1);
     let sketch_id = SketchId("f3d:model:sketch#172".into());
     let sketch = Sketch {
         id: sketch_id.clone(),
@@ -720,7 +720,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         record_index: 401,
         persistent_id: Some(587),
     });
-    group.members.push(201);
+    group.members.extend(remaining_members);
     let mut sketch = sketch;
     let second_profile_id = SketchEntityId("second-profile".into());
     sketch.profiles.push(vec![SketchEntityUse {
