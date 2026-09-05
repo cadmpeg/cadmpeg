@@ -1291,18 +1291,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         secondary_id: 2,
         geometry: None,
     });
-    native.lost_edge_references.push(LostEdgeReference {
-        id: "f3d:test:lost-edge-reference#2".into(),
-        record_byte_offset: 0,
-        class_tag_offset: 0,
-        class_tag: "000".into(),
-        record_index: 0,
-        record_index_offset: 0,
-        byte_offset: 0,
-        next_byte_offset: 1,
-        next_class_tag: "001".into(),
-        next_record_index: 1,
-    });
+    native.lost_edge_references.push(LostEdgeReference::new("f3d:test:lost-edge-reference#2".into(), 0, "000".into(), 0, "001".into(), 1).expect("valid lost-edge record layout"));
     native.sketch_relations.push(SketchRelation {
         id: "native:sketch-relation".into(),
         record_index: 1,

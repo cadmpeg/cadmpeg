@@ -983,12 +983,6 @@ pub(crate) fn validate_lost_edge_edits(
         if after == before {
             continue;
         }
-        if after.class_tag.len() != 3 || !after.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-        {
-            return Err(CodecError::malformed(format_args!(
-                "F3D lost-edge class tag must contain three digits: {id}"
-            )));
-        }
         edits
             .entry(native_stream(id, ":lost-edge-reference#")?)
             .or_default()

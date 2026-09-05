@@ -1026,7 +1026,7 @@ fn decode_transfers_generated_protein_appearance() {
         }));
     assert_eq!(f3d_native(result.ir()).lost_edge_references.len(), 1);
     assert_eq!(
-        f3d_native(result.ir()).lost_edge_references[0].class_tag,
+        f3d_native(result.ir()).lost_edge_references[0].class_tag.as_str(),
         "419"
     );
     assert_eq!(

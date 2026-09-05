@@ -2393,3 +2393,34 @@ fn sketch_visibility_derives_flag_offset_and_rejects_invalid_wire() {
     assert_eq!(last.visible_offset(), u64::MAX);
     assert!(super::DesignSketchVisibility::new(std::num::NonZeroU32::MIN, u64::MAX - 4, true).is_err());
 }
+
+#[test]
+fn lost_edge_reference_derives_offsets_and_rejects_inconsistent_wire() {
+    let wire = r#"{"id":"edge","record_byte_offset":152,"class_tag_offset":156,"class_tag":"419","record_index":299,"record_index_offset":159,"byte_offset":181,"next_byte_offset":200,"next_class_tag":"326","next_record_index":300}"#;
+    let record: super::LostEdgeReference = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+    for field in ["class_tag_offset", "record_index_offset", "byte_offset", "next_byte_offset"] {
+        let mut invalid = serde_json::to_value(&record).unwrap();
+        invalid[field] = serde_json::json!(0);
+        assert!(serde_json::from_value::<super::LostEdgeReference>(invalid).unwrap_err().to_string().contains(field));
+    }
+    let mut invalid = serde_json::to_value(&record).unwrap();
+    invalid["record_byte_offset"] = serde_json::json!(u64::MAX - 47);
+    assert!(serde_json::from_value::<super::LostEdgeReference>(invalid).unwrap_err().to_string().contains("record_byte_offset"));
+    let last = super::LostEdgeReference::new("edge".into(), u64::MAX - 48, "419".into(), 299, "326".into(), 300).unwrap();
+    assert_eq!(last.next_byte_offset(), u64::MAX);
+}
+
+#[test]
+fn lost_edge_reference_requires_three_digit_class_tags() {
+    for invalid in ["", "12", "1234", "12a", "１２３"] {
+        assert!(super::LostEdgeReference::new("edge".into(), 0, invalid.into(), 0, "000".into(), 0).unwrap_err().contains("class_tag"));
+        assert!(super::LostEdgeReference::new("edge".into(), 0, "000".into(), 0, invalid.into(), 0).unwrap_err().contains("next_class_tag"));
+        assert!(serde_json::from_value::<super::DesignClassTag>(serde_json::json!(invalid)).unwrap_err().to_string().contains("class_tag"));
+    }
+    for value in ["000", "019", "999"] {
+        let tag: super::DesignClassTag = serde_json::from_value(serde_json::json!(value)).unwrap();
+        assert_eq!(tag.as_str(), value);
+        assert_eq!(serde_json::to_value(tag).unwrap(), serde_json::json!(value));
+    }
+}

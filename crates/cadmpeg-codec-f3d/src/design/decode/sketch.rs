@@ -723,7 +723,6 @@ pub fn decode_lost_edge_references(
                 continue;
             };
             if after_tag != header_offset + 7
-                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
                 || bytes.get(header_offset + 11..header_offset + 25) != Some(&[0; 14])
                 || View::u32_le_at(bytes, header_offset + 25) != Some(marker.len() as u32)
             {
@@ -739,25 +738,14 @@ pub fn decode_lost_edge_references(
                 continue;
             };
             if after_next_tag != next_byte_offset + 7
-                || !next_class_tag.bytes().all(|byte| byte.is_ascii_digit())
             {
                 continue;
             }
             let Some(next_record_index) = View::u32_le_at(bytes, after_next_tag) else {
                 continue;
             };
-            out.push(LostEdgeReference {
-                id: ids::native_lost_edge_reference_id(&entry.name, header_offset),
-                record_byte_offset: header_offset as u64,
-                class_tag_offset: (header_offset + 4) as u64,
-                class_tag,
-                record_index,
-                record_index_offset: (header_offset + 7) as u64,
-                byte_offset: offset as u64,
-                next_byte_offset: next_byte_offset as u64,
-                next_class_tag,
-                next_record_index,
-            });
+            let Ok(reference) = LostEdgeReference::new(ids::native_lost_edge_reference_id(&entry.name, header_offset), header_offset as u64, class_tag, record_index, next_class_tag, next_record_index) else { continue; };
+            out.push(reference);
         }
     }
     Ok(out)
