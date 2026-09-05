@@ -345,8 +345,7 @@ struct MeshWrapperRecord {
 struct MeshSceneNodeRecord {
     identity: DesignMeshRecordIdentity,
     bounds: Option<DesignMeshSceneBounds>,
-    transform: Option<MeshAffineTransform>,
-    transform_offset: Option<u64>,
+    transform: Option<crate::records::Located<MeshAffineTransform>>,
     state_record_index: u32,
     state_reference_offset: u64,
     auxiliary_record_index: u32,
@@ -973,12 +972,11 @@ fn parse_scene_node_record(
             && View::u32_le_at(record, scene_node::CONSTANT_TWO_B) == Some(2)
             && View::u32_le_at(record, scene_node::CONSTANT_THREE) == Some(3))
         .then_some(())?;
-        let (bounds, transform, transform_offset) = if record.len() == scene_node::LEN
+        let (bounds, transform) = if record.len() == scene_node::LEN
             && record.get(scene_node::ZERO_RUN_24..scene_node::FOOTER_MARKER) == Some(&[0; 24])
         {
             (
                 parse_scene_footer(record, scene_node::FOOTER_MARKER, frame.start)?,
-                None,
                 None,
             )
         } else if record.len() == placed_scene_node::LEN
@@ -987,11 +985,10 @@ fn parse_scene_node_record(
         {
             (
                 parse_scene_bounds_payload(record, placed_scene_node::FOOTER_MASK, frame.start)?,
-                Some(MeshAffineTransform::parse(
-                    record,
-                    placed_scene_node::TRANSFORM,
-                )?),
-                Some(source_offset(frame.start, placed_scene_node::TRANSFORM)?),
+                Some(crate::records::Located {
+                    value: MeshAffineTransform::parse(record, placed_scene_node::TRANSFORM)?,
+                    offset: source_offset(frame.start, placed_scene_node::TRANSFORM)?,
+                }),
             )
         } else {
             return None;
@@ -1000,7 +997,6 @@ fn parse_scene_node_record(
             identity,
             bounds,
             transform,
-            transform_offset,
             state_record_index: exact_local_record_index(
                 record,
                 scene_node::SCENE_STATE_REFERENCE,
@@ -1532,8 +1528,7 @@ where
                 scene_state_bounds: scene_state.1,
                 scene_node_record: scene_node.identity,
                 scene_node_bounds: scene_node.bounds,
-                scene_node_transform: scene_node.transform.map(MeshAffineTransform::rows),
-                scene_node_transform_offset: scene_node.transform_offset,
+                scene_node_transform: scene_node.transform.map(|located| crate::records::Located { value: located.value.rows(), offset: located.offset }),
                 scene_auxiliary_record: scene_auxiliary,
                 owner_record: body_owner,
                 entry_name: entry_name.entry_name,
@@ -2772,9 +2767,9 @@ mod tests {
         };
 
         let parsed = parse_scene_node_record(&bytes, frame).expect("placed Scene node");
-        assert_eq!(parsed.transform.expect("placed transform").0, transform);
+        assert_eq!(parsed.transform.expect("placed transform").value.0, transform);
         assert_eq!(
-            parsed.transform_offset,
+            parsed.transform.map(|located| located.offset),
             Some(placed_scene_node::TRANSFORM as u64)
         );
         let bounds = parsed.bounds.expect("placed bounds");

@@ -8,6 +8,24 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
+/// A source value and the byte offset of its encoding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct Located<T> {
+    pub value: T,
+    pub offset: u64,
+}
+
+impl<T> Located<T> {
+    fn from_wire(value: Option<T>, offset: Option<u64>, field: &str) -> Result<Option<Self>, String> {
+        match (value, offset) {
+            (None, None) => Ok(None),
+            (Some(value), Some(offset)) => Ok(Some(Self { value, offset })),
+            _ => Err(format!("{field} and {field}_offset must occur together")),
+        }
+    }
+}
+
 fn serialize_absent_u64_offset<S: Serializer>(
     value: &Option<u64>,
     serializer: S,
@@ -8658,6 +8676,7 @@ pub struct DesignMeshSceneBounds {
 /// One mesh body and its complete Design identity graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignMeshBodyWire", into = "DesignMeshBodyWire")]
 pub struct DesignMeshBody {
     /// Mesh-body record carrying placement and graph references.
     pub body_record: DesignMeshRecordIdentity,
@@ -8679,10 +8698,7 @@ pub struct DesignMeshBody {
     pub scene_node_bounds: Option<DesignMeshSceneBounds>,
     /// Optional row-major affine transform carried by the placed Scene-node form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scene_node_transform: Option<[[f64; 4]; 4]>,
-    /// Byte offset of `scene_node_transform` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scene_node_transform_offset: Option<u64>,
+    pub scene_node_transform: Option<Located<[[f64; 4]; 4]>>,
     /// Separately typed Scene auxiliary cache reached through the Scene node.
     pub scene_auxiliary_record: DesignMeshRecordIdentity,
     /// Typed Design body-owner record referenced by `body_record`.
@@ -8730,6 +8746,158 @@ pub struct DesignMeshBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tessellation_id: Option<String>,
 }
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignMeshBodyWire {
+    /// Mesh-body record carrying placement and graph references.
+    body_record: DesignMeshRecordIdentity,
+    /// Entry-name record joining the body to one `.paramesh` archive entry.
+    entry_name_record: DesignMeshRecordIdentity,
+    /// GUID record joining the body to the container's `fusion_uuid`.
+    guid_record: DesignMeshRecordIdentity,
+    /// One-to-one `ParaMesh` wrapper around `body_record`.
+    wrapper_record: DesignMeshRecordIdentity,
+    /// Fixed Scene-state record owned by this mesh body.
+    scene_state_record: DesignMeshRecordIdentity,
+    /// Finite bound carried by the Scene-state footer; absent for its unset sentinel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scene_state_bounds: Option<DesignMeshSceneBounds>,
+    /// Scene node connecting `body_record` to its state and auxiliary cache.
+    scene_node_record: DesignMeshRecordIdentity,
+    /// Finite bound carried by the Scene-node footer; absent for its unset sentinel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scene_node_bounds: Option<DesignMeshSceneBounds>,
+    /// Optional row-major affine transform carried by the placed Scene-node form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scene_node_transform: Option<[[f64; 4]; 4]>,
+    /// Byte offset of `scene_node_transform` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scene_node_transform_offset: Option<u64>,
+    /// Separately typed Scene auxiliary cache reached through the Scene node.
+    scene_auxiliary_record: DesignMeshRecordIdentity,
+    /// Typed Design body-owner record referenced by `body_record`.
+    /// Multiple mesh bodies can reference the same owner.
+    owner_record: DesignMeshRecordIdentity,
+    /// Stored `.paramesh` archive-entry basename.
+    entry_name: String,
+    /// Byte offset of the UTF-16LE entry-name code units.
+    entry_name_offset: u64,
+    /// Container identity stored by both Design and `.paramesh` payloads.
+    fusion_uuid: String,
+    /// Container-local version-4 mesh UUID from protobuf registry field 12,
+    /// when the geometry container joined this Design body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    container_mesh_uuid: Option<String>,
+    /// Byte offset of the ASCII `fusion_uuid` payload.
+    fusion_uuid_offset: u64,
+    /// Equal row-major container-to-model-centimetre affine transform.
+    transform: [[f64; 4]; 4],
+    /// Byte offsets of the two equal serialized transform blocks.
+    transform_offsets: [u64; 2],
+    /// Byte offset of the body-to-feature-scope reference.
+    scope_reference_offset: u64,
+    /// Byte offset of the body-to-wrapper reference.
+    wrapper_reference_offset: u64,
+    /// Byte offset of the body-to-owner reference.
+    owner_reference_offset: u64,
+    /// Byte offset of the body-to-GUID reference.
+    guid_reference_offset: u64,
+    /// Byte offset of the body-to-Scene-node reference.
+    scene_node_reference_offset: u64,
+    /// Byte offset of the body's final collection backlink.
+    collection_reference_offset: u64,
+    /// Byte offset of the wrapper's reciprocal body reference.
+    wrapper_body_reference_offset: u64,
+    /// Byte offset of the entry-name record's GUID reference.
+    entry_guid_reference_offset: u64,
+    /// Byte offset of the GUID record's entry-name backlink.
+    guid_entry_reference_offset: u64,
+    /// Byte offset of the Scene node's state-record reference.
+    scene_state_reference_offset: u64,
+    /// Byte offset of the Scene node's auxiliary-record reference.
+    scene_auxiliary_reference_offset: u64,
+    /// Neutral tessellation projected from the joined container, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tessellation_id: Option<String>,
+}
+
+impl From<DesignMeshBody> for DesignMeshBodyWire {
+    fn from(value: DesignMeshBody) -> Self {
+        Self {
+            body_record: value.body_record,
+            entry_name_record: value.entry_name_record,
+            guid_record: value.guid_record,
+            wrapper_record: value.wrapper_record,
+            scene_state_record: value.scene_state_record,
+            scene_state_bounds: value.scene_state_bounds,
+            scene_node_record: value.scene_node_record,
+            scene_node_bounds: value.scene_node_bounds,
+            scene_node_transform: value.scene_node_transform.map(|located| located.value),
+            scene_node_transform_offset: value.scene_node_transform.map(|located| located.offset),
+            scene_auxiliary_record: value.scene_auxiliary_record,
+            owner_record: value.owner_record,
+            entry_name: value.entry_name,
+            entry_name_offset: value.entry_name_offset,
+            fusion_uuid: value.fusion_uuid,
+            container_mesh_uuid: value.container_mesh_uuid,
+            fusion_uuid_offset: value.fusion_uuid_offset,
+            transform: value.transform,
+            transform_offsets: value.transform_offsets,
+            scope_reference_offset: value.scope_reference_offset,
+            wrapper_reference_offset: value.wrapper_reference_offset,
+            owner_reference_offset: value.owner_reference_offset,
+            guid_reference_offset: value.guid_reference_offset,
+            scene_node_reference_offset: value.scene_node_reference_offset,
+            collection_reference_offset: value.collection_reference_offset,
+            wrapper_body_reference_offset: value.wrapper_body_reference_offset,
+            entry_guid_reference_offset: value.entry_guid_reference_offset,
+            guid_entry_reference_offset: value.guid_entry_reference_offset,
+            scene_state_reference_offset: value.scene_state_reference_offset,
+            scene_auxiliary_reference_offset: value.scene_auxiliary_reference_offset,
+            tessellation_id: value.tessellation_id,
+        }
+    }
+}
+
+impl TryFrom<DesignMeshBodyWire> for DesignMeshBody {
+    type Error = String;
+    fn try_from(value: DesignMeshBodyWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            body_record: value.body_record,
+            entry_name_record: value.entry_name_record,
+            guid_record: value.guid_record,
+            wrapper_record: value.wrapper_record,
+            scene_state_record: value.scene_state_record,
+            scene_state_bounds: value.scene_state_bounds,
+            scene_node_record: value.scene_node_record,
+            scene_node_bounds: value.scene_node_bounds,
+            scene_node_transform: Located::from_wire(value.scene_node_transform, value.scene_node_transform_offset, "scene_node_transform")?,
+            scene_auxiliary_record: value.scene_auxiliary_record,
+            owner_record: value.owner_record,
+            entry_name: value.entry_name,
+            entry_name_offset: value.entry_name_offset,
+            fusion_uuid: value.fusion_uuid,
+            container_mesh_uuid: value.container_mesh_uuid,
+            fusion_uuid_offset: value.fusion_uuid_offset,
+            transform: value.transform,
+            transform_offsets: value.transform_offsets,
+            scope_reference_offset: value.scope_reference_offset,
+            wrapper_reference_offset: value.wrapper_reference_offset,
+            owner_reference_offset: value.owner_reference_offset,
+            guid_reference_offset: value.guid_reference_offset,
+            scene_node_reference_offset: value.scene_node_reference_offset,
+            collection_reference_offset: value.collection_reference_offset,
+            wrapper_body_reference_offset: value.wrapper_body_reference_offset,
+            entry_guid_reference_offset: value.entry_guid_reference_offset,
+            guid_entry_reference_offset: value.guid_entry_reference_offset,
+            scene_state_reference_offset: value.scene_state_reference_offset,
+            scene_auxiliary_reference_offset: value.scene_auxiliary_reference_offset,
+            tessellation_id: value.tessellation_id,
+        })
+    }
+}
+
 
 /// One complete `Base Mesh Feature` Design graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
