@@ -382,21 +382,13 @@ fn decode_table(
         let (guid, end) = lp_utf16_bounded(bytes, after_name, 36..=36)
             .filter(|(guid, end)| *end <= frame.end && is_guid_hyphenated(guid))
             .ok_or_else(|| malformed("channel-registry GUID"))?;
-        registry_channels.push(ActRegistryChannel {
-            id: crate::ids::native_scoped_id(stream, "act-registry-channel", byte_offset),
-            ordinal: u32::try_from(ordinal).map_err(|_| malformed("channel-registry ordinal"))?,
-            byte_offset: byte_offset as u64,
+        registry_channels.push(ActRegistryChannel::new(
+            crate::ids::native_scoped_id(stream, "act-registry-channel", byte_offset),
+            u32::try_from(ordinal).map_err(|_| malformed("channel-registry ordinal"))?,
+            byte_offset as u64,
             name,
-            name_offset: byte_offset
-                .checked_add(4)
-                .ok_or_else(|| malformed("channel-registry name offset"))?
-                as u64,
             guid,
-            guid_offset: after_name
-                .checked_add(4)
-                .ok_or_else(|| malformed("channel-registry GUID offset"))?
-                as u64,
-        });
+        ).map_err(|_| malformed("channel-registry entry"))?);
         cursor = end;
     }
     if cursor != frame.end {

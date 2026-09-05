@@ -1321,15 +1321,9 @@ pub(crate) fn validate_act_registry_channel_edits(
         if after.guid == before.guid {
             continue;
         }
-        if after.guid.encode_utf16().count() != before.guid.encode_utf16().count()
-            || !canonical_guid(&after.guid)
-        {
-            return Err(CodecError::malformed(format_args!(
-                "F3D ACT channel-registry GUID {id} must be a same-length canonical GUID"
-            )));
-        }
         let encoded = after
             .guid
+            .as_str()
             .encode_utf16()
             .flat_map(u16::to_le_bytes)
             .collect::<Vec<_>>();
@@ -1337,7 +1331,7 @@ pub(crate) fn validate_act_registry_channel_edits(
             .entry(native_stream(id, ":act-registry-channel#")?)
             .or_default()
             .push(Edit {
-                offset: after.guid_offset,
+                offset: after.guid_offset(),
                 value: encoded,
             });
     }

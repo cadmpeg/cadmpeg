@@ -1030,7 +1030,7 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut registry_offsets = HashSet::new();
     let mut registry_names = HashSet::new();
     for channel in &native.act_registry_channels {
-        let stream = act_stream_for_id(&channel.id, "act-registry-channel", channel.byte_offset);
+        let stream = act_stream_for_id(&channel.id, "act-registry-channel", channel.byte_offset());
         if let Some(stream) = stream {
             streams.entry(stream).or_insert(&channel.id);
         }
@@ -1042,22 +1042,10 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .insert(channel.ordinal)
         });
         let unique_offset =
-            stream.is_some_and(|stream| registry_offsets.insert((stream, channel.byte_offset)));
+            stream.is_some_and(|stream| registry_offsets.insert((stream, channel.byte_offset())));
         let unique_name =
-            stream.is_some_and(|stream| registry_names.insert((stream, channel.name.as_str())));
-        let expected_guid_offset = u64::try_from(channel.name.len())
-            .ok()
-            .and_then(|length| channel.byte_offset.checked_add(8 + length));
-        let valid = stream.is_some()
-            && unique_offset
-            && unique_name
-            && unique_ordinal
-            && channel.byte_offset.checked_add(4) == Some(channel.name_offset)
-            && expected_guid_offset == Some(channel.guid_offset)
-            && !channel.name.is_empty()
-            && channel.name.len() <= 128
-            && channel.name.is_ascii()
-            && valid_design_guid(&channel.guid);
+            stream.is_some_and(|stream| registry_names.insert((stream, channel.name())));
+        let valid = stream.is_some() && unique_offset && unique_name && unique_ordinal;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,

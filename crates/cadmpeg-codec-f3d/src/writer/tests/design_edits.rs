@@ -84,7 +84,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .expect("generated standalone ACT GUID");
     assert!(act_guid.guid_offset() > act_guid.byte_offset());
     act_guid.guid = String::from("ffffffff-1111-2222-3333-444444444444").try_into().unwrap();
-    native.act_registry_channels[0].guid = "dddddddd-1111-2222-3333-eeeeeeeeeeee".into();
+    native.act_registry_channels[0].guid = "dddddddd-1111-2222-3333-eeeeeeeeeeee".to_string().try_into().unwrap();
     let act_root = &mut native.act_root_components[0];
     act_root.instance_root_record = 71;
     act_root.components_root_record = 72;
@@ -197,7 +197,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(act_root.layout.entity_id(), "1_3");
     assert_eq!(act_root.layout.display_name(), "(Renamed)");
     assert_eq!(
-        f3d_native(round_trip.ir()).act_registry_channels[0].guid,
+        f3d_native(round_trip.ir()).act_registry_channels[0].guid.as_str(),
         "dddddddd-1111-2222-3333-eeeeeeeeeeee"
     );
     let act_entity = &f3d_native(round_trip.ir()).act_entities[0];

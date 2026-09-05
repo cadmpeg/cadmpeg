@@ -17811,21 +17811,59 @@ impl From<ActTableReference> for ActTableReferenceWire {
 /// One named entry in the ACT table's stream-wide channel registry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "ActRegistryChannelWire", into = "ActRegistryChannelWire")]
 pub struct ActRegistryChannel {
-    /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Position in the counted registry, in source order.
     pub ordinal: u32,
-    /// Byte offset of the channel-name length prefix in the ACT `BulkStream`.
-    pub byte_offset: u64,
-    /// Stored channel name.
-    pub name: String,
-    /// Byte offset of the ASCII channel-name bytes.
-    pub name_offset: u64,
-    /// Stored registry GUID.
-    pub guid: String,
-    /// Byte offset of the UTF-16 GUID code units.
-    pub guid_offset: u64,
+    byte_offset: u64,
+    name: String,
+    pub guid: DesignGuidText,
+}
+
+impl ActRegistryChannel {
+    pub fn new(id: String, ordinal: u32, byte_offset: u64, name: String, guid: String) -> Result<Self, String> {
+        if name.is_empty() || name.len() > 128 || !name.is_ascii() {
+            return Err("ACT registry name must contain 1 through 128 ASCII bytes".into());
+        }
+        byte_offset.checked_add(8 + name.len() as u64).ok_or("ACT registry offset overflow")?;
+        Ok(Self { id, ordinal, byte_offset, name, guid: guid.try_into()? })
+    }
+    pub fn byte_offset(&self) -> u64 { self.byte_offset }
+    pub fn name(&self) -> &str { &self.name }
+    pub fn name_offset(&self) -> u64 { self.byte_offset + 4 }
+    pub fn guid_offset(&self) -> u64 { self.byte_offset + 8 + self.name.len() as u64 }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ActRegistryChannelWire {
+    id: String,
+    ordinal: u32,
+    byte_offset: u64,
+    name: String,
+    name_offset: u64,
+    guid: String,
+    guid_offset: u64,
+}
+
+impl TryFrom<ActRegistryChannelWire> for ActRegistryChannel {
+    type Error = String;
+    fn try_from(wire: ActRegistryChannelWire) -> Result<Self, Self::Error> {
+        let channel = Self::new(wire.id, wire.ordinal, wire.byte_offset, wire.name, wire.guid)?;
+        if wire.name_offset != channel.name_offset() || wire.guid_offset != channel.guid_offset() {
+            return Err("ACT registry offsets must follow the stored name layout".into());
+        }
+        Ok(channel)
+    }
+}
+
+impl From<ActRegistryChannel> for ActRegistryChannelWire {
+    fn from(channel: ActRegistryChannel) -> Self {
+        let name_offset = channel.name_offset();
+        let guid_offset = channel.guid_offset();
+        Self { id: channel.id, ordinal: channel.ordinal, byte_offset: channel.byte_offset,
+            name: channel.name, name_offset, guid: channel.guid.as_str().into(), guid_offset }
+    }
 }
 
 /// ACT link from the document root entity to the instance/component registries.

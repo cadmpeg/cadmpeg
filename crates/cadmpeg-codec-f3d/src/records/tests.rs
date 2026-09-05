@@ -3596,3 +3596,32 @@ fn act_guid_derives_payload_offset_and_rejects_wire_drift() {
     assert!(super::ActGuid::new("id".into(), u64::MAX - 3, 0, text.into()).is_err());
     assert!(super::ActGuid::new("id".into(), u64::MAX - 4, 0, text.into()).is_ok());
 }
+
+#[test]
+fn act_registry_channel_derives_offsets_and_rejects_invalid_wire() {
+    let wire = serde_json::json!({
+        "id": "stream:act-registry-channel#20", "ordinal": 0, "byte_offset": 20,
+        "name": "abc", "name_offset": 24,
+        "guid": "01234567-89ab-cdef-0123-456789abcdef", "guid_offset": 31
+    });
+    let channel: super::ActRegistryChannel = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(channel.byte_offset(), 20);
+    assert_eq!(channel.name(), "abc");
+    assert_eq!(channel.name_offset(), 24);
+    assert_eq!(channel.guid_offset(), 31);
+    assert_eq!(serde_json::to_value(channel).unwrap(), wire);
+    for field in ["name_offset", "guid_offset"] {
+        let mut invalid = wire.clone();
+        invalid[field] = serde_json::json!(0);
+        assert!(serde_json::from_value::<super::ActRegistryChannel>(invalid).is_err());
+    }
+    for name in [String::new(), "x".repeat(129), "é".into()] {
+        let mut invalid = wire.clone();
+        invalid["name"] = serde_json::json!(name);
+        assert!(serde_json::from_value::<super::ActRegistryChannel>(invalid).is_err());
+    }
+    let guid = "01234567-89ab-cdef-0123-456789abcdef";
+    assert!(super::ActRegistryChannel::new("id".into(), 0, u64::MAX - 10, "abc".into(), guid.into()).is_err());
+    assert!(super::ActRegistryChannel::new("id".into(), 0, u64::MAX - 11, "abc".into(), guid.into()).is_ok());
+    assert!(super::ActRegistryChannel::new("id".into(), 0, 0, "abc".into(), "".into()).is_err());
+}

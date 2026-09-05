@@ -934,11 +934,11 @@ fn decode_transfers_generated_protein_appearance() {
         9
     );
     assert_eq!(
-        f3d_native(result.ir()).act_registry_channels[0].name,
+        f3d_native(result.ir()).act_registry_channels[0].name(),
         "Appearance"
     );
     assert_eq!(
-        f3d_native(result.ir()).act_registry_channels[1].name,
+        f3d_native(result.ir()).act_registry_channels[1].name(),
         "PhysicalMaterial"
     );
     assert!(f3d_native(result.ir()).act_entities[0].in_table());
