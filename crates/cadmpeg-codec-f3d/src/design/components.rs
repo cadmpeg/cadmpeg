@@ -29,9 +29,9 @@ pub(crate) fn project_local_components(
     for scope in scopes {
         if let Some(qualifiers) = scope
             .assembly_alignment()
-            .and_then(|alignment| alignment.operand_qualifiers.as_ref())
+            .and_then(|alignment| alignment.operand_qualifiers())
         {
-            for qualifier in qualifiers {
+            for qualifier in &qualifiers {
                 let DesignAssemblyOperandQualifier::OccurrencePath { path } = qualifier else {
                     continue;
                 };

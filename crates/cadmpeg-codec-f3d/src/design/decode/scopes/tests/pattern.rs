@@ -426,7 +426,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(alignment.offset, [1.0, 10.0, 0.0]);
     assert_eq!(alignment.owner_record_indices, [50, 51, 52, 53]);
     assert_eq!(alignment.value_offsets, [501, 502, 503, 504]);
-    assert_eq!(alignment.operand_frames, None);
+    assert_eq!(alignment.operand_frames(), None);
 
     let mut placement_and_alignment_owners = rectangular_owners.to_vec();
     placement_and_alignment_owners.extend([
@@ -468,7 +468,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         datum_envelope_alignment.owner_record_indices,
         [60, 61, 62, 63]
     );
-    assert!(datum_envelope_alignment.operand_frames.is_none());
+    assert!(datum_envelope_alignment.operand_frames().is_none());
 
     let mut short_axial_owners = rectangular_owners.to_vec();
     short_axial_owners.extend([owner(64, 4, 0.5, 605), owner(65, 5, 2.0, 606)]);
@@ -525,7 +525,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_frames)
+    .and_then(|alignment| alignment.operand_frames())
     .expect("exact assembly operand frames");
     assert_eq!(
         frames.map(|frame| (
@@ -568,7 +568,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &legacy_assembly_scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_frames)
+    .and_then(|alignment| alignment.operand_frames())
     .expect("compact assembly operand frames");
     assert_eq!(legacy_frames[0].reference_offset, 25);
     assert_eq!(legacy_frames[0].transform_offset, 36);
@@ -585,7 +585,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &dynamic_standard_scope,
         &rectangular_owners,
     )
-    .is_some_and(|alignment| alignment.operand_frames.is_some()));
+    .is_some_and(|alignment| alignment.operand_frames().is_some()));
 
     let mut dynamic_compact_bytes = legacy_assembly_bytes.clone();
     dynamic_compact_bytes[637..640].copy_from_slice(b"262");
@@ -599,7 +599,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &dynamic_compact_scope,
         &rectangular_owners,
     )
-    .is_some_and(|alignment| alignment.operand_frames.is_some()));
+    .is_some_and(|alignment| alignment.operand_frames().is_some()));
 
     let mut axial_assembly_bytes = vec![0_u8; 772];
     axial_assembly_bytes[..11].copy_from_slice(&assembly_bytes[..11]);
@@ -631,7 +631,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .expect("legacy assembly alignment and operand frames");
     assert_eq!(axial_alignment.angle, 0.5);
     assert_eq!(axial_alignment.offset, [0.0, 0.0, 2.0]);
-    let axial_frames = axial_alignment.operand_frames.as_ref().unwrap();
+    let axial_frames = axial_alignment.operand_frames().unwrap();
     assert_eq!(axial_frames[0].reference_offset, 29);
     assert_eq!(axial_frames[0].transform_offset, 39);
     assert_eq!(axial_frames[1].reference_offset, 168);
@@ -660,8 +660,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(short_axial_alignment.owner_record_indices, [64, 65]);
     assert!(short_axial_alignment.operand_paths().is_none());
     let short_axial_frames = short_axial_alignment
-        .operand_frames
-        .as_ref()
+        .operand_frames()
         .expect("short axial operand frames");
     assert_eq!(short_axial_frames[0].reference_offset, 29);
     assert_eq!(short_axial_frames[0].transform_offset, 39);
@@ -783,5 +782,5 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &compact_scope,
         &rectangular_owners,
     )
-    .is_some_and(|alignment| alignment.operand_frames.is_some()));
+    .is_some_and(|alignment| alignment.operand_frames().is_some()));
 }
