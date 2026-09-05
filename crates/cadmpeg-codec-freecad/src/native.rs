@@ -527,8 +527,23 @@ impl TryFrom<ApplicationPayloadRecordWire> for ApplicationPayloadRecord {
     }
 }
 
+/// Page-only vs other `TechDraw` drawing payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DrawingRole {
+    /// `TechDraw::DrawPage` or `TechDraw::DrawPagePython`.
+    Page {
+        /// Ordered page views.
+        views: Vec<String>,
+        /// Page template object, when linked.
+        template: Option<String>,
+    },
+    /// Template, view, dimension, annotation, or other drawing object.
+    Other,
+}
+
 /// One `TechDraw` page, template, view, dimension, or annotation record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "DrawingRecordWire", into = "DrawingRecordWire")]
 pub struct DrawingRecord {
     /// Stable drawing-record identity.
     pub id: String,
@@ -536,10 +551,8 @@ pub struct DrawingRecord {
     pub object: String,
     /// Persisted `TechDraw` runtime type.
     pub kind: String,
-    /// Ordered page views for a page record.
-    pub views: Vec<String>,
-    /// Page template object, when linked.
-    pub template: Option<String>,
+    /// Page views and template, or a non-page payload.
+    pub role: DrawingRole,
     /// Ordered source object and subelement references for a view or dimension.
     pub sources: Vec<LinkTarget>,
     /// All drawing relationships grouped by their persisted property name.
@@ -548,6 +561,70 @@ pub struct DrawingRecord {
     pub parameters: BTreeMap<String, String>,
     /// Referenced template or drawing side entries.
     pub side_entries: Vec<String>,
+}
+
+fn is_page_kind(kind: &str) -> bool {
+    matches!(kind, "TechDraw::DrawPage" | "TechDraw::DrawPagePython")
+}
+
+#[derive(Serialize, Deserialize)]
+struct DrawingRecordWire {
+    id: String,
+    object: String,
+    kind: String,
+    views: Vec<String>,
+    template: Option<String>,
+    sources: Vec<LinkTarget>,
+    relationships: BTreeMap<String, Vec<LinkTarget>>,
+    parameters: BTreeMap<String, String>,
+    side_entries: Vec<String>,
+}
+
+impl From<DrawingRecord> for DrawingRecordWire {
+    fn from(value: DrawingRecord) -> Self {
+        let (views, template) = match value.role {
+            DrawingRole::Page { views, template } => (views, template),
+            DrawingRole::Other => (Vec::new(), None),
+        };
+        Self {
+            id: value.id,
+            object: value.object,
+            kind: value.kind,
+            views,
+            template,
+            sources: value.sources,
+            relationships: value.relationships,
+            parameters: value.parameters,
+            side_entries: value.side_entries,
+        }
+    }
+}
+
+impl TryFrom<DrawingRecordWire> for DrawingRecord {
+    type Error = String;
+
+    fn try_from(wire: DrawingRecordWire) -> Result<Self, Self::Error> {
+        let role = if is_page_kind(&wire.kind) {
+            DrawingRole::Page {
+                views: wire.views,
+                template: wire.template,
+            }
+        } else if wire.views.is_empty() && wire.template.is_none() {
+            DrawingRole::Other
+        } else {
+            return Err("non-page drawing record cannot carry views or a template".to_owned());
+        };
+        Ok(Self {
+            id: wire.id,
+            object: wire.object,
+            kind: wire.kind,
+            role,
+            sources: wire.sources,
+            relationships: wire.relationships,
+            parameters: wire.parameters,
+            side_entries: wire.side_entries,
+        })
+    }
 }
 
 /// One assembly joint or grounded-object constraint.

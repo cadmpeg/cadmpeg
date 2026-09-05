@@ -59,11 +59,18 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         .iter()
         .find(|drawing| drawing.object.ends_with("#View"))
         .expect("view");
+    let crate::native::DrawingRole::Page {
+        views,
+        template: page_template,
+    } = &page.role
+    else {
+        panic!("page record is not DrawingRole::Page");
+    };
     assert_eq!(
-        page.template.as_deref(),
+        page_template.as_deref(),
         Some("fcstd:native:object#Template")
     );
-    assert_eq!(page.views, ["fcstd:native:object#View"]);
+    assert_eq!(views.as_slice(), ["fcstd:native:object#View"]);
     assert_eq!(template.side_entries, ["page.svg"]);
     assert_eq!(view.sources[0].object(), Some("fcstd:native:object#Model"));
     assert!(view.parameters.contains_key("Direction"));

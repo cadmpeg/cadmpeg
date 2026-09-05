@@ -8,7 +8,7 @@ use cadmpeg_ir::document::Model;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
-use crate::native::{DrawingRecord, ObjectRecord, PropertyRecord, ValueRecord};
+use crate::native::{DrawingRecord, DrawingRole, ObjectRecord, PropertyRecord, ValueRecord};
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -30,23 +30,23 @@ pub(crate) fn transfer(
                 .cloned()
                 .unwrap_or_default();
             ensure_unique_property_names(&owned)?;
-            let (views, template) = if is_page_type(&object.type_name) {
-                let views = typed_links(&owned, "Views", "App::PropertyLinkList")?
-                    .into_iter()
-                    .filter_map(|link| link.object().map(str::to_owned))
-                    .collect();
-                let template = typed_single_link(&owned, "Template", "App::PropertyLink")?
-                    .and_then(|link| link.object().map(str::to_owned));
-                (views, template)
+            let role = if is_page_type(&object.type_name) {
+                DrawingRole::Page {
+                    views: typed_links(&owned, "Views", "App::PropertyLinkList")?
+                        .into_iter()
+                        .filter_map(|link| link.object().map(str::to_owned))
+                        .collect(),
+                    template: typed_single_link(&owned, "Template", "App::PropertyLink")?
+                        .and_then(|link| link.object().map(str::to_owned)),
+                }
             } else {
-                (Vec::new(), None)
+                DrawingRole::Other
             };
             Ok(DrawingRecord {
                 id: crate::native::native_id("drawing", &object.name),
                 object: object.id.clone(),
                 kind: object.type_name.clone(),
-                views,
-                template,
+                role,
                 sources: [
                     "Source",
                     "XSource",
