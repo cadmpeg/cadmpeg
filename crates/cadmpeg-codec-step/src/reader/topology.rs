@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
+use std::rc::Rc;
 
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_ir::document::CadIr;
@@ -836,7 +837,7 @@ fn build_wire(
     id: u64,
     exchange: &Exchange,
     vdefs: &BTreeMap<u64, VertexDef>,
-    edefs: &BTreeMap<u64, EdgeDef>,
+    edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     point_positions: &CarrierIndex,
     warnings: &mut Vec<String>,
 ) -> BuildOutcome {
@@ -884,7 +885,7 @@ fn build_wire_set(
     set_id: u64,
     exchange: &Exchange,
     vdefs: &BTreeMap<u64, VertexDef>,
-    edefs: &BTreeMap<u64, EdgeDef>,
+    edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     point_positions: &CarrierIndex,
     scoped: bool,
     warnings: &mut Vec<String>,
@@ -911,11 +912,7 @@ fn build_wire_set(
     let mut built_edges = Vec::new();
     for edge_id in used_edges {
         let edge = edefs.get(&edge_id)?;
-        let (start, end) = if edge.same {
-            (edge.start, edge.end)
-        } else {
-            (edge.end, edge.start)
-        };
+        let (start, end) = edge.curve_vertices();
         let edge_suffix = format!("-wire-{id}-set-{set_id}");
         let ir_id = EdgeId::mint(StepIdentity::data(
             "edge",
@@ -942,7 +939,7 @@ fn build_wire_set(
         });
         used_vertices.extend([start, end]);
         typed.insert(edge_id);
-        if let Some(parent) = edge.parent {
+        if let Some(parent) = edge.parent() {
             typed.insert(parent);
         }
     }
@@ -1007,7 +1004,7 @@ fn build_shell_wire(
     id: u64,
     exchange: &Exchange,
     vdefs: &BTreeMap<u64, VertexDef>,
-    edefs: &BTreeMap<u64, EdgeDef>,
+    edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     point_positions: &CarrierIndex,
     scope_root: bool,
     warnings: &mut Vec<String>,
@@ -1057,7 +1054,7 @@ fn build_shell_wire_set(
     shell_id: u64,
     exchange: &Exchange,
     vdefs: &BTreeMap<u64, VertexDef>,
-    edefs: &BTreeMap<u64, EdgeDef>,
+    edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     point_positions: &CarrierIndex,
     scoped: bool,
     scope_root: bool,
@@ -1078,9 +1075,9 @@ fn build_shell_wire_set(
                     let edge = edefs.get(&edge_id)?;
                     let forward = oriented_edge_forward(oriented)?;
                     edge_uses.push((edge_id, oriented_id, forward));
-                    used_vertices.extend([edge.start, edge.end]);
+                    used_vertices.extend([edge.vertices().0, edge.vertices().1]);
                     typed.extend([loop_id, oriented_id, edge_id]);
-                    if let Some(parent) = edge.parent {
+                    if let Some(parent) = edge.parent() {
                         typed.insert(parent);
                     }
                 }
@@ -1119,11 +1116,7 @@ fn build_shell_wire_set(
     let mut wire_edges = Vec::new();
     for (index, (edge_id, oriented_id, forward)) in edge_uses.into_iter().enumerate() {
         let edge = edefs.get(&edge_id)?;
-        let (curve_start, curve_end) = if edge.same {
-            (edge.start, edge.end)
-        } else {
-            (edge.end, edge.start)
-        };
+        let (curve_start, curve_end) = edge.curve_vertices();
         let (start, end) = if forward {
             (curve_start, curve_end)
         } else {
@@ -1354,30 +1347,105 @@ fn build_geometric_set(
 struct VertexDef {
     point: u64,
 }
-#[derive(Clone)]
-struct EdgeDef {
-    start: u64,
-    end: u64,
-    curve: Option<u64>,
-    same: bool,
-    parent: Option<u64>,
-    pcurve: Option<u64>,
+enum EdgeDef {
+    Bare {
+        start: u64,
+        end: u64,
+    },
+    Curve {
+        start: u64,
+        end: u64,
+        curve: u64,
+        same: bool,
+    },
+    Subedge {
+        start: u64,
+        end: u64,
+        parent: u64,
+        basis: Rc<EdgeDef>,
+    },
+    Oriented {
+        element: u64,
+        basis: Rc<EdgeDef>,
+        forward: bool,
+    },
 }
+
+impl EdgeDef {
+    fn vertices(&self) -> (u64, u64) {
+        let mut current = self;
+        loop {
+            match current {
+                Self::Bare { start, end }
+                | Self::Curve { start, end, .. }
+                | Self::Subedge { start, end, .. } => return (*start, *end),
+                Self::Oriented { basis, .. } => current = basis,
+            }
+        }
+    }
+
+    fn curve_vertices(&self) -> (u64, u64) {
+        let (start, end) = self.vertices();
+        if self.same() {
+            (start, end)
+        } else {
+            (end, start)
+        }
+    }
+
+    fn curve(&self) -> Option<u64> {
+        let mut current = self;
+        loop {
+            match current {
+                Self::Bare { .. } => return None,
+                Self::Curve { curve, .. } => return Some(*curve),
+                Self::Subedge { basis, .. } | Self::Oriented { basis, .. } => current = basis,
+            }
+        }
+    }
+
+    fn same(&self) -> bool {
+        let mut current = self;
+        let mut orientation = true;
+        loop {
+            match current {
+                Self::Bare { .. } => return orientation,
+                Self::Curve { same, .. } => return *same == orientation,
+                Self::Subedge { basis, .. } => current = basis,
+                Self::Oriented { basis, forward, .. } => {
+                    orientation = orientation == *forward;
+                    current = basis;
+                }
+            }
+        }
+    }
+
+    fn parent(&self) -> Option<u64> {
+        match self {
+            Self::Bare { .. } | Self::Curve { .. } => None,
+            Self::Subedge { parent, .. } => Some(*parent),
+            Self::Oriented { element, .. } => Some(*element),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum OrientedKind {
+    Plain,
+    Seam { pcurve: Option<u64> },
+}
+
 #[derive(Clone)]
 struct OrientedDef {
     edge: u64,
     forward: bool,
-    pcurve: Option<u64>,
-    seam_edge: bool,
+    kind: OrientedKind,
 }
 
 fn vertex_defs(exchange: &Exchange) -> BTreeMap<u64, VertexDef> {
     exchange
         .entities("VERTEX_POINT")
         .filter_map(|(id, r)| {
-            if !has_type(r, "VERTEX_POINT") {
-                return None;
-            }
             Some((
                 id,
                 VertexDef {
@@ -1387,7 +1455,7 @@ fn vertex_defs(exchange: &Exchange) -> BTreeMap<u64, VertexDef> {
         })
         .collect()
 }
-fn edge_defs(exchange: &Exchange) -> BTreeMap<u64, EdgeDef> {
+fn edge_defs(exchange: &Exchange) -> BTreeMap<u64, Rc<EdgeDef>> {
     let mut edges = BTreeMap::new();
     let mut cache = BTreeMap::new();
     let mut active = BTreeSet::new();
@@ -1409,8 +1477,8 @@ fn edge_def_for(
     id: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-    cache: &mut BTreeMap<u64, Option<EdgeDef>>,
-) -> Option<EdgeDef> {
+    cache: &mut BTreeMap<u64, Option<Rc<EdgeDef>>>,
+) -> Option<Rc<EdgeDef>> {
     if let Some(edge) = cache.get(&id) {
         return edge.clone();
     }
@@ -1430,70 +1498,43 @@ fn edge_def_for(
         "EDGE_CURVE" => {
             let record = exchange.records.get(&id)?;
             let (start, end) = edge_vertices(record)?;
-            Some(EdgeDef {
+            Some(EdgeDef::Curve {
                 start,
                 end,
-                curve: Some(edge_geometry(record)?),
+                curve: edge_geometry(record)?,
                 same: edge_same_sense(record)?,
-                parent: None,
-                pcurve: None,
             })
         }
         "EDGE" => {
-            let record = exchange.records.get(&id)?;
-            let (start, end) = edge_vertices(record)?;
-            Some(EdgeDef {
-                start,
-                end,
-                curve: None,
-                same: true,
-                parent: None,
-                pcurve: None,
-            })
+            let (start, end) = edge_vertices(exchange.records.get(&id)?)?;
+            Some(EdgeDef::Bare { start, end })
         }
         "SUBEDGE" => {
             let record = exchange.records.get(&id)?;
             let (start, end) = edge_vertices(record)?;
             let parent = subedge_parent(record)?;
-            let parent_def = edge_def_for(parent, exchange, active, cache)?;
-            Some(EdgeDef {
+            let basis = edge_def_for(parent, exchange, active, cache)?;
+            Some(EdgeDef::Subedge {
                 start,
                 end,
-                curve: parent_def.curve,
-                same: parent_def.same,
-                parent: Some(parent),
-                pcurve: parent_def.pcurve,
+                parent,
+                basis,
             })
         }
         "ORIENTED_EDGE" | "SEAM_EDGE" => {
             let record = exchange.records.get(&id)?;
             let element = oriented_edge_reference(record)?;
-            let element_def = edge_def_for(element, exchange, active, cache)?;
+            let basis = edge_def_for(element, exchange, active, cache)?;
             let forward = oriented_edge_forward(record)?;
-            Some(EdgeDef {
-                start: element_def.start,
-                end: element_def.end,
-                curve: element_def.curve,
-                same: element_def.same == forward,
-                parent: Some(element),
-                pcurve: if most_specific(record, &["SEAM_EDGE"]).is_some() {
-                    record
-                        .partial("SEAM_EDGE")
-                        .and_then(|partial| {
-                            partial
-                                .parameters
-                                .iter()
-                                .rev()
-                                .find_map(ValueExt::reference)
-                        })
-                        .or(element_def.pcurve)
-                } else {
-                    element_def.pcurve
-                },
+            Some(EdgeDef::Oriented {
+                element,
+                basis,
+                forward,
             })
         }
         _ => None,
-    })();
+    })()
+    .map(Rc::new);
     active.remove(&id);
     cache.insert(id, result.clone());
     result
@@ -1505,7 +1546,7 @@ fn edge_curve_id_reported(
     exchange: &Exchange,
     warnings: &mut Vec<String>,
 ) -> Option<CurveId> {
-    let Some(curve_step) = edge.curve else {
+    let Some(curve_step) = edge.curve() else {
         warnings.push(format!(
             "STEP edge #{edge_id} has no 3D curve carrier; edge committed without a curve"
         ));
@@ -1534,26 +1575,24 @@ fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
     exchange
         .entities_any(&["ORIENTED_EDGE", "SEAM_EDGE"])
         .filter_map(|(id, r)| {
-            if !has_type(r, "ORIENTED_EDGE") && !has_type(r, "SEAM_EDGE") {
-                return None;
-            }
             Some((
                 id,
                 OrientedDef {
                     edge: oriented_edge_reference(r)?,
                     forward: oriented_edge_forward(r)?,
-                    seam_edge: most_specific(r, &["SEAM_EDGE"]).is_some(),
-                    pcurve: r
-                        .partials
-                        .iter()
-                        .find(|partial| partial.name == "SEAM_EDGE")
-                        .and_then(|partial| {
-                            partial
-                                .parameters
-                                .iter()
-                                .rev()
-                                .find_map(ValueExt::reference)
-                        }),
+                    kind: if most_specific(r, &["SEAM_EDGE"]).is_some() {
+                        OrientedKind::Seam {
+                            pcurve: r.partial("SEAM_EDGE").and_then(|partial| {
+                                partial
+                                    .parameters
+                                    .iter()
+                                    .rev()
+                                    .find_map(ValueExt::reference)
+                            }),
+                        }
+                    } else {
+                        OrientedKind::Plain
+                    },
                 },
             ))
         })
@@ -1896,7 +1935,7 @@ fn build(
     exchange: &Exchange,
     ir: &mut CadIr,
     vdefs: &BTreeMap<u64, VertexDef>,
-    edefs: &BTreeMap<u64, EdgeDef>,
+    edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     odefs: &BTreeMap<u64, OrientedDef>,
     shell_definitions: &BTreeMap<u64, ShellDef>,
     decoded_pcurves: &BTreeSet<PcurveId>,
@@ -2027,7 +2066,7 @@ fn build_one(
     exchange: &Exchange,
     ir: &mut CadIr,
     vdefs: &BTreeMap<u64, VertexDef>,
-    edefs: &BTreeMap<u64, EdgeDef>,
+    edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     odefs: &BTreeMap<u64, OrientedDef>,
     shell_definitions: &BTreeMap<u64, ShellDef>,
     decoded_pcurves: &BTreeSet<PcurveId>,
@@ -2441,14 +2480,17 @@ fn build_one(
                         format!("{use_step}-face-{face_step}{face_suffix}"),
                     ))
                     .expect("identity grammar");
-                    let pcurves: Vec<(PcurveId, Option<[f64; 2]>)> = if o.seam_edge {
+                    let pcurves: Vec<(PcurveId, Option<[f64; 2]>)> = if let OrientedKind::Seam {
+                        pcurve,
+                    } = o.kind
+                    {
                         let explicit_pcurve = surface_step.and_then(|surface_step| {
-                            let pcurve_step = o.pcurve?;
+                            let pcurve_step = pcurve?;
                             let pcurve = exchange.records.get(&pcurve_step)?;
                             let pcurve_id =
                                 PcurveId::mint(StepIdentity::data("pcurve", pcurve_step))
                                     .expect("identity grammar");
-                            let edge_curve = edge.curve?;
+                            let edge_curve = edge.curve()?;
                             let associated = associated_pcurves(
                                 edge_curve,
                                 surface_step,
@@ -2470,7 +2512,7 @@ fn build_one(
                             Vec::new()
                         }
                     } else {
-                        let associated = match (surface_step, edge.curve) {
+                        let associated = match (surface_step, edge.curve()) {
                             (Some(surface_step), Some(curve)) => {
                                 associated_pcurves(curve, surface_step, exchange, decoded_pcurves)
                             }
@@ -2502,7 +2544,7 @@ fn build_one(
                                 match selection {
                                     Some(Ok(selected)) => {
                                         let (Some(curve), Some(surface)) =
-                                            (edge.curve, surface_step)
+                                            (edge.curve(), surface_step)
                                         else {
                                             unreachable!(
                                                 "successful pcurve selection has one curve and surface"
@@ -2517,7 +2559,7 @@ fn build_one(
                                     }
                                     Some(Err(PcurveSelectionFailure::Locus)) => {
                                         let (Some(curve), Some(surface)) =
-                                            (edge.curve, surface_step)
+                                            (edge.curve(), surface_step)
                                         else {
                                             unreachable!(
                                                 "a locus failure has one curve and surface"
@@ -2532,7 +2574,7 @@ fn build_one(
                                     }
                                     Some(Err(_)) | None => {
                                         let n = candidates.len();
-                                        let note = match (edge.curve, surface_step, n) {
+                                        let note = match (edge.curve(), surface_step, n) {
                                                 (Some(curve), Some(surface), 1) => {
                                                     StepLossCode::PcurveEndpointsDiscontinuous.note(format!(
                                                         "curve #{curve} has one optional pcurve on surface #{surface} whose mapped endpoints are not continuous with the edge vertices; the pcurve is omitted"
@@ -2560,7 +2602,7 @@ fn build_one(
                         owner_loop: lid.clone(),
                         edge: scoped_edge_id(o.edge, id, shell_step, scope_edges, scope_root),
                         radial_next: CoedgeId::mint(String::new()).expect("identity grammar"),
-                        sense: if (o.forward == edge.same) == bound_forward {
+                        sense: if (o.forward == edge.same()) == bound_forward {
                             Sense::Forward
                         } else {
                             Sense::Reversed
@@ -2586,9 +2628,12 @@ fn build_one(
                         .or_default()
                         .push(coedges.len() - 1);
                     used_e.insert((shell_step, o.edge));
-                    used_v.extend([(shell_step, edge.start), (shell_step, edge.end)]);
+                    used_v.extend([
+                        (shell_step, edge.vertices().0),
+                        (shell_step, edge.vertices().1),
+                    ]);
                     typed.extend([use_step, o.edge]);
-                    if let Some(parent) = edge.parent {
+                    if let Some(parent) = edge.parent() {
                         typed.insert(parent);
                     }
                 }
@@ -2638,11 +2683,7 @@ fn build_one(
             let Some(edge) = edefs.get(edge_id) else {
                 continue;
             };
-            let (start, end) = if edge.same {
-                (edge.start, edge.end)
-            } else {
-                (edge.end, edge.start)
-            };
+            let (start, end) = edge.curve_vertices();
             component_edge_vertices.insert(
                 scoped_edge_id(*edge_id, id, shell_step, scope_edges, scope_root).0,
                 (
@@ -2721,11 +2762,7 @@ fn build_one(
             edge_id,
             CarrierKind::EdgeDefinition,
         )?;
-        let (start, end) = if e.same {
-            (e.start, e.end)
-        } else {
-            (e.end, e.start)
-        };
+        let (start, end) = e.curve_vertices();
         edges.push(Edge {
             id: scoped_edge_id(edge_id, id, shell_step, scope_edges, scope_root),
             curve: edge_curve_id_reported(edge_id, e, exchange, warnings),
@@ -3348,16 +3385,16 @@ fn select_associated_pcurve(
     let geometry = &pcurve.geometry;
     let bound = COINCIDENCE_TOLERANCE.max(ir.tolerances.linear);
     let start = vdefs
-        .get(&edge.start)
+        .get(&edge.vertices().0)
         .and_then(|vertex| point_positions.get(vertex.point))
         .copied()
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let end = vdefs
-        .get(&edge.end)
+        .get(&edge.vertices().1)
         .and_then(|vertex| point_positions.get(vertex.point))
         .copied()
         .ok_or(PcurveSelectionFailure::Carrier)?;
-    let (curve_start, curve_end) = if edge.same {
+    let (curve_start, curve_end) = if edge.same() {
         (start, end)
     } else {
         (end, start)
@@ -3423,7 +3460,7 @@ fn pcurve_locus_witness(
     bound: f64,
 ) -> bool {
     let Some(curve_step) = edge
-        .curve
+        .curve()
         .and_then(|curve| curve_carrier_step(curve, exchange))
     else {
         return false;
