@@ -7070,78 +7070,34 @@ pub(crate) fn exact_fixed_fillet_parameters(
     {
         return None;
     }
-    let group = |tangency_lane: Option<&(u32, FixedScalarFrame)>,
-                 radius_lanes: Vec<&(u32, FixedScalarFrame)>,
-                 parameter_lanes: Vec<&(u32, FixedScalarFrame)>| {
-        let tangency_weight = match tangency_lane {
-            Some((record_index, scalar)) if scalar.value > 0.0 => {
-                Some(crate::records::DesignFixedFilletTangencyWeight {
-                    value: scalar.value,
-                    record_index: *record_index,
-                    value_offset: scalar.value_offset,
-                })
-            }
-            Some(_) => return None,
-            None => None,
-        };
-        let radii = radius_lanes
-            .iter()
-            .map(|(_, scalar)| scalar.value)
-            .collect::<Vec<_>>();
-        let intermediate_parameters = parameter_lanes
-            .iter()
-            .map(|(_, scalar)| scalar.value)
-            .collect::<Vec<_>>();
-        if radii.iter().any(|radius| *radius < 0.0)
-            || radii.iter().all(|radius| *radius == 0.0)
-            || intermediate_parameters
-                .iter()
-                .any(|parameter| !(0.0..1.0).contains(parameter))
-            || intermediate_parameters
-                .windows(2)
-                .any(|pair| pair[0] >= pair[1])
+    use crate::records::{DesignFixedFilletIntermediate, DesignFixedFilletLaw, DesignFixedFilletScalar};
+    let scalar = |(record_index, scalar): &(u32, FixedScalarFrame)| DesignFixedFilletScalar {
+        value: scalar.value, record_index: *record_index, value_offset: scalar.value_offset,
+    };
+    let group = |tangency_lane: Option<&(u32, FixedScalarFrame)>, law: DesignFixedFilletLaw| {
+        let tangency_weight = tangency_lane.map(scalar);
+        if tangency_weight.as_ref().is_some_and(|weight| weight.value <= 0.0)
+            || law.radii().any(|radius| radius.value < 0.0)
+            || law.radii().all(|radius| radius.value == 0.0)
+            || law.intermediate().iter().any(|row| !(0.0..1.0).contains(&row.parameter.value))
+            || law.intermediate().windows(2).any(|pair| pair[0].parameter.value >= pair[1].parameter.value)
         {
             return None;
         }
-        Some(DesignFixedFilletGroup {
-            tangency_weight,
-            radii,
-            radius_record_indexes: radius_lanes
-                .iter()
-                .map(|(record_index, _)| *record_index)
-                .collect(),
-            radius_offsets: radius_lanes
-                .iter()
-                .map(|(_, scalar)| scalar.value_offset)
-                .collect(),
-            intermediate_parameters,
-            intermediate_parameter_record_indexes: parameter_lanes
-                .iter()
-                .map(|(record_index, _)| *record_index)
-                .collect(),
-            intermediate_parameter_offsets: parameter_lanes
-                .iter()
-                .map(|(_, scalar)| scalar.value_offset)
-                .collect(),
-        })
+        Some(DesignFixedFilletGroup { tangency_weight, law })
     };
     let groups = if lanes.len() == 1 {
-        vec![group(None, vec![&lanes[0]], Vec::new())?]
+        vec![group(None, DesignFixedFilletLaw::Constant(scalar(&lanes[0])))?]
     } else if lanes.len() % 2 == 0 {
-        lanes
-            .chunks_exact(2)
-            .map(|pair| group(Some(&pair[0]), vec![&pair[1]], Vec::new()))
+        lanes.chunks_exact(2).map(|pair| group(Some(&pair[0]), DesignFixedFilletLaw::Constant(scalar(&pair[1]))))
             .collect::<Option<Vec<_>>>()?
     } else {
-        let radius_lanes = lanes[1..3]
-            .iter()
-            .chain(lanes[3..].chunks_exact(2).map(|pair| &pair[0]))
-            .collect::<Vec<_>>();
-        let parameter_lanes = lanes[3..]
-            .chunks_exact(2)
-            .map(|pair| &pair[1])
-            .collect::<Vec<_>>();
-        vec![group(Some(&lanes[0]), radius_lanes, parameter_lanes)?]
+        vec![group(Some(&lanes[0]), DesignFixedFilletLaw::Variable {
+            start: scalar(&lanes[1]), end: scalar(&lanes[2]),
+            intermediate: lanes[3..].chunks_exact(2).map(|pair| DesignFixedFilletIntermediate {
+                radius: scalar(&pair[0]), parameter: scalar(&pair[1]),
+            }).collect(),
+        })?]
     };
     Some(DesignFixedFilletParameters { groups })
 }

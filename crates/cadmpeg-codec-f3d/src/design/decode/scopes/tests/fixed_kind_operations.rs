@@ -119,21 +119,19 @@ pub(super) fn continue_fixed_kind_operations(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
             groups: vec![crate::records::DesignFixedFilletGroup {
-                tangency_weight: Some(crate::records::DesignFixedFilletTangencyWeight {
+                tangency_weight: Some(crate::records::DesignFixedFilletScalar {
                     value: 1.0,
                     record_index: 77,
                     value_offset: (fillet_start + 40) as u64,
                 }),
-                radii: vec![0.0, 0.65, 0.4],
-                radius_record_indexes: vec![78, 79, 87],
-                radius_offsets: vec![
-                    (fillet_start + 115 + 40) as u64,
-                    (fillet_start + 230 + 40) as u64,
-                    (fillet_start + 345 + 40) as u64,
-                ],
-                intermediate_parameters: vec![0.2],
-                intermediate_parameter_record_indexes: vec![88],
-                intermediate_parameter_offsets: vec![(fillet_start + 460 + 40) as u64],
+                law: crate::records::DesignFixedFilletLaw::Variable {
+                    start: crate::records::DesignFixedFilletScalar { value: 0.0, record_index: 78, value_offset: (fillet_start + 115 + 40) as u64 },
+                    end: crate::records::DesignFixedFilletScalar { value: 0.65, record_index: 79, value_offset: (fillet_start + 230 + 40) as u64 },
+                    intermediate: vec![crate::records::DesignFixedFilletIntermediate {
+                        radius: crate::records::DesignFixedFilletScalar { value: 0.4, record_index: 87, value_offset: (fillet_start + 345 + 40) as u64 },
+                        parameter: crate::records::DesignFixedFilletScalar { value: 0.2, record_index: 88, value_offset: (fillet_start + 460 + 40) as u64 },
+                    }],
+                },
             }],
         })
     );
@@ -143,12 +141,7 @@ pub(super) fn continue_fixed_kind_operations(
         Some(DesignFixedFilletParameters {
             groups: vec![crate::records::DesignFixedFilletGroup {
                 tangency_weight: None,
-                radii: vec![1.0],
-                radius_record_indexes: vec![77],
-                radius_offsets: vec![(fillet_start + 40) as u64],
-                intermediate_parameters: Vec::new(),
-                intermediate_parameter_record_indexes: Vec::new(),
-                intermediate_parameter_offsets: Vec::new(),
+                law: crate::records::DesignFixedFilletLaw::Constant(crate::records::DesignFixedFilletScalar { value: 1.0, record_index: 77, value_offset: (fillet_start + 40) as u64 }),
             }],
         })
     );
@@ -180,12 +173,7 @@ pub(super) fn continue_fixed_kind_operations(
         Some(DesignFixedFilletParameters {
             groups: vec![crate::records::DesignFixedFilletGroup {
                 tangency_weight: None,
-                radii: vec![0.5],
-                radius_record_indexes: vec![89],
-                radius_offsets: vec![(dynamic_scalar_at + 40) as u64],
-                intermediate_parameters: Vec::new(),
-                intermediate_parameter_record_indexes: Vec::new(),
-                intermediate_parameter_offsets: Vec::new(),
+                law: crate::records::DesignFixedFilletLaw::Constant(crate::records::DesignFixedFilletScalar { value: 0.5, record_index: 89, value_offset: (dynamic_scalar_at + 40) as u64 }),
             }],
         })
     );
@@ -215,8 +203,8 @@ pub(super) fn continue_fixed_kind_operations(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope)
             .expect("two constant-radius Fillet scalar groups");
     assert_eq!(fixed.groups.len(), 2);
-    assert_eq!(fixed.groups[0].radii, [0.5]);
-    assert_eq!(fixed.groups[1].radii, [0.25]);
+    assert_eq!(fixed.groups[0].law.radii().map(|scalar| scalar.value).collect::<Vec<_>>(), [0.5]);
+    assert_eq!(fixed.groups[1].law.radii().map(|scalar| scalar.value).collect::<Vec<_>>(), [0.25]);
     assert_eq!(
         fixed.groups[1]
             .tangency_weight

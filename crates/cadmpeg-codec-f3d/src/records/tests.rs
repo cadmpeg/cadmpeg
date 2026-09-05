@@ -1369,3 +1369,49 @@ fn historical_loop_wire_preserves_each_complete_binding_stage() {
         }
     }
 }
+
+#[test]
+fn fixed_fillet_law_wire_preserves_scalar_order_and_rejects_partial_lanes() {
+    for radius_count in [1_u32, 2, 3, 5] {
+        let intermediate_count = radius_count.saturating_sub(2);
+        let mut wire = serde_json::json!({
+            "radii": (0..radius_count).map(|index| f64::from(index + 1)).collect::<Vec<_>>(),
+            "radius_record_indexes": (0..radius_count).map(|index| 10 + index).collect::<Vec<_>>(),
+            "radius_offsets": (0..radius_count).map(|index| 100 + index * 8).collect::<Vec<_>>()
+        });
+        if intermediate_count != 0 {
+            wire["intermediate_parameters"] = serde_json::json!((0..intermediate_count).map(|index| f64::from(index + 1) / 4.0).collect::<Vec<_>>());
+            wire["intermediate_parameter_record_indexes"] = serde_json::json!((0..intermediate_count).map(|index| 20 + index).collect::<Vec<_>>());
+            wire["intermediate_parameter_offsets"] = serde_json::json!((0..intermediate_count).map(|index| 200 + index * 8).collect::<Vec<_>>());
+        }
+        for with_tangency in [false, true] {
+            let mut wire = wire.clone();
+            if with_tangency {
+                wire["tangency_weight"] = serde_json::json!({ "value": 1.0, "record_index": 5, "value_offset": 50 });
+            }
+            let group: super::DesignFixedFilletGroup = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(group.law.radii().count(), radius_count as usize);
+            assert_eq!(group.law.intermediate().len(), intermediate_count as usize);
+            assert_eq!(serde_json::to_value(&group).unwrap(), wire);
+            for field in ["radii", "radius_record_indexes", "radius_offsets", "intermediate_parameters", "intermediate_parameter_record_indexes", "intermediate_parameter_offsets"] {
+                let mut invalid = wire.clone();
+                let mut column = invalid.get(field).and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
+                column.push(serde_json::json!(1));
+                invalid[field] = serde_json::Value::Array(column);
+                assert!(serde_json::from_value::<super::DesignFixedFilletGroup>(invalid).unwrap_err().to_string().contains(field));
+            }
+            let mut invalid = wire;
+            for field in ["radii", "radius_record_indexes", "radius_offsets"] {
+                invalid[field] = serde_json::json!([]);
+            }
+            assert!(serde_json::from_value::<super::DesignFixedFilletGroup>(invalid).unwrap_err().to_string().contains("radii"));
+        }
+    }
+    for radii in [vec![1.0], vec![1.0, 2.0, 3.0]] {
+        let wire = serde_json::json!({
+            "radius_record_indexes": vec![10; radii.len()], "radius_offsets": vec![100; radii.len()], "radii": radii,
+            "intermediate_parameters": [0.25, 0.5], "intermediate_parameter_record_indexes": [20, 21], "intermediate_parameter_offsets": [200, 208]
+        });
+        assert!(serde_json::from_value::<super::DesignFixedFilletGroup>(wire).unwrap_err().to_string().contains("intermediate_parameters"));
+    }
+}
