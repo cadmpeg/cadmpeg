@@ -100,9 +100,9 @@ fn generated_source_less_rejects_material_assignment_without_presentation_graph(
         id: "generated:material-assignment#0".into(),
         asm_body_key: 42,
         asm_body_key_offset: 0,
-        entity_suffix: 985,
+
         entity_suffix_offset: 0,
-        entity_id: "0_985".into(),
+        entity_id: crate::records::DesignEntityId::try_from("0_985".to_owned()).expect("valid entity ID"),
         entity_id_offset: 0,
         visual_guid: "11111111-2222-3333-4444-555555555555".into(),
         visual_guid_offset: 0,
@@ -173,8 +173,7 @@ fn generated_f3d_rejects_partial_material_assignment_identity_edit() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     update_f3d_native(&mut edited, |native| {
         let assignment = &mut native.design_material_assignments[0];
-        assignment.entity_id = "0_986".into();
-        assignment.entity_suffix = 986;
+        assignment.entity_id = crate::records::DesignEntityId::try_from("0_986".to_owned()).expect("valid entity ID");
     });
 
     let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())

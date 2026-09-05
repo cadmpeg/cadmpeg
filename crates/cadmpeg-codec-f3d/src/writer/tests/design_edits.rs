@@ -129,7 +129,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .insert("refraction_index".into(), 1.8);
     assert_eq!(
         native.act_entities[0].entity_id,
-        native.design_material_assignments[0].entity_id
+        native.design_material_assignments[0].entity_id.as_str()
     );
     native
         .store(
@@ -220,7 +220,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(lost_edge.class_tag, "420");
     assert_eq!(lost_edge.record_index, 4_700);
     assert_eq!(
-        f3d_native(round_trip.ir()).design_material_assignments[0].entity_id,
+        f3d_native(round_trip.ir()).design_material_assignments[0].entity_id.as_str(),
         "0_985"
     );
     assert_eq!(

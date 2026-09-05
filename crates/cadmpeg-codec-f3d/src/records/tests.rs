@@ -440,6 +440,12 @@ fn material_assignment_preserves_located_and_authored_token_wire() {
     let wire = format!("{prefix}}}");
     let parsed: super::DesignMaterialAssignment = serde_json::from_str(&wire).expect("absent tokens");
     assert_eq!(serde_json::to_string(&parsed).expect("material wire"), wire);
+    let mut mismatch: serde_json::Value = serde_json::from_str(&wire).unwrap();
+    mismatch["entity_suffix"] = 986.into();
+    assert!(serde_json::from_value::<super::DesignMaterialAssignment>(mismatch).expect_err("mismatched material suffix").to_string().contains("entity_suffix"));
+    let padded = wire.replace("0_985", "0_+00985");
+    let parsed: super::DesignMaterialAssignment = serde_json::from_str(&padded).expect("preserved numeric spelling");
+    assert_eq!(serde_json::to_string(&parsed).unwrap(), padded);
 }
 
 #[test]

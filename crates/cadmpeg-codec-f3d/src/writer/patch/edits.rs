@@ -878,7 +878,7 @@ pub(crate) fn validate_material_assignment_edits(
     let mut edits: BTreeMap<String, Vec<DesignMaterialAssignment>> = BTreeMap::new();
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
-        if after.entity_id != before.entity_id || after.entity_suffix != before.entity_suffix {
+        if after.entity_id != before.entity_id {
             return Err(CodecError::NotImplemented(format!(
                 "F3D material-assignment identity edit requires synchronized body-presentation, browser-node, B-rep, and scene graphs: {id}"
             )));
@@ -901,19 +901,6 @@ pub(crate) fn validate_material_assignment_edits(
         if after == before {
             continue;
         }
-        let suffix = after
-            .entity_id
-            .rsplit_once('_')
-            .and_then(|(_, suffix)| suffix.parse::<u64>().ok())
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("invalid assignment entity id: {id}"))
-            })?;
-        if suffix != after.entity_suffix {
-            return Err(CodecError::malformed(format_args!(
-                "F3D assignment entity id and suffix disagree: {id}"
-            )));
-        }
-        validate_utf16_replacement(id, &before.entity_id, &after.entity_id)?;
         validate_utf16_replacement(id, &before.visual_guid, &after.visual_guid)?;
         validate_optional_utf16_replacement(
             id,

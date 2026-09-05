@@ -29,11 +29,11 @@ pub(crate) fn patch_material_assignments(
         bytes
             .get_mut(suffix_start..suffix_start + 8)
             .ok_or_else(|| CodecError::Malformed("material-assignment suffix is truncated".into()))?
-            .copy_from_slice(&assignment.entity_suffix.to_le_bytes());
+            .copy_from_slice(&assignment.entity_id.suffix().to_le_bytes());
         patch_utf16_if_changed(
             bytes,
             assignment.entity_id_offset,
-            &assignment.entity_id,
+            assignment.entity_id.as_str(),
             "material-assignment entity id",
         )?;
         patch_utf16_if_changed(
