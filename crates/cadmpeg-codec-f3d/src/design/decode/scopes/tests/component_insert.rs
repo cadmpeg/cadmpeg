@@ -86,10 +86,10 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     assert_eq!(construction.carrier_record_index, 10);
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, (role_at + 4) as u64);
-    assert_eq!(construction.transform, transform);
-    assert_eq!(construction.transform_offset, Some((scope_at + 50) as u64));
+    assert_eq!(*construction.transform(), transform);
+    assert_eq!(construction.transform_offset(), Some((scope_at + 50) as u64));
     assert_eq!(
-        construction.carrier_transform_offset,
+        construction.carrier_transform_offset(),
         Some(carrier_transform_at as u64)
     );
 
@@ -139,10 +139,10 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         )
         .unwrap_or_else(|| panic!("{frame_length}-byte component insert construction"));
         assert_eq!(
-            construction.transform_offset,
+            construction.transform_offset(),
             Some((scope_at + transform_at) as u64)
         );
-        assert_eq!(construction.transform, transform);
+        assert_eq!(*construction.transform(), transform);
     }
 
     let mut expanded = Vec::new();
@@ -207,13 +207,13 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         construction.neutron_role_offset,
         (expanded_role_at + 4) as u64
     );
-    assert_eq!(construction.transform, transform);
+    assert_eq!(*construction.transform(), transform);
     assert_eq!(
-        construction.transform_offset,
+        construction.transform_offset(),
         Some((expanded_scope_at + 54) as u64)
     );
     assert_eq!(
-        construction.carrier_transform_offset,
+        construction.carrier_transform_offset(),
         Some(expanded_carrier_transform_at as u64)
     );
 
@@ -279,7 +279,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         (legacy_role_at + 4) as u64
     );
     assert_eq!(
-        construction.carrier_transform_offset,
+        construction.carrier_transform_offset(),
         Some(legacy_carrier_transform_at as u64)
     );
     assert_eq!(construction.relation_record_index, 20);
@@ -384,9 +384,9 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
     assert_eq!(construction.occurrence_identity, Some(17));
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, 159);
-    assert_eq!(construction.transform, identity_matrix());
-    assert_eq!(construction.transform_offset, None);
-    assert_eq!(construction.carrier_transform_offset, None);
+    assert_eq!(*construction.transform(), identity_matrix());
+    assert_eq!(construction.transform_offset(), None);
+    assert_eq!(construction.carrier_transform_offset(), None);
 }
 
 #[test]
@@ -483,9 +483,9 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
     assert_eq!(construction.occurrence_identity, Some(17));
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, 159);
-    assert_eq!(construction.transform, identity_matrix());
-    assert_eq!(construction.transform_offset, None);
-    assert_eq!(construction.carrier_transform_offset, None);
+    assert_eq!(*construction.transform(), identity_matrix());
+    assert_eq!(construction.transform_offset(), None);
+    assert_eq!(construction.carrier_transform_offset(), None);
 
     bytes[4..7].copy_from_slice(b"382");
     assert!(exact_component_insert_construction(
@@ -591,9 +591,9 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
     assert_eq!(construction.occurrence_identity, Some(17));
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, 159);
-    assert_eq!(construction.transform, identity_matrix());
-    assert_eq!(construction.transform_offset, None);
-    assert_eq!(construction.carrier_transform_offset, None);
+    assert_eq!(*construction.transform(), identity_matrix());
+    assert_eq!(construction.transform_offset(), None);
+    assert_eq!(construction.carrier_transform_offset(), None);
 }
 
 #[test]
@@ -705,9 +705,9 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     assert_eq!(construction.occurrence_identity, Some(17));
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, 159);
-    assert_eq!(construction.transform, identity_matrix());
-    assert_eq!(construction.transform_offset, None);
-    assert_eq!(construction.carrier_transform_offset, None);
+    assert_eq!(*construction.transform(), identity_matrix());
+    assert_eq!(construction.transform_offset(), None);
+    assert_eq!(construction.carrier_transform_offset(), None);
 
     let external_role = "cccccccc-dddd-eeee-ffff-000000000000_urn:adsk.test:asset";
     let mut external_bytes = bytes[..155].to_vec();
@@ -847,9 +847,9 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
         construction.neutron_role_offset,
         crate::layout::component_insert_carrier_334_prefix::NEUTRON_ROLE as u64
     );
-    assert_eq!(construction.transform, identity);
-    assert_eq!(construction.transform_offset, None);
-    assert_eq!(construction.carrier_transform_offset, None);
+    assert_eq!(*construction.transform(), identity);
+    assert_eq!(construction.transform_offset(), None);
+    assert_eq!(construction.carrier_transform_offset(), None);
 
     let transformed = [
         [1.0, 0.0, 0.0, -2.1],
@@ -867,9 +867,9 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
         construction.neutron_role_offset,
         crate::layout::component_insert_carrier_334_prefix::NEUTRON_ROLE as u64
     );
-    assert_eq!(construction.transform, transformed);
-    assert_eq!(construction.transform_offset, Some((scope_at + 46) as u64));
-    assert_eq!(construction.carrier_transform_offset, None);
+    assert_eq!(*construction.transform(), transformed);
+    assert_eq!(construction.transform_offset(), Some((scope_at + 46) as u64));
+    assert_eq!(construction.carrier_transform_offset(), None);
 }
 
 #[test]

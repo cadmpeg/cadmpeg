@@ -1895,3 +1895,26 @@ fn profile_region_member_preserves_fixed_words_and_closed_incidence_values() {
         assert!(error.to_string().contains("incidence_words"));
     }
 }
+
+#[test]
+fn component_insert_pairs_explicit_matrix_with_scope_and_carrier_locations() {
+    let prefix = r#"{"relation_record_index":1,"carrier_record_index":2,"neutron_role":"role","neutron_role_offset":30,"transform":"#;
+    let identity = "[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]";
+    let translated = "[[1.0,0.0,0.0,2.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]";
+    for (matrix, offsets) in [
+        (identity, ""),
+        (identity, ",\"transform_offset\":50"),
+        (translated, ",\"transform_offset\":50"),
+        (translated, ",\"transform_offset\":50,\"carrier_transform_offset\":40"),
+    ] {
+        let wire = format!("{prefix}{matrix}{offsets}}}");
+        let construction: super::DesignComponentInsertConstruction = serde_json::from_str(&wire).expect("component placement");
+        assert_eq!(serde_json::to_string(&construction).expect("component placement wire"), wire);
+        assert_eq!(construction.placement.is_some(), !offsets.is_empty());
+    }
+    for (matrix, offsets) in [(translated, ""), (identity, ",\"carrier_transform_offset\":40")] {
+        let wire = format!("{prefix}{matrix}{offsets}}}");
+        let error = serde_json::from_str::<super::DesignComponentInsertConstruction>(&wire).expect_err("missing scope matrix location");
+        assert!(error.to_string().contains("transform_offset"));
+    }
+}

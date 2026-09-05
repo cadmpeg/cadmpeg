@@ -2940,94 +2940,38 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             Some(construction) => {
                 let relation =
                     records_by_index.get(&(native_stream, construction.relation_record_index));
-                let frame_matches_transform =
-                    match (scope.frame_length, scope.paired_class_tag.as_str()) {
-                        (399, "259") => {
-                            construction.transform_offset
-                                == Some(scope.byte_offset.saturating_add(50))
-                        }
-                        (381, "261") => {
-                            construction.transform_offset
-                                == Some(scope.byte_offset.saturating_add(49))
-                        }
-                        (395, "258") => {
-                            construction.transform_offset
-                                == Some(scope.byte_offset.saturating_add(46))
-                        }
-                        (404, _) => {
-                            construction.transform_offset
-                                == Some(scope.byte_offset.saturating_add(54))
-                        }
-                        (261, "263") if scope.class_tag == "296" => {
-                            construction.transform_offset.is_none()
-                                && construction.transform
-                                    == design::decode::sketch::identity_matrix()
-                        }
-                        (261, "261") if scope.class_tag == "410" => {
-                            construction.transform_offset.is_none()
-                                && construction.transform
-                                    == design::decode::sketch::identity_matrix()
-                        }
-                        (261, "258") if scope.class_tag == "426" => {
-                            construction.transform_offset.is_none()
-                                && construction.transform
-                                    == design::decode::sketch::identity_matrix()
-                        }
-                        (261, "266") if scope.class_tag == "434" => {
-                            construction.transform_offset.is_none()
-                                && construction.transform
-                                    == design::decode::sketch::identity_matrix()
-                        }
-                        (257 | 261 | 267, "264") if scope.class_tag == "414" => {
-                            construction.transform_offset.is_none()
-                                && construction.transform
-                                    == design::decode::sketch::identity_matrix()
-                        }
-                        (389, "264") if scope.class_tag == "414" => {
-                            construction.transform_offset
-                                == Some(scope.byte_offset.saturating_add(50))
-                        }
-                        (257, "262") if scope.class_tag == "283" => {
-                            construction.transform_offset.is_none()
-                                && construction.transform
-                                    == design::decode::sketch::identity_matrix()
-                        }
-                        (385, "262") if scope.class_tag == "283" => {
-                            construction.transform_offset
-                                == Some(scope.byte_offset.saturating_add(46))
-                        }
-                        _ => false,
-                    };
-                let placement_field_order =
-                    match (scope.frame_length, scope.paired_class_tag.as_str()) {
-                        (261, "263") if scope.class_tag == "296" => {
-                            construction.carrier_transform_offset.is_none()
-                        }
-                        (261, "261") if scope.class_tag == "410" => {
-                            construction.carrier_transform_offset.is_none()
-                        }
-                        (261, "258") if scope.class_tag == "426" => {
-                            construction.carrier_transform_offset.is_none()
-                        }
-                        (261, "266") if scope.class_tag == "434" => {
-                            construction.carrier_transform_offset.is_none()
-                        }
-                        (257 | 261 | 267, "264") if scope.class_tag == "414" => {
-                            construction.carrier_transform_offset.is_none()
-                        }
-                        (389, "264") if scope.class_tag == "414" => construction
-                            .carrier_transform_offset
-                            .is_some_and(|offset| construction.neutron_role_offset < offset),
-                        (257 | 385, "262") if scope.class_tag == "283" => {
-                            construction.carrier_transform_offset.is_none()
-                        }
-                        (404, _) => construction
-                            .carrier_transform_offset
-                            .is_some_and(|offset| offset < construction.neutron_role_offset),
-                        _ => construction
-                            .carrier_transform_offset
-                            .is_some_and(|offset| construction.neutron_role_offset < offset),
-                    };
+                let frame_matches_transform = match (
+                    scope.frame_length,
+                    scope.paired_class_tag.as_str(),
+                    construction.placement.as_ref(),
+                ) {
+                    (261, "263", None) if scope.class_tag == "296" => true,
+                    (261, "261", None) if scope.class_tag == "410" => true,
+                    (261, "258", None) if scope.class_tag == "426" => true,
+                    (261, "266", None) if scope.class_tag == "434" => true,
+                    (257 | 261 | 267, "264", None) if scope.class_tag == "414" => true,
+                    (257, "262", None) if scope.class_tag == "283" => true,
+                    (385, "262", Some(matrix)) if scope.class_tag == "283" => {
+                        matrix.scope.offset == scope.byte_offset.saturating_add(46)
+                            && matrix.carrier_offset.is_none()
+                    }
+                    (404, _, Some(matrix)) => {
+                        matrix.scope.offset == scope.byte_offset.saturating_add(54)
+                            && matrix.carrier_offset.is_some_and(|offset| offset < construction.neutron_role_offset)
+                    }
+                    (frame_length, paired, Some(matrix)) => {
+                        let scope_delta = match (frame_length, paired) {
+                            (399, "259") => Some(50),
+                            (381, "261") => Some(49),
+                            (395, "258") => Some(46),
+                            (389, "264") if scope.class_tag == "414" => Some(50),
+                            _ => None,
+                        };
+                        scope_delta.is_some_and(|delta| matrix.scope.offset == scope.byte_offset.saturating_add(delta))
+                            && matrix.carrier_offset.is_some_and(|offset| construction.neutron_role_offset < offset)
+                    }
+                    _ => false,
+                };
                 let role_valid = crate::bytes::is_guid_relaxed(&construction.neutron_role)
                     || (crate::bytes::is_guid_prefix(&construction.neutron_role)
                         && construction.neutron_role.as_bytes().get(36) == Some(&b'_')
@@ -3038,18 +2982,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 scope.reference_members.values().copied().eq([construction.relation_record_index])
                     && construction.carrier_record_index != construction.relation_record_index
                     && role_valid
-                    && design::decode::sketch::valid_sketch_transform(&construction.transform)
+                    && design::decode::sketch::valid_sketch_transform(construction.transform())
                     && frame_matches_transform
-                    && placement_field_order
                     && relation.is_some_and(|relation| {
                         construction
-                            .carrier_transform_offset
+                            .carrier_transform_offset()
                             .is_none_or(|offset| offset < relation.byte_offset)
                     })
                     && (native.xref_references.is_empty()
                         || native.xref_references.iter().any(|reference| {
                             reference.neutron_role == construction.neutron_role
-                                && reference.transform == Some(construction.transform)
+                                && reference.transform == Some(*construction.transform())
                         }))
             }
         };

@@ -1961,9 +1961,10 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
             occurrence_identity: None,
             neutron_role: role.into(),
             neutron_role_offset: 0,
-            transform: identity_matrix(),
-            transform_offset: Some(0),
-            carrier_transform_offset: Some(0),
+            placement: Some(crate::records::DesignComponentInsertMatrix {
+                scope: crate::records::Located { value: identity_matrix(), offset: 0 },
+                carrier_offset: Some(0),
+            }),
         });
     }
     scope

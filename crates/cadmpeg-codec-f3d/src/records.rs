@@ -8,6 +8,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
 
+const IDENTITY_MATRIX: [[f64; 4]; 4] = [
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0],
+];
+
 /// A source value and the byte offset of its encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2096,17 +2103,10 @@ pub struct DesignCoilPlacement {
 }
 
 impl DesignCoilPlacement {
-    const IDENTITY: [[f64; 4]; 4] = [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ];
-
     /// Row-major local-to-model matrix with translation in source centimetres.
     #[must_use]
     pub fn transform(&self) -> &[[f64; 4]; 4] {
-        self.explicit_transform.as_ref().map_or(&Self::IDENTITY, |matrix| &matrix.value)
+        self.explicit_transform.as_ref().map_or(&IDENTITY_MATRIX, |matrix| &matrix.value)
     }
 }
 
@@ -2142,7 +2142,7 @@ impl TryFrom<DesignCoilPlacementWire> for DesignCoilPlacement {
         let explicit_transform = match wire.transform_offset {
             Some(offset) => Some(Located { value: wire.transform, offset }),
             None => {
-                if wire.transform.iter().flatten().zip(Self::IDENTITY.iter().flatten())
+                if wire.transform.iter().flatten().zip(IDENTITY_MATRIX.iter().flatten())
                     .any(|(value, identity)| value.to_bits() != identity.to_bits()) {
                     return Err("transform must be identity when transform_offset is absent".into());
                 }
@@ -3834,6 +3834,7 @@ pub struct DesignAssemblyOperandFrame {
 /// External occurrence and placement joined through a `Component Insert` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignComponentInsertConstructionWire", into = "DesignComponentInsertConstructionWire")]
 pub struct DesignComponentInsertConstruction {
     /// Scope-owned relation record.
     pub relation_record_index: u32,
@@ -3846,16 +3847,106 @@ pub struct DesignComponentInsertConstruction {
     pub neutron_role: String,
     /// Byte offset of the occurrence-role string payload.
     pub neutron_role_offset: u64,
+    /// Explicit scope-local placement and its optional repeated carrier location.
+    /// Absence is the encoded identity form.
+    pub placement: Option<DesignComponentInsertMatrix>,
+}
+
+/// Scope-local matrix with an optional equal matrix in the grouped carrier.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignComponentInsertMatrix {
+    pub scope: Located<[[f64; 4]; 4]>,
+    pub carrier_offset: Option<u64>,
+}
+
+impl DesignComponentInsertConstruction {
+    #[must_use]
+    pub fn transform(&self) -> &[[f64; 4]; 4] {
+        self.placement.as_ref().map_or(&IDENTITY_MATRIX, |matrix| &matrix.scope.value)
+    }
+
+    #[must_use]
+    pub fn transform_offset(&self) -> Option<u64> {
+        self.placement.as_ref().map(|matrix| matrix.scope.offset)
+    }
+
+    #[must_use]
+    pub fn carrier_transform_offset(&self) -> Option<u64> {
+        self.placement.as_ref().and_then(|matrix| matrix.carrier_offset)
+    }
+}
+
+/// External occurrence and placement joined through a `Component Insert` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignComponentInsertConstructionWire {
+    /// Scope-owned relation record.
+    relation_record_index: u32,
+    /// Grouped occurrence carrier named by the relation record.
+    carrier_record_index: u32,
+    /// Eight-byte occurrence identity carried by the scope prologue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    occurrence_identity: Option<u64>,
+    /// Occurrence-role GUID joining the carrier to the external-reference table.
+    neutron_role: String,
+    /// Byte offset of the occurrence-role string payload.
+    neutron_role_offset: u64,
     /// Row-major local occurrence transform in centimetres.
-    pub transform: [[f64; 4]; 4],
+    transform: [[f64; 4]; 4],
     /// Byte offset of the first scope-local transform scalar. `None` is the
     /// stored identity form, which has no scalar block.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform_offset: Option<u64>,
+    transform_offset: Option<u64>,
     /// Byte offset of the equal transform's first scalar in the grouped
-    /// carrier. `None` is the stored identity form, which has no scalar block.
+    /// carrier; absent when the carrier stores no scalar block.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub carrier_transform_offset: Option<u64>,
+    carrier_transform_offset: Option<u64>,
+}
+
+impl TryFrom<DesignComponentInsertConstructionWire> for DesignComponentInsertConstruction {
+    type Error = String;
+    fn try_from(wire: DesignComponentInsertConstructionWire) -> Result<Self, Self::Error> {
+        let placement = match (wire.transform_offset, wire.carrier_transform_offset) {
+            (Some(offset), carrier_offset) => Some(DesignComponentInsertMatrix {
+                scope: Located { value: wire.transform, offset },
+                carrier_offset,
+            }),
+            (None, None) => {
+                if wire.transform.iter().flatten().zip(IDENTITY_MATRIX.iter().flatten())
+                    .any(|(value, identity)| value.to_bits() != identity.to_bits()) {
+                    return Err("transform must be identity when transform_offset is absent".into());
+                }
+                None
+            }
+            (None, Some(_)) => return Err("carrier_transform_offset requires transform_offset".into()),
+        };
+        Ok(Self {
+            relation_record_index: wire.relation_record_index,
+            carrier_record_index: wire.carrier_record_index,
+            occurrence_identity: wire.occurrence_identity,
+            neutron_role: wire.neutron_role,
+            neutron_role_offset: wire.neutron_role_offset,
+            placement,
+        })
+    }
+}
+
+impl From<DesignComponentInsertConstruction> for DesignComponentInsertConstructionWire {
+    fn from(record: DesignComponentInsertConstruction) -> Self {
+        let transform = *record.transform();
+        let transform_offset = record.transform_offset();
+        let carrier_transform_offset = record.carrier_transform_offset();
+        Self {
+            relation_record_index: record.relation_record_index,
+            carrier_record_index: record.carrier_record_index,
+            occurrence_identity: record.occurrence_identity,
+            neutron_role: record.neutron_role,
+            neutron_role_offset: record.neutron_role_offset,
+            transform,
+            transform_offset,
+            carrier_transform_offset,
+        }
+    }
 }
 
 /// Local component occurrence joined through a `DerivedInstance` scope.
