@@ -5537,15 +5537,15 @@ pub(crate) fn exact_offset_constraint(
     use cadmpeg_ir::features::Length;
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchOffsetPair};
 
-    if relation.unknown_constraint_bits != 0
+    if relation.unknown_constraint_bits() != 0
         || !matches!(
-            relation.constraint_kinds.as_slice(),
+            relation.constraint_kinds().as_slice(),
             [SketchConstraintKind::Perpendicular | SketchConstraintKind::Offset]
         )
         || relation.return_members.len() < 4
         || !relation.return_members.len().is_multiple_of(2)
         || relation.return_members.len() != relation.members.len()
-        || relation.resolved_return_members.len() != relation.return_members.len()
+        || relation.resolved_return_members().len() != relation.return_members.len()
     {
         return None;
     }
@@ -5553,11 +5553,11 @@ pub(crate) fn exact_offset_constraint(
     // relation's sources can be another offset relation's results, so their
     // secondary identities are not null and only the run order separates the
     // two sides.
-    let ordered_pairs = relation.constraint_kinds == [SketchConstraintKind::Offset];
+    let ordered_pairs = relation.constraint_kinds() == [SketchConstraintKind::Offset];
     let mut pairs = Vec::new();
     let mut used_entities = HashSet::new();
     let mut canonical_distance: Option<f64> = None;
-    for operands in relation.resolved_return_members.chunks_exact(2) {
+    for operands in relation.resolved_return_members().chunks_exact(2) {
         let (first_record_index, first_secondary_id, second_record_index, second_secondary_id) =
             match operands {
                 [SketchRelationOperand::Curve {
@@ -6003,7 +6003,7 @@ fn sketch_points_close(first: Point2, second: Point2) -> bool {
 
 pub(crate) fn relation_kind_name(relation: &SketchRelation) -> String {
     let mut names = relation
-        .constraint_kinds
+        .constraint_kinds()
         .iter()
         .map(|kind| match kind {
             SketchConstraintKind::Coincident => "coincident",
@@ -6028,7 +6028,7 @@ pub(crate) fn relation_kind_name(relation: &SketchRelation) -> String {
             SketchConstraintKind::TextPath => "text_path",
         })
         .collect::<Vec<_>>();
-    if relation.unknown_constraint_bits != 0 {
+    if relation.unknown_constraint_bits() != 0 {
         names.push("unknown_bits");
     }
     names.join("+")

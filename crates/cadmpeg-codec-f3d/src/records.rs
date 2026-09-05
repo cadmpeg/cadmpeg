@@ -7968,9 +7968,258 @@ pub struct DesignRecordHeader {
     pub byte_offset: u64,
 }
 
+pub(crate) const SKETCH_CONSTRAINT_MASK: u64 = 0x0320_b000_3fff;
+
+/// Decode the constraint kinds and unknown bits selected by a sketch-relation mask.
+#[must_use]
+pub(crate) fn constraint_kinds_from_state(state: u64) -> (Vec<SketchConstraintKind>, u64) {
+    let definitions = [
+        (0x0000_0001, SketchConstraintKind::Coincident),
+        (0x0000_0002, SketchConstraintKind::Colinear),
+        (0x0000_0004, SketchConstraintKind::Concentric),
+        (0x0000_0008, SketchConstraintKind::EqualLength),
+        (0x0000_0010, SketchConstraintKind::Parallel),
+        (0x0000_0020, SketchConstraintKind::Perpendicular),
+        (0x0000_0040, SketchConstraintKind::Horizontal),
+        (0x0000_0080, SketchConstraintKind::Vertical),
+        (0x0000_0100, SketchConstraintKind::Tangent),
+        (0x0000_0200, SketchConstraintKind::Curvature),
+        (0x0000_0400, SketchConstraintKind::Symmetry),
+        (0x0000_0800, SketchConstraintKind::Equal),
+        (0x0000_1000, SketchConstraintKind::Midpoint),
+        (0x0000_2000, SketchConstraintKind::Polygon),
+        (0x1000_0000, SketchConstraintKind::CircularPattern),
+        (0x2000_0000, SketchConstraintKind::RectangularPattern),
+        (0x8000_0000, SketchConstraintKind::SplineGroup),
+        (0x20_0000_0000, SketchConstraintKind::Offset),
+        (0x100_0000_0000, SketchConstraintKind::TextFrame),
+        (0x200_0000_0000, SketchConstraintKind::TextPath),
+    ];
+    let mut kinds = if state == 0 {
+        vec![SketchConstraintKind::Coincident]
+    } else {
+        Vec::new()
+    };
+    let mut recognized = 0u64;
+    for (bit, kind) in definitions {
+        if state & bit != 0 {
+            kinds.push(kind);
+            recognized |= bit;
+        }
+    }
+    debug_assert_eq!(recognized, state & SKETCH_CONSTRAINT_MASK);
+    (kinds, state & !SKETCH_CONSTRAINT_MASK)
+}
+
+/// One first-run sketch-relation member with its offset, ordinal, and resolution.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SketchRelationMember {
+    /// Indexed Design record referenced by the relation.
+    pub record_index: u32,
+    /// Payload offset of the member, relative to the record.
+    pub offset: u32,
+    /// Count of relations already recorded on this member.
+    pub relation_ordinal: u32,
+    /// Typed sketch identity, when the member has been resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<SketchRelationOperand>,
+}
+
+impl SketchRelationMember {
+    /// A member named only by record index, with zero offset and ordinal.
+    #[must_use]
+    pub fn from_index(record_index: u32) -> Self {
+        Self {
+            record_index,
+            offset: 0,
+            relation_ordinal: 0,
+            resolved: None,
+        }
+    }
+}
+
+impl From<u32> for SketchRelationMember {
+    fn from(record_index: u32) -> Self {
+        Self::from_index(record_index)
+    }
+}
+
+/// One return-run sketch-relation member with its offset and resolution.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SketchRelationReturnMember {
+    /// Indexed Design record referenced by the relation.
+    pub record_index: u32,
+    /// Payload offset of the return member, relative to the record.
+    pub offset: u32,
+    /// Typed sketch identity, when the member has been resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<SketchRelationOperand>,
+}
+
+impl SketchRelationReturnMember {
+    /// A return member named only by record index, with zero offset.
+    #[must_use]
+    pub fn from_index(record_index: u32) -> Self {
+        Self {
+            record_index,
+            offset: 0,
+            resolved: None,
+        }
+    }
+}
+
+impl From<u32> for SketchRelationReturnMember {
+    fn from(record_index: u32) -> Self {
+        Self::from_index(record_index)
+    }
+}
+
+/// Pattern or text payload a sketch relation carries, when the mask names one.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum SketchRelationKind {
+    /// No class-specific pattern or text payload.
+    #[default]
+    Unpatterned,
+    /// A circular-pattern relation's auxiliary operands.
+    Circular {
+        /// Record index of the total-angle parameter value record.
+        angle_parameter: u32,
+        /// Record index of the instance-count parameter value record.
+        count_parameter: u32,
+        /// Evaluated total pattern angle in radians.
+        evaluated_angle: f64,
+        /// Evaluated instance count.
+        evaluated_count: u32,
+    },
+    /// A rectangular-pattern relation's two direction clauses.
+    Rectangular {
+        /// The two pattern direction clauses in record order.
+        directions: [SketchPatternDirection; 2],
+    },
+    /// A text-frame relation's auxiliary operand.
+    TextFrame {
+        /// Record index of the sketch-text entity the frame curves bind to.
+        text_reference: u32,
+    },
+    /// A text-path relation's auxiliary operands.
+    TextPath {
+        /// Record index of the sketch-text entity placed along the path curve.
+        text_reference: u32,
+        /// Row-major 4×4 character placement transforms in character order,
+        /// in centimetres.
+        glyph_transforms: Vec<[[f64; 4]; 4]>,
+    },
+}
+
+impl SketchRelationKind {
+    pub(crate) fn from_pattern(pattern: Option<SketchPatternDefinition>) -> Self {
+        match pattern {
+            None => Self::Unpatterned,
+            Some(SketchPatternDefinition::Circular {
+                angle_parameter,
+                count_parameter,
+                evaluated_angle,
+                evaluated_count,
+            }) => Self::Circular {
+                angle_parameter,
+                count_parameter,
+                evaluated_angle,
+                evaluated_count,
+            },
+            Some(SketchPatternDefinition::Rectangular { directions }) => {
+                Self::Rectangular { directions }
+            }
+            Some(SketchPatternDefinition::TextFrame { text_reference }) => {
+                Self::TextFrame { text_reference }
+            }
+            Some(SketchPatternDefinition::TextPath {
+                text_reference,
+                glyph_transforms,
+            }) => Self::TextPath {
+                text_reference,
+                glyph_transforms,
+            },
+        }
+    }
+
+    pub(crate) fn to_pattern(&self) -> Option<SketchPatternDefinition> {
+        match self {
+            Self::Unpatterned => None,
+            Self::Circular {
+                angle_parameter,
+                count_parameter,
+                evaluated_angle,
+                evaluated_count,
+            } => Some(SketchPatternDefinition::Circular {
+                angle_parameter: *angle_parameter,
+                count_parameter: *count_parameter,
+                evaluated_angle: *evaluated_angle,
+                evaluated_count: *evaluated_count,
+            }),
+            Self::Rectangular { directions } => Some(SketchPatternDefinition::Rectangular {
+                directions: directions.clone(),
+            }),
+            Self::TextFrame { text_reference } => Some(SketchPatternDefinition::TextFrame {
+                text_reference: *text_reference,
+            }),
+            Self::TextPath {
+                text_reference,
+                glyph_transforms,
+            } => Some(SketchPatternDefinition::TextPath {
+                text_reference: *text_reference,
+                glyph_transforms: glyph_transforms.clone(),
+            }),
+        }
+    }
+
+    fn expected_constraint_kind(&self) -> Option<SketchConstraintKind> {
+        match self {
+            Self::Unpatterned => None,
+            Self::Circular { .. } => Some(SketchConstraintKind::CircularPattern),
+            Self::Rectangular { .. } => Some(SketchConstraintKind::RectangularPattern),
+            Self::TextFrame { .. } => Some(SketchConstraintKind::TextFrame),
+            Self::TextPath { .. } => Some(SketchConstraintKind::TextPath),
+        }
+    }
+
+    pub(crate) fn agrees_with_state(&self, state: u64) -> bool {
+        let (kinds, _) = constraint_kinds_from_state(state);
+        let first = kinds.first().copied();
+        match self.expected_constraint_kind() {
+            None => !matches!(
+                first,
+                Some(
+                    SketchConstraintKind::CircularPattern
+                        | SketchConstraintKind::RectangularPattern
+                        | SketchConstraintKind::TextFrame
+                        | SketchConstraintKind::TextPath
+                )
+            ),
+            Some(expected) => first == Some(expected),
+        }
+    }
+}
+
+/// Rejected CADIR sketch relation whose derived fields disagree with `state`.
+#[derive(Debug)]
+pub(crate) struct SketchRelationPayloadError(String);
+
+impl std::fmt::Display for SketchRelationPayloadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for SketchRelationPayloadError {}
+
 /// Counted constraint relation owned by a sketch container.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "SketchRelationSerde"))]
+#[serde(try_from = "SketchRelationSerde", into = "SketchRelationSerde")]
 pub struct SketchRelation {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -7996,51 +8245,387 @@ pub struct SketchRelation {
     /// Serialized count of the rectangular class's reference run. Zero selects
     /// seed-to-final spans; a nonzero count selects adjacent spacing. `None`
     /// for other relation classes and native data that did not retain it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rectangular_counted_reference_count: Option<u32>,
     /// First reference run, interleaved with per-member relation ordinals.
     /// Its order does not define relation operand order.
-    pub members: Vec<u32>,
-    /// Member records resolved to typed sketch identities where available.
-    #[serde(default)]
-    pub resolved_members: Vec<SketchRelationOperand>,
-    /// Payload offsets parallel to `members`, relative to the record.
-    #[serde(default)]
-    pub member_offsets: Vec<u32>,
+    pub members: Vec<SketchRelationMember>,
     /// Payload offset of `owner_reference`, relative to the record.
-    #[serde(default)]
     pub owner_reference_offset: u32,
     /// Source sketch-constraint bitmask.
     pub state: u64,
+    /// `EntityGenesis` origin bitfield stored by the relation record, when present.
+    pub entity_genesis: Option<u64>,
+    /// Pattern or text payload named by the constraint mask.
+    pub kind: SketchRelationKind,
+    /// Second reference run in semantic member order.
+    pub return_members: Vec<SketchRelationReturnMember>,
+    /// Complete variable-width source record for native replay/write.
+    pub raw_bytes: Vec<u8>,
+}
+
+impl SketchRelation {
     /// Constraint kinds selected by `state`.
+    #[must_use]
+    pub fn constraint_kinds(&self) -> Vec<SketchConstraintKind> {
+        constraint_kinds_from_state(self.state).0
+    }
+
+    /// Bits in `state` outside the defined constraint mask.
+    #[must_use]
+    pub fn unknown_constraint_bits(&self) -> u64 {
+        constraint_kinds_from_state(self.state).1
+    }
+
+    /// Class-specific pattern or text payload, when the kind carries one.
+    #[must_use]
+    pub fn pattern(&self) -> Option<SketchPatternDefinition> {
+        self.kind.to_pattern()
+    }
+
+    /// Record indices of the first reference run.
+    #[must_use]
+    pub fn member_indices(&self) -> Vec<u32> {
+        self.members
+            .iter()
+            .map(|member| member.record_index)
+            .collect()
+    }
+
+    /// Record indices of the return reference run.
+    #[must_use]
+    pub fn return_member_indices(&self) -> Vec<u32> {
+        self.return_members
+            .iter()
+            .map(|member| member.record_index)
+            .collect()
+    }
+
+    /// First-run then return-run record indices.
+    pub fn all_member_indices(&self) -> impl Iterator<Item = u32> + '_ {
+        self.members
+            .iter()
+            .map(|member| member.record_index)
+            .chain(self.return_members.iter().map(|member| member.record_index))
+    }
+
+    /// Payload offsets parallel to the first reference run.
+    #[must_use]
+    pub fn member_offsets(&self) -> Vec<u32> {
+        self.members.iter().map(|member| member.offset).collect()
+    }
+
+    /// Payload offsets parallel to the return reference run.
+    #[must_use]
+    pub fn return_member_offsets(&self) -> Vec<u32> {
+        self.return_members
+            .iter()
+            .map(|member| member.offset)
+            .collect()
+    }
+
+    /// Relation ordinals parallel to the first reference run.
+    #[must_use]
+    pub fn member_relation_ordinals(&self) -> Vec<u32> {
+        self.members
+            .iter()
+            .map(|member| member.relation_ordinal)
+            .collect()
+    }
+
+    /// Resolved first-run members, empty when none have been bound.
+    #[must_use]
+    pub fn resolved_members(&self) -> Vec<SketchRelationOperand> {
+        if self.members.iter().any(|member| member.resolved.is_none()) {
+            Vec::new()
+        } else {
+            self.members
+                .iter()
+                .filter_map(|member| member.resolved.clone())
+                .collect()
+        }
+    }
+
+    /// Resolved return-run members, empty when none have been bound.
+    #[must_use]
+    pub fn resolved_return_members(&self) -> Vec<SketchRelationOperand> {
+        if self
+            .return_members
+            .iter()
+            .any(|member| member.resolved.is_none())
+        {
+            Vec::new()
+        } else {
+            self.return_members
+                .iter()
+                .filter_map(|member| member.resolved.clone())
+                .collect()
+        }
+    }
+}
+
+pub(crate) fn zip_relation_members(
+    members: Vec<u32>,
+    offsets: Vec<u32>,
+    ordinals: Vec<u32>,
+    resolved: Vec<SketchRelationOperand>,
+) -> Result<Vec<SketchRelationMember>, SketchRelationPayloadError> {
+    let len = members.len();
+    let offsets = pad_or_check("member_offsets", offsets, len)?;
+    let ordinals = pad_or_check("member_relation_ordinals", ordinals, len)?;
+    let resolved = pad_resolved("resolved_members", resolved, len)?;
+    Ok(members
+        .into_iter()
+        .zip(offsets)
+        .zip(ordinals)
+        .zip(resolved)
+        .map(
+            |(((record_index, offset), relation_ordinal), resolved)| SketchRelationMember {
+                record_index,
+                offset,
+                relation_ordinal,
+                resolved,
+            },
+        )
+        .collect())
+}
+
+pub(crate) fn zip_return_members(
+    members: Vec<u32>,
+    offsets: Vec<u32>,
+    resolved: Vec<SketchRelationOperand>,
+) -> Result<Vec<SketchRelationReturnMember>, SketchRelationPayloadError> {
+    let len = members.len();
+    let offsets = pad_or_check("return_member_offsets", offsets, len)?;
+    let resolved = pad_resolved("resolved_return_members", resolved, len)?;
+    Ok(members
+        .into_iter()
+        .zip(offsets)
+        .zip(resolved)
+        .map(
+            |((record_index, offset), resolved)| SketchRelationReturnMember {
+                record_index,
+                offset,
+                resolved,
+            },
+        )
+        .collect())
+}
+
+fn pad_or_check(
+    name: &str,
+    values: Vec<u32>,
+    len: usize,
+) -> Result<Vec<u32>, SketchRelationPayloadError> {
+    if values.is_empty() {
+        Ok(vec![0; len])
+    } else if values.len() == len {
+        Ok(values)
+    } else {
+        Err(SketchRelationPayloadError(format!(
+            "sketch relation {name} length {} does not match members {len}",
+            values.len()
+        )))
+    }
+}
+
+fn pad_resolved(
+    name: &str,
+    values: Vec<SketchRelationOperand>,
+    len: usize,
+) -> Result<Vec<Option<SketchRelationOperand>>, SketchRelationPayloadError> {
+    if values.is_empty() {
+        Ok(vec![None; len])
+    } else if values.len() == len {
+        Ok(values.into_iter().map(Some).collect())
+    } else {
+        Err(SketchRelationPayloadError(format!(
+            "sketch relation {name} length {} does not match members {len}",
+            values.len()
+        )))
+    }
+}
+
+/// Wire form of [`SketchRelation`] with the historical flat field set.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchRelationSerde {
+    pub id: String,
+    pub record_index: u32,
+    pub class_tag: String,
+    pub byte_offset: u64,
+    pub state_offset: u32,
+    pub owner_reference: u32,
+    #[serde(default)]
+    pub owner_entity_id: String,
+    #[serde(default)]
+    pub auxiliary_references: Vec<u32>,
+    #[serde(default)]
+    pub auxiliary_reference_offsets: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rectangular_counted_reference_count: Option<u32>,
+    pub members: Vec<u32>,
+    #[serde(default)]
+    pub resolved_members: Vec<SketchRelationOperand>,
+    #[serde(default)]
+    pub member_offsets: Vec<u32>,
+    #[serde(default)]
+    pub owner_reference_offset: u32,
+    pub state: u64,
     #[serde(default)]
     pub constraint_kinds: Vec<SketchConstraintKind>,
-    /// Bits in `state` outside the defined constraint mask.
+    #[serde(default)]
     pub unknown_constraint_bits: u64,
-    /// Relation ordinals parallel to `members`. The integer beside a member
-    /// counts the relations already recorded on that member, so the ordinals
-    /// carried on one member are pairwise distinct across its relations. It is
-    /// not a role: it says nothing about the member's part in this relation.
     #[serde(default)]
     pub member_relation_ordinals: Vec<u32>,
-    /// `EntityGenesis` origin bitfield stored by the relation record, when present.
     #[serde(default)]
     pub entity_genesis: Option<u64>,
-    /// Class-specific pattern or text payload decoded from the auxiliary run.
     #[serde(default)]
     pub pattern: Option<SketchPatternDefinition>,
-    /// Second reference run in semantic member order.
     pub return_members: Vec<u32>,
-    /// Return-member records resolved to typed sketch identities where available.
     #[serde(default)]
     pub resolved_return_members: Vec<SketchRelationOperand>,
-    /// Payload offsets parallel to `return_members`, relative to the record.
     #[serde(default)]
     pub return_member_offsets: Vec<u32>,
-    /// Complete variable-width source record for native replay/write.
     #[serde(with = "cadmpeg_ir::bytes")]
     #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub raw_bytes: Vec<u8>,
+}
+
+impl TryFrom<SketchRelationSerde> for SketchRelation {
+    type Error = SketchRelationPayloadError;
+
+    fn try_from(wire: SketchRelationSerde) -> Result<Self, Self::Error> {
+        let (derived_kinds, derived_unknown) = constraint_kinds_from_state(wire.state);
+        if !wire.constraint_kinds.is_empty() && wire.constraint_kinds != derived_kinds {
+            return Err(SketchRelationPayloadError(
+                "sketch relation constraint_kinds disagrees with state".into(),
+            ));
+        }
+        if wire.unknown_constraint_bits != 0 && wire.unknown_constraint_bits != derived_unknown {
+            return Err(SketchRelationPayloadError(
+                "sketch relation unknown_constraint_bits disagrees with state".into(),
+            ));
+        }
+        let kind = SketchRelationKind::from_pattern(wire.pattern);
+        if !kind.agrees_with_state(wire.state) {
+            return Err(SketchRelationPayloadError(
+                "sketch relation pattern disagrees with the first constraint kind".into(),
+            ));
+        }
+        Ok(Self {
+            id: wire.id,
+            record_index: wire.record_index,
+            class_tag: wire.class_tag,
+            byte_offset: wire.byte_offset,
+            state_offset: wire.state_offset,
+            owner_reference: wire.owner_reference,
+            owner_entity_id: wire.owner_entity_id,
+            auxiliary_references: wire.auxiliary_references,
+            auxiliary_reference_offsets: wire.auxiliary_reference_offsets,
+            rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
+            members: zip_relation_members(
+                wire.members,
+                wire.member_offsets,
+                wire.member_relation_ordinals,
+                wire.resolved_members,
+            )?,
+            owner_reference_offset: wire.owner_reference_offset,
+            state: wire.state,
+            entity_genesis: wire.entity_genesis,
+            kind,
+            return_members: zip_return_members(
+                wire.return_members,
+                wire.return_member_offsets,
+                wire.resolved_return_members,
+            )?,
+            raw_bytes: wire.raw_bytes,
+        })
+    }
+}
+
+impl From<SketchRelation> for SketchRelationSerde {
+    fn from(relation: SketchRelation) -> Self {
+        let (constraint_kinds, unknown_constraint_bits) =
+            constraint_kinds_from_state(relation.state);
+        let emit_resolved = relation
+            .members
+            .iter()
+            .all(|member| member.resolved.is_some());
+        let emit_return_resolved = relation
+            .return_members
+            .iter()
+            .all(|member| member.resolved.is_some());
+        let emit_ordinals = relation
+            .members
+            .iter()
+            .any(|member| member.relation_ordinal != 0);
+        Self {
+            id: relation.id,
+            record_index: relation.record_index,
+            class_tag: relation.class_tag,
+            byte_offset: relation.byte_offset,
+            state_offset: relation.state_offset,
+            owner_reference: relation.owner_reference,
+            owner_entity_id: relation.owner_entity_id,
+            auxiliary_references: relation.auxiliary_references,
+            auxiliary_reference_offsets: relation.auxiliary_reference_offsets,
+            rectangular_counted_reference_count: relation.rectangular_counted_reference_count,
+            members: relation
+                .members
+                .iter()
+                .map(|member| member.record_index)
+                .collect(),
+            resolved_members: if emit_resolved {
+                relation
+                    .members
+                    .iter()
+                    .filter_map(|member| member.resolved.clone())
+                    .collect()
+            } else {
+                Vec::new()
+            },
+            member_offsets: relation
+                .members
+                .iter()
+                .map(|member| member.offset)
+                .collect(),
+            owner_reference_offset: relation.owner_reference_offset,
+            state: relation.state,
+            constraint_kinds,
+            unknown_constraint_bits,
+            member_relation_ordinals: if emit_ordinals {
+                relation
+                    .members
+                    .iter()
+                    .map(|member| member.relation_ordinal)
+                    .collect()
+            } else {
+                Vec::new()
+            },
+            entity_genesis: relation.entity_genesis,
+            pattern: relation.kind.to_pattern(),
+            return_members: relation
+                .return_members
+                .iter()
+                .map(|member| member.record_index)
+                .collect(),
+            resolved_return_members: if emit_return_resolved {
+                relation
+                    .return_members
+                    .iter()
+                    .filter_map(|member| member.resolved.clone())
+                    .collect()
+            } else {
+                Vec::new()
+            },
+            return_member_offsets: relation
+                .return_members
+                .iter()
+                .map(|member| member.offset)
+                .collect(),
+            raw_bytes: relation.raw_bytes,
+        }
+    }
 }
 
 /// One sketch-relation reference resolved against the indexed Design record graph.

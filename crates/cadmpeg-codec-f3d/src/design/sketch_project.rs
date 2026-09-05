@@ -73,33 +73,35 @@ fn text_frame_curve_records(
     relations
         .iter()
         .filter_map(|relation| {
-            let crate::records::SketchPatternDefinition::TextFrame { text_reference } =
-                relation.pattern.as_ref()?
+            let pattern = relation.pattern()?;
+            let crate::records::SketchPatternDefinition::TextFrame { text_reference } = &pattern
             else {
                 return None;
             };
             let scope = native_stream(&relation.id)?.to_owned();
-            if relation.unknown_constraint_bits != 0
-                || relation.constraint_kinds != [SketchConstraintKind::TextFrame]
-                || relation.members.first() != Some(text_reference)
+            if relation.unknown_constraint_bits() != 0
+                || relation.constraint_kinds() != [SketchConstraintKind::TextFrame]
+                || relation.members.first().map(|member| member.record_index)
+                    != Some(*text_reference)
                 || relation.auxiliary_references != [*text_reference]
                 || relation.members.len() < 2
-                || relation.return_members != relation.members[1..]
+                || relation.return_member_indices() != relation.member_indices()[1..]
                 || text_owners.get(&(scope.clone(), *text_reference))
                     != Some(&relation.owner_reference)
             {
                 return None;
             }
-            if !relation.return_members.iter().all(|record_index| {
-                curve_owners.get(&(scope.clone(), *record_index)) == Some(&relation.owner_reference)
+            if !relation.return_members.iter().all(|member| {
+                curve_owners.get(&(scope.clone(), member.record_index))
+                    == Some(&relation.owner_reference)
             }) {
                 return None;
             }
             Some(
                 relation
-                    .return_members
-                    .iter()
-                    .map(move |record_index| (scope.clone(), *record_index)),
+                    .return_member_indices()
+                    .into_iter()
+                    .map(move |record_index| (scope.clone(), record_index)),
             )
         })
         .flatten()
@@ -385,9 +387,9 @@ pub fn project_spatial_sketch_design(
         // Only the second reference run of a relation record is in semantic
         // order: the control polygon ends with the spline there, and the
         // interleaved first run orders its members by nothing a reader can use.
-        let members = &relation.return_members;
-        if relation.unknown_constraint_bits != 0
-            || relation.constraint_kinds != [SketchConstraintKind::SplineGroup]
+        let members = relation.return_member_indices();
+        if relation.unknown_constraint_bits() != 0
+            || relation.constraint_kinds() != [SketchConstraintKind::SplineGroup]
             || members.len() < 2
             || members.iter().collect::<HashSet<_>>().len() != members.len()
         {
@@ -703,7 +705,7 @@ pub fn project_spatial_sketch_constraints(
     let mut constraints = relations
         .iter()
         .filter_map(|relation| {
-            if relation.unknown_constraint_bits != 0 || relation.constraint_kinds.len() != 1 {
+            if relation.unknown_constraint_bits() != 0 || relation.constraint_kinds().len() != 1 {
                 return None;
             }
             let scope = native_stream(&relation.id)?;
@@ -714,7 +716,7 @@ pub fn project_spatial_sketch_constraints(
             let semantic_entities = relation
                 .return_members
                 .iter()
-                .map(|record_index| projected.get(&(scope, *record_index)).copied())
+                .map(|member| projected.get(&(scope, member.record_index)).copied())
                 .collect::<Option<Vec<_>>>()?;
             let members = semantic_entities
                 .iter()
@@ -724,7 +726,7 @@ pub fn project_spatial_sketch_constraints(
             if distinct.len() != members.len() {
                 return None;
             }
-            let definition = match relation.constraint_kinds[0] {
+            let definition = match relation.constraint_kinds()[0] {
                 SketchConstraintKind::Coincident => {
                     let [first, second] = semantic_entities.as_slice() else {
                         return None;
@@ -848,7 +850,7 @@ pub fn project_spatial_sketch_constraints(
                     let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
                         return None;
                     };
-                    let direction = match relation.constraint_kinds[0] {
+                    let direction = match relation.constraint_kinds()[0] {
                         SketchConstraintKind::Horizontal => Vector3::new(
                             placement.transform[0][0],
                             placement.transform[1][0],

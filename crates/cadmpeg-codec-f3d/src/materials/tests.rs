@@ -1060,23 +1060,23 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(record_33.class_tag, "259");
     assert_eq!(f3d_native(result.ir()).sketch_relations.len(), 2);
     assert_eq!(
-        f3d_native(result.ir()).sketch_relations[0].members,
-        [100, 200]
+        f3d_native(result.ir()).sketch_relations[0].member_indices(),
+        vec![100, 200]
     );
     assert_eq!(
-        f3d_native(result.ir()).sketch_relations[0].return_members,
-        [200, 100]
+        f3d_native(result.ir()).sketch_relations[0].return_member_indices(),
+        vec![200, 100]
     );
     assert_eq!(
         f3d_native(result.ir()).sketch_relations[0].owner_reference,
         277
     );
     assert_eq!(
-        f3d_native(result.ir()).sketch_relations[0].constraint_kinds,
+        f3d_native(result.ir()).sketch_relations[0].constraint_kinds(),
         [crate::records::SketchConstraintKind::Parallel]
     );
     assert_eq!(
-        f3d_native(result.ir()).sketch_relations[0].unknown_constraint_bits,
+        f3d_native(result.ir()).sketch_relations[0].unknown_constraint_bits(),
         0
     );
     assert!(f3d_native(result.ir()).sketch_relations[1]

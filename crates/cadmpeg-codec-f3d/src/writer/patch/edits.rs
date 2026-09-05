@@ -2495,10 +2495,7 @@ pub(crate) fn validate_sketch_relation_edits(
             .clone_from(&before.auxiliary_references);
         normalized.members.clone_from(&before.members);
         normalized.state = before.state;
-        normalized
-            .constraint_kinds
-            .clone_from(&before.constraint_kinds);
-        normalized.unknown_constraint_bits = before.unknown_constraint_bits;
+        normalized.kind.clone_from(&before.kind);
         normalized.return_members.clone_from(&before.return_members);
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
@@ -2514,14 +2511,6 @@ pub(crate) fn validate_sketch_relation_edits(
         {
             continue;
         }
-        let (kinds, unknown) =
-            crate::design::decode::sketch::decode_constraint_kinds(relation.state);
-        if kinds != relation.constraint_kinds || unknown != relation.unknown_constraint_bits {
-            return Err(CodecError::malformed(format_args!(
-                "F3D sketch relation {} has a mask inconsistent with its typed constraint kinds",
-                relation.id
-            )));
-        }
         let stream = relation
             .id
             .strip_prefix(crate::ids::SCHEME_PREFIX)
@@ -2533,9 +2522,9 @@ pub(crate) fn validate_sketch_relation_edits(
         let mut values = Vec::new();
         collect_sketch_reference_edits(
             relation,
-            &before.members,
-            &relation.members,
-            &relation.member_offsets,
+            &before.member_indices(),
+            &relation.member_indices(),
+            &relation.member_offsets(),
             &mut values,
         )?;
         collect_sketch_reference_edits(
@@ -2553,9 +2542,9 @@ pub(crate) fn validate_sketch_relation_edits(
         }
         collect_sketch_reference_edits(
             relation,
-            &before.return_members,
-            &relation.return_members,
-            &relation.return_member_offsets,
+            &before.return_member_indices(),
+            &relation.return_member_indices(),
+            &relation.return_member_offsets(),
             &mut values,
         )?;
         if relation.state != before.state {

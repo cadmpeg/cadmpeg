@@ -142,7 +142,7 @@ pub fn project_sketch_constraints(
         let input_entities = relation
             .members
             .iter()
-            .filter_map(|record_index| projected.get(&(scope, *record_index)).copied())
+            .filter_map(|member| projected.get(&(scope, member.record_index)).copied())
             .collect::<Vec<_>>();
         // The second reference run is the relation's semantic member order.
         // The interleaved first run is retained separately because
@@ -151,26 +151,26 @@ pub fn project_sketch_constraints(
         let semantic_entities = relation
             .return_members
             .iter()
-            .filter_map(|record_index| projected.get(&(scope, *record_index)).copied())
+            .filter_map(|member| projected.get(&(scope, member.record_index)).copied())
             .collect::<Vec<_>>();
-        let exact = relation.unknown_constraint_bits == 0
-            && relation.constraint_kinds.len() == 1
+        let exact = relation.unknown_constraint_bits() == 0
+            && relation.constraint_kinds().len() == 1
             && semantic_entities.len() == relation.return_members.len();
         let native_entities = || {
             relation
-                .members
-                .iter()
-                .chain(&relation.auxiliary_references)
-                .chain(&relation.return_members)
+                .member_indices()
+                .into_iter()
+                .chain(relation.auxiliary_references.iter().copied())
+                .chain(relation.return_member_indices())
                 .filter_map(|record_index| {
                     projected
-                        .get(&(scope, *record_index))
+                        .get(&(scope, record_index))
                         .map(|entity| entity.id().clone())
                 })
                 .collect()
         };
         let definition = (if exact {
-            let kind = relation.constraint_kinds[0];
+            let kind = relation.constraint_kinds()[0];
             let loci = if kind == SketchConstraintKind::Coincident {
                 exact_coincident_loci(&semantic_entities)
             } else {
@@ -200,9 +200,9 @@ pub fn project_sketch_constraints(
             entities: native_entities(),
             parameter: None,
             operands: relation
-                .members
-                .iter()
-                .map(|record_index| native_operand(scope, "member", *record_index))
+                .member_indices()
+                .into_iter()
+                .map(|record_index| native_operand(scope, "member", record_index))
                 .chain(
                     relation
                         .auxiliary_references
@@ -211,9 +211,9 @@ pub fn project_sketch_constraints(
                 )
                 .chain(
                     relation
-                        .return_members
-                        .iter()
-                        .map(|record_index| native_operand(scope, "return", *record_index)),
+                        .return_member_indices()
+                        .into_iter()
+                        .map(|record_index| native_operand(scope, "return", record_index)),
                 )
                 .collect(),
         });
@@ -261,8 +261,8 @@ pub(crate) fn exact_rectangular_pattern(
     use crate::records::SketchPatternDefinition;
     use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
 
-    if relation.unknown_constraint_bits != 0
-        || relation.constraint_kinds != [SketchConstraintKind::RectangularPattern]
+    if relation.unknown_constraint_bits() != 0
+        || relation.constraint_kinds() != [SketchConstraintKind::RectangularPattern]
         || entities.len() != relation.return_members.len()
     {
         return None;
@@ -271,7 +271,8 @@ pub(crate) fn exact_rectangular_pattern(
         0 => RectangularPatternDistanceForm::SeedToFinalSpan,
         _ => RectangularPatternDistanceForm::AdjacentSpacing,
     };
-    let SketchPatternDefinition::Rectangular { directions } = relation.pattern.as_ref()? else {
+    let pattern = relation.pattern()?;
+    let SketchPatternDefinition::Rectangular { directions } = &pattern else {
         return None;
     };
     let source = directions
@@ -451,15 +452,17 @@ pub(crate) fn exact_text_relation(
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
     use cadmpeg_ir::transform::Transform;
 
-    if relation.unknown_constraint_bits != 0 || relation.constraint_kinds.len() != 1 {
+    if relation.unknown_constraint_bits() != 0 || relation.constraint_kinds().len() != 1 {
         return None;
     }
-    match relation.pattern.as_ref()? {
+    let pattern = relation.pattern()?;
+    match &pattern {
         SketchPatternDefinition::TextFrame { text_reference }
-            if relation.constraint_kinds == [SketchConstraintKind::TextFrame]
-                && relation.members.first() == Some(text_reference)
+            if relation.constraint_kinds() == [SketchConstraintKind::TextFrame]
+                && relation.members.first().map(|member| member.record_index)
+                    == Some(*text_reference)
                 && relation.auxiliary_references == [*text_reference]
-                && relation.return_members == relation.members[1..] =>
+                && relation.return_member_indices() == relation.member_indices()[1..] =>
         {
             let text = projected.get(&(scope, *text_reference))?;
             if !matches!(text.geometry, SketchGeometry::Text { .. }) {
@@ -468,7 +471,7 @@ pub(crate) fn exact_text_relation(
             let frame = relation
                 .return_members
                 .iter()
-                .map(|record_index| projected.get(&(scope, *record_index)).copied())
+                .map(|member| projected.get(&(scope, member.record_index)).copied())
                 .collect::<Option<Vec<_>>>()?;
             (!frame.is_empty()
                 && frame.iter().all(|entity| {
@@ -486,14 +489,14 @@ pub(crate) fn exact_text_relation(
         SketchPatternDefinition::TextPath {
             text_reference,
             glyph_transforms,
-        } if relation.constraint_kinds == [SketchConstraintKind::TextPath]
+        } if relation.constraint_kinds() == [SketchConstraintKind::TextPath]
             && relation.members.len() == 2
-            && relation.member_relation_ordinals.len() == 2
-            && relation.members[1] == *text_reference
+            && relation.member_relation_ordinals().len() == 2
+            && relation.members[1].record_index == *text_reference
             && relation.auxiliary_references == [*text_reference]
-            && relation.return_members == [relation.members[0]] =>
+            && relation.return_member_indices() == [relation.members[0].record_index] =>
         {
-            let path = projected.get(&(scope, relation.members[0]))?;
+            let path = projected.get(&(scope, relation.members[0].record_index))?;
             let text = projected.get(&(scope, *text_reference))?;
             if path.id() == text.id()
                 || matches!(
@@ -543,19 +546,20 @@ pub(crate) fn exact_circular_pattern(
         SketchConstraintDefinition as Definition, SketchGeometry,
     };
 
-    if relation.unknown_constraint_bits != 0
-        || relation.constraint_kinds != [SketchConstraintKind::CircularPattern]
+    if relation.unknown_constraint_bits() != 0
+        || relation.constraint_kinds() != [SketchConstraintKind::CircularPattern]
         || members.len() != relation.members.len()
         || returned.len() != relation.return_members.len()
     {
         return None;
     }
+    let pattern = relation.pattern()?;
     let SketchPatternDefinition::Circular {
         angle_parameter,
         count_parameter,
         evaluated_angle,
         evaluated_count,
-    } = relation.pattern.as_ref()?
+    } = &pattern
     else {
         return None;
     };
@@ -922,7 +926,8 @@ mod tests {
         translated_sketch_geometry_matches, RectangularPatternDistanceForm,
     };
     use crate::records::{
-        DesignParameter, DesignParameterKind, SketchConstraintKind, SketchRelation,
+        DesignParameter, DesignParameterKind, SketchRelation, SketchRelationKind,
+        SketchRelationMember, SketchRelationReturnMember,
     };
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{
@@ -998,36 +1003,39 @@ mod tests {
             auxiliary_references,
             auxiliary_reference_offsets: Vec::new(),
             rectangular_counted_reference_count: Some(rectangular_counted_reference_count),
-            members: members.clone(),
-            resolved_members: Vec::new(),
-            member_offsets: Vec::new(),
+            members: members
+                .clone()
+                .into_iter()
+                .map(SketchRelationMember::from_index)
+                .collect(),
             owner_reference_offset: 0,
             state: 0x2000_0000,
-            constraint_kinds: vec![SketchConstraintKind::RectangularPattern],
-            unknown_constraint_bits: 0,
-            member_relation_ordinals: vec![0; members.len()],
             entity_genesis: None,
-            pattern: Some(crate::records::SketchPatternDefinition::Rectangular {
-                directions: [
-                    crate::records::SketchPatternDirection {
-                        count_parameter: 20,
-                        distance_parameter: 21,
-                        evaluated_count,
-                        direction: [1.0, 0.0, 0.0],
-                        evaluated_distance,
-                    },
-                    crate::records::SketchPatternDirection {
-                        count_parameter: 22,
-                        distance_parameter: 23,
-                        evaluated_count: 1,
-                        direction: [0.0, 1.0, 0.0],
-                        evaluated_distance: 0.0,
-                    },
-                ],
-            }),
-            return_members: members,
-            resolved_return_members: Vec::new(),
-            return_member_offsets: Vec::new(),
+            kind: SketchRelationKind::from_pattern(Some(
+                crate::records::SketchPatternDefinition::Rectangular {
+                    directions: [
+                        crate::records::SketchPatternDirection {
+                            count_parameter: 20,
+                            distance_parameter: 21,
+                            evaluated_count,
+                            direction: [1.0, 0.0, 0.0],
+                            evaluated_distance,
+                        },
+                        crate::records::SketchPatternDirection {
+                            count_parameter: 22,
+                            distance_parameter: 23,
+                            evaluated_count: 1,
+                            direction: [0.0, 1.0, 0.0],
+                            evaluated_distance: 0.0,
+                        },
+                    ],
+                },
+            )),
+            return_members: members
+                .iter()
+                .copied()
+                .map(SketchRelationReturnMember::from_index)
+                .collect(),
             raw_bytes: Vec::new(),
         }
     }
@@ -1221,24 +1229,29 @@ mod tests {
             auxiliary_references: vec![20, 21],
             auxiliary_reference_offsets: Vec::new(),
             rectangular_counted_reference_count: None,
-            members: vec![1, 2, 3, 4],
-            resolved_members: Vec::new(),
-            member_offsets: Vec::new(),
+            members: vec![
+                SketchRelationMember::from_index(1),
+                SketchRelationMember::from_index(2),
+                SketchRelationMember::from_index(3),
+                SketchRelationMember::from_index(4),
+            ],
             owner_reference_offset: 0,
             state: 0x1000_0000,
-            constraint_kinds: vec![SketchConstraintKind::CircularPattern],
-            unknown_constraint_bits: 0,
-            member_relation_ordinals: vec![1, 1, 0, 0],
             entity_genesis: None,
-            pattern: Some(crate::records::SketchPatternDefinition::Circular {
-                angle_parameter: 20,
-                count_parameter: 21,
-                evaluated_angle: angle,
-                evaluated_count: 3,
-            }),
-            return_members: vec![2, 3, 4, 1],
-            resolved_return_members: Vec::new(),
-            return_member_offsets: Vec::new(),
+            kind: SketchRelationKind::from_pattern(Some(
+                crate::records::SketchPatternDefinition::Circular {
+                    angle_parameter: 20,
+                    count_parameter: 21,
+                    evaluated_angle: angle,
+                    evaluated_count: 3,
+                },
+            )),
+            return_members: vec![
+                SketchRelationReturnMember::from_index(2),
+                SketchRelationReturnMember::from_index(3),
+                SketchRelationReturnMember::from_index(4),
+                SketchRelationReturnMember::from_index(1),
+            ],
             raw_bytes: Vec::new(),
         };
         let members = [&center, &seed, &middle, &last];
@@ -1323,24 +1336,29 @@ mod tests {
             auxiliary_references: vec![20, 21],
             auxiliary_reference_offsets: Vec::new(),
             rectangular_counted_reference_count: None,
-            members: vec![1, 2, 3, 4],
-            resolved_members: Vec::new(),
-            member_offsets: Vec::new(),
+            members: vec![
+                SketchRelationMember::from_index(1),
+                SketchRelationMember::from_index(2),
+                SketchRelationMember::from_index(3),
+                SketchRelationMember::from_index(4),
+            ],
             owner_reference_offset: 0,
             state: 0x1000_0000,
-            constraint_kinds: vec![SketchConstraintKind::CircularPattern],
-            unknown_constraint_bits: 0,
-            member_relation_ordinals: vec![0, 0, 0, 0],
             entity_genesis: None,
-            pattern: Some(crate::records::SketchPatternDefinition::Circular {
-                angle_parameter: 20,
-                count_parameter: 21,
-                evaluated_angle: std::f64::consts::TAU,
-                evaluated_count: 3,
-            }),
-            return_members: vec![2, 3, 4, 1],
-            resolved_return_members: Vec::new(),
-            return_member_offsets: Vec::new(),
+            kind: SketchRelationKind::from_pattern(Some(
+                crate::records::SketchPatternDefinition::Circular {
+                    angle_parameter: 20,
+                    count_parameter: 21,
+                    evaluated_angle: std::f64::consts::TAU,
+                    evaluated_count: 3,
+                },
+            )),
+            return_members: vec![
+                SketchRelationReturnMember::from_index(2),
+                SketchRelationReturnMember::from_index(3),
+                SketchRelationReturnMember::from_index(4),
+                SketchRelationReturnMember::from_index(1),
+            ],
             raw_bytes: Vec::new(),
         };
         let members = [&center, &seed, &middle, &last];
@@ -1401,22 +1419,20 @@ mod tests {
             auxiliary_references: vec![2],
             auxiliary_reference_offsets: Vec::new(),
             rectangular_counted_reference_count: None,
-            members: vec![1, 2],
-            resolved_members: Vec::new(),
-            member_offsets: Vec::new(),
+            members: vec![
+                SketchRelationMember::from_index(1),
+                SketchRelationMember::from_index(2),
+            ],
             owner_reference_offset: 0,
             state: 0x200_0000_0000,
-            constraint_kinds: vec![SketchConstraintKind::TextPath],
-            unknown_constraint_bits: 0,
-            member_relation_ordinals: vec![1, 0],
             entity_genesis: Some(2),
-            pattern: Some(crate::records::SketchPatternDefinition::TextPath {
-                text_reference: 2,
-                glyph_transforms: vec![glyph],
-            }),
-            return_members: vec![1],
-            resolved_return_members: Vec::new(),
-            return_member_offsets: Vec::new(),
+            kind: SketchRelationKind::from_pattern(Some(
+                crate::records::SketchPatternDefinition::TextPath {
+                    text_reference: 2,
+                    glyph_transforms: vec![glyph],
+                },
+            )),
+            return_members: vec![SketchRelationReturnMember::from_index(1)],
             raw_bytes: Vec::new(),
         };
         let projected =

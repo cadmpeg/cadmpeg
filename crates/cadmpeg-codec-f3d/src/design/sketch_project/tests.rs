@@ -7,7 +7,8 @@ use crate::design::dimensions::{exact_atomic_constraint, point_lies_on_sketch_ge
 use crate::design::geometry::{point_on_sketch_entity, sketch_entity_endpoints};
 use crate::records::{
     DesignSketchPlacement, DesignSketchVisibility, SketchCurveIdentity, SketchPoint,
-    SketchPointClosure, SketchRelation, SketchRelationOperand, SketchText,
+    SketchPointClosure, SketchRelation, SketchRelationKind, SketchRelationMember,
+    SketchRelationOperand, SketchRelationReturnMember, SketchText,
 };
 use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -199,19 +200,25 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         auxiliary_references: vec![20],
         auxiliary_reference_offsets: Vec::new(),
         rectangular_counted_reference_count: None,
-        members: vec![20, 10, 11, 12, 13],
-        resolved_members: Vec::new(),
-        member_offsets: Vec::new(),
+        members: vec![
+            SketchRelationMember::from_index(20),
+            SketchRelationMember::from_index(10),
+            SketchRelationMember::from_index(11),
+            SketchRelationMember::from_index(12),
+            SketchRelationMember::from_index(13),
+        ],
         owner_reference_offset: 0,
         state: 0x100_0000_0000,
-        constraint_kinds: vec![SketchConstraintKind::TextFrame],
-        unknown_constraint_bits: 0,
-        member_relation_ordinals: Vec::new(),
         entity_genesis: Some(0),
-        pattern: Some(crate::records::SketchPatternDefinition::TextFrame { text_reference: 20 }),
-        return_members: vec![10, 11, 12, 13],
-        resolved_return_members: Vec::new(),
-        return_member_offsets: Vec::new(),
+        kind: SketchRelationKind::from_pattern(Some(
+            crate::records::SketchPatternDefinition::TextFrame { text_reference: 20 },
+        )),
+        return_members: vec![
+            SketchRelationReturnMember::from_index(10),
+            SketchRelationReturnMember::from_index(11),
+            SketchRelationReturnMember::from_index(12),
+            SketchRelationReturnMember::from_index(13),
+        ],
         raw_bytes: Vec::new(),
     };
 
@@ -486,7 +493,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         &nurbs.geometry
     ));
 
-    let relation = |record_index, member, operand| SketchRelation {
+    let relation = |record_index, member, _operand| SketchRelation {
         id: format!("f3d:native:relation#{record_index}"),
         record_index,
         class_tag: "302".into(),
@@ -497,19 +504,18 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         auxiliary_references: Vec::new(),
         auxiliary_reference_offsets: Vec::new(),
         rectangular_counted_reference_count: None,
-        members: vec![member],
-        resolved_members: vec![operand],
-        member_offsets: vec![25],
+        members: vec![member]
+            .into_iter()
+            .map(SketchRelationMember::from_index)
+            .collect(),
         owner_reference_offset: 55,
         state: 0x40,
-        constraint_kinds: vec![SketchConstraintKind::Horizontal],
-        unknown_constraint_bits: 0,
-        member_relation_ordinals: Vec::new(),
         entity_genesis: None,
-        pattern: None,
-        return_members: vec![member],
-        resolved_return_members: Vec::new(),
-        return_member_offsets: vec![80],
+        kind: SketchRelationKind::Unpatterned,
+        return_members: vec![member]
+            .into_iter()
+            .map(SketchRelationReturnMember::from_index)
+            .collect(),
         raw_bytes: Vec::new(),
     };
     let mut curve_point_coincidence = relation(
@@ -521,28 +527,27 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             secondary_id: 0,
         },
     );
-    curve_point_coincidence.members.push(175);
-    curve_point_coincidence
-        .resolved_members
-        .push(SketchRelationOperand::Point {
+    curve_point_coincidence.members.push(SketchRelationMember {
+        record_index: 175,
+        offset: 40,
+        relation_ordinal: 0,
+        resolved: Some(SketchRelationOperand::Point {
             record_index: 175,
             persistent_id: Some(10),
-        });
-    curve_point_coincidence.member_offsets.push(40);
-    curve_point_coincidence.return_members.push(175);
-    curve_point_coincidence.return_member_offsets.push(95);
+        }),
+    });
+    curve_point_coincidence
+        .return_members
+        .push(SketchRelationReturnMember::from_index(175));
     curve_point_coincidence.state = 1;
-    curve_point_coincidence.constraint_kinds = vec![SketchConstraintKind::Coincident];
     let mut midpoint = curve_point_coincidence.clone();
     midpoint.record_index = 703;
     midpoint.id = "f3d:native:relation#703".into();
     midpoint.state = 0x10;
-    midpoint.constraint_kinds = vec![SketchConstraintKind::Parallel];
     let mut curvature = curve_point_coincidence.clone();
     curvature.record_index = 704;
     curvature.id = "f3d:native:relation#704".into();
     curvature.state = 0x200;
-    curvature.constraint_kinds = vec![SketchConstraintKind::Curvature];
     let mut spline_group = relation(
         705,
         218,
@@ -554,12 +559,13 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     );
     // Reverse the first run so only the specified semantic run can satisfy the
     // assertion below.
-    spline_group.members = vec![218, 217];
-    spline_group.member_offsets = vec![25, 40];
-    spline_group.return_members = vec![217, 218];
-    spline_group.return_member_offsets = vec![80, 95];
+    spline_group.members =
+        crate::records::zip_relation_members(vec![218, 217], vec![25, 40], Vec::new(), Vec::new())
+            .expect("spline members");
+    spline_group.return_members =
+        crate::records::zip_return_members(vec![217, 218], vec![80, 95], Vec::new())
+            .expect("spline return members");
     spline_group.state = 0x8000_0000;
-    spline_group.constraint_kinds = vec![SketchConstraintKind::SplineGroup];
     let mut horizontal_point = relation(
         701,
         175,
@@ -569,9 +575,11 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         },
     );
     horizontal_point.auxiliary_references = vec![999];
-    horizontal_point.return_members = vec![175, 175];
+    horizontal_point.return_members = vec![
+        SketchRelationReturnMember::from_index(175),
+        SketchRelationReturnMember::from_index(175),
+    ];
     horizontal_point.state = 0x8000_0040;
-    horizontal_point.unknown_constraint_bits = 0x8000_0000;
     let constraints = project_sketch_constraints(
         &placements,
         &[],
@@ -831,19 +839,18 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         auxiliary_reference_offsets: Vec::new(),
         rectangular_counted_reference_count: None,
         // Member run order disagrees with semantic order below.
-        members: vec![104, 103],
-        resolved_members: Vec::new(),
-        member_offsets: Vec::new(),
+        members: vec![
+            SketchRelationMember::from_index(104),
+            SketchRelationMember::from_index(103),
+        ],
         owner_reference_offset: 0,
         state: 0x8000_0000,
-        constraint_kinds: vec![SketchConstraintKind::SplineGroup],
-        unknown_constraint_bits: 0,
-        member_relation_ordinals: Vec::new(),
         entity_genesis: None,
-        pattern: None,
-        return_members: vec![103, 104],
-        resolved_return_members: Vec::new(),
-        return_member_offsets: Vec::new(),
+        kind: SketchRelationKind::Unpatterned,
+        return_members: vec![
+            SketchRelationReturnMember::from_index(103),
+            SketchRelationReturnMember::from_index(104),
+        ],
         raw_bytes: Vec::new(),
     };
     let point = SketchPoint {
@@ -867,9 +874,14 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     midpoint_relation.id = "f3d:Design/BulkStream.dat:relation#106".into();
     midpoint_relation.record_index = 106;
     midpoint_relation.state = 0x1000;
-    midpoint_relation.constraint_kinds = vec![SketchConstraintKind::Midpoint];
-    midpoint_relation.members = vec![106, 101];
-    midpoint_relation.return_members = vec![101, 106];
+    midpoint_relation.members = vec![106, 101]
+        .into_iter()
+        .map(SketchRelationMember::from_index)
+        .collect();
+    midpoint_relation.return_members = vec![101, 106]
+        .into_iter()
+        .map(SketchRelationReturnMember::from_index)
+        .collect();
     let mut coincident_point = point.clone();
     coincident_point.id = "f3d:Design/BulkStream.dat:point#107".into();
     coincident_point.record_index = 107;
@@ -878,17 +890,21 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     let mut coincident_relation = relation.clone();
     coincident_relation.id = "f3d:Design/BulkStream.dat:relation#107".into();
     coincident_relation.record_index = 107;
-    coincident_relation.state = 0x40;
-    coincident_relation.constraint_kinds = vec![SketchConstraintKind::Coincident];
-    coincident_relation.members = vec![106, 107];
-    coincident_relation.return_members = vec![106, 107];
+    coincident_relation.state = 1;
+    coincident_relation.members = vec![106, 107]
+        .into_iter()
+        .map(SketchRelationMember::from_index)
+        .collect();
+    coincident_relation.return_members = vec![106, 107]
+        .into_iter()
+        .map(SketchRelationReturnMember::from_index)
+        .collect();
     let mut horizontal_relation = relation.clone();
     horizontal_relation.id = "f3d:Design/BulkStream.dat:relation#108".into();
     horizontal_relation.record_index = 108;
     horizontal_relation.state = 0x40;
-    horizontal_relation.constraint_kinds = vec![SketchConstraintKind::Horizontal];
-    horizontal_relation.members = vec![108];
-    horizontal_relation.return_members = vec![108];
+    horizontal_relation.members = vec![SketchRelationMember::from_index(108)];
+    horizontal_relation.return_members = vec![SketchRelationReturnMember::from_index(108)];
     let surface = SketchSurface {
         id: "f3d:Design/BulkStream.dat:surface#109".into(),
         record_index: 109,
@@ -910,9 +926,14 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     point_on_surface_relation.id = "f3d:Design/BulkStream.dat:relation#109".into();
     point_on_surface_relation.record_index = 109;
     point_on_surface_relation.state = 1;
-    point_on_surface_relation.constraint_kinds = vec![SketchConstraintKind::Coincident];
-    point_on_surface_relation.members = vec![106, 109];
-    point_on_surface_relation.return_members = vec![106, 109];
+    point_on_surface_relation.members = vec![106, 109]
+        .into_iter()
+        .map(SketchRelationMember::from_index)
+        .collect();
+    point_on_surface_relation.return_members = vec![106, 109]
+        .into_iter()
+        .map(SketchRelationReturnMember::from_index)
+        .collect();
 
     let points = [point, coincident_point];
     let relations = [

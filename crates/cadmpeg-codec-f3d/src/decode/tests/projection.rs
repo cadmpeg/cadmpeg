@@ -25,6 +25,7 @@ use crate::records::{
     DesignDimensionRecipeRecord, DesignFeatureTimeline, DesignParameter, DesignParameterCompanion,
     DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignScopePayload,
     DesignSketchPlacement, LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
+    SketchRelationKind,
 };
 
 #[test]
@@ -1311,18 +1312,11 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         auxiliary_reference_offsets: Vec::new(),
         rectangular_counted_reference_count: None,
         members: Vec::new(),
-        resolved_members: Vec::new(),
-        member_offsets: Vec::new(),
         owner_reference_offset: 0,
         state: 0,
-        constraint_kinds: Vec::new(),
-        unknown_constraint_bits: 0,
-        member_relation_ordinals: Vec::new(),
         entity_genesis: None,
-        pattern: None,
+        kind: SketchRelationKind::Unpatterned,
         return_members: Vec::new(),
-        resolved_return_members: Vec::new(),
-        return_member_offsets: Vec::new(),
         raw_bytes: Vec::new(),
     });
     native.design_parameters.push(DesignParameter {

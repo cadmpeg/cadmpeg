@@ -423,8 +423,8 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
 #[test]
 fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     use crate::records::{
-        DesignEntityHeader, SegmentType, SketchConstraintKind, SketchCurveGeometry,
-        SketchCurveIdentity, SketchPoint, SketchRelation,
+        DesignEntityHeader, SegmentType, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+        SketchRelation, SketchRelationKind, SketchRelationMember, SketchRelationReturnMember,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -643,21 +643,17 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         auxiliary_references: Vec::new(),
         auxiliary_reference_offsets: Vec::new(),
         rectangular_counted_reference_count: None,
-        members: vec![100, 600],
-        resolved_members: Vec::new(),
-        member_offsets: Vec::new(),
-        state: 0x11,
-        constraint_kinds: vec![
-            SketchConstraintKind::Coincident,
-            SketchConstraintKind::Parallel,
+        members: vec![
+            SketchRelationMember::from_index(100),
+            SketchRelationMember::from_index(600),
         ],
-        unknown_constraint_bits: 0,
-        member_relation_ordinals: Vec::new(),
+        state: 0x11,
         entity_genesis: None,
-        pattern: None,
-        return_members: vec![600, 100],
-        resolved_return_members: Vec::new(),
-        return_member_offsets: Vec::new(),
+        kind: SketchRelationKind::Unpatterned,
+        return_members: vec![
+            SketchRelationReturnMember::from_index(600),
+            SketchRelationReturnMember::from_index(100),
+        ],
         raw_bytes: Vec::new(),
     }];
 
@@ -719,8 +715,16 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     f3d_native_mut(&mut source_less).design_types[2].version = 11;
     {
         let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
-        relation.members = vec![100, 600, 100, 600, 100, 600, 100, 600];
-        relation.return_members = relation.members.iter().rev().copied().collect();
+        relation.members = [100, 600, 100, 600, 100, 600, 100, 600]
+            .into_iter()
+            .map(SketchRelationMember::from_index)
+            .collect();
+        relation.return_members = relation
+            .members
+            .iter()
+            .rev()
+            .map(|member| SketchRelationReturnMember::from_index(member.record_index))
+            .collect();
     }
     let mut variable_relation = Vec::new();
     F3dCodec
@@ -734,8 +738,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         )
         .expect("source-less variable-width sketch relation round trip");
     assert_eq!(
-        f3d_native(variable_round_trip.ir()).sketch_relations[0].members,
-        [100, 600, 100, 600, 100, 600, 100, 600]
+        f3d_native(variable_round_trip.ir()).sketch_relations[0].member_indices(),
+        vec![100, 600, 100, 600, 100, 600, 100, 600]
     );
     assert!(
         f3d_native(variable_round_trip.ir()).sketch_relations[0]
@@ -745,8 +749,14 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     );
     {
         let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
-        relation.members = vec![100, 600];
-        relation.return_members = vec![600, 100];
+        relation.members = vec![
+            SketchRelationMember::from_index(100),
+            SketchRelationMember::from_index(600),
+        ];
+        relation.return_members = vec![
+            SketchRelationReturnMember::from_index(600),
+            SketchRelationReturnMember::from_index(100),
+        ];
     }
     f3d_native_mut(&mut source_less).sketch_relations[0].owner_reference = 999;
     let error = F3dCodec
@@ -767,15 +777,6 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .expect_err("duplicate typed sketch indices must not be deduplicated");
     assert!(error.to_string().contains("share record index 600"));
     f3d_native_mut(&mut source_less).sketch_points[0].record_index = 100;
-    f3d_native_mut(&mut source_less).sketch_relations[0].constraint_kinds =
-        vec![SketchConstraintKind::Horizontal];
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("inconsistent generated sketch constraint mask must be rejected");
-    assert!(error
-        .to_string()
-        .contains("mask inconsistent with its typed constraint kinds"));
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less sketch BulkStream round trip");
@@ -825,14 +826,17 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .any(|curve| curve.geometry.as_ref() == Some(&expected)));
     }
     assert_eq!(native.sketch_relations.len(), 1);
-    assert_eq!(native.sketch_relations[0].members, [100, 600]);
+    assert_eq!(native.sketch_relations[0].member_indices(), vec![100, 600]);
     assert!(native.sketch_relations[0].auxiliary_references.is_empty());
     assert_eq!(native.sketch_relations[0].owner_reference, 277);
     assert_eq!(native.sketch_relations[0].owner_entity_id, "0_277");
     assert_eq!(native.sketch_relations[0].state, 0x11);
-    assert_eq!(native.sketch_relations[0].return_members, [600, 100]);
     assert_eq!(
-        native.sketch_relations[0].resolved_members,
+        native.sketch_relations[0].return_member_indices(),
+        vec![600, 100]
+    );
+    assert_eq!(
+        native.sketch_relations[0].resolved_members(),
         [
             crate::records::SketchRelationOperand::Point {
                 record_index: 100,
@@ -846,7 +850,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         ]
     );
     assert_eq!(
-        native.sketch_relations[0].resolved_return_members,
+        native.sketch_relations[0].resolved_return_members(),
         [
             crate::records::SketchRelationOperand::Curve {
                 record_index: 600,
@@ -915,7 +919,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
 
     let mut inconsistent = round_trip.ir().clone();
     f3d_native_mut(&mut inconsistent).sketch_relations[0]
-        .resolved_members
+        .resolved_members()
         .swap(0, 1);
     assert!(crate::validate::validate_native(&inconsistent)
         .iter()

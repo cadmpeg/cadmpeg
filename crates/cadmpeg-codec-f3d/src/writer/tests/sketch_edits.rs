@@ -92,8 +92,6 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     let expected_references = update_f3d_native(&mut edited, |native| {
         let relation = &mut native.sketch_relations[0];
         relation.state = 0x40;
-        relation.constraint_kinds = vec![crate::records::SketchConstraintKind::Horizontal];
-        relation.unknown_constraint_bits = 0;
         relation.members.reverse();
         for reference in &mut relation.auxiliary_references {
             *reference = reference.saturating_add(1);
@@ -117,10 +115,10 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     let relation = &native.sketch_relations[0];
     assert_eq!(relation.state, 0x40);
     assert_eq!(
-        relation.constraint_kinds,
+        relation.constraint_kinds(),
         [crate::records::SketchConstraintKind::Horizontal]
     );
-    assert_eq!(relation.unknown_constraint_bits, 0);
+    assert_eq!(relation.unknown_constraint_bits(), 0);
     assert_eq!(relation.members, expected_references.0);
     assert_eq!(relation.auxiliary_references, expected_references.1);
     assert_eq!(relation.owner_reference, expected_references.2);

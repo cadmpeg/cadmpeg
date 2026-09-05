@@ -1279,8 +1279,34 @@ pub fn decode_sketch_relations(
             {
                 continue;
             }
-            let (constraint_kinds, unknown_constraint_bits) = decode_constraint_kinds(parsed.state);
             let pattern = decode_pattern_definition(payload, &parsed);
+            let kind = crate::records::SketchRelationKind::from_pattern(pattern);
+            if !kind.agrees_with_state(parsed.state) {
+                continue;
+            }
+            let Ok(members) = crate::records::zip_relation_members(
+                parsed.members,
+                parsed
+                    .member_offsets
+                    .into_iter()
+                    .map(|offset| offset as u32)
+                    .collect(),
+                parsed.member_relation_ordinals,
+                Vec::new(),
+            ) else {
+                continue;
+            };
+            let Ok(return_members) = crate::records::zip_return_members(
+                parsed.return_members,
+                parsed
+                    .return_member_offsets
+                    .into_iter()
+                    .map(|offset| offset as u32)
+                    .collect(),
+                Vec::new(),
+            ) else {
+                continue;
+            };
             out.push(SketchRelation {
                 id: ids::native_sketch_relation_id(&entry.name, record.record_index),
                 record_index: record.record_index,
@@ -1297,26 +1323,11 @@ pub fn decode_sketch_relations(
                     .map(|offset| offset as u32)
                     .collect(),
                 rectangular_counted_reference_count: parsed.rectangular_reference_count,
-                members: parsed.members,
-                resolved_members: Vec::new(),
-                member_offsets: parsed
-                    .member_offsets
-                    .into_iter()
-                    .map(|offset| offset as u32)
-                    .collect(),
+                members,
                 state: parsed.state,
-                constraint_kinds,
-                unknown_constraint_bits,
-                member_relation_ordinals: parsed.member_relation_ordinals,
                 entity_genesis: parsed.entity_genesis,
-                pattern,
-                return_members: parsed.return_members,
-                resolved_return_members: Vec::new(),
-                return_member_offsets: parsed
-                    .return_member_offsets
-                    .into_iter()
-                    .map(|offset| offset as u32)
-                    .collect(),
+                kind,
+                return_members,
                 raw_bytes: payload.to_vec(),
             });
         }
@@ -1428,45 +1439,8 @@ pub(crate) fn decode_pattern_definition(
     None
 }
 
-pub(crate) const SKETCH_CONSTRAINT_MASK: u64 = 0x0320_b000_3fff;
-
 pub(crate) fn decode_constraint_kinds(state: u64) -> (Vec<SketchConstraintKind>, u64) {
-    let definitions = [
-        (0x0000_0001, SketchConstraintKind::Coincident),
-        (0x0000_0002, SketchConstraintKind::Colinear),
-        (0x0000_0004, SketchConstraintKind::Concentric),
-        (0x0000_0008, SketchConstraintKind::EqualLength),
-        (0x0000_0010, SketchConstraintKind::Parallel),
-        (0x0000_0020, SketchConstraintKind::Perpendicular),
-        (0x0000_0040, SketchConstraintKind::Horizontal),
-        (0x0000_0080, SketchConstraintKind::Vertical),
-        (0x0000_0100, SketchConstraintKind::Tangent),
-        (0x0000_0200, SketchConstraintKind::Curvature),
-        (0x0000_0400, SketchConstraintKind::Symmetry),
-        (0x0000_0800, SketchConstraintKind::Equal),
-        (0x0000_1000, SketchConstraintKind::Midpoint),
-        (0x0000_2000, SketchConstraintKind::Polygon),
-        (0x1000_0000, SketchConstraintKind::CircularPattern),
-        (0x2000_0000, SketchConstraintKind::RectangularPattern),
-        (0x8000_0000, SketchConstraintKind::SplineGroup),
-        (0x20_0000_0000, SketchConstraintKind::Offset),
-        (0x100_0000_0000, SketchConstraintKind::TextFrame),
-        (0x200_0000_0000, SketchConstraintKind::TextPath),
-    ];
-    let mut kinds = if state == 0 {
-        vec![SketchConstraintKind::Coincident]
-    } else {
-        Vec::new()
-    };
-    let mut recognized = 0u64;
-    for (bit, kind) in definitions {
-        if state & bit != 0 {
-            kinds.push(kind);
-            recognized |= bit;
-        }
-    }
-    debug_assert_eq!(recognized, state & SKETCH_CONSTRAINT_MASK);
-    (kinds, state & !SKETCH_CONSTRAINT_MASK)
+    crate::records::constraint_kinds_from_state(state)
 }
 
 pub(crate) fn trailing_sketch_owner_reference(record: &[u8]) -> Option<u32> {
@@ -2997,12 +2971,12 @@ pub(crate) fn bind_sketch_graph(
     }
     for relation in relations.iter() {
         let scope = native_stream(&relation.id).expect("relation stream checked above");
-        for record_index in relation.members.iter().chain(&relation.return_members) {
-            if !typed_records.contains(&(scope, *record_index)) {
+        for record_index in relation.all_member_indices() {
+            if !typed_records.contains(&(scope, record_index)) {
                 continue;
             }
             if owners
-                .insert((scope, *record_index), relation.owner_reference)
+                .insert((scope, record_index), relation.owner_reference)
                 .is_some_and(|owner| owner != relation.owner_reference)
             {
                 return Err(CodecError::malformed(format_args!(
@@ -3096,8 +3070,28 @@ pub(crate) fn bind_sketch_graph(
     };
     for relation in relations {
         let scope = native_stream(&relation.id).expect("relation stream checked above");
-        relation.resolved_members = resolve(scope, &relation.members);
-        relation.resolved_return_members = resolve(scope, &relation.return_members);
+        let member_indices = relation
+            .members
+            .iter()
+            .map(|member| member.record_index)
+            .collect::<Vec<_>>();
+        let return_indices = relation
+            .return_members
+            .iter()
+            .map(|member| member.record_index)
+            .collect::<Vec<_>>();
+        let resolved_members: Vec<SketchRelationOperand> = resolve(scope, &member_indices);
+        let resolved_return_members: Vec<SketchRelationOperand> = resolve(scope, &return_indices);
+        for (member, resolved) in relation.members.iter_mut().zip(resolved_members) {
+            member.resolved = Some(resolved);
+        }
+        for (member, resolved) in relation
+            .return_members
+            .iter_mut()
+            .zip(resolved_return_members)
+        {
+            member.resolved = Some(resolved);
+        }
     }
     Ok(())
 }
