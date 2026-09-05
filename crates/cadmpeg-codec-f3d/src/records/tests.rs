@@ -740,3 +740,18 @@ fn construction_auxiliary_rows_preserve_wire_and_reject_unequal_offsets() {
         assert!(error.contains("auxiliary_record_offsets"));
     }
 }
+
+#[test]
+fn construction_trailing_rows_preserve_wire_and_reject_unequal_offsets() {
+    for fields in ["", r#","trailing_record_indices":[300],"trailing_record_offsets":[1044]"#, r#","trailing_record_indices":[300,301],"trailing_record_offsets":[1044,1055]"#] {
+        let wire = format!(r#"{{"member_count_offset":20{fields},"opaque_index":1,"opaque_index_offset":80,"opaque_scalar":0.0,"opaque_scalar_offset":84,"variant":false}}"#);
+        let frame: super::DesignConstructionOperandGroupFrame = serde_json::from_str(&wire).expect("construction frame");
+        assert_eq!(serde_json::to_string(&frame).expect("construction wire"), wire);
+    }
+    for fields in [r#","trailing_record_indices":[300]"#, r#","trailing_record_offsets":[1044]"#, r#","trailing_record_indices":[300,301],"trailing_record_offsets":[1044]"#] {
+        let wire = format!(r#"{{"member_count_offset":20{fields},"opaque_index":1,"opaque_index_offset":80,"opaque_scalar":0.0,"opaque_scalar_offset":84,"variant":false}}"#);
+        let error = serde_json::from_str::<super::DesignConstructionOperandGroupFrame>(&wire).expect_err("unequal trailing arrays").to_string();
+        assert!(error.contains("trailing_record_indices"));
+        assert!(error.contains("trailing_record_offsets"));
+    }
+}
