@@ -11196,10 +11196,12 @@ pub struct DesignMeshSceneBounds {
 }
 
 /// One mesh body and its complete Design identity graph.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignMeshBodyWire", into = "DesignMeshBodyWire")]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DesignMeshBody {
+    /// Byte offset of the scope's reference to this body.
+    pub scope_body_reference_offset: u64,
+    /// Byte offset of the collection's reference to this body.
+    pub collection_body_reference_offset: u64,
     /// Mesh-body record carrying placement and graph references.
     pub body_record: DesignMeshRecordIdentity,
     /// Entry-name record joining the body to one `.paramesh` archive entry.
@@ -11211,15 +11213,12 @@ pub struct DesignMeshBody {
     /// Fixed Scene-state record owned by this mesh body.
     pub scene_state_record: DesignMeshRecordIdentity,
     /// Finite bound carried by the Scene-state footer; absent for its unset sentinel.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scene_state_bounds: Option<DesignMeshSceneBounds>,
     /// Scene node connecting `body_record` to its state and auxiliary cache.
     pub scene_node_record: DesignMeshRecordIdentity,
     /// Finite bound carried by the Scene-node footer; absent for its unset sentinel.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scene_node_bounds: Option<DesignMeshSceneBounds>,
     /// Optional row-major affine transform carried by the placed Scene-node form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scene_node_transform: Option<Located<[[f64; 4]; 4]>>,
     /// Separately typed Scene auxiliary cache reached through the Scene node.
     pub scene_auxiliary_record: DesignMeshRecordIdentity,
@@ -11234,7 +11233,6 @@ pub struct DesignMeshBody {
     pub fusion_uuid: String,
     /// Container-local version-4 mesh UUID from protobuf registry field 12,
     /// when the geometry container joined this Design body.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_mesh_uuid: Option<String>,
     /// Byte offset of the ASCII `fusion_uuid` payload.
     pub fusion_uuid_offset: u64,
@@ -11265,7 +11263,6 @@ pub struct DesignMeshBody {
     /// Byte offset of the Scene node's auxiliary-record reference.
     pub scene_auxiliary_reference_offset: u64,
     /// Neutral tessellation projected from the joined container, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tessellation_id: Option<String>,
 }
 
@@ -11382,10 +11379,11 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
     }
 }
 
-impl TryFrom<DesignMeshBodyWire> for DesignMeshBody {
-    type Error = String;
-    fn try_from(value: DesignMeshBodyWire) -> Result<Self, Self::Error> {
+impl DesignMeshBody {
+    fn from_wire(value: DesignMeshBodyWire, scope_body_reference_offset: u64, collection_body_reference_offset: u64) -> Result<Self, String> {
         Ok(Self {
+            scope_body_reference_offset,
+            collection_body_reference_offset,
             body_record: value.body_record,
             entry_name_record: value.entry_name_record,
             guid_record: value.guid_record,
@@ -11424,6 +11422,8 @@ impl TryFrom<DesignMeshBodyWire> for DesignMeshBody {
 /// One complete `Base Mesh Feature` Design graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignMeshFeatureWire"))]
+#[serde(try_from = "DesignMeshFeatureWire", into = "DesignMeshFeatureWire")]
 pub struct DesignMeshFeature {
     /// Globally unique deterministic identity keyed by the feature-scope record.
     pub id: String,
@@ -11439,12 +11439,6 @@ pub struct DesignMeshFeature {
     pub texture_table_record: DesignMeshRecordIdentity,
     /// Three equal body counts: scope, collection prefix, collection base.
     pub body_count_offsets: [u64; 3],
-    /// Ordered mesh-body record identities owned by the feature.
-    pub body_record_indices: Vec<u32>,
-    /// Scope body-reference offsets parallel to `body_record_indices`.
-    pub scope_body_reference_offsets: Vec<u64>,
-    /// Collection body-reference offsets parallel to `body_record_indices`.
-    pub collection_body_reference_offsets: Vec<u64>,
     /// Byte offset of the collection's texture-table reference.
     pub texture_table_reference_offset: u64,
     /// Typed Design owner of the mesh-body collection.
@@ -11465,6 +11459,126 @@ pub struct DesignMeshFeature {
     pub bodies: Vec<DesignMeshBody>,
     /// Texture resources in flags-map order.
     pub textures: Vec<DesignMeshTextureResource>,
+}
+
+/// One complete `Base Mesh Feature` Design graph.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignMeshFeatureWire {
+    /// Globally unique deterministic identity keyed by the feature-scope record.
+    id: String,
+    /// Typed `Base Mesh Feature` scope record.
+    scope_record: DesignMeshRecordIdentity,
+    /// Paired same-index base record closing the feature scope.
+    scope_base_record: DesignMeshRecordIdentity,
+    /// Typed `ParaMesh` body-collection record.
+    collection_record: DesignMeshRecordIdentity,
+    /// Paired same-index base record inside the collection.
+    collection_base_record: DesignMeshRecordIdentity,
+    /// Typed `ParaMesh` texture-table record owned by the collection.
+    texture_table_record: DesignMeshRecordIdentity,
+    /// Three equal body counts: scope, collection prefix, collection base.
+    body_count_offsets: [u64; 3],
+    /// Ordered mesh-body record identities owned by the feature.
+    body_record_indices: Vec<u32>,
+    /// Scope body-reference offsets parallel to `body_record_indices`.
+    scope_body_reference_offsets: Vec<u64>,
+    /// Collection body-reference offsets parallel to `body_record_indices`.
+    collection_body_reference_offsets: Vec<u64>,
+    /// Byte offset of the collection's texture-table reference.
+    texture_table_reference_offset: u64,
+    /// Typed Design owner of the mesh-body collection.
+    collection_owner_record: DesignMeshRecordIdentity,
+    /// Byte offset of the collection's owner reference.
+    collection_owner_reference_offset: u64,
+    /// Byte offset of the owner's reciprocal collection reference.
+    collection_owner_backlink_offset: u64,
+    /// Design owner of the feature scope.
+    scope_owner_record_index: u32,
+    /// Byte offset of the paired scope record's owner reference.
+    scope_owner_reference_offset: u64,
+    /// Byte offset of the texture flags-map count.
+    texture_flags_count_offset: u64,
+    /// Byte offset of the texture filename-map count.
+    texture_filename_count_offset: u64,
+    /// Mesh bodies in the source collection order.
+    bodies: Vec<DesignMeshBodyWire>,
+    /// Texture resources in flags-map order.
+    textures: Vec<DesignMeshTextureResource>,
+}
+
+impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
+    type Error = String;
+    fn try_from(wire: DesignMeshFeatureWire) -> Result<Self, Self::Error> {
+        if wire.scope_body_reference_offsets.len() != wire.bodies.len() {
+            return Err("scope_body_reference_offsets must match bodies".into());
+        }
+        if wire.collection_body_reference_offsets.len() != wire.bodies.len() {
+            return Err("collection_body_reference_offsets must match bodies".into());
+        }
+        if !wire.body_record_indices.iter().copied().eq(wire.bodies.iter().map(|body| body.body_record.record_index)) {
+            return Err("body_record_indices must repeat bodies.body_record.record_index in order".into());
+        }
+        let bodies = wire.bodies.into_iter().zip(wire.scope_body_reference_offsets).zip(wire.collection_body_reference_offsets)
+            .map(|((body, scope_offset), collection_offset)| DesignMeshBody::from_wire(body, scope_offset, collection_offset))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            bodies,
+            id: wire.id,
+            scope_record: wire.scope_record,
+            scope_base_record: wire.scope_base_record,
+            collection_record: wire.collection_record,
+            collection_base_record: wire.collection_base_record,
+            texture_table_record: wire.texture_table_record,
+            body_count_offsets: wire.body_count_offsets,
+            texture_table_reference_offset: wire.texture_table_reference_offset,
+            collection_owner_record: wire.collection_owner_record,
+            collection_owner_reference_offset: wire.collection_owner_reference_offset,
+            collection_owner_backlink_offset: wire.collection_owner_backlink_offset,
+            scope_owner_record_index: wire.scope_owner_record_index,
+            scope_owner_reference_offset: wire.scope_owner_reference_offset,
+            texture_flags_count_offset: wire.texture_flags_count_offset,
+            texture_filename_count_offset: wire.texture_filename_count_offset,
+            textures: wire.textures,
+        })
+    }
+}
+
+impl From<DesignMeshFeature> for DesignMeshFeatureWire {
+    fn from(value: DesignMeshFeature) -> Self {
+        let mut body_record_indices = Vec::with_capacity(value.bodies.len());
+        let mut scope_body_reference_offsets = Vec::with_capacity(value.bodies.len());
+        let mut collection_body_reference_offsets = Vec::with_capacity(value.bodies.len());
+        let mut bodies = Vec::with_capacity(value.bodies.len());
+        for body in value.bodies {
+            body_record_indices.push(body.body_record.record_index);
+            scope_body_reference_offsets.push(body.scope_body_reference_offset);
+            collection_body_reference_offsets.push(body.collection_body_reference_offset);
+            bodies.push(body.into());
+        }
+        Self {
+            body_record_indices,
+            scope_body_reference_offsets,
+            collection_body_reference_offsets,
+            bodies,
+            id: value.id,
+            scope_record: value.scope_record,
+            scope_base_record: value.scope_base_record,
+            collection_record: value.collection_record,
+            collection_base_record: value.collection_base_record,
+            texture_table_record: value.texture_table_record,
+            body_count_offsets: value.body_count_offsets,
+            texture_table_reference_offset: value.texture_table_reference_offset,
+            collection_owner_record: value.collection_owner_record,
+            collection_owner_reference_offset: value.collection_owner_reference_offset,
+            collection_owner_backlink_offset: value.collection_owner_backlink_offset,
+            scope_owner_record_index: value.scope_owner_record_index,
+            scope_owner_reference_offset: value.scope_owner_reference_offset,
+            texture_flags_count_offset: value.texture_flags_count_offset,
+            texture_filename_count_offset: value.texture_filename_count_offset,
+            textures: value.textures,
+        }
+    }
 }
 
 /// Exact image-plane binding owned by one Design `Canvas` scope.

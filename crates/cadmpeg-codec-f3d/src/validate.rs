@@ -1527,7 +1527,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let scope = ctx
             .scopes_by_index
             .get(&(stream, feature.scope_record.record_index));
-        let body_count = feature.body_record_indices.len();
+        let body_count = feature.bodies.len();
         let body_count_u64 = u64::try_from(body_count).unwrap_or(u64::MAX);
         let expected_collection_length = body_count_u64
             .checked_mul(11)
@@ -1542,16 +1542,14 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .ok()?
                     .checked_mul(11)?
                     .checked_add(feature.scope_record.byte_offset.checked_add(25)?)
-            })
-            .collect::<Vec<_>>();
+            });
         let expected_collection_offsets = (0..body_count)
             .filter_map(|ordinal| {
                 u64::try_from(ordinal)
                     .ok()?
                     .checked_mul(11)?
                     .checked_add(feature.collection_record.byte_offset.checked_add(62)?)
-            })
-            .collect::<Vec<_>>();
+            });
         let mut valid = feature_ids.insert(feature.id.as_str())
             && scope_records.insert((stream, feature.scope_record.record_index))
             && collection_records.insert((stream, feature.collection_record.record_index))
@@ -1603,8 +1601,8 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 58,
                 feature.body_count_offsets[2],
             )
-            && feature.scope_body_reference_offsets == expected_scope_offsets
-            && feature.collection_body_reference_offsets == expected_collection_offsets
+            && feature.bodies.iter().map(|body| body.scope_body_reference_offset).eq(expected_scope_offsets)
+            && feature.bodies.iter().map(|body| body.collection_body_reference_offset).eq(expected_collection_offsets)
             && mesh_record_offset_is(
                 &feature.collection_record,
                 27,
@@ -1629,7 +1627,6 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 21,
                 feature.texture_flags_count_offset,
             )
-            && feature.bodies.len() == body_count
             && scope.is_some_and(|scope| {
                 scope.kind() == crate::records::DesignFeatureKind::BaseMeshFeature
                     && scope.byte_offset == feature.scope_record.byte_offset
@@ -1692,8 +1689,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .checked_add(feature.texture_table_record.frame_length)
                 == texture_cursor;
 
-        for (ordinal, body) in feature.bodies.iter().enumerate() {
-            let expected_record_index = feature.body_record_indices.get(ordinal).copied();
+        for body in &feature.bodies {
             let owner_key = (stream, body.owner_record.record_index);
             let owner_consistent = body_owner_records
                 .get(&owner_key)
@@ -1705,8 +1701,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .body_record
                 .byte_offset
                 .checked_add(body.body_record.frame_length);
-            valid &= expected_record_index == Some(body.body_record.record_index)
-                && body_records.insert((stream, body.body_record.record_index))
+            valid &= body_records.insert((stream, body.body_record.record_index))
                 && entry_records.insert((stream, body.entry_name_record.record_index))
                 && guid_records.insert((stream, body.guid_record.record_index))
                 && wrapper_records.insert((stream, body.wrapper_record.record_index))
