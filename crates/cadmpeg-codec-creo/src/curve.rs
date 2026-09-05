@@ -381,20 +381,6 @@ pub struct DepdbCurveRow {
     pub offset: usize,
 }
 
-/// Resolution state of a curve row's four-reference topology suffix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CurveSuffixStatus {
-    /// Exactly one canonical suffix boundary exists.
-    Unique,
-    /// Multiple canonical suffix boundaries exist; connectivity is withheld.
-    #[allow(dead_code)]
-    // Parser currently emits Unique only; Ambiguous is the withheld-connectivity state for multiple suffix boundaries.
-    Ambiguous {
-        /// Number of byte-valid suffix boundaries.
-        candidate_count: usize,
-    },
-}
-
 /// Bounded analytic parameter body from one positional `crv_array` row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveParameterRecord {
@@ -417,8 +403,6 @@ pub struct CurveParameterRecord {
     /// Positional `ref_geom[0]` and `ref_geom[1]` values following the four
     /// topology references.
     pub reference_geometry: [u32; 2],
-    /// Whether the topology suffix boundary is unique.
-    pub suffix: CurveSuffixStatus,
     /// Byte offset of the positional row in the original stream.
     pub offset: usize,
     /// Byte offset of the first parameter-body byte in the original stream.
@@ -6032,7 +6016,6 @@ pub fn parameter_records_with_face_ids(
             references,
             opaque_spans,
             reference_geometry: framed.reference_geometry,
-            suffix: CurveSuffixStatus::Unique,
             offset: framed.start,
             body_offset: framed.start + body_start,
             suffix_offset: framed.start + suffix_start,
@@ -6051,7 +6034,6 @@ fn uniquely_bounded_parameter_records(
     records
         .iter()
         .filter(|record| counts.get(&record.curve_id) == Some(&1))
-        .filter(|record| record.suffix == CurveSuffixStatus::Unique)
         .collect()
 }
 

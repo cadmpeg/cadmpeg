@@ -2147,7 +2147,6 @@ mod tests {
             body,
             skipped_references: Vec::new(),
             references: Vec::new(),
-            suffix: crate::curve::CurveSuffixStatus::Unique,
             offset: 100,
             body_offset: 100,
             suffix_offset: 122,

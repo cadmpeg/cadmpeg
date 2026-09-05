@@ -162,7 +162,6 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(parameters.opaque_spans.len(), 1);
     assert_eq!(parameters.opaque_spans[0].offset, 13);
     assert_eq!(parameters.opaque_spans[0].raw, [0xff]);
-    assert_eq!(parameters.suffix, crate::curve::CurveSuffixStatus::Unique);
     assert_eq!(parameters.body.last(), Some(&0xff));
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
