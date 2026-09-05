@@ -8189,8 +8189,8 @@ fn exact_hole_face_selection(
                 identity_record_offset: frame.identity_record_offset,
                 primary_identity: frame.primary_identity,
                 primary_identity_offset: frame.primary_identity_offset,
-                secondary_identity: frame.secondary_identity,
-                curve_secondary_identity: frame.curve_secondary_identity,
+                secondary_identity: frame.secondary.map(|identity| identity.value),
+                curve_secondary_identity: frame.secondary.and_then(|identity| identity.curve_identity),
                 historical_face_candidates: Vec::new(),
                 next_record_index: frame.next_record_index,
                 next_byte_offset: frame.next_byte_offset,
@@ -9316,8 +9316,10 @@ fn exact_coil_placement(
         context_id: selection.context_id,
         identity_record_index: selection.identity_record_index,
         primary_identity: selection.primary_identity,
-        secondary_identity: selection.secondary_identity.map(|identity| identity.value),
-        curve_secondary_identity: selection.curve_secondary_identity.map(|identity| identity.value),
+        secondary: selection.secondary.map(|identity| crate::records::DesignSecondaryIdentity {
+            value: identity.value.value,
+            curve_identity: identity.curve_identity.map(|identity| identity.value),
+        }),
     })
     .or_else(|| {
         exact_coil_face_selection(
@@ -9529,9 +9531,11 @@ fn exact_coil_face_selection(
         recipe_record_index: face.recipe_record_index,
         recipe_record_byte_offset: face.recipe_record_byte_offset,
         recipe_id: recipe.id.clone(),
-        recipe_kind: recipe.kind,
-        design_id: recipe.design.as_ref().map(|design| design.id.value.clone()),
-        design_selector: recipe.design.as_ref().and_then(|design| design.selector),
+        recipe_kind: crate::records::DesignFaceRecipeKind::try_from(recipe.kind).ok()?,
+        design: recipe.design.as_ref().map(|design| crate::records::ConstructionRecipeDesign {
+            id: design.id.value.clone(),
+            selector: design.selector,
+        }),
     })
 }
 

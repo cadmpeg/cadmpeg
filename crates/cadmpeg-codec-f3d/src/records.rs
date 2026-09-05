@@ -367,9 +367,12 @@ pub enum ConstructionRecipeKind {
 }
 
 /// A recipe Design id and its optional following selector.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ConstructionRecipeDesign<Id> {
+    #[serde(rename = "design_id")]
     pub id: Id,
+    #[serde(rename = "design_selector", skip_serializing_if = "Option::is_none")]
     pub selector: Option<ConstructionRecipeSelector>,
 }
 
@@ -1889,6 +1892,77 @@ pub enum DesignCoilSectionPlacement {
     Outside,
 }
 
+/// A secondary selection identity and its optional curve identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignSecondaryIdentity<Id> {
+    #[serde(rename = "secondary_identity")]
+    pub value: Id,
+    #[serde(rename = "curve_secondary_identity", skip_serializing_if = "Option::is_none")]
+    pub curve_identity: Option<Id>,
+}
+
+/// Construction-recipe families admitted by a face selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "ConstructionRecipeKind"))]
+#[serde(try_from = "ConstructionRecipeKind", into = "ConstructionRecipeKind")]
+pub enum DesignFaceRecipeKind {
+    Face,
+    BoundedFace,
+}
+
+impl TryFrom<ConstructionRecipeKind> for DesignFaceRecipeKind {
+    type Error = String;
+
+    fn try_from(kind: ConstructionRecipeKind) -> Result<Self, Self::Error> {
+        match kind {
+            ConstructionRecipeKind::Face => Ok(Self::Face),
+            ConstructionRecipeKind::BoundedFace => Ok(Self::BoundedFace),
+            ConstructionRecipeKind::Body | ConstructionRecipeKind::Edge | ConstructionRecipeKind::Vertex => {
+                Err("recipe_kind must be face or bounded_face".into())
+            }
+        }
+    }
+}
+
+impl From<DesignFaceRecipeKind> for ConstructionRecipeKind {
+    fn from(kind: DesignFaceRecipeKind) -> Self {
+        match kind {
+            DesignFaceRecipeKind::Face => Self::Face,
+            DesignFaceRecipeKind::BoundedFace => Self::BoundedFace,
+        }
+    }
+}
+
+fn deserialize_coil_secondary_identity<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<DesignSecondaryIdentity<u64>>, D::Error> {
+    #[derive(Deserialize)]
+    struct Wire {
+        secondary_identity: Option<u64>,
+        curve_secondary_identity: Option<u64>,
+    }
+    let wire = Wire::deserialize(deserializer)?;
+    match (wire.secondary_identity, wire.curve_secondary_identity) {
+        (Some(value), curve_identity) => Ok(Some(DesignSecondaryIdentity { value, curve_identity })),
+        (None, None) => Ok(None),
+        (None, Some(_)) => Err(serde::de::Error::custom("curve_secondary_identity requires secondary_identity")),
+    }
+}
+
+fn deserialize_coil_recipe_design<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<ConstructionRecipeDesign<String>>, D::Error> {
+    #[derive(Deserialize)]
+    struct Wire {
+        design_id: Option<String>,
+        design_selector: Option<ConstructionRecipeSelector>,
+    }
+    let wire = Wire::deserialize(deserializer)?;
+    match (wire.design_id, wire.design_selector) {
+        (Some(id), selector) => Ok(Some(ConstructionRecipeDesign { id, selector })),
+        (None, None) => Ok(None),
+        (None, Some(_)) => Err(serde::de::Error::custom("design_selector requires design_id")),
+    }
+}
+
 /// Selection carrier used by a compact Coil placement.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1904,12 +1978,9 @@ pub enum DesignCoilSelection {
         identity_record_index: u32,
         /// First persistent identity value.
         primary_identity: u64,
-        /// Second persistent identity value in the expanded form.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        secondary_identity: Option<u64>,
-        /// Curve secondary identity in the expanded curve-selection form.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        curve_secondary_identity: Option<u64>,
+        /// Secondary identity and any dependent curve identity.
+        #[serde(flatten, deserialize_with = "deserialize_coil_secondary_identity")]
+        secondary: Option<DesignSecondaryIdentity<u64>>,
     },
     /// Face construction recipe carried by a placement selection frame.
     FaceRecipe {
@@ -1924,13 +1995,10 @@ pub enum DesignCoilSelection {
         /// Native construction-recipe arena identity.
         recipe_id: String,
         /// Exact face-recipe family.
-        recipe_kind: ConstructionRecipeKind,
-        /// Design entity id carried by the recipe, when present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        design_id: Option<String>,
-        /// Selector following the recipe's Design entity id, when present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        design_selector: Option<ConstructionRecipeSelector>,
+        recipe_kind: DesignFaceRecipeKind,
+        /// Recipe Design identity and its optional selector.
+        #[serde(flatten, deserialize_with = "deserialize_coil_recipe_design")]
+        design: Option<ConstructionRecipeDesign<String>>,
     },
 }
 
