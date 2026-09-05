@@ -83,6 +83,16 @@ pub struct DesignCensusRecord {
     pub post_processed: bool,
 }
 
+/// Carrier grammar counted by a census record. Empty payloads have no census.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CarrierCensusForm {
+    /// Compact text shape-set grammar.
+    Text,
+    /// Binary shape-set grammar.
+    Binary,
+}
+
 /// Machine-derived carrier and topology-family census for one exact shape payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CarrierCensusRecord {
@@ -91,7 +101,7 @@ pub struct CarrierCensusRecord {
     /// Shape payload being counted.
     pub payload: String,
     /// `text` or `binary` carrier grammar.
-    pub form: String,
+    pub form: CarrierCensusForm,
     /// Grammar version declared by the shape-set header.
     pub topology_version: u8,
     /// Recursive 2D-curve family counts.

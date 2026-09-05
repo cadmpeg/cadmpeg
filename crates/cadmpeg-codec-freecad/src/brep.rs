@@ -1441,9 +1441,9 @@ pub fn carrier_census(payloads: &[ShapePayloadRecord]) -> Vec<crate::native::Car
                 id: crate::native::native_child_id("carrier-census", &payload.id, "families"),
                 payload: payload.id.clone(),
                 form: match payload.payload.form() {
-                    ShapePayloadForm::Empty => "empty".into(),
-                    ShapePayloadForm::Text => "text".into(),
-                    ShapePayloadForm::Binary => "binary".into(),
+                    ShapePayloadForm::Text => crate::native::CarrierCensusForm::Text,
+                    ShapePayloadForm::Binary => crate::native::CarrierCensusForm::Binary,
+                    ShapePayloadForm::Empty => return None,
                 },
                 topology_version: version,
                 curves_2d: BTreeMap::new(),
