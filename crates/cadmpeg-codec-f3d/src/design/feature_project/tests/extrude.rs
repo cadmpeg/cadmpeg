@@ -212,8 +212,6 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_frame: None,
-        work_plane_reference: None,
-        work_plane_reference_offset: None,
         work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_frame: None,

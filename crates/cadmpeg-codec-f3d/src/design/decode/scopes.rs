@@ -265,11 +265,13 @@ pub fn decode_parameter_scopes(
                     scope.work_plane_frame = Some(crate::records::DesignWorkPlaneTransform {
                         work_plane_transform: frame.transform,
                         work_plane_transform_offset: frame.transform_offset,
+                        reference: frame.reference.map(|(record_index, offset)| {
+                            crate::records::DesignWorkPlaneReference {
+                                work_plane_reference: record_index,
+                                work_plane_reference_offset: offset,
+                            }
+                        }),
                     });
-                    if let Some((reference, reference_offset)) = frame.reference {
-                        scope.work_plane_reference = Some(reference);
-                        scope.work_plane_reference_offset = Some(reference_offset);
-                    }
                 }
             }
             if let Some(construction) = exact_work_axis_construction(bytes, &records, &scope) {
@@ -9116,8 +9118,6 @@ pub(crate) fn parse_parameter_scope(
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_frame: None,
-        work_plane_reference: None,
-        work_plane_reference_offset: None,
         work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_frame: None,

@@ -189,8 +189,6 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_frame: None,
-        work_plane_reference: None,
-        work_plane_reference_offset: None,
         work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_frame: None,

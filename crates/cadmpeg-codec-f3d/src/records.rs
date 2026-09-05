@@ -3071,12 +3071,7 @@ pub struct DesignParameterScope {
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_frame: Option<DesignWorkPlaneTransform>,
-    /// Construction record referenced by the `WorkPlane` frame.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work_plane_reference: Option<u32>,
-    /// Byte offset of the `WorkPlane` construction reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work_plane_reference_offset: Option<u64>,
+
     /// Exact construction rule carried by a `WorkPlane` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_construction: Option<DesignWorkPlaneConstruction>,
@@ -3142,6 +3137,20 @@ pub struct DesignWorkPlaneTransform {
     pub work_plane_transform: [[f64; 4]; 4],
     /// Byte offset of the explicit 16-f64 matrix.
     pub work_plane_transform_offset: u64,
+    /// Construction record referenced by the frame, when present.
+    #[serde(flatten)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<DesignWorkPlaneReference>,
+}
+
+/// Construction record named by a `WorkPlane` frame.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignWorkPlaneReference {
+    /// Construction record referenced by the `WorkPlane` frame.
+    pub work_plane_reference: u32,
+    /// Byte offset of the `WorkPlane` construction reference.
+    pub work_plane_reference_offset: u64,
 }
 
 /// Explicit 16-f64 frame carried by a `JointOrigin` scope.
@@ -3585,6 +3594,12 @@ impl DesignParameterScope {
             .map(|frame| frame.work_plane_transform)
     }
 
+    pub(crate) fn work_plane_reference(&self) -> Option<u32> {
+        self.work_plane_frame
+            .as_ref()
+            .and_then(|frame| frame.reference.as_ref().map(|r| r.work_plane_reference))
+    }
+
     /// The JointOrigin frame matrix, when the scope carries one.
     pub(crate) fn joint_origin_transform(&self) -> Option<[[f64; 4]; 4]> {
         self.joint_origin_frame
@@ -3607,7 +3622,17 @@ impl DesignParameterScope {
         self.work_plane_frame = Some(DesignWorkPlaneTransform {
             work_plane_transform: transform,
             work_plane_transform_offset: 0,
+            reference: None,
         });
+    }
+
+    pub(crate) fn with_work_plane_reference(&mut self, record_index: u32) {
+        if let Some(frame) = &mut self.work_plane_frame {
+            frame.reference = Some(DesignWorkPlaneReference {
+                work_plane_reference: record_index,
+                work_plane_reference_offset: 0,
+            });
+        }
     }
 
     pub(crate) fn with_joint_origin_transform(&mut self, transform: [[f64; 4]; 4]) {
@@ -3677,8 +3702,6 @@ impl DesignParameterScope {
             copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_frame: None,
-            work_plane_reference: None,
-            work_plane_reference_offset: None,
             work_plane_construction: None,
             work_axis_construction: None,
             joint_origin_frame: None,

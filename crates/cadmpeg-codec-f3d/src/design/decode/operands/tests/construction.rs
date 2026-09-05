@@ -82,8 +82,6 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_frame: None,
-        work_plane_reference: None,
-        work_plane_reference_offset: None,
         work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_frame: None,
