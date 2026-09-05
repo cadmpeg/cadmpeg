@@ -7,7 +7,7 @@ use cadmpeg_ir::transform::Transform;
 
 use crate::native::F3dNative;
 use crate::writer::generate::index::NativeGenerationIndex;
-use crate::writer::primitives::{history_change_kind, native_bool};
+use crate::writer::primitives::native_bool;
 
 pub(crate) fn native_ident(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     native_text(bytes, 0x0d, value)
@@ -275,15 +275,9 @@ pub(crate) fn native_history_tail(
             native_ref(bytes, board.owner_ref);
             native_i64(bytes, board.number);
             for change in &board.changes {
-                if change.kind != history_change_kind(change.old_ref, change.new_ref)? {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D entity change {} has a kind inconsistent with its references",
-                        change.id
-                    )));
-                }
                 native_i64(bytes, 1);
-                native_ref(bytes, change.old_ref.unwrap_or(-1));
-                native_ref(bytes, change.new_ref.unwrap_or(-1));
+                native_ref(bytes, change.old_ref().unwrap_or(-1));
+                native_ref(bytes, change.new_ref().unwrap_or(-1));
             }
             native_i64(bytes, 0);
         }

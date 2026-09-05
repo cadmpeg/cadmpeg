@@ -335,22 +335,111 @@ pub(crate) struct AsmBulletinBoard {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "AsmEntityChangeSerde"))]
+#[serde(try_from = "AsmEntityChangeSerde", into = "AsmEntityChangeSerde")]
 pub(crate) struct AsmEntityChange {
     pub id: String,
     pub parent: String,
     pub byte_offset: u64,
     pub kind: AsmEntityChangeKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AsmEntityChangeKind {
+    Insert { new: i64 },
+    Delete { old: i64 },
+    Update { old: i64, new: i64 },
+}
+
+impl AsmEntityChange {
+    pub(crate) fn old_ref(&self) -> Option<i64> {
+        match self.kind {
+            AsmEntityChangeKind::Insert { .. } => None,
+            AsmEntityChangeKind::Delete { old } | AsmEntityChangeKind::Update { old, .. } => {
+                Some(old)
+            }
+        }
+    }
+
+    pub(crate) fn new_ref(&self) -> Option<i64> {
+        match self.kind {
+            AsmEntityChangeKind::Delete { .. } => None,
+            AsmEntityChangeKind::Insert { new } | AsmEntityChangeKind::Update { new, .. } => {
+                Some(new)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct AsmEntityChangeSerde {
+    id: String,
+    parent: String,
+    byte_offset: u64,
+    kind: AsmEntityChangeKindWire,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub old_ref: Option<i64>,
+    old_ref: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub new_ref: Option<i64>,
+    new_ref: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum AsmEntityChangeKind {
+enum AsmEntityChangeKindWire {
     Insert,
     Delete,
     Update,
+}
+
+impl TryFrom<AsmEntityChangeSerde> for AsmEntityChange {
+    type Error = String;
+
+    fn try_from(wire: AsmEntityChangeSerde) -> Result<Self, Self::Error> {
+        let kind = match (wire.kind, wire.old_ref, wire.new_ref) {
+            (AsmEntityChangeKindWire::Insert, None, Some(new)) => {
+                AsmEntityChangeKind::Insert { new }
+            }
+            (AsmEntityChangeKindWire::Delete, Some(old), None) => {
+                AsmEntityChangeKind::Delete { old }
+            }
+            (AsmEntityChangeKindWire::Update, Some(old), Some(new)) => {
+                AsmEntityChangeKind::Update { old, new }
+            }
+            _ => {
+                return Err("asm entity change kind disagrees with old_ref/new_ref".into());
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            parent: wire.parent,
+            byte_offset: wire.byte_offset,
+            kind,
+        })
+    }
+}
+
+impl From<AsmEntityChange> for AsmEntityChangeSerde {
+    fn from(change: AsmEntityChange) -> Self {
+        let (kind, old_ref, new_ref) = match change.kind {
+            AsmEntityChangeKind::Insert { new } => {
+                (AsmEntityChangeKindWire::Insert, None, Some(new))
+            }
+            AsmEntityChangeKind::Delete { old } => {
+                (AsmEntityChangeKindWire::Delete, Some(old), None)
+            }
+            AsmEntityChangeKind::Update { old, new } => {
+                (AsmEntityChangeKindWire::Update, Some(old), Some(new))
+            }
+        };
+        Self {
+            id: change.id,
+            parent: change.parent,
+            byte_offset: change.byte_offset,
+            kind,
+            old_ref,
+            new_ref,
+        }
+    }
 }

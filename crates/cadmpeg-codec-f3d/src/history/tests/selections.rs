@@ -715,9 +715,10 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
                     id: format!("change-{index}"),
                     parent: board_id.clone(),
                     byte_offset: index as u64,
-                    kind: AsmEntityChangeKind::Update,
-                    old_ref: Some(old_ref),
-                    new_ref: Some(index as i64),
+                    kind: AsmEntityChangeKind::Update {
+                        old: old_ref,
+                        new: index as i64,
+                    },
                 })
                 .collect(),
         }],
@@ -782,9 +783,7 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
                         id: format!("change-{node_index}-{index}"),
                         parent: board_id.clone(),
                         byte_offset: index as u64,
-                        kind: AsmEntityChangeKind::Insert,
-                        old_ref: None,
-                        new_ref: Some(*new_ref),
+                        kind: AsmEntityChangeKind::Insert { new: *new_ref },
                     })
                     .collect(),
             }],
@@ -882,24 +881,19 @@ fn insert_only_history_rejects_gaps_and_updates() {
                 id: "gap-a".into(),
                 parent: "board".into(),
                 byte_offset: 0,
-                kind: AsmEntityChangeKind::Insert,
-                old_ref: None,
-                new_ref: Some(1),
+                kind: AsmEntityChangeKind::Insert { new: 1 },
             },
             AsmEntityChange {
                 id: "gap-b".into(),
                 parent: "board".into(),
                 byte_offset: 0,
-                kind: AsmEntityChangeKind::Insert,
-                old_ref: None,
-                new_ref: Some(3),
+                kind: AsmEntityChangeKind::Insert { new: 3 },
             },
         ],
     };
     state.bulletin_boards.push(board);
     assert_eq!(insert_only_active_record_count(&[state.clone()]), None);
-    state.bulletin_boards[0].changes[1].old_ref = Some(2);
-    state.bulletin_boards[0].changes[1].kind = AsmEntityChangeKind::Update;
+    state.bulletin_boards[0].changes[1].kind = AsmEntityChangeKind::Update { old: 2, new: 3 };
     assert_eq!(insert_only_active_record_count(&[state]), None);
 }
 
@@ -934,9 +928,7 @@ fn materialized_record_table_normalizes_revision_references() {
                 id: "change".into(),
                 parent: board_id,
                 byte_offset: 0,
-                kind: AsmEntityChangeKind::Update,
-                old_ref: Some(2),
-                new_ref: Some(1),
+                kind: AsmEntityChangeKind::Update { old: 2, new: 1 },
             }],
         }],
         records: vec![AsmHistoryRecord {
@@ -1026,9 +1018,7 @@ fn qualified_history_marker_remains_an_archived_record() {
                 id: "change".into(),
                 parent: board_id,
                 byte_offset: 0,
-                kind: AsmEntityChangeKind::Update,
-                old_ref: Some(2),
-                new_ref: Some(1),
+                kind: AsmEntityChangeKind::Update { old: 2, new: 1 },
             }],
         }],
         records: vec![AsmHistoryRecord {
@@ -1108,13 +1098,11 @@ fn reverse_history_builds_complete_entity_version_maps() {
                     parent: board_id,
                     byte_offset: node_index as u64,
                     kind: match (old_ref, new_ref) {
-                        (Some(_), Some(_)) => AsmEntityChangeKind::Update,
-                        (None, Some(_)) => AsmEntityChangeKind::Insert,
-                        (Some(_), None) => AsmEntityChangeKind::Delete,
+                        (Some(old), Some(new)) => AsmEntityChangeKind::Update { old, new },
+                        (None, Some(new)) => AsmEntityChangeKind::Insert { new },
+                        (Some(old), None) => AsmEntityChangeKind::Delete { old },
                         (None, None) => unreachable!(),
                     },
-                    old_ref,
-                    new_ref,
                 }],
             }],
             records: Vec::new(),

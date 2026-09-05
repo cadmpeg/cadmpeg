@@ -550,19 +550,8 @@ fn generated_source_less_writes_typed_asm_history_graph() {
         f3d_native(preambleless_round_trip.ir()).asm_histories[0].history_entry_count,
         None
     );
-    f3d_native_mut(&mut source_less).asm_histories[0].states[0].bulletin_boards[0].changes[0]
-        .kind = crate::history_records::AsmEntityChangeKind::Delete;
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("inconsistent generated history change kind must be rejected");
-    assert!(error
-        .to_string()
-        .contains("kind inconsistent with its references"));
     {
         let mut native = f3d_native_mut(&mut source_less);
-        native.asm_histories[0].states[0].bulletin_boards[0].changes[0].kind =
-            crate::history_records::AsmEntityChangeKind::Update;
         native.asm_histories[0].stream_size = Some(3);
     }
     let error = F3dCodec
