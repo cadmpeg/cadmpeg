@@ -1066,13 +1066,13 @@ pub(crate) fn validate_act_appearance_bindings(
                 entities
                     .iter()
                     .copied()
-                    .find(|entity| &before.channels == entity.channels())
+                    .find(|entity| before.channels.iter().eq(act_channel_values(entity)))
             });
         let after_entity = before_entity.and_then(|before_entity| {
             target_entities_by_id
                 .get(before_entity.id.as_str())
                 .copied()
-                .filter(|entity| &after.channels == entity.channels())
+                .filter(|entity| after.channels.iter().eq(act_channel_values(entity)))
         });
         if before_entity.is_none() || after_entity.is_none() {
             return Err(CodecError::NotImplemented(format!(
@@ -1118,7 +1118,7 @@ pub(crate) fn validate_act_appearance_bindings(
         let derived_binding = matching_bindings.is_some_and(|bindings| {
             bindings
                 .iter()
-                .any(|(channels, _)| channels == before.channels())
+                .any(|(channels, _)| channels.iter().eq(act_channel_values(before)))
         });
         let assignment_synchronized = assignment_entities.contains(after.entity_id.as_str());
         if before.entity_id != after.entity_id && derived_binding && !assignment_synchronized {
@@ -1136,11 +1136,11 @@ pub(crate) fn validate_act_appearance_bindings(
                     ))
                     .is_some_and(|binding| {
                         binding.source_entity_id.as_deref() == Some(after.entity_id.as_str())
-                            && &binding.channels == after.channels()
+                            && binding.channels.iter().eq(act_channel_values(after))
                     })
             })
         });
-        if (before.entity_id != after.entity_id || before.channels() != after.channels())
+        if (before.entity_id != after.entity_id || act_channel_values(before).ne(act_channel_values(after)))
             && derived_binding
             && !synchronized
         {
@@ -1151,6 +1151,11 @@ pub(crate) fn validate_act_appearance_bindings(
         }
     }
     Ok(())
+}
+
+fn act_channel_values(entity: &ActEntity) -> impl Iterator<Item = (&String, &String)> {
+    entity.channel_group().into_iter().flat_map(|group| &group.channels)
+        .map(|(name, guid)| (name, &guid.value))
 }
 
 pub(crate) fn validate_act_entity_edits(
@@ -1186,7 +1191,11 @@ pub(crate) fn validate_act_entity_edits(
         normalized.entity_id.clone_from(&before.entity_id);
         if let Some(group) = normalized.channel_group_mut() {
             if let Some(before_group) = before.channel_group() {
-                group.channels.clone_from(&before_group.channels);
+                for (name, guid) in &mut group.channels {
+                    if let Some(before_guid) = before_group.channels.get(name) {
+                        guid.value.clone_from(&before_guid.value);
+                    }
+                }
             }
         }
         if &normalized != before {
@@ -1202,24 +1211,15 @@ pub(crate) fn validate_act_entity_edits(
                 "F3D ACT entity id {id} must retain its UTF-16 length"
             )));
         }
-        if after.channels().keys().ne(before.channels().keys())
-            || after
-                .channels()
-                .keys()
-                .ne(after.channel_guid_offsets().keys())
-        {
-            return Err(CodecError::NotImplemented(format!(
-                "F3D ACT entity {id} must retain its channel set and offsets"
-            )));
-        }
-        for (name, guid) in after.channels() {
-            let before_guid = &before.channels()[name];
-            if guid.encode_utf16().count() != before_guid.encode_utf16().count()
-                || !canonical_guid(guid)
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D ACT channel {name} on {id} must be a same-length canonical GUID"
-                )));
+        if let (Some(before_group), Some(after_group)) = (before.channel_group(), after.channel_group()) {
+            for ((_, before_guid), (name, guid)) in before_group.channels.iter().zip(&after_group.channels) {
+                if guid.value.encode_utf16().count() != before_guid.value.encode_utf16().count()
+                    || !canonical_guid(&guid.value)
+                {
+                    return Err(CodecError::malformed(format_args!(
+                        "F3D ACT channel {name} on {id} must be a same-length canonical GUID"
+                    )));
+                }
             }
         }
         edits

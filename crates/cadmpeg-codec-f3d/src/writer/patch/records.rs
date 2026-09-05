@@ -93,14 +93,14 @@ pub(crate) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
         {
             patch_bytes_at(bytes, offset, &encoded_id, "ACT entity id")?;
         }
-        for (name, guid) in entity.channels() {
-            let encoded = guid
+        for guid in entity.channel_group().into_iter().flat_map(|group| group.channels.values()) {
+            let encoded = guid.value
                 .encode_utf16()
                 .flat_map(u16::to_le_bytes)
                 .collect::<Vec<_>>();
             patch_bytes_at(
                 bytes,
-                entity.channel_guid_offsets()[name],
+                guid.offset,
                 &encoded,
                 "ACT channel GUID",
             )?;

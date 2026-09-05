@@ -17419,16 +17419,38 @@ pub struct ActTableRow {
     pub entity_id_offset: u64,
 }
 
+/// Non-padding bytes following an ACT channel group.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActClassTail {
+    bytes: Vec<u8>,
+    offset: u64,
+}
+
+impl ActClassTail {
+    pub(crate) fn new(bytes: Vec<u8>, offset: u64) -> Result<Self, String> {
+        if bytes.iter().all(|byte| *byte == 0) {
+            return Err("channel_class_tail must contain non-padding bytes".into());
+        }
+        if u64::try_from(bytes.len()).ok().and_then(|len| offset.checked_add(len)).is_none() {
+            return Err("channel_class_tail_offset and channel_class_tail length overflow".into());
+        }
+        Ok(Self { bytes, offset })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn bytes(&self) -> &[u8] { &self.bytes }
+
+    pub(crate) fn offset(&self) -> u64 { self.offset }
+}
+
 /// Channel-group payload owned by one ACT entity.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ActChannelGroup {
     pub record_index_offset: u64,
     pub entity_id_offset: Option<u64>,
     pub class_tag: String,
-    pub channels: BTreeMap<String, String>,
-    pub guid_offsets: BTreeMap<String, u64>,
-    pub class_tail: Vec<u8>,
-    pub class_tail_offset: Option<u64>,
+    pub channels: BTreeMap<String, Located<String>>,
+    pub class_tail: Option<ActClassTail>,
 }
 
 /// Whether an ACT entity is keyed in `ACTTable`, has a channel group, or both.
@@ -17514,29 +17536,6 @@ impl ActEntity {
         self.channel_group().map(|group| group.class_tag.as_str())
     }
 
-    pub(crate) fn channels(&self) -> &BTreeMap<String, String> {
-        self.channel_group()
-            .map(|group| &group.channels)
-            .unwrap_or(&EMPTY_ACT_CHANNELS)
-    }
-
-    pub(crate) fn channel_guid_offsets(&self) -> &BTreeMap<String, u64> {
-        self.channel_group()
-            .map(|group| &group.guid_offsets)
-            .unwrap_or(&EMPTY_ACT_GUID_OFFSETS)
-    }
-
-    pub(crate) fn channel_class_tail(&self) -> &[u8] {
-        self.channel_group()
-            .map(|group| group.class_tail.as_slice())
-            .unwrap_or(&[])
-    }
-
-    pub(crate) fn channel_class_tail_offset(&self) -> Option<u64> {
-        self.channel_group()
-            .and_then(|group| group.class_tail_offset)
-    }
-
     pub(crate) fn attach_channel_group(&mut self, group: ActChannelGroup) -> bool {
         match &self.membership {
             ActEntityMembership::TableOnly(row) => {
@@ -17553,9 +17552,6 @@ impl ActEntity {
         }
     }
 }
-
-static EMPTY_ACT_CHANNELS: BTreeMap<String, String> = BTreeMap::new();
-static EMPTY_ACT_GUID_OFFSETS: BTreeMap<String, u64> = BTreeMap::new();
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -17588,6 +17584,9 @@ impl TryFrom<ActEntitySerde> for ActEntity {
     type Error = String;
 
     fn try_from(wire: ActEntitySerde) -> Result<Self, Self::Error> {
+        if wire.channels.keys().ne(wire.channel_guid_offsets.keys()) {
+            return Err("channels and channel_guid_offsets must have identical keys".into());
+        }
         let table = match (
             wire.in_table,
             wire.table_record_index_offset,
@@ -17619,10 +17618,14 @@ impl TryFrom<ActEntitySerde> for ActEntity {
                 record_index_offset,
                 entity_id_offset: wire.channel_entity_id_offset,
                 class_tag,
-                channels: wire.channels,
-                guid_offsets: wire.channel_guid_offsets,
-                class_tail: wire.channel_class_tail,
-                class_tail_offset: wire.channel_class_tail_offset,
+                channels: wire.channels.into_iter().zip(wire.channel_guid_offsets)
+                    .map(|((name, value), (_, offset))| (name, Located { value, offset }))
+                    .collect(),
+                class_tail: match (wire.channel_class_tail, wire.channel_class_tail_offset) {
+                    (bytes, None) if bytes.is_empty() => None,
+                    (bytes, Some(offset)) => Some(ActClassTail::new(bytes, offset)?),
+                    _ => return Err("channel_class_tail requires channel_class_tail_offset".into()),
+                },
             }),
             _ => {
                 return Err(
@@ -17656,11 +17659,17 @@ impl From<ActEntity> for ActEntitySerde {
         let channel_record_index_offset = entity.channel_record_index_offset();
         let channel_entity_id_offset = entity.channel_entity_id_offset();
         let channel_class_tag = entity.channel_class_tag().map(str::to_owned);
-        let channel_class_tail_offset = entity.channel_class_tail_offset();
-        let (channels, channel_guid_offsets, channel_class_tail) = match entity.membership {
-            ActEntityMembership::TableOnly(_) => (BTreeMap::new(), BTreeMap::new(), Vec::new()),
+        let (channels, channel_guid_offsets, channel_class_tail, channel_class_tail_offset) = match entity.membership {
+            ActEntityMembership::TableOnly(_) => (BTreeMap::new(), BTreeMap::new(), Vec::new(), None),
             ActEntityMembership::GroupOnly(group) | ActEntityMembership::Both(_, group) => {
-                (group.channels, group.guid_offsets, group.class_tail)
+                let (channels, offsets) = group.channels.into_iter()
+                    .map(|(name, guid)| ((name.clone(), guid.value), (name, guid.offset)))
+                    .unzip();
+                let (tail, tail_offset) = match group.class_tail {
+                    Some(tail) => (tail.bytes, Some(tail.offset)),
+                    None => (Vec::new(), None),
+                };
+                (channels, offsets, tail, tail_offset)
             }
         };
         Self {

@@ -3434,3 +3434,48 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
         }
     }
 }
+
+#[test]
+fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
+    let wire = serde_json::json!({
+        "id": "stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
+        "in_table": false, "channel_class_tag": "261", "channel_record_index_offset": 100,
+        "channels": {"Appearance": "11111111-2222-3333-4444-555555555555"},
+        "channel_guid_offsets": {"Appearance": 120}
+    });
+    let entity: super::ActEntity = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(entity).unwrap(), wire);
+    for offsets in [serde_json::json!({}), serde_json::json!({"Material": 120})] {
+        let mut invalid = wire.clone();
+        invalid["channel_guid_offsets"] = offsets;
+        let error = serde_json::from_value::<super::ActEntity>(invalid).unwrap_err();
+        assert!(error.to_string().contains("channels and channel_guid_offsets"));
+    }
+    let mut invalid = wire;
+    invalid["channels"] = serde_json::json!({});
+    assert!(serde_json::from_value::<super::ActEntity>(invalid).is_err());
+}
+
+#[test]
+fn act_class_tail_requires_nonpadding_bytes_and_a_bounded_offset() {
+    let wire = serde_json::json!({
+        "id": "stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
+        "in_table": false, "channel_class_tag": "261", "channel_record_index_offset": 100,
+        "channels": {}, "channel_guid_offsets": {},
+        "channel_class_tail": [0, 1], "channel_class_tail_offset": 300
+    });
+    let entity: super::ActEntity = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(entity).unwrap(), wire);
+    for (bytes, offset) in [
+        (serde_json::json!([]), serde_json::json!(300)),
+        (serde_json::json!([0, 0]), serde_json::json!(300)),
+        (serde_json::json!([1]), serde_json::Value::Null),
+        (serde_json::json!([1]), serde_json::json!(u64::MAX)),
+    ] {
+        let mut invalid = wire.clone();
+        invalid["channel_class_tail"] = bytes;
+        invalid["channel_class_tail_offset"] = offset;
+        let error = serde_json::from_value::<super::ActEntity>(invalid).unwrap_err();
+        assert!(error.to_string().contains("channel_class_tail"));
+    }
+}

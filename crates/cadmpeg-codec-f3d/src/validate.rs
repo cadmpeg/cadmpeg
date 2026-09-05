@@ -917,28 +917,15 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let valid_table = entity.table_row().is_none_or(|row| {
             row.record_index_offset.checked_add(14) == Some(row.entity_id_offset)
         });
-        let valid_class_tail = match entity.channel_group() {
-            None => true,
-            Some(group) if group.class_tail.is_empty() => group.class_tail_offset.is_none(),
-            Some(group) => {
-                group.class_tail.iter().any(|byte| *byte != 0)
-                    && group.class_tail_offset.is_some_and(|tail_offset| {
-                        group.record_index_offset < tail_offset
-                            && group
-                                .entity_id_offset
-                                .is_none_or(|entity_offset| entity_offset < tail_offset)
-                            && group.guid_offsets.values().all(|guid_offset| {
-                                guid_offset
-                                    .checked_add(72)
-                                    .is_some_and(|guid_end| guid_end <= tail_offset)
-                            })
-                            && u64::try_from(group.class_tail.len())
-                                .ok()
-                                .and_then(|tail_len| tail_offset.checked_add(tail_len))
-                                .is_some()
+        let valid_class_tail = entity.channel_group().is_none_or(|group| {
+            group.class_tail.as_ref().is_none_or(|tail| {
+                group.record_index_offset < tail.offset()
+                    && group.entity_id_offset.is_none_or(|offset| offset < tail.offset())
+                    && group.channels.values().all(|guid| {
+                        guid.offset.checked_add(72).is_some_and(|end| end <= tail.offset())
                     })
-            }
-        };
+            })
+        });
         let valid_group = match entity.channel_group() {
             Some(group) => {
                 valid_dynamic_class_tag(&group.class_tag)
@@ -948,15 +935,15 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && group
                         .entity_id_offset
                         .is_some_and(|key| group.record_index_offset < key)
-                    && group.channels.keys().eq(group.guid_offsets.keys())
                     && group
                         .channels
                         .keys()
                         .all(|name| !name.is_empty() && name.len() <= 128 && name.is_ascii())
-                    && group.channels.values().all(|guid| valid_design_guid(guid))
+                    && group.channels.values().all(|guid| valid_design_guid(&guid.value))
                     && group.entity_id_offset.is_some_and(|entity_offset| {
-                        group.guid_offsets.values().all(|guid_offset| {
-                            group.record_index_offset < *guid_offset
+                        group.channels.values().all(|guid| {
+                                let guid_offset = guid.offset;
+                            group.record_index_offset < guid_offset
                                 && guid_offset
                                     .checked_add(72)
                                     .is_some_and(|guid_end| guid_end <= entity_offset)
