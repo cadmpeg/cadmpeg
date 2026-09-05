@@ -974,9 +974,13 @@ fn materialized_record_table_normalizes_revision_references() {
         })
         .collect::<Vec<_>>();
 
-    let archive =
-        historical_record_archive(std::slice::from_ref(&state), &active, &archived_bytes, 8)
-            .expect("complete historical record archive");
+    let archive = historical_record_archive(
+        std::slice::from_ref(&state),
+        &active,
+        &archived_bytes,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("complete historical record archive");
     let table =
         materialize_record_table(&state, &archive).expect("complete historical RecordTable");
 
@@ -1064,9 +1068,13 @@ fn qualified_history_marker_remains_an_archived_record() {
         })
         .collect::<Vec<_>>();
 
-    let archive =
-        historical_record_archive(std::slice::from_ref(&state), &active, &archived_bytes, 8)
-            .expect("qualified history marker is an archived record");
+    let archive = historical_record_archive(
+        std::slice::from_ref(&state),
+        &active,
+        &archived_bytes,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("qualified history marker is an archived record");
     let record = archive
         .records
         .get(&2)

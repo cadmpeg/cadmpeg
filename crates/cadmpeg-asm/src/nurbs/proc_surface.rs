@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Procedural spline-surface embedded types and their `_spl_sur` decoders.
 
+use crate::kernel_header::RefWidth;
 use crate::nurbs::blend::{
     compact_rb_blend_spl_sur, cyl_spl_sur, full_rb_blend_spl_sur, rolling_ball_side,
     var_blend_spl_sur, vertex_blend_spl_sur,
@@ -503,7 +504,7 @@ pub struct EmbeddedG2Blend {
 pub(crate) fn decode_nullable_embedded_pcurve(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<Nullable<NurbsPcurve>> {
     let saved = *position;
     if take_native_ident(bytes, position).as_deref() == Some("nullbs") {
@@ -4462,7 +4463,7 @@ mod tail_selector_tests {
         push_enum(&mut span, 1);
         span.push(0x06);
         span.extend_from_slice(&0.0f64.to_le_bytes());
-        let toks = toks::lex_test_span(&span, 4);
+        let toks = toks::lex_test_span(&span, RefWidth::Four);
         let mut cur = Cur::at(&toks, 0);
         assert!(revision_surface_tail(&mut cur).is_none());
     }
@@ -4494,7 +4495,7 @@ mod tail_selector_tests {
         }
         span.push(0x0b);
 
-        let toks = toks::lex_test_span(&span, 4);
+        let toks = toks::lex_test_span(&span, RefWidth::Four);
         let mut cur = Cur::at(&toks, 0);
         let tail = revision_surface_tail(&mut cur).expect("parameterized tail");
         assert_eq!(cur.pos(), toks.len());

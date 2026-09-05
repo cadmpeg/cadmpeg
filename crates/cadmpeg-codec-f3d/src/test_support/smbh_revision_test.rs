@@ -50,7 +50,13 @@ pub(crate) fn synthetic_revision_surface_smbh(
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -182,22 +188,36 @@ pub(crate) fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::Cad
         .iter()
         .position(|&byte| byte == 0x0f)
         .expect("subtype opening");
-    cadmpeg_asm::nurbs::subtypes::subtype_span(&bytes, inner, 8)
-        .expect("subtype span")
-        .to_vec()
+    cadmpeg_asm::nurbs::subtypes::subtype_span(
+        &bytes,
+        inner,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("subtype span")
+    .to_vec()
 }
 
 /// The subtype span of the synthetic stream's revision-gated surface record.
 pub(crate) fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
     let start = asm_header::record_stream_start(smbh).unwrap();
     let limit = asm_header::solved_record_limit(smbh).unwrap();
-    let records = cadmpeg_asm::sab::frame(smbh, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        smbh,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let record = &records[9];
     let slice = &smbh[record.offset..record.offset + record.len];
     let inner = slice.iter().position(|&byte| byte == 0x0f).unwrap();
-    cadmpeg_asm::nurbs::subtypes::subtype_span(slice, inner, 8)
-        .unwrap()
-        .to_vec()
+    cadmpeg_asm::nurbs::subtypes::subtype_span(
+        slice,
+        inner,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap()
+    .to_vec()
 }
 
 /// The parameterization the shared form-`2` tail builder writes.

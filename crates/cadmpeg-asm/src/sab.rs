@@ -11,15 +11,15 @@
 //! byte synchronization and record extents without requiring semantic decoding
 //! of each payload.
 
+use crate::kernel_header::RefWidth;
 use crate::stream_error::{StreamError, StreamFormat};
 use cadmpeg_core::decode::View;
 use std::sync::Arc;
 
-pub(crate) fn int_le_at(bytes: &[u8], offset: usize, width: usize) -> Option<i64> {
+pub(crate) fn int_le_at(bytes: &[u8], offset: usize, width: RefWidth) -> Option<i64> {
     match width {
-        4 => Some(i64::from(View::i32_le_at(bytes, offset)?)),
-        8 => View::i64_le_at(bytes, offset),
-        _ => None,
+        RefWidth::Four => Some(i64::from(View::i32_le_at(bytes, offset)?)),
+        RefWidth::Eight => View::i64_le_at(bytes, offset),
     }
 }
 
@@ -159,7 +159,7 @@ pub fn payload_subtype_range(
     bytes: &[u8],
     record: &Record,
     token_index: usize,
-    ref_width: usize,
+    ref_width: RefWidth,
     expected: &str,
 ) -> Option<std::ops::Range<usize>> {
     let limit = record.offset.checked_add(record.len)?;
@@ -222,7 +222,7 @@ pub fn payload_subtype_range(
 pub fn payload_token_offset(
     bytes: &[u8],
     record: &Record,
-    ref_width: usize,
+    ref_width: RefWidth,
     token_index: usize,
 ) -> Option<usize> {
     let limit = record.offset.checked_add(record.len)?;
@@ -264,7 +264,7 @@ enum Lexed {
     Terminator,
 }
 
-fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), StreamError> {
+fn lex(bytes: &[u8], pos: usize, ref_width: RefWidth) -> Result<(Lexed, usize), StreamError> {
     let err = |reason: &str| StreamError {
         format: StreamFormat::Binary,
         offset: pos,
@@ -301,7 +301,7 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Str
         ),
         0x04 => {
             let v = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
-            (Lexed::Value(Token::Long(v)), p + ref_width)
+            (Lexed::Value(Token::Long(v)), p + ref_width.bytes())
         }
         0x05 => (
             Lexed::Value(Token::Float(
@@ -327,15 +327,15 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Str
             let len = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
             let len = usize::try_from(len).map_err(|_| err("negative string length"))?;
             (
-                Lexed::Value(Token::Str(string(p + ref_width, len)?)),
-                p + ref_width + len,
+                Lexed::Value(Token::Str(string(p + ref_width.bytes(), len)?)),
+                p + ref_width.bytes() + len,
             )
         }
         0x0a => (Lexed::Value(Token::True), p),
         0x0b => (Lexed::Value(Token::False), p),
         0x0c => {
             let v = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
-            (Lexed::Value(Token::Ref(v)), p + ref_width)
+            (Lexed::Value(Token::Ref(v)), p + ref_width.bytes())
         }
         0x0d => {
             let len = *bytes.get(p).ok_or_else(truncated)? as usize;
@@ -358,7 +358,7 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Str
         ),
         0x15 => {
             let v = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
-            (Lexed::Value(Token::Enum(v)), p + ref_width)
+            (Lexed::Value(Token::Enum(v)), p + ref_width.bytes())
         }
         0x16 => {
             let u = View::f64_le_at(bytes, p).ok_or_else(truncated)?;
@@ -366,7 +366,7 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Str
             (Lexed::Value(Token::Vector2([u, v])), p + 16)
         }
         0x17 => {
-            let v = int_le_at(bytes, p, 8).ok_or_else(truncated)?;
+            let v = int_le_at(bytes, p, RefWidth::Eight).ok_or_else(truncated)?;
             (Lexed::Value(Token::Int64(v)), p + 8)
         }
         other => {
@@ -384,7 +384,7 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Str
 pub fn payload_token_offsets(
     bytes: &[u8],
     record: &Record,
-    ref_width: usize,
+    ref_width: RefWidth,
     tag: u8,
 ) -> Result<Vec<usize>, StreamError> {
     let end = record.offset + record.len;
@@ -413,7 +413,7 @@ pub fn frame(
     bytes: &[u8],
     start: usize,
     limit: usize,
-    ref_width: usize,
+    ref_width: RefWidth,
 ) -> Result<Vec<Record>, StreamError> {
     frame_impl(bytes, start, limit, ref_width, false)
 }
@@ -424,7 +424,7 @@ pub fn frame_history(
     bytes: &[u8],
     start: usize,
     limit: usize,
-    ref_width: usize,
+    ref_width: RefWidth,
 ) -> Result<Vec<Record>, StreamError> {
     frame_impl(bytes, start, limit, ref_width, true)
 }
@@ -433,7 +433,7 @@ fn frame_impl(
     bytes: &[u8],
     start: usize,
     limit: usize,
-    ref_width: usize,
+    ref_width: RefWidth,
     eof_terminates_final_record: bool,
 ) -> Result<Vec<Record>, StreamError> {
     let limit = limit.min(bytes.len());
@@ -550,6 +550,7 @@ fn frame_impl(
 #[cfg(test)]
 mod tests {
     use super::{exact_identifier_at, frame, frame_history, payload_token_offset};
+    use crate::kernel_header::RefWidth;
 
     #[test]
     fn exact_identifier_requires_the_tag_length_and_complete_payload() {
@@ -568,8 +569,9 @@ mod tests {
     #[test]
     fn history_framer_accepts_only_the_final_record_at_eof() {
         let bytes = [0x0d, 4, b'e', b'd', b'g', b'e'];
-        assert!(frame(&bytes, 0, bytes.len(), 8).is_err());
-        let records = frame_history(&bytes, 0, bytes.len(), 8).expect("history EOF record");
+        assert!(frame(&bytes, 0, bytes.len(), RefWidth::Eight).is_err());
+        let records =
+            frame_history(&bytes, 0, bytes.len(), RefWidth::Eight).expect("history EOF record");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].name, "edge");
         assert_eq!(records[0].len, bytes.len());
@@ -592,7 +594,7 @@ mod tests {
         }
         bytes.push(0x11);
 
-        let records = frame_history(&bytes, 0, bytes.len(), 8).expect("wrapped edge");
+        let records = frame_history(&bytes, 0, bytes.len(), RefWidth::Eight).expect("wrapped edge");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].name, "edge");
         assert_eq!(records[0].head, "edge");
@@ -605,7 +607,7 @@ mod tests {
             .unwrap();
         let mut non_wrapper = bytes;
         non_wrapper.splice(embedded_offset..embedded_offset, [0x02, 0]);
-        let records = frame_history(&non_wrapper, 0, non_wrapper.len(), 8)
+        let records = frame_history(&non_wrapper, 0, non_wrapper.len(), RefWidth::Eight)
             .expect("marker with a later payload identifier");
         assert_eq!(records[0].name, "End-of-ASM-History-Section");
     }
@@ -628,7 +630,7 @@ mod tests {
         bytes.push(0x0b); // chunk 4
         bytes.push(0x11);
 
-        let records = frame(&bytes, 0, bytes.len(), 8).expect("named subtype");
+        let records = frame(&bytes, 0, bytes.len(), RefWidth::Eight).expect("named subtype");
         assert_eq!(records.len(), 1);
         let record = &records[0];
         // The token stream is faithful: the subtype's name chain is present.
@@ -660,22 +662,23 @@ mod tests {
             let tail_offset = bytes.len();
             bytes.extend_from_slice(&tail);
 
-            let error = frame(&bytes, 0, bytes.len(), 8).expect_err("unbalanced subtype scope");
+            let error = frame(&bytes, 0, bytes.len(), RefWidth::Eight)
+                .expect_err("unbalanced subtype scope");
             assert_eq!(error.offset, tail_offset + bad_token_index);
         }
     }
 
     #[test]
     fn wide_string_length_prefix_uses_the_stream_ref_width() {
-        for ref_width in [4usize, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let text = "subtransform program text";
             let mut bytes = vec![0x0d, 4];
             bytes.extend_from_slice(b"tspl");
             bytes.push(0x09);
-            bytes.extend_from_slice(&(text.len() as u64).to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&(text.len() as u64).to_le_bytes()[..ref_width.bytes()]);
             bytes.extend_from_slice(text.as_bytes());
             bytes.push(0x04);
-            bytes.extend_from_slice(&7i64.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&7i64.to_le_bytes()[..ref_width.bytes()]);
             bytes.push(0x11);
 
             let records =
@@ -712,7 +715,8 @@ mod tests {
                 .iter()
                 .position(|byte| *byte == 0xff)
                 .expect("invalid byte offset");
-            let error = frame(&bytes, 0, bytes.len(), 8).expect_err("invalid UTF-8 must fail");
+            let error = frame(&bytes, 0, bytes.len(), RefWidth::Eight)
+                .expect_err("invalid UTF-8 must fail");
             assert_eq!(error.offset, invalid_offset);
         }
     }
@@ -730,17 +734,18 @@ mod tests {
             bytes.extend_from_slice("é".as_bytes());
             bytes.push(0x11);
 
-            let records = frame(&bytes, 0, bytes.len(), 8).expect("multibyte UTF-8 string");
+            let records =
+                frame(&bytes, 0, bytes.len(), RefWidth::Eight).expect("multibyte UTF-8 string");
             assert_eq!(records[0].chunk(0), Some(&super::Token::Str("é".into())));
         }
     }
 
-    fn generated_pcurve_record(ref_width: usize) -> Vec<u8> {
+    fn generated_pcurve_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0d, 6];
         bytes.extend_from_slice(b"pcurve");
         for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1), (0x04, 0)] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         bytes.extend_from_slice(&[0x0b, 0x0f, 0x0d, 11]);
         bytes.extend_from_slice(b"exp_par_cur");
@@ -748,12 +753,12 @@ mod tests {
         bytes
     }
 
-    fn generated_ref_pcurve_record(ref_width: usize) -> Vec<u8> {
+    fn generated_ref_pcurve_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0d, 6];
         bytes.extend_from_slice(b"pcurve");
         for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1), (0x04, 2), (0x0c, 20)] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         for value in [-2.0f64, 4.0] {
             bytes.push(0x06);
@@ -763,14 +768,14 @@ mod tests {
         bytes
     }
 
-    fn generated_cone_record(ref_width: usize) -> Vec<u8> {
+    fn generated_cone_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0e, 4];
         bytes.extend_from_slice(b"cone");
         bytes.extend_from_slice(&[0x0d, 7]);
         bytes.extend_from_slice(b"surface");
         for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         for (tag, values) in [
             (0x13, [1.0f64, 2.0, 3.0]),
@@ -794,14 +799,14 @@ mod tests {
         bytes
     }
 
-    fn generated_sphere_record(ref_width: usize) -> Vec<u8> {
+    fn generated_sphere_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0e, 6];
         bytes.extend_from_slice(b"sphere");
         bytes.extend_from_slice(&[0x0d, 7]);
         bytes.extend_from_slice(b"surface");
         for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         bytes.push(0x13);
         for value in [1.0f64, 2.0, 3.0] {
@@ -820,14 +825,14 @@ mod tests {
         bytes
     }
 
-    fn generated_torus_record(ref_width: usize) -> Vec<u8> {
+    fn generated_torus_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0e, 5];
         bytes.extend_from_slice(b"torus");
         bytes.extend_from_slice(&[0x0d, 7]);
         bytes.extend_from_slice(b"surface");
         for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         for (tag, values) in [(0x13, [1.0f64, 2.0, 3.0]), (0x14, [0.0, 0.0, 1.0])] {
             bytes.push(tag);
@@ -848,14 +853,14 @@ mod tests {
         bytes
     }
 
-    fn generated_plane_record(ref_width: usize) -> Vec<u8> {
+    fn generated_plane_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0e, 5];
         bytes.extend_from_slice(b"plane");
         bytes.extend_from_slice(&[0x0d, 7]);
         bytes.extend_from_slice(b"surface");
         for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         for (tag, values) in [
             (0x13, [1.0f64, 2.0, 3.0]),
@@ -871,14 +876,14 @@ mod tests {
         bytes
     }
 
-    fn generated_ellipse_record(ref_width: usize) -> Vec<u8> {
+    fn generated_ellipse_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0e, 7];
         bytes.extend_from_slice(b"ellipse");
         bytes.extend_from_slice(&[0x0d, 5]);
         bytes.extend_from_slice(b"curve");
         for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         for (tag, values) in [
             (0x13, [1.0f64, 2.0, 3.0]),
@@ -896,14 +901,14 @@ mod tests {
         bytes
     }
 
-    fn generated_straight_record(ref_width: usize) -> Vec<u8> {
+    fn generated_straight_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0e, 8];
         bytes.extend_from_slice(b"straight");
         bytes.extend_from_slice(&[0x0d, 5]);
         bytes.extend_from_slice(b"curve");
         for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         for (tag, values) in [(0x13, [1.0f64, 2.0, 3.0]), (0x14, [4.0, 5.0, 6.0])] {
             bytes.push(tag);
@@ -915,14 +920,14 @@ mod tests {
         bytes
     }
 
-    fn generated_degenerate_curve_record(ref_width: usize) -> Vec<u8> {
+    fn generated_degenerate_curve_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0e, 16];
         bytes.extend_from_slice(b"degenerate_curve");
         bytes.extend_from_slice(&[0x0d, 5]);
         bytes.extend_from_slice(b"curve");
         for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         bytes.push(0x13);
         for value in [1.0f64, 2.0, 3.0] {
@@ -932,12 +937,12 @@ mod tests {
         bytes
     }
 
-    fn generated_point_record(ref_width: usize) -> Vec<u8> {
+    fn generated_point_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0d, 5];
         bytes.extend_from_slice(b"point");
         for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         bytes.push(0x13);
         for value in [1.0f64, 2.0, 3.0] {
@@ -947,22 +952,22 @@ mod tests {
         bytes
     }
 
-    fn generated_edge_record(ref_width: usize) -> Vec<u8> {
+    fn generated_edge_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0d, 4];
         bytes.extend_from_slice(b"edge");
         for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1), (0x0c, 10)] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         bytes.push(0x06);
         bytes.extend_from_slice(&(-2.0f64).to_le_bytes());
         bytes.push(0x0c);
-        bytes.extend_from_slice(&11i64.to_le_bytes()[..ref_width]);
+        bytes.extend_from_slice(&11i64.to_le_bytes()[..ref_width.bytes()]);
         bytes.push(0x06);
         bytes.extend_from_slice(&3.0f64.to_le_bytes());
         for value in [-1i64, 12] {
             bytes.push(0x0c);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         bytes.extend_from_slice(&[0x0b, 0x07, 7]);
         bytes.extend_from_slice(b"unknown");
@@ -970,7 +975,7 @@ mod tests {
         bytes
     }
 
-    fn generated_tedge_record(ref_width: usize) -> Vec<u8> {
+    fn generated_tedge_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = generated_edge_record(ref_width);
         bytes.splice(1..6, [5, b't', b'e', b'd', b'g', b'e']);
         bytes.pop();
@@ -978,13 +983,13 @@ mod tests {
         bytes.extend_from_slice(&0.0035f64.to_le_bytes());
         for value in [22800i64, 0] {
             bytes.push(0x04);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         bytes.push(0x11);
         bytes
     }
 
-    fn generated_tcoedge_record(ref_width: usize) -> Vec<u8> {
+    fn generated_tcoedge_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0d, 7];
         bytes.extend_from_slice(b"tcoedge");
         for (tag, value) in [
@@ -997,12 +1002,12 @@ mod tests {
             (0x0c, 4),
         ] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         bytes.push(0x0b);
         for (tag, value) in [(0x0c, 5i64), (0x04, 0), (0x0c, 6)] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         for value in [-2.0f64, 3.0] {
             bytes.push(0x06);
@@ -1010,13 +1015,13 @@ mod tests {
         }
         for value in [-1i64, 0, 0] {
             bytes.push(if value == -1 { 0x0c } else { 0x04 });
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         bytes.push(0x11);
         bytes
     }
 
-    fn generated_face_record(ref_width: usize) -> Vec<u8> {
+    fn generated_face_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0d, 4];
         bytes.extend_from_slice(b"face");
         for (tag, value) in [
@@ -1030,13 +1035,13 @@ mod tests {
             (0x0c, 3),
         ] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         bytes.extend_from_slice(&[0x0b, 0x0a, 0x0b, 0x11]);
         bytes
     }
 
-    fn generated_tvertex_record(ref_width: usize) -> Vec<u8> {
+    fn generated_tvertex_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0d, 7];
         bytes.extend_from_slice(b"tvertex");
         for (tag, value) in [
@@ -1048,7 +1053,7 @@ mod tests {
             (0x0c, 11),
         ] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         // The fixture writes two `-1` sentinels, the evaluated tolerance, and
         // integer 0.
@@ -1057,12 +1062,12 @@ mod tests {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         bytes.push(0x04);
-        bytes.extend_from_slice(&0i64.to_le_bytes()[..ref_width]);
+        bytes.extend_from_slice(&0i64.to_le_bytes()[..ref_width.bytes()]);
         bytes.push(0x11);
         bytes
     }
 
-    fn generated_body_record(ref_width: usize) -> Vec<u8> {
+    fn generated_body_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0d, 4];
         bytes.extend_from_slice(b"body");
         for (tag, value) in [
@@ -1074,7 +1079,7 @@ mod tests {
             (0x0c, -1),
         ] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         bytes.push(0x11);
         bytes
@@ -1100,7 +1105,7 @@ mod tests {
         bytes
     }
 
-    fn generated_wire_record(ref_width: usize) -> Vec<u8> {
+    fn generated_wire_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0d, 4];
         bytes.extend_from_slice(b"wire");
         for (tag, value) in [
@@ -1113,13 +1118,13 @@ mod tests {
             (0x0c, -1),
         ] {
             bytes.push(tag);
-            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width.bytes()]);
         }
         bytes.extend_from_slice(&[0x0b, 0x11]);
         bytes
     }
 
-    fn generated_rgb_attribute_record(ref_width: usize) -> Vec<u8> {
+    fn generated_rgb_attribute_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0e, 9];
         bytes.extend_from_slice(b"rgb_color");
         bytes.extend_from_slice(&[0x0e, 2]);
@@ -1127,7 +1132,7 @@ mod tests {
         bytes.extend_from_slice(&[0x0d, 6]);
         bytes.extend_from_slice(b"attrib");
         bytes.push(0x0c);
-        bytes.extend_from_slice(&(-1i64).to_le_bytes()[..ref_width]);
+        bytes.extend_from_slice(&(-1i64).to_le_bytes()[..ref_width.bytes()]);
         for value in [0.1f64, 0.2, 0.3] {
             bytes.push(0x06);
             bytes.extend_from_slice(&value.to_le_bytes());
@@ -1136,17 +1141,17 @@ mod tests {
         bytes
     }
 
-    fn generated_timestamp_attribute_record(ref_width: usize) -> Vec<u8> {
+    fn generated_timestamp_attribute_record(ref_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x0e, 13];
         bytes.extend_from_slice(b"ATTRIB_CUSTOM");
         bytes.extend_from_slice(&[0x0d, 6]);
         bytes.extend_from_slice(b"attrib");
         bytes.push(0x0c);
-        bytes.extend_from_slice(&(-1i64).to_le_bytes()[..ref_width]);
+        bytes.extend_from_slice(&(-1i64).to_le_bytes()[..ref_width.bytes()]);
         bytes.extend_from_slice(&[0x07, 20]);
         bytes.extend_from_slice(b"Timestamp_attrib_def");
         bytes.push(0x04);
-        bytes.extend_from_slice(&1i64.to_le_bytes()[..ref_width]);
+        bytes.extend_from_slice(&1i64.to_le_bytes()[..ref_width.bytes()]);
         bytes.push(0x06);
         bytes.extend_from_slice(&1_579_392_000_000_007.0f64.to_le_bytes());
         bytes.push(0x11);
@@ -1155,7 +1160,7 @@ mod tests {
 
     #[test]
     fn generated_payload_offsets_use_declared_integer_width() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_pcurve_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated record");
             let record = records.first().expect("generated pcurve");
@@ -1175,7 +1180,7 @@ mod tests {
 
     #[test]
     fn generated_ref_pcurve_range_has_fixed_payload_fields_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_ref_pcurve_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated ref pcurve");
             let record = &records[0];
@@ -1197,7 +1202,7 @@ mod tests {
 
     #[test]
     fn generated_cone_geometry_has_fixed_payload_fields_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_cone_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated cone");
             let record = &records[0];
@@ -1219,7 +1224,7 @@ mod tests {
 
     #[test]
     fn generated_sphere_geometry_has_fixed_payload_fields_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_sphere_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated sphere");
             let record = &records[0];
@@ -1233,7 +1238,7 @@ mod tests {
 
     #[test]
     fn generated_torus_geometry_has_fixed_payload_fields_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_torus_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated torus");
             let record = &records[0];
@@ -1247,7 +1252,7 @@ mod tests {
 
     #[test]
     fn generated_plane_geometry_has_fixed_payload_fields_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_plane_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated plane");
             let record = &records[0];
@@ -1261,7 +1266,7 @@ mod tests {
 
     #[test]
     fn generated_ellipse_geometry_has_fixed_payload_fields_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_ellipse_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated ellipse");
             let record = &records[0];
@@ -1275,7 +1280,7 @@ mod tests {
 
     #[test]
     fn generated_straight_geometry_has_fixed_payload_fields_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_straight_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated straight");
             let record = &records[0];
@@ -1289,7 +1294,7 @@ mod tests {
 
     #[test]
     fn generated_degenerate_curve_has_fixed_point_field_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_degenerate_curve_record(ref_width);
             let records =
                 frame(&bytes, 0, bytes.len(), ref_width).expect("generated degenerate curve");
@@ -1302,7 +1307,7 @@ mod tests {
 
     #[test]
     fn generated_point_has_fixed_position_field_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_point_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated point");
             let record = &records[0];
@@ -1314,7 +1319,7 @@ mod tests {
 
     #[test]
     fn generated_topology_ranges_have_fixed_fields_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let edge = generated_edge_record(ref_width);
             let records = frame(&edge, 0, edge.len(), ref_width).expect("generated edge");
             for index in [4usize, 6] {
@@ -1350,7 +1355,7 @@ mod tests {
 
     #[test]
     fn generated_topology_senses_have_fixed_fields_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let face = generated_face_record(ref_width);
             let records = frame(&face, 0, face.len(), ref_width).expect("generated face");
             for index in [8usize, 9, 10] {
@@ -1379,7 +1384,7 @@ mod tests {
 
     #[test]
     fn generated_tolerant_vertex_has_fixed_metadata_fields_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_tvertex_record(ref_width);
             let records =
                 frame(&bytes, 0, bytes.len(), ref_width).expect("generated tolerant vertex");
@@ -1402,7 +1407,7 @@ mod tests {
 
     #[test]
     fn generated_ownership_keys_have_fixed_fields_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let body = generated_body_record(ref_width);
             let records = frame(&body, 0, body.len(), ref_width).expect("generated body");
             let key =
@@ -1419,7 +1424,7 @@ mod tests {
 
     #[test]
     fn generated_transform_has_fixed_matrix_and_hint_fields_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_transform_record();
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated transform");
             let record = &records[0];
@@ -1438,7 +1443,7 @@ mod tests {
 
     #[test]
     fn generated_wire_has_fixed_side_field_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_wire_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated wire");
             let offset =
@@ -1449,7 +1454,7 @@ mod tests {
 
     #[test]
     fn generated_attribute_values_have_semantic_fields_at_both_widths() {
-        for ref_width in [4, 8] {
+        for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let color = generated_rgb_attribute_record(ref_width);
             let records =
                 frame(&color, 0, color.len(), ref_width).expect("generated RGB attribute");

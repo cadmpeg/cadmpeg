@@ -19,6 +19,7 @@
 //! outside the band has no declared text-band grammar to name, so it takes the
 //! residual path. The host charges either recovery from the kernel layer.
 
+use crate::kernel_header::RefWidth;
 use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, Grammar, LayerInstance};
@@ -214,11 +215,10 @@ pub fn acis_binary_row(save_format_major: Option<u32>) -> DialectId {
 /// The ASM record decoders compare no save format, so this row carries no band
 /// and is always admitted.
 #[must_use]
-pub fn asm_binary_row(width: u8) -> DialectId {
-    if width == 4 {
-        ACIS_ASM_BINARYFILE_4
-    } else {
-        ACIS_ASM_BINARYFILE_8
+pub fn asm_binary_row(width: RefWidth) -> DialectId {
+    match width {
+        RefWidth::Four => ACIS_ASM_BINARYFILE_4,
+        RefWidth::Eight => ACIS_ASM_BINARYFILE_8,
     }
 }
 
@@ -231,10 +231,11 @@ mod tests {
         ACIS_TEXT_ASM, ACIS_UNKNOWN, DECLARED_CARRIER, FORMAT,
     };
     use crate::kernel_header::KernelHeader;
+    use crate::kernel_header::RefWidth;
     use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, LayerInstance};
     use std::collections::BTreeSet;
 
-    fn header(width: u8, save_format_version: Option<u32>) -> KernelHeader {
+    fn header(width: RefWidth, save_format_version: Option<u32>) -> KernelHeader {
         KernelHeader {
             width,
             save_format_version,
@@ -282,14 +283,18 @@ mod tests {
         assert_eq!(unverified.dialect(), &ACIS_SAVE_FORMAT_BINARY_OTHER);
         assert_eq!(unverified.using(), Some(ACIS_SAVE_FORMAT_218));
         assert_eq!(
-            classify(KernelHeaderRef::TextAcis(&header(4, Some(70_000)))).admission(),
+            classify(KernelHeaderRef::TextAcis(&header(
+                RefWidth::Four,
+                Some(70_000)
+            )))
+            .admission(),
             &Admission::Residual
         );
     }
 
     #[test]
     fn unverified_message_projects_the_complete_kernel_declaration() {
-        let binary = classify(KernelHeaderRef::Acis(&header(4, Some(70_001))));
+        let binary = classify(KernelHeaderRef::Acis(&header(RefWidth::Four, Some(70_001))));
         assert_eq!(
             unverified_message("the carrier", &binary).as_deref(),
             Some(
@@ -297,7 +302,7 @@ mod tests {
             )
         );
 
-        let text = classify(KernelHeaderRef::TextAcis(&header(4, None)));
+        let text = classify(KernelHeaderRef::TextAcis(&header(RefWidth::Four, None)));
         assert_eq!(
             unverified_message("the stream", &text).as_deref(),
             Some(
@@ -306,7 +311,7 @@ mod tests {
         );
         assert!(unverified_message(
             "the carrier",
-            &classify(KernelHeaderRef::Acis(&header(4, Some(21_703))))
+            &classify(KernelHeaderRef::Acis(&header(RefWidth::Four, Some(21_703))))
         )
         .is_none());
         assert!(unverified_message(
@@ -318,7 +323,7 @@ mod tests {
 
     #[test]
     fn layer_classification_owns_carrier_identity() {
-        let header = header(4, Some(21_804));
+        let header = header(RefWidth::Four, Some(21_804));
         let matched = classify_layer(
             KernelHeaderRef::Acis(&header),
             "stream@12",
@@ -330,7 +335,7 @@ mod tests {
 
     #[test]
     fn classification_uses_family_and_canonical_declarations() {
-        let acis = header(4, Some(21_703));
+        let acis = header(RefWidth::Four, Some(21_703));
         let matched = classify(KernelHeaderRef::Acis(&acis));
         assert_eq!(matched.format(), FORMAT);
         assert_eq!(matched.dialect(), &ACIS_SAVE_FORMAT_217);
@@ -344,7 +349,7 @@ mod tests {
             ]
         );
 
-        let asm = header(8, Some(70_001));
+        let asm = header(RefWidth::Eight, Some(70_001));
         assert_eq!(
             classify(KernelHeaderRef::Asm(&asm)),
             DialectMatch::admitted(ACIS_ASM_BINARYFILE_8).with_declared(
@@ -374,13 +379,13 @@ mod tests {
 
     #[test]
     fn every_acis_registry_row_is_produced() {
-        let acis = header(4, Some(21_700));
-        let asm4 = header(4, Some(70_000));
-        let asm8 = header(8, Some(70_000));
+        let acis = header(RefWidth::Four, Some(21_700));
+        let asm4 = header(RefWidth::Four, Some(70_000));
+        let asm8 = header(RefWidth::Eight, Some(70_000));
         let ids: BTreeSet<_> = [
             classify(KernelHeaderRef::Acis(&acis)),
-            classify(KernelHeaderRef::Acis(&header(4, Some(21_800)))),
-            classify(KernelHeaderRef::Acis(&header(4, Some(23_200)))),
+            classify(KernelHeaderRef::Acis(&header(RefWidth::Four, Some(21_800)))),
+            classify(KernelHeaderRef::Acis(&header(RefWidth::Four, Some(23_200)))),
             classify(KernelHeaderRef::Asm(&asm4)),
             classify(KernelHeaderRef::Asm(&asm8)),
             classify(KernelHeaderRef::TextAsm(&asm8)),

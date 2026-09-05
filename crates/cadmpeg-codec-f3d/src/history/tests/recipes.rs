@@ -1163,7 +1163,14 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
 
 #[test]
 fn opaque_history_span_retains_the_precise_framing_error() {
-    let records = super::super::decode_history_records(&[0x33], 0, None, "stream", "state", 8);
+    let records = super::super::decode_history_records(
+        &[0x33],
+        0,
+        None,
+        "stream",
+        "state",
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    );
     let [record] = records.as_slice() else {
         panic!("one opaque record");
     };

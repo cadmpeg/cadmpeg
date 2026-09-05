@@ -537,7 +537,12 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
     )
     .expect("regenerate stamped law curve");
     let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
-    let span = cadmpeg_asm::nurbs::subtypes::subtype_span(&regenerated, inner, 8).unwrap();
+    let span = cadmpeg_asm::nurbs::subtypes::subtype_span(
+        &regenerated,
+        inner,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     assert_eq!(span, subtype.as_slice());
 }
 
@@ -570,9 +575,13 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
             .position(|window| window == b"law_int_cur")
             .unwrap()
             - 3;
-        cadmpeg_asm::nurbs::subtypes::subtype_span(&smbh, marker, 8)
-            .unwrap()
-            .to_vec()
+        cadmpeg_asm::nurbs::subtypes::subtype_span(
+            &smbh,
+            marker,
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+        )
+        .unwrap()
+        .to_vec()
     };
     let solved = decoded
         .ir()
@@ -599,7 +608,12 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
     )
     .expect("regenerate legacy law curve");
     let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
-    let span = cadmpeg_asm::nurbs::subtypes::subtype_span(&regenerated, inner, 8).unwrap();
+    let span = cadmpeg_asm::nurbs::subtypes::subtype_span(
+        &regenerated,
+        inner,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     assert_eq!(span, original.as_slice());
 }
 

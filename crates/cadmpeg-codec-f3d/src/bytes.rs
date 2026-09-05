@@ -9,16 +9,16 @@
 //! through the `bounds` and `allowed` parameters rather than sharing one
 //! unified policy.
 
+use cadmpeg_asm::kernel_header::RefWidth;
 use std::ops::RangeInclusive;
 
 use cadmpeg_core::decode::View;
 
 /// Read a signed little-endian integer with a four- or eight-byte width.
-pub(crate) fn int_at(bytes: &[u8], offset: usize, width: usize) -> Option<i64> {
+pub(crate) fn int_at(bytes: &[u8], offset: usize, width: RefWidth) -> Option<i64> {
     match width {
-        4 => Some(i64::from(View::i32_le_at(bytes, offset)?)),
-        8 => View::i64_le_at(bytes, offset),
-        _ => None,
+        RefWidth::Four => Some(i64::from(View::i32_le_at(bytes, offset)?)),
+        RefWidth::Eight => View::i64_le_at(bytes, offset),
     }
 }
 

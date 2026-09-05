@@ -72,7 +72,13 @@ fn generated_straight_record_patches_by_token_boundaries() {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes.push(0x11);
-    let records = sab::frame(&bytes, 0, bytes.len(), 8).expect("generated straight record");
+    let records = sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("generated straight record");
     let lines = BTreeMap::from([(
         "f3d:brep:entity#0".to_string(),
         (Point3::new(40.0, 50.0, 60.0), Vector3::new(0.0, 1.0, 0.0)),
@@ -110,7 +116,13 @@ fn generated_straight_record_patches_by_token_boundaries() {
         1.0,
     )
     .expect("generated line edit");
-    let decoded = sab::frame(&bytes, 0, bytes.len(), 8).expect("patched generated straight record");
+    let decoded = sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("patched generated straight record");
     assert!(matches!(
         cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]),
         Some(CurveGeometry::Line { origin, direction })
@@ -136,7 +148,13 @@ fn generated_signed_sphere_patches_exact_frame_and_radius() {
         }
     }
     bytes.push(0x11);
-    let records = sab::frame(&bytes, 0, bytes.len(), 8).expect("generated sphere record");
+    let records = sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("generated sphere record");
     let spheres = BTreeMap::from([(
         "f3d:brep:entity#0".to_string(),
         (
@@ -179,7 +197,13 @@ fn generated_signed_sphere_patches_exact_frame_and_radius() {
         1.0,
     )
     .expect("generated sphere edit");
-    let decoded = sab::frame(&bytes, 0, bytes.len(), 8).expect("patched sphere record");
+    let decoded = sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("patched sphere record");
     assert!(matches!(
         cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]),
         Some((SurfaceGeometry::Sphere { center, axis, ref_direction, radius }, false))
@@ -211,7 +235,13 @@ fn generated_torus_preserves_signed_self_intersecting_radii() {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes.push(0x11);
-    let records = sab::frame(&bytes, 0, bytes.len(), 8).expect("generated torus record");
+    let records = sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("generated torus record");
     let tori = BTreeMap::from([(
         "f3d:brep:entity#0".to_string(),
         (
@@ -255,7 +285,13 @@ fn generated_torus_preserves_signed_self_intersecting_radii() {
         1.0,
     )
     .expect("generated torus edit");
-    let decoded = sab::frame(&bytes, 0, bytes.len(), 8).expect("patched torus record");
+    let decoded = sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("patched torus record");
     assert!(matches!(
         cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]),
         Some((SurfaceGeometry::Torus {
@@ -292,7 +328,13 @@ fn generated_cylinder_preserves_native_angle_branch() {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes.push(0x11);
-    let records = sab::frame(&bytes, 0, bytes.len(), 8).expect("generated cylinder record");
+    let records = sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("generated cylinder record");
     let cones = BTreeMap::from([(
         "f3d:brep:entity#0".to_string(),
         (
@@ -337,7 +379,13 @@ fn generated_cylinder_preserves_native_angle_branch() {
         1.0,
     )
     .expect("generated cylinder edit");
-    let decoded = sab::frame(&bytes, 0, bytes.len(), 8).expect("patched cylinder record");
+    let decoded = sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("patched cylinder record");
     // The patch preserves the record's native negative-cosine angle
     // branch, so decode reports the inward-normal flag.
     assert!(matches!(
@@ -372,7 +420,13 @@ fn generated_ellipse_preserves_negative_ratio_phase() {
     bytes.push(0x06);
     bytes.extend_from_slice(&(-0.5f64).to_le_bytes());
     bytes.push(0x11);
-    let records = sab::frame(&bytes, 0, bytes.len(), 8).expect("generated ellipse record");
+    let records = sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("generated ellipse record");
     let conics = BTreeMap::from([(
         "f3d:brep:entity#0".to_string(),
         (
@@ -416,8 +470,13 @@ fn generated_ellipse_preserves_negative_ratio_phase() {
         1.0,
     )
     .expect("generated ellipse edit");
-    let ratio_offset =
-        sab::payload_token_offsets(&bytes, &records[0], 8, 0x06).expect("ellipse tokens")[0];
+    let ratio_offset = sab::payload_token_offsets(
+        &bytes,
+        &records[0],
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x06,
+    )
+    .expect("ellipse tokens")[0];
     assert_eq!(
         f64::from_le_bytes(
             bytes[ratio_offset + 1..ratio_offset + 9]
@@ -426,7 +485,13 @@ fn generated_ellipse_preserves_negative_ratio_phase() {
         ),
         -0.25
     );
-    let decoded = sab::frame(&bytes, 0, bytes.len(), 8).expect("patched ellipse record");
+    let decoded = sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("patched ellipse record");
     assert!(matches!(
         cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]),
         Some(CurveGeometry::Ellipse {
@@ -450,7 +515,13 @@ fn generated_binaryfile4_integer_patch_preserves_following_token() {
     bytes.extend_from_slice(&(-3i32).to_le_bytes());
     bytes.extend_from_slice(&[0x0d, 0x03, b'n', b'e', b'x']);
 
-    AsmEditSet::patch_tagged_integer_at(&mut bytes, 0, 4, 7).expect("width-4 enum patch");
+    AsmEditSet::patch_tagged_integer_at(
+        &mut bytes,
+        0,
+        cadmpeg_asm::kernel_header::RefWidth::Four,
+        7,
+    )
+    .expect("width-4 enum patch");
 
     assert_eq!(&bytes[1..5], &7i32.to_le_bytes());
     assert_eq!(&bytes[5..], &[0x0d, 0x03, b'n', b'e', b'x']);

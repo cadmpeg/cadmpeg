@@ -21,6 +21,7 @@ use crate::records::{
     AsmHistoricalEntityKind, DesignBodyBinding, DesignComponentNamingSpace,
     DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
 };
+use cadmpeg_asm::kernel_header::RefWidth;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const EPS_HISTORY_HEM_GAP_LENGTH_FORM_E7: f64 = 1.0e-7;
@@ -123,7 +124,7 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 pub(crate) fn decode(
     bytes: &[u8],
     stream: &str,
-    width: usize,
+    width: RefWidth,
     limits: &cadmpeg_core::decode::ResourceLimits,
 ) -> Option<AsmHistory> {
     let preamble_offset = bytes
@@ -444,7 +445,7 @@ fn history_topology_work_budget_exceeded(
 fn bind_complete_record_tables(
     states: &mut [AsmDeltaState],
     bytes: &[u8],
-    width: usize,
+    width: RefWidth,
     limits: &cadmpeg_core::decode::ResourceLimits,
 ) -> bool {
     let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
@@ -542,7 +543,7 @@ fn historical_record_archive(
     states: &[AsmDeltaState],
     active_records: &[cadmpeg_asm::sab::Record],
     bytes: &[u8],
-    width: usize,
+    width: RefWidth,
 ) -> Option<HistoricalRecordArchive> {
     if active_records
         .iter()
@@ -8863,7 +8864,7 @@ fn decode_bulletin_boards(
     stream: &str,
     state_offset: usize,
     state_id: &str,
-    width: usize,
+    width: RefWidth,
 ) -> Option<(Vec<AsmBulletinBoard>, usize)> {
     if bytes.get(position) == Some(&0x11) {
         return Some((Vec::new(), position));
@@ -8930,14 +8931,14 @@ fn decode_history_records(
     next_delta: Option<usize>,
     stream: &str,
     state_id: &str,
-    width: usize,
+    width: RefWidth,
 ) -> Vec<AsmHistoryRecord> {
     let mut start = state_end + usize::from(bytes.get(state_end) == Some(&0x11));
     if bytes.get(start) == Some(&0x04)
         && int_at(bytes, start + 1, width) == Some(0)
-        && bytes.get(start + 1 + width) == Some(&0x11)
+        && bytes.get(start + 1 + width.bytes()) == Some(&0x11)
     {
-        start += 2 + width;
+        start += 2 + width.bytes();
     }
     let limit = next_delta.map_or(bytes.len(), |offset| offset + 1);
     if start >= limit {
@@ -8992,7 +8993,7 @@ fn decode_history_records(
     }
 }
 
-fn decode_preamble(bytes: &[u8], mut position: usize, width: usize) -> Option<(i64, i64)> {
+fn decode_preamble(bytes: &[u8], mut position: usize, width: RefWidth) -> Option<(i64, i64)> {
     let size = take_int(bytes, &mut position, 0x04, width)?;
     let duplicate = take_int(bytes, &mut position, 0x04, width)?;
     let zero = take_int(bytes, &mut position, 0x04, width)?;
@@ -9002,12 +9003,12 @@ fn decode_preamble(bytes: &[u8], mut position: usize, width: usize) -> Option<(i
 
 /// Read a tagged little-endian signed integer of the stream's ref width (4 or
 /// 8 bytes) and advance past it.
-fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option<i64> {
+fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: RefWidth) -> Option<i64> {
     if bytes.get(*position) != Some(&tag) {
         return None;
     }
     let value = int_at(bytes, *position + 1, width)?;
-    *position += 1 + width;
+    *position += 1 + width.bytes();
     Some(value)
 }
 

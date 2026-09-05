@@ -6688,7 +6688,10 @@ mod revision_surface_tail_tests {
             .expect("tail discontinuities");
         bytes.push(native_bool(false));
 
-        let toks = cadmpeg_asm::nurbs::toks::lex_test_span(&bytes, 8);
+        let toks = cadmpeg_asm::nurbs::toks::lex_test_span(
+            &bytes,
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+        );
         let mut cur = cadmpeg_asm::nurbs::toks::Cur::at(&toks, 0);
         let tail = cadmpeg_asm::nurbs::proc_surface::revision_surface_tail(&mut cur)
             .expect("decoded parameterized tail");

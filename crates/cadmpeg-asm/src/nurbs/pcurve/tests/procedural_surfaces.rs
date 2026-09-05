@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::kernel_header::RefWidth;
 
 #[test]
 fn offset_surface_uses_direct_support_fields_then_cache() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["off_spl_sur", "offsur"] {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, name);
@@ -69,7 +70,7 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
 
 #[test]
 fn offset_surface_rejects_nested_cache_substitution() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "offsur");
         push_ident(&mut bytes, "plane");
@@ -101,7 +102,7 @@ fn offset_surface_rejects_nested_cache_substitution() {
 
 #[test]
 fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "defm_spl_sur");
         push_int(&mut bytes, 0x04, 22_506, int_width);
@@ -217,7 +218,7 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
         ("swept_tpr_spl_sur", 5),
         ("swepttapersur", 5),
     ];
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for (name, kind) in variants {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, name);
@@ -287,7 +288,7 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
 
 #[test]
 fn taper_surface_rejects_nested_cache_substitution() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "taper_spl_sur");
         push_ident(&mut bytes, "plane");
@@ -319,7 +320,7 @@ fn taper_surface_rejects_nested_cache_substitution() {
 
 #[test]
 fn compound_surface_uses_leading_cache_then_parameterized_components() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "comp_spl_sur");
         bytes.extend_from_slice(&surface_block_with_x_offset(int_width, 5.0));
@@ -374,7 +375,7 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
 
 #[test]
 fn compound_surface_rejects_nonleading_cache_and_trailing_fields() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for malformed in [0u8, 1] {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, "comp_spl_sur");
@@ -408,7 +409,7 @@ fn compound_surface_rejects_nonleading_cache_and_trailing_fields() {
 
 #[test]
 fn loft_surface_walks_bridge_to_direct_cache() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["loft_spl_sur", "loftsur"] {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, name);
@@ -463,7 +464,7 @@ fn loft_surface_walks_bridge_to_direct_cache() {
 
 #[test]
 fn loft_surface_rejects_nested_cache_substitution() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "loftsur");
         push_int(&mut bytes, 0x04, 0, int_width);
@@ -496,7 +497,7 @@ fn loft_surface_rejects_nested_cache_substitution() {
 
 #[test]
 fn exact_surface_uses_leading_cache_ranges_then_extension() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["exact_spl_sur", "exactsur"] {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, name);
@@ -534,7 +535,7 @@ fn exact_surface_uses_leading_cache_ranges_then_extension() {
 
 #[test]
 fn exact_surface_rejects_nonleading_cache_and_trailing_fields() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for malformed in [0u8, 1] {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, "exactsur");
@@ -571,7 +572,7 @@ fn exact_surface_rejects_nonleading_cache_and_trailing_fields() {
 
 #[test]
 fn ruled_surface_uses_two_direct_profiles_then_cache() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rule_sur");
         bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [1.0, 0.0, 0.0]));
@@ -601,7 +602,7 @@ fn ruled_surface_uses_two_direct_profiles_then_cache() {
 
 #[test]
 fn ruled_surface_rejects_nested_profile_substitution() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rule_sur");
         bytes.push(0x0f);
@@ -628,7 +629,7 @@ fn ruled_surface_rejects_nested_profile_substitution() {
 
 #[test]
 fn sum_surface_uses_two_direct_curves_origin_then_cache() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "sum_spl_sur");
         bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [1.0, 0.0, 0.0]));
@@ -672,7 +673,7 @@ fn sum_surface_uses_two_direct_curves_origin_then_cache() {
 
 #[test]
 fn sum_surface_rejects_nested_curve_substitution() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "sum_spl_sur");
         bytes.push(0x0f);
@@ -700,7 +701,7 @@ fn sum_surface_rejects_nested_curve_substitution() {
 
 #[test]
 fn revolution_surface_uses_direct_profile_axis_then_cache() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rot_spl_sur");
         bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [4.0, 0.0, 0.0]));
@@ -749,7 +750,7 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
 
 #[test]
 fn revolution_surface_rejects_nested_profile_substitution() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rot_spl_sur");
         bytes.push(0x0f);
@@ -777,7 +778,7 @@ fn revolution_surface_rejects_nested_profile_substitution() {
 
 #[test]
 fn revision_revolution_uses_the_shared_tails_solved_cache_domain() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rot_spl_sur");
         push_int(&mut bytes, 0x04, 23_100, int_width);
@@ -822,16 +823,16 @@ fn surface_cache_resolves_width4_subtype_ref() {
     // Active slice: one named subtype span holding the surface cache.
     let mut active = vec![0x0f, 0x0d, 0x07];
     active.extend_from_slice(b"spl_sur");
-    active.extend_from_slice(&surface_block(4));
+    active.extend_from_slice(&surface_block(RefWidth::Four));
     active.push(0x10);
     // Record: `ref 0` into the subtype table, 4-byte index payload.
     let mut record = vec![0x0f, 0x0d, 0x03];
     record.extend_from_slice(b"ref");
-    push_int(&mut record, 0x04, 0, 4);
+    push_int(&mut record, 0x04, 0, RefWidth::Four);
     record.push(0x10);
     let surface = crate::nurbs::core::surface_cache_resolving_refs(
-        &crate::nurbs::toks::lex_test_span(&record, 4),
-        &crate::nurbs::toks::test_table(&active, 4),
+        &crate::nurbs::toks::lex_test_span(&record, RefWidth::Four),
+        &crate::nurbs::toks::test_table(&active, RefWidth::Four),
     )
     .expect("resolved width-4 ref");
     assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
@@ -839,7 +840,7 @@ fn surface_cache_resolves_width4_subtype_ref() {
 
 #[test]
 fn surface_cache_resolves_compact_subtype_refs_at_both_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut active = vec![0x0f];
         push_ident(&mut active, "spl_sur");
         active.extend_from_slice(&surface_block(int_width));
@@ -858,7 +859,7 @@ fn surface_cache_resolves_compact_subtype_refs_at_both_widths() {
 
 #[test]
 fn spring_layout_walks_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f, 0x0d, 0x0e];
         bytes.extend_from_slice(b"spring_int_cur");
         for _ in 0..2 {
@@ -899,7 +900,7 @@ fn spring_layout_walks_both_integer_widths() {
 
 #[test]
 fn three_surface_layout_walks_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f, 0x0d, 0x0b];
         bytes.extend_from_slice(b"sss_int_cur");
         for _ in 0..2 {
@@ -937,7 +938,7 @@ fn three_surface_layout_walks_both_integer_widths() {
 #[test]
 fn surface_curve_layout_walks_each_family_at_both_widths() {
     use cadmpeg_ir::geometry::SurfaceCurveFamilyKind;
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for (name, family) in [
             ("blend_int_cur", SurfaceCurveFamilyKind::Blend),
             ("surf_int_cur", SurfaceCurveFamilyKind::SurfaceConstrained),
@@ -974,7 +975,7 @@ fn surface_curve_layout_walks_each_family_at_both_widths() {
 
 #[test]
 fn intersection_layout_walks_modern_and_legacy_names_at_both_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["int_int_cur", "surf_surf_int_cur", "surfintcur"] {
             let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
             bytes.extend_from_slice(name.as_bytes());
@@ -1009,7 +1010,7 @@ fn intersection_layout_walks_modern_and_legacy_names_at_both_widths() {
 
 #[test]
 fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "intersection_support");
         support.extend_from_slice(&surface_block(int_width));
@@ -1073,7 +1074,7 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
 
 #[test]
 fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_forms() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "helix_spl_line");
         push_int(&mut support, 0x04, 23_100, int_width);
@@ -1148,7 +1149,7 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
 
 #[test]
 fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "blend_support");
         support.extend_from_slice(&surface_block(int_width));
@@ -1211,7 +1212,7 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
     // surface slot 1 and pcurve slot 1 are null, while slot 2 carries the
     // parametric support surface and its bs2 pcurve. `par_int_cur`
     // terminates on two booleans, so `flag2` is read after `flag1`.
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "par_support");
         support.extend_from_slice(&surface_block(int_width));
@@ -1273,7 +1274,7 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
 
 #[test]
 fn projection_layout_walks_both_tail_forms_at_both_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for early_close in [false, true] {
             let mut bytes = vec![0x0f, 0x0d, 0x0c];
             bytes.extend_from_slice(b"proj_int_cur");
@@ -1327,7 +1328,7 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
 #[test]
 fn silhouette_layout_walks_each_family_at_both_widths() {
     use cadmpeg_ir::geometry::SilhouetteKind;
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for (name, kind) in [
             ("silh_int_cur", SilhouetteKind::Standard),
             ("para_silh_int_cur", SilhouetteKind::Parametric),
@@ -1375,7 +1376,7 @@ fn silhouette_layout_walks_each_family_at_both_widths() {
 
 #[test]
 fn surface_offset_layout_walks_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let name = "off_surf_int_cur";
         let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
         bytes.extend_from_slice(name.as_bytes());

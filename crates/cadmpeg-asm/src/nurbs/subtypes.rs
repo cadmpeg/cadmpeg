@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Subtype reference tables, intcurve subtype classification, and token walkers.
 
+use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::INT_WIDTHS;
 use crate::sab::{int_le_at, Record};
 use cadmpeg_core::decode::View;
@@ -9,7 +10,7 @@ use cadmpeg_core::decode::View;
 /// `0x0f` openings at the outermost nesting level, in stream order, `ref`
 /// included. A definition inside a nested scope belongs to that scope's
 /// construction, not to `bytes`.
-pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: usize) -> Vec<(usize, &[u8])> {
+pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Vec<(usize, &[u8])> {
     let mut owned = Vec::new();
     let mut depth = 0usize;
     let mut pos = 0usize;
@@ -47,7 +48,7 @@ pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: usize) -> Vec<(usize, 
 pub(crate) fn find_owned_subtype_marker<'n>(
     bytes: &[u8],
     names: &[&'n [u8]],
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<(usize, &'n [u8])> {
     let owned = owned_subtype_defs(bytes, int_width);
     names.iter().copied().find_map(|name| {
@@ -64,7 +65,7 @@ pub(crate) fn find_owned_subtype_marker<'n>(
 pub(crate) fn find_owned_intcurve_subtype(
     bytes: &[u8],
     modern: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<(usize, usize)> {
     let legacy: &[u8] = match modern {
         b"blend_int_cur" => b"bldcur",
@@ -96,8 +97,8 @@ pub(crate) fn decode_cache_resolving_refs<T>(
     active_bytes: &[u8],
     tables: &SubtypeTables,
     seen: &mut Vec<usize>,
-    decode_inline: fn(&[u8], usize) -> Option<T>,
-    int_width: usize,
+    decode_inline: fn(&[u8], RefWidth) -> Option<T>,
+    int_width: RefWidth,
 ) -> Option<T> {
     if let Some(decoded) = decode_inline(bytes, int_width) {
         return Some(decoded);
@@ -166,18 +167,17 @@ impl SubtypeTables {
         }
     }
 
-    /// The table built for `int_width`, or an empty slice for a width outside
-    /// the candidate set.
-    pub fn for_width(&self, int_width: usize) -> &[usize] {
-        INT_WIDTHS
-            .iter()
-            .position(|&width| width == int_width)
-            .map_or(&[], |slot| self.tables[slot].as_slice())
+    /// The table built for the specified stream width.
+    pub fn for_width(&self, int_width: RefWidth) -> &[usize] {
+        match int_width {
+            RefWidth::Eight => &self.tables[0],
+            RefWidth::Four => &self.tables[1],
+        }
     }
 
     /// Return the table index assigned to an absolute subtype-definition offset,
     /// for tests.
-    pub fn index_of_offset(&self, int_width: usize, offset: usize) -> Option<usize> {
+    pub fn index_of_offset(&self, int_width: RefWidth, offset: usize) -> Option<usize> {
         self.for_width(int_width)
             .iter()
             .position(|candidate| *candidate == offset)
@@ -190,7 +190,7 @@ fn collect_defs_in_span(
     bytes: &[u8],
     start: usize,
     end: usize,
-    int_width: usize,
+    int_width: RefWidth,
     table: &mut Vec<usize>,
 ) {
     let end = end.min(bytes.len());
@@ -213,7 +213,7 @@ fn collect_defs_in_span(
 
 /// Subtype-table reference indices in `bytes`, in token order. References are
 /// recognized only at token boundaries, mirroring [`SubtypeTables`].
-pub(crate) fn subtype_refs(bytes: &[u8], int_width: usize) -> Vec<usize> {
+pub(crate) fn subtype_refs(bytes: &[u8], int_width: RefWidth) -> Vec<usize> {
     let mut refs = Vec::new();
     let marker = b"\x0f\x0d\x03ref\x04";
     let mut pos = 0usize;
@@ -226,7 +226,7 @@ pub(crate) fn subtype_refs(bytes: &[u8], int_width: usize) -> Vec<usize> {
             }
         } else if bytes.get(pos) == Some(&0x0f)
             && bytes.get(pos + 1) == Some(&0x04)
-            && bytes.get(pos + 2 + int_width) == Some(&0x10)
+            && bytes.get(pos + 2 + int_width.bytes()) == Some(&0x10)
         {
             if let Some(index) = int_le_at(bytes, pos + 2, int_width) {
                 if index >= 0 {
@@ -245,7 +245,7 @@ pub(crate) fn subtype_refs(bytes: &[u8], int_width: usize) -> Vec<usize> {
 /// The byte span of the subtype definition that opens at `start`: from its
 /// `0x0f` opening through the matching `0x10` close, nested definitions
 /// included.
-pub fn subtype_span(bytes: &[u8], start: usize, int_width: usize) -> Option<&[u8]> {
+pub fn subtype_span(bytes: &[u8], start: usize, int_width: RefWidth) -> Option<&[u8]> {
     let mut depth = 0usize;
     let mut pos = start;
     while pos < bytes.len() {
@@ -268,12 +268,12 @@ pub fn subtype_span(bytes: &[u8], start: usize, int_width: usize) -> Option<&[u8
 /// unrecognized or its payload runs past the end. `0x04`, `0x0c` and `0x15`
 /// carry an `int_width` payload; `0x09` and `0x12` carry an `int_width` string
 /// length prefix, unlike the one- and two-byte prefixes of `0x07` and `0x08`.
-pub(crate) fn next_token(bytes: &[u8], pos: usize, int_width: usize) -> Option<usize> {
+pub(crate) fn next_token(bytes: &[u8], pos: usize, int_width: RefWidth) -> Option<usize> {
     let tag = *bytes.get(pos)?;
     let fixed = match tag {
         0x02 => 2,
         0x03 => 3,
-        0x04 | 0x0c | 0x15 => 1 + int_width,
+        0x04 | 0x0c | 0x15 => 1 + int_width.bytes(),
         0x06 | 0x17 => 9,
         0x05 => 5,
         0x0a | 0x0b | 0x0f | 0x10 | 0x11 => 1,
@@ -283,7 +283,7 @@ pub(crate) fn next_token(bytes: &[u8], pos: usize, int_width: usize) -> Option<u
         0x08 => 3 + usize::from(View::u16_le_at(bytes, pos + 1)?),
         0x09 | 0x12 => {
             let length = int_le_at(bytes, pos + 1, int_width)?;
-            1 + int_width + usize::try_from(length).ok()?
+            1 + int_width.bytes() + usize::try_from(length).ok()?
         }
         _ => return None,
     };
@@ -308,11 +308,11 @@ mod ownership_tests {
     /// intersection belongs to the construction the record embeds.
     #[test]
     fn a_nested_intcurve_construction_does_not_own_the_record() {
-        for int_width in [4usize, 8] {
+        for int_width in [RefWidth::Four, RefWidth::Eight] {
             let mut bytes = Vec::new();
             open(&mut bytes, b"defm_int_cur");
             bytes.push(0x04);
-            bytes.extend_from_slice(&vec![0u8; int_width]);
+            bytes.extend_from_slice(&vec![0u8; int_width.bytes()]);
             open(&mut bytes, b"int_int_cur");
             bytes.push(0x10);
             bytes.push(0x10);

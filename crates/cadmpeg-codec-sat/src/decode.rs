@@ -40,7 +40,7 @@ pub(crate) fn decode_asm_binary(
     if let Some(count) = header.entity_count {
         ctx.charge_entities(count, "admit SAT header entities")?;
     }
-    let width = usize::from(header.width);
+    let width = header.width;
     let start = asm_header::record_stream_start_with_header(bytes, &header).ok_or_else(|| {
         unsupported_unframed(
             &StreamEvidence::Binary {
@@ -98,8 +98,18 @@ pub(crate) fn decode_acis_binary(
         )
     })?;
     let framed = match acis_header::solved_record_limit_with_header(bytes, &header) {
-        Some(limit) => sab::frame(bytes, start, limit, 4),
-        None => sab::frame_history(bytes, start, bytes.len(), 4),
+        Some(limit) => sab::frame(
+            bytes,
+            start,
+            limit,
+            cadmpeg_asm::kernel_header::RefWidth::Four,
+        ),
+        None => sab::frame_history(
+            bytes,
+            start,
+            bytes.len(),
+            cadmpeg_asm::kernel_header::RefWidth::Four,
+        ),
     };
     let records = framed
         .map_err(|error| CodecError::malformed(format_args!("ACIS SAB framing failed: {error}")))?;

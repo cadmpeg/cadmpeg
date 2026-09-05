@@ -21,7 +21,7 @@
 //! In both widths, three `0x06`-tagged little-endian f64s (`scale`, `resabs`,
 //! `resnor`) follow the strings, then the SAB record stream.
 
-use crate::kernel_header::{read_string_region, KernelHeader};
+use crate::kernel_header::{read_string_region, KernelHeader, RefWidth};
 use crate::layout::asmheader_binaryfile4 as bf4;
 use crate::layout::asmheader_binaryfile8 as bf8;
 use cadmpeg_core::decode::View;
@@ -33,34 +33,32 @@ const MAGIC_PREFIX: &[u8] = b"ASM BinaryFile";
 /// 15-byte prefix `ASM BinaryFile4` or `ASM BinaryFile8`. Byte 15 is the
 /// save-format version's low byte in both widths, not part of the magic.
 pub fn has_asm_magic(bytes: &[u8]) -> bool {
-    bytes.len() >= 16 && bytes.starts_with(MAGIC_PREFIX) && matches!(bytes[14], b'4' | b'8')
+    declared_width(bytes).is_some()
+}
+
+fn declared_width(bytes: &[u8]) -> Option<RefWidth> {
+    if bytes.len() < 16 || !bytes.starts_with(MAGIC_PREFIX) {
+        return None;
+    }
+    match bytes[14] {
+        b'4' => Some(RefWidth::Four),
+        b'8' => Some(RefWidth::Eight),
+        _ => None,
+    }
 }
 
 /// The integer and reference width `bytes` declares, in bytes. A slice without
 /// a readable header is read at the `BinaryFile8` width, which is the width of
 /// every construction the decoder synthesizes.
-pub fn stream_ref_width(bytes: &[u8]) -> usize {
-    parse(bytes).map_or(8, |header| usize::from(header.width))
-}
-
-/// Byte offset of the string region for the stream's declared width, or `None`
-/// when the width is unrecognized.
-fn string_region_start(bytes: &[u8]) -> Option<usize> {
-    match bytes[14] {
-        b'8' => Some(bf8::LEN),
-        b'4' => Some(bf4::LEN),
-        _ => None,
-    }
+pub fn stream_ref_width(bytes: &[u8]) -> RefWidth {
+    declared_width(bytes).unwrap_or(RefWidth::Eight)
 }
 
 /// Parse the header of a decompressed ASM stream. Returns `None` if the magic
 /// is absent. Fields that cannot be read (short stream or unexpected tags) are
 /// left `None` rather than guessed.
 pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
-    if !has_asm_magic(bytes) {
-        return None;
-    }
-    let width = bytes[14] - b'0';
+    let width = declared_width(bytes)?;
     let mut header = KernelHeader {
         width,
         save_format_version: None,
@@ -76,25 +74,25 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
     };
 
     match width {
-        8 => {
+        RefWidth::Eight => {
             header.save_format_version = View::u32_le_at(bytes, bf8::SAVE_FORMAT_VERSION);
             header.entity_count = View::u64_le_at(bytes, bf8::ENTITY_COUNT);
             header.flags = View::u64_le_at(bytes, bf8::FLAGS);
         }
-        4 => {
+        RefWidth::Four => {
             header.save_format_version = View::u32_le_at(bytes, bf4::SAVE_FORMAT_VERSION);
             header.record_count = View::u32_le_at(bytes, bf4::RECORD_COUNT);
             header.entity_count = View::u32_le_at(bytes, bf4::ENTITY_COUNT).map(u64::from);
             header.flags = View::u32_le_at(bytes, bf4::FLAGS).map(u64::from);
         }
-        _ => return Some(header),
     }
 
     // The three product strings and three tolerance doubles follow the fixed
     // word block. Parse them by tag rather than fixed offset so differing
     // string lengths do not desync the doubles.
-    let Some(start) = string_region_start(bytes) else {
-        return Some(header);
+    let start = match width {
+        RefWidth::Four => bf4::LEN,
+        RefWidth::Eight => bf8::LEN,
     };
     let (strings, doubles, _) = read_string_region(bytes, start);
 
@@ -124,9 +122,8 @@ pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
 /// ASM header.
 pub fn record_stream_start_with_header(bytes: &[u8], header: &KernelHeader) -> Option<usize> {
     let start = match header.width {
-        8 => bf8::LEN,
-        4 => bf4::LEN,
-        _ => return None,
+        RefWidth::Eight => bf8::LEN,
+        RefWidth::Four => bf4::LEN,
     };
     let (strings, doubles, cur) = read_string_region(bytes, start);
     (strings.len() == 3 && doubles.len() == 3).then_some(cur)
@@ -155,7 +152,7 @@ pub fn solved_record_limit_with_header(bytes: &[u8], header: &KernelHeader) -> O
         return None;
     }
     let start = record_stream_start_with_header(bytes, header)?;
-    let records = crate::sab::frame(bytes, start, bytes.len(), usize::from(header.width)).ok()?;
+    let records = crate::sab::frame(bytes, start, bytes.len(), header.width).ok()?;
     if let Some(preamble) = records
         .iter()
         .find(|record| record.name == HISTORY_PREAMBLE_RECORD)

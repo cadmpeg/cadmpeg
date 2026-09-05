@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::kernel_header::RefWidth;
 
 #[test]
 fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
 
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for (name, kind) in [
             (
                 "blend_support_cos_curve",
@@ -52,7 +53,7 @@ fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {
 
 #[test]
 fn fixed_arity_law_operators_decode_at_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = Vec::new();
         push_string(&mut bytes, "SET");
         push_f64(&mut bytes, -2.0);
@@ -95,7 +96,7 @@ fn fixed_arity_law_operators_decode_at_both_integer_widths() {
 
 #[test]
 fn law_surface_layout_decodes_at_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "law_spl_sur");
         push_string(&mut bytes, "primary-law");
@@ -141,7 +142,7 @@ fn law_surface_layout_decodes_at_both_integer_widths() {
 
 #[test]
 fn legacy_law_surface_uses_implicit_full_tail_at_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "lawsur");
         for value in [-1.0, 2.0, -3.0, 4.0] {
@@ -175,7 +176,7 @@ fn legacy_law_surface_uses_implicit_full_tail_at_both_integer_widths() {
 
 #[test]
 fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for selector in 1..=4 {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, "law_spl_sur");
@@ -231,7 +232,7 @@ fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
 
 #[test]
 fn sub_surface_layout_decodes_at_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["sub_spl_sur", "subsur"] {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, name);
@@ -268,7 +269,7 @@ fn sub_surface_layout_decodes_at_both_integer_widths() {
 
 #[test]
 fn rolling_ball_layout_walks_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rb_blend_spl_sur");
         push_int(&mut bytes, 0x04, 22507, int_width);
@@ -310,7 +311,7 @@ fn rolling_ball_layout_walks_both_integer_widths() {
 
 #[test]
 fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut straight = Vec::new();
         push_ident(&mut straight, "straight");
         push_position(&mut straight, [1.0, 2.0, 3.0]);
@@ -386,7 +387,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
 
 #[test]
 fn rolling_ball_surfaces_decode_framed_spline_supports() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = Vec::new();
         push_ident(&mut bytes, "spline");
         bytes.push(0x0b);

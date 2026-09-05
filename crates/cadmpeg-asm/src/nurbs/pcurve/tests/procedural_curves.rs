@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::kernel_header::RefWidth;
 
 #[test]
 fn extrusion_layout_walks_modern_and_legacy_names_at_both_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["cyl_spl_sur", "cylsur"] {
             let mut bytes = Vec::new();
             push_f64(&mut bytes, 99.0);
@@ -48,7 +49,7 @@ fn extrusion_layout_walks_modern_and_legacy_names_at_both_widths() {
 
 #[test]
 fn extrusion_definition_decodes_without_a_solved_surface_cache() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "cyl_spl_sur");
         push_f64(&mut bytes, -2.0);
@@ -78,7 +79,7 @@ fn extrusion_definition_decodes_without_a_solved_surface_cache() {
 
 #[test]
 fn helix_layout_walks_optional_range_flags_at_both_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = Vec::new();
         push_f64(&mut bytes, 99.0);
         push_position(&mut bytes, [90.0, 91.0, 92.0]);
@@ -139,8 +140,9 @@ fn decodes_current_cacheless_helix_record() {
         .map(|digits| u8::from_str_radix(std::str::from_utf8(digits).unwrap(), 16).unwrap())
         .collect::<Vec<_>>();
 
-    let definition = crate::nurbs::proc_curve::helix_definition(&lex_test_span(&bytes, 4))
-        .expect("current cache-less helix definition");
+    let definition =
+        crate::nurbs::proc_curve::helix_definition(&lex_test_span(&bytes, RefWidth::Four))
+            .expect("current cache-less helix definition");
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
         angle_range,
         pitch,
@@ -159,7 +161,7 @@ fn decodes_current_cacheless_helix_record() {
 
 #[test]
 fn decodes_current_cacheless_helix_surface_at_both_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "helix_spl_line");
         push_int(&mut bytes, 0x04, 23_100, int_width);
@@ -196,7 +198,7 @@ fn decodes_current_cacheless_helix_surface_at_both_widths() {
 
 #[test]
 fn vector_offset_layout_ignores_outer_vectors_at_both_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = Vec::new();
         push_f64(&mut bytes, 99.0);
         push_vector(&mut bytes, [90.0, 91.0, 92.0]);
@@ -229,7 +231,7 @@ fn vector_offset_layout_ignores_outer_vectors_at_both_widths() {
 
 #[test]
 fn subset_layout_ignores_outer_curve_cache_at_both_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = curve_block(int_width);
         push_f64(&mut bytes, 99.0);
         bytes.push(0x0f);
@@ -251,7 +253,7 @@ fn subset_layout_ignores_outer_curve_cache_at_both_widths() {
 
 #[test]
 fn compound_layout_requires_framed_subtype_at_both_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = Vec::new();
         push_string(&mut bytes, "comp_int_cur");
         push_int(&mut bytes, 0x04, 1, int_width);

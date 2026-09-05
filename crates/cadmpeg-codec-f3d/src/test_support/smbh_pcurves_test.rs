@@ -56,7 +56,13 @@ pub(crate) fn synthetic_inline_pcurve_with_referenced_support_smbh() -> Vec<u8> 
     let mut bytes = synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let asmheader_end = records[0].offset + records[0].len - 1;
 
     let mut target = vec![0x0f];
@@ -95,7 +101,13 @@ pub(crate) fn replace_generated_face_with_nurbs_surface(mut bytes: Vec<u8>) -> V
     }
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[6];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -162,7 +174,13 @@ pub(crate) fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let coedge = &records[7];
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
     let pcurve_ref_tag = record.iter().rposition(|b| *b == 0x0c).unwrap();
@@ -209,7 +227,13 @@ pub(crate) fn synthetic_geometry_with_ref_pcurve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let coedge = &records[7];
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
     let pcurve_ref_tag = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
@@ -245,13 +269,24 @@ pub(crate) fn synthetic_geometry_with_ref_pcurve_smbh() -> Vec<u8> {
 pub(crate) fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let pcurve = records
         .iter()
         .find(|record| record.head == "pcurve")
         .expect("generated pcurve record");
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, pcurve, 8, 0x04)
-        .expect("generated pcurve integer offsets");
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+        &bytes,
+        pcurve,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x04,
+    )
+    .expect("generated pcurve integer offsets");
     bytes[offsets[1] + 1..offsets[1] + 9].copy_from_slice(&discriminator.to_le_bytes());
     bytes
 }
@@ -259,13 +294,24 @@ pub(crate) fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) 
 pub(crate) fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let pcurve = records
         .iter()
         .find(|record| record.head == "pcurve")
         .expect("generated pcurve record");
-    let integers = cadmpeg_asm::sab::payload_token_offsets(&bytes, pcurve, 8, 0x04)
-        .expect("generated pcurve integer offsets");
+    let integers = cadmpeg_asm::sab::payload_token_offsets(
+        &bytes,
+        pcurve,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x04,
+    )
+    .expect("generated pcurve integer offsets");
     let wrapper = integers[1] + 9;
     assert_eq!(bytes[wrapper], 0x0b, "generated inline wrapper boolean");
     bytes.splice(wrapper..=wrapper, [0x02, 0x00]);
@@ -275,7 +321,13 @@ pub(crate) fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<
 pub(crate) fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8]) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let pcurve = records
         .iter()
         .find(|record| record.head == "pcurve")
@@ -294,7 +346,13 @@ pub(crate) fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8])
 pub(crate) fn with_ref_pcurve_companion_reversed(mut bytes: Vec<u8>) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let pcurve = records
         .iter()
         .find(|record| record.head == "pcurve")

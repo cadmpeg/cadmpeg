@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Byte-level readers, markers, and integer/float payload primitives shared across the NURBS decoders.
 
+use crate::kernel_header::RefWidth;
 use crate::sab::{int_le_at, vec3_le_at};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -23,16 +24,21 @@ const NURBS_MARKER: &[u8] = b"\x0d\x05nurbs";
 /// swallows the next tag byte into the value and fails the range check, while
 /// a 4-byte read on an 8-byte stream leaves a zero byte where the next tag
 /// must be and fails tag dispatch.
-pub(crate) const INT_WIDTHS: [usize; 2] = [8, 4];
+pub(crate) const INT_WIDTHS: [RefWidth; 2] = [RefWidth::Eight, RefWidth::Four];
 
 /// Consume a `tag`-prefixed integer of `int_width` bytes at `*pos`, advancing
 /// past it.
-pub(crate) fn take_tagged_int(b: &[u8], pos: &mut usize, tag: u8, int_width: usize) -> Option<i64> {
+pub(crate) fn take_tagged_int(
+    b: &[u8],
+    pos: &mut usize,
+    tag: u8,
+    int_width: RefWidth,
+) -> Option<i64> {
     if *b.get(*pos)? != tag {
         return None;
     }
     let v = int_le_at(b, *pos + 1, int_width)?;
-    *pos += 1 + int_width;
+    *pos += 1 + int_width.bytes();
     Some(v)
 }
 
@@ -69,7 +75,7 @@ pub(crate) fn marker_positions(b: &[u8]) -> Vec<usize> {
 /// A scope's members and the members of the constructions it nests are
 /// indistinguishable to a raw byte scan, so a scan that ignores nesting reports
 /// a nested support's cache as the scope's own.
-pub(crate) fn owned_marker_positions(b: &[u8], int_width: usize) -> Vec<usize> {
+pub(crate) fn owned_marker_positions(b: &[u8], int_width: RefWidth) -> Vec<usize> {
     let mut out = Vec::new();
     let mut depth = 0usize;
     let mut pos = usize::from(b.first() == Some(&0x0f));
@@ -98,7 +104,7 @@ pub(crate) fn owned_marker_positions(b: &[u8], int_width: usize) -> Vec<usize> {
 /// construction. Enter every non-reference outer scope and admit its markers
 /// only when exactly one such scope owns markers. Multiple cache-bearing outer
 /// scopes are ambiguous and therefore not writable.
-pub(crate) fn construction_marker_positions(b: &[u8], int_width: usize) -> Vec<usize> {
+pub(crate) fn construction_marker_positions(b: &[u8], int_width: RefWidth) -> Vec<usize> {
     let candidates = crate::nurbs::subtypes::owned_subtype_defs(b, int_width)
         .into_iter()
         .filter(|(_, name)| *name != b"ref")
@@ -180,7 +186,7 @@ pub(crate) fn read_knots(
     pos: &mut usize,
     n: usize,
     degree: i64,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<(Vec<f64>, usize, KnotLayout)> {
     let mut knots = Vec::new();
     let mut mults = Vec::new();
@@ -278,11 +284,11 @@ pub(crate) fn take_double_payload(bytes: &[u8], position: &mut usize) -> Option<
 pub(crate) fn take_float_array_payloads(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<Vec<usize>> {
     (*bytes.get(*position)? == 0x04).then_some(())?;
     let count = usize::try_from(int_le_at(bytes, *position + 1, int_width)?).ok()?;
-    *position += 1 + int_width;
+    *position += 1 + int_width.bytes();
     (0..count)
         .map(|_| take_double_payload(bytes, position))
         .collect()
@@ -326,7 +332,7 @@ pub(crate) fn take_native_ident(bytes: &[u8], position: &mut usize) -> Option<St
 pub(crate) fn take_native_string(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<String> {
     let (length, header) = match *bytes.get(*position)? {
         0x07 => (usize::from(*bytes.get(*position + 1)?), 2),
@@ -335,7 +341,7 @@ pub(crate) fn take_native_string(
         // four bytes ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#21-tag-table)).
         0x09 => (
             usize::try_from(int_le_at(bytes, *position + 1, int_width)?).ok()?,
-            1 + int_width,
+            1 + int_width.bytes(),
         ),
         _ => return None,
     };
@@ -388,12 +394,13 @@ pub(crate) fn take_native_vec3(bytes: &[u8], position: &mut usize, tag: u8) -> O
 #[cfg(test)]
 mod string_width_tests {
     use super::take_native_string;
+    use crate::kernel_header::RefWidth;
 
     /// A `0x09` string whose length prefix is the stream integer width.
-    fn long_string_bytes(payload: &str, int_width: usize) -> Vec<u8> {
+    fn long_string_bytes(payload: &str, int_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x09];
         let mut length = (payload.len() as u64).to_le_bytes().to_vec();
-        length.truncate(int_width);
+        length.truncate(int_width.bytes());
         bytes.extend_from_slice(&length);
         bytes.extend_from_slice(payload.as_bytes());
         bytes
@@ -401,7 +408,7 @@ mod string_width_tests {
 
     #[test]
     fn long_string_length_prefix_is_the_stream_int_width() {
-        for int_width in [4usize, 8] {
+        for int_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = long_string_bytes("#TS0200\ndegree 3", int_width);
             let mut position = 0;
             let value = take_native_string(&bytes, &mut position, int_width)
@@ -416,9 +423,9 @@ mod string_width_tests {
         // A width-8 stream read at width 4 starts four bytes early; the
         // leading NUL bytes make the mismatch visible instead of parsing as
         // the intended payload.
-        let bytes = long_string_bytes("#TS0200\ndegree 3", 8);
+        let bytes = long_string_bytes("#TS0200\ndegree 3", RefWidth::Eight);
         let mut position = 0;
-        let value = take_native_string(&bytes, &mut position, 4);
+        let value = take_native_string(&bytes, &mut position, RefWidth::Four);
         assert_ne!(value.as_deref(), Some("#TS0200\ndegree 3"));
     }
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Apply fixed-width edits to a framed ASM SAB stream.
 
+use crate::kernel_header::RefWidth;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -8,7 +9,6 @@ use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::transform::Transform;
 
 use crate::asm_header;
-use crate::asm_header::stream_ref_width;
 use crate::nurbs::reader::KnotLayout;
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{self, Record};
@@ -20,7 +20,7 @@ use crate::sab::{self, Record};
 /// to the typed field writers.
 pub struct AsmEditSet {
     records: Vec<Record>,
-    ref_width: usize,
+    ref_width: RefWidth,
     header_scale: f64,
 }
 
@@ -71,16 +71,17 @@ impl AsmEditSet {
 
     /// Frame the solved record partition without changing the input bytes.
     pub fn frame(bytes: &[u8]) -> Result<Self, CodecError> {
-        let start = asm_header::record_stream_start(bytes)
+        let header = asm_header::parse(bytes)
             .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-        let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-        let ref_width = asm_header::stream_ref_width(bytes);
+        let start = asm_header::record_stream_start_with_header(bytes, &header)
+            .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
+        let limit =
+            asm_header::solved_record_limit_with_header(bytes, &header).unwrap_or(bytes.len());
+        let ref_width = header.width;
         let records = sab::frame(bytes, start, limit, ref_width).map_err(|error| {
             CodecError::malformed(format_args!("cannot frame active BREP: {error}"))
         })?;
-        let header_scale = asm_header::parse(bytes)
-            .and_then(|header| header.scale)
-            .unwrap_or(1.0);
+        let header_scale = header.scale.unwrap_or(1.0);
         Ok(Self {
             records,
             ref_width,
@@ -89,21 +90,12 @@ impl AsmEditSet {
     }
 
     /// Build a context from an already framed record partition.
-    pub fn from_framed(
-        records: Vec<Record>,
-        ref_width: usize,
-        header_scale: f64,
-    ) -> Result<Self, CodecError> {
-        if !matches!(ref_width, 4 | 8) {
-            return Err(CodecError::malformed(format_args!(
-                "ASM stream has unsupported integer width {ref_width}"
-            )));
-        }
-        Ok(Self {
+    pub fn from_framed(records: Vec<Record>, ref_width: RefWidth, header_scale: f64) -> Self {
+        Self {
             records,
             ref_width,
             header_scale,
-        })
+        }
     }
 
     /// The framed solved records in record-table order.
@@ -117,7 +109,7 @@ impl AsmEditSet {
     }
 
     /// Integer and reference payload width for this SAB stream.
-    pub const fn ref_width(&self) -> usize {
+    pub const fn ref_width(&self) -> RefWidth {
         self.ref_width
     }
 
@@ -141,7 +133,7 @@ impl AsmEditSet {
     pub fn required_payload_field_at(
         bytes: &[u8],
         record: &Record,
-        ref_width: usize,
+        ref_width: RefWidth,
         index: usize,
         tag: u8,
     ) -> Result<usize, CodecError> {
@@ -277,14 +269,14 @@ impl AsmEditSet {
                     record.head, record.index
                 ))
             })?;
-        match bytes.get(offset).copied() {
-            Some(0x17) => {
+        match (bytes.get(offset).copied(), self.ref_width) {
+            (Some(0x17), _) => {
                 bytes[offset + 1..offset + 9].copy_from_slice(&i64::from(packed).to_le_bytes());
             }
-            Some(0x04) if self.ref_width == 4 => {
+            (Some(0x04), RefWidth::Four) => {
                 bytes[offset + 1..offset + 5].copy_from_slice(&packed.to_le_bytes());
             }
-            Some(0x04) if self.ref_width == 8 => {
+            (Some(0x04), RefWidth::Eight) => {
                 bytes[offset + 1..offset + 9].copy_from_slice(&i64::from(packed).to_le_bytes());
             }
             _ => {
@@ -321,7 +313,7 @@ impl AsmEditSet {
         let length_width = match bytes.get(offset).copied() {
             Some(0x07) => 1,
             Some(0x08) => 2,
-            Some(0x09 | 0x12) => self.ref_width,
+            Some(0x09 | 0x12) => self.ref_width.bytes(),
             _ => {
                 return Err(CodecError::malformed(format_args!(
                     "{} record {} decimal-color field {field} has an invalid text tag",
@@ -353,26 +345,21 @@ impl AsmEditSet {
     pub fn patch_layout_integer(
         bytes: &mut [u8],
         offset: usize,
-        width: usize,
+        width: RefWidth,
         value: i64,
     ) -> Result<(), CodecError> {
-        if !matches!(width, 4 | 8) {
-            return Err(CodecError::malformed(format_args!(
-                "ASM integer payload has unsupported width {width}"
-            )));
-        }
-        if width == 4 && i64::from(value as i32) != value {
+        if width == RefWidth::Four && i64::from(value as i32) != value {
             return Err(CodecError::NotImplemented(
                 "F3D NURBS integer edit exceeds BinaryFile4 range".into(),
             ));
         }
         let end = offset
-            .checked_add(width)
+            .checked_add(width.bytes())
             .ok_or_else(|| CodecError::Malformed("ASM integer payload offset overflows".into()))?;
         let target = bytes.get_mut(offset..end).ok_or_else(|| {
             CodecError::Malformed("F3D NURBS integer payload is truncated".into())
         })?;
-        target.copy_from_slice(&value.to_le_bytes()[..width]);
+        target.copy_from_slice(&value.to_le_bytes()[..width.bytes()]);
         Ok(())
     }
 
@@ -380,7 +367,7 @@ impl AsmEditSet {
     pub fn patch_tagged_integer_at(
         bytes: &mut [u8],
         tag_offset: usize,
-        width: usize,
+        width: RefWidth,
         value: i64,
     ) -> Result<(), CodecError> {
         if !matches!(bytes.get(tag_offset), Some(0x04 | 0x0c | 0x15)) {
@@ -479,7 +466,7 @@ impl AsmEditSet {
         record_offset: usize,
         layout: &KnotLayout,
         knots: &[f64],
-        int_width: usize,
+        int_width: RefWidth,
     ) -> Result<(), CodecError> {
         let mut runs: Vec<(f64, usize)> = Vec::new();
         for knot in knots {
@@ -545,43 +532,47 @@ impl AsmEditSet {
         record: &Record,
         definition: &ProceduralCurveDefinition,
     ) -> Result<(), CodecError> {
-        debug_assert_eq!(self.ref_width, stream_ref_width(bytes));
         match definition {
             ProceduralCurveDefinition::Helix { .. } => {
-                patch_helix_definition(bytes, record, definition)
+                patch_helix_definition(bytes, self.ref_width, record, definition)
             }
             ProceduralCurveDefinition::VectorOffset { .. } => {
-                patch_vector_offset_definition(bytes, record, definition)
+                patch_vector_offset_definition(bytes, self.ref_width, record, definition)
             }
             ProceduralCurveDefinition::Subset { .. } => {
-                patch_subset_definition(bytes, record, definition)
+                patch_subset_definition(bytes, self.ref_width, record, definition)
             }
             ProceduralCurveDefinition::Compound { .. } => {
-                patch_compound_definition(bytes, record, definition)
+                patch_compound_definition(bytes, self.ref_width, record, definition)
             }
             ProceduralCurveDefinition::TwoSidedOffset { .. } => {
                 patch_two_sided_offset_definition(bytes, record, definition)
             }
             ProceduralCurveDefinition::SurfaceOffset { .. } => {
-                patch_surface_offset_definition(bytes, record, definition)
+                patch_surface_offset_definition(bytes, self.ref_width, record, definition)
             }
             ProceduralCurveDefinition::Spring { .. } => {
-                patch_spring_definition(bytes, record, definition)
+                patch_spring_definition(bytes, self.ref_width, record, definition)
             }
             ProceduralCurveDefinition::Projection { .. } => {
-                patch_projection_definition(bytes, record, definition)
+                patch_projection_definition(bytes, self.ref_width, record, definition)
             }
             ProceduralCurveDefinition::Intersection { .. } => {
-                patch_intersection_definition(bytes, record, definition)
+                patch_intersection_definition(bytes, self.ref_width, record, definition)
             }
             ProceduralCurveDefinition::ThreeSurfaceIntersection { .. } => {
-                patch_three_surface_intersection_definition(bytes, record, definition)
+                patch_three_surface_intersection_definition(
+                    bytes,
+                    self.ref_width,
+                    record,
+                    definition,
+                )
             }
             ProceduralCurveDefinition::SurfaceCurve { .. } => {
-                patch_surface_curve_definition(bytes, record, definition)
+                patch_surface_curve_definition(bytes, self.ref_width, record, definition)
             }
             ProceduralCurveDefinition::Silhouette { .. } => {
-                patch_silhouette_definition(bytes, record, definition)
+                patch_silhouette_definition(bytes, self.ref_width, record, definition)
             }
             _ => Err(CodecError::NotImplemented(
                 "ASM procedural-curve definition is not writable".into(),
@@ -763,8 +754,7 @@ impl AsmEditSet {
         edit: NurbsSurfaceEdit<'_>,
         surface_ordinal: Option<usize>,
     ) -> Result<(), CodecError> {
-        debug_assert_eq!(self.ref_width, stream_ref_width(bytes));
-        patch_nurbs_surface_record(bytes, record, &edit, surface_ordinal)
+        patch_nurbs_surface_record(bytes, self.ref_width, record, &edit, surface_ordinal)
     }
 
     /// Apply one solved NURBS curve cache edit.
@@ -775,8 +765,7 @@ impl AsmEditSet {
         edit: NurbsCurveEdit<'_>,
         final_cache: bool,
     ) -> Result<(), CodecError> {
-        debug_assert_eq!(self.ref_width, stream_ref_width(bytes));
-        patch_nurbs_curve_record(bytes, record, &edit, final_cache)
+        patch_nurbs_curve_record(bytes, self.ref_width, record, &edit, final_cache)
     }
 
     /// Apply one solved NURBS parameter-curve cache edit.
@@ -786,8 +775,7 @@ impl AsmEditSet {
         record: &Record,
         edit: NurbsPcurveEdit<'_>,
     ) -> Result<(), CodecError> {
-        debug_assert_eq!(self.ref_width, stream_ref_width(bytes));
-        patch_nurbs_pcurve_record(bytes, record, &edit)
+        patch_nurbs_pcurve_record(bytes, self.ref_width, record, &edit)
     }
 
     /// Apply the writable wrapper fields of a reference-form parameter curve.
@@ -797,8 +785,7 @@ impl AsmEditSet {
         record: &Record,
         edit: NurbsPcurveEdit<'_>,
     ) -> Result<(), CodecError> {
-        debug_assert_eq!(self.ref_width, stream_ref_width(bytes));
-        patch_ref_pcurve_contract(bytes, record, &edit)
+        patch_ref_pcurve_contract(bytes, self.ref_width, record, &edit)
     }
 }
 
@@ -849,6 +836,7 @@ fn finite_vector(vector: Vector3) -> bool {
 
 fn patch_helix_definition(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
@@ -867,14 +855,13 @@ fn patch_helix_definition(
         ));
     };
     let record_bytes = record_slice(bytes, record, "helix")?;
-    let layout =
-        crate::nurbs::proc_curve::helix_patch_layout(record_bytes, stream_ref_width(bytes))
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "procedural curve record {} lacks writable helix fields",
-                    record.index
-                ))
-            })?;
+    let layout = crate::nurbs::proc_curve::helix_patch_layout(record_bytes, stream_width)
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "procedural curve record {} lacks writable helix fields",
+                record.index
+            ))
+        })?;
     apply_f64_patches(
         bytes,
         record.offset,
@@ -912,6 +899,7 @@ fn patch_helix_definition(
 
 fn patch_vector_offset_definition(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
@@ -926,14 +914,13 @@ fn patch_vector_offset_definition(
         ));
     };
     let record_bytes = record_slice(bytes, record, "vector-offset")?;
-    let layout =
-        crate::nurbs::proc_curve::vector_offset_patch_layout(record_bytes, stream_ref_width(bytes))
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "vector-offset record {} lacks writable construction fields",
-                    record.index
-                ))
-            })?;
+    let layout = crate::nurbs::proc_curve::vector_offset_patch_layout(record_bytes, stream_width)
+        .ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "vector-offset record {} lacks writable construction fields",
+            record.index
+        ))
+    })?;
     apply_f64_patches(
         bytes,
         record.offset,
@@ -953,6 +940,7 @@ fn patch_vector_offset_definition(
 
 fn patch_subset_definition(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
@@ -965,14 +953,13 @@ fn patch_subset_definition(
         ));
     };
     let record_bytes = record_slice(bytes, record, "subset")?;
-    let layout =
-        crate::nurbs::proc_curve::subset_patch_layout(record_bytes, stream_ref_width(bytes))
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "subset record {} lacks writable construction fields",
-                    record.index
-                ))
-            })?;
+    let layout = crate::nurbs::proc_curve::subset_patch_layout(record_bytes, stream_width)
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "subset record {} lacks writable construction fields",
+                record.index
+            ))
+        })?;
     apply_f64_patches(
         bytes,
         record.offset,
@@ -983,6 +970,7 @@ fn patch_subset_definition(
 
 fn patch_compound_definition(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
@@ -997,14 +985,13 @@ fn patch_compound_definition(
         ));
     };
     let record_bytes = record_slice(bytes, record, "compound")?;
-    let layout =
-        crate::nurbs::proc_curve::compound_patch_layout(record_bytes, stream_ref_width(bytes))
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "compound record {} lacks writable parameter arrays",
-                    record.index
-                ))
-            })?;
+    let layout = crate::nurbs::proc_curve::compound_patch_layout(record_bytes, stream_width)
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "compound record {} lacks writable parameter arrays",
+                record.index
+            ))
+        })?;
     if layout.parameters.len() != parameters.len()
         || layout.component_parameters.len() != component_parameters.len()
     {
@@ -1040,7 +1027,7 @@ fn patch_two_sided_offset_definition(
         ));
     };
     let record_bytes = record_slice(bytes, record, "two-sided offset")?;
-    let layout = [8usize, 4]
+    let layout = [RefWidth::Eight, RefWidth::Four]
         .into_iter()
         .filter_map(|width| {
             crate::nurbs::proc_curve::two_sided_offset_patch_layout(record_bytes, width)
@@ -1074,6 +1061,7 @@ fn patch_two_sided_offset_definition(
 
 fn patch_surface_offset_definition(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
@@ -1118,11 +1106,8 @@ fn patch_surface_offset_definition(
         ));
     }
     let record_bytes = record_slice(bytes, record, "surface-offset")?;
-    let layout = crate::nurbs::proc_curve::surface_offset_patch_layout(
-        record_bytes,
-        stream_ref_width(bytes),
-    )
-    .ok_or_else(|| CodecError::Malformed("surface-offset construction is malformed".into()))?;
+    let layout = crate::nurbs::proc_curve::surface_offset_patch_layout(record_bytes, stream_width)
+        .ok_or_else(|| CodecError::Malformed("surface-offset construction is malformed".into()))?;
     if layout
         .discontinuities
         .iter()
@@ -1164,6 +1149,7 @@ fn patch_surface_offset_definition(
 
 fn patch_spring_definition(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
@@ -1193,7 +1179,7 @@ fn patch_spring_definition(
         ));
     }
     let record_bytes = record_slice(bytes, record, "spring")?;
-    let int_width = stream_ref_width(bytes);
+    let int_width = stream_width;
     let layout = crate::nurbs::proc_curve::spring_patch_layout(record_bytes, int_width)
         .ok_or_else(|| CodecError::Malformed("spring construction is malformed".into()))?;
     if layout
@@ -1230,6 +1216,7 @@ fn patch_spring_definition(
 
 fn patch_projection_definition(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
@@ -1255,9 +1242,8 @@ fn patch_projection_definition(
         ));
     }
     let record_bytes = record_slice(bytes, record, "projection")?;
-    let layout =
-        crate::nurbs::proc_curve::projection_patch_layout(record_bytes, stream_ref_width(bytes))
-            .ok_or_else(|| CodecError::Malformed("projection construction is malformed".into()))?;
+    let layout = crate::nurbs::proc_curve::projection_patch_layout(record_bytes, stream_width)
+        .ok_or_else(|| CodecError::Malformed("projection construction is malformed".into()))?;
     if layout
         .discontinuities
         .iter()
@@ -1328,6 +1314,7 @@ fn patch_projection_definition(
 
 fn patch_intersection_definition(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
@@ -1351,11 +1338,8 @@ fn patch_intersection_definition(
         ));
     }
     let record_bytes = record_slice(bytes, record, "intersection")?;
-    let layout =
-        crate::nurbs::proc_curve::intersection_patch_layout(record_bytes, stream_ref_width(bytes))
-            .ok_or_else(|| {
-                CodecError::Malformed("intersection construction is malformed".into())
-            })?;
+    let layout = crate::nurbs::proc_curve::intersection_patch_layout(record_bytes, stream_width)
+        .ok_or_else(|| CodecError::Malformed("intersection construction is malformed".into()))?;
     if layout
         .discontinuities
         .iter()
@@ -1386,6 +1370,7 @@ fn patch_intersection_definition(
 
 fn patch_three_surface_intersection_definition(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
@@ -1410,7 +1395,7 @@ fn patch_three_surface_intersection_definition(
         ));
     }
     let record_bytes = record_slice(bytes, record, "three-surface intersection")?;
-    let int_width = stream_ref_width(bytes);
+    let int_width = stream_width;
     let layout = crate::nurbs::proc_curve::three_surface_patch_layout(record_bytes, int_width)
         .ok_or_else(|| CodecError::Malformed("three-surface construction is malformed".into()))?;
     if layout
@@ -1448,6 +1433,7 @@ fn patch_three_surface_intersection_definition(
 
 fn patch_surface_curve_definition(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
@@ -1471,7 +1457,7 @@ fn patch_surface_curve_definition(
     let record_bytes = record_slice(bytes, record, "surface-curve")?;
     let layout = crate::nurbs::proc_curve::surface_curve_patch_layout(
         record_bytes,
-        stream_ref_width(bytes),
+        stream_width,
         family.kind(),
     )
     .ok_or_else(|| CodecError::Malformed("surface-curve construction is malformed".into()))?;
@@ -1504,6 +1490,7 @@ fn patch_surface_curve_definition(
 
 fn patch_silhouette_definition(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
@@ -1535,12 +1522,9 @@ fn patch_silhouette_definition(
         }
     };
     let record_bytes = record_slice(bytes, record, "silhouette")?;
-    let layout = crate::nurbs::proc_curve::silhouette_patch_layout(
-        record_bytes,
-        stream_ref_width(bytes),
-        silhouette,
-    )
-    .ok_or_else(|| CodecError::Malformed("silhouette construction is malformed".into()))?;
+    let layout =
+        crate::nurbs::proc_curve::silhouette_patch_layout(record_bytes, stream_width, silhouette)
+            .ok_or_else(|| CodecError::Malformed("silhouette construction is malformed".into()))?;
     apply_vector_payload(
         bytes,
         record.offset + layout.light_direction,
@@ -1558,13 +1542,14 @@ fn patch_silhouette_definition(
 
 fn patch_nurbs_surface_record(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     edit: &NurbsSurfaceEdit<'_>,
     surface_ordinal: Option<usize>,
 ) -> Result<(), CodecError> {
     let surface = edit.surface;
     let record_bytes = record_slice(bytes, record, "NURBS surface")?;
-    let int_width = stream_ref_width(bytes);
+    let int_width = stream_width;
     let layout = surface_ordinal
         .map_or_else(
             || crate::nurbs::core::final_surface_patch_layout(record_bytes, int_width),
@@ -1649,13 +1634,14 @@ fn patch_nurbs_surface_record(
 
 fn patch_nurbs_curve_record(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     edit: &NurbsCurveEdit<'_>,
     final_cache: bool,
 ) -> Result<(), CodecError> {
     let curve = edit.curve;
     let record_bytes = record_slice(bytes, record, "NURBS curve")?;
-    let int_width = stream_ref_width(bytes);
+    let int_width = stream_width;
     let layout = if final_cache {
         crate::nurbs::core::final_curve_patch_layout(record_bytes, int_width)
     } else {
@@ -1721,6 +1707,7 @@ fn patch_nurbs_curve_record(
 
 fn patch_nurbs_pcurve_record(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     edit: &NurbsPcurveEdit<'_>,
 ) -> Result<(), CodecError> {
@@ -1731,7 +1718,7 @@ fn patch_nurbs_pcurve_record(
             record.index
         )));
     };
-    let ref_width = stream_ref_width(bytes);
+    let ref_width = stream_width;
     let scope = if record.head == "pcurve" {
         sab::payload_subtype_range(bytes, record, 5, ref_width, "exp_par_cur").ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -1887,6 +1874,7 @@ fn patch_nurbs_pcurve_record(
 
 fn patch_ref_pcurve_contract(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     edit: &NurbsPcurveEdit<'_>,
 ) -> Result<(), CodecError> {
@@ -1902,7 +1890,7 @@ fn patch_ref_pcurve_contract(
     let Some(range) = edit.parameter_range else {
         return Ok(());
     };
-    let ref_width = stream_ref_width(bytes);
+    let ref_width = stream_width;
     for (index, value) in [5usize, 6].into_iter().zip(range) {
         let offset =
             sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
@@ -1925,6 +1913,7 @@ fn patch_ref_pcurve_contract(
 #[cfg(test)]
 mod tests {
     use super::AsmEditSet;
+    use crate::kernel_header::RefWidth;
 
     #[test]
     fn tagged_i64_replaces_only_the_selected_payload() {
@@ -1954,8 +1943,13 @@ mod tests {
     #[test]
     fn layout_integer_rejects_binary_file4_overflow() {
         let mut bytes = [0u8; 4];
-        let error = AsmEditSet::patch_layout_integer(&mut bytes, 0, 4, i64::from(i32::MAX) + 1)
-            .expect_err("overflow must fail");
+        let error = AsmEditSet::patch_layout_integer(
+            &mut bytes,
+            0,
+            RefWidth::Four,
+            i64::from(i32::MAX) + 1,
+        )
+        .expect_err("overflow must fail");
 
         assert!(error.to_string().contains("BinaryFile4 range"));
     }

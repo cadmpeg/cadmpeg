@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cached parameter-space curve (pcurve) block decoding, patch layouts, and cache entry points.
 
+use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{
     construction_marker_positions, is_periodic, marker_at, marker_positions, read_knots,
     take_tagged_int, KnotLayout, INT_WIDTHS,
@@ -69,7 +70,7 @@ impl NurbsPcurve {
 /// Writable value offsets for one 2D pcurve cache.
 pub struct PcurvePatchLayout {
     /// Payload width of integer and enum fields.
-    pub int_width: usize,
+    pub int_width: RefWidth,
     /// Tagged-integer payload offset for the curve degree.
     pub degree_value_offset: usize,
     /// Tagged-double payload offsets in `(u, v)` pole order.
@@ -87,11 +88,11 @@ pub struct PcurvePatchLayout {
 }
 
 /// Locate the final valid 2D pcurve block at the stream's known integer width.
-pub fn final_pcurve_patch_layout(record: &[u8], int_width: usize) -> Option<PcurvePatchLayout> {
+pub fn final_pcurve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<PcurvePatchLayout> {
     final_pcurve_patch_layout_at(record, int_width)
 }
 
-fn final_pcurve_patch_layout_at(record: &[u8], int_width: usize) -> Option<PcurvePatchLayout> {
+fn final_pcurve_patch_layout_at(record: &[u8], int_width: RefWidth) -> Option<PcurvePatchLayout> {
     construction_marker_positions(record, int_width)
         .into_iter()
         .filter_map(|marker_pos| {
@@ -140,14 +141,14 @@ fn final_pcurve_patch_layout_at(record: &[u8], int_width: usize) -> Option<Pcurv
         .next_back()
 }
 
-fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: usize) -> Option<NurbsPcurve> {
+fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: RefWidth) -> Option<NurbsPcurve> {
     decode_pcurve_block_with_end(b, marker_pos, int_width).map(|(pcurve, _)| pcurve)
 }
 
 pub(crate) fn decode_pcurve_block_with_end(
     b: &[u8],
     marker_pos: usize,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<(NurbsPcurve, usize)> {
     let (_cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
     let mut pos = marker_pos + marker_len;

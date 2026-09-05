@@ -591,18 +591,30 @@ fn ref_pcurve_resolves_intcurve_uv_slot() {
     intcurve.extend_from_slice(&generated_pcurve_block());
 
     let pcurve = cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(
-        &cadmpeg_asm::nurbs::toks::lex_test_span(&intcurve, 8),
+        &cadmpeg_asm::nurbs::toks::lex_test_span(
+            &intcurve,
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+        ),
         2,
-        &cadmpeg_asm::nurbs::toks::test_table(&intcurve, 8),
+        &cadmpeg_asm::nurbs::toks::test_table(
+            &intcurve,
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+        ),
     )
     .expect("intcurve slot 2 carries the UV cache");
     assert_eq!(pcurve.control_points()[0].u, 0.25);
     assert_eq!(pcurve.control_points()[1].v, 1.5);
     assert!(
         cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(
-            &cadmpeg_asm::nurbs::toks::lex_test_span(&intcurve, 8),
+            &cadmpeg_asm::nurbs::toks::lex_test_span(
+                &intcurve,
+                cadmpeg_asm::kernel_header::RefWidth::Eight
+            ),
             1,
-            &cadmpeg_asm::nurbs::toks::test_table(&intcurve, 8),
+            &cadmpeg_asm::nurbs::toks::test_table(
+                &intcurve,
+                cadmpeg_asm::kernel_header::RefWidth::Eight
+            ),
         )
         .is_none()
     );
@@ -622,9 +634,15 @@ fn ref_pcurve_rejects_orphan_typed_slot() {
 
     assert!(
         cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(
-            &cadmpeg_asm::nurbs::toks::lex_test_span(&source, 8),
+            &cadmpeg_asm::nurbs::toks::lex_test_span(
+                &source,
+                cadmpeg_asm::kernel_header::RefWidth::Eight
+            ),
             2,
-            &cadmpeg_asm::nurbs::toks::test_table(&active, 8),
+            &cadmpeg_asm::nurbs::toks::test_table(
+                &active,
+                cadmpeg_asm::kernel_header::RefWidth::Eight
+            ),
         )
         .is_none(),
         "a pcurve without its typed support surface is not a carrier"
@@ -900,7 +918,13 @@ fn generated_pcurve_reports_dangling_carrier_reference() {
     let mut smbh = synthetic_geometry_with_pcurve_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
     let limit = asm_header::solved_record_limit(&smbh).unwrap();
-    let records = cadmpeg_asm::sab::frame(&smbh, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &smbh,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let coedge = &records[7];
     let record = &mut smbh[coedge.offset..coedge.offset + coedge.len];
     let pcurve_ref = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
