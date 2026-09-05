@@ -4715,8 +4715,12 @@ fn valid_work_plane_construction(
             inputs[1].record_index,
             inputs[2].record_index,
         ] == [*first, *second, *third]
-        && scope.work_plane_reference == Some(*extra_offset)
-        && scope.work_plane_reference_offset.is_some()
+        && scope.work_plane_reference() == Some(*extra_offset)
+        && scope
+            .work_plane_frame
+            .as_ref()
+            .and_then(|frame| frame.reference.as_ref())
+            .is_some()
         && design::decode::sketch::valid_sketch_transform(&transform)
         && transform_offset > placement_header.byte_offset
         && inputs

@@ -106,7 +106,7 @@ fn dispatcher_projects_referenced_work_plane_frame() {
     let mut referenced =
         DesignParameterScope::empty("f3d:native:parameter-scope#10", "WorkPlane", 10);
     referenced.with_work_plane_transform(identity_matrix());
-    referenced.work_plane_reference = Some(11);
+    referenced.with_work_plane_reference(11);
 
     let (features, _) = project_parameter_design(&[], &[], &[referenced], &[], &[], &[], &[], &[]);
     assert!(matches!(
