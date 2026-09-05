@@ -16,8 +16,8 @@ use crate::dialect::{
 ///
 /// Default values produce deterministic output. They identify the file as
 /// `cadmpeg_model`, leave the author and organization empty, use `cadmpeg` as
-/// the originating system, and substitute `1970-01-01T00:00:00` for the empty
-/// timestamp.
+/// the originating system, and substitute `1970-01-01T00:00:00` when the
+/// timestamp is absent.
 #[derive(Debug, Clone)]
 pub struct StepWriteOptions {
     /// The `FILE_NAME` name field.
@@ -31,9 +31,8 @@ pub struct StepWriteOptions {
     pub organization: String,
     /// The `FILE_NAME` timestamp.
     ///
-    /// Supply an ISO 8601 value. An empty string is written as
-    /// `1970-01-01T00:00:00`.
-    pub timestamp: String,
+    /// Supply an ISO 8601 value. Absence writes `1970-01-01T00:00:00`.
+    pub timestamp: Option<String>,
     /// The `FILE_NAME` originating-system field.
     pub originating_system: String,
 }
@@ -44,7 +43,7 @@ impl Default for StepWriteOptions {
             product_name: "cadmpeg_model".to_string(),
             author: String::new(),
             organization: String::new(),
-            timestamp: String::new(),
+            timestamp: None,
             originating_system: "cadmpeg".to_string(),
         }
     }

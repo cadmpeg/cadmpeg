@@ -37,10 +37,7 @@ const RANGE_INFERENCE_WORK_UNITS: u64 = 4_096;
 pub(super) struct GeometryData {
     pub placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
     pub transformation_operators: BTreeMap<u64, Transform>,
-    pub length_scale: f64,
-    pub plane_angle_scale: f64,
-    pub length_scales: BTreeMap<u64, f64>,
-    pub plane_angle_scales: BTreeMap<u64, f64>,
+    pub units: UnitScales,
 }
 
 pub(super) fn placement_transform(
@@ -194,40 +191,37 @@ fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Optio
     Some([normalized_start, normalized_start + sweep.min(period)])
 }
 
-struct UnitScales {
+pub(super) struct UnitScales {
+    default_length: f64,
+    default_angle: f64,
     length: BTreeMap<u64, f64>,
     angle: BTreeMap<u64, f64>,
 }
 
 impl UnitScales {
-    fn length(&self, id: u64, fallback: f64) -> f64 {
-        self.length.get(&id).copied().unwrap_or(fallback)
+    pub(super) fn length(&self, ids: impl IntoIterator<Item = u64>) -> f64 {
+        ids.into_iter()
+            .find_map(|id| self.length.get(&id).copied())
+            .unwrap_or(self.default_length)
     }
 
-    fn angle(&self, id: u64, fallback: f64) -> f64 {
-        self.angle.get(&id).copied().unwrap_or(fallback)
+    pub(super) fn angle(&self, ids: impl IntoIterator<Item = u64>) -> f64 {
+        ids.into_iter()
+            .find_map(|id| self.angle.get(&id).copied())
+            .unwrap_or(self.default_angle)
     }
 }
 
 fn resolve_source_curve_parameter_scales(
     exchange: &Exchange,
     unit_scales: &UnitScales,
-    default_length: f64,
-    default_angle: f64,
 ) -> BTreeMap<u64, f64> {
     exchange
         .records
         .keys()
         .filter_map(|id| {
-            source_curve_parameter_scale(
-                *id,
-                exchange,
-                unit_scales,
-                default_length,
-                default_angle,
-                &mut BTreeSet::new(),
-            )
-            .map(|scale| (*id, scale))
+            source_curve_parameter_scale(*id, exchange, unit_scales, &mut BTreeSet::new())
+                .map(|scale| (*id, scale))
         })
         .collect()
 }
@@ -236,8 +230,6 @@ fn source_curve_parameter_scale(
     id: u64,
     exchange: &Exchange,
     unit_scales: &UnitScales,
-    default_length: f64,
-    default_angle: f64,
     active: &mut BTreeSet<u64>,
 ) -> Option<f64> {
     if !active.insert(id) {
@@ -253,11 +245,11 @@ fn source_curve_parameter_scale(
                 .and_then(|vector| named_parameter(vector, "VECTOR", 2))
                 .and_then(Value::number)
                 .filter(|magnitude| magnitude.is_finite() && *magnitude > 0.0)?;
-            let scale = magnitude * unit_scales.length(id, default_length);
+            let scale = magnitude * unit_scales.length([id]);
             return scale.is_finite().then_some(scale);
         }
         if record.partial("CIRCLE").is_some() || record.partial("ELLIPSE").is_some() {
-            return Some(unit_scales.angle(id, default_angle));
+            return Some(unit_scales.angle([id]));
         }
         if record.partial("PARABOLA").is_some()
             || record.partial("HYPERBOLA").is_some()
@@ -294,14 +286,7 @@ fn source_curve_parameter_scale(
                     .then(|| surface_curve_basis(record))
                     .flatten()
             })?;
-        source_curve_parameter_scale(
-            parent,
-            exchange,
-            unit_scales,
-            default_length,
-            default_angle,
-            active,
-        )
+        source_curve_parameter_scale(parent, exchange, unit_scales, active)
     })();
     active.remove(&id);
     scale
@@ -323,7 +308,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     });
     let unit_scales = resolve_unit_scales(exchange, scale, angle_scale, &mut losses);
     let source_curve_parameter_scales =
-        resolve_source_curve_parameter_scales(exchange, &unit_scales, scale, angle_scale);
+        resolve_source_curve_parameter_scales(exchange, &unit_scales);
     let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut points = BTreeMap::new();
@@ -374,7 +359,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ],
         ) {
             Some(point_type @ ("APLL_POINT" | "APLL_POINT_WITH_SURFACE")) => {
-                let record_scale = unit_scales.length(id, scale);
+                let record_scale = unit_scales.length([id]);
                 if let Some(position) = apll_point_coordinates(record, point_type, record_scale) {
                     points.insert(id, position);
                     let source_name = representation_item_name(record)
@@ -395,7 +380,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 }
             }
             Some("CARTESIAN_POINT") => {
-                let record_scale = unit_scales.length(id, scale);
+                let record_scale = unit_scales.length([id]);
                 if let Some(position) =
                     named_coordinates(record, "CARTESIAN_POINT", 1, record_scale)
                 {
@@ -429,7 +414,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     decode_tessellated_curve_sets(
         exchange,
         &unit_scales,
-        scale,
         ir,
         &mut typed,
         &mut warnings,
@@ -529,7 +513,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         }));
     for (id, record) in exchange.entities("VECTOR") {
         if record.partial("VECTOR").is_some() {
-            let record_scale = unit_scales.length(id, scale);
+            let record_scale = unit_scales.length([id]);
             let value = named_parameter(record, "VECTOR", 1)
                 .and_then(Value::reference)
                 .and_then(|direction| directions.get(&direction).copied())
@@ -657,7 +641,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             continue;
         };
         let pcurve_angle_scale = representation_id.map_or(angle_scale, |representation| {
-            unit_scales.angle(representation, angle_scale)
+            unit_scales.angle([representation])
         });
         let decoded = items
             .iter()
@@ -718,7 +702,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if curve_type == "B_SPLINE_CURVE_WITH_KNOTS" && record.simple_name().is_none() {
             continue;
         }
-        let record_scale = unit_scales.length(id, scale);
+        let record_scale = unit_scales.length([id]);
         let parameter_offset = if curve_type == "ELLIPSE" {
             let first_radius = named_parameter(record, "ELLIPSE", 2).and_then(Value::number);
             let second_radius = named_parameter(record, "ELLIPSE", 3).and_then(Value::number);
@@ -970,8 +954,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             else {
                 continue;
             };
-            let record_scale = unit_scales.length(id, scale);
-            let record_angle_scale = unit_scales.angle(id, angle_scale);
+            let record_scale = unit_scales.length([id]);
+            let record_angle_scale = unit_scales.angle([id]);
             let parameter_offset = curve_parameter_offsets
                 .get(&basis_step)
                 .copied()
@@ -1073,8 +1057,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let distance = parameters.get(2).and_then(Value::number);
         let self_intersect = parameters
             .get(3)
-            .and_then(logical_value)
-            .map(StepLogical::into_option);
+            .and_then(|value| logical_value(value).ok());
         let reference_direction = parameters
             .get(4)
             .and_then(Value::reference)
@@ -1118,7 +1101,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     .expect("identity grammar"),
                 ProceduralCurveDefinition::SpatialOffset {
                     source,
-                    distance: distance * unit_scales.length(id, scale),
+                    distance: distance * unit_scales.length([id]),
                     reference_direction,
                     self_intersect,
                 },
@@ -1327,8 +1310,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if surface_type == "B_SPLINE_SURFACE_WITH_KNOTS" && record.simple_name().is_none() {
             continue;
         }
-        let record_scale = unit_scales.length(id, scale);
-        let record_angle_scale = unit_scales.angle(id, angle_scale);
+        let record_scale = unit_scales.length([id]);
+        let record_angle_scale = unit_scales.angle([id]);
         let placement = named_parameter(record, surface_type, 1)
             .and_then(Value::reference)
             .and_then(|placement| placements.get(&placement).copied());
@@ -1451,8 +1434,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(parameters) = entity_parameters(record, "RECTANGULAR_TRIMMED_SURFACE") else {
                 continue;
             };
-            let record_scale = unit_scales.length(id, scale);
-            let record_angle_scale = unit_scales.angle(id, angle_scale);
+            let record_scale = unit_scales.length([id]);
+            let record_angle_scale = unit_scales.angle([id]);
             let Some(support_step) = parameters.get(1).and_then(Value::reference) else {
                 continue;
             };
@@ -1652,7 +1635,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(parameters) = entity_parameters(record, "OFFSET_SURFACE") else {
                 continue;
             };
-            let record_scale = unit_scales.length(id, scale);
+            let record_scale = unit_scales.length([id]);
             let Some(support_step) = parameters.get(1).and_then(Value::reference) else {
                 continue;
             };
@@ -1665,8 +1648,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let distance = parameters.get(2).and_then(Value::number);
             let self_intersect = parameters
                 .get(3)
-                .and_then(logical_value)
-                .map(StepLogical::into_option);
+                .and_then(|value| logical_value(value).ok());
             let Some((distance, self_intersect)) = distance.zip(self_intersect) else {
                 continue;
             };
@@ -1871,8 +1853,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 ir,
                 &surface.id,
                 &surface.geometry,
-                unit_scales.length(id, scale),
-                unit_scales.angle(id, angle_scale),
+                unit_scales.length([id]),
+                unit_scales.angle([id]),
                 &source_curve_parameter_scales,
             )?;
             Some((id, scales))
@@ -1961,8 +1943,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
 
     for (id, record) in exchange.entities("DEGENERATE_TOROIDAL_SURFACE") {
         let Some(select_outer) = named_parameter(record, "DEGENERATE_TOROIDAL_SURFACE", 4)
-            .and_then(logical_value)
-            .and_then(StepLogical::into_option)
+            .and_then(|value| logical_value(value).ok().flatten())
         else {
             if carrier_index.surfaces.contains_key(&id) {
                 warnings.push(format!(
@@ -2012,10 +1993,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         value: GeometryData {
             placements,
             transformation_operators,
-            length_scale: scale,
-            plane_angle_scale: angle_scale,
-            length_scales: unit_scales.length,
-            plane_angle_scales: unit_scales.angle,
+            units: unit_scales,
         },
         claims: typed,
         warnings,
@@ -2027,7 +2005,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
 fn decode_tessellated_curve_sets(
     exchange: &Exchange,
     unit_scales: &UnitScales,
-    fallback_scale: f64,
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
     warnings: &mut Vec<String>,
@@ -2051,7 +2028,7 @@ fn decode_tessellated_curve_sets(
             ));
             continue;
         };
-        let scale = unit_scales.length(coordinates_id, fallback_scale);
+        let scale = unit_scales.length([coordinates_id]);
         let Some(vertices) = coordinate_rows(coordinates_record, scale) else {
             warnings.push(format!(
                 "TESSELLATED_CURVE_SET #{id} has invalid COORDINATES_LIST #{coordinates_id}"
@@ -3018,6 +2995,8 @@ fn resolve_unit_scales(
     let length = finalize_unit_candidates(length_candidates, "length", losses);
     let angle = finalize_unit_candidates(angle_candidates, "plane-angle", losses);
     UnitScales {
+        default_length,
+        default_angle,
         length: length
             .into_iter()
             .filter(|(_, scale)| scale.is_finite() && *scale > 0.0 && *scale != default_length)
@@ -3850,8 +3829,7 @@ fn composite_curve(
         segments,
         parameters
             .get(offset + 1)
-            .and_then(logical_value)?
-            .into_option(),
+            .and_then(|value| logical_value(value).ok())?,
     ))
 }
 
@@ -3922,27 +3900,12 @@ fn surface_curve_pcurves(record: &RawRecord) -> Option<Vec<u64>> {
         .and_then(|partial| partial.parameters.get(1).and_then(references))
 }
 
-#[derive(Clone, Copy)]
-enum StepLogical {
-    Known(bool),
-    Unknown,
-}
-
-impl StepLogical {
-    fn into_option(self) -> Option<bool> {
-        match self {
-            Self::Known(value) => Some(value),
-            Self::Unknown => None,
-        }
-    }
-}
-
-fn logical_value(value: &Value) -> Option<StepLogical> {
+fn logical_value(value: &Value) -> Result<Option<bool>, ()> {
     match value {
-        Value::Enumeration(value) if value == "T" => Some(StepLogical::Known(true)),
-        Value::Enumeration(value) if value == "F" => Some(StepLogical::Known(false)),
-        Value::Enumeration(value) if value == "U" => Some(StepLogical::Unknown),
-        _ => None,
+        Value::Enumeration(value) if value == "T" => Ok(Some(true)),
+        Value::Enumeration(value) if value == "F" => Ok(Some(false)),
+        Value::Enumeration(value) if value == "U" => Ok(None),
+        _ => Err(()),
     }
 }
 
@@ -3952,9 +3915,9 @@ fn periodic_value(
     record_id: u64,
     warnings: &mut Vec<String>,
 ) -> Option<bool> {
-    match logical_value(value?)? {
-        StepLogical::Known(value) => Some(value),
-        StepLogical::Unknown => {
+    match logical_value(value?).ok()? {
+        Some(value) => Some(value),
+        None => {
             warnings.push(format!(
                 "{field} #{record_id} has UNKNOWN periodicity; decoded as non-periodic"
             ));
@@ -5306,27 +5269,16 @@ fn default_reference_axis(axis: Vector3) -> Vector3 {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum TransformationParameterError {
-    Invalid,
-}
-
 fn transformation_direction<T: Copy>(
     record: &RawRecord,
     name: &str,
     index: usize,
     directions: &BTreeMap<u64, T>,
-) -> Result<Option<T>, TransformationParameterError> {
-    match transformation_parameter(record, name, index)
-        .ok_or(TransformationParameterError::Invalid)?
-    {
+) -> Result<Option<T>, ()> {
+    match transformation_parameter(record, name, index).ok_or(())? {
         Value::Omitted | Value::Derived => Ok(None),
-        Value::Reference(id) => directions
-            .get(id)
-            .copied()
-            .map(Some)
-            .ok_or(TransformationParameterError::Invalid),
-        _ => Err(TransformationParameterError::Invalid),
+        Value::Reference(id) => directions.get(id).copied().map(Some).ok_or(()),
+        _ => Err(()),
     }
 }
 

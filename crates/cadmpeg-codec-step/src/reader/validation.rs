@@ -114,12 +114,7 @@ pub(super) fn decode(
             let Some(item) = exchange.records.get(&item_id) else {
                 continue;
             };
-            let scale = geometry
-                .length_scales
-                .get(&item_id)
-                .copied()
-                .or_else(|| geometry.length_scales.get(&representation_id).copied())
-                .unwrap_or(geometry.length_scale);
+            let scale = geometry.units.length([item_id, representation_id]);
             let expected = expected_value(item, exchange, scale, &mut losses);
             let Some(expected) = expected else {
                 warnings.push(format!(
