@@ -478,44 +478,81 @@ pub enum EmbeddedDeformableSource {
     },
 }
 
-/// A procedural curve cache together with its native subtype and fit contract.
+/// Native helix construction without an approximation cache.
+pub struct HelixDefinition {
+    /// Native angular interval.
+    pub angle_range: [f64; 2],
+    /// Helix center in document length units.
+    pub center: Point3,
+    /// Major radial vector.
+    pub major: Vector3,
+    /// Minor radial vector.
+    pub minor: Vector3,
+    /// Pitch vector.
+    pub pitch: Vector3,
+    /// Apex factor.
+    pub apex_factor: f64,
+    /// Axis direction.
+    pub axis: Vector3,
+}
+
+impl HelixDefinition {
+    pub(crate) fn into_definition(self) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+            angle_range: self.angle_range,
+            center: self.center,
+            major: self.major,
+            minor: self.minor,
+            pitch: self.pitch,
+            apex_factor: self.apex_factor,
+            axis: self.axis,
+        }
+    }
+}
+
+/// The single construction selected by a procedural curve's native subtype.
+pub enum ProceduralCurveConstruction {
+    /// An exact curve cache.
+    Exact,
+    /// Native helix parameters.
+    Helix(HelixDefinition),
+    /// Source curve and vector-offset fields.
+    VectorOffset(VectorOffsetDefinition),
+    /// Source curve and bounded subset interval.
+    Subset(SubsetDefinition),
+    /// Ordered child curves and their parameter arrays.
+    Compound(CompoundDefinition),
+    /// Two-sided offset support context.
+    TwoSidedOffset(EmbeddedTwoSidedOffset),
+    /// Intersection support context and discontinuity flag.
+    Intersection(EmbeddedIntersection, bool),
+    /// Three ordered surface-intersection supports.
+    ThreeSurface(EmbeddedThreeSurfaceIntersection),
+    /// A surface-constrained curve family.
+    SurfaceCurve(EmbeddedSurfaceCurve),
+    /// Silhouette support and projection fields.
+    Silhouette(EmbeddedSilhouette),
+    /// Support context and surface-offset fields.
+    SurfaceOffset(EmbeddedSurfaceOffset),
+    /// Spring support context and direction.
+    Spring(EmbeddedSpring),
+    /// Deformation source and fields.
+    Deformable(EmbeddedDeformable),
+    /// Projection support and source.
+    Projection(EmbeddedProjection),
+    /// Support context and recursive law formulas.
+    Law(EmbeddedLawCurve),
+    /// A retained native construction with no decoded payload.
+    Unknown(String),
+}
+
+/// A procedural curve cache and its selected native construction.
 pub struct DecodedProceduralCurve {
-    /// The cached B-spline curve (control points scaled centimetre→
-    /// millimetre; knots and weights unscaled).
+    /// The cached B-spline curve in document length units.
     pub curve: NurbsCurve,
-    /// The `intcurve` subtype record name (`exact_int_cur`, `off_int_cur`,
-    /// `proj_int_cur`, `int_int_cur`, `helix_int_cur`, `sss_int_cur`, ...).
-    pub native_kind: String,
-    /// Neutral construction fields decoded from the subtype tail.
-    pub definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
-    /// Source curve and tail fields of an `offset_int_cur` construction.
-    pub vector_offset: Option<VectorOffsetDefinition>,
-    /// Parent curve and retained range of a `subset_int_cur` construction.
-    pub subset: Option<SubsetDefinition>,
-    /// Parameter arrays and ordered child curves of a `comp_int_cur` construction.
-    pub compound: Option<CompoundDefinition>,
-    /// Non-null embedded NURBS support carriers of an `off_int_cur`.
-    pub embedded_two_sided_offset: Option<EmbeddedTwoSidedOffset>,
-    /// Embedded support context of an `int_int_cur`.
-    pub embedded_intersection: Option<(EmbeddedIntersection, bool)>,
-    /// Three embedded support pairs of an `sss_int_cur`.
-    pub embedded_three_surface_intersection: Option<EmbeddedThreeSurfaceIntersection>,
-    /// Prefix-only surface-curve family and support context.
-    pub embedded_surface_curve: Option<EmbeddedSurfaceCurve>,
-    /// Embedded silhouette support, cast surface, and light vector.
-    pub embedded_silhouette: Option<EmbeddedSilhouette>,
-    /// Embedded support context and base curve of an `off_surf_int_cur`.
-    pub embedded_surface_offset: Option<EmbeddedSurfaceOffset>,
-    /// Modern non-null `spring_int_cur` construction.
-    pub embedded_spring: Option<EmbeddedSpring>,
-    /// Embedded bend curve and discriminator payload of a `defm_int_cur`.
-    pub embedded_deformable: Option<EmbeddedDeformable>,
-    /// Embedded support context and source of a `proj_int_cur`.
-    pub embedded_projection: Option<EmbeddedProjection>,
-    /// Embedded support context and recursive formulas of a `law_int_cur`.
-    pub embedded_law: Option<EmbeddedLawCurve>,
-    /// `surface_fit_tolerance` of the cached B-spline block, if present
-    /// ([spec §6.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#65-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
+    /// The layout-specific construction fields.
+    pub construction: ProceduralCurveConstruction,
+    /// The cached block's fit tolerance, when present.
     pub cache_fit_tolerance: Option<f64>,
 }
 
@@ -581,7 +618,8 @@ fn pcurve_for_selector_recursive(
         if let Some(pcurve) = selected_pcurve(&decoded, slot) {
             return Some((pcurve, false));
         }
-        if decoded.native_kind != "intcurve" {
+        if !matches!(&decoded.construction, ProceduralCurveConstruction::Unknown(kind) if kind == "intcurve")
+        {
             // Modern exact curves can carry the same cache-first support
             // context as the surface-related intcurve families. Their
             // construction remains exact, but the pcurve selector still
@@ -674,35 +712,29 @@ fn selected_optional_pcurve(
 }
 
 fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<NurbsPcurve> {
-    if let Some(context) = decoded.embedded_two_sided_offset.as_ref() {
-        return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
-    }
-    if let Some((context, _)) = decoded.embedded_intersection.as_ref() {
-        // An intersection support may be a procedural surface with no
-        // standalone SurfaceGeometry carrier. The native pcurve slot remains
-        // a complete parameter-space carrier when its paired native support
-        // slot is present. Edge-domain validation runs after this function.
-        match context.surfaces.get(slot)? {
-            SupportSlot::Absent => return None,
-            SupportSlot::DeclaredOnly | SupportSlot::Surface(_) => {}
+    match &decoded.construction {
+        ProceduralCurveConstruction::TwoSidedOffset(context) => {
+            selected_optional_pcurve(&context.surfaces, &context.pcurves, slot)
         }
-        return context.pcurves.get(slot)?.clone();
-    }
-    if let Some(context) = decoded.embedded_three_surface_intersection.as_ref() {
-        return context.pcurves.get(slot).cloned();
-    }
-    if let Some(surface_curve) = decoded.embedded_surface_curve.as_ref() {
-        let context = surface_curve.context();
-        return selected_support_pcurve(&context.surfaces, &context.pcurves, slot);
-    }
-    if let Some(context) = decoded.embedded_silhouette.as_ref() {
-        return selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
-    }
-    if let Some(context) = decoded.embedded_surface_offset.as_ref() {
-        return selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
-    }
-    if let Some(context) = decoded.embedded_spring.as_ref() {
-        return match &context.layout {
+        ProceduralCurveConstruction::Intersection(context, _) => {
+            match context.surfaces.get(slot)? {
+                SupportSlot::Absent => return None,
+                SupportSlot::DeclaredOnly | SupportSlot::Surface(_) => {}
+            }
+            context.pcurves.get(slot)?.clone()
+        }
+        ProceduralCurveConstruction::ThreeSurface(context) => context.pcurves.get(slot).cloned(),
+        ProceduralCurveConstruction::SurfaceCurve(surface_curve) => {
+            let context = surface_curve.context();
+            selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
+        }
+        ProceduralCurveConstruction::Silhouette(context) => {
+            selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot)
+        }
+        ProceduralCurveConstruction::SurfaceOffset(context) => {
+            selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot)
+        }
+        ProceduralCurveConstruction::Spring(context) => match &context.layout {
             EmbeddedSpringLayout::CacheFirst { context, .. } => {
                 selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
             }
@@ -721,18 +753,21 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<Nurb
                     _ => None,
                 })
                 .flatten(),
-        };
+        },
+        ProceduralCurveConstruction::Deformable(context) => {
+            selected_optional_pcurve(&context.surfaces, &context.pcurves, slot)
+        }
+        ProceduralCurveConstruction::Projection(context) => context.pcurves.get(slot).cloned(),
+        ProceduralCurveConstruction::Law(context) => {
+            selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot)
+        }
+        ProceduralCurveConstruction::Exact
+        | ProceduralCurveConstruction::Helix(_)
+        | ProceduralCurveConstruction::VectorOffset(_)
+        | ProceduralCurveConstruction::Subset(_)
+        | ProceduralCurveConstruction::Compound(_)
+        | ProceduralCurveConstruction::Unknown(_) => None,
     }
-    if let Some(context) = decoded.embedded_deformable.as_ref() {
-        return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
-    }
-    if let Some(context) = decoded.embedded_projection.as_ref() {
-        return context.pcurves.get(slot).cloned();
-    }
-    if let Some(context) = decoded.embedded_law.as_ref() {
-        return selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
-    }
-    None
 }
 
 fn direct_pcurve_after_curve(toks: &[Token]) -> Option<NurbsPcurve> {
@@ -747,7 +782,7 @@ fn direct_pcurve_after_curve(toks: &[Token]) -> Option<NurbsPcurve> {
 pub fn cacheless_procedural_curve_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
-) -> Option<(String, cadmpeg_ir::geometry::ProceduralCurveDefinition)> {
+) -> Option<HelixDefinition> {
     cacheless_procedural_curve_recursive(toks, table, &mut Vec::new())
 }
 
@@ -755,9 +790,9 @@ fn cacheless_procedural_curve_recursive(
     toks: &[Token],
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
-) -> Option<(String, cadmpeg_ir::geometry::ProceduralCurveDefinition)> {
+) -> Option<HelixDefinition> {
     if let Some(definition) = helix_definition(toks) {
-        return Some(("helix_int_cur".into(), definition));
+        return Some(definition);
     }
     for index in crate::nurbs::toks::subtype_refs(toks) {
         if seen.contains(&index) {
@@ -802,35 +837,53 @@ fn procedural_curve_recursive(
             Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
             _ => None,
         };
-        let native_kind = crate::nurbs::toks::owned_construction_subtype(toks)
-            .unwrap_or_else(|| "intcurve".to_string());
-        let definition = if native_kind == "exact_int_cur" {
-            Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact)
-        } else {
-            helix_definition(toks).or_else(|| two_sided_offset(toks))
-        };
-        let embedded_intersection = embedded_intersection(toks, &curve, table);
-        let embedded_surface_curve = embedded_surface_curve(toks, &curve, table);
-        let embedded_surface_offset = embedded_surface_offset(toks, &curve, table);
-        let embedded_spring = embedded_spring(toks, &curve, table);
-        let embedded_deformable = embedded_deformable(toks, &curve, table);
+        let construction = vector_offset
+            .map(ProceduralCurveConstruction::VectorOffset)
+            .or_else(|| subset.map(ProceduralCurveConstruction::Subset))
+            .or_else(|| {
+                embedded_two_sided_offset(toks).map(ProceduralCurveConstruction::TwoSidedOffset)
+            })
+            .or_else(|| {
+                embedded_intersection(toks, &curve, table)
+                    .map(|(context, flag)| ProceduralCurveConstruction::Intersection(context, flag))
+            })
+            .or_else(|| {
+                embedded_three_surface_intersection(toks)
+                    .map(ProceduralCurveConstruction::ThreeSurface)
+            })
+            .or_else(|| {
+                embedded_surface_curve(toks, &curve, table)
+                    .map(ProceduralCurveConstruction::SurfaceCurve)
+            })
+            .or_else(|| embedded_silhouette(toks).map(ProceduralCurveConstruction::Silhouette))
+            .or_else(|| {
+                embedded_surface_offset(toks, &curve, table)
+                    .map(ProceduralCurveConstruction::SurfaceOffset)
+            })
+            .or_else(|| {
+                embedded_spring(toks, &curve, table).map(ProceduralCurveConstruction::Spring)
+            })
+            .or_else(|| {
+                embedded_deformable(toks, &curve, table)
+                    .map(ProceduralCurveConstruction::Deformable)
+            })
+            .or_else(|| embedded_projection(toks).map(ProceduralCurveConstruction::Projection))
+            .or_else(|| embedded_law_curve(toks).map(ProceduralCurveConstruction::Law))
+            .or_else(|| compound.map(ProceduralCurveConstruction::Compound))
+            .unwrap_or_else(|| {
+                let native_kind = crate::nurbs::toks::owned_construction_subtype(toks)
+                    .unwrap_or_else(|| "intcurve".to_string());
+                if native_kind == "exact_int_cur" {
+                    ProceduralCurveConstruction::Exact
+                } else {
+                    helix_definition(toks)
+                        .map(ProceduralCurveConstruction::Helix)
+                        .unwrap_or(ProceduralCurveConstruction::Unknown(native_kind))
+                }
+            });
         return Some(DecodedProceduralCurve {
             curve,
-            native_kind,
-            definition,
-            vector_offset,
-            subset,
-            compound,
-            embedded_two_sided_offset: embedded_two_sided_offset(toks),
-            embedded_intersection,
-            embedded_three_surface_intersection: embedded_three_surface_intersection(toks),
-            embedded_surface_curve,
-            embedded_silhouette: embedded_silhouette(toks),
-            embedded_surface_offset,
-            embedded_spring,
-            embedded_deformable,
-            embedded_projection: embedded_projection(toks),
-            embedded_law: embedded_law_curve(toks),
+            construction,
             cache_fit_tolerance,
         });
     }
@@ -3066,51 +3119,6 @@ pub(crate) fn optional_embedded_surface_with_bounds(
     None
 }
 
-fn two_sided_offset(toks: &[Token]) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
-    use cadmpeg_ir::geometry::{
-        IntcurveSupportContext, IntcurveSupportSide, ProceduralCurveDefinition,
-    };
-
-    let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "off_int_cur")?;
-    let mut cur = Cur::at(toks, marker + 2);
-    for expected in ["null_surface", "null_surface", "nullbs", "nullbs"] {
-        if cur.take_ident()? != expected {
-            return None;
-        }
-    }
-    let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
-    let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-    ];
-    let discontinuity_flag = cur.take_bool()?;
-    let offsets = [
-        cur.take_range_value()? * LEN_TO_MM,
-        cur.take_range_value()? * LEN_TO_MM,
-    ];
-    Some(ProceduralCurveDefinition::TwoSidedOffset {
-        context: IntcurveSupportContext {
-            sides: [
-                IntcurveSupportSide {
-                    surface: None,
-                    pcurve: None,
-                    pcurve_parameter_range: None,
-                },
-                IntcurveSupportSide {
-                    surface: None,
-                    pcurve: None,
-                    pcurve_parameter_range: None,
-                },
-            ],
-            parameter_range,
-            discontinuities,
-        },
-        discontinuity_flag,
-        offsets,
-    })
-}
-
 fn compound_definition(toks: &[Token]) -> Option<CompoundDefinition> {
     let marker = crate::nurbs::toks::find_owned_subtype_marker(toks, &["comp_int_cur"])
         .map(|(marker, _)| marker)?;
@@ -3183,9 +3191,7 @@ fn vector_offset_definition(toks: &[Token]) -> Option<VectorOffsetDefinition> {
 
 /// Decode the `helix_int_cur` construction fields. Token-space counterpart of
 /// the byte helix walk retained by [`helix_patch_layout`].
-pub(crate) fn helix_definition(
-    toks: &[Token],
-) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
+pub(crate) fn helix_definition(toks: &[Token]) -> Option<HelixDefinition> {
     let marker = crate::nurbs::toks::find_owned_subtype_marker(toks, &["helix_int_cur"])
         .map(|(marker, _)| marker)?;
     let mut cur = Cur::at(toks, marker + 2);
@@ -3205,7 +3211,7 @@ pub(crate) fn helix_definition(
     let pitch = take_frame_vector(&mut cur)?;
     let apex_factor = cur.take_f64()?;
     let axis = cur.take_vector3()?;
-    Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+    Some(HelixDefinition {
         angle_range: [lower, upper],
         center: Point3::new(
             center[0] * LEN_TO_MM,

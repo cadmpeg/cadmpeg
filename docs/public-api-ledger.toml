@@ -5195,3 +5195,136 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::geometry::SkinSurfaceProfile::data"
 reason = "ASM-06 and IR-21 audit: construct layout-specific loft payloads and remove optional classic support, flag, and extension states"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::native_kind"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::definition"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::vector_offset"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::subset"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::compound"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::embedded_two_sided_offset"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::embedded_intersection"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::embedded_three_surface_intersection"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::embedded_surface_curve"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::embedded_silhouette"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::embedded_surface_offset"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::embedded_spring"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::embedded_deformable"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::embedded_projection"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::embedded_law"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::construction"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "variant"
+item = "cadmpeg_asm::nurbs::proc_curve::ProceduralCurveConstruction"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_curve::HelixDefinition"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "f90dec12e64b0cf0f3034164b18f12e3990d28e7"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::cacheless_procedural_curve_resolving_refs"
+reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"

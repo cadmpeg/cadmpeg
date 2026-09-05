@@ -1053,9 +1053,11 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
             &test_table(&active, int_width),
         )
         .unwrap_or_else(|| panic!("cache-first intersection at width {int_width}"));
-        let (context, flag) = decoded
-            .embedded_intersection
-            .expect("typed intersection context");
+        let crate::nurbs::proc_curve::ProceduralCurveConstruction::Intersection(context, flag) =
+            decoded.construction
+        else {
+            panic!("typed intersection context")
+        };
         assert!(!flag);
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert!(matches!(
@@ -1127,11 +1129,11 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
             let table = test_table(&active, int_width);
             let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&toks, &table)
                 .unwrap_or_else(|| panic!("cacheless support intersection at {int_width}: {form}"));
-            let context = decoded
-                .embedded_intersection
-                .as_ref()
-                .map(|(context, _)| context)
-                .expect("typed intersection context");
+            let crate::nurbs::proc_curve::ProceduralCurveConstruction::Intersection(context, _) =
+                &decoded.construction
+            else {
+                panic!("typed intersection context")
+            };
             assert!(matches!(
                 context.surfaces,
                 [
@@ -1191,10 +1193,12 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
             &test_table(&active, int_width),
         )
         .unwrap_or_else(|| panic!("cache-first blend curve at width {int_width}"));
-        let EmbeddedSurfaceCurve::Blend {
-            context,
-            tail: Some(tail),
-        } = decoded.embedded_surface_curve.expect("typed blend context")
+        let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
+            EmbeddedSurfaceCurve::Blend {
+                context,
+                tail: Some(tail),
+            },
+        ) = decoded.construction
         else {
             panic!("blend surface-curve family")
         };
@@ -1261,10 +1265,12 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
             &test_table(&active, int_width),
         )
         .unwrap_or_else(|| panic!("cache-first par curve at width {int_width}"));
-        let EmbeddedSurfaceCurve::Parametric {
-            context,
-            tail: Some(tail),
-        } = decoded.embedded_surface_curve.expect("typed par context")
+        let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
+            EmbeddedSurfaceCurve::Parametric {
+                context,
+                tail: Some(tail),
+            },
+        ) = decoded.construction
         else {
             panic!("parametric surface-curve family")
         };
