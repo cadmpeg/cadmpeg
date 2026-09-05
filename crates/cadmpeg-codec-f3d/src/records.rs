@@ -193,7 +193,9 @@ fn deserialize_absent_u64_offset<'de, D: Deserializer<'de>>(
 use cadmpeg_ir::assets::AssetId;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId};
+use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
 
 /// The `sketch_attrib_def` sense value that constrains nothing, written as the
@@ -16336,21 +16338,25 @@ pub struct SketchText {
     pub raw_bytes: Vec<u8>,
 }
 
+/// Horizontal and vertical alignment members of a sketch-text record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SketchTextAlignment {
+    pub horizontal: u32,
+    pub vertical: u32,
+}
+
 /// `txt_tag` versus `textex_tag` member layout of one sketch-text record.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SketchTextLayout {
     TxtTag {
-        anchor: Point2,
-        rotation: f64,
+        placement: TextPlacement,
     },
     TextexTag {
         width_factor: f64,
-        horizontal_alignment: Option<u32>,
-        vertical_alignment: Option<u32>,
+        alignment: Option<SketchTextAlignment>,
         first_reference: Option<u32>,
         second_reference: Option<u32>,
-        anchor: Option<Point2>,
-        rotation: Option<f64>,
+        placement: Option<TextPlacement>,
     },
 }
 
@@ -16362,54 +16368,17 @@ impl SketchText {
         }
     }
 
-    pub(crate) fn anchor(&self) -> Option<Point2> {
+    pub(crate) fn placement(&self) -> Option<TextPlacement> {
         match self.layout {
-            SketchTextLayout::TxtTag { anchor, .. } => Some(anchor),
-            SketchTextLayout::TextexTag { anchor, .. } => anchor,
+            SketchTextLayout::TxtTag { placement } => Some(placement),
+            SketchTextLayout::TextexTag { placement, .. } => placement,
         }
     }
 
-    pub(crate) fn rotation(&self) -> Option<f64> {
-        match self.layout {
-            SketchTextLayout::TxtTag { rotation, .. } => Some(rotation),
-            SketchTextLayout::TextexTag { rotation, .. } => rotation,
-        }
-    }
-
-    pub(crate) fn horizontal_alignment(&self) -> Option<u32> {
+    pub(crate) fn alignment(&self) -> Option<SketchTextAlignment> {
         match self.layout {
             SketchTextLayout::TxtTag { .. } => None,
-            SketchTextLayout::TextexTag {
-                horizontal_alignment,
-                ..
-            } => horizontal_alignment,
-        }
-    }
-
-    pub(crate) fn vertical_alignment(&self) -> Option<u32> {
-        match self.layout {
-            SketchTextLayout::TxtTag { .. } => None,
-            SketchTextLayout::TextexTag {
-                vertical_alignment, ..
-            } => vertical_alignment,
-        }
-    }
-
-    pub(crate) fn first_reference(&self) -> Option<u32> {
-        match self.layout {
-            SketchTextLayout::TxtTag { .. } => None,
-            SketchTextLayout::TextexTag {
-                first_reference, ..
-            } => first_reference,
-        }
-    }
-
-    pub(crate) fn second_reference(&self) -> Option<u32> {
-        match self.layout {
-            SketchTextLayout::TxtTag { .. } => None,
-            SketchTextLayout::TextexTag {
-                second_reference, ..
-            } => second_reference,
+            SketchTextLayout::TextexTag { alignment, .. } => alignment,
         }
     }
 }
@@ -16457,40 +16426,48 @@ impl TryFrom<SketchTextSerde> for SketchText {
     type Error = String;
 
     fn try_from(wire: SketchTextSerde) -> Result<Self, Self::Error> {
+        let placement = match (wire.anchor, wire.rotation) {
+            (None, None) => None,
+            (Some(anchor), Some(rotation)) => Some(TextPlacement {
+                anchor,
+                rotation: Angle(rotation),
+            }),
+            _ => return Err("sketch text anchor and rotation must occur together".into()),
+        };
+        let alignment =
+            match (wire.horizontal_alignment, wire.vertical_alignment) {
+                (None, None) => None,
+                (Some(horizontal), Some(vertical)) => Some(SketchTextAlignment {
+                    horizontal,
+                    vertical,
+                }),
+                _ => return Err(
+                    "sketch text horizontal_alignment and vertical_alignment must occur together"
+                        .into(),
+                ),
+            };
         let layout = match (
             wire.width_factor,
-            wire.horizontal_alignment,
-            wire.vertical_alignment,
+            alignment,
             wire.first_reference,
             wire.second_reference,
-            wire.anchor,
-            wire.rotation,
+            placement,
         ) {
-            (None, None, None, None, None, Some(anchor), Some(rotation)) => {
-                SketchTextLayout::TxtTag { anchor, rotation }
+            (None, None, None, None, Some(placement)) => SketchTextLayout::TxtTag { placement },
+            (Some(width_factor), alignment, first_reference, second_reference, placement) => {
+                SketchTextLayout::TextexTag {
+                    width_factor,
+                    alignment,
+                    first_reference,
+                    second_reference,
+                    placement,
+                }
             }
-            (
-                Some(width_factor),
-                horizontal_alignment,
-                vertical_alignment,
-                first_reference,
-                second_reference,
-                anchor,
-                rotation,
-            ) => SketchTextLayout::TextexTag {
-                width_factor,
-                horizontal_alignment,
-                vertical_alignment,
-                first_reference,
-                second_reference,
-                anchor,
-                rotation,
-            },
             _ => {
                 return Err(
                     "sketch text layout disagrees with width_factor, alignment, and placement"
                         .into(),
-                );
+                )
             }
         };
         Ok(Self {
@@ -16516,13 +16493,23 @@ impl TryFrom<SketchTextSerde> for SketchText {
 
 impl From<SketchText> for SketchTextSerde {
     fn from(text: SketchText) -> Self {
-        let width_factor = text.width_factor();
-        let anchor = text.anchor();
-        let rotation = text.rotation();
-        let horizontal_alignment = text.horizontal_alignment();
-        let vertical_alignment = text.vertical_alignment();
-        let first_reference = text.first_reference();
-        let second_reference = text.second_reference();
+        let (width_factor, alignment, first_reference, second_reference, placement) =
+            match text.layout {
+                SketchTextLayout::TxtTag { placement } => (None, None, None, None, Some(placement)),
+                SketchTextLayout::TextexTag {
+                    width_factor,
+                    alignment,
+                    first_reference,
+                    second_reference,
+                    placement,
+                } => (
+                    Some(width_factor),
+                    alignment,
+                    first_reference,
+                    second_reference,
+                    placement,
+                ),
+            };
         Self {
             id: text.id,
             record_index: text.record_index,
@@ -16539,10 +16526,10 @@ impl From<SketchText> for SketchTextSerde {
             height: text.height,
             width_factor,
             color: text.color,
-            anchor,
-            rotation,
-            horizontal_alignment,
-            vertical_alignment,
+            anchor: placement.map(|value| value.anchor),
+            rotation: placement.map(|value| value.rotation.0),
+            horizontal_alignment: alignment.map(|value| value.horizontal),
+            vertical_alignment: alignment.map(|value| value.vertical),
             first_reference,
             second_reference,
             raw_bytes: text.raw_bytes,

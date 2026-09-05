@@ -18,13 +18,15 @@ use crate::records::{
     SketchCurveGeometry, SketchCurveIdentity, SketchGlyphTransform, SketchPoint,
     SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
     SketchPointRecordForm, SketchRelation, SketchRelationOperand, SketchSurface, SketchText,
-    DESIGN_MODULE_SKETCH,
+    SketchTextAlignment, SketchTextLayout, DESIGN_MODULE_SKETCH,
 };
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::knots_nondecreasing;
+use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
 use std::collections::HashMap;
 
@@ -1598,7 +1600,7 @@ const TXT_TAG_FONT_WEIGHT_AT: usize = 3;
 enum SketchTextIdentity {
     /// `textex_tag`: a `1` byte, the width factor, a zero byte between the font
     /// family and the height, and the anchor inside a placement transform.
-    TextexTag,
+    TextexTag { width_factor: f64 },
     /// `txt_tag`: a `0` byte, no width factor, the height directly after the
     /// font family, and the anchor stored on its own.
     TxtTag { rotation: f64 },
@@ -1644,7 +1646,7 @@ fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
 /// last column, and its 2×2 basis is a rotation of unit determinant carrying no
 /// scale or shear. A run failing any of that is not a placement, so the record
 /// is misframed.
-fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<(Point2, f64)> {
+fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlacement> {
     let elements = f64s_at(payload, *cursor, 16)?;
     *cursor = cursor.checked_add(128)?;
     let at = |row: usize, column: usize| elements[row * 4 + column];
@@ -1667,7 +1669,10 @@ fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<(Point2, f6
     (planar && constant(determinant, 1.0)).then_some(())?;
     let anchor = Point2::new(at(0, 3) * 10.0, at(1, 3) * 10.0);
     (anchor.u.is_finite() && anchor.v.is_finite()).then_some(())?;
-    Some((anchor, at(1, 0).atan2(at(0, 0))))
+    Some(TextPlacement {
+        anchor,
+        rotation: Angle(at(1, 0).atan2(at(0, 0))),
+    })
 }
 
 /// The record index a reference names, absent when the reference is null.
@@ -1679,27 +1684,20 @@ fn reference_index(reference: &Reference) -> Option<u32> {
 
 /// Class-level fields of a sketch-text record, ending at the text height.
 struct SketchTextHead {
-    identity: SketchTextIdentity,
     entity_genesis: Option<u64>,
     persistent_id: Option<u64>,
     base_id: Option<u64>,
     font_family: String,
     height: f64,
-    width_factor: Option<f64>,
     color: Color,
     cursor: usize,
 }
 
 /// Fields following the height, whose framing depends on the two slot forms.
 struct SketchTextTail {
-    first_reference: Option<u32>,
-    second_reference: Option<u32>,
+    layout: SketchTextLayout,
     text: String,
     font_weight: i32,
-    anchor: Option<Point2>,
-    rotation: Option<f64>,
-    horizontal_alignment: Option<u32>,
-    vertical_alignment: Option<u32>,
     owner_reference: u32,
 }
 
@@ -1728,7 +1726,10 @@ fn read_sketch_text_leading_block(payload: &[u8], cursor: &mut usize) -> Option<
 }
 
 /// Read the record prefix, property block, and the metrics up to the height.
-fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchTextHead> {
+fn decode_sketch_text_head(
+    payload: &[u8],
+    class_version: u32,
+) -> Option<(SketchTextHead, SketchTextIdentity)> {
     // Record prefix: the LP-ASCII class tag, the u64 entity ID, and the
     // LP-ASCII record name.
     let (_, after_tag) = lp_ascii_filtered(payload, 0, 3..=3, u8::is_ascii_digit)?;
@@ -1758,40 +1759,30 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
         (None, None) if class_version < TXT_TAG_IDENTITY_KEY_VERSION => true,
         (None, None) => return None,
     };
-    let identity = if is_txt_tag {
+    let (identity, color, persistent_id) = if is_txt_tag {
         let rotation = View::f64_le_at(payload, cursor)?;
         rotation.is_finite().then_some(())?;
-        SketchTextIdentity::TxtTag { rotation }
+        cursor = cursor.checked_add(8)?;
+        (payload.get(cursor)? == &0).then_some(())?;
+        cursor = cursor.checked_add(TXT_TAG_POST_ROTATION_RUN)?;
+        let color = read_sketch_text_color(payload, &mut cursor)?;
+        (
+            SketchTextIdentity::TxtTag { rotation },
+            color,
+            property("txt_tag"),
+        )
     } else {
-        SketchTextIdentity::TextexTag
-    };
-    let property = |key: &str| {
-        properties
-            .iter()
-            .find(|(name, _)| name == key)
-            .map(|(_, value)| *value)
-    };
-    let persistent_id = match identity {
-        SketchTextIdentity::TextexTag => property("textex_tag"),
-        SketchTextIdentity::TxtTag { .. } => property("txt_tag"),
-    };
-    let (width_factor, color) = match identity {
-        SketchTextIdentity::TextexTag => {
-            (payload.get(cursor)? == &1).then_some(())?;
-            cursor += 1;
-            let width_factor = View::f64_le_at(payload, cursor)?;
-            cursor = cursor.checked_add(8)?;
-            let color = read_sketch_text_color(payload, &mut cursor)?;
-            (width_factor.is_finite() && width_factor >= 0.0).then_some(())?;
-            (Some(width_factor), color)
-        }
-        SketchTextIdentity::TxtTag { .. } => {
-            cursor = cursor.checked_add(8)?;
-            (payload.get(cursor)? == &0).then_some(())?;
-            cursor = cursor.checked_add(TXT_TAG_POST_ROTATION_RUN)?;
-            let color = read_sketch_text_color(payload, &mut cursor)?;
-            (None, color)
-        }
+        (payload.get(cursor)? == &1).then_some(())?;
+        cursor += 1;
+        let width_factor = View::f64_le_at(payload, cursor)?;
+        cursor = cursor.checked_add(8)?;
+        let color = read_sketch_text_color(payload, &mut cursor)?;
+        (width_factor.is_finite() && width_factor >= 0.0).then_some(())?;
+        (
+            SketchTextIdentity::TextexTag { width_factor },
+            color,
+            property("textex_tag"),
+        )
     };
     let font_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if font_count == 0 || font_count > 1_024 {
@@ -1799,24 +1790,25 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
     }
     let (font_family, after_font) = utf16le_at(payload, cursor + 4, font_count)?;
     cursor = after_font;
-    if matches!(identity, SketchTextIdentity::TextexTag) {
+    if matches!(identity, SketchTextIdentity::TextexTag { .. }) {
         (payload.get(cursor)? == &0).then_some(())?;
         cursor += 1;
     }
     let height = View::f64_le_at(payload, cursor)? * 10.0;
     cursor = cursor.checked_add(8)?;
     (height.is_finite() && height > 0.0).then_some(())?;
-    Some(SketchTextHead {
+    Some((
+        SketchTextHead {
+            entity_genesis: property("EntityGenesis"),
+            persistent_id,
+            base_id: property("txt_tag_base"),
+            font_family,
+            height,
+            color,
+            cursor,
+        },
         identity,
-        entity_genesis: property("EntityGenesis"),
-        persistent_id,
-        base_id: property("txt_tag_base"),
-        font_family,
-        height,
-        width_factor,
-        color,
-        cursor,
-    })
+    ))
 }
 
 /// Read the indexed Design form of a `textex_tag` record. It has no leading
@@ -1824,7 +1816,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
 /// nine-byte zero entity lane and the ordinary property block. Its one-byte
 /// width prefix is zero, unlike the legacy class form's one-byte prefix of
 /// one; the f64 width factor and the remaining metrics have the same roles.
-fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
+fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<(SketchTextHead, f64)> {
     let (_, after_tag) = lp_ascii_filtered(payload, 0, 3..=3, u8::is_ascii_digit)?;
     if after_tag != 7
         || View::u32_le_at(payload, after_tag).is_none()
@@ -1858,17 +1850,18 @@ fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
     let height = View::f64_le_at(payload, cursor)? * 10.0;
     cursor = cursor.checked_add(8)?;
     (height.is_finite() && height > 0.0).then_some(())?;
-    Some(SketchTextHead {
-        identity: SketchTextIdentity::TextexTag,
-        entity_genesis: property("EntityGenesis"),
-        persistent_id: Some(persistent_id),
-        base_id: property("txt_tag_base"),
-        font_family,
-        height,
-        width_factor: Some(width_factor),
-        color,
-        cursor,
-    })
+    Some((
+        SketchTextHead {
+            entity_genesis: property("EntityGenesis"),
+            persistent_id: Some(persistent_id),
+            base_id: property("txt_tag_base"),
+            font_family,
+            height,
+            color,
+            cursor,
+        },
+        width_factor,
+    ))
 }
 
 /// Read the alignment fields, text content, and class tail under one pair of
@@ -1879,10 +1872,11 @@ fn decode_sketch_text_tail(
     mut cursor: usize,
     first_slot: TextReferenceSlot,
     second_slot: TextReferenceSlot,
+    width_factor: f64,
 ) -> Option<SketchTextTail> {
     let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
     // Horizontal alignment enum and three flag bytes.
-    let horizontal_alignment = Some(View::u32_le_at(payload, cursor)?);
+    let horizontal_alignment = View::u32_le_at(payload, cursor)?;
     cursor = cursor.checked_add(7)?;
     let text_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if text_count == 0 || text_count > 1_048_576 {
@@ -1892,7 +1886,7 @@ fn decode_sketch_text_tail(
     cursor = after_text;
     let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
     // Vertical alignment enum, one flag byte, and the font weight.
-    let vertical_alignment = Some(View::u32_le_at(payload, cursor)?);
+    let vertical_alignment = View::u32_le_at(payload, cursor)?;
     let font_weight = View::u32_le_at(payload, cursor.checked_add(5)?)? as i32;
     matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(9)?;
@@ -1913,14 +1907,18 @@ fn decode_sketch_text_tail(
     let owner = take_reference(payload, &mut cursor)?;
     (cursor == payload.len()).then_some(())?;
     Some(SketchTextTail {
-        first_reference: reference_index(&first_reference),
-        second_reference: reference_index(&second_reference),
+        layout: SketchTextLayout::TextexTag {
+            width_factor,
+            alignment: Some(SketchTextAlignment {
+                horizontal: horizontal_alignment,
+                vertical: vertical_alignment,
+            }),
+            first_reference: reference_index(&first_reference),
+            second_reference: reference_index(&second_reference),
+            placement,
+        },
         text,
         font_weight,
-        anchor: placement.map(|(anchor, _)| anchor),
-        rotation: placement.map(|(_, rotation)| rotation),
-        horizontal_alignment,
-        vertical_alignment,
         owner_reference: reference_index(&owner)?,
     })
 }
@@ -1970,14 +1968,14 @@ fn decode_txt_tag_sketch_text_tail(
     let owner = take_reference(payload, &mut cursor)?;
     (cursor == payload.len()).then_some(())?;
     Some(SketchTextTail {
-        first_reference: None,
-        second_reference: None,
+        layout: SketchTextLayout::TxtTag {
+            placement: TextPlacement {
+                anchor,
+                rotation: Angle(rotation),
+            },
+        },
         text,
         font_weight,
-        anchor: Some(anchor),
-        rotation: Some(rotation),
-        horizontal_alignment: None,
-        vertical_alignment: None,
         owner_reference: reference_index(&owner)?,
     })
 }
@@ -1994,9 +1992,10 @@ fn decode_indexed_sketch_text_tail(
     mut cursor: usize,
     first_slot: TextReferenceSlot,
     second_slot: TextReferenceSlot,
+    width_factor: f64,
 ) -> Option<SketchTextTail> {
     let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
-    let horizontal_alignment = Some(View::u32_le_at(payload, cursor)?);
+    let horizontal_alignment = View::u32_le_at(payload, cursor)?;
     cursor = cursor.checked_add(7)?;
     let text_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if text_count == 0 || text_count > 1_048_576 {
@@ -2005,7 +2004,7 @@ fn decode_indexed_sketch_text_tail(
     let (text, after_text) = utf16le_at(payload, cursor + 4, text_count)?;
     cursor = after_text;
     let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
-    let vertical_alignment = Some(View::u32_le_at(payload, cursor)?);
+    let vertical_alignment = View::u32_le_at(payload, cursor)?;
     let font_weight = View::u32_le_at(payload, cursor.checked_add(5)?)? as i32;
     matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(9)?;
@@ -2037,25 +2036,37 @@ fn decode_indexed_sketch_text_tail(
     let owner = take_reference(payload, &mut cursor)?;
     (cursor == payload.len()).then_some(())?;
     Some(SketchTextTail {
-        first_reference: reference_index(&first_reference),
-        second_reference: reference_index(&second_reference),
+        layout: SketchTextLayout::TextexTag {
+            width_factor,
+            alignment: Some(SketchTextAlignment {
+                horizontal: horizontal_alignment,
+                vertical: vertical_alignment,
+            }),
+            first_reference: reference_index(&first_reference),
+            second_reference: reference_index(&second_reference),
+            placement: None,
+        },
         text,
         font_weight,
-        anchor: None,
-        rotation: None,
-        horizontal_alignment,
-        vertical_alignment,
         owner_reference: reference_index(&owner)?,
     })
 }
 
-fn decode_indexed_sketch_text_record_tail(payload: &[u8], cursor: usize) -> Option<SketchTextTail> {
+fn decode_indexed_sketch_text_record_tail(
+    payload: &[u8],
+    cursor: usize,
+    width_factor: f64,
+) -> Option<SketchTextTail> {
     let mut closed = None;
     for first_slot in TEXT_REFERENCE_SLOTS {
         for second_slot in TEXT_REFERENCE_SLOTS {
-            let Some(tail) =
-                decode_indexed_sketch_text_tail(payload, cursor, first_slot, second_slot)
-            else {
+            let Some(tail) = decode_indexed_sketch_text_tail(
+                payload,
+                cursor,
+                first_slot,
+                second_slot,
+                width_factor,
+            ) else {
                 continue;
             };
             if closed.replace(tail).is_some() {
@@ -2077,21 +2088,6 @@ fn assemble_sketch_text(
     head: SketchTextHead,
     tail: SketchTextTail,
 ) -> SketchText {
-    let layout = match head.identity {
-        SketchTextIdentity::TxtTag { .. } => crate::records::SketchTextLayout::TxtTag {
-            anchor: tail.anchor.unwrap_or(Point2::new(0.0, 0.0)),
-            rotation: tail.rotation.unwrap_or(0.0),
-        },
-        SketchTextIdentity::TextexTag => crate::records::SketchTextLayout::TextexTag {
-            width_factor: head.width_factor.unwrap_or(0.0),
-            horizontal_alignment: tail.horizontal_alignment,
-            vertical_alignment: tail.vertical_alignment,
-            first_reference: tail.first_reference,
-            second_reference: tail.second_reference,
-            anchor: tail.anchor,
-            rotation: tail.rotation,
-        },
-    };
     SketchText {
         id: ids::native_sketch_text_id(stream, byte_offset),
         record_index,
@@ -2107,7 +2103,7 @@ fn assemble_sketch_text(
         font_weight: tail.font_weight,
         height: head.height,
         color: head.color,
-        layout,
+        layout: tail.layout,
         raw_bytes: payload.to_vec(),
     }
 }
@@ -2120,16 +2116,20 @@ pub(crate) fn decode_sketch_text_record(
     record_index: u32,
     byte_offset: usize,
 ) -> Option<SketchText> {
-    if let Some(head) = decode_sketch_text_head(payload, class_version) {
-        let tail = match head.identity {
-            SketchTextIdentity::TextexTag => {
+    if let Some((head, identity)) = decode_sketch_text_head(payload, class_version) {
+        let tail = match identity {
+            SketchTextIdentity::TextexTag { width_factor } => {
                 let mut closed = None;
                 let mut ambiguous = false;
                 'forms: for first_slot in TEXT_REFERENCE_SLOTS {
                     for second_slot in TEXT_REFERENCE_SLOTS {
-                        let Some(tail) =
-                            decode_sketch_text_tail(payload, head.cursor, first_slot, second_slot)
-                        else {
+                        let Some(tail) = decode_sketch_text_tail(
+                            payload,
+                            head.cursor,
+                            first_slot,
+                            second_slot,
+                            width_factor,
+                        ) else {
                             continue;
                         };
                         // Two slot forms both ending on the owning-sketch reference
@@ -2163,8 +2163,8 @@ pub(crate) fn decode_sketch_text_record(
             ));
         }
     }
-    let head = decode_indexed_sketch_text_head(payload)?;
-    let tail = decode_indexed_sketch_text_record_tail(payload, head.cursor)?;
+    let (head, width_factor) = decode_indexed_sketch_text_head(payload)?;
+    let tail = decode_indexed_sketch_text_record_tail(payload, head.cursor, width_factor)?;
     Some(assemble_sketch_text(
         payload,
         stream,

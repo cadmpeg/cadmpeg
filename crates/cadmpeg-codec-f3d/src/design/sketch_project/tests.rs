@@ -158,12 +158,16 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         },
         layout: crate::records::SketchTextLayout::TextexTag {
             width_factor: 1.0,
-            horizontal_alignment: Some(1),
-            vertical_alignment: Some(1),
+            alignment: Some(crate::records::SketchTextAlignment {
+                horizontal: 1,
+                vertical: 1,
+            }),
             first_reference: None,
             second_reference: None,
-            anchor: Some(Point2::new(0.0, 0.0)),
-            rotation: Some(0.0),
+            placement: Some(cadmpeg_ir::sketches::TextPlacement {
+                anchor: Point2::new(0.0, 0.0),
+                rotation: cadmpeg_ir::features::Angle(0.0),
+            }),
         },
         raw_bytes: Vec::new(),
     };
