@@ -198,7 +198,6 @@ fn parse_document(
         let type_name = required_attr(node, "type")?;
         let id = object_id(&name);
         let data_node = data_by_name.get(&name);
-        let raw_xml = data_node.map(|data| text[data.range()].to_owned());
         let attributes = node
             .attributes()
             .filter(|attribute| !matches!(attribute.name(), "name" | "type" | "id" | "ViewType"))
@@ -226,9 +225,11 @@ fn parse_document(
                 .map_or_else(Vec::new, |dependency| dependency.dependencies.clone()),
             dependency_allow_partial: dependency.and_then(|dependency| dependency.allow_partial),
             order,
-            raw_xml,
-            byte_start: data_node.map(|data| data.range().start as u64),
-            byte_end: data_node.map(|data| data.range().end as u64),
+            data: data_node.map(|data| crate::native::ObjectData {
+                raw_xml: text[data.range()].to_owned(),
+                byte_start: data.range().start as u64,
+                byte_end: data.range().end as u64,
+            }),
         });
     }
 

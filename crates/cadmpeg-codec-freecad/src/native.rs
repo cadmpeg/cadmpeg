@@ -919,6 +919,7 @@ pub struct DocumentFacts {
 
 /// One declared application object and its persistence state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "ObjectRecordWire", into = "ObjectRecordWire")]
 pub struct ObjectRecord {
     /// Stable native identity.
     pub id: String,
@@ -938,12 +939,94 @@ pub struct ObjectRecord {
     pub dependency_allow_partial: Option<i64>,
     /// Source-order index.
     pub order: usize,
-    /// Exact object-data XML, when present.
-    pub raw_xml: Option<String>,
+    /// Exact object-data XML and its source span, when present.
+    pub data: Option<ObjectData>,
+}
+
+/// Object-data XML and the source span that produced it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectData {
+    /// Exact object-data XML.
+    pub raw_xml: String,
     /// Inclusive byte offset of object-data XML.
-    pub byte_start: Option<u64>,
+    pub byte_start: u64,
     /// Exclusive byte offset of object-data XML.
-    pub byte_end: Option<u64>,
+    pub byte_end: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ObjectRecordWire {
+    id: String,
+    name: String,
+    type_name: String,
+    persistent_id: Option<i64>,
+    view_type: Option<String>,
+    attributes: BTreeMap<String, String>,
+    dependencies: Vec<String>,
+    dependency_allow_partial: Option<i64>,
+    order: usize,
+    raw_xml: Option<String>,
+    byte_start: Option<u64>,
+    byte_end: Option<u64>,
+}
+
+impl From<ObjectRecord> for ObjectRecordWire {
+    fn from(value: ObjectRecord) -> Self {
+        let (raw_xml, byte_start, byte_end) = match value.data {
+            Some(data) => (
+                Some(data.raw_xml),
+                Some(data.byte_start),
+                Some(data.byte_end),
+            ),
+            None => (None, None, None),
+        };
+        Self {
+            id: value.id,
+            name: value.name,
+            type_name: value.type_name,
+            persistent_id: value.persistent_id,
+            view_type: value.view_type,
+            attributes: value.attributes,
+            dependencies: value.dependencies,
+            dependency_allow_partial: value.dependency_allow_partial,
+            order: value.order,
+            raw_xml,
+            byte_start,
+            byte_end,
+        }
+    }
+}
+
+impl TryFrom<ObjectRecordWire> for ObjectRecord {
+    type Error = String;
+
+    fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
+        let data = match (wire.raw_xml, wire.byte_start, wire.byte_end) {
+            (Some(raw_xml), Some(byte_start), Some(byte_end)) => Some(ObjectData {
+                raw_xml,
+                byte_start,
+                byte_end,
+            }),
+            (None, None, None) => None,
+            _ => {
+                return Err(
+                    "object data raw_xml, byte_start, and byte_end must be set together".to_owned(),
+                )
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            name: wire.name,
+            type_name: wire.type_name,
+            persistent_id: wire.persistent_id,
+            view_type: wire.view_type,
+            attributes: wire.attributes,
+            dependencies: wire.dependencies,
+            dependency_allow_partial: wire.dependency_allow_partial,
+            order: wire.order,
+            data,
+        })
+    }
 }
 
 /// One dynamic object extension.

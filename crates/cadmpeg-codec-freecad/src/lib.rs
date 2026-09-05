@@ -263,9 +263,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         ));
     }
     for object in &objects {
-        let valid_object_bytes = match (&object.raw_xml, object.byte_start, object.byte_end) {
-            (Some(raw), Some(start), Some(end)) => start < end && end - start == raw.len() as u64,
-            _ => false,
+        let valid_object_bytes = match &object.data {
+            Some(data) => {
+                data.byte_start < data.byte_end
+                    && data.byte_end - data.byte_start == data.raw_xml.len() as u64
+            }
+            None => true,
         };
         if !valid_object_bytes {
             findings.push(finding(
