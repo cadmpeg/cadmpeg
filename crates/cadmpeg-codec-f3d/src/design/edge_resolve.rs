@@ -1598,7 +1598,14 @@ fn bipartite_assignment(
 
 /// Members of one construction operand group: `(identity, resolved edge slot,
 /// deleted boundary edge slots)`.
-type EdgeGroupMembers = Vec<(u32, Option<i64>, Vec<i64>)>;
+#[derive(Clone)]
+pub(crate) struct EdgeGroupMember {
+    pub(crate) identity: u32,
+    pub(crate) resolved_edge: Option<i64>,
+    pub(crate) deleted_boundary_edges: Vec<i64>,
+}
+
+type EdgeGroupMembers = Vec<EdgeGroupMember>;
 
 fn scope_partition_edge_group_candidates(
     target: &DesignConstructionOperandGroup,
@@ -1629,11 +1636,11 @@ fn scope_partition_edge_group_candidates(
                 complete = false;
                 break;
             };
-            members.push((
-                operand.record_index,
-                resolved_edge_operand(operand),
-                operand.deleted_boundary_edge_slots.clone(),
-            ));
+            members.push(EdgeGroupMember {
+                identity: operand.record_index,
+                resolved_edge: resolved_edge_operand(operand),
+                deleted_boundary_edges: operand.deleted_boundary_edge_slots.clone(),
+            });
         }
         if !complete {
             continue;
@@ -1655,11 +1662,11 @@ pub(crate) fn partition_unique_incomplete_edge_group(
     }
     let mut identities = HashSet::new();
     let mut universe = None::<Vec<i64>>;
-    for (identity, _, deleted) in groups.iter().flatten() {
-        if !identities.insert(*identity) {
+    for member in groups.iter().flatten() {
+        if !identities.insert(member.identity) {
             return None;
         }
-        let mut deleted = deleted.clone();
+        let mut deleted = member.deleted_boundary_edges.clone();
         deleted.sort_unstable();
         deleted.dedup();
         if deleted.is_empty()
@@ -1678,7 +1685,7 @@ pub(crate) fn partition_unique_incomplete_edge_group(
     let incomplete = groups
         .iter()
         .enumerate()
-        .filter(|(_, group)| group.iter().any(|(_, resolved, _)| resolved.is_none()))
+        .filter(|(_, group)| group.iter().any(|member| member.resolved_edge.is_none()))
         .map(|(ordinal, _)| ordinal)
         .collect::<Vec<_>>();
     if incomplete.as_slice() != [target_ordinal] {
@@ -1689,8 +1696,8 @@ pub(crate) fn partition_unique_incomplete_edge_group(
         if ordinal == target_ordinal {
             continue;
         }
-        for (_, resolved, _) in group {
-            let resolved = resolved.as_ref()?;
+        for member in group {
+            let resolved = member.resolved_edge.as_ref()?;
             if !universe.contains(resolved) || reserved.contains(resolved) {
                 return None;
             }
@@ -1704,7 +1711,7 @@ pub(crate) fn partition_unique_incomplete_edge_group(
     if target.len() != groups[target_ordinal].len()
         || groups[target_ordinal]
             .iter()
-            .filter_map(|(_, resolved, _)| *resolved)
+            .filter_map(|member| member.resolved_edge)
             .any(|resolved| !target.contains(&resolved))
     {
         return None;

@@ -26,7 +26,10 @@ fn superseded_xref_placements_have_a_distinct_loss_note() {
             transform: None,
         }],
         placement_failures: Vec::new(),
-        placement_overrides: vec![(4, 2)],
+        placement_overrides: vec![crate::xref::PlacementOverride {
+            ordinal: 4,
+            count: 2,
+        }],
     };
 
     report_xref_placement_overrides(&mut report, &table);

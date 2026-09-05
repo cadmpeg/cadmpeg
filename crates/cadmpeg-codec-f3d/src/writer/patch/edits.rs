@@ -35,12 +35,36 @@ pub(crate) struct PatchNatives<'a> {
     pub(crate) target: Option<&'a F3dNative>,
 }
 
-pub(crate) type SketchPointEdit = (u64, u32, cadmpeg_ir::math::Point2);
-pub(crate) type PersistentReferenceEdit = (u64, u32, u64);
-pub(crate) type BodyMemberEdit = (u64, u64, u16);
-pub(crate) type ActGuidEdit = (u64, Vec<u8>);
-pub(crate) type SketchCurveEdit = (u64, u32, SketchCurveGeometry);
-pub(crate) type SketchRelationEdit = Vec<(u64, Vec<u8>)>;
+pub(crate) struct Edit<T> {
+    pub(crate) offset: u64,
+    pub(crate) value: T,
+}
+
+pub(crate) struct SketchPointEdit {
+    pub(crate) offset: u64,
+    pub(crate) coordinate_offset: u32,
+    pub(crate) coordinates: cadmpeg_ir::math::Point2,
+}
+
+pub(crate) struct PersistentReferenceEdit {
+    pub(crate) offset: u64,
+    pub(crate) identity_offset: u32,
+    pub(crate) identity: u64,
+}
+
+pub(crate) struct BodyMemberEdit {
+    pub(crate) offset: u64,
+    pub(crate) entity_suffix: u64,
+    pub(crate) flags: u16,
+}
+
+pub(crate) type ActGuidEdit = Edit<Vec<u8>>;
+pub(crate) struct SketchCurveEdit {
+    pub(crate) offset: u64,
+    pub(crate) geometry_offset: u32,
+    pub(crate) geometry: SketchCurveGeometry,
+}
+pub(crate) type SketchRelationEdit = Vec<Edit<Vec<u8>>>;
 
 pub(crate) fn validate_creation_timestamp_edits(
     native: PatchNatives<'_>,
@@ -1268,10 +1292,10 @@ pub(crate) fn validate_act_guid_edits(
             .flat_map(u16::to_le_bytes)
             .collect::<Vec<_>>();
         let stream = native_stream(id, ":act-guid#")?;
-        edits
-            .entry(stream)
-            .or_default()
-            .push((after.guid_offset, encoded));
+        edits.entry(stream).or_default().push(Edit {
+            offset: after.guid_offset,
+            value: encoded,
+        });
     }
     Ok(edits)
 }
@@ -1328,7 +1352,10 @@ pub(crate) fn validate_act_registry_channel_edits(
         edits
             .entry(native_stream(id, ":act-registry-channel#")?)
             .or_default()
-            .push((after.guid_offset, encoded));
+            .push(Edit {
+                offset: after.guid_offset,
+                value: encoded,
+            });
     }
     Ok(edits)
 }
@@ -1554,8 +1581,8 @@ pub(crate) fn validate_configuration_edits(
 }
 
 pub(crate) struct EntityHeaderEdit {
-    pub(crate) record_reference: Option<(u64, u32)>,
-    pub(crate) references: Vec<(u64, u32)>,
+    pub(crate) record_reference: Option<Edit<u32>>,
+    pub(crate) references: Vec<Edit<u32>>,
 }
 
 pub(crate) fn validate_entity_header_edits(
@@ -1610,18 +1637,18 @@ pub(crate) fn validate_entity_header_edits(
         let record_reference = if after.record_reference == before.record_reference {
             None
         } else {
-            Some((
-                after.record_reference_offset.ok_or_else(|| {
+            Some(Edit {
+                offset: after.record_reference_offset.ok_or_else(|| {
                     CodecError::NotImplemented(format!(
                         "F3D entity header {id} has no writable owning-record reference"
                     ))
                 })?,
-                after.record_reference.ok_or_else(|| {
+                value: after.record_reference.ok_or_else(|| {
                     CodecError::NotImplemented(format!(
                         "cannot remove F3D entity-header record reference: {id}"
                     ))
                 })?,
-            ))
+            })
         };
         let references = after
             .reference_offsets
@@ -1629,7 +1656,9 @@ pub(crate) fn validate_entity_header_edits(
             .copied()
             .zip(after.reference_indices.iter().copied())
             .zip(&before.reference_indices)
-            .filter_map(|((offset, value), before)| (value != *before).then_some((offset, value)))
+            .filter_map(|((offset, value), before)| {
+                (value != *before).then_some(Edit { offset, value })
+            })
             .collect();
         let stream = id
             .strip_prefix(crate::ids::SCHEME_PREFIX)
@@ -1693,11 +1722,11 @@ pub(crate) fn validate_body_member_edits(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("invalid design-body-member id {id}"))
             })?;
-        edits.entry(stream).or_default().push((
-            after.byte_offset,
-            after.entity_suffix,
-            after.flags,
-        ));
+        edits.entry(stream).or_default().push(BodyMemberEdit {
+            offset: after.byte_offset,
+            entity_suffix: after.entity_suffix,
+            flags: after.flags,
+        });
     }
     Ok(edits)
 }
@@ -1890,8 +1919,8 @@ pub(crate) struct BodyNativeKeyEdits {
 }
 
 pub(crate) struct ConstructionRecipeEdit {
-    pub(crate) record_index: Option<(u64, i32)>,
-    pub(crate) design_id: Option<(u64, Vec<u8>)>,
+    pub(crate) record_index: Option<Edit<i32>>,
+    pub(crate) design_id: Option<Edit<Vec<u8>>>,
 }
 
 pub(crate) fn validate_construction_recipe_edits(
@@ -1938,7 +1967,10 @@ pub(crate) fn validate_construction_recipe_edits(
             .then(|| {
                 after
                     .record_index_offset
-                    .map(|offset| (offset, after.record_index))
+                    .map(|offset| Edit {
+                        offset,
+                        value: after.record_index,
+                    })
                     .ok_or_else(|| {
                         CodecError::NotImplemented(format!(
                             "F3D construction recipe {id} has no writable record-index carrier"
@@ -1968,7 +2000,10 @@ pub(crate) fn validate_construction_recipe_edits(
                 )));
             }
             let encoded = after_value.as_bytes().to_vec();
-            Some((offset, encoded))
+            Some(Edit {
+                offset,
+                value: encoded,
+            })
         };
         let stream = id
             .strip_prefix(crate::ids::SCHEME_PREFIX)
@@ -2037,7 +2072,11 @@ pub(crate) fn validate_persistent_reference_edits(
         edits
             .entry(stream)
             .or_default()
-            .push((after.byte_offset, after.value_offset, after.value));
+            .push(PersistentReferenceEdit {
+                offset: after.byte_offset,
+                identity_offset: after.value_offset,
+                identity: after.value,
+            });
     }
     Ok(edits)
 }
@@ -2265,11 +2304,11 @@ pub(crate) fn validate_sketch_point_edits(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("invalid sketch-point id {}", point.id))
             })?;
-        edits.entry(stream).or_default().push((
-            point.byte_offset,
-            point.coordinate_offset,
-            point.coordinates,
-        ));
+        edits.entry(stream).or_default().push(SketchPointEdit {
+            offset: point.byte_offset,
+            coordinate_offset: point.coordinate_offset,
+            coordinates: point.coordinates,
+        });
     }
     Ok(edits)
 }
@@ -2333,10 +2372,11 @@ pub(crate) fn validate_sketch_curve_edits(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("invalid sketch-curve id {}", curve.id))
             })?;
-        edits
-            .entry(stream)
-            .or_default()
-            .push((curve.byte_offset, curve.geometry_offset, geometry));
+        edits.entry(stream).or_default().push(SketchCurveEdit {
+            offset: curve.byte_offset,
+            geometry_offset: curve.geometry_offset,
+            geometry,
+        });
     }
     Ok(edits)
 }
@@ -2528,10 +2568,10 @@ pub(crate) fn validate_sketch_relation_edits(
             &mut values,
         )?;
         if relation.owner_reference != before.owner_reference {
-            values.push((
-                relation.byte_offset + u64::from(relation.owner_reference_offset),
-                relation.owner_reference.to_le_bytes().to_vec(),
-            ));
+            values.push(Edit {
+                offset: relation.byte_offset + u64::from(relation.owner_reference_offset),
+                value: relation.owner_reference.to_le_bytes().to_vec(),
+            });
         }
         collect_sketch_reference_edits(
             relation,
@@ -2543,10 +2583,10 @@ pub(crate) fn validate_sketch_relation_edits(
         if relation.state != before.state {
             let encoded =
                 encode_sketch_relation_state(&relation.id, &before.raw_bytes, relation.state)?;
-            values.push((
-                relation.byte_offset + u64::from(relation.state_offset),
-                encoded,
-            ));
+            values.push(Edit {
+                offset: relation.byte_offset + u64::from(relation.state_offset),
+                value: encoded,
+            });
         }
         edits.entry(stream).or_default().push(values);
     }
@@ -2558,7 +2598,7 @@ fn collect_sketch_reference_edits(
     before: &[u32],
     after: &[u32],
     offsets: &[u32],
-    edits: &mut Vec<(u64, Vec<u8>)>,
+    edits: &mut Vec<Edit<Vec<u8>>>,
 ) -> Result<(), CodecError> {
     if before.len() != after.len() || after.len() != offsets.len() {
         return Err(CodecError::NotImplemented(format!(
@@ -2572,11 +2612,9 @@ fn collect_sketch_reference_edits(
             .zip(after)
             .zip(offsets)
             .filter(|((before, after), _)| before != after)
-            .map(|((_, after), offset)| {
-                (
-                    relation.byte_offset + u64::from(*offset),
-                    after.to_le_bytes().to_vec(),
-                )
+            .map(|((_, after), offset)| Edit {
+                offset: relation.byte_offset + u64::from(*offset),
+                value: after.to_le_bytes().to_vec(),
             }),
     );
     Ok(())

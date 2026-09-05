@@ -113,8 +113,8 @@ pub(crate) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
 }
 
 pub(crate) fn patch_act_guids(bytes: &mut [u8], edits: &[ActGuidEdit]) -> Result<(), CodecError> {
-    for (offset, encoded) in edits {
-        patch_bytes_at(bytes, *offset, encoded, "ACT GUID")?;
+    for edit in edits {
+        patch_bytes_at(bytes, edit.offset, &edit.value, "ACT GUID")?;
     }
     Ok(())
 }
@@ -228,11 +228,21 @@ pub(crate) fn patch_entity_headers(
     edits: &[EntityHeaderEdit],
 ) -> Result<(), CodecError> {
     for edit in edits {
-        if let Some((offset, value)) = edit.record_reference {
-            patch_u32_at(bytes, offset, value, "entity-header record reference")?;
+        if let Some(reference) = &edit.record_reference {
+            patch_u32_at(
+                bytes,
+                reference.offset,
+                reference.value,
+                "entity-header record reference",
+            )?;
         }
-        for &(offset, value) in &edit.references {
-            patch_u32_at(bytes, offset, value, "entity-header child reference")?;
+        for reference in &edit.references {
+            patch_u32_at(
+                bytes,
+                reference.offset,
+                reference.value,
+                "entity-header child reference",
+            )?;
         }
     }
     Ok(())
@@ -252,7 +262,10 @@ pub(crate) fn patch_body_members(
     bytes: &mut [u8],
     edits: &[BodyMemberEdit],
 ) -> Result<(), CodecError> {
-    for &(offset, entity_suffix, flags) in edits {
+    for edit in edits {
+        let offset = edit.offset;
+        let entity_suffix = edit.entity_suffix;
+        let flags = edit.flags;
         let start = usize::try_from(offset).map_err(|_| {
             CodecError::Malformed("design-body-member offset exceeds address space".into())
         })?;
@@ -446,7 +459,9 @@ pub(crate) fn patch_construction_recipes(
     edits: &[ConstructionRecipeEdit],
 ) -> Result<(), CodecError> {
     for edit in edits {
-        if let Some((offset, record_index)) = edit.record_index {
+        if let Some(record_index) = &edit.record_index {
+            let offset = record_index.offset;
+            let record_index = record_index.value;
             let start = usize::try_from(offset).map_err(|_| {
                 CodecError::Malformed("construction-recipe offset exceeds address space".into())
             })?;
@@ -457,8 +472,10 @@ pub(crate) fn patch_construction_recipes(
                 })?
                 .copy_from_slice(&record_index.to_le_bytes());
         }
-        if let Some((offset, encoded)) = &edit.design_id {
-            let start = usize::try_from(*offset).map_err(|_| {
+        if let Some(design_id) = &edit.design_id {
+            let offset = design_id.offset;
+            let encoded = &design_id.value;
+            let start = usize::try_from(offset).map_err(|_| {
                 CodecError::Malformed(
                     "construction-recipe design-id offset exceeds address space".into(),
                 )
@@ -478,7 +495,10 @@ pub(crate) fn patch_persistent_references(
     bytes: &mut [u8],
     edits: &[PersistentReferenceEdit],
 ) -> Result<(), CodecError> {
-    for &(record_offset, value_offset, value) in edits {
+    for edit in edits {
+        let record_offset = edit.offset;
+        let value_offset = edit.identity_offset;
+        let value = edit.identity;
         let start = usize::try_from(record_offset)
             .ok()
             .and_then(|offset| offset.checked_add(value_offset as usize))
@@ -560,10 +580,13 @@ pub(crate) fn patch_sketch_points(
     bytes: &mut [u8],
     edits: &[SketchPointEdit],
 ) -> Result<(), CodecError> {
-    for (record_offset, coordinate_offset, coordinates) in edits {
-        let start = usize::try_from(*record_offset)
+    for edit in edits {
+        let record_offset = edit.offset;
+        let coordinate_offset = edit.coordinate_offset;
+        let coordinates = &edit.coordinates;
+        let start = usize::try_from(record_offset)
             .ok()
-            .and_then(|record| record.checked_add(*coordinate_offset as usize))
+            .and_then(|record| record.checked_add(coordinate_offset as usize))
             .ok_or_else(|| {
                 CodecError::Malformed("sketch-point offset exceeds address space".into())
             })?;
@@ -580,10 +603,13 @@ pub(crate) fn patch_sketch_curves(
     bytes: &mut [u8],
     edits: &[SketchCurveEdit],
 ) -> Result<(), CodecError> {
-    for (record_offset, geometry_offset, geometry) in edits {
-        let start = usize::try_from(*record_offset)
+    for edit in edits {
+        let record_offset = edit.offset;
+        let geometry_offset = edit.geometry_offset;
+        let geometry = &edit.geometry;
+        let start = usize::try_from(record_offset)
             .ok()
-            .and_then(|record| record.checked_add(*geometry_offset as usize))
+            .and_then(|record| record.checked_add(geometry_offset as usize))
             .ok_or_else(|| {
                 CodecError::Malformed("sketch-curve offset exceeds address space".into())
             })?;
@@ -738,8 +764,8 @@ pub(crate) fn patch_sketch_relations(
     edits: &[SketchRelationEdit],
 ) -> Result<(), CodecError> {
     for edit in edits {
-        for (offset, value) in edit {
-            patch_bytes_at(bytes, *offset, value, "sketch-relation value")?;
+        for member in edit {
+            patch_bytes_at(bytes, member.offset, &member.value, "sketch-relation value")?;
         }
     }
     Ok(())

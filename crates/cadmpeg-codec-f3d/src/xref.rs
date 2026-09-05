@@ -55,7 +55,14 @@ pub struct XrefTable {
     pub(crate) placement_failures: Vec<u32>,
     /// `(XREF ordinal, placement-record count)` pairs whose structured
     /// placements were superseded by scope-bound Component Insert carriers.
-    pub(crate) placement_overrides: Vec<(u32, usize)>,
+    pub(crate) placement_overrides: Vec<PlacementOverride>,
+}
+
+/// One XREF ordinal whose structured placements were superseded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PlacementOverride {
+    pub(crate) ordinal: u32,
+    pub(crate) count: usize,
 }
 
 /// The `docstruct` document-type declaration of a JSON `Properties.dat`.
@@ -404,7 +411,10 @@ fn bind_occurrences(
             let structured_count =
                 superseded_placement_count(&direct, placements, &reference.neutron_role);
             if !direct.is_empty() && structured_count != 0 {
-                placement_overrides.push((reference.ordinal, structured_count));
+                placement_overrides.push(PlacementOverride {
+                    ordinal: reference.ordinal,
+                    count: structured_count,
+                });
             }
             occurrences.extend(occurrence_transforms_with_precedence(
                 direct,

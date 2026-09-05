@@ -3604,11 +3604,13 @@ fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::
 /// Report structured placements that were ignored because a scope-bound
 /// Component Insert carrier supplied the occurrence transform for the role.
 fn report_xref_placement_overrides(report: &mut DecodeBody, table: &crate::xref::XrefTable) {
-    for (ordinal, count) in &table.placement_overrides {
+    for override_ in &table.placement_overrides {
+        let ordinal = override_.ordinal;
+        let count = override_.count;
         let Some(reference) = table
             .references
             .iter()
-            .find(|reference| reference.ordinal == *ordinal)
+            .find(|reference| reference.ordinal == ordinal)
         else {
             continue;
         };
