@@ -376,9 +376,19 @@ fn encode_regenerates_an_edited_point_from_neutral_ir() {
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report.losses.is_empty());
-    let (global, _) = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
-    assert!(global.maximum_coordinate_mm().unwrap() >= 6.0);
-    assert_ne!(global.maximum_coordinate_mm().unwrap(), 1000.0);
+    let scan = crate::card::scan(&written).unwrap();
+    crate::global::parse(&scan).unwrap();
+    let global_text = scan
+        .lines
+        .iter()
+        .filter(|line| line.section == Some(crate::card::Section::Global))
+        .flat_map(|line| line.payload.iter().take(72).copied())
+        .collect::<Vec<_>>();
+    let global_text = String::from_utf8(global_text)
+        .expect("generated Global record is ASCII")
+        .replace(' ', "");
+    assert!(global_text.contains(",6.0000000000000000D+00,"));
+    assert!(!global_text.contains(",1.0000000000000000D+03,"));
 
     let decoded = IgesCodec
         .decode(

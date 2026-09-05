@@ -372,7 +372,6 @@ fn the_5_0_global_defaults_resolve_receiver_units_and_coordinate_metadata() {
 
     assert_eq!(parsed.receiver_product().as_deref(), Some("product"));
     assert_eq!(parsed.units_name().as_deref(), Some("MM"));
-    assert_eq!(parsed.maximum_coordinate_mm(), None);
     assert!(losses.is_empty(), "{losses:#?}");
 }
 
@@ -488,7 +487,6 @@ fn the_4_0_global_defaults_do_not_inherit_5_0_metadata_defaults() {
 
     assert_eq!(parsed.receiver_product(), None);
     assert_eq!(parsed.units_name(), None);
-    assert_eq!(parsed.maximum_coordinate_mm(), None);
     assert_eq!(
         report_code_count_from_losses(&losses, IgesLossCode::GlobalMetadataFieldUnusable),
         3,
