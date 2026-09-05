@@ -43,7 +43,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             angle_owner_record_index: 402,
             auxiliary_reference_record_indices: Vec::new(),
             settings_record_index: 411,
-            bend_radius: 0.25,
+            bend_radius: crate::records::DesignBendRadius::new(0.25).expect("positive bend radius"),
             bend_radius_offset: 156,
 
             height_datum: DesignSheetMetalHeightDatum::InnerFaces,
@@ -453,7 +453,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             angle_owner_record_index: 402,
             auxiliary_reference_record_indices: Vec::new(),
             settings_record_index: 411,
-            bend_radius: 0.25,
+            bend_radius: crate::records::DesignBendRadius::new(0.25).expect("positive bend radius"),
             bend_radius_offset: 156,
 
             height_datum: DesignSheetMetalHeightDatum::OuterFaces,
@@ -642,7 +642,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
             angle_owner_record_index: 334,
             auxiliary_reference_record_indices: Vec::new(),
             settings_record_index: 343,
-            bend_radius: 0.25,
+            bend_radius: crate::records::DesignBendRadius::new(0.25).expect("positive bend radius"),
             bend_radius_offset: 156,
 
             height_datum: DesignSheetMetalHeightDatum::OuterFaces,
@@ -952,7 +952,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         aggregate_operand_record_index: 720,
         parameter_owners,
         settings_record_index: 724,
-        bend_radius: 0.25,
+        bend_radius: crate::records::DesignBendRadius::new(0.25).expect("positive bend radius"),
         bend_radius_offset: 100,
     };
     let project = |record_index: u32,

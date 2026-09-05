@@ -2320,8 +2320,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     })
                     && (edge_count != 1 || operation.shape.edges().all(|edge|
                         edge.aggregate_operand_record_index == operation.aggregate_group_record_index.saturating_add(3)))
-                    && operation.bend_radius.is_finite()
-                    && operation.bend_radius > 0.0
                     && operation.bend_radius_offset > scope.byte_offset
                     && operation.bend_radius_offset < scope.paired_byte_offset
             }
@@ -2368,8 +2366,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         == operation.edge_group_record_index.saturating_add(3)
                     && operation.aggregate_operand_record_index
                         == operation.aggregate_group_record_index.saturating_add(3)
-                    && operation.bend_radius.is_finite()
-                    && operation.bend_radius > 0.0
                     && operation.bend_radius_offset > scope.byte_offset
                     && operation.bend_radius_offset < scope.paired_byte_offset
             }
