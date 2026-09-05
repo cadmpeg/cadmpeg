@@ -1852,10 +1852,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             reference_type: 0,
             reference_type_offset: 0,
             tangent_point_data: None,
-            tangent_point_data_prefix: None,
-            tangent_point_data_offset: None,
-            input_record_indices: vec![55],
-            input_record_offsets: vec![0],
+            input_records: vec![crate::records::Located { value: 55, offset: 0 }],
             face_selection: Some(DesignHoleFaceSelection {
                 record_index: 100,
                 byte_offset: 0,

@@ -8470,7 +8470,7 @@ fn hole_construction_frame_at(
     let reference_type_at = cursor;
     let reference_type = View::u32_le_at(body, cursor)?;
     cursor = cursor.checked_add(4)?;
-    let (tangent_point_data_prefix, tangent_point_data, tangent_point_data_offset) = if version == 4
+    let tangent_point_data = if version == 4
     {
         let prefix = *body.get(cursor)?;
         cursor = cursor.checked_add(1)?;
@@ -8478,13 +8478,12 @@ fn hole_construction_frame_at(
         cursor = cursor.checked_add(24)?;
         let tangent_point_data: [f64; 3] =
             f64s_at(body, tangent_point_data_at, 3)?.try_into().ok()?;
-        (
-            Some(prefix),
-            Some(tangent_point_data),
-            Some(u64::try_from(tangent_point_data_at).ok()?),
-        )
+        Some(crate::records::DesignHoleTangentPoint {
+            prefix,
+            data: crate::records::Located { value: tangent_point_data, offset: u64::try_from(tangent_point_data_at).ok()? },
+        })
     } else if version == 1 {
-        (None, None, None)
+        None
     } else {
         return None;
     };
@@ -8504,20 +8503,18 @@ fn hole_construction_frame_at(
         .iter()
         .chain(direction.iter())
         .chain(point_parameters.iter())
-        .chain(tangent_point_data.iter().flatten())
+        .chain(tangent_point_data.iter().flat_map(|tangent| tangent.data.value.iter()))
         .any(|value| !value.is_finite())
         || (direction_norm - 1.0).abs() > EPS_HOLE_DIRECTION_NORM
     {
         return None;
     }
-    let mut input_record_indices = Vec::with_capacity(input_count);
-    let mut input_record_offsets = Vec::with_capacity(input_count);
+    let mut input_records = Vec::with_capacity(input_count);
     for _ in 0..input_count {
         let reference_at = cursor;
         let reference = take_reference(body, &mut cursor)?;
         let target = u32::try_from(reference.target?).ok()?;
-        input_record_indices.push(target);
-        input_record_offsets.push(u64::try_from(reference_at.checked_add(1)?).ok()?);
+        input_records.push(crate::records::Located { value: target, offset: u64::try_from(reference_at.checked_add(1)?).ok()? });
     }
     if (version == 4 && cursor != paired_at)
         || (version == 1 && next_indexed_record_offset(bytes, cursor)? != paired_at)
@@ -8539,10 +8536,7 @@ fn hole_construction_frame_at(
         reference_type,
         reference_type_offset: u64::try_from(reference_type_at).ok()?,
         tangent_point_data,
-        tangent_point_data_prefix,
-        tangent_point_data_offset,
-        input_record_indices,
-        input_record_offsets,
+        input_records,
         face_selection,
     })
 }

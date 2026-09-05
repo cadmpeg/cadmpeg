@@ -82,11 +82,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             point_parameter_offsets: [83, 91],
             reference_type: 19,
             reference_type_offset: 99,
-            tangent_point_data: Some([-1.0, -1.0, -1.0]),
-            tangent_point_data_prefix: Some(0),
-            tangent_point_data_offset: Some(104),
-            input_record_indices: vec![378],
-            input_record_offsets: vec![129],
+            tangent_point_data: Some(crate::records::DesignHoleTangentPoint { prefix: 0, data: crate::records::Located { value: [-1.0, -1.0, -1.0], offset: 104 } }),
+            input_records: vec![crate::records::Located { value: 378, offset: 129 }],
             face_selection: None,
         });
     }
