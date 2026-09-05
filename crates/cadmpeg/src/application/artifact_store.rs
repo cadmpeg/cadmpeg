@@ -399,7 +399,7 @@ mod tests {
         let library_candidates = identify(&mut source, &InspectOptions::default())
             .unwrap()
             .into_iter()
-            .map(|identified| (identified.format, identified.confidence))
+            .map(|identified| (identified.format(), identified.confidence()))
             .collect::<Vec<_>>();
 
         assert!(cli_candidates.iter().any(|(format, _)| *format == "nx"));

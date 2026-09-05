@@ -31,15 +31,6 @@ pub enum Inspection {
     Classified(ContainerSummary),
     /// The codec recognized the prefix but inspection failed.
     Failed(CodecError),
-    /// Inspection did not run for this typed reason.
-    Skipped(SkipReason),
-}
-
-/// Why a candidate did not run native container inspection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SkipReason {
-    /// The candidate is neutral CADIR and has no native container.
-    Neutral,
     /// Multiple native codecs tied, so no single codec could inspect.
     Ambiguous,
 }
@@ -47,17 +38,47 @@ pub enum SkipReason {
 /// What cadmpeg makes of one file, before any semantic decode.
 ///
 #[derive(Debug)]
-pub struct Identification {
-    /// The stable format id of the candidate codec, for example `"f3d"`.
-    pub format: &'static str,
-    /// How strongly the byte prefix named this format.
-    ///
-    /// Detection confidence, not classification confidence. A `High` here can
-    /// still accompany a failed or skipped inspection.
-    pub confidence: Confidence,
-    /// Inspection outcome, including the complete successful summary or the
-    /// typed error that prevented classification.
-    pub inspection: Inspection,
+pub enum Identification {
+    /// Neutral CADIR has high-confidence identity and no native container.
+    Cadir,
+    /// Native prefix evidence and its container inspection outcome.
+    Native {
+        /// Stable format id of the candidate codec.
+        format: &'static str,
+        /// Confidence of prefix detection.
+        confidence: Confidence,
+        /// The inspection outcome.
+        inspection: Inspection,
+    },
+}
+
+impl Identification {
+    /// Returns the candidate format id.
+    #[must_use]
+    pub const fn format(&self) -> &'static str {
+        match self {
+            Self::Cadir => "cadir",
+            Self::Native { format, .. } => format,
+        }
+    }
+
+    /// Returns prefix detection confidence.
+    #[must_use]
+    pub const fn confidence(&self) -> Confidence {
+        match self {
+            Self::Cadir => Confidence::High,
+            Self::Native { confidence, .. } => *confidence,
+        }
+    }
+
+    /// Returns the native container inspection, when applicable.
+    #[must_use]
+    pub const fn inspection(&self) -> Option<&Inspection> {
+        match self {
+            Self::Cadir => None,
+            Self::Native { inspection, .. } => Some(inspection),
+        }
+    }
 }
 
 /// A successfully inspected source: the selected codec's format, how it was
@@ -140,11 +161,7 @@ pub fn identify_with(
     let prefix = read_prefix(source, options)?;
     match catalog.detect(&prefix) {
         DetectionOutcome::None if crate::catalog::is_cadir_prefix(&prefix) => {
-            Ok(vec![Identification {
-                format: crate::descriptors::CADIR.id(),
-                confidence: Confidence::High,
-                inspection: Inspection::Skipped(SkipReason::Neutral),
-            }])
+            Ok(vec![Identification::Cadir])
         }
         DetectionOutcome::None => Ok(Vec::new()),
         DetectionOutcome::Detected { codec, confidence } => {
@@ -152,7 +169,7 @@ pub fn identify_with(
                 Ok(summary) => Inspection::Classified(summary),
                 Err(error) => Inspection::Failed(error),
             };
-            Ok(vec![Identification {
+            Ok(vec![Identification::Native {
                 format: codec.id(),
                 confidence,
                 inspection,
@@ -163,10 +180,10 @@ pub fn identify_with(
             candidates,
         } => Ok(candidates
             .into_iter()
-            .map(|format| Identification {
+            .map(|format| Identification::Native {
                 format,
                 confidence,
-                inspection: Inspection::Skipped(SkipReason::Ambiguous),
+                inspection: Inspection::Ambiguous,
             })
             .collect()),
     }
@@ -260,7 +277,7 @@ mod tests {
 
         let found = identify(&mut reader, &options).expect("the cap bounds CFB detection");
 
-        assert!(found.iter().any(|candidate| candidate.format == "nx"));
+        assert!(found.iter().any(|candidate| candidate.format() == "nx"));
     }
 
     #[cfg(feature = "nx")]
@@ -350,9 +367,9 @@ mod tests {
         use super::*;
 
         fn summary(identification: &Identification) -> Option<&ContainerSummary> {
-            match &identification.inspection {
-                Inspection::Classified(summary) => Some(summary),
-                Inspection::Failed(_) | Inspection::Skipped(_) => None,
+            match identification.inspection() {
+                Some(Inspection::Classified(summary)) => Some(summary),
+                Some(Inspection::Failed(_) | Inspection::Ambiguous) | None => None,
             }
         }
 
@@ -446,7 +463,7 @@ mod tests {
                 let winner = found
                     .first()
                     .unwrap_or_else(|| panic!("{}: no candidate at all", case.format));
-                assert_eq!(winner.format, case.format, "{found:?}");
+                assert_eq!(winner.format(), case.format, "{found:?}");
                 let catalog = InputCatalog::with_builtins();
                 let resolved = catalog
                     .resolve_source(case.bytes, None)
@@ -455,13 +472,13 @@ mod tests {
                     panic!("{}: resolver did not select a native codec", case.format);
                 };
                 assert_eq!(
-                    winner.format,
+                    winner.format(),
                     codec.id(),
                     "{}: resolver winner",
                     case.format
                 );
                 assert_eq!(
-                    Some(winner.confidence),
+                    Some(winner.confidence()),
                     selection.confidence(),
                     "{}: resolver confidence",
                     case.format
@@ -494,15 +511,15 @@ mod tests {
         let found = run(b"PK\x03\x04 markerless", &inspection());
         assert!(found.len() > 1, "{found:?}");
         for identification in &found {
-            assert_eq!(identification.confidence, Confidence::Low);
+            assert_eq!(identification.confidence(), Confidence::Low);
             assert!(matches!(
-                identification.inspection,
-                Inspection::Skipped(SkipReason::Ambiguous)
+                identification.inspection(),
+                Some(Inspection::Ambiguous)
             ));
         }
         let formats = found
             .iter()
-            .map(|identification| identification.format)
+            .map(|identification| identification.format())
             .collect::<Vec<_>>();
         assert!(
             formats.contains(&"fcstd") && formats.contains(&"f3d"),
@@ -532,9 +549,9 @@ mod tests {
 
         let found = run(bytes, &starved);
         let winner = found.first().expect("the prefix still names rhino");
-        assert_eq!(winner.format, "rhino");
-        assert_eq!(winner.confidence, Confidence::High);
-        let Inspection::Failed(error) = &winner.inspection else {
+        assert_eq!(winner.format(), "rhino");
+        assert_eq!(winner.confidence(), Confidence::High);
+        let Some(Inspection::Failed(error)) = winner.inspection() else {
             panic!("expected a typed inspection failure: {winner:?}");
         };
         assert!(matches!(error, CodecError::ResourceLimit(_)), "{error}");
@@ -561,8 +578,8 @@ mod tests {
         // The same bytes under the default budget do settle the dialect, so
         // the difference above is the budget and not the fixture.
         assert!(matches!(
-            &run(bytes, &inspection())[0].inspection,
-            Inspection::Classified(_)
+            run(bytes, &inspection())[0].inspection(),
+            Some(Inspection::Classified(_))
         ));
     }
 
@@ -574,12 +591,9 @@ mod tests {
         ] {
             let found = run(bytes, &inspection());
             assert_eq!(found.len(), 1);
-            assert_eq!(found[0].format, "cadir");
-            assert_eq!(found[0].confidence, Confidence::High);
-            assert!(matches!(
-                found[0].inspection,
-                Inspection::Skipped(SkipReason::Neutral)
-            ));
+            assert_eq!(found[0].format(), "cadir");
+            assert_eq!(found[0].confidence(), Confidence::High);
+            assert!(matches!(found[0], Identification::Cadir));
         }
     }
 

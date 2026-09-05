@@ -142,12 +142,12 @@ pub enum ResolvedSource<'a> {
 #[derive(Debug, thiserror::Error)]
 pub enum ResolveSourceError {
     /// Multiple codecs tied at the strongest confidence.
-    #[error("ambiguous {confidence}-confidence input format: {candidates}")]
+    #[error("ambiguous {confidence}-confidence input format: {names}", names = .candidates.join(", "))]
     Ambiguous {
         /// Shared strongest confidence.
         confidence: Confidence,
-        /// Comma-separated candidate format ids.
-        candidates: String,
+        /// Candidate format ids in detection order.
+        candidates: Vec<&'static str>,
     },
 }
 
@@ -281,7 +281,7 @@ impl InputCatalog {
                     candidates,
                 } => Err(ResolveSourceError::Ambiguous {
                     confidence,
-                    candidates: candidates.join(", "),
+                    candidates,
                 }),
             },
         }

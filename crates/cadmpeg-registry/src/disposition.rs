@@ -7,14 +7,64 @@ use serde::Deserialize;
 
 /// A capability-registry cell whose word is outside its vocabulary.
 #[derive(Debug, thiserror::Error)]
-#[error("{word:?} is not a {column} disposition; expected one of: {expected}")]
+#[error("{word:?} is not a {column} disposition; expected one of: {expected}", expected = .column.vocabulary())]
 pub struct UnknownDisposition {
     /// The registry column the word came from, `read` or `write`.
-    column: &'static str,
+    column: Column,
     /// The word the registry carried.
     word: String,
-    /// The column's vocabulary.
-    expected: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Column {
+    Read,
+    Write,
+}
+
+impl Column {
+    const fn vocabulary(self) -> &'static str {
+        match self {
+            Self::Read => ReadDisposition::VOCABULARY,
+            Self::Write => WriteDisposition::VOCABULARY,
+        }
+    }
+}
+
+impl fmt::Display for Column {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Read => "read",
+            Self::Write => "write",
+        })
+    }
+}
+
+/// A capability ladder level from zero through nine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "u8")]
+pub struct LadderLevel(u8);
+
+/// A level outside the capability ladder.
+#[derive(Debug, thiserror::Error)]
+#[error("level {0} is outside 0..=9")]
+pub struct InvalidLadderLevel(u8);
+
+impl TryFrom<u8> for LadderLevel {
+    type Error = InvalidLadderLevel;
+
+    fn try_from(level: u8) -> Result<Self, Self::Error> {
+        if level <= 9 {
+            Ok(Self(level))
+        } else {
+            Err(InvalidLadderLevel(level))
+        }
+    }
+}
+
+impl fmt::Display for LadderLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
 }
 
 /// What cadmpeg does when it reads a dialect.
@@ -28,7 +78,7 @@ pub struct UnknownDisposition {
 #[serde(try_from = "String")]
 pub enum ReadDisposition {
     /// A `docs/format-support.md` ladder score, `L0` through `L9`.
-    Level(u8),
+    Level(LadderLevel),
     /// Classified, with no fixture witnessing a decode. The floor for an
     /// unwitnessed dialect.
     Detected,
@@ -70,14 +120,13 @@ impl TryFrom<String> for ReadDisposition {
         if let Some(level) = word
             .strip_prefix('L')
             .and_then(|rest| rest.parse::<u8>().ok())
-            .filter(|level| *level <= 9)
+            .and_then(|level| LadderLevel::try_from(level).ok())
         {
             return Ok(Self::Level(level));
         }
         Err(UnknownDisposition {
-            column: "read",
+            column: Column::Read,
             word,
-            expected: Self::VOCABULARY,
         })
     }
 }
@@ -128,9 +177,8 @@ impl TryFrom<String> for WriteDisposition {
             "preserved" => Ok(Self::Preserved),
             "none" => Ok(Self::None),
             _ => Err(UnknownDisposition {
-                column: "write",
+                column: Column::Write,
                 word,
-                expected: Self::VOCABULARY,
             }),
         }
     }

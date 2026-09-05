@@ -41,12 +41,15 @@ pub use catalog::{
     ResolvedSource, Selection,
 };
 pub use descriptors::{forced_input, input_names, FormatDescriptor, NativeDescriptor};
-pub use disposition::{Disposition, ReadDisposition, UnknownDisposition, WriteDisposition};
+pub use disposition::{
+    Disposition, InvalidLadderLevel, LadderLevel, ReadDisposition, UnknownDisposition,
+    WriteDisposition,
+};
 pub use encoders::build_encoder;
 pub use format::Format;
 pub use identify::{
     identify, identify_with, resolve_and_inspect_with, Identification, InspectError, Inspected,
-    Inspection, SkipReason, DETECTION_PREFIX_LEN,
+    Inspection, DETECTION_PREFIX_LEN,
 };
 pub use registry::{dialects, support, DialectEntry};
 pub use views::{

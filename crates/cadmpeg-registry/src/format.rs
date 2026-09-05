@@ -40,7 +40,22 @@ impl Format {
 
     /// Every output format this build carries, in registry order.
     pub fn all() -> impl Iterator<Item = Self> {
-        crate::descriptors::writable().map(|(_, output)| output.format)
+        [
+            Self::Cadir,
+            #[cfg(feature = "step")]
+            Self::Step,
+            #[cfg(feature = "fcstd")]
+            Self::Fcstd,
+            #[cfg(feature = "f3d")]
+            Self::F3d,
+            #[cfg(feature = "sldprt")]
+            Self::Sldprt,
+            #[cfg(feature = "rhino")]
+            Self::Rhino,
+            #[cfg(feature = "iges")]
+            Self::Iges,
+        ]
+        .into_iter()
     }
 
     /// The format an output-format word names, by id or by accepted alias.
@@ -52,9 +67,7 @@ impl Format {
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         let canonical = crate::registry::canonical_format_name(name)?;
-        crate::descriptors::writable()
-            .find(|(descriptor, _)| descriptor.id() == canonical)
-            .map(|(_, output)| output.format)
+        Self::all().find(|format| format.name() == canonical)
     }
 
     /// The output-format words this build accepts, for a refusal message.
@@ -67,9 +80,13 @@ impl Format {
     #[must_use]
     pub fn from_extension(extension: &str) -> Option<Self> {
         let extension = extension.to_ascii_lowercase();
-        crate::descriptors::writable()
-            .find(|(_, output)| output.extensions.contains(&extension.as_str()))
-            .map(|(_, output)| output.format)
+        Self::all().find(|format| {
+            format
+                .descriptor()
+                .1
+                .extensions
+                .contains(&extension.as_str())
+        })
     }
 
     /// The stable format id, which is also its canonical `--to` spelling.
