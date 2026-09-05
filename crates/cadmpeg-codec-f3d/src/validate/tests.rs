@@ -253,7 +253,6 @@ fn validation_accepts_carrier_local_component_references() {
         occurrence_guid_offset: byte_offset + 124,
         occurrence_ordinal: 1,
         transform: None,
-        transform_offset: None,
     };
     let mut ir = cadmpeg_ir::examples::unit_cube();
     {

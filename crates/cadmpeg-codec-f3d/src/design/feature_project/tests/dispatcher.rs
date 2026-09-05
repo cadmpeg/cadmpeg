@@ -87,8 +87,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
         *slot = Some(DesignScaleOperation {
             body_group_record_index: 5,
             center_record_index: 6,
-            center_position: Some([1.25, -2.5, 3.75]),
-            center_position_offset: Some(40),
+            center_position: Some(crate::records::Located { value: [1.25, -2.5, 3.75], offset: 40 }),
             uniform_factor: 2.5,
             uniform_factor_offset: 20,
         });

@@ -903,3 +903,50 @@ fn face_source_span_rejects_empty_reversed_and_conflicting_lengths() {
     let group: super::DesignFaceSourceGroup = serde_json::from_str(wire).expect("positive carrier span");
     assert_eq!(serde_json::to_string(&group).expect("Face source wire"), wire);
 }
+
+#[test]
+fn scale_center_preserves_wire_and_rejects_partial_location() {
+    for center in [None, Some(super::Located { value: [1.25, -2.5, 3.75], offset: 40 })] {
+        let record = super::DesignScaleOperation {
+            body_group_record_index: 102,
+            center_record_index: 105,
+            center_position: center,
+            uniform_factor: 2.5,
+            uniform_factor_offset: 21,
+        };
+        let expected = match center {
+            None => r#"{"body_group_record_index":102,"center_record_index":105,"uniform_factor":2.5,"uniform_factor_offset":21}"#,
+            Some(_) => r#"{"body_group_record_index":102,"center_record_index":105,"center_position":[1.25,-2.5,3.75],"center_position_offset":40,"uniform_factor":2.5,"uniform_factor_offset":21}"#,
+        };
+        assert_eq!(serde_json::to_string(&record).unwrap(), expected);
+        assert_eq!(serde_json::from_str::<super::DesignScaleOperation>(expected).unwrap(), record);
+    }
+    for partial in [r#""center_position":[1.25,-2.5,3.75]"#, r#""center_position_offset":40"#] {
+        let wire = format!(r#"{{"body_group_record_index":102,"center_record_index":105,{partial},"uniform_factor":2.5,"uniform_factor_offset":21}}"#);
+        assert!(serde_json::from_str::<super::DesignScaleOperation>(&wire).unwrap_err().to_string().contains("center_position"));
+    }
+}
+
+#[test]
+fn component_placement_preserves_wire_and_rejects_partial_location() {
+    let base = serde_json::json!({
+        "id": "occurrence", "class_tag": "327", "record_index": 7, "byte_offset": 0,
+        "component_record_index": 8, "component_guid": "component", "component_guid_offset": 48,
+        "occurrence_guid": "placed", "occurrence_guid_offset": 124, "occurrence_ordinal": 1
+    });
+    let transform = serde_json::json!([[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]);
+    for placed in [false, true] {
+        let mut wire = base.clone();
+        if placed {
+            wire["transform"] = transform.clone();
+            wire["transform_offset"] = serde_json::json!(209);
+        }
+        let record: super::DesignComponentOccurrence = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    }
+    for (field, value) in [("transform", transform), ("transform_offset", serde_json::json!(209))] {
+        let mut wire = base.clone();
+        wire[field] = value;
+        assert!(serde_json::from_value::<super::DesignComponentOccurrence>(wire).unwrap_err().to_string().contains("transform"));
+    }
+}
