@@ -2378,16 +2378,14 @@ pub(crate) fn parse_construction_operand_path(
     }
     let entity_ref = View::u64_le_at(bytes, start + 22)?;
     let entity_ref_offset = u64::try_from(start + 22).ok()?;
-    let (transform, transform_offset, compact_variant, mut cursor) =
+    let (placement, mut cursor) =
         if bytes.get(start + 30..start + 33)? == [0; 3] {
             let transform = rigid_transform_at(bytes, start + 33)?;
             if bytes.get(start + 161) != Some(&0) {
                 return None;
             }
             (
-                Some(transform),
-                Some(u64::try_from(start + 33).ok()?),
-                None,
+                crate::records::DesignConstructionPathPlacement::Transform(crate::records::Located { value: transform, offset: u64::try_from(start + 33).ok()? }),
                 start + 162,
             )
         } else {
@@ -2395,7 +2393,7 @@ pub(crate) fn parse_construction_operand_path(
                 [0, 0, variant @ (0 | 1), 0] => *variant != 0,
                 _ => return None,
             };
-            (None, None, Some(variant), start + 34)
+            (crate::records::DesignConstructionPathPlacement::Compact(variant), start + 34)
         };
     let (scope_record_index, scope_record_index_offset) =
         take_record_reference(bytes, &mut cursor)?;
@@ -2422,9 +2420,7 @@ pub(crate) fn parse_construction_operand_path(
         class_tag: header.class_tag.clone(),
         entity_ref,
         entity_ref_offset,
-        transform,
-        transform_offset,
-        compact_variant,
+        placement,
         scope_record_index,
         scope_record_index_offset,
         nested_record_index,

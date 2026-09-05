@@ -1309,9 +1309,7 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     let expanded = parse_construction_operand_path(&expanded, scope_record_index, &expanded_header)
         .expect("expanded selection path");
     assert_eq!(expanded.entity_ref, 174);
-    assert_eq!(expanded.transform, Some(transform));
-    assert_eq!(expanded.transform_offset, Some(33));
-    assert_eq!(expanded.compact_variant, None);
+    assert_eq!(expanded.placement, crate::records::DesignConstructionPathPlacement::Transform(crate::records::Located { value: transform, offset: 33 }));
     assert_eq!(expanded.scope_record_index_offset, 163);
     assert_eq!(expanded.nested_record_index, 102);
     assert_eq!(expanded.nested_record_index_offset, 174);
@@ -1332,8 +1330,7 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     let compact = parse_construction_operand_path(&compact, scope_record_index, &expanded_header)
         .expect("compact selection path");
     assert_eq!(compact.entity_ref, 18_064);
-    assert_eq!(compact.transform, None);
-    assert_eq!(compact.compact_variant, Some(true));
+    assert_eq!(compact.placement, crate::records::DesignConstructionPathPlacement::Compact(true));
     assert_eq!(compact.scope_record_index_offset, 35);
     assert_eq!(compact.nested_record_index_offset, 46);
     assert_eq!(compact.following_byte_offset, compact_following_at as u64);

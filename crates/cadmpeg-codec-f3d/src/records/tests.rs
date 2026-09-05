@@ -340,3 +340,32 @@ fn hole_construction_preserves_tangent_and_input_reference_wire() {
         assert!(error.contains("input_record_offsets"));
     }
 }
+
+#[test]
+fn construction_path_preserves_layout_wire_and_rejects_mixed_forms() {
+    let prefix = r#"{"record_index":100,"byte_offset":0,"class_tag":"304","entity_ref":174,"entity_ref_offset":22"#;
+    let suffix = r#","scope_record_index":90,"scope_record_index_offset":163,"nested_record_index":102,"nested_record_index_offset":174,"following_record_index":101,"following_byte_offset":190,"following_class_tag":"390"}"#;
+    let fields = [
+        ("transform", "[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]"),
+        ("transform_offset", "33"),
+        ("compact_variant", "false"),
+    ];
+    for mask in 0..8 {
+        let mut wire = prefix.to_owned();
+        for (index, (field, value)) in fields.iter().enumerate() {
+            if mask & (1 << index) != 0 {
+                wire.push_str(&format!(",\"{field}\":{value}"));
+            }
+        }
+        wire.push_str(suffix);
+        let result = serde_json::from_str::<super::DesignConstructionOperandPath>(&wire);
+        if mask == 3 || mask == 4 {
+            assert_eq!(serde_json::to_string(&result.expect("complete placement form")).expect("path wire"), wire);
+        } else {
+            let error = result.expect_err("invalid placement form").to_string();
+            for (field, _) in fields {
+                assert!(error.contains(field));
+            }
+        }
+    }
+}
