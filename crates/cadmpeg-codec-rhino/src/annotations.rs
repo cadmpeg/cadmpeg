@@ -126,18 +126,18 @@ fn anonymous(
     expected_minor: i32,
 ) -> Result<BoundedReader<'_>, FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             range.start,
             "annotation wrapper is invalid",
         ));
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < expected_minor {
         return Err(FramingError::structural(
-            chunk.body.start,
+            chunk.body().start,
             "annotation wrapper version is unsupported",
         ));
     }
@@ -251,16 +251,16 @@ fn decode_legacy_annotation(
         return Ok(value);
     }
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             range.start,
             "legacy annotation wrapper is invalid",
         ));
     }
-    let mut outer = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut outer = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     if outer.i32()? != 1 || outer.i32()? < 0 {
         return Err(FramingError::structural(
-            chunk.body.start,
+            chunk.body().start,
             "legacy annotation wrapper version is unsupported",
         ));
     }

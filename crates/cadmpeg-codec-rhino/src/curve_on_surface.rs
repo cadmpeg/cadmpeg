@@ -30,8 +30,8 @@ fn class(
 ) -> Result<crate::objects::ClassDescriptor, GeometryError> {
     let start = reader.position();
     let wrapper = chunk_at(data, start, reader.end(), archive, false)?;
-    let class = parse_class_wrapper(data, start..wrapper.next_offset, archive, warnings)?;
-    reader.skip(wrapper.next_offset - start)?;
+    let class = parse_class_wrapper(data, start..wrapper.next_offset(), archive, warnings)?;
+    reader.skip(wrapper.next_offset() - start)?;
     Ok(class)
 }
 

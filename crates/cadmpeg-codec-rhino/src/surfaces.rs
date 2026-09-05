@@ -164,35 +164,36 @@ fn read_clipping_plane_surface(
 ) -> Result<DecodedSurface, GeometryError> {
     const ANONYMOUS: u32 = 0x4000_8000;
     let outer = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if outer.typecode != ANONYMOUS || outer.short {
+    if outer.typecode != ANONYMOUS || outer.short() {
         return Err(error(
             reader.position(),
             "invalid clipping-plane outer chunk",
         ));
     }
-    let mut payload = BoundedReader::new(data, outer.body.start, outer.body.end)?;
+    let mut payload = BoundedReader::new(data, outer.body().start, outer.body().end)?;
     let version = (payload.i32()?, payload.i32()?);
     if version.0 != 1 || version.1 < 0 {
         return Err(GeometryError::unsupported(
-            outer.body.start,
+            outer.body().start,
             "unsupported clipping-plane surface version",
         ));
     }
     let plane_chunk = chunk_at(data, payload.position(), payload.end(), archive, false)?;
-    if plane_chunk.typecode != ANONYMOUS || plane_chunk.short {
+    if plane_chunk.typecode != ANONYMOUS || plane_chunk.short() {
         return Err(error(
             plane_chunk.header_start,
             "invalid clipping-plane carrier chunk",
         ));
     }
-    let mut plane_reader = BoundedReader::new(data, plane_chunk.body.start, plane_chunk.body.end)?;
+    let mut plane_reader =
+        BoundedReader::new(data, plane_chunk.body().start, plane_chunk.body().end)?;
     let (geometry, plane_parameterization) =
         read_plane_surface_with_parameterization(&mut plane_reader, scale)?;
     plane_reader.skip_remaining()?;
-    payload.skip(plane_chunk.next_offset - payload.position())?;
+    payload.skip(plane_chunk.next_offset() - payload.position())?;
     read_clipping_plane(data, &mut payload, archive)?;
     payload.skip_remaining()?;
-    reader.skip(outer.next_offset - reader.position())?;
+    reader.skip(outer.next_offset() - reader.position())?;
     Ok(DecodedSurface::Typed {
         geometry,
         derived: scale != 1.0,
@@ -207,20 +208,20 @@ fn read_clipping_plane(
 ) -> Result<(), GeometryError> {
     const ANONYMOUS: u32 = 0x4000_8000;
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(chunk.header_start, "invalid clipping-plane chunk"));
     }
-    let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     if payload.i32()? != 1 {
         return Err(GeometryError::unsupported(
-            chunk.body.start,
+            chunk.body().start,
             "unsupported clipping-plane major version",
         ));
     }
     let minor = payload.i32()?;
     if minor < 0 {
         return Err(GeometryError::unsupported(
-            chunk.body.start,
+            chunk.body().start,
             "unsupported clipping-plane minor version",
         ));
     }
@@ -247,7 +248,7 @@ fn read_clipping_plane(
         read_clipping_participation(&mut payload)?;
     }
     payload.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(())
 }
 
@@ -258,21 +259,21 @@ fn read_uuid_list(
 ) -> Result<(), GeometryError> {
     const ANONYMOUS: u32 = 0x4000_8000;
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(chunk.header_start, "invalid clipping viewport list"));
     }
-    let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (payload.i32()?, payload.i32()?);
     if version.0 != 1 || version.1 < 0 {
         return Err(GeometryError::unsupported(
-            chunk.body.start,
+            chunk.body().start,
             "unsupported clipping viewport-list version",
         ));
     }
     let count = checked_count(&mut payload, 16)?;
     payload.skip(count * 16)?;
     payload.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(())
 }
 

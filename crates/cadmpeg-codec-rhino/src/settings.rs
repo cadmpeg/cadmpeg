@@ -758,18 +758,18 @@ fn parse_layer_extensions(
         archive,
         false,
     )?;
-    if outer.short || outer.typecode != ANONYMOUS {
+    if outer.short() || outer.typecode != ANONYMOUS {
         return Err(FramingError::structural(
             outer.header_start,
             "layer extensions payload is not a long anonymous chunk",
         ));
     }
-    let mut outer_reader = BoundedReader::new(data, outer.body.start, outer.body.end)?;
+    let mut outer_reader = BoundedReader::new(data, outer.body().start, outer.body().end)?;
     let major = outer_reader.i32()?;
     let minor = outer_reader.i32()?;
     if major != 1 || minor < 0 {
         return Err(FramingError::structural(
-            outer.body.start,
+            outer.body().start,
             "layer extensions version is unsupported",
         ));
     }
@@ -787,22 +787,22 @@ fn parse_layer_extensions(
         let entry = chunk_at(
             data,
             outer_reader.position(),
-            outer.body.end,
+            outer.body().end,
             archive,
             false,
         )?;
-        if entry.short || entry.typecode != ANONYMOUS {
+        if entry.short() || entry.typecode != ANONYMOUS {
             return Err(FramingError::structural(
                 entry.header_start,
                 "layer extensions entry is not a long anonymous chunk",
             ));
         }
-        let mut entry_reader = BoundedReader::new(data, entry.body.start, entry.body.end)?;
+        let mut entry_reader = BoundedReader::new(data, entry.body().start, entry.body().end)?;
         let entry_major = entry_reader.i32()?;
         let entry_minor = entry_reader.i32()?;
         if entry_major != 1 || entry_minor < 0 {
             return Err(FramingError::structural(
-                entry.body.start,
+                entry.body().start,
                 "layer extensions entry version is unsupported",
             ));
         }
@@ -881,7 +881,7 @@ fn parse_layer_extensions(
                 persistent_visibility,
             });
         }
-        outer_reader.skip(entry.next_offset - outer_reader.position())?;
+        outer_reader.skip(entry.next_offset() - outer_reader.position())?;
     }
     outer_reader.skip_remaining()?;
     values.sort_by(|a, b| {
@@ -1200,14 +1200,14 @@ fn anonymous_payload<'a>(
 ) -> Result<(BoundedReader<'a>, Range<usize>), FramingError> {
     let start = reader.position();
     let chunk = chunk_at(data, start, reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             start,
             format!("{label} must be a long anonymous chunk"),
         ));
     }
-    let payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
-    reader.skip(chunk.next_offset - start)?;
+    let payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
+    reader.skip(chunk.next_offset() - start)?;
     Ok((payload, chunk.range()))
 }
 
@@ -1661,13 +1661,13 @@ pub(crate) fn parse_rendering_attributes(
 ) -> Result<Range<usize>, FramingError> {
     let start = reader.position();
     let chunk = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             "rendering attributes must be an anonymous chunk",
         ));
     }
-    let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = payload.i32()?;
     let minor = payload.i32()?;
     if major != 1 || (matches!(kind, RenderingAttributesKind::Object) && minor < 1) {
@@ -1689,7 +1689,7 @@ pub(crate) fn parse_rendering_attributes(
     for _ in 0..count {
         let material =
             crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
-        if material.typecode != ANONYMOUS || material.short {
+        if material.typecode != ANONYMOUS || material.short() {
             return Err(FramingError::structural(
                 payload.position(),
                 "rendering material reference must be anonymous",
@@ -1699,7 +1699,7 @@ pub(crate) fn parse_rendering_attributes(
             warnings.push(warning);
         }
         let mut material_payload =
-            BoundedReader::new(data, material.body.start, material.body.end)?;
+            BoundedReader::new(data, material.body().start, material.body().end)?;
         let material_major = material_payload.i32()?;
         let material_minor = material_payload.i32()?;
         if material_major != 1 {
@@ -1721,7 +1721,7 @@ pub(crate) fn parse_rendering_attributes(
         }
         material_payload.skip_remaining()?;
         children.push(material.range());
-        payload.skip(material.next_offset - payload.position())?;
+        payload.skip(material.next_offset() - payload.position())?;
     }
     if matches!(kind, RenderingAttributesKind::Object) {
         let mapping_count = crate::chunks::checked_count_bytes(
@@ -1734,14 +1734,14 @@ pub(crate) fn parse_rendering_attributes(
         for _ in 0..mapping_count {
             let mapping =
                 crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
-            if mapping.typecode != ANONYMOUS || mapping.short {
+            if mapping.typecode != ANONYMOUS || mapping.short() {
                 return Err(FramingError::structural(
                     payload.position(),
                     "rendering mapping reference must be anonymous",
                 ));
             }
             let mut mapping_payload =
-                BoundedReader::new(data, mapping.body.start, mapping.body.end)?;
+                BoundedReader::new(data, mapping.body().start, mapping.body().end)?;
             let mapping_major = mapping_payload.i32()?;
             let _mapping_minor = mapping_payload.i32()?;
             if mapping_major != 1 {
@@ -1767,14 +1767,14 @@ pub(crate) fn parse_rendering_attributes(
                     archive,
                     false,
                 )?;
-                if channel.typecode != ANONYMOUS || channel.short {
+                if channel.typecode != ANONYMOUS || channel.short() {
                     return Err(FramingError::structural(
                         mapping_payload.position(),
                         "rendering mapping channel must be anonymous",
                     ));
                 }
                 let mut channel_payload =
-                    BoundedReader::new(data, channel.body.start, channel.body.end)?;
+                    BoundedReader::new(data, channel.body().start, channel.body().end)?;
                 if channel_payload.i32()? != 1 {
                     return Err(FramingError::structural(
                         channel_payload.position() - 4,
@@ -1787,7 +1787,7 @@ pub(crate) fn parse_rendering_attributes(
                     channel_payload.skip(16 * 8)?;
                 }
                 channel_payload.skip_remaining()?;
-                mapping_payload.skip(channel.next_offset - mapping_payload.position())?;
+                mapping_payload.skip(channel.next_offset() - mapping_payload.position())?;
                 channels.push(channel.range());
             }
             mapping_payload.skip_remaining()?;
@@ -1795,7 +1795,7 @@ pub(crate) fn parse_rendering_attributes(
                 warnings.push(warning);
             }
             children.push(mapping.range());
-            payload.skip(mapping.next_offset - payload.position())?;
+            payload.skip(mapping.next_offset() - payload.position())?;
         }
         if minor >= 2 {
             payload.bool()?;
@@ -1809,7 +1809,7 @@ pub(crate) fn parse_rendering_attributes(
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
         warnings.push(warning);
     }
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(start..reader.position())
 }
 
@@ -1820,13 +1820,13 @@ fn begin_direct_object<'a>(
     label: &str,
 ) -> Result<(crate::chunks::Chunk, BoundedReader<'a>, (i32, i32)), FramingError> {
     let chunk = crate::chunks::chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             format!("{label} must be an object chunk"),
         ));
     }
-    let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (payload.i32()?, payload.i32()?);
     Ok((chunk, payload, version))
 }
@@ -1838,7 +1838,7 @@ fn skip_model_attributes(
     warnings: &mut Vec<String>,
 ) -> Result<Range<usize>, FramingError> {
     let chunk = crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
-    if chunk.typecode != MODEL_ATTRIBUTES || chunk.short {
+    if chunk.typecode != MODEL_ATTRIBUTES || chunk.short() {
         return Err(FramingError::structural(
             payload.position(),
             "missing model-component attributes chunk",
@@ -1847,7 +1847,7 @@ fn skip_model_attributes(
     if let Some(warning) = checksum_warning(data, &chunk)? {
         warnings.push(warning);
     }
-    payload.skip(chunk.next_offset - payload.position())?;
+    payload.skip(chunk.next_offset() - payload.position())?;
     Ok(chunk.range())
 }
 
@@ -1964,7 +1964,7 @@ pub(crate) fn parse_direct_linetype<'a>(
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
         warnings.push(warning);
     }
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(EmbeddedDescriptor {
         source: SourceRange {
             range: chunk.range(),
@@ -2076,7 +2076,7 @@ pub(crate) fn parse_direct_section_style<'a>(
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
         warnings.push(warning);
     }
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(EmbeddedDescriptor {
         source: SourceRange {
             range: chunk.range(),
@@ -2103,7 +2103,7 @@ fn checksum_warning_excluding(
     chunk: &crate::chunks::Chunk,
     children: &[Range<usize>],
 ) -> Result<Option<String>, FramingError> {
-    let ranges = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
+    let ranges = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
     match crate::chunks::verify_checksum_ranges(data, chunk, &ranges)? {
         crate::chunks::ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",

@@ -338,7 +338,7 @@ fn v1_annotation(
     chunk: &crate::chunks::Chunk,
 ) -> Result<V1AnnotationPayload, CodecError> {
     let mut reader =
-        BoundedReader::new(data, chunk.body.start, chunk.body.end).map_err(malformed)?;
+        BoundedReader::new(data, chunk.body().start, chunk.body().end).map_err(malformed)?;
     let version = reader.i32().map_err(malformed)?;
     match chunk.typecode {
         TCODE_TEXT_BLOCK => {
@@ -544,7 +544,7 @@ fn child_with_type(
         if chunk.typecode == typecode {
             return Ok(Some(chunk));
         }
-        offset = chunk.next_offset;
+        offset = chunk.next_offset();
     }
     Ok(None)
 }
@@ -666,7 +666,7 @@ fn legacy_curve_segments(
     let stuff = child_with_type(data, range, TCODE_LEGACY_CRVSTUFF)?
         .ok_or_else(|| CodecError::Malformed("V1 curve has no curve-stuff chunk".to_string()))?;
     let mut reader =
-        BoundedReader::new(data, stuff.body.start, stuff.body.end).map_err(malformed)?;
+        BoundedReader::new(data, stuff.body().start, stuff.body().end).map_err(malformed)?;
     let dimension = reader.u8().map_err(malformed)?;
     if !matches!(dimension, 2 | 3) {
         return Err(CodecError::Malformed(
@@ -691,7 +691,7 @@ fn legacy_curve_segments(
         let spline = chunk_at(
             data,
             reader.position(),
-            stuff.body.end,
+            stuff.body().end,
             ArchiveVersion::V1,
             false,
         )
@@ -701,13 +701,13 @@ fn legacy_curve_segments(
                 "V1 curve segment is not a spline".to_string(),
             ));
         }
-        let spline_stuff = child_with_type(data, spline.body.clone(), TCODE_LEGACY_SPLSTUFF)?
+        let spline_stuff = child_with_type(data, spline.body().clone(), TCODE_LEGACY_SPLSTUFF)?
             .ok_or_else(|| {
                 CodecError::Malformed("V1 spline has no spline-stuff chunk".to_string())
             })?;
-        segments.push(legacy_spline(data, spline_stuff.body, scale)?);
+        segments.push(legacy_spline(data, spline_stuff.body(), scale)?);
         reader
-            .skip(spline.next_offset - reader.position())
+            .skip(spline.next_offset() - reader.position())
             .map_err(malformed)?;
     }
     Ok(segments)
@@ -738,14 +738,14 @@ fn nested_chunk(
         false,
     )
     .map_err(malformed)?;
-    if chunk.short || chunk.typecode != typecode {
+    if chunk.short() || chunk.typecode != typecode {
         return Err(CodecError::malformed(format_args!(
             "expected V1 nested chunk {typecode:#010x} at offset {}",
             reader.position()
         )));
     }
     reader
-        .skip(chunk.next_offset - reader.position())
+        .skip(chunk.next_offset() - reader.position())
         .map_err(malformed)?;
     Ok(chunk)
 }
@@ -985,7 +985,7 @@ fn v1_nurbs_curve_object(
 ) -> Result<V1NurbsCurve, CodecError> {
     let mut reader = BoundedReader::new(data, range.start, range.end).map_err(malformed)?;
     let data_chunk = nested_chunk(data, &mut reader, TCODE_RHINOIO_OBJECT_DATA)?;
-    let curve = v1_nurbs_curve_data(data, data_chunk.body)?;
+    let curve = v1_nurbs_curve_data(data, data_chunk.body())?;
     reader.skip_remaining().map_err(malformed)?;
     Ok(curve)
 }
@@ -996,7 +996,7 @@ fn v1_nurbs_surface_object(
 ) -> Result<V1NurbsSurface, CodecError> {
     let mut reader = BoundedReader::new(data, range.start, range.end).map_err(malformed)?;
     let data_chunk = nested_chunk(data, &mut reader, TCODE_RHINOIO_OBJECT_DATA)?;
-    let surface = v1_nurbs_surface_data(data, data_chunk.body)?;
+    let surface = v1_nurbs_surface_data(data, data_chunk.body())?;
     reader.skip_remaining().map_err(malformed)?;
     Ok(surface)
 }
@@ -1014,17 +1014,17 @@ fn v1_nurbs_curve_group(
     let mut segments = Vec::with_capacity(segment_count);
     for _ in 0..segment_count {
         let object = nested_chunk(data, reader, TCODE_RHINOIO_OBJECT_NURBS_CURVE)?;
-        segments.push(v1_nurbs_curve_object(data, object.body)?);
+        segments.push(v1_nurbs_curve_object(data, object.body())?);
     }
     Ok(V1NurbsCurveGroup { segments })
 }
 
 fn v1_nurbs_brep(data: &[u8], chunk: &crate::chunks::Chunk) -> Result<V1NurbsBrep, CodecError> {
     let mut outer =
-        BoundedReader::new(data, chunk.body.start, chunk.body.end).map_err(malformed)?;
+        BoundedReader::new(data, chunk.body().start, chunk.body().end).map_err(malformed)?;
     let data_chunk = nested_chunk(data, &mut outer, TCODE_RHINOIO_OBJECT_DATA)?;
-    let mut reader =
-        BoundedReader::new(data, data_chunk.body.start, data_chunk.body.end).map_err(malformed)?;
+    let mut reader = BoundedReader::new(data, data_chunk.body().start, data_chunk.body().end)
+        .map_err(malformed)?;
     let wire_version = reader.i32().map_err(malformed)?;
     if wire_version != 100 && wire_version != 101 {
         return Err(CodecError::malformed(format_args!(
@@ -1063,7 +1063,7 @@ fn v1_nurbs_brep(data: &[u8], chunk: &crate::chunks::Chunk) -> Result<V1NurbsBre
     let mut surfaces = Vec::with_capacity(surface_count);
     for _ in 0..surface_count {
         let object = nested_chunk(data, &mut reader, TCODE_RHINOIO_OBJECT_NURBS_SURFACE)?;
-        surfaces.push(v1_nurbs_surface_object(data, object.body)?);
+        surfaces.push(v1_nurbs_surface_object(data, object.body())?);
     }
 
     let vertex_count = v1_count(&mut reader, "Brep vertex", 1 << 20)?;
@@ -1176,10 +1176,10 @@ fn v1_direct_record(
         | TCODE_ANGULAR_DIMENSION
         | TCODE_RADIAL_DIMENSION => V1DirectPayload::Annotation(v1_annotation(data, chunk)?),
         TCODE_RHINOIO_OBJECT_NURBS_CURVE => {
-            V1DirectPayload::NurbsCurve(v1_nurbs_curve_object(data, chunk.body.clone())?)
+            V1DirectPayload::NurbsCurve(v1_nurbs_curve_object(data, chunk.body().clone())?)
         }
         TCODE_RHINOIO_OBJECT_NURBS_SURFACE => {
-            V1DirectPayload::NurbsSurface(v1_nurbs_surface_object(data, chunk.body.clone())?)
+            V1DirectPayload::NurbsSurface(v1_nurbs_surface_object(data, chunk.body().clone())?)
         }
         TCODE_RHINOIO_OBJECT_BREP => V1DirectPayload::NurbsBrep(v1_nurbs_brep(data, chunk)?),
         _ => {
@@ -1209,7 +1209,7 @@ fn legacy_surface(
 ) -> Result<NurbsSurface, CodecError> {
     let stuff = nested_stuff(data, range, TCODE_LEGACY_SRF, TCODE_LEGACY_SRFSTUFF)?;
     let mut reader =
-        BoundedReader::new(data, stuff.body.start, stuff.body.end).map_err(malformed)?;
+        BoundedReader::new(data, stuff.body().start, stuff.body().end).map_err(malformed)?;
     let dimension = usize::from(reader.u8().map_err(malformed)?);
     if !matches!(dimension, 2 | 3) {
         return Err(CodecError::Malformed(
@@ -1801,7 +1801,7 @@ fn legacy_trim(
 ) -> Result<LegacyTrim, CodecError> {
     let stuff = nested_stuff(data, range, TCODE_LEGACY_TRM, TCODE_LEGACY_TRMSTUFF)?;
     let mut reader =
-        BoundedReader::new(data, stuff.body.start, stuff.body.end).map_err(malformed)?;
+        BoundedReader::new(data, stuff.body().start, stuff.body().end).map_err(malformed)?;
     let flags = reader.u8().map_err(malformed)?;
     let has_edge = flags % 2 != 0;
     let has_mate = flags & 6 != 0;
@@ -1812,10 +1812,10 @@ fn legacy_trim(
     let tolerance_3d = reader.f64().map_err(malformed)? * scale;
     let tolerance_2d = reader.f64().map_err(malformed)?;
     let pcurve_wrapper = nested_chunk(data, &mut reader, TCODE_LEGACY_CRV)?;
-    let pcurve = legacy_curve(data, pcurve_wrapper.body, 1.0)?;
+    let pcurve = legacy_curve(data, pcurve_wrapper.body(), 1.0)?;
     let curve = if has_edge {
         let curve_wrapper = nested_chunk(data, &mut reader, TCODE_LEGACY_CRV)?;
-        Some(legacy_curve(data, curve_wrapper.body, scale)?)
+        Some(legacy_curve(data, curve_wrapper.body(), scale)?)
     } else {
         None
     };
@@ -1837,7 +1837,7 @@ fn legacy_loop(
 ) -> Result<LegacyLoop, CodecError> {
     let stuff = nested_stuff(data, range, TCODE_LEGACY_BND, TCODE_LEGACY_BNDSTUFF)?;
     let mut reader =
-        BoundedReader::new(data, stuff.body.start, stuff.body.end).map_err(malformed)?;
+        BoundedReader::new(data, stuff.body().start, stuff.body().end).map_err(malformed)?;
     let count = usize::try_from(reader.i32().map_err(malformed)?)
         .ok()
         .filter(|count| *count > 0)
@@ -1857,7 +1857,7 @@ fn legacy_loop(
     let mut trims = Vec::with_capacity(count);
     for _ in 0..count {
         let trim = nested_chunk(data, &mut reader, TCODE_LEGACY_TRM)?;
-        trims.push(legacy_trim(data, trim.body, scale)?);
+        trims.push(legacy_trim(data, trim.body(), scale)?);
     }
     Ok(LegacyLoop { role, trims })
 }
@@ -1869,7 +1869,7 @@ fn legacy_face(
 ) -> Result<LegacyFace, CodecError> {
     let stuff = nested_stuff(data, range, TCODE_LEGACY_FAC, TCODE_LEGACY_FACSTUFF)?;
     let mut reader =
-        BoundedReader::new(data, stuff.body.start, stuff.body.end).map_err(malformed)?;
+        BoundedReader::new(data, stuff.body().start, stuff.body().end).map_err(malformed)?;
     let reversed = match reader.i32().map_err(malformed)? {
         0 => false,
         1 => true,
@@ -1895,11 +1895,11 @@ fn legacy_face(
         .map(|_| reader.u16().map(usize::from).map_err(malformed))
         .collect::<Result<Vec<_>, _>>()?;
     let surface_chunk = nested_chunk(data, &mut reader, TCODE_LEGACY_SRF)?;
-    let surface = legacy_surface(data, surface_chunk.body, scale)?;
+    let surface = legacy_surface(data, surface_chunk.body(), scale)?;
     let mut loops = Vec::with_capacity(boundary_count);
     for _ in 0..boundary_count {
         let loop_chunk = nested_chunk(data, &mut reader, TCODE_LEGACY_BND)?;
-        loops.push(legacy_loop(data, loop_chunk.body, scale)?);
+        loops.push(legacy_loop(data, loop_chunk.body(), scale)?);
     }
     Ok(LegacyFace {
         reversed,
@@ -1917,13 +1917,13 @@ fn legacy_brep(
     if chunk.typecode == TCODE_LEGACY_FAC {
         return Ok(LegacyBrep {
             shell_glue: Vec::new(),
-            faces: vec![legacy_face(data, chunk.body.clone(), scale)?],
+            faces: vec![legacy_face(data, chunk.body().clone(), scale)?],
         });
     }
-    let stuff = child_with_type(data, chunk.body.clone(), TCODE_LEGACY_SHLSTUFF)?
+    let stuff = child_with_type(data, chunk.body().clone(), TCODE_LEGACY_SHLSTUFF)?
         .ok_or_else(|| CodecError::Malformed("V1 shell has no shell-stuff chunk".to_string()))?;
     let mut reader =
-        BoundedReader::new(data, stuff.body.start, stuff.body.end).map_err(malformed)?;
+        BoundedReader::new(data, stuff.body().start, stuff.body().end).map_err(malformed)?;
     let _outer = reader.i32().map_err(malformed)?;
     let face_count = usize::try_from(reader.i32().map_err(malformed)?)
         .ok()
@@ -1938,7 +1938,7 @@ fn legacy_brep(
     let mut faces = Vec::with_capacity(face_count);
     for _ in 0..face_count {
         let face = nested_chunk(data, &mut reader, TCODE_LEGACY_FAC)?;
-        faces.push(legacy_face(data, face.body, scale)?);
+        faces.push(legacy_face(data, face.body(), scale)?);
     }
     Ok(LegacyBrep { shell_glue, faces })
 }
@@ -1952,7 +1952,7 @@ fn legacy_mesh(
     let geometry = child_with_type(data, range, TCODE_COMPRESSED_MESH_GEOMETRY)?
         .ok_or_else(|| CodecError::Malformed("V1 mesh has no compressed geometry".to_string()))?;
     let mut reader =
-        BoundedReader::new(data, geometry.body.start, geometry.body.end).map_err(malformed)?;
+        BoundedReader::new(data, geometry.body().start, geometry.body().end).map_err(malformed)?;
     let point_count = usize::try_from(reader.i32().map_err(malformed)?)
         .ok()
         .filter(|count| *count > 0 && *count <= reader.remaining() / 6)
@@ -2117,12 +2117,12 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
     let mut offset = header.start_offset + file_header::LEN;
     let comment =
         chunk_at(data, offset, data.len(), ArchiveVersion::V1, false).map_err(malformed)?;
-    if comment.typecode != TCODE_COMMENT || comment.short {
+    if comment.typecode != TCODE_COMMENT || comment.short() {
         return Err(CodecError::Malformed(
             "V1 first post-header chunk is not the comment".to_string(),
         ));
     }
-    offset = comment.next_offset;
+    offset = comment.next_offset();
 
     // The flat legacy grammar is the strategy `rhino:archive-1` declares, so
     // this path admits the document on its own row. It reads no properties
@@ -2154,12 +2154,12 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
             break;
         }
         if chunk.typecode == TCODE_ENDOFTABLE {
-            offset = chunk.next_offset;
+            offset = chunk.next_offset();
             continue;
         }
-        if chunk.typecode == TCODE_UNIT_AND_TOLERANCES && !chunk.short {
-            let mut reader =
-                BoundedReader::new(data, chunk.body.start, chunk.body.end).map_err(malformed)?;
+        if chunk.typecode == TCODE_UNIT_AND_TOLERANCES && !chunk.short() {
+            let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
+                .map_err(malformed)?;
             let version = reader.i32().map_err(malformed)?;
             if version != 1 {
                 return Err(CodecError::malformed(format_args!(
@@ -2177,12 +2177,12 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
             ir.tolerances.linear = reader.f64().map_err(malformed)? * scale;
             let _relative_tolerance = reader.f64().map_err(malformed)?;
             ir.tolerances.angular = reader.f64().map_err(malformed)?;
-        } else if is_v1_presentation_setting(chunk.typecode) && !chunk.short {
+        } else if is_v1_presentation_setting(chunk.typecode) && !chunk.short() {
             *omitted.entry(chunk.typecode).or_default() += 1;
             opaque_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
-        } else if chunk.typecode == TCODE_RH_POINT && !chunk.short {
-            let mut reader =
-                BoundedReader::new(data, chunk.body.start, chunk.body.end).map_err(malformed)?;
+        } else if chunk.typecode == TCODE_RH_POINT && !chunk.short() {
+            let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
+                .map_err(malformed)?;
             let position = Point3::new(
                 reader.f64().map_err(malformed)? * scale,
                 reader.f64().map_err(malformed)? * scale,
@@ -2243,7 +2243,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                 | TCODE_RHINOIO_OBJECT_NURBS_CURVE
                 | TCODE_RHINOIO_OBJECT_NURBS_SURFACE
                 | TCODE_RHINOIO_OBJECT_BREP
-        ) && !chunk.short
+        ) && !chunk.short()
         {
             match v1_direct_record(data, &chunk, scale) {
                 Ok(record) => {
@@ -2271,8 +2271,8 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                     opaque_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
                 }
             }
-        } else if chunk.typecode == TCODE_LEGACY_CRV && !chunk.short {
-            match legacy_curve_segments(data, chunk.body.clone(), scale) {
+        } else if chunk.typecode == TCODE_LEGACY_CRV && !chunk.short() {
+            match legacy_curve_segments(data, chunk.body().clone(), scale) {
                 Ok(segments) => {
                     for segment in segments {
                         let suffix = format!("legacy-{decoded_curves:06}");
@@ -2370,7 +2370,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                     opaque_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
                 }
             }
-        } else if matches!(chunk.typecode, TCODE_LEGACY_FAC | TCODE_LEGACY_SHL) && !chunk.short {
+        } else if matches!(chunk.typecode, TCODE_LEGACY_FAC | TCODE_LEGACY_SHL) && !chunk.short() {
             match legacy_brep(data, &chunk, scale).and_then(|brep| {
                 append_legacy_brep(&mut ir, brep, &format!("legacy-brep-{decoded_breps:06}"))
             }) {
@@ -2381,10 +2381,10 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                     opaque_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
                 }
             }
-        } else if chunk.typecode == TCODE_MESH_OBJECT && !chunk.short {
+        } else if chunk.typecode == TCODE_MESH_OBJECT && !chunk.short() {
             match legacy_mesh(
                 data,
-                chunk.body.clone(),
+                chunk.body().clone(),
                 format!("rhino:object:tessellation#legacy-{decoded_meshes:06}"),
                 scale,
             ) {
@@ -2402,7 +2402,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
             *omitted.entry(chunk.typecode).or_default() += 1;
             opaque_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
         }
-        offset = chunk.next_offset;
+        offset = chunk.next_offset();
     }
     if !direct_records.is_empty() {
         let namespace = ir.native.namespace_mut("rhino", std::num::NonZeroU32::MIN);
@@ -2903,7 +2903,7 @@ mod tests {
         .expect("comment chunk");
         let face = chunk_at(
             &face_archive,
-            comment.next_offset,
+            comment.next_offset(),
             face_archive.len(),
             ArchiveVersion::V1,
             false,

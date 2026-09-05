@@ -1016,13 +1016,13 @@ fn anonymous(
     archive: ArchiveVersion,
 ) -> Result<(BoundedReader<'_>, (i32, i32)), FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             range.start,
             "presentation wrapper is invalid",
         ));
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (reader.i32()?, reader.i32()?);
     Ok((reader, version))
 }
@@ -1033,13 +1033,13 @@ fn component(
     archive: ArchiveVersion,
 ) -> Result<Component, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if !matches!(chunk.typecode, MODEL_ATTRIBUTES | ANONYMOUS) || chunk.short {
+    if !matches!(chunk.typecode, MODEL_ATTRIBUTES | ANONYMOUS) || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             "model-component attributes are missing",
         ));
     }
-    let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (value.i32()?, value.i32()?);
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
@@ -1071,7 +1071,7 @@ fn component(
             value.skip(8)?;
         }
         value.skip_remaining()?;
-        reader.skip(chunk.next_offset - reader.position())?;
+        reader.skip(chunk.next_offset() - reader.position())?;
         return Ok(Component { index, id, name });
     }
     match value.u8()? {
@@ -1100,7 +1100,7 @@ fn component(
         _ => String::new(),
     };
     value.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(Component { index, id, name })
 }
 
@@ -1331,13 +1331,13 @@ fn wide_string(
     archive: ArchiveVersion,
 ) -> Result<String, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != UTF8_STRING_CHUNK || chunk.short {
+    if chunk.typecode != UTF8_STRING_CHUNK || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             "wide-string wrapper is invalid",
         ));
     }
-    let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let format = value.u8()?;
     let result = match format {
         0 if value.remaining() == 0 => String::new(),
@@ -1351,7 +1351,7 @@ fn wide_string(
             ))
         }
     };
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(result)
 }
 
@@ -1380,7 +1380,7 @@ fn class_data_prefix(
     let wrapper = chunk_at(data, record.body.start, record.body.end, archive, false)?;
     let class = parse_class_wrapper(
         data,
-        wrapper.header_start..wrapper.next_offset,
+        wrapper.header_start..wrapper.next_offset(),
         archive,
         &mut Vec::new(),
     )?;
@@ -1403,7 +1403,7 @@ fn parse_light_record_attributes(
     let mut warnings = Vec::new();
     let _ = class_data_prefix(data, record, archive, LIGHT)?;
     let wrapper = chunk_at(data, record.body.start, record.body.end, archive, false)?;
-    let mut offset = wrapper.next_offset;
+    let mut offset = wrapper.next_offset();
     let mut attributes_chunk = None;
     let mut attributes_body_range = None;
     let mut attributes_userdata_body_range = None;
@@ -1412,13 +1412,13 @@ fn parse_light_record_attributes(
     while offset < record.body.end {
         let item = chunk_at(data, offset, record.body.end, archive, false)?;
         if item.typecode == LIGHT_RECORD_END {
-            if !item.short || item.value != 0 {
+            if !item.short() || item.value() != 0 {
                 return Err(FramingError::structural(
                     item.header_start,
                     "light record end must be short with value zero",
                 ));
             }
-            if item.next_offset != record.body.end {
+            if item.next_offset() != record.body.end {
                 return Err(FramingError::structural(
                     item.header_start,
                     "light record end is not final",
@@ -1429,24 +1429,24 @@ fn parse_light_record_attributes(
         }
         match item.typecode {
             LIGHT_RECORD_ATTRIBUTES if phase == 0 => {
-                if item.short {
+                if item.short() {
                     return Err(FramingError::structural(
                         item.header_start,
                         "light record attributes must be a long chunk",
                     ));
                 }
                 attributes_chunk = Some(item.clone());
-                attributes_body_range = Some(item.body.clone());
+                attributes_body_range = Some(item.body().clone());
                 phase = 1;
             }
             LIGHT_RECORD_ATTRIBUTES_USERDATA if phase <= 1 => {
-                if item.short {
+                if item.short() {
                     return Err(FramingError::structural(
                         item.header_start,
                         "light attribute userdata must be a long chunk",
                     ));
                 }
-                attributes_userdata_body_range = Some(item.body.clone());
+                attributes_userdata_body_range = Some(item.body().clone());
                 phase = 2;
             }
             _ => {
@@ -1456,7 +1456,7 @@ fn parse_light_record_attributes(
                 ));
             }
         }
-        offset = item.next_offset;
+        offset = item.next_offset();
     }
     if !record_end_seen {
         return Err(FramingError::structural(
@@ -1512,7 +1512,7 @@ fn parse_light_record_attributes(
             .and_then(|value| value.rendering_range.clone())
             .into_iter()
             .collect::<Vec<_>>();
-        let direct = direct_checksum_ranges(&item.body, &children)?;
+        let direct = direct_checksum_ranges(&item.body(), &children)?;
         if let Some(note) = match verify_checksum_ranges(data, item, &direct)? {
             ChecksumStatus::Mismatch { expected, actual } => Some(format!(
                 "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
@@ -1669,13 +1669,13 @@ fn texture_array(
     archive: ArchiveVersion,
 ) -> Result<Vec<TextureRecord>, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             "texture array is not anonymous",
         ));
     }
-    let mut values = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut values = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (values.i32()?, values.i32()?);
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
@@ -1695,7 +1695,7 @@ fn texture_array(
     let mut textures = Vec::new();
     for _ in 0..count {
         let object = chunk_at(data, values.position(), values.end(), archive, false)?;
-        if object.short {
+        if object.short() {
             return Err(FramingError::structural(
                 values.position(),
                 "texture object is short-framed",
@@ -1703,7 +1703,7 @@ fn texture_array(
         }
         let class = parse_class_wrapper(
             data,
-            object.header_start..object.next_offset,
+            object.header_start..object.next_offset(),
             archive,
             &mut Vec::new(),
         )?;
@@ -1719,10 +1719,10 @@ fn texture_array(
             archive,
             object.header_start,
         )?);
-        values.skip(object.next_offset - values.position())?;
+        values.skip(object.next_offset() - values.position())?;
     }
     values.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(textures)
 }
 
@@ -1893,7 +1893,7 @@ fn parse_material(
             ));
         }
         let chunk = chunk_at(data, outer.position(), outer.end(), archive, false)?;
-        let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+        let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
         let version = (reader.i32()?, reader.i32()?);
         if version.0 != 1 || version.1 < 0 {
             return Err(FramingError::structural(
@@ -2420,7 +2420,7 @@ fn parse_hatch_pattern(
         let fill_type = reader.i32()?;
         let description = utf16(&mut reader)?;
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-        let mut line_reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+        let mut line_reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
         let count = line_reader.i32()?;
         let count = usize::try_from(count).map_err(|_| {
             FramingError::structural(line_reader.position() - 4, "negative hatch-line count")
@@ -2440,7 +2440,7 @@ fn parse_hatch_pattern(
                 archive,
                 false,
             )?;
-            let mut payload = BoundedReader::new(data, line.body.start, line.body.end)?;
+            let mut payload = BoundedReader::new(data, line.body().start, line.body().end)?;
             let version = (payload.i32()?, payload.i32()?);
             if version.0 != 1 || version.1 < 0 {
                 return Err(FramingError::structural(
@@ -2450,10 +2450,10 @@ fn parse_hatch_pattern(
             }
             lines.push(hatch_line_fields(&mut payload, scale)?);
             payload.skip_remaining()?;
-            line_reader.skip(line.next_offset - line_reader.position())?;
+            line_reader.skip(line.next_offset() - line_reader.position())?;
         }
         line_reader.skip_remaining()?;
-        reader.skip(chunk.next_offset - reader.position())?;
+        reader.skip(chunk.next_offset() - reader.position())?;
         if archive.value() >= 90 {
             pattern_unit_system = Some(reader.u8()?);
             always_model_distances = Some(reader.bool()?);
@@ -2541,17 +2541,17 @@ fn named_child(
 ) -> Result<serde_json::Value, FramingError> {
     let offset = reader.position();
     let chunk = chunk_at(data, offset, reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             offset,
             "dimension-style child wrapper is invalid",
         ));
     }
-    reader.skip(chunk.next_offset - offset)?;
+    reader.skip(chunk.next_offset() - offset)?;
     Ok(serde_json::json!({
         "offset": offset,
-        "byte_len": chunk.next_offset - offset,
-        "sha256": cadmpeg_ir::hash::sha256_hex(&data[offset..chunk.next_offset]),
+        "byte_len": chunk.next_offset() - offset,
+        "sha256": cadmpeg_ir::hash::sha256_hex(&data[offset..chunk.next_offset()]),
     }))
 }
 
@@ -3162,13 +3162,13 @@ fn parse_embedded_image(
                     reader.skip(size)?;
                 } else {
                     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-                    if chunk.typecode != ANONYMOUS || chunk.short {
+                    if chunk.typecode != ANONYMOUS || chunk.short() {
                         return Err(FramingError::structural(
                             reader.position(),
                             "compressed image chunk is invalid",
                         ));
                     }
-                    reader.skip(chunk.next_offset - reader.position())?;
+                    reader.skip(chunk.next_offset() - reader.position())?;
                 }
             }
         }
@@ -3221,13 +3221,13 @@ fn bitmap_buffer(
         0 => reader.skip(uncompressed_byte_len)?,
         1 => {
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-            if chunk.typecode != ANONYMOUS || chunk.short || chunk.body.is_empty() {
+            if chunk.typecode != ANONYMOUS || chunk.short() || chunk.body().is_empty() {
                 return Err(FramingError::structural(
                     reader.position(),
                     "Windows bitmap compressed buffer chunk is invalid",
                 ));
             }
-            reader.skip(chunk.next_offset - reader.position())?;
+            reader.skip(chunk.next_offset() - reader.position())?;
         }
         _ => {
             return Err(FramingError::structural(
@@ -3387,7 +3387,7 @@ fn parse_texture_mapping(
     let uvw_transform = xform(&mut reader)?;
     let name = utf16(&mut reader)?;
     let object = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    let (primitive_class_uuid, cache_requires_opaque) = if object.short {
+    let (primitive_class_uuid, cache_requires_opaque) = if object.short() {
         (None, false)
     } else {
         let mut warnings = Vec::new();
@@ -3400,7 +3400,7 @@ fn parse_texture_mapping(
         });
         (Some(value.class_uuid.to_string()), cache_requires_opaque)
     };
-    reader.skip(object.next_offset - reader.position())?;
+    reader.skip(object.next_offset() - reader.position())?;
     let texture_space = if version.1 >= 1 { reader.u32()? } else { 0 };
     let capped = version.1 >= 1 && reader.bool()?;
     reader.skip_remaining()?;
@@ -3434,13 +3434,13 @@ fn parse_rendering_mapping_channel(
     archive: ArchiveVersion,
 ) -> Result<(RenderingMappingChannel, usize), FramingError> {
     let chunk = chunk_at(data, start, end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             start,
             "rendering mapping channel is not an anonymous long chunk",
         ));
     }
-    let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     if value.i32()? != 1 {
         return Err(FramingError::structural(
             value.position() - 4,
@@ -3462,7 +3462,7 @@ fn parse_rendering_mapping_channel(
             mapping_uuid,
             object_transform,
         },
-        chunk.next_offset,
+        chunk.next_offset(),
     ))
 }
 
@@ -3497,7 +3497,7 @@ fn rendering_attributes(
         for _ in 0..material_count {
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
             let parsed = (|| {
-                let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+                let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
                 if value.i32()? != 1 {
                     return Err(FramingError::structural(
                         value.position(),
@@ -3540,7 +3540,7 @@ fn rendering_attributes(
                 })
             })();
             presentation.materials.push(parsed?);
-            reader.skip(chunk.next_offset - reader.position())?;
+            reader.skip(chunk.next_offset() - reader.position())?;
         }
         if matches!(kind, settings::RenderingAttributesKind::Object) {
             let mapping_count = checked_count_bytes(
@@ -3552,7 +3552,7 @@ fn rendering_attributes(
             )?;
             for _ in 0..mapping_count {
                 let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-                let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+                let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
                 if value.i32()? != 1 {
                     return Err(FramingError::structural(
                         value.position() - 4,
@@ -3584,7 +3584,7 @@ fn rendering_attributes(
                     plugin_uuid,
                     channels,
                 });
-                reader.skip(chunk.next_offset - reader.position())?;
+                reader.skip(chunk.next_offset() - reader.position())?;
             }
         }
         if matches!(kind, settings::RenderingAttributesKind::Object) && version.1 >= 2 {
@@ -3613,13 +3613,13 @@ fn parse_font(
     writer_version: Option<i64>,
 ) -> Result<FontRecord, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             "font wrapper is invalid",
         ));
     }
-    let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let (major, minor) = (value.i32()?, value.i32()?);
     if major != 1 || minor < 0 {
         return Err(FramingError::structural(
@@ -3660,13 +3660,13 @@ fn parse_font(
         font.localized_face_name = utf16(&mut value)?;
         font.english_face_name = utf16(&mut value)?;
         let panose = chunk_at(data, value.position(), value.end(), archive, false)?;
-        if panose.typecode != ANONYMOUS || panose.short {
+        if panose.typecode != ANONYMOUS || panose.short() {
             return Err(FramingError::structural(
                 value.position(),
                 "font PANOSE wrapper is invalid",
             ));
         }
-        let mut bytes = BoundedReader::new(data, panose.body.start, panose.body.end)?;
+        let mut bytes = BoundedReader::new(data, panose.body().start, panose.body().end)?;
         if bytes.u8()? != 0x10 || bytes.remaining() != 10 {
             return Err(FramingError::structural(
                 bytes.position(),
@@ -3674,13 +3674,13 @@ fn parse_font(
             ));
         }
         font.panose = Some(bytes.array()?);
-        value.skip(panose.next_offset - value.position())?;
+        value.skip(panose.next_offset() - value.position())?;
     }
     if minor >= 6 {
         font.quartet_member = Some(value.u8()?);
     }
     value.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(font)
 }
 
@@ -5705,7 +5705,7 @@ mod tests {
         let bytes = physically_based_payload(2, &[0xaa, 0xbb]);
         let payload = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false)
             .expect("outer userdata payload");
-        let material = parse_physically_based_material(&bytes, payload.body, ArchiveVersion::V8)
+        let material = parse_physically_based_material(&bytes, payload.body(), ArchiveVersion::V8)
             .expect("physically based material");
         assert_eq!(material.version, 2);
         assert_eq!(material.base_color, [0.1, 0.2, 0.3, 0.4]);
@@ -5735,7 +5735,7 @@ mod tests {
         let bytes = physically_based_payload(1, &[0xcc, 0xdd]);
         let payload = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false)
             .expect("outer userdata payload");
-        let material = parse_physically_based_material(&bytes, payload.body, ArchiveVersion::V8)
+        let material = parse_physically_based_material(&bytes, payload.body(), ArchiveVersion::V8)
             .expect("version one physically based material");
         assert_eq!(material.version, 1);
         assert_eq!(material.alpha, 1.0);

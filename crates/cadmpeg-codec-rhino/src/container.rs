@@ -216,7 +216,7 @@ fn checksum_warning(
         let Ok(children) = list_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if matches!(
         typecode,
@@ -225,48 +225,48 @@ fn checksum_warning(
         let Ok(children) = mesh_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_SETTINGS {
         let Ok(children) = render_settings_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
         let Ok(children) = settings_attributes_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_PLUGIN_LIST {
         let Ok(children) = plugin_list_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_USERDATA {
         let Ok(children) = checksum_children_through_class_end(
             data,
-            chunk.body.clone(),
+            chunk.body().clone(),
             archive,
             "render-settings userdata",
         ) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_COMPRESSED_PREVIEW {
         let Ok(children) = compressed_preview_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_USER_TABLE_UUID {
         let Ok(children) = user_table_uuid_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else {
         verify_checksum(data, &chunk)
@@ -291,7 +291,7 @@ fn mesh_checksum_children(
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     Ok(mesh_subd_checksum_child(data, &mut reader, archive)?
         .into_iter()
         .collect())
@@ -345,10 +345,10 @@ fn render_settings_checksum_children(
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    if View::u32_le_at(data, chunk.body.start) != Some(TCODE_ANONYMOUS) {
+    if View::u32_le_at(data, chunk.body().start) != Some(TCODE_ANONYMOUS) {
         return Ok(Vec::new());
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     Ok(vec![take_anonymous_checksum_child(
         data,
         &mut reader,
@@ -363,7 +363,7 @@ fn settings_attributes_checksum_children(
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let packed_version = reader.u8()?;
     if packed_version >> 4 != 1 {
         return Ok(Vec::new());
@@ -431,7 +431,7 @@ fn compressed_preview_checksum_children(
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     reader.i32()?;
     reader.i32()?;
     reader.i32()?;
@@ -555,13 +555,13 @@ fn take_anonymous_checksum_child(
 ) -> Result<std::ops::Range<usize>, FramingError> {
     let start = reader.position();
     let child = chunk_at(data, start, reader.end(), archive, false)?;
-    if child.typecode != TCODE_ANONYMOUS || child.short {
+    if child.typecode != TCODE_ANONYMOUS || child.short() {
         return Err(FramingError::structural(
             start,
             format!("{label} must be an anonymous long chunk"),
         ));
     }
-    reader.skip(child.next_offset - start)?;
+    reader.skip(child.next_offset() - start)?;
     Ok(child.range())
 }
 
@@ -571,7 +571,7 @@ fn user_table_uuid_checksum_children(
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     reader.skip(16)?;
     if reader.position() == reader.end() {
         return Ok(Vec::new());
@@ -579,10 +579,10 @@ fn user_table_uuid_checksum_children(
 
     let start = reader.position();
     let child = chunk_at(data, start, reader.end(), archive, false)?;
-    if child.typecode != TCODE_USER_TABLE_RECORD_HEADER || child.short {
+    if child.typecode != TCODE_USER_TABLE_RECORD_HEADER || child.short() {
         return Ok(Vec::new());
     }
-    reader.skip(child.next_offset - start)?;
+    reader.skip(child.next_offset() - start)?;
     Ok(vec![child.range()])
 }
 
@@ -596,35 +596,35 @@ fn list_checksum_children(
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    let count = View::i32_le_at(data, chunk.body.start).ok_or(FramingError::Truncated {
-        offset: chunk.body.start,
+    let count = View::i32_le_at(data, chunk.body().start).ok_or(FramingError::Truncated {
+        offset: chunk.body().start,
         needed: 4,
     })?;
     let child_count = usize::try_from(count).unwrap_or(0);
     let mut offset = chunk
-        .body
+        .body()
         .start
         .checked_add(4)
         .ok_or(FramingError::Overflow {
-            offset: chunk.body.start,
+            offset: chunk.body().start,
         })?;
-    if offset > chunk.body.end {
+    if offset > chunk.body().end {
         return Err(FramingError::Truncated {
-            offset: chunk.body.end,
-            needed: offset - chunk.body.end,
+            offset: chunk.body().end,
+            needed: offset - chunk.body().end,
         });
     }
     let mut children = Vec::new();
     for _ in 0..child_count {
-        let child = chunk_at(data, offset, chunk.body.end, archive, false)?;
-        if child.next_offset <= offset {
+        let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
+        if child.next_offset() <= offset {
             return Err(FramingError::structural(
                 offset,
                 "view-list child did not advance",
             ));
         }
         children.push(child.range());
-        offset = child.next_offset;
+        offset = child.next_offset();
     }
     Ok(children)
 }
@@ -639,7 +639,7 @@ fn plugin_list_checksum_children(
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let packed_version = reader.u8()?;
     if packed_version >> 4 != 1 {
         return Ok(Vec::new());
@@ -656,20 +656,20 @@ fn plugin_list_checksum_children(
     for _ in 0..child_count {
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
-        if child.typecode != TCODE_ANONYMOUS || child.short {
+        if child.typecode != TCODE_ANONYMOUS || child.short() {
             return Err(FramingError::structural(
                 start,
                 "plugin-list child must be an anonymous long chunk",
             ));
         }
-        if child.next_offset <= start {
+        if child.next_offset() <= start {
             return Err(FramingError::structural(
                 start,
                 "plugin-list child did not advance",
             ));
         }
         children.push(child.range());
-        reader.skip(child.next_offset - start)?;
+        reader.skip(child.next_offset() - start)?;
     }
     Ok(children)
 }
@@ -683,10 +683,10 @@ fn parse_record(
     let chunk = chunk_at(data, offset, end, archive, false).map_err(framing_error)?;
     Ok(Record {
         typecode: chunk.typecode,
-        range: offset..chunk.next_offset,
-        body: chunk.body,
-        short: chunk.short,
-        value: chunk.value,
+        range: offset..chunk.next_offset(),
+        body: chunk.body(),
+        short: chunk.short(),
+        value: chunk.value(),
     })
 }
 
@@ -883,7 +883,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             TCODE_OBJECTS => saw_objects = true,
             _ => {}
         }
-        if chunk.short {
+        if chunk.short() {
             return Err(CodecError::Malformed(
                 "table chunks must use long framing".to_string(),
             ));
@@ -921,18 +921,18 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
         } else {
             None
         };
-        let mut child_offset = chunk.body.start;
+        let mut child_offset = chunk.body().start;
         let mut terminated = false;
-        while child_offset < chunk.body.end {
-            let child = chunk_at(data, child_offset, chunk.body.end, archive, false)
+        while child_offset < chunk.body().end {
+            let child = chunk_at(data, child_offset, chunk.body().end, archive, false)
                 .map_err(framing_error)?;
             if child.typecode == TCODE_ENDOFTABLE {
-                if !child.short || child.value != 0 {
+                if !child.short() || child.value() != 0 {
                     return Err(CodecError::Malformed(
                         "end-of-table marker must be short with value zero".to_string(),
                     ));
                 }
-                if child.next_offset != chunk.body.end {
+                if child.next_offset() != chunk.body().end {
                     return Err(CodecError::Malformed(
                         "end-of-table marker is not the final table child".to_string(),
                     ));
@@ -953,10 +953,10 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 .expect("document record budget bounds table count");
             let record = Record {
                 typecode: child.typecode,
-                range: child_offset..child.next_offset,
-                body: child.body,
-                short: child.short,
-                value: child.value,
+                range: child_offset..child.next_offset(),
+                body: child.body(),
+                short: child.short(),
+                value: child.value(),
             };
             let opaque = table_base(chunk.typecode) == TCODE_USER
                 || !record_is_allowed(chunk.typecode, record.typecode, record.short);
@@ -972,9 +972,13 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                     record.typecode, chunk.typecode
                 ));
             }
-            if let Some(note) =
-                checksum_warning(data, record.typecode, child_offset, chunk.body.end, archive)?
-            {
+            if let Some(note) = checksum_warning(
+                data,
+                record.typecode,
+                child_offset,
+                chunk.body().end,
+                archive,
+            )? {
                 warnings.push(note);
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
@@ -1008,7 +1012,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             if retain_records {
                 records.push(record);
             }
-            child_offset = child.next_offset;
+            child_offset = child.next_offset();
         }
         if !terminated {
             warnings.push(format!(
@@ -1017,7 +1021,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             ));
         }
         if let Some(note) =
-            checksum_warning(data, chunk.typecode, offset, chunk.next_offset, archive)?
+            checksum_warning(data, chunk.typecode, offset, chunk.next_offset(), archive)?
         {
             warnings.push(note);
         }
@@ -1039,13 +1043,13 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
         }
         tables.push(Table {
             typecode: chunk.typecode,
-            range: offset..chunk.next_offset,
-            body: chunk.body,
+            range: offset..chunk.next_offset(),
+            body: chunk.body(),
             records,
             record_count: table_record_count,
             object_typecodes,
         });
-        offset = chunk.next_offset;
+        offset = chunk.next_offset();
     }
     Err(CodecError::Malformed(
         "missing end-of-file chunk".to_string(),

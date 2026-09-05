@@ -1496,7 +1496,7 @@ fn read_legacy_mesh_sides(
                     return Ok((empty_mesh_slots(face_count), start..reader.position()));
                 }
             };
-            if let Err(error) = reader.skip(object.next_offset - object_start) {
+            if let Err(error) = reader.skip(object.next_offset() - object_start) {
                 reader.skip_remaining()?;
                 warnings.push(format!("legacy Brep mesh cache degraded: {error}"));
                 return Ok((empty_mesh_slots(face_count), start..reader.position()));
@@ -1511,7 +1511,7 @@ fn read_legacy_mesh_sides(
                     Some(RawBrepChild {
                         class_uuid: class.class_uuid,
                         class_data_range: class.class_data_range,
-                        source_range: object_start..object.next_offset,
+                        source_range: object_start..object.next_offset(),
                         base_type: RawBrepBaseType::Other,
                     }),
                     userdata,
@@ -1595,7 +1595,7 @@ fn read_children(
             1 => {
                 let child_start = child_reader.position();
                 let child_chunk = chunk_at(bytes, child_start, child_reader.end(), archive, false)?;
-                let child_end = child_chunk.next_offset;
+                let child_end = child_chunk.next_offset();
                 let class =
                     parse_class_wrapper(bytes, chunk_start_range(&child_chunk), archive, warnings)?;
                 child_reader.skip(child_end - child_start)?;
@@ -1625,7 +1625,7 @@ fn read_children(
     )?;
     Ok(RawBrepChildren {
         slots,
-        source_range: start..chunk.next_offset,
+        source_range: start..chunk.next_offset(),
         expected_type,
     })
 }
@@ -1915,14 +1915,14 @@ fn read_mesh_sides(
                     archive,
                     warnings,
                 );
-                child.skip(object.next_offset - start)?;
+                child.skip(object.next_offset() - start)?;
                 match class {
                     Ok((class, userdata)) if supported_mesh(class.class_uuid) => {
                         result.push(RawBrepMeshSlot {
                             mesh: Some(RawBrepChild {
                                 class_uuid: class.class_uuid,
                                 class_data_range: class.class_data_range,
-                                source_range: start..object.next_offset,
+                                source_range: start..object.next_offset(),
                                 base_type: RawBrepBaseType::Other,
                             }),
                             present: true,
@@ -1954,7 +1954,7 @@ fn read_mesh_sides(
     match parsed {
         Ok(result) => Ok(result),
         Err(error) => {
-            reader.skip(chunk.next_offset - reader.position())?;
+            reader.skip(chunk.next_offset() - reader.position())?;
             warnings.push(format!("Brep mesh cache degraded: {error}"));
             Ok((
                 alloc_filled(
@@ -2031,10 +2031,10 @@ fn read_regions(
         outer.skip_remaining()?;
         Ok((sides, regions, Some(nested_chunk.range()), true))
     })();
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     match parsed {
         Ok((sides, regions, nested, inline_region_loaded)) => {
-            let direct = crate::chunks::direct_checksum_ranges(&chunk.body, nested.as_slice())?;
+            let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), nested.as_slice())?;
             if matches!(
                 verify_checksum_ranges(bytes, &chunk, &direct)?,
                 ChecksumStatus::Mismatch { .. }
@@ -2179,8 +2179,8 @@ fn region_element(
     let start = reader.position();
     if archive.value() < 60 {
         let chunk = crate::chunks::chunk_at(bytes, start, reader.end(), archive, false)?;
-        reader.skip(chunk.next_offset - start)?;
-        let mut child = BoundedReader::new(bytes, chunk.body.start, chunk.body.end)?;
+        reader.skip(chunk.next_offset() - start)?;
+        let mut child = BoundedReader::new(bytes, chunk.body().start, chunk.body().end)?;
         let major = child.i32()?;
         let minor = child.i32()?;
         if major != 1 || minor < 0 {
@@ -2189,7 +2189,10 @@ fn region_element(
                 "unsupported raw region element version",
             ));
         }
-        Ok((child.position()..chunk.body.end, start..chunk.next_offset))
+        Ok((
+            child.position()..chunk.body().end,
+            start..chunk.next_offset(),
+        ))
     } else {
         let chunk = crate::chunks::chunk_at(bytes, start, reader.end(), archive, false)?;
         let class =
@@ -2197,7 +2200,7 @@ fn region_element(
         if class.class_uuid != expected_class {
             return Err(error(start, "unexpected Brep region element class"));
         }
-        reader.skip(chunk.next_offset - start)?;
+        reader.skip(chunk.next_offset() - start)?;
         let mut class_data = BoundedReader::new(
             bytes,
             class.class_data_range.start,
@@ -2209,11 +2212,14 @@ fn region_element(
         let minor = body.i32()?;
         if major != 1 || minor < 0 {
             return Err(GeometryError::unsupported(
-                payload.body.start,
+                payload.body().start,
                 "unsupported Brep region element version",
             ));
         }
-        Ok((body.position()..payload.body.end, start..chunk.next_offset))
+        Ok((
+            body.position()..payload.body().end,
+            start..chunk.next_offset(),
+        ))
     }
 }
 
@@ -2533,7 +2539,7 @@ fn anonymous_chunk(
     archive: ArchiveVersion,
 ) -> Result<Chunk, GeometryError> {
     let chunk = chunk_at(bytes, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(
             chunk.header_start,
             "expected bounded anonymous Brep chunk",
@@ -2543,7 +2549,11 @@ fn anonymous_chunk(
 }
 
 fn body_reader<'a>(bytes: &'a [u8], chunk: &Chunk) -> Result<BoundedReader<'a>, GeometryError> {
-    Ok(BoundedReader::new(bytes, chunk.body.start, chunk.body.end)?)
+    Ok(BoundedReader::new(
+        bytes,
+        chunk.body().start,
+        chunk.body().end,
+    )?)
 }
 
 fn finish_anonymous(
@@ -2568,7 +2578,7 @@ fn finish_anonymous(
             chunk.header_start
         ));
     }
-    parent.skip(chunk.next_offset - parent.position())?;
+    parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
 }
 
@@ -2580,7 +2590,7 @@ fn finish_anonymous_children(
     children: &[Range<usize>],
     warnings: &mut Vec<String>,
 ) -> Result<(), GeometryError> {
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
     finish_anonymous_ranges(bytes, parent, chunk, child, &direct, warnings)
 }
 
@@ -2607,7 +2617,7 @@ fn finish_anonymous_ranges(
             chunk.header_start
         ));
     }
-    parent.skip(chunk.next_offset - parent.position())?;
+    parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
 }
 

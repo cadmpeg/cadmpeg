@@ -281,13 +281,13 @@ fn render_settings(
     let modern = data.get(body.start).copied() == Some(0);
     let (mut reader, minor, legacy_version) = if modern {
         let chunk = chunk_at(data, body.start, body.end, archive, false)?;
-        if chunk.typecode != ANONYMOUS || chunk.short {
+        if chunk.typecode != ANONYMOUS || chunk.short() {
             return Err(FramingError::Structural {
                 offset: body.start,
                 message: "render-settings wrapper is invalid".to_string(),
             });
         }
-        let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+        let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
         let (major, minor) = (reader.i32()?, reader.i32()?);
         if major != 1 || minor < 0 {
             return Err(FramingError::structural(
@@ -446,7 +446,7 @@ fn render_userdata(
         let chunk = chunk_at(data, offset, record.body.end, archive, false)?;
         match chunk.typecode {
             CLASS_USERDATA => {
-                if chunk.short {
+                if chunk.short() {
                     return Err(FramingError::structural(
                         chunk.header_start,
                         "render userdata item must be a long chunk",
@@ -459,10 +459,10 @@ fn render_userdata(
                     archive,
                     &mut checksum_warnings,
                 )?);
-                offset = chunk.next_offset;
+                offset = chunk.next_offset();
             }
             CLASS_END => {
-                if !chunk.short || chunk.value != 0 {
+                if !chunk.short() || chunk.value() != 0 {
                     return Err(FramingError::structural(
                         chunk.header_start,
                         "render userdata class end must be a short zero chunk",
@@ -472,7 +472,7 @@ fn render_userdata(
                     source: record.range.clone(),
                     items,
                     unknown_chunks,
-                    suffix: chunk.next_offset..record.body.end,
+                    suffix: chunk.next_offset()..record.body.end,
                 });
             }
             0 => {
@@ -483,7 +483,7 @@ fn render_userdata(
             }
             _ => {
                 unknown_chunks.push(chunk.range());
-                offset = chunk.next_offset;
+                offset = chunk.next_offset();
             }
         }
     }

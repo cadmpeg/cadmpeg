@@ -81,32 +81,32 @@ fn parses_widths_short_long_and_bounds() {
     bytes.extend(42_i32.to_le_bytes());
     let parsed =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V4, false).expect("required invariant");
-    assert!(parsed.short);
-    assert_eq!(parsed.value, 42);
-    assert_eq!(parsed.next_offset, long_narrow::LEN);
+    assert!(parsed.short());
+    assert_eq!(parsed.value(), 42);
+    assert_eq!(parsed.next_offset(), long_narrow::LEN);
 
     let bytes = long_chunk(ArchiveVersion::V4, 9, &[1, 2, 3]);
     let parsed =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V4, false).expect("required invariant");
-    assert_eq!(parsed.body, long_narrow::LEN..11);
+    assert_eq!(parsed.body(), long_narrow::LEN..11);
     assert_eq!(parsed.header_start, 0);
     assert_eq!(parsed.range(), 0..11);
-    assert_eq!(parsed.next_offset, 11);
+    assert_eq!(parsed.next_offset(), 11);
 
     let bytes = long_chunk(ArchiveVersion::V5, 9, &[1, 2, 3]);
     let parsed =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).expect("required invariant");
-    assert_eq!(parsed.body, long_wide::LEN..15);
+    assert_eq!(parsed.body(), long_wide::LEN..15);
     assert_eq!(parsed.header_start, 0);
     assert_eq!(parsed.range(), 0..15);
-    assert_eq!(parsed.next_offset, 15);
+    assert_eq!(parsed.next_offset(), 15);
 
     let mut bad = 9_u32.to_le_bytes().to_vec();
     bad.extend((-1_i64).to_le_bytes());
     let bodyless = chunk_at(&bad, 0, bad.len(), ArchiveVersion::V5, false)
         .expect("negative long value is bodyless");
-    assert!(bodyless.short);
-    assert_eq!(bodyless.body.len(), 0);
+    assert!(bodyless.short());
+    assert_eq!(bodyless.body().len(), 0);
     let mut overflow = 9_u32.to_le_bytes().to_vec();
     overflow.extend(i32::MAX.to_le_bytes());
     assert!(matches!(
@@ -140,11 +140,11 @@ fn verifies_crc_vectors_and_recoverable_mismatch() {
 
     assert_eq!(
         crate::chunks::checksum_kind(ArchiveVersion::V1, 0x0001_0000, false),
-        crate::chunks::ChecksumKind::Crc16
+        Some(crate::chunks::ChecksumKind::Crc16)
     );
     assert_eq!(
         crate::chunks::checksum_kind(ArchiveVersion::V1, 0x0002_fffd, true),
-        crate::chunks::ChecksumKind::Crc16
+        Some(crate::chunks::ChecksumKind::Crc16)
     );
 }
 
@@ -223,16 +223,16 @@ fn nested_bounds_and_unknown_skip_are_exact() {
         chunk_at(&parent, 0, parent.len(), ArchiveVersion::V5, false).expect("required invariant");
     let nested = chunk_at(
         &parent,
-        first.body.start,
-        first.body.end,
+        first.body().start,
+        first.body().end,
         ArchiveVersion::V5,
         false,
     )
     .expect("required invariant");
-    assert_eq!(nested.next_offset, first.body.start + child.len());
+    assert_eq!(nested.next_offset(), first.body().start + child.len());
     let next = chunk_at(
         &parent,
-        first.next_offset,
+        first.next_offset(),
         parent.len(),
         ArchiveVersion::V5,
         false,
@@ -242,8 +242,8 @@ fn nested_bounds_and_unknown_skip_are_exact() {
     assert!(matches!(
         chunk_at(
             &parent,
-            first.body.start,
-            first.body.start + child.len() - 1,
+            first.body().start,
+            first.body().start + child.len() - 1,
             ArchiveVersion::V5,
             false
         ),

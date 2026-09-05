@@ -64,16 +64,16 @@ fn anonymous<'a>(
     family: &str,
 ) -> Result<(BoundedReader<'a>, usize, i32, i32), GeometryError> {
     let chunk = chunk_at(data, offset, end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(GeometryError::malformed(
             offset,
             format!("{family} is not anonymous"),
         ));
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
-    Ok((reader, chunk.next_offset, major, minor))
+    Ok((reader, chunk.next_offset(), major, minor))
 }
 
 fn count(

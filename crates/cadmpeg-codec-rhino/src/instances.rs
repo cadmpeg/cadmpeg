@@ -206,7 +206,7 @@ fn checksum_warning_excluding(
     label: &str,
     warnings: &mut Vec<String>,
 ) -> Result<(), FramingError> {
-    let direct = direct_checksum_ranges(&chunk.body, children)?;
+    let direct = direct_checksum_ranges(&chunk.body(), children)?;
     if matches!(
         verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
@@ -259,7 +259,7 @@ fn anonymous_versioned<'a>(
     warnings: &mut Vec<String>,
 ) -> Result<(crate::chunks::Chunk, BoundedReader<'a>, (i32, i32)), FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             format!("{label} is not anonymous"),
@@ -268,9 +268,9 @@ fn anonymous_versioned<'a>(
     if verify_container_crc {
         checksum_warning(data, &chunk, label, warnings)?;
     }
-    let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (payload.i32()?, payload.i32()?);
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok((chunk, payload, version))
 }
 
@@ -324,14 +324,14 @@ fn model_component(
     warnings: &mut Vec<String>,
 ) -> Result<(Option<i32>, Uuid, String), FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != MODEL_ATTRIBUTES || chunk.short {
+    if chunk.typecode != MODEL_ATTRIBUTES || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             "missing model-component attributes",
         ));
     }
     checksum_warning(data, &chunk, "model-component attributes", warnings)?;
-    let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = payload.i32()?;
     let minor = payload.i32()?;
     if major != 1 || minor < 0 {
@@ -392,7 +392,7 @@ fn model_component(
         }
     };
     finish(&mut payload, "model-component attributes")?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok((index, id, name))
 }
 
@@ -413,13 +413,13 @@ pub(crate) fn file_reference<'a>(
     let full_path = utf16(&mut payload)?;
     let relative_path = utf16(&mut payload)?;
     let hash = chunk_at(data, payload.position(), payload.end(), archive, false)?;
-    if hash.typecode != ANONYMOUS || hash.short {
+    if hash.typecode != ANONYMOUS || hash.short() {
         return Err(FramingError::structural(
             payload.position(),
             "missing content-hash chunk",
         ));
     }
-    let mut hash_payload = BoundedReader::new(data, hash.body.start, hash.body.end)?;
+    let mut hash_payload = BoundedReader::new(data, hash.body().start, hash.body().end)?;
     let hash_major = hash_payload.i32()?;
     let hash_minor = hash_payload.i32()?;
     if hash_major != 1 || hash_minor < 0 {
@@ -434,14 +434,14 @@ pub(crate) fn file_reference<'a>(
     let mut digest_ranges = Vec::with_capacity(2);
     let mut read_sha1 = |payload: &mut BoundedReader<'a>| -> Result<[u8; 20], FramingError> {
         let digest = chunk_at(data, payload.position(), payload.end(), archive, false)?;
-        if digest.typecode != ANONYMOUS || digest.short {
+        if digest.typecode != ANONYMOUS || digest.short() {
             return Err(FramingError::structural(
                 payload.position(),
                 "missing SHA-1 chunk",
             ));
         }
         checksum_warning(data, &digest, "SHA-1 hash", warnings)?;
-        let mut bytes = BoundedReader::new(data, digest.body.start, digest.body.end)?;
+        let mut bytes = BoundedReader::new(data, digest.body().start, digest.body().end)?;
         let digest_major = bytes.i32()?;
         let digest_minor = bytes.i32()?;
         if digest_major != 1 || digest_minor < 0 {
@@ -453,7 +453,7 @@ pub(crate) fn file_reference<'a>(
         let value = bytes.array()?;
         bytes.skip_remaining()?;
         digest_ranges.push(digest.range());
-        payload.skip(digest.next_offset - payload.position())?;
+        payload.skip(digest.next_offset() - payload.position())?;
         Ok(value)
     };
     let content_hash = ContentHash {
@@ -465,7 +465,7 @@ pub(crate) fn file_reference<'a>(
     };
     finish(&mut hash_payload, "content hash")?;
     checksum_warning_excluding(data, &hash, &digest_ranges, "content hash", warnings)?;
-    payload.skip(hash.next_offset - payload.position())?;
+    payload.skip(hash.next_offset() - payload.position())?;
     let path_status = payload.u32()?;
     let embedded_file_id = if version.1 >= 1 {
         Some(uuid(&mut payload)?)
@@ -513,14 +513,14 @@ fn skip_object_array(
     let mut ranges = Vec::with_capacity(count);
     for _ in 0..count {
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-        if chunk.short {
+        if chunk.short() {
             return Err(FramingError::structural(
                 reader.position(),
                 "object array item is short-framed",
             ));
         }
         ranges.push(chunk.range());
-        reader.skip(chunk.next_offset - reader.position())?;
+        reader.skip(chunk.next_offset() - reader.position())?;
     }
     Ok(ranges)
 }
@@ -570,14 +570,15 @@ fn reference_settings<'a>(
                 archive,
                 false,
             )?;
-            if parent.short {
+            if parent.short() {
                 return Err(FramingError::structural(
                     implementation_payload.position(),
                     "reference parent layer is short-framed",
                 ));
             }
             children.push(parent.range());
-            implementation_payload.skip(parent.next_offset - implementation_payload.position())?;
+            implementation_payload
+                .skip(parent.next_offset() - implementation_payload.position())?;
         }
         finish(
             &mut implementation_payload,

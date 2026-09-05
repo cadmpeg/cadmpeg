@@ -212,11 +212,11 @@ pub(crate) fn decode(
         let mut loop_warnings = Vec::new();
         let class = parse_class_wrapper(
             data,
-            wrapper_offset..wrapper.next_offset,
+            wrapper_offset..wrapper.next_offset(),
             archive,
             &mut loop_warnings,
         )?;
-        body.skip(wrapper.next_offset - wrapper_offset)
+        body.skip(wrapper.next_offset() - wrapper_offset)
             .ok_or_else(|| GeometryError::malformed(body.position(), "hatch loop overruns body"))?;
         let decoded =
             crate::curves::decode_2d(data, class.class_uuid, class.class_data_range, archive)?;
@@ -326,13 +326,13 @@ fn parse_gradient_userdata(
         archive,
         false,
     )?;
-    if outer.typecode != ANONYMOUS || outer.short {
+    if outer.typecode != ANONYMOUS || outer.short() {
         return Err(GeometryError::malformed(
             outer.header_start,
             "gradient userdata payload is not an anonymous chunk",
         ));
     }
-    let mut reader = crate::chunks::BoundedReader::new(data, outer.body.start, outer.body.end)?;
+    let mut reader = crate::chunks::BoundedReader::new(data, outer.body().start, outer.body().end)?;
     let version_offset = reader.position();
     let major = reader.i32()?;
     let _minor = reader.i32()?;
@@ -378,15 +378,15 @@ fn parse_gradient_userdata(
         .map_err(|_| GeometryError::malformed(count_offset, "gradient color allocation refused"))?;
     for index in 0..count {
         let stop_offset = reader.position();
-        let stop = chunk_at(data, stop_offset, outer.body.end, archive, false)?;
-        if stop.typecode != ANONYMOUS || stop.short {
+        let stop = chunk_at(data, stop_offset, outer.body().end, archive, false)?;
+        if stop.typecode != ANONYMOUS || stop.short() {
             return Err(GeometryError::malformed(
                 stop_offset,
                 format!("gradient color stop {index} is not an anonymous chunk"),
             ));
         }
         let mut stop_reader =
-            crate::chunks::BoundedReader::new(data, stop.body.start, stop.body.end)?;
+            crate::chunks::BoundedReader::new(data, stop.body().start, stop.body().end)?;
         let stop_version_offset = stop_reader.position();
         let stop_major = stop_reader.i32()?;
         let _stop_minor = stop_reader.i32()?;
@@ -406,7 +406,7 @@ fn parse_gradient_userdata(
             ));
         }
         stop_reader.skip_remaining()?;
-        reader.skip(stop.next_offset - reader.position())?;
+        reader.skip(stop.next_offset() - reader.position())?;
         colors.push(GradientColorStop { color, position });
     }
     reader.skip_remaining()?;
@@ -471,18 +471,19 @@ fn parse_userdata(
         archive,
         false,
     )?;
-    if payload.typecode != ANONYMOUS || payload.short {
+    if payload.typecode != ANONYMOUS || payload.short() {
         return Err(GeometryError::malformed(
             payload.header_start,
             "V5 hatch userdata payload is not an anonymous chunk",
         ));
     }
-    let mut reader = crate::chunks::BoundedReader::new(data, payload.body.start, payload.body.end)?;
+    let mut reader =
+        crate::chunks::BoundedReader::new(data, payload.body().start, payload.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 0 {
         return Err(GeometryError::malformed(
-            payload.body.start,
+            payload.body().start,
             "unsupported V5 hatch-extra version",
         ));
     }

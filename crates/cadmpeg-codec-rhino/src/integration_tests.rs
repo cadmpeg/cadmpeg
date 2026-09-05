@@ -1196,7 +1196,7 @@ fn brep_nested_mesh_userdata_future_payload_retains_parent_record() {
         .rev()
         .find(|offset| {
             crate::chunks::chunk_at(&brep_payload, *offset, payload_end, archive, false).is_ok_and(
-                |chunk| chunk.typecode == 0x4000_8000 && chunk.next_offset == payload_end,
+                |chunk| chunk.typecode == 0x4000_8000 && chunk.next_offset() == payload_end,
             )
         })
         .expect("Brep fixture has an inline region wrapper");
