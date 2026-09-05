@@ -658,8 +658,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         context_record_index: 1,
         context_record_index_offset: 0,
         item_count_offset: 0,
-        item_record_indices: vec![100],
-        item_record_index_offsets: vec![0],
+        items: vec![crate::records::Located { value: 100, offset: 0 }],
     };
     let project = |selection: &DesignEntitySelectionOperand| {
         crate::design::feature_project::project_parameter_design_with_edge_identities(

@@ -346,8 +346,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         context_record_index: 1,
         context_record_index_offset: 0,
         item_count_offset: 0,
-        item_record_indices: vec![10, 20],
-        item_record_index_offsets: vec![0, 0],
+        items: vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 20, offset: 0 }],
     };
     let scopes = vec![predecessor, point];
     let (features, _) = project_parameter_design_with_edge_identities(

@@ -1333,12 +1333,10 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
         };
         let expected_type = expected.get(&(segment, timeline.record_index));
         let frame_end = timeline.byte_offset.checked_add(timeline.frame_length);
-        let offsets_valid = timeline.item_record_indices.len()
-            == timeline.item_record_index_offsets.len()
-            && timeline.item_record_index_offsets.windows(2).all(|pair| {
-                pair[0]
+        let offsets_valid = timeline.items.windows(2).all(|pair| {
+                pair[0].offset
                     .checked_add(11)
-                    .is_some_and(|minimum| pair[1] >= minimum)
+                    .is_some_and(|minimum| pair[1].offset >= minimum)
             })
             && frame_end.is_some_and(|end| {
                 timeline.context_record_index_offset > timeline.byte_offset
@@ -1351,13 +1349,13 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .checked_add(4)
                         .is_some_and(|after_count| after_count <= end)
                     && timeline
-                        .item_record_index_offsets
+                        .items
                         .first()
                         .is_none_or(|offset| {
-                            timeline.item_count_offset.checked_add(5) == Some(*offset)
+                            timeline.item_count_offset.checked_add(5) == Some(offset.offset)
                         })
-                    && timeline.item_record_index_offsets.iter().all(|offset| {
-                        offset
+                    && timeline.items.iter().all(|offset| {
+                        offset.offset
                             .checked_add(10)
                             .is_some_and(|after_reference| after_reference <= end)
                     })
@@ -1380,10 +1378,10 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 && unique_record
                 && offsets_valid;
         let mut items_valid = true;
-        for item in &timeline.item_record_indices {
-            items_valid &= *item != 0
-                && entity_type_counts.get(&(segment, *item)) == Some(&1)
-                && item_records.insert((segment, *item));
+        for item in timeline.items.iter().map(|item| item.value) {
+            items_valid &= item != 0
+                && entity_type_counts.get(&(segment, item)) == Some(&1)
+                && item_records.insert((segment, item));
         }
         if !record_valid || !items_valid {
             findings.push(Finding {

@@ -230,7 +230,7 @@ fn authored_scope_ordinals_for_stream<'a>(
     }
     if stream_timelines
         .iter()
-        .filter(|timeline| !timeline.item_record_indices.is_empty())
+        .filter(|timeline| !timeline.items.is_empty())
         .count()
         > 1
     {
@@ -241,8 +241,8 @@ fn authored_scope_ordinals_for_stream<'a>(
     let mut item_ordinals = HashMap::<u64, u64>::new();
     let mut next_ordinal = 0_u64;
     for timeline in stream_timelines {
-        for item in &timeline.item_record_indices {
-            if *item == 0 || item_ordinals.insert(*item, next_ordinal).is_some() {
+        for item in timeline.items.iter().map(|item| item.value) {
+            if item == 0 || item_ordinals.insert(item, next_ordinal).is_some() {
                 return Err(CodecError::Malformed(
                     "Design timeline item identity is not unique".into(),
                 ));
@@ -529,10 +529,7 @@ pub fn project_parameter_design(
             .iter_mut()
             .find(|timeline| native_stream(&timeline.id) == Some(stream));
         if let Some(timeline) = timeline {
-            timeline
-                .item_record_indices
-                .push(u64::from(scope.record_index));
-            timeline.item_record_index_offsets.push(0);
+            timeline.items.push(crate::records::Located { value: u64::from(scope.record_index), offset: 0 });
         } else {
             timelines.push(DesignFeatureTimeline {
                 id: ids::native_design_feature_timeline_id_in_stream(stream, 0),
@@ -544,8 +541,7 @@ pub fn project_parameter_design(
                 context_record_index: 1,
                 context_record_index_offset: 0,
                 item_count_offset: 0,
-                item_record_indices: vec![u64::from(scope.record_index)],
-                item_record_index_offsets: vec![0],
+                items: vec![crate::records::Located { value: u64::from(scope.record_index), offset: 0 }],
             });
         }
     }

@@ -478,8 +478,7 @@ fn parse_feature_timeline_record(
     if count > end.checked_sub(at)? / 11 {
         return None;
     }
-    let mut item_record_indices = Vec::with_capacity(count);
-    let mut item_record_index_offsets = Vec::with_capacity(count);
+    let mut items = Vec::with_capacity(count);
     let mut unique = HashSet::with_capacity(count);
     for _ in 0..count {
         let target_offset = at.checked_add(1)?;
@@ -487,8 +486,7 @@ fn parse_feature_timeline_record(
         if target == 0 || !unique.insert(target) {
             return None;
         }
-        item_record_indices.push(target);
-        item_record_index_offsets.push(target_offset as u64);
+        items.push(crate::records::Located { value: target, offset: target_offset as u64 });
     }
     if at != end {
         return None;
@@ -504,8 +502,7 @@ fn parse_feature_timeline_record(
         context_record_index,
         context_record_index_offset: context_reference_offset as u64,
         item_count_offset: item_count_offset as u64,
-        item_record_indices,
-        item_record_index_offsets,
+        items,
     })
 }
 

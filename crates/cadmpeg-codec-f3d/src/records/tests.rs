@@ -673,3 +673,18 @@ fn copied_body_rows_preserve_wire_and_reject_unequal_runs() {
         }
     }
 }
+
+#[test]
+fn timeline_items_preserve_wire_and_reject_unequal_offsets() {
+    for offsets in ["[0,0]", "[245,256]"] {
+        let wire = format!(r#"{{"id":"timeline","byte_offset":200,"class_tag":"256","record_index":35,"source_ordinal":0,"frame_length":100,"context_record_index":17,"context_record_index_offset":220,"item_count_offset":240,"item_record_indices":[101,102],"item_record_index_offsets":{offsets}}}"#);
+        let timeline: super::DesignFeatureTimeline = serde_json::from_str(&wire).expect("timeline items");
+        assert_eq!(serde_json::to_string(&timeline).expect("timeline wire"), wire);
+        for invalid_offsets in ["[]", "[245]", "[245,256,267]"] {
+            let invalid = wire.replace(&format!("\"item_record_index_offsets\":{offsets}"), &format!("\"item_record_index_offsets\":{invalid_offsets}"));
+            let error = serde_json::from_str::<super::DesignFeatureTimeline>(&invalid).expect_err("unequal timeline arrays").to_string();
+            assert!(error.contains("item_record_indices"));
+            assert!(error.contains("item_record_index_offsets"));
+        }
+    }
+}
