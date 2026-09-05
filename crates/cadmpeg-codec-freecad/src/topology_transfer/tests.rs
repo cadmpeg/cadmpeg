@@ -10,6 +10,35 @@ fn translation(x: f64, y: f64, z: f64) -> Transform {
         .expect("translation is affine")
 }
 
+fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
+    match kind {
+        TextShapeKind::Vertex => TextTShapeGeometry::Vertex {
+            tolerance: 0.0,
+            point: Point3::new(0.0, 0.0, 0.0),
+            representations: Vec::new(),
+        },
+        TextShapeKind::Edge => TextTShapeGeometry::Edge {
+            tolerance: 0.0,
+            same_parameter: false,
+            same_range: false,
+            degenerated: false,
+            representations: Vec::new(),
+        },
+        TextShapeKind::Face => TextTShapeGeometry::Face {
+            natural_restriction: false,
+            tolerance: 0.0,
+            surface: 0,
+            location: 0,
+            triangulation: None,
+        },
+        TextShapeKind::Wire => TextTShapeGeometry::Wire,
+        TextShapeKind::Shell => TextTShapeGeometry::Shell,
+        TextShapeKind::Solid => TextTShapeGeometry::Solid,
+        TextShapeKind::CompSolid => TextTShapeGeometry::CompSolid,
+        TextShapeKind::Compound => TextTShapeGeometry::Compound,
+    }
+}
+
 #[test]
 fn neutral_identity_keys_preserve_exact_composed_locations() {
     let positive = translation(0.5e-12, 0.0, 0.0);
@@ -59,8 +88,7 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
     }];
     let tshapes = [TextTShape {
         index: 1,
-        kind: TextShapeKind::Edge,
-        geometry: TextTShapeGeometry::Empty,
+        geometry: geometry_for_kind(TextShapeKind::Edge),
         flags: [false; 7],
         children: Vec::new(),
     }];
@@ -117,8 +145,7 @@ fn source_indices_follow_depth_first_topology_order() {
     };
     let empty = |index: usize, kind: TextShapeKind, children: Vec<usize>| TextTShape {
         index,
-        kind,
-        geometry: TextTShapeGeometry::Empty,
+        geometry: geometry_for_kind(kind),
         flags: [false; 7],
         children: children.into_iter().map(use_shape).collect(),
     };
@@ -181,8 +208,7 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
     };
     let empty = |index: usize, kind: TextShapeKind, children: Vec<usize>| TextTShape {
         index,
-        kind,
-        geometry: TextTShapeGeometry::Empty,
+        geometry: geometry_for_kind(kind),
         flags: [false; 7],
         children: children.into_iter().map(use_shape).collect(),
     };
