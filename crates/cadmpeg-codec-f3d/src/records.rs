@@ -8451,11 +8451,9 @@ pub struct DesignConstructionOperandGroup {
     /// Per-file dynamic primary class tag.
     pub class_tag: String,
     /// Ordered operand-record references.
-    pub members: Vec<u32>,
+    pub members: Vec<Located<u32>>,
     /// Ordered unresolved-edge records whose run terminates at this group's identity.
     pub lost_edge_references: Vec<String>,
-    /// Byte offsets parallel to `members`.
-    pub member_offsets: Vec<u64>,
     /// Exact framing of the operand-member run and its auxiliary fields.
     pub frame: DesignConstructionOperandGroupFrame,
     /// Source u64 role code.
@@ -8508,7 +8506,10 @@ impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandG
     type Error = String;
 
     fn try_from(wire: DesignConstructionOperandGroupSerde) -> Result<Self, Self::Error> {
-        let extrude_role = match (wire.extrude_role, wire.extrude_face_role) {
+        if wire.members.len() != wire.member_offsets.len() {
+ return Err("members and member_offsets must have equal lengths".into());
+}
+let extrude_role = match (wire.extrude_role, wire.extrude_face_role) {
             (Some(DesignExtrudeOperandRoleTag::Bodies), None) => {
                 Some(DesignExtrudeOperandRole::Bodies)
             }
@@ -8530,9 +8531,8 @@ impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandG
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
             class_tag: wire.class_tag,
-            members: wire.members,
+            members: wire.members.into_iter().zip(wire.member_offsets).map(|(value, offset)| Located { value, offset }).collect(),
             lost_edge_references: wire.lost_edge_references,
-            member_offsets: wire.member_offsets,
             frame: wire.frame,
             role: wire.role,
             extrude_role,
@@ -8545,7 +8545,8 @@ impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandG
 
 impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerde {
     fn from(group: DesignConstructionOperandGroup) -> Self {
-        let (extrude_role, extrude_face_role) = match group.extrude_role {
+        let (members, member_offsets) = group.members.into_iter().map(|member| (member.value, member.offset)).unzip();
+let (extrude_role, extrude_face_role) = match group.extrude_role {
             Some(DesignExtrudeOperandRole::Bodies) => {
                 (Some(DesignExtrudeOperandRoleTag::Bodies), None)
             }
@@ -8564,9 +8565,9 @@ impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerd
             record_index: group.record_index,
             byte_offset: group.byte_offset,
             class_tag: group.class_tag,
-            members: group.members,
+            members,
             lost_edge_references: group.lost_edge_references,
-            member_offsets: group.member_offsets,
+            member_offsets,
             frame: group.frame,
             role: group.role,
             extrude_role,

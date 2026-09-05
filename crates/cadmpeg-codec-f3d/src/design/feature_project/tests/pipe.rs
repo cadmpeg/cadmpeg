@@ -81,9 +81,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         record_index: 20,
         byte_offset: 0,
         class_tag: "312".into(),
-        members: vec![21],
+        members: vec![crate::records::Located { value: 21, offset: 0 }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![0],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
             auxiliary_records: Vec::new(),

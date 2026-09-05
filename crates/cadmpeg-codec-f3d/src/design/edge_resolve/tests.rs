@@ -217,8 +217,7 @@ fn only_edge_treatments_use_single_member_transition_chains() {
 #[test]
 fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![10, 11];
-    selection_group.member_offsets = vec![0, 0];
+    selection_group.members = vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }];
     let mut first = identity(10, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
     first.compact_layout = false;
     let mut second = identity(11, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
@@ -351,8 +350,7 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
     use crate::records::{DesignEdgeTreatmentVertexOperand, DesignVertexRecipe};
 
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![10, 11, 12, 13];
-    selection_group.member_offsets = vec![0; 4];
+    selection_group.members = vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }, crate::records::Located { value: 12, offset: 0 }, crate::records::Located { value: 13, offset: 0 }];
     let mut first_edge = recipe_edge_operand(11, &[], &[]);
     first_edge.recipe_state_id = Some(7);
     first_edge.resolved_edge_slot = Some(17);
@@ -527,8 +525,7 @@ fn grouped_surface_patch_recipe_rejects_ambiguous_or_repeated_edges() {
 #[test]
 fn grouped_surface_patch_recipe_projects_historical_edges() {
     let mut group = group(2, 10);
-    group.members = vec![10, 11];
-    group.member_offsets = vec![0, 0];
+    group.members = vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }];
     let mut first = recipe_edge_operand(10, &[], &[]);
     first.recipe_references = vec![recipe_reference(&[17])];
     first.surface_patch_recipe_structure =
@@ -762,8 +759,7 @@ fn edge_treatment_chain_requires_complete_recipe_boundary_coverage() {
 #[test]
 fn compact_identity_group_uses_selected_recipe_context_boundaries() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![10, 11];
-    selection_group.member_offsets = vec![0, 0];
+    selection_group.members = vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }];
     let first_identity = identity(10, &[(17, 0.0), (18, 0.0)]);
     let mut second_identity = identity(11, &[(17, 0.0), (18, 0.0)]);
     second_identity.group_member_ordinal = 1;
@@ -813,8 +809,7 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
 #[test]
 fn lost_references_preserve_a_complete_compact_transition_chain() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![10, 11];
-    selection_group.member_offsets = vec![0, 0];
+    selection_group.members = vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }];
     let first_identity = identity(10, &[(17, 0.0), (18, 0.0)]);
     let mut second_identity = identity(11, &[(17, 0.0), (18, 0.0)]);
     second_identity.group_member_ordinal = 1;
@@ -892,8 +887,7 @@ fn compact_identity_group_does_not_displace_a_possible_support_group() {
 #[test]
 fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![10, 11];
-    selection_group.member_offsets = vec![0, 0];
+    selection_group.members = vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }];
     let first = identity(10, &[(17, 5.0), (19, 5.0)]);
     let mut second = identity(11, &[(17, 5.0), (19, 5.0)]);
     second.group_member_ordinal = 1;

@@ -492,9 +492,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             record_index,
             byte_offset: 1_000 + u64::from(scope_reference_ordinal),
             class_tag: "288".into(),
-            members: vec![record_index + 100],
+            members: vec![crate::records::Located { value: record_index + 100, offset: 1_026 + u64::from(scope_reference_ordinal) }],
             lost_edge_references: Vec::new(),
-            member_offsets: vec![1_026 + u64::from(scope_reference_ordinal)],
             frame: crate::records::DesignConstructionOperandGroupFrame {
                 member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
                 auxiliary_records: Vec::new(),
@@ -585,9 +584,8 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         record_index,
         byte_offset: 0,
         class_tag: "000".into(),
-        members: vec![member],
+        members: vec![crate::records::Located { value: member, offset: 0 }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![0],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
             auxiliary_records: Vec::new(),
@@ -897,10 +895,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         record_index,
         byte_offset: 1000 + u64::from(ordinal) * 200,
         class_tag: "288".into(),
-        member_offsets: (0..members.len())
-            .map(|index| 1026 + u64::from(ordinal) * 200 + index as u64 * 11)
-            .collect(),
-        members,
+
+
+        members: members.into_iter().enumerate().map(|(index, value)| crate::records::Located { value, offset: 1026 + u64::from(ordinal) * 200 + index as u64 * 11 }).collect(),
         lost_edge_references: Vec::new(),
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 1021 + u64::from(ordinal) * 200,
@@ -1423,7 +1420,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_scope.frame_length = 343;
     patch_scope.reference_members = vec![100, 200, 201, 202, 203, 300];
     patch_scope.payload = crate::records::DesignScopePayload::SurfacePatch(Vec::new());
-    patch_group.members = vec![200, 201, 202, 203];
+    patch_group.members = vec![200, 201, 202, 203].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
     let grouped_projection = crate::design::feature_project::project_surface_patch(
         &patch_scope,
         std::slice::from_ref(&patch_group),

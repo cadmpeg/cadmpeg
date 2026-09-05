@@ -437,9 +437,8 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
             record_index,
             byte_offset,
             class_tag: "277".into(),
-            members: vec![member],
+            members: vec![crate::records::Located { value: member, offset: byte_offset + 26 }],
             lost_edge_references: Vec::new(),
-            member_offsets: vec![byte_offset + 26],
             frame: DesignConstructionOperandGroupFrame {
                 member_count_offset: byte_offset + 21,
                 auxiliary_records: Vec::new(),
@@ -561,7 +560,6 @@ fn validation_checks_pipe_path_group_roles() {
         class_tag: "312".into(),
         members: Vec::new(),
         lost_edge_references: Vec::new(),
-        member_offsets: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 1_021,
             auxiliary_records: Vec::new(),
@@ -628,8 +626,7 @@ fn validation_checks_pipe_path_group_roles() {
     {
         let mut native = f3d_native_mut(&mut ir);
         let group = &mut native.design_construction_operand_groups[0];
-        group.members.push(21);
-        group.member_offsets.push(1_026);
+        group.members.push(crate::records::Located { value: 21, offset: 1_026 });
     }
     assert!(!has_role_finding(&ir));
     // The synthetic carrier is only a record header. No typed edge operand
@@ -1056,9 +1053,8 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         record_index: 30,
         byte_offset: 400,
         class_tag: "302".into(),
-        members: vec![20],
+        members: vec![crate::records::Located { value: 20, offset: 424 }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![424],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 420,
             auxiliary_records: Vec::new(),
@@ -1151,7 +1147,6 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         class_tag: "271".into(),
         members: Vec::new(),
         lost_edge_references: Vec::new(),
-        member_offsets: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 1_021,
             auxiliary_records: Vec::new(),
@@ -1254,9 +1249,8 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
         record_index: 100,
         byte_offset: 900,
         class_tag: "277".into(),
-        members: vec![200],
+        members: vec![crate::records::Located { value: 200, offset: 926 }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![926],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
             auxiliary_records: Vec::new(),

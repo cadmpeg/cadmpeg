@@ -636,9 +636,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         record_index: 101,
         byte_offset: 1000,
         class_tag: "332".into(),
-        members: vec![200],
+        members: vec![crate::records::Located { value: 200, offset: 1026 }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![1026],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 1021,
             auxiliary_records: Vec::new(),
@@ -690,8 +689,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     target_shape_group.id = "f3d:Design/BulkStream.dat:operand-group#105".into();
     target_shape_group.record_index = 105;
     target_shape_group.scope_reference_ordinal = 2;
-    target_shape_group.members = vec![201];
-    target_shape_group.member_offsets = vec![1026];
+    target_shape_group.members = vec![crate::records::Located { value: 201, offset: 1026 }];
     target_shape_group.role = 0x0000_0005_0000_0000;
     target_shape_group.extrude_role = None;
     let Some(DesignExtrudePrologue::ReferenceAware {
@@ -709,7 +707,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     unrelated_target_group.id = "f3d:Design/BulkStream.dat:operand-group#106".into();
     unrelated_target_group.record_index = 106;
     unrelated_target_group.scope_reference_ordinal = 3;
-    unrelated_target_group.members = vec![202];
+    unrelated_target_group.members = vec![crate::records::Located { value: 202, offset: unrelated_target_group.members[0].offset }];
     let mut target_shape_operand = DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe-operand#201".into(),
         scope_record_index: scope.record_index,
@@ -824,8 +822,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     ));
 
     let mut multi_target_group = target_shape_group.clone();
-    multi_target_group.members.push(202);
-    multi_target_group.member_offsets.push(1030);
+    multi_target_group.members.push(crate::records::Located { value: 202, offset: 1030 });
     let mut second_target_operand = target_shape_operand.clone();
     second_target_operand.id = "f3d:Design/BulkStream.dat:body-recipe-operand#202".into();
     second_target_operand.owner = DesignOperandOwner::Group {

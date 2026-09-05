@@ -35,9 +35,8 @@ fn group() -> DesignConstructionOperandGroup {
         record_index: 9,
         byte_offset: 0,
         class_tag: "277".into(),
-        members: vec![10, 11],
+        members: vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![0, 0],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
             auxiliary_records: Vec::new(),
@@ -950,7 +949,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
     }];
     let mut group = group();
     group.role = 0x41_0000_0000;
-    group.members = vec![10];
+    group.members = vec![10].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
     let operands = [operand(10, 0, 100)];
     let resolution = EntitySelectionPathResolution {
         operands: &operands,
