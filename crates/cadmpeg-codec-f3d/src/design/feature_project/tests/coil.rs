@@ -52,12 +52,12 @@ fn long_coil_matrix_projects_as_explicit_placement() {
         "CoilPrimitive",
         40,
     );
-    scope.coil_operation = Some(DesignExtrudeOperation::NewBody);
-    scope.coil_extent = Some(DesignCoilExtent::RevolutionsHeight);
-    scope.coil_section = Some(DesignCoilSection::Circular);
-    scope.coil_section_placement = Some(DesignCoilSectionPlacement::Inside);
-    scope.coil_clockwise = Some(false);
-    scope.coil_transform = Some(DesignCoilTransform {
+    scope.ensure_coil().coil_operation = Some(DesignExtrudeOperation::NewBody);
+    scope.ensure_coil().coil_extent = Some(DesignCoilExtent::RevolutionsHeight);
+    scope.ensure_coil().coil_section = Some(DesignCoilSection::Circular);
+    scope.ensure_coil().coil_section_placement = Some(DesignCoilSectionPlacement::Inside);
+    scope.ensure_coil().coil_clockwise = Some(false);
+    scope.ensure_coil().coil_transform = Some(DesignCoilTransform {
         transform: [
             [1.0, 0.0, 0.0, 1.25],
             [0.0, 1.0, 0.0, -2.5],

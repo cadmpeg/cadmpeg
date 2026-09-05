@@ -394,7 +394,7 @@ fn compact_coil_spiral_placement_fixture() -> (Vec<u8>, DesignParameterScope, us
     let (bytes, mut scope, transform_start) = compact_coil_placement_fixture(None);
     scope.frame_length = 411;
     scope.reference_members.pop();
-    scope.coil_extent = Some(DesignCoilExtent::Spiral);
+    scope.ensure_coil().coil_extent = Some(DesignCoilExtent::Spiral);
     (bytes, scope, transform_start)
 }
 
@@ -650,7 +650,7 @@ fn compact_coil_spiral_placement_accepts_seven_reference_form() {
 #[test]
 fn compact_coil_seven_reference_form_requires_spiral_extent() {
     let (bytes, mut scope, _) = compact_coil_spiral_placement_fixture();
-    scope.coil_extent = Some(DesignCoilExtent::RevolutionsHeight);
+    scope.ensure_coil().coil_extent = Some(DesignCoilExtent::RevolutionsHeight);
     assert_eq!(
         exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
         None
