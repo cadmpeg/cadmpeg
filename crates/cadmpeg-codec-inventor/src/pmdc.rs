@@ -53,17 +53,139 @@ pub(crate) struct PmDcContentHeader {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "PmDcReferenceListWire", into = "PmDcReferenceListWire")]
 pub(crate) struct PmDcReferenceList {
     pub(crate) marker: u16,
-    pub(crate) metadata: Option<PmDcListMetadata>,
-    pub(crate) references: Vec<PmDcReference>,
+    items: Option<(PmDcListMetadata, Vec<PmDcReference>)>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PmDcReferenceListWire {
+    marker: u16,
+    metadata: Option<PmDcListMetadata>,
+    references: Vec<PmDcReference>,
+}
+
+impl PmDcReferenceList {
+    pub(crate) fn new(
+        marker: u16,
+        metadata: Option<PmDcListMetadata>,
+        references: Vec<PmDcReference>,
+    ) -> Option<Self> {
+        Some(Self {
+            marker,
+            items: paired_items(metadata, references)?,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn metadata(&self) -> Option<&PmDcListMetadata> {
+        self.items.as_ref().map(|(metadata, _)| metadata)
+    }
+
+    pub(crate) fn references(&self) -> &[PmDcReference] {
+        self.items
+            .as_ref()
+            .map(|(_, references)| references.as_slice())
+            .unwrap_or(&[])
+    }
+}
+
+impl From<PmDcReferenceList> for PmDcReferenceListWire {
+    fn from(value: PmDcReferenceList) -> Self {
+        match value.items {
+            None => Self {
+                marker: value.marker,
+                metadata: None,
+                references: Vec::new(),
+            },
+            Some((metadata, references)) => Self {
+                marker: value.marker,
+                metadata: Some(metadata),
+                references,
+            },
+        }
+    }
+}
+
+impl TryFrom<PmDcReferenceListWire> for PmDcReferenceList {
+    type Error = String;
+
+    fn try_from(wire: PmDcReferenceListWire) -> Result<Self, Self::Error> {
+        Self::new(wire.marker, wire.metadata, wire.references)
+            .ok_or_else(|| "PmDc reference list metadata disagrees with length".to_owned())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "PmDcU32ListWire", into = "PmDcU32ListWire")]
 pub(crate) struct PmDcU32List {
     pub(crate) marker: u16,
-    pub(crate) metadata: Option<PmDcListMetadata>,
-    pub(crate) values: Vec<u32>,
+    items: Option<(PmDcListMetadata, Vec<u32>)>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PmDcU32ListWire {
+    marker: u16,
+    metadata: Option<PmDcListMetadata>,
+    values: Vec<u32>,
+}
+
+impl PmDcU32List {
+    pub(crate) fn new(
+        marker: u16,
+        metadata: Option<PmDcListMetadata>,
+        values: Vec<u32>,
+    ) -> Option<Self> {
+        Some(Self {
+            marker,
+            items: paired_items(metadata, values)?,
+        })
+    }
+
+    pub(crate) fn values(&self) -> &[u32] {
+        self.items
+            .as_ref()
+            .map(|(_, values)| values.as_slice())
+            .unwrap_or(&[])
+    }
+}
+
+impl From<PmDcU32List> for PmDcU32ListWire {
+    fn from(value: PmDcU32List) -> Self {
+        match value.items {
+            None => Self {
+                marker: value.marker,
+                metadata: None,
+                values: Vec::new(),
+            },
+            Some((metadata, values)) => Self {
+                marker: value.marker,
+                metadata: Some(metadata),
+                values,
+            },
+        }
+    }
+}
+
+impl TryFrom<PmDcU32ListWire> for PmDcU32List {
+    type Error = String;
+
+    fn try_from(wire: PmDcU32ListWire) -> Result<Self, Self::Error> {
+        Self::new(wire.marker, wire.metadata, wire.values)
+            .ok_or_else(|| "PmDc integer list metadata disagrees with length".to_owned())
+    }
+}
+
+pub(crate) fn paired_items<M, T>(
+    metadata: Option<M>,
+    values: Vec<T>,
+) -> Option<Option<(M, Vec<T>)>> {
+    match (metadata, values.is_empty()) {
+        (None, true) => Some(None),
+        (Some(metadata), false) => Some(Some((metadata, values))),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -188,10 +310,8 @@ pub(crate) fn reference_list(
     for index in 0..count {
         references.push(cursor.reference(&format!("{field} reference {index}"))?);
     }
-    Ok(PmDcReferenceList {
-        marker,
-        metadata,
-        references,
+    PmDcReferenceList::new(marker, metadata, references).ok_or_else(|| {
+        CodecError::Malformed("Inventor PmDc reference list metadata disagrees with length".into())
     })
 }
 
@@ -241,9 +361,7 @@ pub(crate) fn u32_list(
     for index in 0..count {
         values.push(cursor.u32(&format!("{field} value {index}"))?);
     }
-    Ok(PmDcU32List {
-        marker,
-        metadata,
-        values,
+    PmDcU32List::new(marker, metadata, values).ok_or_else(|| {
+        CodecError::Malformed("Inventor PmDc integer list metadata disagrees with length".into())
     })
 }

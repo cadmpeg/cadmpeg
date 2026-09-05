@@ -746,10 +746,10 @@ fn parse_unit_definition(
         header_value,
         header_id,
         kind: PmDcUnitKind::Definition {
-            numerators: numerators.references,
-            numerator_metadata: numerators.metadata,
-            denominators: denominators.references,
-            denominator_metadata: denominators.metadata,
+            numerators: numerators.references().to_vec(),
+            numerator_metadata: numerators.metadata(),
+            denominators: denominators.references().to_vec(),
+            denominator_metadata: denominators.metadata(),
             visible,
             derived,
         },
@@ -843,8 +843,26 @@ fn unique_by_ordinal<'a, T>(
 }
 
 struct ReferenceArray {
-    references: Vec<PmDcReference>,
-    metadata: Option<[u16; 2]>,
+    items: Option<([u16; 2], Vec<PmDcReference>)>,
+}
+
+impl ReferenceArray {
+    fn new(metadata: Option<[u16; 2]>, references: Vec<PmDcReference>) -> Option<Self> {
+        Some(Self {
+            items: crate::pmdc::paired_items(metadata, references)?,
+        })
+    }
+
+    fn metadata(&self) -> Option<[u16; 2]> {
+        self.items.as_ref().map(|(metadata, _)| *metadata)
+    }
+
+    fn references(&self) -> &[PmDcReference] {
+        self.items
+            .as_ref()
+            .map(|(_, references)| references.as_slice())
+            .unwrap_or(&[])
+    }
 }
 
 impl Cursor<'_> {
@@ -876,9 +894,10 @@ impl Cursor<'_> {
         for index in 0..count {
             references.push(self.reference(&format!("{field} reference {index}"))?);
         }
-        Ok(ReferenceArray {
-            references,
-            metadata,
+        ReferenceArray::new(metadata, references).ok_or_else(|| {
+            CodecError::Malformed(
+                "Inventor PmDc unit reference list metadata disagrees with length".into(),
+            )
         })
     }
 }

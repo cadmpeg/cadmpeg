@@ -105,15 +105,122 @@ pub(crate) struct PmDcConstraintHeader {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "PmDcReferenceScalarMapWire",
+    into = "PmDcReferenceScalarMapWire"
+)]
 pub(crate) struct PmDcReferenceScalarMap {
-    pub(crate) metadata: Option<[u32; 2]>,
-    pub(crate) entries: Vec<(PmDcReference, f64)>,
+    items: Option<([u32; 2], Vec<(PmDcReference, f64)>)>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PmDcReferenceScalarMapWire {
+    metadata: Option<[u32; 2]>,
+    entries: Vec<(PmDcReference, f64)>,
+}
+
+impl PmDcReferenceScalarMap {
+    fn new(metadata: Option<[u32; 2]>, entries: Vec<(PmDcReference, f64)>) -> Option<Self> {
+        Some(Self {
+            items: crate::pmdc::paired_items(metadata, entries)?,
+        })
+    }
+
+    pub(crate) fn metadata(&self) -> Option<[u32; 2]> {
+        self.items.as_ref().map(|(metadata, _)| *metadata)
+    }
+
+    pub(crate) fn entries(&self) -> &[(PmDcReference, f64)] {
+        self.items
+            .as_ref()
+            .map(|(_, entries)| entries.as_slice())
+            .unwrap_or(&[])
+    }
+}
+
+impl From<PmDcReferenceScalarMap> for PmDcReferenceScalarMapWire {
+    fn from(value: PmDcReferenceScalarMap) -> Self {
+        match value.items {
+            None => Self {
+                metadata: None,
+                entries: Vec::new(),
+            },
+            Some((metadata, entries)) => Self {
+                metadata: Some(metadata),
+                entries,
+            },
+        }
+    }
+}
+
+impl TryFrom<PmDcReferenceScalarMapWire> for PmDcReferenceScalarMap {
+    type Error = String;
+
+    fn try_from(wire: PmDcReferenceScalarMapWire) -> Result<Self, Self::Error> {
+        Self::new(wire.metadata, wire.entries)
+            .ok_or_else(|| "PmDc scalar map metadata disagrees with length".to_owned())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "PmDcReferencePairMapWire",
+    into = "PmDcReferencePairMapWire"
+)]
 pub(crate) struct PmDcReferencePairMap {
-    pub(crate) metadata: Option<[u32; 2]>,
-    pub(crate) entries: Vec<(PmDcReference, PmDcReference)>,
+    items: Option<([u32; 2], Vec<(PmDcReference, PmDcReference)>)>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PmDcReferencePairMapWire {
+    metadata: Option<[u32; 2]>,
+    entries: Vec<(PmDcReference, PmDcReference)>,
+}
+
+impl PmDcReferencePairMap {
+    fn new(
+        metadata: Option<[u32; 2]>,
+        entries: Vec<(PmDcReference, PmDcReference)>,
+    ) -> Option<Self> {
+        Some(Self {
+            items: crate::pmdc::paired_items(metadata, entries)?,
+        })
+    }
+
+    pub(crate) fn metadata(&self) -> Option<[u32; 2]> {
+        self.items.as_ref().map(|(metadata, _)| *metadata)
+    }
+
+    pub(crate) fn entries(&self) -> &[(PmDcReference, PmDcReference)] {
+        self.items
+            .as_ref()
+            .map(|(_, entries)| entries.as_slice())
+            .unwrap_or(&[])
+    }
+}
+
+impl From<PmDcReferencePairMap> for PmDcReferencePairMapWire {
+    fn from(value: PmDcReferencePairMap) -> Self {
+        match value.items {
+            None => Self {
+                metadata: None,
+                entries: Vec::new(),
+            },
+            Some((metadata, entries)) => Self {
+                metadata: Some(metadata),
+                entries,
+            },
+        }
+    }
+}
+
+impl TryFrom<PmDcReferencePairMapWire> for PmDcReferencePairMap {
+    type Error = String;
+
+    fn try_from(wire: PmDcReferencePairMapWire) -> Result<Self, Self::Error> {
+        Self::new(wire.metadata, wire.entries)
+            .ok_or_else(|| "PmDc pair map metadata disagrees with length".to_owned())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -763,7 +870,9 @@ fn reference_scalar_map(
             cursor.f64(&format!("constraint scalar-map value {index}"))?,
         ));
     }
-    Ok(PmDcReferenceScalarMap { metadata, entries })
+    PmDcReferenceScalarMap::new(metadata, entries).ok_or_else(|| {
+        CodecError::Malformed("Inventor PmDc scalar map metadata disagrees with length".into())
+    })
 }
 
 fn reference_pair_map(
@@ -778,7 +887,9 @@ fn reference_pair_map(
             cursor.reference(&format!("constraint reference-map value {index}"))?,
         ));
     }
-    Ok(PmDcReferencePairMap { metadata, entries })
+    PmDcReferencePairMap::new(metadata, entries).ok_or_else(|| {
+        CodecError::Malformed("Inventor PmDc pair map metadata disagrees with length".into())
+    })
 }
 
 fn parse_constraint_header(
@@ -791,14 +902,8 @@ fn parse_constraint_header(
     let group = cursor.reference("constraint group")?;
     let (scalar_map, reference_map) = if version <= 16 {
         (
-            PmDcReferenceScalarMap {
-                metadata: None,
-                entries: Vec::new(),
-            },
-            PmDcReferencePairMap {
-                metadata: None,
-                entries: Vec::new(),
-            },
+            PmDcReferenceScalarMap::new(None, Vec::new()).expect("empty scalar map"),
+            PmDcReferencePairMap::new(None, Vec::new()).expect("empty pair map"),
         )
     } else {
         (
@@ -962,7 +1067,7 @@ pub(crate) fn project(
         };
         if !sketch
             .entities
-            .references
+            .references()
             .iter()
             .any(|reference| reference.index == entity.record_ordinal.saturating_add(1))
         {
@@ -995,7 +1100,7 @@ pub(crate) fn project(
         }
         let raw_referenced_entities = sketch
             .entities
-            .references
+            .references()
             .iter()
             .filter_map(|reference| {
                 let ordinal = reference.index.checked_sub(1)?;
@@ -1086,7 +1191,7 @@ pub(crate) fn project(
             return false;
         };
         let mut seen = HashSet::new();
-        raw.entities.references.iter().all(|reference| {
+        raw.entities.references().iter().all(|reference| {
             let Some(ordinal) = reference.index.checked_sub(1) else {
                 return false;
             };
@@ -1137,7 +1242,7 @@ pub(crate) fn project(
         raw_sketch_by_id
             .get(&constraint.sketch)
             .is_some_and(|sketch| {
-                sketch.entities.references.iter().any(|reference| {
+                sketch.entities.references().iter().any(|reference| {
                     reference.index == raw_constraint.record_ordinal.saturating_add(1)
                 })
             })
@@ -1159,10 +1264,10 @@ fn project_constraint(
     entities: &HashMap<(String, u32), &SketchEntity>,
     parameters: &HashMap<String, ParameterId>,
 ) -> Option<SketchConstraint> {
-    if constraint.header.scalar_map.metadata.is_some()
-        || !constraint.header.scalar_map.entries.is_empty()
-        || constraint.header.reference_map.metadata.is_some()
-        || !constraint.header.reference_map.entries.is_empty()
+    if constraint.header.scalar_map.metadata().is_some()
+        || !constraint.header.scalar_map.entries().is_empty()
+        || constraint.header.reference_map.metadata().is_some()
+        || !constraint.header.reference_map.entries().is_empty()
     {
         return None;
     }
@@ -1410,7 +1515,7 @@ fn project_geometry(
             direction,
             ..
         } => {
-            let [start, end] = points.references.as_slice() else {
+            let [start, end] = points.references() else {
                 return None;
             };
             let start = resolve_point(&entity.segment_token, start.index, entities)?;
@@ -1499,7 +1604,7 @@ fn entity_endpoint_refs(
         return Vec::new();
     };
     points
-        .references
+        .references()
         .iter()
         .filter_map(|reference| {
             entities
@@ -1829,7 +1934,7 @@ mod tests {
         assert!(matches!(
             parsed.kind,
             PmDcSketchEntityKind::Line { ref points, .. }
-                if points.references.iter().map(|value| value.index).collect::<Vec<_>>() == [4, 5]
+                if points.references().iter().map(|value| value.index).collect::<Vec<_>>() == [4, 5]
         ));
 
         let mut circle = entity_prefix(3, 3, 0);
@@ -1921,8 +2026,8 @@ mod tests {
         let parsed = parse(&bytes, |ctx, source| {
             parse_constraint(ctx, COINCIDENT_TYPE, source, 16).expect("legacy coincident")
         });
-        assert!(parsed.header.scalar_map.entries.is_empty());
-        assert!(parsed.header.reference_map.entries.is_empty());
+        assert!(parsed.header.scalar_map.entries().is_empty());
+        assert!(parsed.header.reference_map.entries().is_empty());
         assert!(matches!(
             parsed.kind,
             PmDcSketchConstraintKind::Coincident { first, second }
@@ -2078,13 +2183,15 @@ mod tests {
         inventory
             .constraints
             .push(identify(mapped_constraint, COINCIDENT_TYPE, "segment", 11));
-        inventory.sketches[0]
-            .entities
-            .references
-            .push(PmDcReference {
-                index: 12,
-                qualified: false,
-            });
+        let entities = &mut inventory.sketches[0].entities;
+        let mut references = entities.references().to_vec();
+        references.push(PmDcReference {
+            index: 12,
+            qualified: false,
+        });
+        *entities =
+            PmDcReferenceList::new(entities.marker, entities.metadata().cloned(), references)
+                .expect("extended entity list");
         let incomplete = project(&inventory, &[]);
         assert_eq!(incomplete.unresolved_sketches, 1);
         assert_eq!(incomplete.unresolved_constraints, 1);

@@ -914,7 +914,7 @@ fn parse_edge_item(
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let index_references = u32_list(ctx, &mut cursor, 2, "edge-item index references")?;
-    let index_reference_value = if index_references.values.is_empty() {
+    let index_reference_value = if index_references.values().is_empty() {
         -1
     } else {
         cursor.i32("edge-item selected index")?
@@ -1119,11 +1119,11 @@ fn project_extrusion(
         _ => return None,
     };
     let boundary = references(source, 1, PmDcFeatureReferenceFamily::BoundaryPatch, index)?;
-    if source.properties.references.get(23)? != source.properties.references.get(1)? {
+    if source.properties.references().get(23)? != source.properties.references().get(1)? {
         return None;
     }
     let selections = boundary
-        .references
+        .references()
         .iter()
         .map(|reference| {
             let property = resolve_property(&source.segment_token, reference.index, index)?;
@@ -1138,10 +1138,10 @@ fn project_extrusion(
                 .then(|| property.id.clone())
         })
         .collect::<Option<Vec<_>>>()?;
-    if selections.is_empty() || label.participants.references.len() != 1 {
+    if selections.is_empty() || label.participants.references().len() != 1 {
         return None;
     }
-    let sketch_reference = label.participants.references.first()?;
+    let sketch_reference = label.participants.references().first()?;
     let sketch = index.sketches.get(&(
         source.segment_token.as_str(),
         sketch_reference.index.checked_sub(1)?,
@@ -1216,14 +1216,14 @@ fn project_fillet(
     index: &ProjectionIndex<'_>,
 ) -> Option<(Feature, FeatureResultTopology)> {
     if enum16(source, 11, PmDcFeatureEnumFamily::Fillet, index)? != 0
-        || source.properties.references.get(1)?.index != 0
-        || source.properties.references.get(10)?.index != 0
+        || source.properties.references().get(1)?.index != 0
+        || source.properties.references().get(10)?.index != 0
     {
         return None;
     }
     let sets = references(source, 0, PmDcFeatureReferenceFamily::FilletEdgeSets, index)?;
     let groups = sets
-        .references
+        .references()
         .iter()
         .map(|reference| {
             let set = resolve_property(&source.segment_token, reference.index, index)?;
@@ -1381,7 +1381,7 @@ fn project_hole(
         5 => LinearTermination::ThroughAll,
         _ => return None,
     };
-    let transform_reference = source.properties.references.get(8)?;
+    let transform_reference = source.properties.references().get(8)?;
     let transform = index.transforms.get(&(
         source.segment_token.as_str(),
         transform_reference.index.checked_sub(1)?,
@@ -1471,7 +1471,7 @@ fn feature_result(
         return None;
     };
     let bodies = items
-        .references
+        .references()
         .iter()
         .map(|reference| {
             let body = resolve_property(&source.segment_token, reference.index, index)?;
@@ -1503,15 +1503,15 @@ fn feature_result(
 }
 
 fn closed_edge_items(token: &str, items: &PmDcReferenceList, index: &ProjectionIndex<'_>) -> bool {
-    !items.references.is_empty()
-        && items.references.iter().all(|reference| {
+    !items.references().is_empty()
+        && items.references().iter().all(|reference| {
             resolve_property(token, reference.index, index).is_some_and(|property| {
                 matches!(
                     &property.kind,
                     PmDcFeaturePropertyKind::EdgeItem {
                         index_references,
                         ..
-                    } if !index_references.values.is_empty()
+                    } if !index_references.values().is_empty()
                 )
             })
         })
@@ -1524,7 +1524,7 @@ fn slot_property<'a>(
 ) -> Option<&'a PmDcFeatureProperty> {
     resolve_property(
         &source.segment_token,
-        source.properties.references.get(slot)?.index,
+        source.properties.references().get(slot)?.index,
         index,
     )
 }
@@ -1590,7 +1590,7 @@ fn resolve_direction<'a>(
     slot: usize,
     index: &'a ProjectionIndex<'a>,
 ) -> Option<&'a crate::sketch::PmDcDirection> {
-    let reference = source.properties.references.get(slot)?;
+    let reference = source.properties.references().get(slot)?;
     index
         .directions
         .get(&(
@@ -1607,7 +1607,7 @@ fn length_parameter(
 ) -> Option<Length> {
     length_reference(
         &source.segment_token,
-        source.properties.references.get(slot)?.index,
+        source.properties.references().get(slot)?.index,
         index,
     )
 }
@@ -1625,7 +1625,7 @@ fn angle_parameter(
     slot: usize,
     index: &ProjectionIndex<'_>,
 ) -> Option<Angle> {
-    let reference = source.properties.references.get(slot)?;
+    let reference = source.properties.references().get(slot)?;
     let parameter = index.parameters.get(&(
         source.segment_token.as_str(),
         reference.index.checked_sub(1)?,
@@ -1727,12 +1727,13 @@ mod tests {
     }
 
     fn reference_list(values: &[u32]) -> PmDcReferenceList {
-        PmDcReferenceList {
-            marker: 2,
-            metadata: (!values.is_empty())
+        PmDcReferenceList::new(
+            2,
+            (!values.is_empty())
                 .then_some(crate::pmdc::PmDcListMetadata::U32([values.len() as u32, 0])),
-            references: values.iter().copied().map(reference).collect(),
-        }
+            values.iter().copied().map(reference).collect(),
+        )
+        .expect("test list metadata matches length")
     }
 
     fn test_header() -> PmDcContentHeader {
@@ -1772,11 +1773,13 @@ mod tests {
             header: test_header(),
             state: 69,
             outline_value: 0,
-            properties: PmDcReferenceList {
-                marker: 2,
-                metadata: Some(crate::pmdc::PmDcListMetadata::U32([slot_count as u32, 0])),
+            properties: PmDcReferenceList::new(
+                2,
+                (!references.is_empty())
+                    .then_some(crate::pmdc::PmDcListMetadata::U32([slot_count as u32, 0])),
                 references,
-            },
+            )
+            .expect("test list metadata matches length"),
             value: 0,
         }
     }
@@ -1945,8 +1948,8 @@ mod tests {
         });
         assert_eq!(parsed.state, -1);
         assert_eq!(parsed.outline_value, 42);
-        assert_eq!(parsed.properties.references.len(), 2);
-        assert!(parsed.properties.references[0].qualified);
+        assert_eq!(parsed.properties.references().len(), 2);
+        assert!(parsed.properties.references()[0].qualified);
         assert_eq!(parsed.value, 9);
 
         let mut terminator = content(8);
@@ -2005,7 +2008,7 @@ mod tests {
                 parse_pattern_feature(ctx, source, version, family).expect("pattern feature")
             });
             assert_eq!(parsed.family, family);
-            assert_eq!(parsed.participants.references.len(), 2);
+            assert_eq!(parsed.participants.references().len(), 2);
             assert_eq!(parsed.property_slots.len(), slots);
             assert_eq!(parsed.extension_values.len(), extensions);
         }
@@ -2066,11 +2069,12 @@ mod tests {
             test_property(
                 7,
                 PmDcFeaturePropertyKind::EdgeItem {
-                    index_references: PmDcU32List {
-                        marker: 2,
-                        metadata: Some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
-                        values: vec![42],
-                    },
+                    index_references: PmDcU32List::new(
+                        2,
+                        Some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
+                        vec![42],
+                    )
+                    .expect("test list metadata matches length"),
                     index_reference_value: 0,
                     value: 0,
                 },
@@ -2131,11 +2135,12 @@ mod tests {
             test_property(
                 33,
                 PmDcFeaturePropertyKind::EdgeItem {
-                    index_references: PmDcU32List {
-                        marker: 2,
-                        metadata: Some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
-                        values: vec![17],
-                    },
+                    index_references: PmDcU32List::new(
+                        2,
+                        Some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
+                        vec![17],
+                    )
+                    .expect("test list metadata matches length"),
                     index_reference_value: -1,
                     value: 0,
                 },
@@ -2201,11 +2206,7 @@ mod tests {
             header: test_header(),
             state: 0,
             count_value: 0,
-            entities: PmDcReferenceList {
-                marker: 8,
-                metadata: None,
-                references: Vec::new(),
-            },
+            entities: PmDcReferenceList::new(8, None, Vec::new()).expect("empty entity list"),
             transform: reference(0),
             direction: reference(0),
             values: [0; 2],
@@ -2582,7 +2583,7 @@ mod tests {
         assert!(matches!(
             parsed.kind,
             PmDcFeaturePropertyKind::References { items, .. }
-                if items.references.len() == 2
+                if items.references().len() == 2
         ));
 
         let mut rdx = content(13);
@@ -2682,7 +2683,7 @@ mod tests {
             parse_label(ctx, source, 16).expect("label")
         });
         assert_eq!(parsed.name, "Extrude1");
-        assert_eq!(parsed.participants.references.len(), 1);
+        assert_eq!(parsed.participants.references().len(), 1);
         assert_eq!(parsed.class_id, "abababababababababababababababab");
     }
 }
