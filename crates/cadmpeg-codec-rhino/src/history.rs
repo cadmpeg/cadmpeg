@@ -1017,7 +1017,7 @@ fn extended_geometry_json(
             .iter()
             .map(|localizer| {
                 serde_json::json!({
-                    "kind": localizer.kind,
+                    "kind": localizer.kind.as_i32(),
                     "point": localizer.point,
                     "vector": localizer.vector,
                     "interval": localizer.interval,

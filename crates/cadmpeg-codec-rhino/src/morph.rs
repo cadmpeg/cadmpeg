@@ -35,9 +35,58 @@ pub(crate) enum Control {
     },
 }
 
+/// Morph localizer type. Unknown values are not mapped to `None`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LocalizerKind {
+    /// Type 0.
+    None,
+    /// Type 1.
+    Sphere,
+    /// Type 2.
+    Plane,
+    /// Type 3.
+    Cylinder,
+    /// Type 4.
+    Curve,
+    /// Type 5.
+    Surface,
+    /// Type 6.
+    Distance,
+    /// An unrecognized type code.
+    Unknown(i32),
+}
+
+impl LocalizerKind {
+    fn from_i32(value: i32) -> Self {
+        match value {
+            0 => Self::None,
+            1 => Self::Sphere,
+            2 => Self::Plane,
+            3 => Self::Cylinder,
+            4 => Self::Curve,
+            5 => Self::Surface,
+            6 => Self::Distance,
+            other => Self::Unknown(other),
+        }
+    }
+
+    pub(crate) fn as_i32(self) -> i32 {
+        match self {
+            Self::None => 0,
+            Self::Sphere => 1,
+            Self::Plane => 2,
+            Self::Cylinder => 3,
+            Self::Curve => 4,
+            Self::Surface => 5,
+            Self::Distance => 6,
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Localizer {
-    pub(crate) kind: i32,
+    pub(crate) kind: LocalizerKind,
     pub(crate) point: [f64; 3],
     pub(crate) vector: [f64; 3],
     pub(crate) interval: [f64; 2],
@@ -215,10 +264,7 @@ fn localizer(
             message: format!("unsupported localizer version {major}.{minor}"),
         });
     }
-    let kind = match value.i32()? {
-        value @ 0..=6 => value,
-        _ => 0,
-    };
+    let kind = LocalizerKind::from_i32(value.i32()?);
     let offset = value.position();
     let point = scale_point(point(&mut value)?, scale, offset)?;
     let vector = vector(&mut value)?.0;
@@ -557,7 +603,10 @@ pub(crate) fn project(
     };
     for (index, localizer) in morph.localizers.iter().enumerate() {
         let prefix = format!("localizer_{index}");
-        properties.insert(format!("{prefix}_type"), localizer.kind.to_string());
+        properties.insert(
+            format!("{prefix}_type"),
+            localizer.kind.as_i32().to_string(),
+        );
         properties.insert(format!("{prefix}_point"), numbers(localizer.point));
         properties.insert(format!("{prefix}_vector"), numbers(localizer.vector));
         properties.insert(format!("{prefix}_interval"), numbers(localizer.interval));
