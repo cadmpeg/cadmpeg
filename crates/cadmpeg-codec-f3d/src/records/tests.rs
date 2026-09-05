@@ -2014,3 +2014,30 @@ fn combine_requires_boolean_operation_local_target_and_nonempty_tools() {
     let error = serde_json::from_value::<super::DesignCombineOperation>(external_target).expect_err("local combine target");
     assert!(error.to_string().contains("target.external_identity"));
 }
+
+#[test]
+fn thread_nominal_size_preserves_spelling_and_derives_numeric_wire_value() {
+    let wire = |text: &str, number: &str| format!("{{\"form\":\"standard\",\"designation_offset\":38,\"designation\":\"M1\",\"nominal_size_text\":\"{text}\",\"nominal_size\":{number},\"profile\":\"ISO Metric profile\",\"major_diameter\":1.0,\"minor_diameter\":0.5,\"pitch\":0.1,\"pitch_diameter\":0.75,\"face_group_record_indices\":[10]}}");
+    for (text, number) in [("1.0", "1.0"), ("+1.00", "1.0"), ("1.25e1", "12.5"), ("0.125", "0.125")] {
+        let json = wire(text, number);
+        let thread: super::DesignThreadConstruction = serde_json::from_str(&json).expect("thread nominal size");
+        assert_eq!(thread.nominal_size.text(), text);
+        assert_eq!(serde_json::to_string(&thread).expect("thread nominal-size wire"), json);
+    }
+    for text in ["", "-", "0", "-0.0", "-1", "NaN", "inf", "1e9999"] {
+        let error = serde_json::from_str::<super::DesignThreadConstruction>(&wire(text, "1.0")).expect_err("invalid nominal-size spelling");
+        assert!(error.to_string().contains("nominal_size_text"));
+    }
+    let error = serde_json::from_str::<super::DesignThreadConstruction>(&wire("1.0", "2.0")).expect_err("derived nominal size");
+    assert!(error.to_string().contains("nominal_size"));
+    assert!(error.to_string().contains("nominal_size_text"));
+    let compact = wire("1.0", "1.0").replace("\"standard\"", "\"compact\"");
+    for index in [1, u32::MAX] {
+        let json = compact.replace("\"face_group_record_indices\"", &format!("\"trailing_reference_record_index\":{index},\"trailing_reference_offset\":100,\"face_group_record_indices\""));
+        let thread: super::DesignThreadConstruction = serde_json::from_str(&json).expect("compact trailer reference");
+        assert_eq!(serde_json::to_string(&thread).expect("compact trailer wire"), json);
+    }
+    let invalid = compact.replace("\"face_group_record_indices\"", "\"trailing_reference_record_index\":0,\"trailing_reference_offset\":100,\"face_group_record_indices\"");
+    let error = serde_json::from_str::<super::DesignThreadConstruction>(&invalid).expect_err("nonzero compact trailer reference");
+    assert!(error.to_string().contains("trailing_reference_record_index"));
+}

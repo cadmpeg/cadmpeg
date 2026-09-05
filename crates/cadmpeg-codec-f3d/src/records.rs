@@ -4841,7 +4841,7 @@ pub enum DesignThreadForm {
     /// Standard prefix, construction marker, and trailer layout.
     Standard,
     /// Compact prefix, construction marker, and trailer layout.
-    Compact(Option<Located<u32>>),
+    Compact(Option<Located<NonZeroU32>>),
     /// Direct standard prefix with the legacy compact scalar and trailer lanes.
     StandardLegacy,
     /// Compact prefix with the legacy scalar and no-reference trailer lanes.
@@ -4849,9 +4849,10 @@ pub enum DesignThreadForm {
 }
 
 /// Exact form and size construction carried by a `Thread` scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignThreadConstructionWire", into = "DesignThreadConstructionWire")]
+#[serde(try_from = "DesignThreadConstructionWire")]
+#[cfg_attr(feature = "schema", schemars(with = "DesignThreadConstructionWire"))]
 pub struct DesignThreadConstruction {
     /// Standard, compact, or class-specific legacy construction form.
     pub form: DesignThreadForm,
@@ -4859,10 +4860,8 @@ pub struct DesignThreadConstruction {
     pub designation_offset: u64,
     /// Standard thread designation.
     pub designation: String,
-    /// Exact nominal-size text interpreted into `nominal_size`.
-    pub nominal_size_text: String,
-    /// Numeric nominal size interpreted by `profile`.
-    pub nominal_size: f64,
+    /// Validated nominal-size spelling; its numeric value is derived on read.
+    pub nominal_size: DesignThreadNominalSize,
     /// Thread profile name.
     pub profile: String,
     /// Physical major diameter in Design length units.
@@ -4875,6 +4874,39 @@ pub struct DesignThreadConstruction {
     pub pitch_diameter: f64,
     /// Ordered counted face-selection groups referenced by the scope.
     pub face_group_record_indices: Vec<u32>,
+}
+
+/// Original spelling of a finite positive nominal thread size.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignThreadNominalSize(String);
+
+impl TryFrom<String> for DesignThreadNominalSize {
+    type Error = String;
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        if !text.parse::<f64>().is_ok_and(|value| value.is_finite() && value > 0.0) {
+            return Err("nominal_size_text must encode a finite positive number".into());
+        }
+        Ok(Self(text))
+    }
+}
+
+impl DesignThreadNominalSize {
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.0
+    }
+
+    pub fn value(&self) -> Result<f64, std::num::ParseFloatError> {
+        self.0.parse()
+    }
+}
+
+impl Serialize for DesignThreadConstruction {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignThreadConstructionWire::try_from(self.clone())
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -4924,38 +4956,44 @@ struct DesignThreadConstructionWire {
     face_group_record_indices: Vec<u32>,
 }
 
-impl From<DesignThreadConstruction> for DesignThreadConstructionWire {
-    fn from(value: DesignThreadConstruction) -> Self {
+impl TryFrom<DesignThreadConstruction> for DesignThreadConstructionWire {
+    type Error = String;
+    fn try_from(value: DesignThreadConstruction) -> Result<Self, Self::Error> {
+        let nominal_size = value.nominal_size.value().map_err(|error| format!("nominal_size_text: {error}"))?;
         let (form, trailing_reference) = match value.form {
             DesignThreadForm::Standard => (DesignThreadFormWire::Standard, None),
             DesignThreadForm::Compact(reference) => (DesignThreadFormWire::Compact, reference),
             DesignThreadForm::StandardLegacy => (DesignThreadFormWire::StandardLegacy, None),
             DesignThreadForm::CompactLegacy => (DesignThreadFormWire::CompactLegacy, None),
         };
-        Self {
+        Ok(Self {
             form,
             designation_offset: value.designation_offset,
             designation: value.designation,
-            nominal_size_text: value.nominal_size_text,
-            nominal_size: value.nominal_size,
+            nominal_size_text: value.nominal_size.0,
+            nominal_size,
             profile: value.profile,
             major_diameter: value.major_diameter,
             minor_diameter: value.minor_diameter,
             pitch: value.pitch,
             pitch_diameter: value.pitch_diameter,
-            trailing_reference_record_index: trailing_reference.map(|located| located.value),
+            trailing_reference_record_index: trailing_reference.map(|located| located.value.get()),
             trailing_reference_offset: trailing_reference.map(|located| located.offset),
             face_group_record_indices: value.face_group_record_indices,
-        }
+        })
     }
 }
 
 impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
     type Error = String;
     fn try_from(value: DesignThreadConstructionWire) -> Result<Self, Self::Error> {
+        let nominal_size = DesignThreadNominalSize::try_from(value.nominal_size_text)?;
+        if nominal_size.value().map_err(|error| format!("nominal_size_text: {error}"))?.to_bits() != value.nominal_size.to_bits() {
+            return Err("nominal_size must match nominal_size_text".into());
+        }
         let reference = match (value.trailing_reference_record_index, value.trailing_reference_offset) {
             (None, None) => None,
-            (Some(value), Some(offset)) => Some(Located { value, offset }),
+            (Some(value), Some(offset)) => Some(Located { value: NonZeroU32::new(value).ok_or("trailing_reference_record_index must be nonzero")?, offset }),
             _ => return Err("trailing_reference_record_index and trailing_reference_offset must occur together".into()),
         };
         let form = match (value.form, reference) {
@@ -4969,8 +5007,7 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
             form,
             designation_offset: value.designation_offset,
             designation: value.designation,
-            nominal_size_text: value.nominal_size_text,
-            nominal_size: value.nominal_size,
+            nominal_size,
             profile: value.profile,
             major_diameter: value.major_diameter,
             minor_diameter: value.minor_diameter,

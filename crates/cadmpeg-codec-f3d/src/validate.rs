@@ -3247,16 +3247,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         Some(38 | 42)
                     )
                     && !construction.designation.is_empty()
-                    && construction
-                        .nominal_size_text
-                        .parse::<f64>()
-                        .is_ok_and(|value| value.to_bits() == construction.nominal_size.to_bits())
                     && !construction.profile.is_empty()
                     && match construction.form {
                         records::DesignThreadForm::Compact(Some(reference)) => {
                             reference.offset > construction.designation_offset
                                 && reference.offset < scope.paired_byte_offset
-                                && record_indices.contains(&(native_stream, reference.value))
+                                && record_indices.contains(&(native_stream, reference.value.get()))
                         }
                         records::DesignThreadForm::Compact(None)
                         | records::DesignThreadForm::Standard
@@ -3264,7 +3260,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         | records::DesignThreadForm::CompactLegacy => true,
                     }
                     && [
-                        construction.nominal_size,
                         construction.major_diameter,
                         construction.minor_diameter,
                         construction.pitch,

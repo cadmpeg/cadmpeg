@@ -776,7 +776,7 @@ pub(crate) fn parse_thread_payload(
             ),
             _ => return None,
         };
-    let nominal_size = nominal_size_text.parse::<f64>().ok()?;
+    let nominal_size = crate::records::DesignThreadNominalSize::try_from(nominal_size_text).ok()?;
     let major_diameter = View::f64_le_at(bytes, after_profile + thread_tail::MAJOR_DIAMETER)?;
     let minor_diameter = View::f64_le_at(bytes, after_profile + thread_tail::MINOR_DIAMETER)?;
     let pitch = (bytes.get(after_profile + thread_tail::PITCH_MARKER) == Some(&pitch_marker))
@@ -809,10 +809,7 @@ pub(crate) fn parse_thread_payload(
                 && bytes.get(trailer_offset + 5..trailer_offset + 11)? == [0; 6] =>
         {
             let reference_offset = trailer_offset.checked_add(1)?;
-            let record_index = View::u32_le_at(bytes, reference_offset)?;
-            if record_index == 0 {
-                return None;
-            }
+            let record_index = std::num::NonZeroU32::new(View::u32_le_at(bytes, reference_offset)?)?;
             DesignThreadForm::Compact(Some(crate::records::Located {
                 value: record_index,
                 offset: u64::try_from(reference_offset).ok()?,
@@ -821,7 +818,6 @@ pub(crate) fn parse_thread_payload(
         _ => return None,
     };
     if !([
-        nominal_size,
         major_diameter,
         minor_diameter,
         pitch,
@@ -838,7 +834,6 @@ pub(crate) fn parse_thread_payload(
         form,
         designation_offset: u64::try_from(designation_at).ok()?,
         designation,
-        nominal_size_text,
         nominal_size,
         profile,
         major_diameter,
