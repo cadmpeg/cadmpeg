@@ -2531,3 +2531,26 @@ fn timeline_frame_rejects_invalid_source_spans() {
     let empty = super::DesignTimelineFrame::new(200, 44, 220, 240, Vec::new()).unwrap();
     assert!(empty.items().is_empty());
 }
+
+#[test]
+fn mesh_scene_bounds_preserve_wire_and_check_corners_and_offsets() {
+    let wire = r#"{"maximum":[1.0,2.0,3.0],"minimum":[-4.0,-5.0,-6.0],"offsets":[100,124]}"#;
+    let bounds: super::DesignMeshSceneBounds = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&bounds).unwrap(), wire);
+    assert_eq!(bounds.offsets(), [100, 124]);
+    for (field, bad) in [
+        ("minimum", serde_json::json!([2.0, -5.0, -6.0])),
+        ("maximum", serde_json::json!([-5.0, 2.0, 3.0])),
+        ("offsets", serde_json::json!([100, 125])),
+        ("offsets", serde_json::json!([u64::MAX, 0])),
+    ] {
+        let mut invalid = serde_json::to_value(&bounds).unwrap();
+        invalid[field] = bad;
+        assert!(serde_json::from_value::<super::DesignMeshSceneBounds>(invalid).unwrap_err().to_string().contains(field));
+    }
+    assert!(super::DesignMeshSceneBounds::new([0.0; 3], [0.0; 3], 0).is_ok());
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(super::DesignMeshSceneBounds::new([value, 1.0, 1.0], [0.0; 3], 0).is_err());
+        assert!(super::DesignMeshSceneBounds::new([1.0; 3], [value, 0.0, 0.0], 0).is_err());
+    }
+}

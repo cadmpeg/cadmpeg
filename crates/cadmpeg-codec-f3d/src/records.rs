@@ -13695,13 +13695,55 @@ pub struct DesignMeshTextureResource {
 /// One finite axis-aligned bound stored by a mesh Scene record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignMeshSceneBoundsWire"))]
+#[serde(try_from = "DesignMeshSceneBoundsWire", into = "DesignMeshSceneBoundsWire")]
 pub struct DesignMeshSceneBounds {
+    maximum: [f64; 3],
+    minimum: [f64; 3],
+    byte_offset: u64,
+}
+
+impl DesignMeshSceneBounds {
+    pub fn new(maximum: [f64; 3], minimum: [f64; 3], byte_offset: u64) -> Result<Self, String> {
+        if !maximum.iter().chain(&minimum).all(|value| value.is_finite()) {
+            return Err("scene bounds maximum and minimum must be finite".into());
+        }
+        if minimum.iter().zip(maximum).any(|(minimum, maximum)| *minimum > maximum) {
+            return Err("scene bounds minimum exceeds maximum".into());
+        }
+        byte_offset.checked_add(24).ok_or("scene bounds offsets overflow")?;
+        Ok(Self { maximum, minimum, byte_offset })
+    }
+    pub fn maximum(&self) -> [f64; 3] { self.maximum }
+    pub fn minimum(&self) -> [f64; 3] { self.minimum }
+    pub fn offsets(&self) -> [u64; 2] { [self.byte_offset, self.byte_offset + 24] }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignMeshSceneBoundsWire {
     /// Component-wise upper corner, serialized first.
-    pub maximum: [f64; 3],
+    maximum: [f64; 3],
     /// Component-wise lower corner, serialized second.
-    pub minimum: [f64; 3],
+    minimum: [f64; 3],
     /// Byte offsets of the serialized upper and lower corners.
-    pub offsets: [u64; 2],
+    offsets: [u64; 2],
+}
+
+impl TryFrom<DesignMeshSceneBoundsWire> for DesignMeshSceneBounds {
+    type Error = String;
+    fn try_from(wire: DesignMeshSceneBoundsWire) -> Result<Self, Self::Error> {
+        let bounds = Self::new(wire.maximum, wire.minimum, wire.offsets[0])?;
+        if bounds.offsets() != wire.offsets {
+            return Err("scene bounds offsets must differ by 24 bytes".into());
+        }
+        Ok(bounds)
+    }
+}
+impl From<DesignMeshSceneBounds> for DesignMeshSceneBoundsWire {
+    fn from(bounds: DesignMeshSceneBounds) -> Self {
+        Self { maximum: bounds.maximum(), minimum: bounds.minimum(), offsets: bounds.offsets() }
+    }
 }
 
 /// One mesh body and its complete Design identity graph.
