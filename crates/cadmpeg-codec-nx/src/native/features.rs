@@ -1463,8 +1463,69 @@ pub struct FeatureSketchPayloadScalarLane {
     pub terminator_source_offset: u64,
 }
 
+/// Compact type code on a reconstructed payload name that is not payload-leading.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeaturePayloadTypeCode {
+    /// Decoded compact type code following the `66` marker.
+    pub value: u32,
+    /// Exact compact type-code token.
+    pub raw: Vec<u8>,
+    /// Payload-relative offset of the compact type-code token.
+    pub payload_offset: u64,
+    /// Absolute source offset of the compact type-code token, when mapped.
+    pub source_offset: Option<u64>,
+}
+
+fn feature_payload_type_code_from_wire(
+    type_code: Option<u32>,
+    raw_type_code: Option<Vec<u8>>,
+    type_code_payload_offset: Option<u64>,
+    type_code_source_offset: Option<u64>,
+    payload_leading: bool,
+) -> Result<Option<FeaturePayloadTypeCode>, String> {
+    match (
+        type_code,
+        raw_type_code,
+        type_code_payload_offset,
+        type_code_source_offset,
+        payload_leading,
+    ) {
+        (None, None, None, None, true) => Ok(None),
+        (Some(value), Some(raw), Some(payload_offset), source_offset, false) => {
+            Ok(Some(FeaturePayloadTypeCode {
+                value,
+                raw,
+                payload_offset,
+                source_offset,
+            }))
+        }
+        _ => Err(
+            "payload name type code is present exactly when payload_leading is false".to_owned(),
+        ),
+    }
+}
+
+fn feature_payload_type_code_to_wire(
+    type_code: Option<FeaturePayloadTypeCode>,
+) -> (Option<u32>, Option<Vec<u8>>, Option<u64>, Option<u64>, bool) {
+    match type_code {
+        None => (None, None, None, None, true),
+        Some(code) => (
+            Some(code.value),
+            Some(code.raw),
+            Some(code.payload_offset),
+            code.source_offset,
+            false,
+        ),
+    }
+}
+
 /// Exact framed name retained from one reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureSketchPayloadNameWire",
+    into = "FeatureSketchPayloadNameWire"
+)]
 pub struct FeatureSketchPayloadName {
     /// Globally unique name-field identity.
     pub id: String,
@@ -1474,26 +1535,83 @@ pub struct FeatureSketchPayloadName {
     pub construction_payload: String,
     /// Zero-based name-field order within the reconstructed payload.
     pub ordinal: u32,
-    /// Decoded compact type code following the `66` marker, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub type_code: Option<u32>,
-    /// Exact compact type-code token, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub raw_type_code: Option<Vec<u8>>,
-    /// Payload-relative offset of the compact type-code token.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub type_code_payload_offset: Option<u64>,
-    /// Absolute source offset of the compact type-code token.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub type_code_source_offset: Option<u64>,
-    /// Whether the field uses the type-free payload-leading form.
-    pub payload_leading: bool,
+    /// Compact type code, absent for the type-free payload-leading form.
+    pub type_code: Option<FeaturePayloadTypeCode>,
     /// Exact printable field value.
     pub value: String,
     /// Byte offset of the opening `66` or payload-leading `03` marker.
     pub payload_offset: u64,
     /// Absolute file offset of the opening marker.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureSketchPayloadNameWire {
+    id: String,
+    operation_label: String,
+    construction_payload: String,
+    ordinal: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    type_code: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    raw_type_code: Option<Vec<u8>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    type_code_payload_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    type_code_source_offset: Option<u64>,
+    payload_leading: bool,
+    value: String,
+    payload_offset: u64,
+    source_offset: u64,
+}
+
+impl From<FeatureSketchPayloadName> for FeatureSketchPayloadNameWire {
+    fn from(value: FeatureSketchPayloadName) -> Self {
+        let (
+            type_code,
+            raw_type_code,
+            type_code_payload_offset,
+            type_code_source_offset,
+            payload_leading,
+        ) = feature_payload_type_code_to_wire(value.type_code);
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            construction_payload: value.construction_payload,
+            ordinal: value.ordinal,
+            type_code,
+            raw_type_code,
+            type_code_payload_offset,
+            type_code_source_offset,
+            payload_leading,
+            value: value.value,
+            payload_offset: value.payload_offset,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureSketchPayloadNameWire> for FeatureSketchPayloadName {
+    type Error = String;
+
+    fn try_from(wire: FeatureSketchPayloadNameWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            construction_payload: wire.construction_payload,
+            ordinal: wire.ordinal,
+            type_code: feature_payload_type_code_from_wire(
+                wire.type_code,
+                wire.raw_type_code,
+                wire.type_code_payload_offset,
+                wire.type_code_source_offset,
+                wire.payload_leading,
+            )?,
+            value: wire.value,
+            payload_offset: wire.payload_offset,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Named sketch payload interval and its ordered framed numeric fields.
@@ -3020,6 +3138,10 @@ pub struct FeatureBlockPayloadScalar {
 
 /// One complete compact-code name field in a reconstructed `BLOCK` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureBlockPayloadNameWire",
+    into = "FeatureBlockPayloadNameWire"
+)]
 pub struct FeatureBlockPayloadName {
     /// Globally unique name-field identity.
     pub id: String,
@@ -3029,25 +3151,83 @@ pub struct FeatureBlockPayloadName {
     pub construction_payload: String,
     /// Zero-based name order in the reconstructed payload.
     pub ordinal: u32,
-    /// Non-null compact type code, absent for the payload-leading form.
-    pub type_code: Option<u32>,
-    /// Exact compact type-code token, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub raw_type_code: Option<Vec<u8>>,
-    /// Payload-relative offset of the compact type-code token.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub type_code_payload_offset: Option<u64>,
-    /// Absolute source offset of the compact type-code token.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub type_code_source_offset: Option<u64>,
-    /// Whether the field uses the type-free payload-leading form.
-    pub payload_leading: bool,
+    /// Compact type code, absent for the type-free payload-leading form.
+    pub type_code: Option<FeaturePayloadTypeCode>,
     /// Exact printable field value.
     pub value: String,
     /// Payload-relative opening `66` or payload-leading `03` marker offset.
     pub payload_offset: u64,
     /// Absolute source offset of the opening marker.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureBlockPayloadNameWire {
+    id: String,
+    operation_label: String,
+    construction_payload: String,
+    ordinal: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    type_code: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    raw_type_code: Option<Vec<u8>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    type_code_payload_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    type_code_source_offset: Option<u64>,
+    payload_leading: bool,
+    value: String,
+    payload_offset: u64,
+    source_offset: u64,
+}
+
+impl From<FeatureBlockPayloadName> for FeatureBlockPayloadNameWire {
+    fn from(value: FeatureBlockPayloadName) -> Self {
+        let (
+            type_code,
+            raw_type_code,
+            type_code_payload_offset,
+            type_code_source_offset,
+            payload_leading,
+        ) = feature_payload_type_code_to_wire(value.type_code);
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            construction_payload: value.construction_payload,
+            ordinal: value.ordinal,
+            type_code,
+            raw_type_code,
+            type_code_payload_offset,
+            type_code_source_offset,
+            payload_leading,
+            value: value.value,
+            payload_offset: value.payload_offset,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureBlockPayloadNameWire> for FeatureBlockPayloadName {
+    type Error = String;
+
+    fn try_from(wire: FeatureBlockPayloadNameWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            construction_payload: wire.construction_payload,
+            ordinal: wire.ordinal,
+            type_code: feature_payload_type_code_from_wire(
+                wire.type_code,
+                wire.raw_type_code,
+                wire.type_code_payload_offset,
+                wire.type_code_source_offset,
+                wire.payload_leading,
+            )?,
+            value: wire.value,
+            payload_offset: wire.payload_offset,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Name-delimited interval in a reconstructed `BLOCK` payload.
@@ -6316,20 +6496,17 @@ pub fn feature_sketch_payload_names(
                         operation_label: construction.operation_label.clone(),
                         construction_payload: construction_payload.clone(),
                         ordinal: ordinal as u32,
-                        type_code: field.type_code,
-                        raw_type_code: field.raw_type_code,
-                        type_code_payload_offset: field
-                            .type_code_offset
-                            .map(|offset| offset as u64),
-                        type_code_source_offset: field.type_code_offset.and_then(|offset| {
-                            joined_payload_source_offset(
-                                offset as u64,
+                        type_code: field.type_code.map(|code| FeaturePayloadTypeCode {
+                            value: code.value,
+                            raw: code.raw,
+                            payload_offset: code.offset as u64,
+                            source_offset: joined_payload_source_offset(
+                                code.offset as u64,
                                 &block_payload_offsets,
                                 &block_byte_lengths,
                                 &block_source_offsets,
-                            )
+                            ),
                         }),
-                        payload_leading: field.payload_leading,
                         value: field.value.to_string(),
                         payload_offset: relative,
                         source_offset,
@@ -9461,15 +9638,17 @@ pub fn feature_block_payload_names(
                         operation_label: payload.operation_label.clone(),
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        type_code: field.type_code,
-                        raw_type_code: field.raw_type_code,
-                        type_code_payload_offset: field
-                            .type_code_offset
-                            .map(|offset| offset as u64),
-                        type_code_source_offset: field.type_code_offset.and_then(|offset| {
-                            joined_payload_source_offset(offset as u64, &starts, &lengths, &sources)
+                        type_code: field.type_code.map(|code| FeaturePayloadTypeCode {
+                            value: code.value,
+                            raw: code.raw,
+                            payload_offset: code.offset as u64,
+                            source_offset: joined_payload_source_offset(
+                                code.offset as u64,
+                                &starts,
+                                &lengths,
+                                &sources,
+                            ),
                         }),
-                        payload_leading: field.payload_leading,
                         value: field.value.to_string(),
                         payload_offset: field.offset as u64,
                         source_offset,

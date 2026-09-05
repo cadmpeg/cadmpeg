@@ -178,18 +178,18 @@ fn om_sketch_name_field_decodes_direct_and_extended_compact_type_codes() {
     ];
     let fields = super::construction_payload_named_fields(&bytes);
     assert_eq!(fields.len(), 2);
-    assert_eq!(
-        (fields[0].offset, fields[0].type_code, fields[0].value),
-        (0, Some(0x32), "Point1")
-    );
-    assert_eq!(fields[0].raw_type_code, Some(vec![0x32]));
-    assert_eq!(fields[0].type_code_offset, Some(1));
-    assert_eq!(
-        (fields[1].offset, fields[1].type_code, fields[1].value),
-        (12, Some(0x83), "Line2")
-    );
-    assert_eq!(fields[1].raw_type_code, Some(vec![0x80, 0x83]));
-    assert_eq!(fields[1].type_code_offset, Some(13));
+    assert_eq!(fields[0].offset, 0);
+    assert_eq!(fields[0].value, "Point1");
+    let first = fields[0].type_code.as_ref().expect("typed name");
+    assert_eq!(first.value, 0x32);
+    assert_eq!(first.raw, vec![0x32]);
+    assert_eq!(first.offset, 1);
+    assert_eq!(fields[1].offset, 12);
+    assert_eq!(fields[1].value, "Line2");
+    let second = fields[1].type_code.as_ref().expect("typed name");
+    assert_eq!(second.value, 0x83);
+    assert_eq!(second.raw, vec![0x80, 0x83]);
+    assert_eq!(second.offset, 13);
 
     assert!(super::construction_payload_named_fields(&[
         0x66, 0xff, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00,
@@ -208,10 +208,8 @@ fn om_sketch_name_field_decodes_type_free_payload_leading_form() {
     ]);
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0].offset, 0);
-    assert_eq!(fields[0].type_code, None);
-    assert_eq!(fields[0].raw_type_code, None);
-    assert_eq!(fields[0].type_code_offset, None);
-    assert!(fields[0].payload_leading);
+    assert!(fields[0].type_code.is_none());
+    assert!(fields[0].payload_leading());
     assert_eq!(fields[0].value, "Point1");
 
     assert!(super::construction_payload_named_fields(&[

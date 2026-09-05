@@ -800,7 +800,7 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
 fn nx_block_payload_points_require_exactly_two_named_scalars() {
     use super::{
         feature_block_payload_point_groups, feature_block_payload_points, FeatureBlockPayloadName,
-        FeatureBlockPayloadNamedRecord, FeatureBlockPayloadScalar,
+        FeatureBlockPayloadNamedRecord, FeatureBlockPayloadScalar, FeaturePayloadTypeCode,
     };
 
     let operation_label = "operation".to_string();
@@ -810,11 +810,12 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
         operation_label: operation_label.clone(),
         construction_payload: construction_payload.clone(),
         ordinal: 0,
-        type_code: Some(131),
-        raw_type_code: Some(vec![0x80, 0x83]),
-        type_code_payload_offset: Some(11),
-        type_code_source_offset: Some(101),
-        payload_leading: false,
+        type_code: Some(FeaturePayloadTypeCode {
+            value: 131,
+            raw: vec![0x80, 0x83],
+            payload_offset: 11,
+            source_offset: Some(101),
+        }),
         value: "Point7".to_string(),
         payload_offset: 10,
         source_offset: 100,
