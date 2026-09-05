@@ -626,14 +626,10 @@ fn exact_base_feature_direct_body_based_on_faces(
         return None;
     }
     Some(DesignBaseFeatureConstruction::BodyBasedOnFaces {
-        body_entity_suffixes: vec![u64::from(body_entity_suffix)],
-        body_entity_suffix_offsets: vec![
-            scope.byte_offset + u64::try_from(class_377::BODY_ENTITY_SUFFIX).ok()?,
-        ],
-        body_reference_records: vec![body_entity_suffix],
-        body_reference_record_offsets: vec![
-            scope.byte_offset + u64::try_from(class_377::BODY_ENTITY_SUFFIX).ok()?,
-        ],
+        body: crate::records::Located {
+            value: body_entity_suffix,
+            offset: scope.byte_offset + u64::try_from(class_377::BODY_ENTITY_SUFFIX).ok()?,
+        },
         parameter_body_record,
         parameter_body_record_offset: scope.byte_offset
             + u64::try_from(class_377::PARAMETER_BODY_RECORD).ok()?,
@@ -642,7 +638,6 @@ fn exact_base_feature_direct_body_based_on_faces(
             + u64::try_from(class_377::AUXILIARY_RECORD).ok()?,
         envelope_guid,
         envelope_guid_offset: scope.byte_offset + u64::try_from(class_377::ENVELOPE_GUID).ok()?,
-        tag_body_based_on_faces: true,
         tag_body_based_on_faces_offset: scope.byte_offset
             + u64::try_from(class_377::TAG_BODY_BASED_ON_FACES_VALUE).ok()?,
     })
