@@ -1267,7 +1267,6 @@ pub(crate) fn parse_dimension_annotation_frame(
         }
         let mut cursor = tail + 15;
         let mut return_members = Vec::with_capacity(return_count);
-        let mut return_member_offsets = Vec::with_capacity(return_count);
         let mut valid = true;
         for _ in 0..return_count {
             if bytes.get(cursor) != Some(&1) || bytes.get(cursor + 5..cursor + 11) != Some(&[0; 6])
@@ -1283,8 +1282,7 @@ pub(crate) fn parse_dimension_annotation_frame(
                 valid = false;
                 break;
             }
-            return_members.push(reference);
-            return_member_offsets.push((cursor + 1) as u64);
+            return_members.push(crate::records::Located { value: reference, offset: (cursor + 1) as u64 });
             cursor += 11;
         }
         if !valid
@@ -1301,7 +1299,7 @@ pub(crate) fn parse_dimension_annotation_frame(
                 (operand.geometry_record_index != 0).then_some(operand.geometry_record_index)
             })
             .collect::<Vec<_>>();
-        let mut returned = return_members.clone();
+        let mut returned = return_members.iter().map(|member| member.value).collect::<Vec<_>>();
         operand_members.sort_unstable();
         returned.sort_unstable();
         if operand_members != returned {
@@ -1312,7 +1310,6 @@ pub(crate) fn parse_dimension_annotation_frame(
             governing_owner_record_index,
             governing_companion_record_index,
             return_members,
-            return_member_offsets,
         ));
     }
     let [
@@ -1321,7 +1318,6 @@ pub(crate) fn parse_dimension_annotation_frame(
             governing_owner_record_index,
             governing_companion_record_index,
             return_members,
-            return_member_offsets,
         ),
     ] = tails.as_slice()
     else {
@@ -1352,7 +1348,6 @@ pub(crate) fn parse_dimension_annotation_frame(
         governing_owner_record_index: *governing_owner_record_index,
         governing_owner_reference_offset: (*tail + 1) as u64,
         return_members: return_members.clone(),
-        return_member_offsets: return_member_offsets.clone(),
         paired_class_tag,
         paired_byte_offset: paired_byte_offset as u64,
         owner_reference,

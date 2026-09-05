@@ -800,6 +800,8 @@ pub struct DesignDimensionAnnotationOperand {
 /// Paired `EntityGenesis` dimension frame carrying annotation geometry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignDimensionAnnotationFrameWire"))]
+#[serde(try_from = "DesignDimensionAnnotationFrameWire", into = "DesignDimensionAnnotationFrameWire")]
 pub struct DesignDimensionAnnotationFrame {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -829,9 +831,7 @@ pub struct DesignDimensionAnnotationFrame {
     /// Byte offset of `governing_owner_record_index`.
     pub governing_owner_reference_offset: u64,
     /// Ordered non-null return geometry records.
-    pub return_members: Vec<u32>,
-    /// Byte offsets parallel to `return_members`.
-    pub return_member_offsets: Vec<u64>,
+    pub return_members: Vec<Located<u32>>,
     /// Dynamic class tag of the paired indexed record.
     pub paired_class_tag: String,
     /// Byte offset of the paired indexed record header.
@@ -840,6 +840,104 @@ pub struct DesignDimensionAnnotationFrame {
     pub owner_reference: u32,
     /// Byte offset of `owner_reference`.
     pub owner_reference_offset: u64,
+}
+
+/// Paired `EntityGenesis` dimension frame carrying annotation geometry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignDimensionAnnotationFrameWire {
+    /// Globally unique deterministic identifier for this native record.
+    id: String,
+    /// Companion record containing this frame, absent before the first companion in a scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    companion_record_index: Option<u32>,
+    /// Companion record of the dimension parameter governed by this frame.
+    governing_companion_record_index: u32,
+    /// Byte offset of the primary indexed record header.
+    byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    class_tag: String,
+    /// Source indexed-record identity.
+    record_index: u32,
+    /// Byte length from the primary through the paired header boundary.
+    frame_length: u64,
+    /// Ordered nullable locus operands.
+    operands: Vec<DesignDimensionAnnotationOperand>,
+    /// `EntityGenesis` origin bitfield.
+    entity_genesis: u64,
+    /// Opaque annotation bytes between the genesis block and governing owner.
+    annotation_bytes: Vec<u8>,
+    /// Byte offset of `annotation_bytes`.
+    annotation_byte_offset: u64,
+    /// Indexed parameter-owner record selecting the governed dimension.
+    governing_owner_record_index: u32,
+    /// Byte offset of `governing_owner_record_index`.
+    governing_owner_reference_offset: u64,
+    /// Ordered non-null return geometry records.
+    return_members: Vec<u32>,
+    /// Byte offsets parallel to `return_members`.
+    return_member_offsets: Vec<u64>,
+    /// Dynamic class tag of the paired indexed record.
+    paired_class_tag: String,
+    /// Byte offset of the paired indexed record header.
+    paired_byte_offset: u64,
+    /// Numeric design-entity suffix of the owning sketch.
+    owner_reference: u32,
+    /// Byte offset of `owner_reference`.
+    owner_reference_offset: u64,
+}
+
+impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFrame {
+    type Error = String;
+    fn try_from(wire: DesignDimensionAnnotationFrameWire) -> Result<Self, Self::Error> {
+        if wire.return_members.len() != wire.return_member_offsets.len() {
+            return Err("return_members and return_member_offsets must have equal lengths".into());
+        }
+        Ok(Self {
+            return_members: wire.return_members.into_iter().zip(wire.return_member_offsets).map(|(value, offset)| Located { value, offset }).collect(),
+            id: wire.id,
+            companion_record_index: wire.companion_record_index,
+            governing_companion_record_index: wire.governing_companion_record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            record_index: wire.record_index,
+            frame_length: wire.frame_length,
+            operands: wire.operands,
+            entity_genesis: wire.entity_genesis,
+            annotation_bytes: wire.annotation_bytes,
+            annotation_byte_offset: wire.annotation_byte_offset,
+            governing_owner_record_index: wire.governing_owner_record_index,
+            governing_owner_reference_offset: wire.governing_owner_reference_offset,
+            paired_class_tag: wire.paired_class_tag,
+            paired_byte_offset: wire.paired_byte_offset,
+            owner_reference: wire.owner_reference,
+            owner_reference_offset: wire.owner_reference_offset,
+        })
+    }
+}
+impl From<DesignDimensionAnnotationFrame> for DesignDimensionAnnotationFrameWire {
+    fn from(value: DesignDimensionAnnotationFrame) -> Self {
+        let (return_members, return_member_offsets) = value.return_members.into_iter().map(|member| (member.value, member.offset)).unzip();
+        Self { return_members, return_member_offsets,
+            id: value.id,
+            companion_record_index: value.companion_record_index,
+            governing_companion_record_index: value.governing_companion_record_index,
+            byte_offset: value.byte_offset,
+            class_tag: value.class_tag,
+            record_index: value.record_index,
+            frame_length: value.frame_length,
+            operands: value.operands,
+            entity_genesis: value.entity_genesis,
+            annotation_bytes: value.annotation_bytes,
+            annotation_byte_offset: value.annotation_byte_offset,
+            governing_owner_record_index: value.governing_owner_record_index,
+            governing_owner_reference_offset: value.governing_owner_reference_offset,
+            paired_class_tag: value.paired_class_tag,
+            paired_byte_offset: value.paired_byte_offset,
+            owner_reference: value.owner_reference,
+            owner_reference_offset: value.owner_reference_offset,
+        }
+    }
 }
 
 /// Paired Fusion presentation frame that directly identifies a dimension's
