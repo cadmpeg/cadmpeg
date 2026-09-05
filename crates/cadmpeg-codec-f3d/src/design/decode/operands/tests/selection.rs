@@ -458,7 +458,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 1100,
-        extrude_prologue: None,
+        extrude: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -492,7 +492,6 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
-        fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
@@ -507,7 +506,6 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
         hole_construction: None,
-        extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
@@ -673,7 +671,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     );
     assert_eq!(member.operand_identity_ids, [identity.id]);
     let mut owning_scope = scope;
-    owning_scope.extrude_profile = Some(DesignSketchProfileOperand {
+    owning_scope.ensure_extrude().extrude_profile = Some(DesignSketchProfileOperand {
         scope_reference_ordinal: 1,
         record_index: 300,
         byte_offset: 3000,

@@ -2920,9 +2920,10 @@ pub struct DesignParameterScope {
     pub kind: DesignFeatureKind,
     /// Byte offset of the kind's UTF-16LE code units.
     pub kind_offset: u64,
-    /// Extrude fixed prologue.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_prologue: Option<DesignExtrudePrologue>,
+    /// Extrude prologue, fixed parameters, and profile.
+    #[serde(flatten)]
+    #[serde(default, skip_serializing_if = "extrude_scope_is_absent")]
+    pub extrude: Option<DesignExtrudeScope>,
     /// Coil result operation from the fixed scope prologue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_operation: Option<DesignExtrudeOperation>,
@@ -3019,9 +3020,7 @@ pub struct DesignParameterScope {
     /// Exact edge, parameter, and settings records carried by a `Hem` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hem_operation: Option<DesignHemOperation>,
-    /// Exact fixed scalar lanes carried by an Extrude scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fixed_extrude_parameters: Option<DesignFixedExtrudeParameters>,
+
     /// Exact fixed scalar lanes carried by a Fillet scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixed_fillet_parameters: Option<DesignFixedFilletParameters>,
@@ -3089,9 +3088,7 @@ pub struct DesignParameterScope {
     /// Exact point-and-direction construction carried by a `Hole` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hole_construction: Option<DesignHoleConstruction>,
-    /// Profile operand carried by an Extrude scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_profile: Option<DesignSketchProfileOperand>,
+
     /// Sketch-profile operand carried by a `Sweep` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sweep_profile: Option<DesignSketchProfileOperand>,
@@ -3106,6 +3103,32 @@ pub struct DesignParameterScope {
     pub paired_class_tag: String,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
+}
+
+fn extrude_scope_is_absent(extrude: &Option<DesignExtrudeScope>) -> bool {
+    match extrude {
+        None => true,
+        Some(extrude) => {
+            extrude.extrude_prologue.is_none()
+                && extrude.fixed_extrude_parameters.is_none()
+                && extrude.extrude_profile.is_none()
+        }
+    }
+}
+
+/// Extrude-specific records carried by an Extrude parameter scope.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignExtrudeScope {
+    /// Extrude fixed prologue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extrude_prologue: Option<DesignExtrudePrologue>,
+    /// Exact fixed scalar lanes carried by an Extrude scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixed_extrude_parameters: Option<DesignFixedExtrudeParameters>,
+    /// Profile operand carried by an Extrude scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extrude_profile: Option<DesignSketchProfileOperand>,
 }
 
 /// Sketch-module entity named by a sketch parameter scope.
@@ -3596,6 +3619,40 @@ pub enum DesignEdgeFlangeWidthParameterSource {
 
 impl DesignParameterScope {
     /// The WorkPlane frame matrix, when the scope carries one.
+    pub(crate) fn ensure_extrude(&mut self) -> &mut DesignExtrudeScope {
+        self.extrude.get_or_insert_with(DesignExtrudeScope::default)
+    }
+
+    pub(crate) fn extrude_prologue(&self) -> Option<DesignExtrudePrologue> {
+        self.extrude
+            .as_ref()
+            .and_then(|extrude| extrude.extrude_prologue)
+    }
+
+    pub(crate) fn extrude_prologue_mut(&mut self) -> Option<&mut DesignExtrudePrologue> {
+        self.extrude
+            .as_mut()
+            .and_then(|extrude| extrude.extrude_prologue.as_mut())
+    }
+
+    pub(crate) fn extrude_profile(&self) -> Option<&DesignSketchProfileOperand> {
+        self.extrude
+            .as_ref()
+            .and_then(|extrude| extrude.extrude_profile.as_ref())
+    }
+
+    pub(crate) fn extrude_profile_mut(&mut self) -> Option<&mut DesignSketchProfileOperand> {
+        self.extrude
+            .as_mut()
+            .and_then(|extrude| extrude.extrude_profile.as_mut())
+    }
+
+    pub(crate) fn fixed_extrude_parameters(&self) -> Option<&DesignFixedExtrudeParameters> {
+        self.extrude
+            .as_ref()
+            .and_then(|extrude| extrude.fixed_extrude_parameters.as_ref())
+    }
+
     pub(crate) fn work_plane_transform(&self) -> Option<[[f64; 4]; 4]> {
         self.work_plane_frame
             .as_ref()
@@ -3693,7 +3750,7 @@ impl DesignParameterScope {
             frame_length: 0,
             kind: kind.into(),
             kind_offset: 0,
-            extrude_prologue: None,
+            extrude: None,
             coil_operation: None,
             coil_operation_offset: None,
             coil_extent: None,
@@ -3727,7 +3784,6 @@ impl DesignParameterScope {
             surface_patch_boundaries: Vec::new(),
             edge_flange_operation: None,
             hem_operation: None,
-            fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
@@ -3749,7 +3805,6 @@ impl DesignParameterScope {
             work_point_construction: None,
             unclosed_construction_operand_groups: Vec::new(),
             hole_construction: None,
-            extrude_profile: None,
             sweep_profile: None,
             base_flange_profile: None,
             sketch_entity: None,

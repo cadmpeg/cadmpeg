@@ -427,7 +427,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
 
     let mut scope = DesignParameterScope::empty("generated:scope#12", "Extrude", 12);
     scope.reference_members = vec![80, 82];
-    scope.extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
+    scope.ensure_extrude().extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
         reference: None,
         operation: DesignExtrudeOperation::NewBody,
         operation_offset: 28,

@@ -211,7 +211,7 @@ pub(crate) fn is_class_296_two_sided_to_faces_scope(scope: &DesignParameterScope
             .saturating_sub(scope.byte_offset),
         scope.reference_members.len(),
     ) && scope
-        .extrude_prologue
+        .extrude_prologue()
         .and_then(DesignExtrudePrologue::extent)
         == Some(DesignExtrudeExtent::TwoSidedToFaces)
 }

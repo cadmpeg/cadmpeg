@@ -475,7 +475,7 @@ pub(crate) fn bind_extrude_profile_selections(
             continue;
         };
         if let (Some(profile_operand), Some(stream)) =
-            (scope.extrude_profile.as_ref(), native_stream(&scope.id))
+            (scope.extrude_profile(), native_stream(&scope.id))
         {
             if let Some(profiles) = resolved_sketch_profile_regions(
                 stream,

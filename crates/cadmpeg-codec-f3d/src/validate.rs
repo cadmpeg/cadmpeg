@@ -2283,7 +2283,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let is_extrude = design::design_feature_family(&scope.kind)
             == Some(design::DesignFeatureFamily::Extrude);
         let extrude_profile_link = scope
-            .extrude_profile
+            .extrude_profile()
             .as_ref()
             .is_none_or(|profile| is_extrude && valid_sketch_profile(profile));
         let is_sweep =
@@ -3747,7 +3747,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && !scope.kind.is_empty()
-            && match (is_extrude, scope.extrude_prologue) {
+            && match (is_extrude, scope.extrude_prologue()) {
                 (
                     true,
                     Some(records::DesignExtrudePrologue::LegacyDistance {
@@ -5200,7 +5200,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         Some(records::DesignExtrudeOperandRole::Profile) => {
                             group.role == 0x0000_0041_0000_0000
                                 && group.extrude_face_role.is_none()
-                                && scope.extrude_profile.as_ref().is_none_or(|profile| {
+                                && scope.extrude_profile().is_none_or(|profile| {
                                     group.members.first() == Some(&profile.record_index)
                                 })
                         }
@@ -5208,14 +5208,14 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             (group.role == 0x0000_0011_0000_0000
                                 || group.role == 0x0000_0012_0000_0000
                                     && scope
-                                        .extrude_prologue
+                                        .extrude_prologue()
                                         .and_then(records::DesignExtrudePrologue::extent)
                                         == Some(records::DesignExtrudeExtent::OneSidedToFace)
                                 || group.role == 0x0000_0012_0000_0000
                                     && is_class_296_two_sided_to_faces_scope(scope)
                                 || group.role == 0x0000_0005_0000_0000
                                     && scope
-                                        .extrude_prologue
+                                        .extrude_prologue()
                                         .map(records::DesignExtrudePrologue::start)
                                         == Some(records::DesignExtrudeStart::FromFace))
                                 && group.extrude_face_role.is_some()
@@ -5732,18 +5732,19 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && group.extrude_role == Some(records::DesignExtrudeOperandRole::Profile)
                 })
                 .collect::<Vec<_>>();
-            let profile_matches_operand = scope.extrude_profile.as_ref().is_none_or(|profile| {
-                match profile_groups.as_slice() {
-                    [] => {
-                        usize::try_from(profile.scope_reference_ordinal)
-                            .ok()
-                            .and_then(|ordinal| scope.reference_members.get(ordinal))
-                            == Some(&profile.record_index)
-                    }
-                    [group] => group.members.first() == Some(&profile.record_index),
-                    [_, _, ..] => false,
-                }
-            });
+            let profile_matches_operand =
+                scope
+                    .extrude_profile()
+                    .is_none_or(|profile| match profile_groups.as_slice() {
+                        [] => {
+                            usize::try_from(profile.scope_reference_ordinal)
+                                .ok()
+                                .and_then(|ordinal| scope.reference_members.get(ordinal))
+                                == Some(&profile.record_index)
+                        }
+                        [group] => group.members.first() == Some(&profile.record_index),
+                        [_, _, ..] => false,
+                    });
             if !profile_matches_operand {
                 findings.push(Finding {
                     check: Check::NativeLinks,
@@ -5799,7 +5800,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 })
                 .count();
             let operation_matches_operands = match scope
-                .extrude_prologue
+                .extrude_prologue()
                 .map(records::DesignExtrudePrologue::operation)
             {
                 Some(records::DesignExtrudeOperation::NewBody) => !has_body_operands,
@@ -5819,7 +5820,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     entity: Some(scope.id.clone()),
                 });
             }
-            let Some(prologue) = scope.extrude_prologue else {
+            let Some(prologue) = scope.extrude_prologue() else {
                 continue;
             };
             let Some(extrude_extent) = prologue.extent() else {
@@ -5868,13 +5869,13 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let side_one_offset_is_absent = side_one_offsets.is_empty()
                 || matches!(side_one_offsets.as_slice(), [offset] if *offset == 0.0);
             let side_two_offset_count = parameter_kind_count("Side2Offset");
-            let has_fixed_extrude_parameters = scope.fixed_extrude_parameters.is_some();
+            let has_fixed_extrude_parameters = scope.fixed_extrude_parameters().is_some();
             let has_fixed_along = scope
-                .fixed_extrude_parameters
+                .fixed_extrude_parameters()
                 .as_ref()
                 .is_some_and(|fixed| fixed.along_distance.is_some());
             let fixed_along_uses_reversal = scope
-                .fixed_extrude_parameters
+                .fixed_extrude_parameters()
                 .as_ref()
                 .and_then(|fixed| fixed.along_distance.as_ref())
                 .is_some_and(|distance| {
@@ -6423,7 +6424,7 @@ fn validate_construction_operand_identities<'a>(
         let group = operand_groups_by_index.get(&(native_stream, identity.group_record_index));
         let selected_profile = group
             .and_then(|group| scopes_by_index.get(&(native_stream, group.scope_record_index)))
-            .and_then(|scope| scope.extrude_profile.as_ref());
+            .and_then(|scope| scope.extrude_profile());
         let wrapper_shape = identity.wrapper_record_indices.len()
             == identity.wrapper_byte_offsets.len()
             && identity.wrapper_record_indices.len() == identity.wrapper_class_tags.len()
@@ -6958,8 +6959,7 @@ fn validate_operand_group_carriers<'a>(
                 .get(&(native_stream, group.scope_record_index))
                 .is_some_and(|scope| {
                     scope
-                        .extrude_profile
-                        .as_ref()
+                        .extrude_profile()
                         .or(scope.sweep_profile.as_ref())
                         .or(scope.base_flange_profile.as_ref())
                         .is_some_and(|profile| group.members == [profile.record_index])
@@ -7047,7 +7047,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let header = records_by_index.get(&(native_stream, member.record_index));
         let selected_profile = group
             .and_then(|group| scopes_by_index.get(&(native_stream, group.scope_record_index)))
-            .and_then(|scope| scope.extrude_profile.as_ref());
+            .and_then(|scope| scope.extrude_profile());
         let selected_sketch =
             selected_profile.and_then(|profile| u32::try_from(profile.entity_suffix).ok());
         let point_targets = native.sketch_points.iter().filter_map(|point| {
