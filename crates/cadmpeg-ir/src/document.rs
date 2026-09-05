@@ -397,7 +397,7 @@ macro_rules! declare_model {
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         pub struct Model {
             $(
-                $(#[$attribute])*
+                $(#[cfg_attr(feature = "schema", $attribute)])*
                 #[doc = $doc]
                 pub $field: Vec<$ty>,
             )*
