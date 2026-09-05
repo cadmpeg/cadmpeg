@@ -169,19 +169,21 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         font_family: "Arial".into(),
         font_weight: 400,
         height: 10.0,
-        width_factor: Some(1.0),
         color: cadmpeg_ir::topology::Color {
             r: 0.0,
             g: 0.0,
             b: 0.0,
             a: 1.0,
         },
-        anchor: Some(Point2::new(0.0, 0.0)),
-        rotation: Some(0.0),
-        horizontal_alignment: Some(1),
-        vertical_alignment: Some(1),
-        first_reference: None,
-        second_reference: None,
+        layout: crate::records::SketchTextLayout::TextexTag {
+            width_factor: 1.0,
+            horizontal_alignment: Some(1),
+            vertical_alignment: Some(1),
+            first_reference: None,
+            second_reference: None,
+            anchor: Some(Point2::new(0.0, 0.0)),
+            rotation: Some(0.0),
+        },
         raw_bytes: Vec::new(),
     };
     let relation = SketchRelation {

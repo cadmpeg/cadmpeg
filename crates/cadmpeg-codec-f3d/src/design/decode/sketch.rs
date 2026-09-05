@@ -2219,6 +2219,21 @@ fn assemble_sketch_text(
     head: SketchTextHead,
     tail: SketchTextTail,
 ) -> SketchText {
+    let layout = match head.identity {
+        SketchTextIdentity::TxtTag { .. } => crate::records::SketchTextLayout::TxtTag {
+            anchor: tail.anchor.unwrap_or(Point2::new(0.0, 0.0)),
+            rotation: tail.rotation.unwrap_or(0.0),
+        },
+        SketchTextIdentity::TextexTag => crate::records::SketchTextLayout::TextexTag {
+            width_factor: head.width_factor.unwrap_or(0.0),
+            horizontal_alignment: tail.horizontal_alignment,
+            vertical_alignment: tail.vertical_alignment,
+            first_reference: tail.first_reference,
+            second_reference: tail.second_reference,
+            anchor: tail.anchor,
+            rotation: tail.rotation,
+        },
+    };
     SketchText {
         id: ids::native_sketch_text_id(stream, byte_offset),
         record_index,
@@ -2233,14 +2248,8 @@ fn assemble_sketch_text(
         font_family: head.font_family,
         font_weight: tail.font_weight,
         height: head.height,
-        width_factor: head.width_factor,
         color: head.color,
-        anchor: tail.anchor,
-        rotation: tail.rotation,
-        horizontal_alignment: tail.horizontal_alignment,
-        vertical_alignment: tail.vertical_alignment,
-        first_reference: tail.first_reference,
-        second_reference: tail.second_reference,
+        layout,
         raw_bytes: payload.to_vec(),
     }
 }
