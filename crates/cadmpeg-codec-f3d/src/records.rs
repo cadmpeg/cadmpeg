@@ -10693,38 +10693,37 @@ pub struct DesignEdgeOperand {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_edge_slot: Option<i64>,
     /// Selected historical carrier axis, when exact.
-    #[serde(flatten)]
-    pub resolved_axis: Option<EdgeResolvedAxisWire>,
+    #[serde(flatten, serialize_with = "serialize_edge_resolved_axis", deserialize_with = "deserialize_edge_resolved_axis")]
+    #[cfg_attr(feature = "schema", schemars(with = "EdgeResolvedAxisWire"))]
+    pub resolved_axis: Option<DesignAxis>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
     pub next_byte_offset: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct EdgeResolvedAxisWire {
-    #[serde(rename = "resolved_axis_origin")]
-    pub origin: Point3,
-    #[serde(rename = "resolved_axis_direction")]
-    pub direction: Vector3,
+struct EdgeResolvedAxisWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolved_axis_origin: Option<Point3>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolved_axis_direction: Option<Vector3>,
 }
 
-impl From<DesignAxis> for EdgeResolvedAxisWire {
-    fn from(axis: DesignAxis) -> Self {
-        Self {
-            origin: axis.origin,
-            direction: axis.direction,
-        }
-    }
+fn serialize_edge_resolved_axis<S: serde::Serializer>(axis: &Option<DesignAxis>, serializer: S) -> Result<S::Ok, S::Error> {
+    EdgeResolvedAxisWire {
+        resolved_axis_origin: axis.map(|axis| axis.origin),
+        resolved_axis_direction: axis.map(|axis| axis.direction),
+    }.serialize(serializer)
 }
 
-impl From<EdgeResolvedAxisWire> for DesignAxis {
-    fn from(axis: EdgeResolvedAxisWire) -> Self {
-        Self {
-            origin: axis.origin,
-            direction: axis.direction,
-        }
+fn deserialize_edge_resolved_axis<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<DesignAxis>, D::Error> {
+    let wire = EdgeResolvedAxisWire::deserialize(deserializer)?;
+    match (wire.resolved_axis_origin, wire.resolved_axis_direction) {
+        (None, None) => Ok(None),
+        (Some(origin), Some(direction)) => Ok(Some(DesignAxis { origin, direction })),
+        _ => Err(serde::de::Error::custom("resolved_axis_origin and resolved_axis_direction must occur together")),
     }
 }
 
