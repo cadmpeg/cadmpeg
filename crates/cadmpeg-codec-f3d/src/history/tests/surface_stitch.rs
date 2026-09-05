@@ -113,8 +113,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
         transition,
     };
     let history = AsmHistory {

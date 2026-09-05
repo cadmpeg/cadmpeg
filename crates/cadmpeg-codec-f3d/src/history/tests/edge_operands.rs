@@ -58,8 +58,7 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(topology),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition,
     };
     let previous = state(

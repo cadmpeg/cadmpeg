@@ -417,7 +417,7 @@ pub(crate) fn resolved_edge_treatment_group_with_corners(
         .filter(|history| ids::same_native_occurrence(&history.id, &group.id))
         .flat_map(|history| &history.states)
         .filter(|state| state.state_id == state_id);
-    let Some(topology) = states.next().and_then(|state| state.topology.as_ref()) else {
+    let Some(topology) = states.next().and_then(|state| state.topology()) else {
         return EdgeSelection::Native(group.id.clone());
     };
     if states.next().is_some() {

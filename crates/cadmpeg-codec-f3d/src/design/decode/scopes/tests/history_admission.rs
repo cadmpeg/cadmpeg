@@ -23,8 +23,7 @@ fn history_state(state_id: i64, previous_state_id: Option<i64>) -> AsmDeltaState
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
         transition: previous_state_id.map(|previous_state_id| AsmHistoricalTransition {
             previous_state_id: Some(previous_state_id),
             records: AsmHistoricalEntityDelta::default(),

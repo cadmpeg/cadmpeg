@@ -40,8 +40,7 @@ fn state(
             entity_ref: 7,
             record_ref: 7,
         }],
-        record_table_complete: true,
-        topology: Some(topology),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition,
     }
 }
@@ -180,14 +179,12 @@ fn edge_backed_hole_selection_uses_the_oriented_updated_support_plane() {
 fn edge_backed_hole_selection_rejects_ambiguous_support_planes() {
     let mut history = test_history();
     history.states[1]
-        .topology
-        .as_mut()
+        .topology_mut()
         .expect("preceding topology")
         .surface_planes[0]
         .origin = Point3::new(0.0, 0.0, 0.0);
     history.states[1]
-        .topology
-        .as_mut()
+        .topology_mut()
         .expect("preceding topology")
         .surface_planes[1]
         .normal = Vector3::new(0.0, 0.0, 1.0);

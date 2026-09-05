@@ -39,8 +39,7 @@ fn projection_caches_end_after_history_consumers() {
             entity_ref: 3,
             record_ref: 4,
         }],
-        record_table_complete: true,
-        topology: Some(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
         transition: Some(transition.clone()),
     };
     let mut histories = [AsmHistory {
@@ -57,8 +56,8 @@ fn projection_caches_end_after_history_consumers() {
     let state = &histories[0].states[0];
     assert!(histories[0].projection_finalized);
     assert!(state.entity_versions.is_empty());
-    assert!(!state.record_table_complete);
-    assert!(state.topology.is_none());
+    assert!(!state.record_table_complete());
+    assert!(state.topology().is_none());
     assert_eq!(state.transition, Some(transition));
 
     let mut native = crate::native::F3dNative {

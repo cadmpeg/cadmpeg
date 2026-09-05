@@ -236,8 +236,8 @@ impl<'a> From<&'a AsmDeltaState> for FlatAsmDeltaState<'a> {
             bulletin_boards: &[],
             records: &[],
             entity_versions: &state.entity_versions,
-            record_table_complete: state.record_table_complete,
-            topology: state.topology.as_ref(),
+            record_table_complete: state.record_table_complete(),
+            topology: state.topology(),
             transition: state.transition.as_ref(),
         }
     }

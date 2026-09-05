@@ -73,8 +73,7 @@ fn move_body_selection_uses_unique_owning_history() {
             bulletin_boards: Vec::new(),
             records: Vec::new(),
             entity_versions: Vec::new(),
-            record_table_complete: true,
-            topology: Some(topology()),
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology()),
             transition,
         }
     };

@@ -398,8 +398,7 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(AsmHistoricalTopology {
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology {
             edges: vec![17],
             vertices: vec![3, 4, 5],
             edge_vertices: vec![AsmHistoricalEdge {
