@@ -47,7 +47,7 @@ pub(crate) fn schema_three_uses_the_object_envelope_and_defaults_file_version() 
     assert_eq!(objects[0].type_name, "App::FeaturePython");
     assert_eq!(properties.len(), 2);
     assert_eq!(
-        properties[1].links[0].object.as_deref(),
+        properties[1].links[0].object(),
         Some(objects[0].id.as_str())
     );
     assert!(crate::validate_native(result.ir()).is_empty());
@@ -82,7 +82,7 @@ pub(crate) fn schema_two_uses_the_feature_envelope_and_common_property_grammar()
     );
     assert_eq!(properties.len(), 2);
     assert_eq!(
-        properties[1].links[0].object.as_deref(),
+        properties[1].links[0].object(),
         Some(objects[0].id.as_str())
     );
     assert!(objects.iter().all(|object| object.persistent_id.is_none()));
@@ -244,7 +244,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .expect("support");
     assert_eq!(support.owner, "fcstd:native:object#Body");
     assert_eq!(
-        support.links[0].object.as_deref(),
+        support.links[0].object(),
         Some("fcstd:native:object#Sketch")
     );
     assert_eq!(support.family, crate::native::PropertyFamily::Link);
@@ -259,10 +259,10 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .expect("members");
     assert_eq!(members.links.len(), 2);
     assert_eq!(
-        members.links[0].object.as_deref(),
+        members.links[0].object(),
         Some("fcstd:native:object#Sketch")
     );
-    assert_eq!(members.links[1].object.as_deref(), Some(""));
+    assert_eq!(members.links[1].object(), None);
     let transient = properties
         .iter()
         .find(|property| property.name == "TransientState")

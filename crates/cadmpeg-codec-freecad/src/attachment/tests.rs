@@ -36,7 +36,7 @@ fn retains_support_attachment_and_distinct_offset_frame() {
     assert_eq!(attachments.len(), 1);
     assert_eq!(attachments[0].map_mode.as_deref(), Some("5"));
     assert_eq!(
-        attachments[0].supports[0].object.as_deref(),
+        attachments[0].supports[0].object(),
         Some("fcstd:native:object#Support")
     );
     assert_eq!(attachments[0].supports[0].subelements, ["Face1"]);

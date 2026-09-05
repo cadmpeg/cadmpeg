@@ -46,7 +46,7 @@ pub(crate) fn transfer(
                 link_list(property, "App::PropertyLinkList", "Group").map(|links| {
                     links
                         .iter()
-                        .filter_map(|link| link.object.clone())
+                        .filter_map(|link| link.object().map(str::to_owned))
                         .collect::<Vec<_>>()
                 })
             })
@@ -92,7 +92,7 @@ pub(crate) fn transfer(
                 link_list(property, "App::PropertyLinkList", "ElementList").map(|links| {
                     links
                         .iter()
-                        .filter_map(|link| link.object.clone())
+                        .filter_map(|link| link.object().map(str::to_owned))
                         .collect::<Vec<_>>()
                 })
             })
@@ -102,10 +102,8 @@ pub(crate) fn transfer(
         let node = match kind {
             "occurrence" => ProductNode::Occurrence(LinkOccurrence {
                 members,
-                prototype: prototype_link.and_then(|link| link.object.clone()),
+                prototype: prototype_link.and_then(|link| link.object().map(str::to_owned)),
                 external_document: prototype_link.and_then(|link| link.document.clone()),
-                external_document_attribute: prototype_link
-                    .and_then(|link| link.document_attribute.clone()),
                 local_transform,
                 placement_property,
                 element_count,
@@ -213,7 +211,7 @@ pub(crate) fn transfer_neutral(
             .iter()
             .flat_map(|joint| joint.references().into_iter().cloned())
             .filter(|reference| reference.document.is_none())
-            .filter_map(|reference| reference.object.clone())
+            .filter_map(|reference| reference.object().map(str::to_owned))
             .filter(|object| !object.is_empty() && !occurrence_objects.contains(object.as_str())),
     );
     component_objects.sort();
@@ -335,10 +333,16 @@ pub(crate) fn transfer_neutral(
                 .expect("identity grammar"),
                 prototype: if let Some(document) = record.external_document() {
                     PrototypeReference::External {
-                        document: external_document_reference(
-                            document,
-                            record.external_document_attribute(),
-                        ),
+                        document: match document {
+                            crate::native::ExternalDocument::File(path) => {
+                                cadmpeg_ir::products::ExternalDocumentReference::path(path.as_str())
+                            }
+                            crate::native::ExternalDocument::Name(name) => {
+                                cadmpeg_ir::products::ExternalDocumentReference::document_id(
+                                    name.as_str(),
+                                )
+                            }
+                        },
                         object: record.prototype().map(str::to_owned),
                     }
                 } else if let Some(prototype) = record.prototype() {
@@ -949,11 +953,7 @@ fn linked_object(
         return Ok(None);
     };
     let link = single_link(property, expected_type, root, name)?;
-    Ok(link
-        .object
-        .as_ref()
-        .filter(|object| !object.is_empty())
-        .cloned())
+    Ok(link.object().map(str::to_owned))
 }
 
 fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<[f64; 3]>, CodecError> {

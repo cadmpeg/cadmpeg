@@ -2,6 +2,7 @@
 //! Versioned FCStd-native records.
 
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::products::NonEmptyString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -636,7 +637,6 @@ impl JointRecord {
 pub(crate) fn empty_link_target() -> LinkTarget {
     LinkTarget {
         document: None,
-        document_attribute: None,
         object: None,
         subelements: Vec::new(),
     }
@@ -770,9 +770,7 @@ pub struct LinkOccurrence {
     /// Linked prototype object.
     pub prototype: Option<String>,
     /// External document token when the prototype is not local.
-    pub external_document: Option<String>,
-    /// Exact attribute spelling that carried the external document reference.
-    pub external_document_attribute: Option<String>,
+    pub external_document: Option<ExternalDocument>,
     /// Local occurrence placement as a row-major affine matrix.
     pub local_transform: Option<[[f64; 4]; 4]>,
     /// Property supplying the placement.
@@ -858,15 +856,9 @@ impl ProductNodeRecord {
     }
 
     /// External document token when the prototype is not local.
-    pub fn external_document(&self) -> Option<&str> {
+    pub fn external_document(&self) -> Option<&ExternalDocument> {
         self.occurrence()
-            .and_then(|node| node.external_document.as_deref())
-    }
-
-    /// Exact attribute spelling that carried the external document reference.
-    pub fn external_document_attribute(&self) -> Option<&str> {
-        self.occurrence()
-            .and_then(|node| node.external_document_attribute.as_deref())
+            .and_then(|node| node.external_document.as_ref())
     }
 
     /// Number of array elements requested by the link.
@@ -942,7 +934,6 @@ impl LinkOccurrence {
     fn is_empty_link_payload(&self) -> bool {
         self.prototype.is_none()
             && self.external_document.is_none()
-            && self.external_document_attribute.is_none()
             && self.element_count.is_none()
             && self.link_transform.is_none()
             && self.element_transforms.is_empty()
@@ -1005,7 +996,6 @@ impl From<ProductNodeRecord> for ProductNodeRecordWire {
             members: Vec::new(),
             prototype: None,
             external_document: None,
-            external_document_attribute: None,
             local_transform: None,
             placement_property: None,
             element_count: None,
@@ -1027,8 +1017,16 @@ impl From<ProductNodeRecord> for ProductNodeRecordWire {
             kind,
             members,
             prototype: occurrence.prototype,
-            external_document: occurrence.external_document,
-            external_document_attribute: occurrence.external_document_attribute,
+            external_document: occurrence
+                .external_document
+                .as_ref()
+                .map(ExternalDocument::as_str)
+                .map(str::to_owned),
+            external_document_attribute: occurrence
+                .external_document
+                .as_ref()
+                .and_then(ExternalDocument::attribute)
+                .map(str::to_owned),
             local_transform,
             placement_property,
             element_count: occurrence.element_count,
@@ -1063,8 +1061,10 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
         let occurrence = LinkOccurrence {
             members: container.members.clone(),
             prototype: wire.prototype,
-            external_document: wire.external_document,
-            external_document_attribute: wire.external_document_attribute,
+            external_document: ExternalDocument::from_wire(
+                wire.external_document,
+                wire.external_document_attribute.as_deref(),
+            )?,
             local_transform: container.local_transform,
             placement_property: container.placement_property.clone(),
             element_count: wire.element_count,
@@ -1322,17 +1322,134 @@ pub struct DynamicPropertyMeta {
     pub hidden: Option<bool>,
 }
 
-/// One generically recovered ordered link target.
+/// External document named by a file path or a document identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExternalDocument {
+    /// Path carried by a `file` attribute.
+    File(NonEmptyString),
+    /// Document identity carried without a `file` attribute.
+    Name(NonEmptyString),
+}
+
+impl ExternalDocument {
+    /// Document token retained on the CADIR wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::File(value) | Self::Name(value) => value.as_str(),
+        }
+    }
+
+    /// Attribute spelling retained on the CADIR wire.
+    pub fn attribute(&self) -> Option<&'static str> {
+        match self {
+            Self::File(_) => Some("file"),
+            Self::Name(_) => None,
+        }
+    }
+
+    pub(crate) fn from_file_attr(file: Option<String>) -> Option<Self> {
+        file.and_then(NonEmptyString::new).map(Self::File)
+    }
+
+    fn from_wire(
+        document: Option<String>,
+        attribute: Option<&str>,
+    ) -> Result<Option<Self>, String> {
+        match (document, attribute) {
+            (None, None) | (None, Some("file")) => Ok(None),
+            (Some(path), Some("file")) => NonEmptyString::new(path)
+                .map(Self::File)
+                .map(Some)
+                .ok_or_else(|| "external document file path must not be empty".to_owned()),
+            (Some(name), None) => NonEmptyString::new(name)
+                .map(Self::Name)
+                .map(Some)
+                .ok_or_else(|| "external document name must not be empty".to_owned()),
+            (_, Some(attribute)) => Err(format!(
+                "external document attribute must be \"file\", not {attribute}"
+            )),
+        }
+    }
+}
+
+/// One XLink, PropertyLink, or PropertyLinkSub target.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "LinkTargetWire", into = "LinkTargetWire")]
 pub struct LinkTarget {
-    /// Target document identity, when external.
-    pub document: Option<String>,
-    /// Exact attribute spelling that carried the document reference.
-    pub document_attribute: Option<String>,
-    /// Target object identity, including an explicit empty/null target.
-    pub object: Option<String>,
+    /// External document, when the target is not local.
+    pub document: Option<ExternalDocument>,
+    /// Target object identity. Empty source names are absent.
+    pub object: Option<NonEmptyString>,
     /// Ordered subelement selectors.
     pub subelements: Vec<String>,
+}
+
+impl LinkTarget {
+    /// Document token retained on the CADIR wire.
+    pub fn document_name(&self) -> Option<&str> {
+        self.document.as_ref().map(ExternalDocument::as_str)
+    }
+
+    /// Attribute spelling retained on the CADIR wire.
+    pub fn document_attribute(&self) -> Option<&'static str> {
+        self.document.as_ref().and_then(ExternalDocument::attribute)
+    }
+
+    /// Target object identity, omitting empty source names.
+    pub fn object(&self) -> Option<&str> {
+        self.object.as_ref().map(NonEmptyString::as_str)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct LinkTargetWire {
+    document: Option<String>,
+    document_attribute: Option<String>,
+    object: Option<String>,
+    subelements: Vec<String>,
+}
+
+impl From<LinkTarget> for LinkTargetWire {
+    fn from(value: LinkTarget) -> Self {
+        let document_attribute = value
+            .document
+            .as_ref()
+            .and_then(ExternalDocument::attribute)
+            .map(str::to_owned);
+        let document = value
+            .document
+            .as_ref()
+            .map(ExternalDocument::as_str)
+            .map(str::to_owned);
+        Self {
+            document,
+            document_attribute,
+            object: Some(
+                value
+                    .object
+                    .as_ref()
+                    .map(NonEmptyString::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+            ),
+            subelements: value.subelements,
+        }
+    }
+}
+
+impl TryFrom<LinkTargetWire> for LinkTarget {
+    type Error = String;
+
+    fn try_from(wire: LinkTargetWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            document: ExternalDocument::from_wire(
+                wire.document,
+                wire.document_attribute.as_deref(),
+            )?,
+            object: wire.object.and_then(NonEmptyString::new),
+            subelements: wire.subelements,
+        })
+    }
 }
 
 /// One property value element retained in source order.

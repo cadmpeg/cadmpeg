@@ -96,17 +96,17 @@ pub(crate) fn transfer_neutral(
             .collect::<Vec<_>>();
         validate_text_carriers(&owned, &schema)?;
         let target = |link: &crate::native::LinkTarget| {
-            let target = match (&link.document, &link.object) {
+            let target = match (link.document_name(), link.object()) {
                 (Some(document), Some(object)) => ReferenceTarget::External {
-                    document: document.clone(),
-                    object: object.clone(),
+                    document: document.to_owned(),
+                    object: object.to_owned(),
                 },
-                (None, Some(object)) if object.is_empty() => ReferenceTarget::Null,
+                (None, None) => ReferenceTarget::Null,
                 (None, Some(object)) => ReferenceTarget::Local(
                     drawing_ids
-                        .get(object.as_str())
+                        .get(object)
                         .cloned()
-                        .unwrap_or_else(|| object.clone()),
+                        .unwrap_or_else(|| object.to_owned()),
                 ),
                 _ => {
                     return Err(CodecError::malformed(
@@ -1033,9 +1033,7 @@ pub(crate) mod tests {
             .find(|drawing| drawing.object.ends_with("#Dimension"))
             .expect("drawing dimension");
         assert_eq!(
-            drawing_dimension.relationships["BaseView"][0]
-                .object
-                .as_deref(),
+            drawing_dimension.relationships["BaseView"][0].object(),
             Some("fcstd:native:object#View")
         );
         assert_eq!(drawing_dimension.sources.len(), 2);

@@ -181,18 +181,18 @@ pub(crate) fn transfer_neutral(
                 .references()
                 .into_iter()
                 .map(|reference| {
-                    let object = reference.object.clone()?;
+                    let object = reference.object()?.to_owned();
                     let subelements = reference
                         .subelements
                         .iter()
                         .filter(|subelement| !subelement.is_empty())
                         .cloned()
                         .collect();
-                    if let Some(document) = reference.document.as_deref() {
+                    if let Some(document) = reference.document.as_ref() {
                         return Some(JointOperand::external(
                             crate::product::external_document_reference(
-                                document,
-                                reference.document_attribute.as_deref(),
+                                document.as_str(),
+                                document.attribute(),
                             ),
                             object,
                             subelements,
@@ -559,13 +559,7 @@ fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkT
             property
                 .links
                 .iter()
-                .filter(|link| {
-                    link.document.is_some()
-                        || link
-                            .object
-                            .as_deref()
-                            .is_some_and(|object| !object.is_empty())
-                })
+                .filter(|link| link.document.is_some() || link.object().is_some())
                 .cloned()
                 .collect()
         })
@@ -701,7 +695,7 @@ pub(crate) mod tests {
         assert_eq!(joints[0].kind(), "Revolute");
         assert_eq!(joints[0].references().len(), 2);
         assert_eq!(
-            joints[0].references()[0].object.as_deref(),
+            joints[0].references()[0].object(),
             Some("fcstd:native:object#Assembly")
         );
         assert_eq!(
