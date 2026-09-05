@@ -1043,7 +1043,10 @@ impl CodecBackend for FcstdCodec {
             "object_count".into(),
             scan.document.object_count.to_string(),
         );
-        attributes.insert("document_kind".into(), scan.document.document_kind.clone());
+        attributes.insert(
+            "document_kind".into(),
+            scan.document.document_kind.as_str().to_owned(),
+        );
         attributes.insert(
             "application_domains".into(),
             scan.document.domains.join(","),

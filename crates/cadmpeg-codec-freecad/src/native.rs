@@ -1397,6 +1397,38 @@ impl TryFrom<ArchiveSpanWire> for ArchiveSpan {
     }
 }
 
+/// Structural document-kind classification from declared object domains.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DocumentKind {
+    /// At least one `Assembly::` object.
+    Assembly,
+    /// At least one `TechDraw::` object and no assembly objects.
+    Drawing,
+    /// At least one `PartDesign::` object and no assembly or drawing objects.
+    PartDesign,
+    /// At least one `Part::` object and no assembly, drawing, or part-design objects.
+    Part,
+    /// No declared application objects.
+    Empty,
+    /// Declared objects with none of the classified domains.
+    ApplicationDocument,
+}
+
+impl DocumentKind {
+    /// Stable document-kind label retained on the CADIR wire.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Assembly => "assembly",
+            Self::Drawing => "drawing",
+            Self::PartDesign => "part-design",
+            Self::Part => "part",
+            Self::Empty => "empty",
+            Self::ApplicationDocument => "application-document",
+        }
+    }
+}
+
 /// Metadata read from the persistence document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DocumentFacts {
@@ -1413,7 +1445,7 @@ pub struct DocumentFacts {
     /// Number of declared application objects.
     pub object_count: usize,
     /// Structural document-kind classification.
-    pub document_kind: String,
+    pub document_kind: DocumentKind,
     /// Application domains present in object declarations.
     pub domains: Vec<String>,
 }

@@ -25,7 +25,7 @@ fn document(schema_version: &str) -> DocumentFacts {
         program_version: Some("1.1R20260414 (Git shallow)".into()),
         root_name: "Document".into(),
         object_count: 0,
-        document_kind: "part".into(),
+        document_kind: crate::native::DocumentKind::Part,
         domains: Vec::new(),
     }
 }
