@@ -969,3 +969,29 @@ fn sketch_auxiliary_rows_preserve_absent_and_complete_offset_runs() {
         assert!(serde_json::from_value::<super::SketchRelation>(wire).unwrap_err().to_string().contains("auxiliary_reference"));
     }
 }
+
+#[test]
+fn sketch_nurbs_poles_preserve_wire_and_reject_partial_weights() {
+    let base = r#"{"kind":"nurbs","subtype_class_tag":"302","subtype_record_index":7,"degree":1,"fit_tolerance":0.125,"scalar_width":4,"knots":[0.0,0.0,1.0,1.0],"weights":[],"control_points":[{"x":2.0,"y":3.0,"z":4.0},{"x":5.0,"y":6.0,"z":7.0}]}"#;
+    for weights in ["[]", "[1.0,0.5]"] {
+        let expected = base.replace("\"weights\":[]", &format!("\"weights\":{weights}"));
+        let curve: super::SketchCurveGeometry = serde_json::from_str(&expected).unwrap();
+        assert_eq!(serde_json::to_string(&curve).unwrap(), expected);
+    }
+    for weights in ["[1.0]", "[1.0,0.5,1.0]"] {
+        let wire = base.replace("\"weights\":[]", &format!("\"weights\":{weights}"));
+        assert!(serde_json::from_str::<super::SketchCurveGeometry>(&wire).unwrap_err().to_string().contains("weights"));
+    }
+    let empty = super::SketchCurveGeometry::Nurbs {
+        carrier_reference: None,
+        subtype_class_tag: "302".into(),
+        subtype_record_index: 7,
+        degree: 1,
+        fit_tolerance: 0.125,
+        scalar_width: 4,
+        knots: vec![0.0, 1.0],
+        poles: super::SketchNurbsPoles::Rational(Vec::new()),
+    };
+    let wire = serde_json::to_string(&empty).unwrap();
+    assert_eq!(serde_json::from_str::<super::SketchCurveGeometry>(&wire).unwrap(), empty);
+}

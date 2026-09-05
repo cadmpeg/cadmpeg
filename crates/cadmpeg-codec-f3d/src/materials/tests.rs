@@ -1141,10 +1141,9 @@ fn decode_transfers_generated_protein_appearance() {
         Some(crate::records::SketchCurveGeometry::Nurbs {
             carrier_reference: Some(42),
             degree: 2,
-            weights,
-            control_points,
+            poles,
             ..
-        }) if weights.is_empty() && control_points.len() == 3
+        }) if poles.weights().next().is_none() && poles.point_count() == 3
     ));
     assert_eq!(f3d_native(result.ir()).design_body_members.len(), 2);
     assert_eq!(

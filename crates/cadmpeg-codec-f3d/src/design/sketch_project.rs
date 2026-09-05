@@ -263,21 +263,19 @@ pub fn project_sketch_design(
             SketchCurveGeometry::Nurbs {
                 degree,
                 knots,
-                weights,
-                control_points,
+                poles,
                 ..
             } if *degree != 0
-                && usize::try_from(*degree).is_ok_and(|degree| control_points.len() > degree)
-                && control_points.iter().all(planar_point) =>
+                && usize::try_from(*degree).is_ok_and(|degree| poles.point_count() > degree)
+                && poles.points().all(planar_point) =>
             {
                 SketchGeometry::Nurbs {
                     degree: *degree,
                     knots: knots.clone(),
-                    control_points: control_points
-                        .iter()
+                    control_points: poles.points()
                         .map(|point| Point2::new(point.x, point.y))
                         .collect(),
-                    weights: (!weights.is_empty()).then(|| weights.clone()),
+                    weights: poles.weights().next().is_some().then(|| poles.weights().copied().collect()),
                     periodic: false,
                 }
             }
@@ -405,29 +403,29 @@ pub fn project_spatial_sketch_design(
         else {
             continue;
         };
-        let Some(SketchCurveGeometry::Nurbs { control_points, .. }) = curve.geometry.as_ref()
+        let Some(SketchCurveGeometry::Nurbs { poles, .. }) = curve.geometry.as_ref()
         else {
             continue;
         };
         if curve.owner_reference != Some(relation.owner_reference)
-            || control_points.len() != members.len()
+            || poles.point_count() != members.len()
         {
             continue;
         }
         let segments = members[..members.len() - 1]
             .iter()
-            .zip(control_points.windows(2))
-            .map(|(record, points)| {
+            .zip(poles.points().zip(poles.points().skip(1)))
+            .map(|(record, (first, second))| {
                 let member = curves_by_record.get(&(scope, *record))?;
                 if member.owner_reference != Some(relation.owner_reference) {
                     return None;
                 }
                 match member.geometry.as_ref() {
-                    None => Some((*record, [points[0], points[1]])),
+                    None => Some((*record, [*first, *second])),
                     Some(SketchCurveGeometry::Line { start, end, .. })
-                        if start == &points[0] && end == &points[1] =>
+                        if start == first && end == second =>
                     {
-                        Some((*record, [points[0], points[1]]))
+                        Some((*record, [*first, *second]))
                     }
                     _ => None,
                 }
@@ -535,21 +533,19 @@ pub fn project_spatial_sketch_design(
                     SketchCurveGeometry::Nurbs {
                         degree,
                         knots,
-                        weights,
-                        control_points,
+                        poles,
                         ..
                     } if *degree != 0
                         && usize::try_from(*degree)
-                            .is_ok_and(|degree| control_points.len() > degree) =>
+                            .is_ok_and(|degree| poles.point_count() > degree) =>
                     {
                         SpatialSketchGeometry::Nurbs {
                             degree: *degree,
                             knots: knots.clone(),
-                            control_points: control_points
-                                .iter()
+                            control_points: poles.points()
                                 .map(|point| transform_point(placement, point))
                                 .collect(),
-                            weights: (!weights.is_empty()).then(|| weights.clone()),
+                            weights: poles.weights().next().is_some().then(|| poles.weights().copied().collect()),
                             periodic: false,
                         }
                     }

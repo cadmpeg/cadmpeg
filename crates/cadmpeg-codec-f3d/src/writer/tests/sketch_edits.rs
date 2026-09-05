@@ -136,15 +136,16 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
         let curve = &mut native.sketch_curve_identities[1];
         let Some(crate::records::SketchCurveGeometry::Nurbs {
             fit_tolerance,
-            control_points,
+            poles,
             ..
         }) = &mut curve.geometry
         else {
             panic!("generated sketch curve must be NURBS")
         };
         *fit_tolerance = 0.125;
-        control_points[1].x += 15.0;
-        control_points[1].y -= 5.0;
+        let point = poles.points_mut().nth(1).expect("second spline control point");
+        point.x += 15.0;
+        point.y -= 5.0;
         curve.geometry.clone()
     });
 

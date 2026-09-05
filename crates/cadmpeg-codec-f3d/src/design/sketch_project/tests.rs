@@ -427,13 +427,12 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             fit_tolerance: 1.0e-6,
             scalar_width: 8,
             knots: vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            weights: Vec::new(),
-            control_points: vec![
+            poles: crate::records::SketchNurbsPoles::Polynomial(vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(2.0, 0.0, 0.0),
                 Point3::new(2.0, 2.0, 0.0),
                 Point3::new(4.0, 2.0, 0.0),
-            ],
+            ]),
         }),
     };
 
@@ -804,8 +803,10 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             fit_tolerance: 1.0e-8,
             scalar_width: 4,
             knots: vec![0.0, 0.0, 1.0, 1.0],
-            weights: vec![1.0, 1.0],
-            control_points: vec![Point3::new(2.0, 3.0, 4.0), Point3::new(5.0, 6.0, 7.0)],
+            poles: crate::records::SketchNurbsPoles::Rational(vec![
+                crate::records::SketchNurbsPole { point: Point3::new(2.0, 3.0, 4.0), weight: 1.0 },
+                crate::records::SketchNurbsPole { point: Point3::new(5.0, 6.0, 7.0), weight: 1.0 },
+            ]),
         },
     ));
     let relation = SketchRelation {

@@ -8,7 +8,6 @@ use crate::records::{
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::math::Point3;
 
 use super::edits::{
     BodyMemberEdit, ConstructionRecipeEdit, DesignTypeEdit, Edit, EntityHeaderEdit, HistoryEdits,
@@ -611,37 +610,34 @@ pub(crate) fn patch_sketch_curves(
             .ok_or_else(|| {
                 CodecError::Malformed("sketch-curve offset exceeds address space".into())
             })?;
-        if let SketchCurveGeometry::Nurbs {
-            fit_tolerance,
-            knots,
-            weights,
-            control_points,
-            ..
-        } = geometry
-        {
-            patch_sketch_nurbs(bytes, start, *fit_tolerance, knots, weights, control_points)?;
-            continue;
-        }
-        let values = match geometry {
+        let (values, scalar_count) = match geometry {
             SketchCurveGeometry::Line {
-                start,
+                start: line_start,
                 end,
                 direction,
                 normal,
-            } => [
-                start.x / LEN_TO_MM,
-                start.y / LEN_TO_MM,
-                start.z / LEN_TO_MM,
-                (end.x - start.x) / LEN_TO_MM,
-                (end.y - start.y) / LEN_TO_MM,
-                (end.z - start.z) / LEN_TO_MM,
+            } => {
+                let scalar_count = line_scalar_count(bytes, start)?;
+                if scalar_count == 9 && (normal.x != 0.0 || normal.y != 0.0 || normal.z != 1.0) {
+                    return Err(CodecError::NotImplemented(
+                        "F3D compact planar-line edits require the implicit +Z normal".into(),
+                    ));
+                }
+                ([
+                line_start.x / LEN_TO_MM,
+                line_start.y / LEN_TO_MM,
+                line_start.z / LEN_TO_MM,
+                (end.x - line_start.x) / LEN_TO_MM,
+                (end.y - line_start.y) / LEN_TO_MM,
+                (end.z - line_start.z) / LEN_TO_MM,
                 direction.x,
                 direction.y,
                 direction.z,
                 normal.x,
                 normal.y,
                 normal.z,
-            ],
+            ], scalar_count)
+            }
             SketchCurveGeometry::Arc {
                 center,
                 normal,
@@ -649,7 +645,7 @@ pub(crate) fn patch_sketch_curves(
                 radius,
                 start_angle,
                 end_angle,
-            } => [
+            } => ([
                 center.x / LEN_TO_MM,
                 center.y / LEN_TO_MM,
                 center.z / LEN_TO_MM,
@@ -662,21 +658,11 @@ pub(crate) fn patch_sketch_curves(
                 radius / LEN_TO_MM,
                 *start_angle,
                 *end_angle,
-            ],
-            SketchCurveGeometry::Nurbs { .. } => unreachable!("NURBS handled before fixed payload"),
-        };
-        let scalar_count = match geometry {
-            SketchCurveGeometry::Line { normal, .. } => {
-                let scalar_count = line_scalar_count(bytes, start)?;
-                if scalar_count == 9 && (normal.x != 0.0 || normal.y != 0.0 || normal.z != 1.0) {
-                    return Err(CodecError::NotImplemented(
-                        "F3D compact planar-line edits require the implicit +Z normal".into(),
-                    ));
-                }
-                scalar_count
+            ], 12),
+            SketchCurveGeometry::Nurbs { fit_tolerance, knots, poles, .. } => {
+                patch_sketch_nurbs(bytes, start, *fit_tolerance, knots, poles)?;
+                continue;
             }
-            SketchCurveGeometry::Arc { .. } => 12,
-            SketchCurveGeometry::Nurbs { .. } => unreachable!("NURBS handled before fixed payload"),
         };
         let payload = bytes
             .get_mut(start..start + scalar_count * 8)
@@ -722,16 +708,15 @@ fn patch_sketch_nurbs(
     start: usize,
     fit_tolerance: f64,
     knots: &[f64],
-    weights: &[f64],
-    control_points: &[Point3],
+    poles: &crate::records::SketchNurbsPoles,
 ) -> Result<(), CodecError> {
     let fit_at = start + 94;
     let knots_at = start + 114;
     let weights_header = knots_at + knots.len() * 8;
     let weights_at = weights_header + 12;
-    let points_header = weights_at + weights.len() * 8;
+    let points_header = weights_at + poles.weights().len() * 8;
     let points_at = points_header + 12;
-    let end = points_at + control_points.len() * 24;
+    let end = points_at + poles.point_count() * 24;
     if end > bytes.len() {
         return Err(CodecError::Malformed(
             "sketch NURBS arrays extend beyond BulkStream".into(),
@@ -742,11 +727,11 @@ fn patch_sketch_nurbs(
         let at = knots_at + ordinal * 8;
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
-    for (ordinal, value) in weights.iter().enumerate() {
+    for (ordinal, value) in poles.weights().enumerate() {
         let at = weights_at + ordinal * 8;
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
-    for (ordinal, point) in control_points.iter().enumerate() {
+    for (ordinal, point) in poles.points().enumerate() {
         let at = points_at + ordinal * 24;
         for (component, value) in [point.x, point.y, point.z].into_iter().enumerate() {
             let component_at = at + component * 8;

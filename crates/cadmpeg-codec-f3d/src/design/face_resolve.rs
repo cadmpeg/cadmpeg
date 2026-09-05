@@ -2128,8 +2128,8 @@ pub(crate) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
                 && reference_direction.z.abs() <= EPS_FACE_RESOLVE_SKETCH_CURVE_IS_SPATIAL_E9
                 && sketch_normal_sign(normal).is_some())
         }
-        Some(SketchCurveGeometry::Nurbs { control_points, .. }) => {
-            control_points.iter().any(|point| !planar_point(point))
+        Some(SketchCurveGeometry::Nurbs { poles, .. }) => {
+            poles.points().any(|point| !planar_point(point))
         }
         None => false,
     }

@@ -577,12 +577,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 fit_tolerance: 1.0e-8,
                 scalar_width: 8,
                 knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                weights: vec![1.0, 0.8, 1.0],
-                control_points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(10.0, 20.0, 0.0),
-                    Point3::new(30.0, 10.0, 0.0),
-                ],
+                poles: crate::records::SketchNurbsPoles::Rational(vec![
+                    crate::records::SketchNurbsPole { point: Point3::new(0.0, 0.0, 0.0), weight: 1.0 },
+                    crate::records::SketchNurbsPole { point: Point3::new(10.0, 20.0, 0.0), weight: 0.8 },
+                    crate::records::SketchNurbsPole { point: Point3::new(30.0, 10.0, 0.0), weight: 1.0 },
+                ]),
             }),
         },
     ];

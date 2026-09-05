@@ -9,7 +9,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::ids::CoedgeId;
-use cadmpeg_ir::math::Point3;
 
 use super::index::NativeGenerationIndex;
 use super::native_bytes::{native_f64, native_i64, native_ref};
@@ -644,8 +643,7 @@ fn encode_sketch_curve_identity(
             fit_tolerance,
             scalar_width,
             knots,
-            weights,
-            control_points,
+            poles,
         }) => encode_sketch_nurbs(
             &mut record,
             *carrier_reference,
@@ -655,8 +653,7 @@ fn encode_sketch_curve_identity(
             *fit_tolerance,
             *scalar_width,
             knots,
-            weights,
-            control_points,
+            poles,
         )?,
         None => {
             return Err(CodecError::NotImplemented(format!(
@@ -700,17 +697,16 @@ fn encode_sketch_nurbs(
     fit_tolerance: f64,
     scalar_width: u32,
     knots: &[f64],
-    weights: &[f64],
-    control_points: &[Point3],
+    poles: &crate::records::SketchNurbsPoles,
 ) -> Result<(), CodecError> {
     validate_dynamic_class_tag(subtype_class_tag, "sketch NURBS subtype")?;
-    if scalar_width != 8 || (!weights.is_empty() && weights.len() != control_points.len()) {
+    if scalar_width != 8 {
         return Err(CodecError::Malformed(
             "source-less sketch NURBS requires scalar width 8 and parallel weights".into(),
         ));
     }
-    let expected_knots = control_points
-        .len()
+    let expected_knots = poles
+        .point_count()
         .checked_add(usize::try_from(degree).unwrap_or(usize::MAX))
         .and_then(|count| count.checked_add(1));
     if expected_knots != Some(knots.len()) {
@@ -733,19 +729,18 @@ fn encode_sketch_nurbs(
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
     encode_f64_sequence(record, knots)?;
-    let weight_count = u32::try_from(weights.len())
+    let weight_count = u32::try_from(poles.weights().len())
         .map_err(|_| CodecError::Malformed("sketch NURBS has too many weights".into()))?;
     record.extend_from_slice(&weight_count.to_le_bytes());
     record.extend_from_slice(&weight_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
-    encode_f64_sequence(record, weights)?;
-    let point_count = u32::try_from(control_points.len())
+    encode_f64_sequence(record, &poles.weights().copied().collect::<Vec<_>>())?;
+    let point_count = u32::try_from(poles.point_count())
         .map_err(|_| CodecError::Malformed("sketch NURBS has too many control points".into()))?;
     record.extend_from_slice(&point_count.to_le_bytes());
     record.extend_from_slice(&point_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
-    let coordinates = control_points
-        .iter()
+    let coordinates = poles.points()
         .flat_map(|point| {
             [
                 point.x / LEN_TO_MM,
