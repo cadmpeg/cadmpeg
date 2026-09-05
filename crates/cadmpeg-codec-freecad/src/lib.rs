@@ -425,17 +425,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .placement
             .iter()
             .chain(attachment.offset.iter())
-            .chain(std::iter::once(&attachment.effective_frame))
             .flat_map(|matrix| matrix.iter().flatten())
             .any(|value| !value.is_finite());
-        let effective_mismatch =
-            crate::attachment::effective_frame(attachment.placement, attachment.offset)
-                != attachment.effective_frame;
-        if !object_ids.contains(attachment.object.as_str())
-            || missing_support
-            || non_finite
-            || effective_mismatch
-        {
+        if !object_ids.contains(attachment.object.as_str()) || missing_support || non_finite {
             findings.push(finding(
                 Check::NativeLinks,
                 format!(

@@ -89,7 +89,6 @@ pub(crate) fn transfer(
             if support.is_none() && mode.is_none() && placement.is_none() && offset.is_none() {
                 return Ok(None);
             }
-            let effective_frame = effective_frame(placement, offset);
             Ok(Some(AttachmentRecord {
                 id: crate::native::native_id("attachment", &object.name),
                 object: object.id.clone(),
@@ -97,7 +96,6 @@ pub(crate) fn transfer(
                 map_mode: mode.map(map_mode_value).transpose()?.flatten(),
                 placement,
                 offset,
-                effective_frame,
             }))
         })
         .collect::<Result<Vec<_>, CodecError>>()
