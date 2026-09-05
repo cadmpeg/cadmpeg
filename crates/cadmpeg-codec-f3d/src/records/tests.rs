@@ -701,3 +701,27 @@ fn annotation_return_members_preserve_wire_and_reject_unequal_offsets() {
         assert!(error.contains("return_member_offsets"));
     }
 }
+
+#[test]
+fn dimension_locus_rows_preserve_return_order_and_derive_state_views() {
+    for (state, kinds, unknown) in [(0, r#"["coincident"]"#, 0), (32, r#"["perpendicular"]"#, 0), (16384, "[]", 16384)] {
+        let wire = format!(r#"{{"id":"locus-group","companion_record_index":2,"byte_offset":100,"class_tag":"256","record_index":3,"frame_length":150,"loci":[{{"geometry_record_index":11,"geometry_reference_offset":125,"role":0,"role_offset":135}},{{"geometry_record_index":10,"geometry_reference_offset":140,"role":0,"role_offset":150}}],"owner_reference":5,"owner_reference_offset":156,"owner_role":0,"owner_role_offset":166,"state":{state},"state_offset":170,"constraint_kinds":{kinds},"unknown_constraint_bits":{unknown},"return_members":[10,11],"return_member_offsets":[179,190],"next_class_tag":"259","next_record_index":4,"next_byte_offset":201}}"#);
+        let group: super::DesignDimensionLocusGroup = serde_json::from_str(&wire).expect("locus group rows");
+        assert_eq!(serde_json::to_string(&group).expect("locus group wire"), wire);
+        assert_eq!(group.loci[0].geometry_record_index, 11);
+        assert_eq!(group.loci[0].returned.value, 10);
+        let value: serde_json::Value = serde_json::from_str(&wire).expect("locus JSON");
+        for field in ["loci", "return_members", "return_member_offsets"] {
+            let mut invalid = value.clone();
+            invalid[field].as_array_mut().expect("locus array").pop();
+            let error = serde_json::from_value::<super::DesignDimensionLocusGroup>(invalid).expect_err("unequal locus arrays").to_string();
+            assert!(error.contains(field), "{field}: {error}");
+        }
+        for (field, replacement) in [("constraint_kinds", serde_json::json!(["parallel"])), ("unknown_constraint_bits", serde_json::json!(1))] {
+            let mut invalid = value.clone();
+            invalid[field] = replacement;
+            let error = serde_json::from_value::<super::DesignDimensionLocusGroup>(invalid).expect_err("inconsistent state projection").to_string();
+            assert!(error.contains(field));
+        }
+    }
+}

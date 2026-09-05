@@ -518,7 +518,7 @@ fn project_all_dimension_constraints(
                 return Some(definition);
             }
         }
-        if group.state == 0 && group.unknown_constraint_bits == 0 {
+        if group.state == 0 {
             let counted_definition = counted_role_relation_at_tolerance(
                 &locus_entities,
                 group.owner_role,
@@ -541,7 +541,7 @@ fn project_all_dimension_constraints(
             return Some(definition);
         }
         if parameter.source_kind.starts_with("Linear Dimension") {
-            if group.state == 0x20 && group.unknown_constraint_bits == 0 {
+            if group.state == 0x20 {
                 let loci = group
                     .loci
                     .iter()
@@ -565,7 +565,7 @@ fn project_all_dimension_constraints(
                     .collect::<HashMap<_, _>>();
                 let mut definition = exact_counted_offset(
                     &loci,
-                    &group.return_members,
+                    &group.loci.iter().map(|locus| locus.returned.value).collect::<Vec<_>>(),
                     &entities_by_record,
                     &secondary_ids,
                     linear_tolerance,
@@ -596,7 +596,7 @@ fn project_all_dimension_constraints(
             ) {
                 return Some(definition);
             }
-            if group.state == 0 && group.unknown_constraint_bits == 0 {
+            if group.state == 0 {
                 return two_locus_distance_dimension(&locus_entities, parameter_id);
             }
         }
@@ -606,7 +606,7 @@ fn project_all_dimension_constraints(
         .iter()
         .filter_map(|group| {
             let scope = native_stream(&group.id)?;
-            if group.state != 0 || group.unknown_constraint_bits != 0 {
+            if group.state != 0 {
                 return None;
             }
             let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
@@ -790,10 +790,7 @@ fn project_all_dimension_constraints(
                         .collect::<Vec<_>>();
                     operands.push(("owner", Some(group.owner_role), group.owner_reference));
                     operands.extend(
-                        group
-                            .return_members
-                            .iter()
-                            .map(|record_index| ("return", None, *record_index)),
+                        group.loci.iter().map(|locus| ("return", None, locus.returned.value)),
                     );
                     native_definition(
                         scope,

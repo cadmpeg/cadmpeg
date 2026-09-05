@@ -250,12 +250,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         frame_length: 100,
         loci: vec![
             DesignDimensionLocus {
+                returned: crate::records::Located { value: 50, offset: 0 },
                 geometry_record_index: 50,
                 geometry_reference_offset: 0,
                 role: 2,
                 role_offset: 0,
             },
             DesignDimensionLocus {
+                returned: crate::records::Located { value: 51, offset: 0 },
                 geometry_record_index: 51,
                 geometry_reference_offset: 0,
                 role: 2,
@@ -268,10 +270,6 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         owner_role_offset: 0,
         state: 0,
         state_offset: 0,
-        constraint_kinds: vec![SketchConstraintKind::Coincident],
-        unknown_constraint_bits: 0,
-        return_members: vec![50, 51],
-        return_member_offsets: vec![0, 0],
         next_class_tag: "300".into(),
         next_record_index: 61,
         next_byte_offset: 100,
@@ -334,12 +332,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         frame_length: 100,
         loci: vec![
             DesignDimensionLocus {
+                returned: crate::records::Located { value: 40, offset: 0 },
                 geometry_record_index: 40,
                 geometry_reference_offset: 0,
                 role: 0,
                 role_offset: 0,
             },
             DesignDimensionLocus {
+                returned: crate::records::Located { value: 41, offset: 0 },
                 geometry_record_index: 41,
                 geometry_reference_offset: 0,
                 role: 0,
@@ -352,10 +352,6 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         owner_role_offset: 0,
         state: 0,
         state_offset: 0,
-        constraint_kinds: vec![SketchConstraintKind::Parallel],
-        unknown_constraint_bits: 0,
-        return_members: vec![40, 41],
-        return_member_offsets: vec![0, 0],
         next_class_tag: "300".into(),
         next_record_index: 42,
         next_byte_offset: 100,

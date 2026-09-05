@@ -979,9 +979,11 @@ pub struct DesignDimensionPresentationFrame {
 }
 
 /// One typed geometry locus and its dimension-role code.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignDimensionLocus {
+    /// Return reference at the same position in the return run.
+    pub returned: Located<u32>,
     /// Indexed sketch-point or sketch-curve record.
     pub geometry_record_index: u32,
     /// Byte offset of `geometry_record_index`.
@@ -995,6 +997,8 @@ pub struct DesignDimensionLocus {
 /// Counted-locus frame nested under a dimensional parameter companion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignDimensionLocusGroupWire"))]
+#[serde(try_from = "DesignDimensionLocusGroupWire", into = "DesignDimensionLocusGroupWire")]
 pub struct DesignDimensionLocusGroup {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -1022,20 +1026,159 @@ pub struct DesignDimensionLocusGroup {
     pub state: u32,
     /// Byte offset of `state`.
     pub state_offset: u64,
-    /// Constraint kinds selected by `state`.
-    pub constraint_kinds: Vec<SketchConstraintKind>,
-    /// Bits in `state` outside the defined constraint mask.
-    pub unknown_constraint_bits: u32,
-    /// Ordered return geometry records.
-    pub return_members: Vec<u32>,
-    /// Byte offsets parallel to `return_members`.
-    pub return_member_offsets: Vec<u64>,
     /// Dynamic class tag of the immediately following indexed record.
     pub next_class_tag: String,
     /// Identity of the immediately following indexed record.
     pub next_record_index: u32,
     /// Byte offset of the immediately following indexed record.
     pub next_byte_offset: u64,
+}
+
+/// One typed geometry locus and its dimension-role code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignDimensionLocusWire {
+    /// Indexed sketch-point or sketch-curve record.
+    geometry_record_index: u32,
+    /// Byte offset of `geometry_record_index`.
+    geometry_reference_offset: u64,
+    /// Source role code following the geometry reference.
+    role: u32,
+    /// Byte offset of `role`.
+    role_offset: u64,
+}
+
+/// Counted-locus frame nested under a dimensional parameter companion.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignDimensionLocusGroupWire {
+    /// Globally unique deterministic identifier for this native record.
+    id: String,
+    /// Companion record containing this frame.
+    companion_record_index: u32,
+    /// Byte offset of the indexed record header.
+    byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    class_tag: String,
+    /// Source indexed-record identity.
+    record_index: u32,
+    /// Byte length through the zero byte preceding the next indexed header.
+    frame_length: u64,
+    /// Ordered typed geometry loci.
+    loci: Vec<DesignDimensionLocusWire>,
+    /// Numeric design-entity suffix of the owning sketch.
+    owner_reference: u32,
+    /// Byte offset of `owner_reference`.
+    owner_reference_offset: u64,
+    /// Source role code following the owner reference.
+    owner_role: u32,
+    /// Byte offset of `owner_role`.
+    owner_role_offset: u64,
+    /// Source constraint-state mask.
+    state: u32,
+    /// Byte offset of `state`.
+    state_offset: u64,
+    /// Constraint kinds selected by `state`.
+    constraint_kinds: Vec<SketchConstraintKind>,
+    /// Bits in `state` outside the defined constraint mask.
+    unknown_constraint_bits: u32,
+    /// Ordered return geometry records.
+    return_members: Vec<u32>,
+    /// Byte offsets parallel to `return_members`.
+    return_member_offsets: Vec<u64>,
+    /// Dynamic class tag of the immediately following indexed record.
+    next_class_tag: String,
+    /// Identity of the immediately following indexed record.
+    next_record_index: u32,
+    /// Byte offset of the immediately following indexed record.
+    next_byte_offset: u64,
+}
+
+impl DesignDimensionLocusGroup {
+    #[must_use]
+    pub fn constraint_kinds(&self) -> Vec<SketchConstraintKind> {
+        constraint_kinds_from_state(u64::from(self.state)).0
+    }
+
+    #[must_use]
+    pub fn unknown_constraint_bits(&self) -> u32 {
+        self.state & !(SKETCH_CONSTRAINT_MASK as u32)
+    }
+}
+
+impl TryFrom<DesignDimensionLocusGroupWire> for DesignDimensionLocusGroup {
+    type Error = String;
+    fn try_from(wire: DesignDimensionLocusGroupWire) -> Result<Self, Self::Error> {
+        if wire.return_members.len() != wire.loci.len() {
+            return Err("return_members must match loci".into());
+        }
+        if wire.return_member_offsets.len() != wire.loci.len() {
+            return Err("return_member_offsets must match loci".into());
+        }
+        let (kinds, unknown) = constraint_kinds_from_state(u64::from(wire.state));
+        if wire.constraint_kinds != kinds { return Err("constraint_kinds must match state".into()); }
+        if u64::from(wire.unknown_constraint_bits) != unknown { return Err("unknown_constraint_bits must match state".into()); }
+        let loci = wire.loci.into_iter().zip(wire.return_members.into_iter().zip(wire.return_member_offsets)).map(|(locus, (value, offset))| DesignDimensionLocus {
+            geometry_record_index: locus.geometry_record_index,
+            geometry_reference_offset: locus.geometry_reference_offset,
+            role: locus.role,
+            role_offset: locus.role_offset,
+            returned: Located { value, offset },
+        }).collect();
+        Ok(Self { loci,
+            id: wire.id,
+            companion_record_index: wire.companion_record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            record_index: wire.record_index,
+            frame_length: wire.frame_length,
+            owner_reference: wire.owner_reference,
+            owner_reference_offset: wire.owner_reference_offset,
+            owner_role: wire.owner_role,
+            owner_role_offset: wire.owner_role_offset,
+            state: wire.state,
+            state_offset: wire.state_offset,
+            next_class_tag: wire.next_class_tag,
+            next_record_index: wire.next_record_index,
+            next_byte_offset: wire.next_byte_offset,
+        })
+    }
+}
+impl From<DesignDimensionLocusGroup> for DesignDimensionLocusGroupWire {
+    fn from(value: DesignDimensionLocusGroup) -> Self {
+        let constraint_kinds = value.constraint_kinds();
+        let unknown_constraint_bits = value.unknown_constraint_bits();
+        let mut loci = Vec::with_capacity(value.loci.len());
+        let mut return_members = Vec::with_capacity(value.loci.len());
+        let mut return_member_offsets = Vec::with_capacity(value.loci.len());
+        for locus in value.loci {
+            return_members.push(locus.returned.value);
+            return_member_offsets.push(locus.returned.offset);
+            loci.push(DesignDimensionLocusWire {
+                geometry_record_index: locus.geometry_record_index,
+                geometry_reference_offset: locus.geometry_reference_offset,
+                role: locus.role,
+                role_offset: locus.role_offset,
+            });
+        }
+        Self { loci, return_members, return_member_offsets, constraint_kinds, unknown_constraint_bits,
+            id: value.id,
+            companion_record_index: value.companion_record_index,
+            byte_offset: value.byte_offset,
+            class_tag: value.class_tag,
+            record_index: value.record_index,
+            frame_length: value.frame_length,
+            owner_reference: value.owner_reference,
+            owner_reference_offset: value.owner_reference_offset,
+            owner_role: value.owner_role,
+            owner_role_offset: value.owner_role_offset,
+            state: value.state,
+            state_offset: value.state_offset,
+            next_class_tag: value.next_class_tag,
+            next_record_index: value.next_record_index,
+            next_byte_offset: value.next_byte_offset,
+        }
+    }
 }
 
 /// Boolean result operation stored by an Extrude parameter scope.
