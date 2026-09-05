@@ -5603,8 +5603,8 @@ pub(crate) fn project_fixed_revolve_with_entities(
         .collect::<Vec<_>>();
     let axis = if let [axis_operand] = matches.as_slice() {
         Some(RevolutionAxis {
-            origin: axis_operand.resolved_axis_origin?,
-            direction: axis_operand.resolved_axis_direction?,
+            origin: axis_operand.resolved_axis?.origin,
+            direction: axis_operand.resolved_axis?.direction,
             reference: None,
         })
     } else if matches.is_empty() {
@@ -6327,10 +6327,9 @@ fn circular_pattern_axis(
             Vector3::new(direction[0], direction[1], direction[2]),
         )),
         DesignCircularPatternAxis::HistoricalEdge {
-            resolved_origin: Some(origin),
-            resolved_direction: Some(direction),
+            resolved: Some(axis),
             ..
-        } => Some((*origin, *direction)),
+        } => Some((axis.resolved_origin, axis.resolved_direction)),
         DesignCircularPatternAxis::HistoricalEdge { .. } => None,
     }
 }
@@ -6488,32 +6487,30 @@ pub(crate) fn project_mirror(
             }),
         )
     };
-    let (plane_origin, plane_normal, scale_origin) =
-        match (construction.plane_origin, construction.plane_normal) {
-            (Some(origin), Some(normal)) => (origin, normal, false),
-            (None, None) => {
-                let plane_scope_record_index = construction.plane_scope_record_index?;
-                let matching_planes = scopes
-                    .iter()
-                    .filter(|candidate| {
-                        native_stream(&candidate.id) == Some(stream)
-                            && candidate.record_index == plane_scope_record_index
-                            && candidate.kind == "WorkPlane"
-                            && candidate.work_plane_transform().is_some()
-                    })
-                    .collect::<Vec<_>>();
-                let [plane] = matching_planes.as_slice() else {
-                    return None;
-                };
-                let transform = plane.work_plane_transform()?;
-                (
-                    Point3::new(transform[0][3], transform[1][3], transform[2][3]),
-                    Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
-                    true,
-                )
-            }
-            _ => return None,
-        };
+    let (plane_origin, plane_normal, scale_origin) = match construction.plane {
+        Some(plane) => (plane.plane_origin, plane.plane_normal, false),
+        None => {
+            let plane_scope_record_index = construction.plane_scope_record_index?;
+            let matching_planes = scopes
+                .iter()
+                .filter(|candidate| {
+                    native_stream(&candidate.id) == Some(stream)
+                        && candidate.record_index == plane_scope_record_index
+                        && candidate.kind == "WorkPlane"
+                        && candidate.work_plane_transform().is_some()
+                })
+                .collect::<Vec<_>>();
+            let [plane] = matching_planes.as_slice() else {
+                return None;
+            };
+            let transform = plane.work_plane_transform()?;
+            (
+                Point3::new(transform[0][3], transform[1][3], transform[2][3]),
+                Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
+                true,
+            )
+        }
+    };
     let origin_scale = if scale_origin { 10.0 } else { 1.0 };
     Some(FeatureDefinition::Pattern {
         seeds: vec![seed],

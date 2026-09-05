@@ -1530,6 +1530,20 @@ pub struct DesignCircularPatternConstruction {
     pub selection_record_index: u32,
 }
 
+/// Proven origin and unit direction.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DesignAxis {
+    pub origin: Point3,
+    pub direction: Vector3,
+}
+
+/// Proven origin and unit normal.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DesignPlane {
+    pub origin: Point3,
+    pub normal: Vector3,
+}
+
 /// Axis construction carried by a fixed circular-pattern scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1554,13 +1568,35 @@ pub enum DesignCircularPatternAxis {
         persistent_identities: Vec<u64>,
         /// Byte offsets parallel to `persistent_identities`.
         identity_offsets: Vec<u64>,
-        /// Resolved model-space axis origin in millimetres.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        resolved_origin: Option<Point3>,
-        /// Resolved unit model-space axis direction.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        resolved_direction: Option<Vector3>,
+        /// Resolved model-space axis, when exact.
+        #[serde(flatten)]
+        resolved: Option<HistoricalResolvedAxisWire>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub(crate) struct HistoricalResolvedAxisWire {
+    pub resolved_origin: Point3,
+    pub resolved_direction: Vector3,
+}
+
+impl From<DesignAxis> for HistoricalResolvedAxisWire {
+    fn from(axis: DesignAxis) -> Self {
+        Self {
+            resolved_origin: axis.origin,
+            resolved_direction: axis.direction,
+        }
+    }
+}
+
+impl From<HistoricalResolvedAxisWire> for DesignAxis {
+    fn from(axis: HistoricalResolvedAxisWire) -> Self {
+        Self {
+            origin: axis.resolved_origin,
+            direction: axis.resolved_direction,
+        }
+    }
 }
 
 /// Ordered scalar lanes carried by a rectangular-pattern scope.
@@ -2401,12 +2437,34 @@ pub struct DesignMirrorConstruction {
     /// Persistent entity-selection record used as the mirror plane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plane_selection_record_index: Option<u32>,
-    /// Proven selected-face mirror-plane origin in model-space millimetres.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plane_origin: Option<Point3>,
-    /// Proven unit mirror-plane normal.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plane_normal: Option<Vector3>,
+    /// Proven selected-face mirror plane, when exact.
+    #[serde(flatten)]
+    pub plane: Option<MirrorPlaneWire>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct MirrorPlaneWire {
+    pub plane_origin: Point3,
+    pub plane_normal: Vector3,
+}
+
+impl From<DesignPlane> for MirrorPlaneWire {
+    fn from(plane: DesignPlane) -> Self {
+        Self {
+            plane_origin: plane.origin,
+            plane_normal: plane.normal,
+        }
+    }
+}
+
+impl From<MirrorPlaneWire> for DesignPlane {
+    fn from(plane: MirrorPlaneWire) -> Self {
+        Self {
+            origin: plane.plane_origin,
+            normal: plane.plane_normal,
+        }
+    }
 }
 
 /// Exact inline carrier for a legacy Mirror stitch tolerance.
@@ -7616,16 +7674,40 @@ pub struct DesignEdgeOperand {
     /// intersection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_edge_slot: Option<i64>,
-    /// Origin of the selected historical carrier axis, when exact.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved_axis_origin: Option<Point3>,
-    /// Unit direction of the selected historical carrier axis, when exact.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved_axis_direction: Option<Vector3>,
+    /// Selected historical carrier axis, when exact.
+    #[serde(flatten)]
+    pub resolved_axis: Option<EdgeResolvedAxisWire>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
     pub next_byte_offset: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct EdgeResolvedAxisWire {
+    #[serde(rename = "resolved_axis_origin")]
+    pub origin: Point3,
+    #[serde(rename = "resolved_axis_direction")]
+    pub direction: Vector3,
+}
+
+impl From<DesignAxis> for EdgeResolvedAxisWire {
+    fn from(axis: DesignAxis) -> Self {
+        Self {
+            origin: axis.origin,
+            direction: axis.direction,
+        }
+    }
+}
+
+impl From<EdgeResolvedAxisWire> for DesignAxis {
+    fn from(axis: EdgeResolvedAxisWire) -> Self {
+        Self {
+            origin: axis.origin,
+            direction: axis.direction,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

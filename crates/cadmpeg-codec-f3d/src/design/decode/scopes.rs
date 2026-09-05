@@ -4626,8 +4626,7 @@ fn exact_legacy_circular_pattern_axis(
             wrapper_record_indices,
             persistent_identities: vec![*persistent_identity],
             identity_offsets: wrappers.into_iter().map(|(_, offset)| offset).collect(),
-            resolved_origin: None,
-            resolved_direction: None,
+            resolved: None,
         },
         selection_record_index,
     ))
@@ -5073,8 +5072,7 @@ pub fn bind_mirror_constructions(
             plane_scope_record_index,
             plane_reference_offset,
             plane_selection_record_index,
-            plane_origin: None,
-            plane_normal: None,
+            plane: None,
         }));
     }
     Ok(())

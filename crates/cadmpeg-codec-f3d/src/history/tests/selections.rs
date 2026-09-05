@@ -1683,8 +1683,13 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     );
 
     let construction = scope.mirror_construction().expect("mirror construction");
-    assert_eq!(construction.plane_origin, Some(Point3::new(1.0, 2.0, 3.0)));
-    assert_eq!(construction.plane_normal, Some(Vector3::new(0.0, 0.0, 1.0)));
+    assert_eq!(
+        construction.plane.map(crate::records::DesignPlane::from),
+        Some(crate::records::DesignPlane {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        })
+    );
 
     operand.primary_identity = 44;
     bind_mirror_selection_planes(
@@ -1697,8 +1702,13 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     );
 
     let construction = scope.mirror_construction().expect("mirror construction");
-    assert_eq!(construction.plane_origin, Some(Point3::new(0.0, 0.0, 0.0)));
-    assert_eq!(construction.plane_normal, Some(Vector3::new(1.0, 0.0, 0.0)));
+    assert_eq!(
+        construction.plane.map(crate::records::DesignPlane::from),
+        Some(crate::records::DesignPlane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(1.0, 0.0, 0.0),
+        })
+    );
 }
 
 #[test]
