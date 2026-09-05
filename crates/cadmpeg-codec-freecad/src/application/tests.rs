@@ -132,8 +132,8 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
         .expect("payload span");
     assert_eq!(span.start, 0);
     assert_eq!(span.end, payload.len() as u64);
-    assert_eq!(span.classification, "named_opaque");
-    assert_eq!(span.owner.as_deref(), Some(entry.id.as_str()));
+    assert_eq!(span.classification.as_str(), "named_opaque");
+    assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
     assert_eq!(entry.data, payload);
     assert!(crate::validate_native(result.ir()).is_empty());
 }
@@ -261,8 +261,8 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
             .expect("side-entry span");
         assert_eq!(span.start, 0);
         assert_eq!(span.end, payload.len() as u64);
-        assert_eq!(span.classification, "named_opaque");
-        assert_eq!(span.owner.as_deref(), Some(entry.id.as_str()));
+        assert_eq!(span.classification.as_str(), "named_opaque");
+        assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
     }
     assert!(crate::validate_native(result.ir()).is_empty());
 }

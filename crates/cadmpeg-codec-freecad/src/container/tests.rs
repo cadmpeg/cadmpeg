@@ -231,8 +231,8 @@ fn retains_every_reference_to_a_shared_side_entry() {
 
     assert_eq!(shared.referenced_by.len(), 2);
     assert_ne!(shared.referenced_by[0], shared.referenced_by[1]);
-    assert_eq!(span.classification, "named_opaque");
-    assert_eq!(span.owner.as_deref(), Some(shared.id.as_str()));
+    assert_eq!(span.classification.as_str(), "named_opaque");
+    assert_eq!(span.classification.owner(), Some(shared.id.as_str()));
     assert!(crate::validate_native(result.ir()).is_empty());
 
     let mut corrupted = result.ir().clone();
