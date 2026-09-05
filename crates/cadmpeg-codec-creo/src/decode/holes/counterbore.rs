@@ -379,7 +379,7 @@ pub fn counterbore_cylinder_sources(
         if !table.surface_ids().contains(&entry.entity_id) {
             continue;
         }
-        let source_id = entry.source_entity_id?;
+        let source_id = entry.source_entity_id()?;
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
         else {
             continue;
@@ -432,7 +432,7 @@ pub fn counterbore_entity_table<'a>(
         .filter(|table| {
             table.entries.iter().any(|entry| {
                 entry.class_id == 200
-                    && entry.source_entity_id.is_some()
+                    && entry.source_entity_id().is_some()
                     && table.surface_ids().contains(&entry.entity_id)
                     && crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
                         .is_some_and(|row| {

@@ -62,13 +62,68 @@ pub(crate) fn dummy_table_entry(entity_id: u32, is_surface: bool) -> FeatureEnti
     FeatureEntityTableEntry {
         entity_id,
         class_id: 0,
-        source_entity_id: None,
-        related_entity_id: None,
-        related_entity_state: None,
+        payload: EntryPayload::Plain,
         prefixed: false,
         offset: 0,
         end_offset: 0,
         is_surface,
+    }
+}
+
+/// Class-specific generated-entity payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryPayload {
+    /// Class `200` source-section identifier, present when the compact id parsed.
+    Source { entity: Option<u32> },
+    /// Related entity carried by class `210`, related-form `214`, `219`, or `2017`.
+    Related { entity: u32, state: RelatedState },
+    /// Any other class, or a related class whose pair did not parse.
+    Plain,
+}
+
+/// One-byte state following a related entity identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelatedState {
+    Zero,
+    One,
+}
+
+impl RelatedState {
+    pub(crate) fn from_byte(byte: u8) -> Option<Self> {
+        match byte {
+            0 => Some(Self::Zero),
+            1 => Some(Self::One),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_u8(self) -> u8 {
+        match self {
+            Self::Zero => 0,
+            Self::One => 1,
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn entry_payload(
+    class_id: u32,
+    source_entity_id: Option<u32>,
+    related_entity_id: Option<u32>,
+    related_entity_state: Option<u8>,
+) -> EntryPayload {
+    match class_id {
+        200 => EntryPayload::Source {
+            entity: source_entity_id,
+        },
+        210 | 214 | 219 | 2017 => match (
+            related_entity_id,
+            related_entity_state.and_then(RelatedState::from_byte),
+        ) {
+            (Some(entity), Some(state)) => EntryPayload::Related { entity, state },
+            _ => EntryPayload::Plain,
+        },
+        _ => EntryPayload::Plain,
     }
 }
 
@@ -79,13 +134,8 @@ pub struct FeatureEntityTableEntry {
     pub entity_id: u32,
     /// Positional entry class following the entity identifier.
     pub class_id: u32,
-    /// Source section entity identifier carried by class `200` entries.
-    pub source_entity_id: Option<u32>,
-    /// Related entity identifier carried by class `210`, related-form class
-    /// `214`, class `219`, and class `2017` entries.
-    pub related_entity_id: Option<u32>,
-    /// One-byte state following a related entity.
-    pub related_entity_state: Option<u8>,
+    /// Payload owned by `class_id`.
+    pub payload: EntryPayload,
     /// Whether the record starts with the `f7 1e` entry prefix.
     pub prefixed: bool,
     /// Whether this entity identifier is a materialized `srf_array` identifier.
@@ -96,6 +146,29 @@ pub struct FeatureEntityTableEntry {
     /// structural `e3`, or points at the enclosing `f2 f7` table separator
     /// when the final entry uses that separator as its terminator.
     pub end_offset: usize,
+}
+
+impl FeatureEntityTableEntry {
+    pub fn source_entity_id(&self) -> Option<u32> {
+        match self.payload {
+            EntryPayload::Source { entity } => entity,
+            _ => None,
+        }
+    }
+
+    pub fn related_entity_id(&self) -> Option<u32> {
+        match self.payload {
+            EntryPayload::Related { entity, .. } => Some(entity),
+            _ => None,
+        }
+    }
+
+    pub fn related_entity_state(&self) -> Option<u8> {
+        match self.payload {
+            EntryPayload::Related { state, .. } => Some(state.as_u8()),
+            _ => None,
+        }
+    }
 }
 
 /// One named record in the implicit `AllFeatur` walker-order entity table.
@@ -130,7 +203,7 @@ pub(crate) fn generated_class_200_source_entity_ids(table: &FeatureEntityTable) 
         .entries
         .iter()
         .filter(|entry| entry.class_id == 200)
-        .filter_map(|entry| entry.source_entity_id)
+        .filter_map(|entry| entry.source_entity_id())
         .collect()
 }
 
@@ -214,40 +287,51 @@ pub(crate) fn read_entries(
                 .flatten()
                 .map(|(class_id, _)| (class_id, after))
         })?;
-        let (source_entity_id, related_entity_id, related_entity_state, body_start) =
-            if class_id == 200 {
-                match psb::reference_id(payload, after_class) {
-                    Ok((order, after_order)) => (Some(order), None, None, after_order),
-                    Err(_) => (None, None, None, after_class),
+        let (entry_payload, body_start) = if class_id == 200 {
+            match psb::reference_id(payload, after_class) {
+                Ok((order, after_order)) => (
+                    EntryPayload::Source {
+                        entity: Some(order),
+                    },
+                    after_order,
+                ),
+                Err(_) => (EntryPayload::Source { entity: None }, after_class),
+            }
+        } else if matches!(class_id, 210 | 214 | 219 | 2017) {
+            match psb::reference_id(payload, after_class) {
+                Ok((related, after_related))
+                    if matches!(
+                        (class_id, payload.get(after_related)),
+                        (210 | 214 | 219 | 2017, Some(&0)) | (2017, Some(&1))
+                    ) =>
+                {
+                    let state =
+                        RelatedState::from_byte(payload.get(after_related).copied().unwrap_or(0))
+                            .unwrap_or(RelatedState::Zero);
+                    (
+                        EntryPayload::Related {
+                            entity: related,
+                            state,
+                        },
+                        after_related,
+                    )
                 }
-            } else if matches!(class_id, 210 | 214 | 219 | 2017) {
-                match psb::reference_id(payload, after_class) {
-                    Ok((related, after_related))
-                        if matches!(
-                            (class_id, payload.get(after_related)),
-                            (210 | 214 | 219 | 2017, Some(&0)) | (2017, Some(&1))
-                        ) =>
-                    {
-                        (
-                            None,
-                            Some(related),
-                            payload.get(after_related).copied(),
-                            after_related,
-                        )
-                    }
-                    Err(_) => (None, None, None, after_class),
-                    Ok(_) => (None, None, None, after_class),
-                }
-            } else {
-                (None, None, None, after_class)
-            };
+                Err(_) => (EntryPayload::Plain, after_class),
+                Ok(_) => (EntryPayload::Plain, after_class),
+            }
+        } else {
+            (EntryPayload::Plain, after_class)
+        };
         let terminal_state = if class_id == 200 {
             payload
                 .get(body_start)
                 .copied()
                 .filter(|state| matches!(state, 0 | 1))
         } else {
-            related_entity_state
+            match entry_payload {
+                EntryPayload::Related { state, .. } => Some(state.as_u8()),
+                _ => None,
+            }
         };
         let terminal_table_separator = (index + 1 == count
             && terminal_state.is_some()
@@ -267,9 +351,7 @@ pub(crate) fn read_entries(
         entries.push(FeatureEntityTableEntry {
             entity_id: id,
             class_id,
-            source_entity_id,
-            related_entity_id,
-            related_entity_state,
+            payload: entry_payload,
             prefixed,
             is_surface: false,
             offset,

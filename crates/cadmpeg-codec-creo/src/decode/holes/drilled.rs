@@ -129,7 +129,7 @@ fn split_patch_table_is_counterbore(
         if !materialized && !rowless {
             return false;
         }
-        let Some(source_id) = entry.source_entity_id else {
+        let Some(source_id) = entry.source_entity_id() else {
             continue;
         };
         if source_id == 0 && materialized {
@@ -225,7 +225,7 @@ pub fn paired_hole_replay_surfaces_by_source(
         {
             framed_class_200_count += 1;
             let kind = entry_kind(entry)?;
-            match entry.source_entity_id {
+            match entry.source_entity_id() {
                 Some(0) => {
                     kind.is_none().then_some(())?;
                     source_zero_count += 1;

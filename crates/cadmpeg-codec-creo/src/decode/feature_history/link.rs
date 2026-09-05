@@ -87,7 +87,7 @@ pub(in super::super) fn generated_surface_id_for_feature(
                 .entries
                 .iter()
                 .filter(|entry| {
-                    entry.class_id == 200 && entry.source_entity_id == Some(source_entity_id)
+                    entry.class_id == 200 && entry.source_entity_id() == Some(source_entity_id)
                 })
                 .filter(|entry| table.surface_ids().contains(&entry.entity_id))
                 .map(|entry| entry.entity_id)
@@ -103,7 +103,7 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
     expected_kinds: &[crate::surface::SurfaceKind],
     rows: &[crate::surface::SurfaceRow],
 ) -> bool {
-    if entry.class_id != 200 || entry.source_entity_id.is_none() {
+    if entry.class_id != 200 || entry.source_entity_id().is_none() {
         return false;
     }
     if table.surface_ids().contains(&entry.entity_id) {
@@ -152,7 +152,7 @@ pub(in super::super) fn section_entity_is_generated_profile(
                 .entries
                 .iter()
                 .filter(|entry| {
-                    entry.class_id == 200 && entry.source_entity_id == Some(source_entity_id)
+                    entry.class_id == 200 && entry.source_entity_id() == Some(source_entity_id)
                 })
                 .collect::<Vec<_>>();
             let [entry] = matching.as_slice() else {
@@ -188,8 +188,8 @@ pub(in super::super) fn section_entity_is_generated_profile(
                 profile.class_id,
                 cylinder.class_id,
             ] == [204, 203, 200, 200]
-                && profile.source_entity_id == Some(source_entity_id)
-                && cylinder.source_entity_id.is_none()
+                && profile.source_entity_id() == Some(source_entity_id)
+                && cylinder.source_entity_id().is_none()
                 && table.surface_ids().contains(&cap.entity_id)
                 && table.surface_ids().contains(&cylinder.entity_id)
                 && table
@@ -217,7 +217,7 @@ fn generated_profile_table_shape(table: &crate::feature::FeatureEntityTable) -> 
         || rest.is_empty()
         || !rest
             .iter()
-            .all(|entry| entry.class_id == 200 && entry.source_entity_id.is_some())
+            .all(|entry| entry.class_id == 200 && entry.source_entity_id().is_some())
     {
         return false;
     }

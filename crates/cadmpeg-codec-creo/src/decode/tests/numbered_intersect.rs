@@ -666,11 +666,10 @@ fn dependency_reconciliation_preserves_typed_history_edges() {
 #[test]
 fn class_100_entity_reference_depends_on_its_unique_generator() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: true,
         offset: 0,
         end_offset: 0,
@@ -801,11 +800,10 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
 #[test]
 fn owned_output_entity_depends_on_its_prior_surface_target() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: true,
         offset: 0,
         end_offset: 0,
@@ -850,9 +848,7 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
     let entry = |entity_id, offset| crate::feature::FeatureEntityTableEntry {
         entity_id,
         class_id: 200,
-        source_entity_id: None,
-        related_entity_id: None,
-        related_entity_state: None,
+        payload: crate::feature::entry_payload(200, None, None, None),
         prefixed: true,
         offset,
         end_offset: offset + 1,
@@ -897,9 +893,7 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         entries: vec![crate::feature::FeatureEntityTableEntry {
             entity_id: 192,
             class_id: 201,
-            source_entity_id: Some(175),
-            related_entity_id: None,
-            related_entity_state: None,
+            payload: crate::feature::entry_payload(201, Some(175), None, None),
             prefixed: true,
             offset: 20,
             end_offset: 0,
@@ -998,11 +992,10 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         offset: 0,
     };
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -1125,11 +1118,10 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
 fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
     let entry =
         |entity_id, class_id, source_entity_id, offset| crate::feature::FeatureEntityTableEntry {
+            payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
             entity_id,
             class_id,
-            source_entity_id,
-            related_entity_id: None,
-            related_entity_state: None,
             prefixed: true,
             offset,
             end_offset: offset + 1,

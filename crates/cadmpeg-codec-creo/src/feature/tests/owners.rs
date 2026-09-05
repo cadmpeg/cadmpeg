@@ -122,9 +122,7 @@ fn generated_entity_table(owner: u32, source_ids: &[u32]) -> FeatureEntityTable 
             .map(|(index, source_id)| FeatureEntityTableEntry {
                 entity_id: index as u32 + 1,
                 class_id: 200,
-                source_entity_id: Some(*source_id),
-                related_entity_id: None,
-                related_entity_state: None,
+                payload: crate::feature::entry_payload(200, Some(*source_id), None, None),
                 prefixed: true,
                 offset: index,
                 end_offset: index + 1,
@@ -238,9 +236,7 @@ fn saved_section_owner_uses_only_class_200_source_ids() {
     table.entries.push(FeatureEntityTableEntry {
         entity_id: 2,
         class_id: 201,
-        source_entity_id: Some(10),
-        related_entity_id: None,
-        related_entity_state: None,
+        payload: crate::feature::entry_payload(201, Some(10), None, None),
         prefixed: true,
         offset: 1,
         end_offset: 2,

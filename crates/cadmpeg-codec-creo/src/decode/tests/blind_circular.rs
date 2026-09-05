@@ -38,11 +38,10 @@ use std::collections::BTreeSet;
 #[test]
 fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -248,11 +247,10 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
             offset: 0,
         });
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -307,11 +305,10 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
 #[test]
 fn compact_hole_materialized_core_establishes_the_simple_form() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -368,14 +365,14 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         ),
         Some(117)
     );
-    table.entries[2].source_entity_id = None;
+    table.entries[2].payload = crate::feature::EntryPayload::Source { entity: None };
     assert!(compact_simple_hole_cylinder_id(
         107,
         std::slice::from_ref(&table),
         std::slice::from_ref(&row),
     )
     .is_none());
-    table.entries[2].source_entity_id = Some(0);
+    table.entries[2].payload = crate::feature::EntryPayload::Source { entity: Some(0) };
     table.table_class_id = 28;
     assert!(compact_simple_hole_cylinder_id(
         107,
@@ -1762,11 +1759,10 @@ fn ordered_parallel_caps_define_blind_direction_and_depth() {
 #[test]
 fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -1823,7 +1819,8 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
         ))
     );
 
-    scan.features.entity_tables[0].entries[2].source_entity_id = None;
+    scan.features.entity_tables[0].entries[2].payload =
+        crate::feature::EntryPayload::Source { entity: None };
     assert!(generated_cap_plane_extent(&scan, &ir, 7).is_none());
     scan.features.entity_tables[0] = table.clone();
     scan.features.entity_tables.push(table);

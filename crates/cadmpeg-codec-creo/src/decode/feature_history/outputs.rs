@@ -252,7 +252,7 @@ pub(in super::super) fn new_sheet_output_surface_id(
     };
     let generated = unique_table(29)?;
     (owner.class_id == 200
-        && owner.source_entity_id == Some(feature_id)
+        && owner.source_entity_id() == Some(feature_id)
         && output.entity_id == owner.entity_id
         && generated.surface_ids().contains(&output.class_id)
         && generated
@@ -517,7 +517,7 @@ pub(in super::super) fn feature_parameters(
         .filter(|table| table.feature_id == feature_id)
     {
         for entry in &table.entries {
-            let Some(source_entity_id) = entry.source_entity_id else {
+            let Some(source_entity_id) = entry.source_entity_id() else {
                 continue;
             };
             insert_feature_parameter(

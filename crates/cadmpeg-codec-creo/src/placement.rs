@@ -85,7 +85,7 @@ fn generated_cylinder_section_transform(
             entry.class_id == 200 && table.surface_ids().contains(&entry.entity_id)
         })
     {
-        let Some(external_id) = entry.source_entity_id else {
+        let Some(external_id) = entry.source_entity_id() else {
             continue;
         };
         let Some(segment) = definition.segments.as_ref()?.segment(external_id) else {
@@ -263,7 +263,7 @@ fn generated_planar_section_transform(
         let Some(model_plane) = generated_plane_equation(entry) else {
             continue;
         };
-        let Some(segment) = entry.source_entity_id.and_then(|id| segments.segment(id)) else {
+        let Some(segment) = entry.source_entity_id().and_then(|id| segments.segment(id)) else {
             continue;
         };
         (segment.kind == FeatureSegmentKind::Line).then_some(())?;
@@ -423,7 +423,7 @@ fn generated_planar_table_shape(table: &FeatureEntityTable) -> bool {
         || rest.is_empty()
         || !rest
             .iter()
-            .all(|entry| entry.class_id == 200 && entry.source_entity_id.is_some())
+            .all(|entry| entry.class_id == 200 && entry.source_entity_id().is_some())
     {
         return false;
     }
@@ -952,7 +952,7 @@ fn circular_profile_aligned_origin(
     let [table] = tables.as_slice() else {
         return None;
     };
-    let profile_external_id = table.entries[2].source_entity_id?;
+    let profile_external_id = table.entries[2].source_entity_id()?;
     let profile_internal_id = definition
         .order_table
         .as_ref()?

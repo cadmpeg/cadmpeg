@@ -909,7 +909,7 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
         [entry]
             if entry.class_id == 200
                 && entry.entity_id == surface.id
-                && entry.source_entity_id == Some(0)
+                && entry.source_entity_id() == Some(0)
                 && generated.surface_ids().as_slice() == [surface.id]
     ) && topology
         .entries
@@ -917,7 +917,7 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
         .map(|entry| entry.class_id)
         .eq([221, 222, 220, 220])
         && owner_entry.class_id == 200
-        && owner_entry.source_entity_id == Some(feature_id)
+        && owner_entry.source_entity_id() == Some(feature_id)
         && matches!(
             output.entries.as_slice(),
             [entry]

@@ -520,11 +520,10 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             offset: 0,
         });
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -623,11 +622,15 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
 #[test]
 fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
     let entry = |entity_id, class_id, related_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(
+            class_id,
+            None,
+            related_entity_id,
+            related_entity_id.map(|_| 0),
+        ),
+
         entity_id,
         class_id,
-        source_entity_id: None,
-        related_entity_id,
-        related_entity_state: related_entity_id.map(|_| 0),
         prefixed: true,
         offset: entity_id as usize,
         end_offset: entity_id as usize,
@@ -667,7 +670,10 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
     assert_eq!(feature_surface_transitions(17, &[partial], &rows), None);
 
     let mut conflicting = table.clone();
-    conflicting.entries[3].related_entity_id = Some(101);
+    conflicting.entries[3].payload = crate::feature::EntryPayload::Related {
+        entity: 101,
+        state: crate::feature::RelatedState::Zero,
+    };
     assert_eq!(feature_surface_transitions(17, &[conflicting], &rows), None);
     let mut wrong_predecessor_class = table.clone();
     wrong_predecessor_class.entries[0].class_id = 219;
@@ -687,11 +693,10 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
 #[test]
 fn draft_neutral_plane_requires_one_owned_class_209_plane() {
     let entry = |entity_id, class_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, None, None, None),
+
         entity_id,
         class_id,
-        source_entity_id: None,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: true,
         offset: entity_id as usize,
         end_offset: entity_id as usize,
@@ -754,9 +759,7 @@ fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
         entries: vec![crate::feature::FeatureEntityTableEntry {
             entity_id: 226,
             class_id: 209,
-            source_entity_id: None,
-            related_entity_id: None,
-            related_entity_state: None,
+            payload: crate::feature::entry_payload(209, None, None, None),
             prefixed: true,
             offset: 0,
             end_offset: 0,
@@ -993,11 +996,10 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
 #[test]
 fn named_linear_sweep_reuses_materialized_cap_extent() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,
@@ -1065,11 +1067,10 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
 #[test]
 fn boundary_surface_entity_graph_requires_the_complete_generated_chain() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: true,
         offset: 0,
         end_offset: 0,
@@ -1127,11 +1128,10 @@ fn boundary_surface_entity_graph_requires_the_complete_generated_chain() {
 #[test]
 fn new_sheet_output_requires_an_owned_output_surface() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: true,
         offset: 0,
         end_offset: 0,
