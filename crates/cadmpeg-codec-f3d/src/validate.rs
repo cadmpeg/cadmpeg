@@ -1647,7 +1647,6 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 utf16_end(image.asset_name_offset, &image.asset_name) == Some(scope.byte_offset)
             })
             && image.visibility_offset == image.geometry_byte_offset.saturating_add(25)
-            && design::decode::canvas::canvas_mirroring(image.boundary_segments).is_some()
             && !image.geometry_class_tag.is_empty()
             && image
                 .geometry_class_tag

@@ -2979,6 +2979,7 @@ fn canvas_image_wire_derives_visibility_and_geometry_values() {
         ("origin", serde_json::json!({"x":11.0,"y":20.0,"z":30.0})),
         ("u_axis", serde_json::json!({"x":1.0,"y":1.0,"z":0.0})),
         ("v_axis", serde_json::json!({"x":0.0,"y":0.0,"z":0.0})),
+        ("boundary_segments", serde_json::json!([[{"u":-2.0,"v":-1.0},{"u":3.0,"v":-1.0}],[{"u":-2.0,"v":4.0},{"u":2.0,"v":4.0}]])),
     ] {
         let mut value = base.clone();
         value[field] = replacement;
@@ -3022,4 +3023,22 @@ fn canvas_geometry_payload_decodes_opacity_and_plane_frame() {
     payload[4] = 0;
     payload[53..61].copy_from_slice(&1.0f64.to_le_bytes());
     assert!(DesignCanvasGeometryPayload::try_from(payload.as_slice()).is_err());
+}
+
+#[test]
+fn canvas_bounds_preserve_segment_order_and_derive_extents() {
+    use cadmpeg_ir::math::Point2;
+    for (segments, mirroring) in [
+        ([[Point2::new(3.0, 4.0), Point2::new(-2.0, 4.0)], [Point2::new(3.0, -1.0), Point2::new(-2.0, -1.0)]], (true, true)),
+        ([[Point2::new(3.0, -1.0), Point2::new(3.0, 4.0)], [Point2::new(-2.0, -1.0), Point2::new(-2.0, 4.0)]], (true, false)),
+    ] {
+        let bounds = super::DesignCanvasBounds::try_from(segments).expect("Canvas bounds");
+        assert_eq!(bounds.segments(), segments);
+        assert_eq!(bounds.mirroring(), mirroring);
+        assert_eq!(bounds.extents(), [Point2::new(-2.0, -1.0), Point2::new(3.0, 4.0)]);
+    }
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let segments = [[Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)], [Point2::new(-2.0, 4.0), Point2::new(invalid, 4.0)]];
+        assert!(super::DesignCanvasBounds::try_from(segments).is_err());
+    }
 }

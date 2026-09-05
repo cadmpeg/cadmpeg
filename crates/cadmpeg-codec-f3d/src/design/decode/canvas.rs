@@ -8,7 +8,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::ids;
-use crate::records::{DesignCanvasImage, DesignCanvasGeometryPayload, DesignCanvasPrologue, DesignParameterScope};
+use crate::records::{DesignCanvasImage, DesignCanvasBounds, DesignCanvasGeometryPayload, DesignCanvasPrologue, DesignParameterScope};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
@@ -67,31 +67,8 @@ pub fn project_canvas_images(
         else {
             continue;
         };
-        let Some((mirror_u, mirror_v)) = canvas_mirroring(image.boundary_segments) else {
-            continue;
-        };
-        let mut u_values = image
-            .boundary_segments
-            .iter()
-            .flatten()
-            .map(|point| point.u);
-        let mut v_values = image
-            .boundary_segments
-            .iter()
-            .flatten()
-            .map(|point| point.v);
-        let (Some(mut u_min), Some(mut v_min)) = (u_values.next(), v_values.next()) else {
-            continue;
-        };
-        let (mut u_max, mut v_max) = (u_min, v_min);
-        for value in u_values {
-            u_min = u_min.min(value);
-            u_max = u_max.max(value);
-        }
-        for value in v_values {
-            v_min = v_min.min(value);
-            v_max = v_max.max(value);
-        }
+        let (mirror_u, mirror_v) = image.boundary.mirroring();
+        let [minimum, maximum] = image.boundary.extents();
         let Some(asset) = embedded_image_asset(scan, &image.asset_name)? else {
             continue;
         };
@@ -112,8 +89,8 @@ pub fn project_canvas_images(
             u_axis,
             v_axis,
             bounds: [
-                Point2::new(u_min * DESIGN_LENGTH_TO_MM, v_min * DESIGN_LENGTH_TO_MM),
-                Point2::new(u_max * DESIGN_LENGTH_TO_MM, v_max * DESIGN_LENGTH_TO_MM),
+                Point2::new(minimum.u * DESIGN_LENGTH_TO_MM, minimum.v * DESIGN_LENGTH_TO_MM),
+                Point2::new(maximum.u * DESIGN_LENGTH_TO_MM, maximum.v * DESIGN_LENGTH_TO_MM),
             ],
             opacity: Some(f64::from(opacity)),
         };
@@ -178,9 +155,6 @@ fn parse_canvas_image(
     let mut coordinates = [0.0; 8];
     for (coordinate, offset) in coordinates.iter_mut().zip(boundary_offsets) {
         *coordinate = View::f64_le_at(bytes, offset)?;
-        if !coordinate.is_finite() {
-            return None;
-        }
     }
     let boundary_segments = [
         [
@@ -192,7 +166,7 @@ fn parse_canvas_image(
             Point2::new(coordinates[6], coordinates[7]),
         ],
     ];
-    canvas_mirroring(boundary_segments)?;
+    let boundary = DesignCanvasBounds::try_from(boundary_segments).ok()?;
 
     let plane_at = geometry_at + 58;
     let scope_reference_at = geometry_at + 146;
@@ -247,7 +221,7 @@ fn parse_canvas_image(
         paired_geometry_class_tag,
         paired_geometry_byte_offset: u64::try_from(paired_at).ok()?,
         paired_component_reference_offset: u64::try_from(paired_component_at + 1).ok()?,
-        boundary_segments,
+        boundary,
         boundary_coordinate_offsets: boundary_offsets.map(|offset| offset as u64),
         second_boundary_present_offset: u64::try_from(asset_at + 11).ok()?,
         plane_entity_suffix,
@@ -270,34 +244,10 @@ fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
     (bytes.get(at) == Some(&1)).then(|| View::u32_le_at(bytes, at + 1))?
 }
 
-pub(crate) fn canvas_mirroring(segments: [[Point2; 2]; 2]) -> Option<(bool, bool)> {
-    let [[a, b], [c, d]] = segments;
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= 64.0 * f64::EPSILON * left.abs().max(right.abs()).max(1.0)
-    };
-    let horizontal = close(a.v, b.v)
-        && close(c.v, d.v)
-        && close(a.u, c.u)
-        && close(b.u, d.u)
-        && !close(a.v, c.v);
-    let vertical = close(a.u, b.u)
-        && close(c.u, d.u)
-        && close(a.v, c.v)
-        && close(b.v, d.v)
-        && !close(a.u, c.u);
-    if horizontal {
-        Some((a.u > b.u, a.v > c.v))
-    } else if vertical {
-        Some((a.u > c.u, a.v > b.v))
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        canvas_mirroring,
+        DesignCanvasBounds,
     };
     use cadmpeg_ir::math::Point2;
 
@@ -306,62 +256,62 @@ mod tests {
     #[test]
     fn canvas_bounds_decode_u_and_v_mirroring_from_endpoint_order() {
         assert_eq!(
-            canvas_mirroring([
+            DesignCanvasBounds::try_from([
                 [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
                 [Point2::new(-2.0, 4.0), Point2::new(3.0, 4.0)],
-            ]),
+            ]).ok().map(DesignCanvasBounds::mirroring),
             Some((false, false))
         );
         assert_eq!(
-            canvas_mirroring([
+            DesignCanvasBounds::try_from([
                 [Point2::new(3.0, -1.0), Point2::new(-2.0, -1.0)],
                 [Point2::new(3.0, 4.0), Point2::new(-2.0, 4.0)],
-            ]),
+            ]).ok().map(DesignCanvasBounds::mirroring),
             Some((true, false))
         );
         assert_eq!(
-            canvas_mirroring([
+            DesignCanvasBounds::try_from([
                 [Point2::new(-2.0, 4.0), Point2::new(3.0, 4.0)],
                 [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
-            ]),
+            ]).ok().map(DesignCanvasBounds::mirroring),
             Some((false, true))
         );
         assert_eq!(
-            canvas_mirroring([
+            DesignCanvasBounds::try_from([
                 [Point2::new(3.0, 4.0), Point2::new(-2.0, 4.0)],
                 [Point2::new(3.0, -1.0), Point2::new(-2.0, -1.0)],
-            ]),
+            ]).ok().map(DesignCanvasBounds::mirroring),
             Some((true, true))
         );
         assert_eq!(
-            canvas_mirroring([
+            DesignCanvasBounds::try_from([
                 [Point2::new(-2.0, 4.0), Point2::new(-2.0, -1.0)],
                 [Point2::new(3.0, 4.0), Point2::new(3.0, -1.0)],
-            ]),
+            ]).ok().map(DesignCanvasBounds::mirroring),
             Some((false, true))
         );
         assert_eq!(
-            canvas_mirroring([
+            DesignCanvasBounds::try_from([
                 [Point2::new(3.0, -1.0), Point2::new(3.0, 4.0)],
                 [Point2::new(-2.0, -1.0), Point2::new(-2.0, 4.0)],
-            ]),
+            ]).ok().map(DesignCanvasBounds::mirroring),
             Some((true, false))
         );
         assert_eq!(
-            canvas_mirroring([
+            DesignCanvasBounds::try_from([
                 [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
                 [
                     Point2::new(f64::from_bits((-2.0f64).to_bits() + 4), 4.0),
                     Point2::new(f64::from_bits(3.0f64.to_bits() + 4), 4.0),
                 ],
-            ]),
+            ]).ok().map(DesignCanvasBounds::mirroring),
             Some((false, false))
         );
         assert_eq!(
-            canvas_mirroring([
+            DesignCanvasBounds::try_from([
                 [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
                 [Point2::new(-2.0, 4.0), Point2::new(2.0, 4.0)],
-            ]),
+            ]).ok().map(DesignCanvasBounds::mirroring),
             None
         );
     }

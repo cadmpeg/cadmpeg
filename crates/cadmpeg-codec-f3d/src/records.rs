@@ -14824,6 +14824,62 @@ impl DesignCanvasGeometryPayload {
     }
 }
 
+/// Authored Canvas boundary segments in an admitted horizontal or vertical form.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DesignCanvasBounds {
+    form: DesignCanvasBoundaryForm,
+}
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum DesignCanvasBoundaryForm {
+    Horizontal([[Point2; 2]; 2]),
+    Vertical([[Point2; 2]; 2]),
+}
+impl TryFrom<[[Point2; 2]; 2]> for DesignCanvasBounds {
+    type Error = String;
+    fn try_from(segments: [[Point2; 2]; 2]) -> Result<Self, Self::Error> {
+        if segments.iter().flatten().any(|point| !point.u.is_finite() || !point.v.is_finite()) {
+            return Err("boundary_segments must contain finite coordinates".into());
+        }
+        let [[a, b], [c, d]] = segments;
+        let close = |left: f64, right: f64| {
+            (left - right).abs() <= 64.0 * f64::EPSILON * left.abs().max(right.abs()).max(1.0)
+        };
+        let horizontal = close(a.v, b.v) && close(c.v, d.v) && close(a.u, c.u)
+            && close(b.u, d.u) && !close(a.v, c.v);
+        let vertical = close(a.u, b.u) && close(c.u, d.u) && close(a.v, c.v)
+            && close(b.v, d.v) && !close(a.u, c.u);
+        let form = if horizontal {
+            DesignCanvasBoundaryForm::Horizontal(segments)
+        } else if vertical {
+            DesignCanvasBoundaryForm::Vertical(segments)
+        } else {
+            return Err("boundary_segments must form an admitted horizontal or vertical pair".into());
+        };
+        Ok(Self { form })
+    }
+}
+impl DesignCanvasBounds {
+    pub fn segments(self) -> [[Point2; 2]; 2] {
+        match self.form {
+            DesignCanvasBoundaryForm::Horizontal(segments) | DesignCanvasBoundaryForm::Vertical(segments) => segments,
+        }
+    }
+    pub fn mirroring(self) -> (bool, bool) {
+        match self.form {
+            DesignCanvasBoundaryForm::Horizontal([[a, b], [c, _]]) => (a.u > b.u, a.v > c.v),
+            DesignCanvasBoundaryForm::Vertical([[a, b], [c, _]]) => (a.u > c.u, a.v > b.v),
+        }
+    }
+    pub fn extents(self) -> [Point2; 2] {
+        let [[a, b], [c, d]] = self.segments();
+        let (minimum, maximum) = [b, c, d].into_iter().fold((a, a), |(minimum, maximum), point| {
+            (Point2::new(minimum.u.min(point.u), minimum.v.min(point.v)),
+             Point2::new(maximum.u.max(point.u), maximum.v.max(point.v)))
+        });
+        [minimum, maximum]
+    }
+}
+
 /// Canvas geometry flags; all other prologue bytes are fixed zero.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DesignCanvasPrologue {
@@ -14883,7 +14939,7 @@ pub struct DesignCanvasImage {
     /// Byte offset of the paired record's marked component reference.
     pub paired_component_reference_offset: u64,
     /// Two opposite boundary segments in plane-local coordinates.
-    pub boundary_segments: [[Point2; 2]; 2],
+    pub boundary: DesignCanvasBounds,
     /// Byte offsets of the eight boundary-coordinate f64 values.
     pub boundary_coordinate_offsets: [u64; 8],
     /// Byte offset of the presence marker preceding the second boundary segment.
@@ -15025,7 +15081,7 @@ impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
             paired_geometry_class_tag: wire.paired_geometry_class_tag,
             paired_geometry_byte_offset: wire.paired_geometry_byte_offset,
             paired_component_reference_offset: wire.paired_component_reference_offset,
-            boundary_segments: wire.boundary_segments,
+            boundary: DesignCanvasBounds::try_from(wire.boundary_segments)?,
             boundary_coordinate_offsets: wire.boundary_coordinate_offsets,
             second_boundary_present_offset: wire.second_boundary_present_offset,
             plane_entity_suffix: wire.plane_entity_suffix,
@@ -15063,7 +15119,7 @@ impl From<DesignCanvasImage> for DesignCanvasImageWire {
             paired_geometry_class_tag: value.paired_geometry_class_tag,
             paired_geometry_byte_offset: value.paired_geometry_byte_offset,
             paired_component_reference_offset: value.paired_component_reference_offset,
-            boundary_segments: value.boundary_segments,
+            boundary_segments: value.boundary.segments(),
             boundary_coordinate_offsets: value.boundary_coordinate_offsets,
             second_boundary_present_offset: value.second_boundary_present_offset,
             plane_entity_suffix: value.plane_entity_suffix,
