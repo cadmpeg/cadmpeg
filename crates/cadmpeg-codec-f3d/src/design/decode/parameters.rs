@@ -204,12 +204,11 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         family_discriminator,
         family_discriminator_offset: family_discriminator.map(|_| 22),
         source_ordinal,
-        owner_record_index,
+        owner: crate::records::DesignParameterOwnerKind::from_kind(kind, owner_record_index),
         expression,
         expression_offset: (expression_at + 4) as u64,
         source_kind,
         source_kind_offset: (source_kind_at + 4) as u64,
-        kind,
         unit,
         unit_offset: unit_offset.map(|offset| offset as u64),
         name,
@@ -287,12 +286,11 @@ fn parse_legacy_287_design_parameter(
         family_discriminator: None,
         family_discriminator_offset: None,
         source_ordinal,
-        owner_record_index: Some(owner_record_index),
+        owner: crate::records::DesignParameterOwnerKind::from_kind(kind, Some(owner_record_index)),
         expression,
         expression_offset: u64::try_from(legacy_287::EXPRESSION_LENGTH + 4).ok()?,
         source_kind,
         source_kind_offset: u64::try_from(source_kind_at.checked_add(4)?).ok()?,
-        kind,
         unit,
         unit_offset,
         name,
@@ -348,12 +346,11 @@ fn parse_legacy_design_parameter(
         family_discriminator: None,
         family_discriminator_offset: None,
         source_ordinal,
-        owner_record_index: Some(owner_record_index),
+        owner: crate::records::DesignParameterOwnerKind::from_kind(kind, Some(owner_record_index)),
         expression,
         expression_offset: (expression_at + 4) as u64,
         source_kind,
         source_kind_offset: (source_kind_at + 4) as u64,
-        kind,
         unit: Some(unit),
         unit_offset: Some((unit_at + 4) as u64),
         name,
@@ -421,7 +418,7 @@ pub fn decode_parameter_owners(
 ) -> Result<Vec<DesignParameterOwner>, CodecError> {
     if parameters
         .iter()
-        .all(|parameter| parameter.owner_record_index.is_none())
+        .all(|parameter| parameter.owner_record_index().is_none())
     {
         return Ok(Vec::new());
     }
@@ -461,7 +458,7 @@ pub fn decode_parameter_owners(
     }
     let mut out = Vec::new();
     for parameter in parameters {
-        let Some(owner_index) = parameter.owner_record_index else {
+        let Some(owner_index) = parameter.owner_record_index() else {
             continue;
         };
         let malformed = |invariant: &str| {

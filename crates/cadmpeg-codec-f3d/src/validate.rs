@@ -4685,7 +4685,7 @@ fn valid_work_plane_construction(
         && ctx.native.design_parameters.iter().any(|parameter| {
             design_stream(&parameter.id) == native_stream
                 && parameter.record_index == owner.parameter_record_index
-                && parameter.owner_record_index == Some(owner.record_index)
+                && parameter.owner_record_index() == Some(owner.record_index)
                 && parameter.source_kind == "ExtraOffset"
                 && parameter.evaluated_value.is_finite()
                 && parameter.evaluated_value == 0.0
@@ -6031,7 +6031,7 @@ fn validate_fillet_radius_groups<'a>(
             construction_groups_by_index.get(&(native_stream, assignment.group_record_index));
         let assignment_parameter = |record_index: u32| {
             let parameter = *parameters_by_index.get(&(native_stream, record_index))?;
-            let owner = *owners_by_index.get(&(native_stream, parameter.owner_record_index?))?;
+            let owner = *owners_by_index.get(&(native_stream, parameter.owner_record_index()?))?;
             (owner.scope_record_index == assignment.scope_record_index
                 && owner.parameter_record_index == record_index)
                 .then_some(parameter)
@@ -8278,7 +8278,7 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .get(&(native_stream, owner.companion_record_index))
                 .is_some_and(|companion| companion.owner_record_index == owner.record_index)
             && parameter.is_some_and(|parameter| {
-                parameter.owner_record_index == Some(owner.record_index)
+                parameter.owner_record_index() == Some(owner.record_index)
                     && parameter.evaluated_value.to_bits() == owner.evaluated_value.to_bits()
             })
             && unique_index
@@ -8375,7 +8375,9 @@ fn validate_dimension_recipe_records<'a>(
                 .and_then(|owner| {
                     parameters_by_index.get(&(native_stream, owner.parameter_record_index))
                 })
-                .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
+                .is_some_and(|parameter| {
+                    parameter.kind() == records::DesignParameterKind::Dimension
+                })
         });
         let recipe = native
             .construction_recipes
@@ -8464,7 +8466,7 @@ fn validate_dimension_companion_recipes<'a>(
             .and_then(|owner| {
                 parameters_by_index.get(&(native_stream, owner.parameter_record_index))
             })
-            .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension);
+            .is_some_and(|parameter| parameter.kind() == records::DesignParameterKind::Dimension);
         if dimension_companion
             && companion.owned_recipe_ids.iter().any(|recipe_id| {
                 !dimension_recipe_ids.contains(&(native_stream, recipe_id.as_str()))
@@ -8513,7 +8515,9 @@ fn validate_dimension_locus_pairs<'a>(
                 .and_then(|owner| {
                     parameters_by_index.get(&(native_stream, owner.parameter_record_index))
                 })
-                .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
+                .is_some_and(|parameter| {
+                    parameter.kind() == records::DesignParameterKind::Dimension
+                })
         });
         let governs_following_dimension =
             design::decode::dimension_frames::following_dimension_companion_record_index(
@@ -8609,7 +8613,7 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 && parameters_by_index
                     .get(&(native_stream, owner.parameter_record_index))
                     .is_some_and(|parameter| {
-                        parameter.kind == records::DesignParameterKind::Dimension
+                        parameter.kind() == records::DesignParameterKind::Dimension
                     })
         });
         let operand_start = frame.byte_offset.saturating_add(24);
@@ -8714,7 +8718,7 @@ fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>
             owner.parameter_record_index == frame.governing_parameter_record_index
                 && owner.companion_record_index == frame.governing_companion_record_index
                 && parameter.is_some_and(|parameter| {
-                    parameter.kind == records::DesignParameterKind::Dimension
+                    parameter.kind() == records::DesignParameterKind::Dimension
                 })
                 && companion
                     .is_some_and(|companion| companion.owner_record_index == owner.record_index)
@@ -8733,7 +8737,7 @@ fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>
                     && parameters_by_index
                         .get(&(native_stream, candidate.parameter_record_index))
                         .is_some_and(|parameter| {
-                            parameter.kind == records::DesignParameterKind::Dimension
+                            parameter.kind() == records::DesignParameterKind::Dimension
                         })
             })
             .min_by_key(|candidate| candidate.byte_offset);
@@ -8811,7 +8815,9 @@ fn validate_dimension_locus_groups<'a>(
                 .and_then(|owner| {
                     parameters_by_index.get(&(native_stream, owner.parameter_record_index))
                 })
-                .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
+                .is_some_and(|parameter| {
+                    parameter.kind() == records::DesignParameterKind::Dimension
+                })
         });
         let count = group.loci.len();
         let loci_start = group.byte_offset.saturating_add(24);
@@ -8930,7 +8936,9 @@ fn validate_dimension_null_locus_pairs<'a>(
                 .and_then(|owner| {
                     parameters_by_index.get(&(native_stream, owner.parameter_record_index))
                 })
-                .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
+                .is_some_and(|parameter| {
+                    parameter.kind() == records::DesignParameterKind::Dimension
+                })
         });
         let governs_following_dimension =
             design::decode::dimension_frames::following_dimension_companion_record_index(
@@ -8989,12 +8997,6 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
         } else {
             records::DesignParameterKind::Feature
         };
-        let owner_shape_valid = match parameter.kind {
-            records::DesignParameterKind::User => parameter.owner_record_index.is_none(),
-            records::DesignParameterKind::Dimension | records::DesignParameterKind::Feature => {
-                parameter.owner_record_index.is_some()
-            }
-        };
         let offsets_ordered = parameter.byte_offset < parameter.expression_offset
             && parameter.family_discriminator.is_some()
                 == parameter.family_discriminator_offset.is_some()
@@ -9020,12 +9022,12 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && parameter.unit.as_ref().is_none_or(|unit| !unit.is_empty())
             && parameter.unit.is_some() == parameter.unit_offset.is_some()
             && parameter.evaluated_value.is_finite()
-            && (parameter.family_discriminator.is_some() || parameter.owner_record_index.is_some())
+            && (parameter.family_discriminator.is_some()
+                || parameter.owner_record_index().is_some())
             && parameter.family_discriminator.is_none_or(|value| {
                 design::decode::parameters::valid_design_parameter_discriminator(value)
             })
-            && parameter.kind == expected_kind
-            && owner_shape_valid
+            && parameter.kind() == expected_kind
             && offsets_ordered
             && unique_index;
         if !valid {

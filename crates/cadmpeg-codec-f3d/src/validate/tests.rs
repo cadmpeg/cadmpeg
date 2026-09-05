@@ -803,12 +803,15 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
         family_discriminator: Some(0),
         family_discriminator_offset: Some(122),
         source_ordinal: 0,
-        owner_record_index: None,
+        owner: crate::records::DesignParameterOwnerKind::from_kind(
+            crate::records::DesignParameterKind::User,
+            None,
+        ),
         expression: "60 mm".into(),
         expression_offset: 136,
         source_kind: "User Parameter".into(),
         source_kind_offset: 166,
-        kind: crate::records::DesignParameterKind::User,
+
         unit: Some("mm".into()),
         unit_offset: Some(210),
         name: "Width".into(),
@@ -845,8 +848,9 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
 
     {
         let mut native = f3d_native_mut(&mut ir);
-        native.design_parameters[0].kind = crate::records::DesignParameterKind::Feature;
-        native.design_parameters[0].owner_record_index = Some(1234);
+        native.design_parameters[0].owner = crate::records::DesignParameterOwnerKind::Feature {
+            owner_record_index: 1234,
+        };
     }
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::NativeLinks
@@ -871,12 +875,15 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         family_discriminator: None,
         family_discriminator_offset: None,
         source_ordinal: 0,
-        owner_record_index: Some(100),
+        owner: crate::records::DesignParameterOwnerKind::from_kind(
+            DesignParameterKind::Feature,
+            Some(100),
+        ),
         expression: "6 cm".into(),
         expression_offset: 1_080,
         source_kind: "Feature Input".into(),
         source_kind_offset: 1_100,
-        kind: DesignParameterKind::Feature,
+
         unit: Some("cm".into()),
         unit_offset: Some(1_120),
         name: "Length".into(),
@@ -919,12 +926,15 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         family_discriminator: None,
         family_discriminator_offset: None,
         source_ordinal: 1,
-        owner_record_index: Some(200),
+        owner: crate::records::DesignParameterOwnerKind::from_kind(
+            DesignParameterKind::Feature,
+            Some(200),
+        ),
         expression: "OffsetX".into(),
         expression_offset: 1_440,
         source_kind: "Feature Input".into(),
         source_kind_offset: 1_470,
-        kind: DesignParameterKind::Feature,
+
         unit: None,
         unit_offset: None,
         name: "OffsetX".into(),

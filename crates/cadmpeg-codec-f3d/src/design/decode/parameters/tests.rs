@@ -88,7 +88,7 @@ fn class_287_parameter_accepts_the_compact_prefix_with_af_tail() {
         .expect("class-287 parameter");
     assert_eq!(parameter.class_tag, "287");
     assert_eq!(parameter.record_index, 887);
-    assert_eq!(parameter.owner_record_index, Some(886));
+    assert_eq!(parameter.owner_record_index(), Some(886));
     assert_eq!(parameter.source_ordinal, 20);
     assert_eq!(parameter.expression, "0.4375 in");
     assert_eq!(parameter.expression_offset, 45);
@@ -139,7 +139,7 @@ fn compact_owned_design_parameter_has_no_family_discriminator() {
         compact_owned_parameter_record(6653, 99, "82.00 mm", "Diameter", Some("mm"), "d99", 8.2);
     let parameter = parse_design_parameter(&bytes).expect("compact owned parameter");
     assert_eq!(parameter.record_index, 6654);
-    assert_eq!(parameter.owner_record_index, Some(6653));
+    assert_eq!(parameter.owner_record_index(), Some(6653));
     assert_eq!(parameter.source_ordinal, 99);
     assert_eq!(parameter.family_discriminator, None);
     assert_eq!(parameter.family_discriminator_offset, None);
@@ -171,7 +171,7 @@ fn legacy_owned_design_parameter_uses_the_compact_identity_prefix() {
 
     let parameter = parse_design_parameter(&bytes).expect("legacy owned parameter");
     assert_eq!(parameter.record_index, 439);
-    assert_eq!(parameter.owner_record_index, Some(437));
+    assert_eq!(parameter.owner_record_index(), Some(437));
     assert_eq!(parameter.source_ordinal, 5);
     assert_eq!(parameter.source_kind, "OffsetX");
     assert_eq!(parameter.unit.as_deref(), Some("mm"));
@@ -190,8 +190,8 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
         6.0,
     ))
     .unwrap();
-    assert_eq!(user.kind, DesignParameterKind::User);
-    assert_eq!(user.owner_record_index, None);
+    assert_eq!(user.kind(), DesignParameterKind::User);
+    assert_eq!(user.owner_record_index(), None);
     assert_eq!(user.unit.as_deref(), Some("mm"));
     assert_eq!(user.evaluated_value, 6.0);
 
@@ -204,8 +204,8 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
         3.0,
     ))
     .unwrap();
-    assert_eq!(feature.kind, DesignParameterKind::Feature);
-    assert_eq!(feature.owner_record_index, Some(44));
+    assert_eq!(feature.kind(), DesignParameterKind::Feature);
+    assert_eq!(feature.owner_record_index(), Some(44));
     assert_eq!(feature.expression, "Width / 2");
 
     let boolean = parse_design_parameter(&parameter_record(
@@ -243,7 +243,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     scale_factor[scale_factor_tail + 2] = 16;
     let scale_factor = parse_design_parameter(&scale_factor).expect("scale-factor parameter");
     assert_eq!(scale_factor.family_discriminator, Some(5));
-    assert_eq!(scale_factor.owner_record_index, Some(1331));
+    assert_eq!(scale_factor.owner_record_index(), Some(1331));
     assert_eq!(scale_factor.unit, None);
     assert_eq!(scale_factor.evaluated_value, 1.0);
 
@@ -305,7 +305,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     let sheet_metal = parse_design_parameter(&sheet_metal)
         .expect("sheet-metal parameter with ten-byte expression trailer");
     assert_eq!(sheet_metal.source_kind, "FlangeHeight");
-    assert_eq!(sheet_metal.owner_record_index, Some(301));
+    assert_eq!(sheet_metal.owner_record_index(), Some(301));
     assert_eq!(sheet_metal.evaluated_value, 5.0);
 }
 
@@ -828,12 +828,15 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         family_discriminator: Some(0),
         family_discriminator_offset: Some(222),
         source_ordinal: 0,
-        owner_record_index: Some(44),
+        owner: crate::records::DesignParameterOwnerKind::from_kind(
+            crate::records::DesignParameterKind::Feature,
+            Some(44),
+        ),
         expression: "6 cm".into(),
         expression_offset: 240,
         source_kind: "Distance".into(),
         source_kind_offset: 260,
-        kind: crate::records::DesignParameterKind::Feature,
+
         unit: Some("cm".into()),
         unit_offset: Some(280),
         name: "distance".into(),
@@ -899,12 +902,15 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
         family_discriminator: None,
         family_discriminator_offset: None,
         source_ordinal: 0,
-        owner_record_index: Some(21),
+        owner: crate::records::DesignParameterOwnerKind::from_kind(
+            DesignParameterKind::Dimension,
+            Some(21),
+        ),
         expression: "distance".into(),
         expression_offset: 0,
         source_kind: "Linear Dimension-1".into(),
         source_kind_offset: 0,
-        kind: DesignParameterKind::Dimension,
+
         unit: Some("mm".into()),
         unit_offset: Some(0),
         name: "d1".into(),

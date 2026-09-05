@@ -1580,15 +1580,15 @@ pub fn project_parameter_design_with_edge_identities(
         .map(|parameter| {
             let stream = native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM);
             let native_owner = parameter
-                .owner_record_index
+                .owner_record_index()
                 .and_then(|record_index| owners_by_index.get(&(stream, record_index)));
             let owner =
                 native_owner.and_then(|owner| scope_ids.get(&(stream, owner.scope_record_index)));
             let mut properties = BTreeMap::new();
-            if parameter.kind != DesignParameterKind::User {
+            if parameter.kind() != DesignParameterKind::User {
                 properties.insert("source_kind".into(), parameter.source_kind.clone());
             }
-            if let (Some(owner_record_index), None) = (parameter.owner_record_index, owner) {
+            if let (Some(owner_record_index), None) = (parameter.owner_record_index(), owner) {
                 properties.insert("owner_record_index".into(), owner_record_index.to_string());
             }
             let value = match parameter.unit.as_deref() {

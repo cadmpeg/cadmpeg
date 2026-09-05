@@ -56,7 +56,7 @@ fn container_only_dimension_parameters(
                 crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM)
                     == stream
                     && parameter.record_index == owner.parameter_record_index
-                    && parameter.kind == crate::records::DesignParameterKind::Dimension
+                    && parameter.kind() == crate::records::DesignParameterKind::Dimension
             });
             let parameter = parameters.next()?;
             parameters
@@ -79,7 +79,7 @@ fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize
                     crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM),
                     parameter.record_index,
                 ),
-                parameter.kind,
+                parameter.kind(),
             )
         })
         .collect::<HashMap<_, _>>();
@@ -1310,7 +1310,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .design_parameters
             .iter()
             .filter(|parameter| {
-                let Some(owner_record_index) = parameter.owner_record_index else {
+                let Some(owner_record_index) = parameter.owner_record_index() else {
                     return false;
                 };
                 let Some(stream) = crate::ids::native_stream(&parameter.id) else {
@@ -1459,7 +1459,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 .filter(|parameter| {
                     let stream = crate::ids::native_stream(&parameter.id)
                         .unwrap_or(crate::ids::DEFAULT_STREAM);
-                    parameter.kind == crate::records::DesignParameterKind::Dimension
+                    parameter.kind() == crate::records::DesignParameterKind::Dimension
                         && relation_bearing_parameters.contains(&(stream, parameter.record_index))
                         && !projected_dimension_parameters
                             .contains(&crate::ids::neutral_parameter_id(parameter))
@@ -4116,7 +4116,7 @@ fn extend_related_design_records(
         .chain(native.design_parameters.iter().filter_map(|parameter| {
             Some((
                 crate::ids::native_stream(&parameter.id)?.to_owned(),
-                parameter.owner_record_index?,
+                parameter.owner_record_index()?,
             ))
         }))
         .collect::<Vec<_>>();

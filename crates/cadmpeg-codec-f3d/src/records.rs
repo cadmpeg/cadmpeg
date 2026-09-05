@@ -249,9 +249,56 @@ pub enum DesignParameterKind {
     Feature,
 }
 
+/// Who owns a Design parameter: a user parameter, a dimension, or a feature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesignParameterOwnerKind {
+    User,
+    Dimension { owner_record_index: u32 },
+    Feature { owner_record_index: u32 },
+}
+
+impl DesignParameterOwnerKind {
+    pub(crate) fn kind(self) -> DesignParameterKind {
+        match self {
+            Self::User => DesignParameterKind::User,
+            Self::Dimension { .. } => DesignParameterKind::Dimension,
+            Self::Feature { .. } => DesignParameterKind::Feature,
+        }
+    }
+
+    pub(crate) fn owner_record_index(self) -> Option<u32> {
+        match self {
+            Self::User => None,
+            Self::Dimension { owner_record_index } | Self::Feature { owner_record_index } => {
+                Some(owner_record_index)
+            }
+        }
+    }
+
+    pub(crate) fn from_kind(kind: DesignParameterKind, owner_record_index: Option<u32>) -> Self {
+        match (kind, owner_record_index) {
+            (DesignParameterKind::User, _) => Self::User,
+            (DesignParameterKind::Dimension, Some(owner_record_index)) => {
+                Self::Dimension { owner_record_index }
+            }
+            (DesignParameterKind::Feature, Some(owner_record_index)) => {
+                Self::Feature { owner_record_index }
+            }
+            (DesignParameterKind::Dimension, None) => Self::Dimension {
+                owner_record_index: 0,
+            },
+            (DesignParameterKind::Feature, None) => Self::Feature {
+                owner_record_index: 0,
+            },
+        }
+    }
+}
+
 /// One indexed Design parameter or expression record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignParameterSerde"))]
+#[serde(try_from = "DesignParameterSerde", into = "DesignParameterSerde")]
 pub struct DesignParameter {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -269,9 +316,9 @@ pub struct DesignParameter {
     pub family_discriminator_offset: Option<u64>,
     /// Source ordering value stored by the parameter record.
     pub source_ordinal: u32,
-    /// Indexed owner record for feature and dimension parameters.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub owner_record_index: Option<u32>,
+    /// Indexed owner: user parameters have none; feature and dimension
+    /// parameters name their owning record.
+    pub owner: DesignParameterOwnerKind,
     /// Literal or symbolic source expression.
     pub expression: String,
     /// Byte offset of the expression's UTF-16LE code units.
@@ -281,8 +328,6 @@ pub struct DesignParameter {
     pub source_kind: String,
     /// Byte offset of the source-family UTF-16LE code units.
     pub source_kind_offset: u64,
-    /// Parameter family derived from `source_kind`.
-    pub kind: DesignParameterKind,
     /// Declared unit token; absent for dimensionless and Boolean parameters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
@@ -297,6 +342,126 @@ pub struct DesignParameter {
     pub evaluated_value: f64,
     /// Byte offset of `evaluated_value`.
     pub evaluated_value_offset: u64,
+}
+
+impl DesignParameter {
+    pub(crate) fn kind(&self) -> DesignParameterKind {
+        self.owner.kind()
+    }
+
+    pub(crate) fn owner_record_index(&self) -> Option<u32> {
+        self.owner.owner_record_index()
+    }
+}
+
+fn design_parameter_kind_from_source(source_kind: &str) -> DesignParameterKind {
+    if source_kind == "User Parameter" {
+        DesignParameterKind::User
+    } else if source_kind.contains("Dimension") {
+        DesignParameterKind::Dimension
+    } else {
+        DesignParameterKind::Feature
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignParameterSerde {
+    id: String,
+    byte_offset: u64,
+    class_tag: String,
+    record_index: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    family_discriminator: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    family_discriminator_offset: Option<u64>,
+    source_ordinal: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner_record_index: Option<u32>,
+    expression: String,
+    expression_offset: u64,
+    source_kind: String,
+    source_kind_offset: u64,
+    kind: DesignParameterKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    unit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    unit_offset: Option<u64>,
+    name: String,
+    name_offset: u64,
+    evaluated_value: f64,
+    evaluated_value_offset: u64,
+}
+
+impl TryFrom<DesignParameterSerde> for DesignParameter {
+    type Error = String;
+
+    fn try_from(wire: DesignParameterSerde) -> Result<Self, Self::Error> {
+        let derived = design_parameter_kind_from_source(&wire.source_kind);
+        if wire.kind != derived {
+            return Err("design parameter kind disagrees with source_kind".into());
+        }
+        let owner = match (wire.kind, wire.owner_record_index) {
+            (DesignParameterKind::User, None) => DesignParameterOwnerKind::User,
+            (DesignParameterKind::Dimension, Some(owner_record_index)) => {
+                DesignParameterOwnerKind::Dimension { owner_record_index }
+            }
+            (DesignParameterKind::Feature, Some(owner_record_index)) => {
+                DesignParameterOwnerKind::Feature { owner_record_index }
+            }
+            _ => {
+                return Err("design parameter owner_record_index disagrees with kind".into());
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            record_index: wire.record_index,
+            family_discriminator: wire.family_discriminator,
+            family_discriminator_offset: wire.family_discriminator_offset,
+            source_ordinal: wire.source_ordinal,
+            owner,
+            expression: wire.expression,
+            expression_offset: wire.expression_offset,
+            source_kind: wire.source_kind,
+            source_kind_offset: wire.source_kind_offset,
+            unit: wire.unit,
+            unit_offset: wire.unit_offset,
+            name: wire.name,
+            name_offset: wire.name_offset,
+            evaluated_value: wire.evaluated_value,
+            evaluated_value_offset: wire.evaluated_value_offset,
+        })
+    }
+}
+
+impl From<DesignParameter> for DesignParameterSerde {
+    fn from(parameter: DesignParameter) -> Self {
+        let kind = parameter.kind();
+        let owner_record_index = parameter.owner_record_index();
+        Self {
+            id: parameter.id,
+            byte_offset: parameter.byte_offset,
+            class_tag: parameter.class_tag,
+            record_index: parameter.record_index,
+            family_discriminator: parameter.family_discriminator,
+            family_discriminator_offset: parameter.family_discriminator_offset,
+            source_ordinal: parameter.source_ordinal,
+            owner_record_index,
+            expression: parameter.expression,
+            expression_offset: parameter.expression_offset,
+            source_kind: parameter.source_kind,
+            source_kind_offset: parameter.source_kind_offset,
+            kind,
+            unit: parameter.unit,
+            unit_offset: parameter.unit_offset,
+            name: parameter.name,
+            name_offset: parameter.name_offset,
+            evaluated_value: parameter.evaluated_value,
+            evaluated_value_offset: parameter.evaluated_value_offset,
+        }
+    }
 }
 
 /// Indexed record that owns one Design parameter.

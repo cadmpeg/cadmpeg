@@ -583,9 +583,9 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
             )));
         }
         validate_dynamic_class_tag(&parameter.class_tag, "Design parameter")?;
-        if parameter.kind != crate::records::DesignParameterKind::User
+        if parameter.kind() != crate::records::DesignParameterKind::User
             || parameter.source_kind != "User Parameter"
-            || parameter.owner_record_index.is_some()
+            || parameter.owner_record_index().is_some()
         {
             return Err(CodecError::NotImplemented(
                 "source-less F3D owned Design parameter records are not writable".into(),

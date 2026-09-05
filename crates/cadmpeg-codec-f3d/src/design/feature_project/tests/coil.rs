@@ -30,12 +30,15 @@ fn parameter(
         family_discriminator: None,
         family_discriminator_offset: None,
         source_ordinal: 0,
-        owner_record_index: None,
+        owner: crate::records::DesignParameterOwnerKind::from_kind(
+            DesignParameterKind::Feature,
+            None,
+        ),
         expression: value.to_string(),
         expression_offset: 0,
         source_kind: source_kind.into(),
         source_kind_offset: 0,
-        kind: DesignParameterKind::Feature,
+
         unit: unit.map(str::to_owned),
         unit_offset: None,
         name: source_kind.into(),

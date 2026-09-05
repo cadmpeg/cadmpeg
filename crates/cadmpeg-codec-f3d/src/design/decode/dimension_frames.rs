@@ -61,7 +61,7 @@ pub fn decode_dimension_recipe_records(
             let stream = native_stream(&owner.id)?;
             parameters
                 .get(&(stream, owner.parameter_record_index))
-                .is_some_and(|parameter| parameter.kind == DesignParameterKind::Dimension)
+                .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
                 .then_some((stream.to_owned(), owner.record_index))
         })
         .collect::<HashSet<_>>();
@@ -620,7 +620,7 @@ pub fn decode_dimension_locus_pairs(
             };
             parameters
                 .get(&(scope, owner.parameter_record_index))
-                .is_some_and(|parameter| parameter.kind == DesignParameterKind::Dimension)
+                .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
         })
         .filter_map(|owner| {
             Some((
@@ -711,7 +711,7 @@ pub(crate) fn following_dimension_companion_record_index<'a>(
             && parameters
                 .get(&owner.parameter_record_index)
                 .and_then(|parameter| *parameter)
-                .is_some_and(|parameter| parameter.kind == DesignParameterKind::Dimension)
+                .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
     });
     let owner = matches.next()?;
     matches
@@ -847,7 +847,7 @@ pub fn decode_dimension_null_locus_pairs(
             };
             parameters
                 .get(&(scope, owner.parameter_record_index))
-                .is_some_and(|parameter| parameter.kind == DesignParameterKind::Dimension)
+                .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
         })
         .filter_map(|owner| {
             Some((
@@ -1055,7 +1055,7 @@ pub fn decode_dimension_annotation_frames(
             };
             parameters
                 .get(&(stream, owner.parameter_record_index))
-                .is_some_and(|parameter| parameter.kind == DesignParameterKind::Dimension)
+                .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
         })
         .filter_map(|owner| {
             Some((
@@ -1390,7 +1390,7 @@ pub fn decode_dimension_presentation_frames(
         .filter_map(|parameter| {
             Some((
                 (native_stream(&parameter.id)?, parameter.record_index),
-                parameter.kind,
+                parameter.kind(),
             ))
         })
         .collect::<HashMap<_, _>>();
@@ -1628,7 +1628,7 @@ pub fn decode_dimension_locus_groups(
             };
             parameters
                 .get(&(scope, owner.parameter_record_index))
-                .is_some_and(|parameter| parameter.kind == DesignParameterKind::Dimension)
+                .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
         })
         .filter_map(|owner| {
             Some((
