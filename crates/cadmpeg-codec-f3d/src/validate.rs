@@ -1688,7 +1688,6 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .is_none_or(crate::paramesh::valid_mesh_uuid)
                 && mesh_record_offset_is(&body.guid_record, 36, body.fusion_uuid_offset)
                 && body.guid_record.frame_length() >= 83
-                && design::decode::mesh::valid_mesh_transform(body.transform)
                 && body.tessellation_id.as_deref().is_none_or(|id| {
                     tessellation_ids.contains(id) && projected_tessellations.insert(id)
                 });

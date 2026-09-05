@@ -2572,3 +2572,24 @@ fn mesh_record_identity_preserves_wire_and_rejects_invalid_headers() {
         assert!(serde_json::from_value::<super::DesignMeshRecordIdentity>(invalid).unwrap_err().to_string().contains(field));
     }
 }
+
+#[test]
+fn mesh_affine_transform_preserves_rows_and_rejects_invalid_maps() {
+    let rows = [[-2.0, 0.0, 0.0, 3.0], [0.0, 4.0, 0.0, 5.0],
+        [0.0, 0.0, 6.0, 7.0], [0.0, 0.0, 0.0, 1.0]];
+    let value = super::MeshAffineTransform::try_from(rows).unwrap();
+    let json = serde_json::to_value(rows).unwrap();
+    assert_eq!(serde_json::to_value(value).unwrap(), json);
+    assert_eq!(serde_json::from_value::<super::MeshAffineTransform>(json).unwrap(), value);
+    for (row, column, invalid) in [(3, 0, 1.0), (3, 3, 0.0), (1, 1, 0.0)] {
+        let mut changed = rows;
+        changed[row][column] = invalid;
+        assert!(serde_json::from_value::<super::MeshAffineTransform>(
+            serde_json::to_value(changed).unwrap()).is_err());
+    }
+    let mut cells = value.cells();
+    cells[0] = f64::INFINITY;
+    assert!(super::MeshAffineTransform::new(cells).is_err());
+    cells[0] = f64::MAX;
+    assert!(super::MeshAffineTransform::new(cells).is_err());
+}

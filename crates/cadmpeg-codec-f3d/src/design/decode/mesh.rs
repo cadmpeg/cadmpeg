@@ -32,6 +32,7 @@ use crate::layout::paramesh_scene_state as scene_state;
 use crate::layout::paramesh_texture_filename_prefix as texture_filename;
 use crate::layout::paramesh_texture_table_prefix as texture_table;
 use crate::paramesh::{decode_mesh_container, MeshContainer};
+use crate::records::MeshAffineTransform;
 use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshSceneBounds,
     DesignMeshTextureResource, DesignRecordHeader,
@@ -116,23 +117,18 @@ pub(crate) struct MeshBody {
     pub(crate) attributes: Vec<crate::paramesh::MeshAttribute>,
 }
 
-/// A finite, nonsingular row-major affine map.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct MeshAffineTransform([f64; 16]);
-
 impl MeshAffineTransform {
     fn parse(bytes: &[u8], at: usize) -> Option<Self> {
         let mut cells = [0.0; 16];
         for (index, cell) in cells.iter_mut().enumerate() {
             *cell = View::f64_le_at(bytes, at.checked_add(index.checked_mul(8)?)?)?;
         }
-        let transform = Self(cells);
-        valid_mesh_transform(transform.rows()).then_some(transform)
+        Self::new(cells).ok()
     }
 
     fn transform_point(self, point: [f64; 3]) -> Result<cadmpeg_ir::math::Point3, CodecError> {
         let [x, y, z] = point;
-        let cells = self.0;
+        let cells = self.cells();
         let point = cadmpeg_ir::math::Point3::new(
             (cells[0] * x + cells[1] * y + cells[2] * z + cells[3])
                 * cadmpeg_asm::nurbs::reader::LEN_TO_MM,
@@ -153,7 +149,7 @@ impl MeshAffineTransform {
     /// map. The determinant sign keeps the normal aligned with the unchanged
     /// triangle tuple under a reflection.
     fn transform_normal(self, normal: [f64; 3]) -> Result<cadmpeg_ir::math::Vector3, CodecError> {
-        let cells = self.0;
+        let cells = self.cells();
         let [x, y, z] = normal;
         let transformed = [
             (cells[5] * cells[10] - cells[6] * cells[9]) * x
@@ -189,37 +185,6 @@ impl MeshAffineTransform {
         ))
     }
 
-    fn rows(self) -> [[f64; 4]; 4] {
-        let cells = self.0;
-        [
-            [cells[0], cells[1], cells[2], cells[3]],
-            [cells[4], cells[5], cells[6], cells[7]],
-            [cells[8], cells[9], cells[10], cells[11]],
-            [cells[12], cells[13], cells[14], cells[15]],
-        ]
-    }
-
-    fn from_rows(rows: [[f64; 4]; 4]) -> Self {
-        Self([
-            rows[0][0], rows[0][1], rows[0][2], rows[0][3], rows[1][0], rows[1][1], rows[1][2],
-            rows[1][3], rows[2][0], rows[2][1], rows[2][2], rows[2][3], rows[3][0], rows[3][1],
-            rows[3][2], rows[3][3],
-        ])
-    }
-}
-
-/// Whether a row-major mesh placement is finite, affine, and nonsingular.
-pub(crate) fn valid_mesh_transform(transform: [[f64; 4]; 4]) -> bool {
-    if !transform.iter().flatten().all(|value| value.is_finite())
-        || transform[3] != [0.0, 0.0, 0.0, 1.0]
-    {
-        return false;
-    }
-    let determinant = transform[0][0]
-        * (transform[1][1] * transform[2][2] - transform[1][2] * transform[2][1])
-        - transform[0][1] * (transform[1][0] * transform[2][2] - transform[1][2] * transform[2][0])
-        + transform[0][2] * (transform[1][0] * transform[2][1] - transform[1][1] * transform[2][0]);
-    determinant.is_finite() && determinant != 0.0
 }
 
 /// The two equal affine maps stored by a mesh-body class record.
@@ -1505,7 +1470,7 @@ where
                 scene_state_bounds: scene_state.1,
                 scene_node_record: scene_node.identity,
                 scene_node_bounds: scene_node.bounds,
-                scene_node_transform: scene_node.transform.map(|located| crate::records::Located { value: located.value.rows(), offset: located.offset }),
+                scene_node_transform: scene_node.transform,
                 scene_auxiliary_record: scene_auxiliary,
                 owner_record: body_owner,
                 entry_name: entry_name.entry_name,
@@ -1513,7 +1478,7 @@ where
                 fusion_uuid: guid.fusion_uuid,
                 container_mesh_uuid: None,
                 fusion_uuid_offset: guid.fusion_uuid_offset,
-                transform: body.transform.rows(),
+                transform: body.transform,
                 transform_offsets: [
                     source_offset(body_byte_offset, mesh_body::FIRST_TRANSFORM).ok_or_else(
                         || stream_error("the first mesh transform has an addressable offset"),
@@ -1679,7 +1644,7 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
         let projected = match MeshBody::from_container(
             &entry.name,
             body.body_record.byte_offset(),
-            MeshAffineTransform::from_rows(body.transform),
+            body.transform,
             container,
         ) {
             Ok(projected) => projected,
@@ -2740,7 +2705,7 @@ mod tests {
         };
 
         let parsed = parse_scene_node_record(&bytes, frame).expect("placed Scene node");
-        assert_eq!(parsed.transform.expect("placed transform").value.0, transform);
+        assert_eq!(parsed.transform.expect("placed transform").value.cells(), transform);
         assert_eq!(
             parsed.transform.map(|located| located.offset),
             Some(placed_scene_node::TRANSFORM as u64)
