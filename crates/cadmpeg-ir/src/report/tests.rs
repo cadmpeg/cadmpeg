@@ -243,8 +243,10 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
             basis: CensusBasis::TargetRecords,
             counts: BTreeMap::new(),
         },
-        FidelityResolution::NotProvided,
-        WritePath::Synthesized,
+        crate::codec::write::WritePath::Synthesized {
+            consumption: crate::codec::write::Consumption::NotConsumed,
+        },
+        false,
         Vec::new(),
         Vec::new(),
     );
@@ -272,8 +274,10 @@ fn native_export_report_derives_its_format_from_the_target() {
             basis: CensusBasis::TargetRecords,
             counts: BTreeMap::new(),
         },
-        FidelityResolution::NotProvided,
-        WritePath::Synthesized,
+        crate::codec::write::WritePath::Synthesized {
+            consumption: crate::codec::write::Consumption::NotConsumed,
+        },
+        false,
         Vec::new(),
         Vec::new(),
     );
