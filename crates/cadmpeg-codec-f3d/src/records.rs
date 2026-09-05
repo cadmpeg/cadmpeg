@@ -3708,6 +3708,7 @@ pub struct DesignCopyPasteComponentOperation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "DesignMirrorConstructionWire", into = "DesignMirrorConstructionWire")]
+#[cfg_attr(feature = "schema", schemars(with = "DesignMirrorConstructionWire"))]
 pub struct DesignMirrorConstruction {
     /// Fixed instance count, including the seed.
     pub count: u32,
@@ -3740,8 +3741,7 @@ pub struct DesignMirrorConstruction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plane_selection_record_index: Option<u32>,
     /// Proven selected-face mirror plane, when exact.
-    #[serde(flatten)]
-    pub plane: Option<MirrorPlaneWire>,
+    pub plane: Option<DesignPlane>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -3784,8 +3784,10 @@ struct DesignMirrorConstructionWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     plane_selection_record_index: Option<u32>,
     /// Proven selected-face mirror plane, when exact.
-    #[serde(flatten)]
-    plane: Option<MirrorPlaneWire>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    plane_origin: Option<Point3>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    plane_normal: Option<Vector3>,
 }
 
 impl TryFrom<DesignMirrorConstructionWire> for DesignMirrorConstruction {
@@ -3804,7 +3806,11 @@ impl TryFrom<DesignMirrorConstructionWire> for DesignMirrorConstruction {
             seed_feature_scope_record_index: Located::from_wire(wire.seed_feature_scope_record_index, wire.seed_feature_reference_offset, "seed_feature_scope_record_index").map_err(|_| "seed_feature_scope_record_index and seed_feature_reference_offset must occur together")?,
             plane_scope_record_index: Located::from_wire(wire.plane_scope_record_index, wire.plane_reference_offset, "plane_scope_record_index").map_err(|_| "plane_scope_record_index and plane_reference_offset must occur together")?,
             plane_selection_record_index: wire.plane_selection_record_index,
-            plane: wire.plane,
+            plane: match (wire.plane_origin, wire.plane_normal) {
+                (None, None) => None,
+                (Some(origin), Some(normal)) => Some(DesignPlane { origin, normal }),
+                _ => return Err("plane_origin and plane_normal must occur together".into()),
+            },
         })
     }
 }
@@ -3826,32 +3832,8 @@ impl From<DesignMirrorConstruction> for DesignMirrorConstructionWire {
             plane_scope_record_index: record.plane_scope_record_index.map(|reference| reference.value),
             plane_reference_offset: record.plane_scope_record_index.map(|reference| reference.offset),
             plane_selection_record_index: record.plane_selection_record_index,
-            plane: record.plane,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct MirrorPlaneWire {
-    pub plane_origin: Point3,
-    pub plane_normal: Vector3,
-}
-
-impl From<DesignPlane> for MirrorPlaneWire {
-    fn from(plane: DesignPlane) -> Self {
-        Self {
-            plane_origin: plane.origin,
-            plane_normal: plane.normal,
-        }
-    }
-}
-
-impl From<MirrorPlaneWire> for DesignPlane {
-    fn from(plane: MirrorPlaneWire) -> Self {
-        Self {
-            origin: plane.plane_origin,
-            normal: plane.plane_normal,
+            plane_origin: record.plane.map(|plane| plane.origin),
+            plane_normal: record.plane.map(|plane| plane.normal),
         }
     }
 }

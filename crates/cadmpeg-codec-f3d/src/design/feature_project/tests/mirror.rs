@@ -77,8 +77,7 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
                 crate::records::DesignPlane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
-                }
-                .into(),
+                },
             ),
         });
     }

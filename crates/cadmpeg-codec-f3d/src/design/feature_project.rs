@@ -6447,7 +6447,7 @@ pub(crate) fn project_mirror(
         )
     };
     let (plane_origin, plane_normal, scale_origin) = match construction.plane {
-        Some(plane) => (plane.plane_origin, plane.plane_normal, false),
+        Some(plane) => (plane.origin, plane.normal, false),
         None => {
             let plane_scope_record_index = construction.plane_scope_record_index?.value;
             let matching_planes = scopes
