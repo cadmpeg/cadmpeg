@@ -38,14 +38,14 @@ pub(crate) fn transfer(
                 .type_name
                 .split_once("::")
                 .map_or("Unqualified", |(domain, _)| domain);
-            let data = object
-                .raw_xml
-                .as_deref()
-                .unwrap_or_default()
-                .as_bytes()
-                .to_vec();
-            let byte_start = object.byte_start.unwrap_or_default();
-            let byte_end = object.byte_end.unwrap_or(byte_start);
+            let (data, byte_start, byte_end) = match &object.data {
+                Some(data) => (
+                    data.raw_xml.as_bytes().to_vec(),
+                    data.byte_start,
+                    data.byte_end,
+                ),
+                None => (Vec::new(), 0, 0),
+            };
             ApplicationRecord {
                 id: crate::native::native_id("application", &object.name),
                 object: object.id.clone(),

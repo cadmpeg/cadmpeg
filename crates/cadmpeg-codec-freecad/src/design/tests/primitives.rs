@@ -992,7 +992,7 @@ fn retains_vendor_qualified_primitive_like_types_as_native_objects() {
         .expect("objects");
     assert!(objects
         .iter()
-        .any(|object| { object.type_name == "Part::VendorBox" && object.raw_xml.is_some() }));
+        .any(|object| object.type_name == "Part::VendorBox" && object.data.is_some()));
     assert!(result.ir().model.features.is_empty());
 }
 
