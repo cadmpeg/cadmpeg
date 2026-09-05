@@ -7881,6 +7881,7 @@ pub struct DesignConstructionOperandDualTransform {
 /// One persistent-entity step in a construction operand's selection path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignConstructionOperandPathWire", into = "DesignConstructionOperandPathWire")]
 pub struct DesignConstructionOperandPath {
     /// Indexed path-record identity.
     pub record_index: u32,
@@ -7892,15 +7893,8 @@ pub struct DesignConstructionOperandPath {
     pub entity_ref: u64,
     /// Byte offset of `entity_ref`.
     pub entity_ref_offset: u64,
-    /// Optional row-major selection-path placement.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<[[f64; 4]; 4]>,
-    /// Byte offset of the first transform scalar.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform_offset: Option<u64>,
-    /// Compact-frame boolean; absent from the transform frame.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub compact_variant: Option<bool>,
+    /// Transform or compact selection-path layout.
+    pub placement: DesignConstructionPathPlacement,
     /// Owning feature-scope record.
     pub scope_record_index: u32,
     /// Byte offset of the owning-scope reference.
@@ -7916,6 +7910,104 @@ pub struct DesignConstructionOperandPath {
     /// Per-file dynamic following-record class tag.
     pub following_class_tag: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignConstructionOperandPathWire {
+    /// Indexed path-record identity.
+    record_index: u32,
+    /// Path-record header byte offset.
+    byte_offset: u64,
+    /// Per-file dynamic path-record class tag.
+    class_tag: String,
+    /// Persistent entity identity carried by this path step.
+    entity_ref: u64,
+    /// Byte offset of `entity_ref`.
+    entity_ref_offset: u64,
+    /// Optional row-major selection-path placement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    transform: Option<[[f64; 4]; 4]>,
+    /// Byte offset of the first transform scalar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    transform_offset: Option<u64>,
+    /// Compact-frame boolean; absent from the transform frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    compact_variant: Option<bool>,
+    /// Owning feature-scope record.
+    scope_record_index: u32,
+    /// Byte offset of the owning-scope reference.
+    scope_record_index_offset: u64,
+    /// Nested record selected after the owning scope.
+    nested_record_index: u32,
+    /// Byte offset of the nested-record reference.
+    nested_record_index_offset: u64,
+    /// Indexed record immediately following this path frame.
+    following_record_index: u32,
+    /// Following-record header byte offset.
+    following_byte_offset: u64,
+    /// Per-file dynamic following-record class tag.
+    following_class_tag: String,
+}
+
+impl TryFrom<DesignConstructionOperandPathWire> for DesignConstructionOperandPath {
+    type Error = String;
+    fn try_from(wire: DesignConstructionOperandPathWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            record_index: wire.record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            entity_ref: wire.entity_ref,
+            entity_ref_offset: wire.entity_ref_offset,
+            placement: match (wire.transform, wire.transform_offset, wire.compact_variant) {
+                (Some(value), Some(offset), None) => DesignConstructionPathPlacement::Transform(Located { value, offset }),
+                (None, None, Some(variant)) => DesignConstructionPathPlacement::Compact(variant),
+                _ => return Err("transform and transform_offset must occur together and exclude compact_variant; compact_variant is required without transform".into()),
+            },
+            scope_record_index: wire.scope_record_index,
+            scope_record_index_offset: wire.scope_record_index_offset,
+            nested_record_index: wire.nested_record_index,
+            nested_record_index_offset: wire.nested_record_index_offset,
+            following_record_index: wire.following_record_index,
+            following_byte_offset: wire.following_byte_offset,
+            following_class_tag: wire.following_class_tag,
+        })
+    }
+}
+
+impl From<DesignConstructionOperandPath> for DesignConstructionOperandPathWire {
+    fn from(record: DesignConstructionOperandPath) -> Self {
+        let (transform, transform_offset, compact_variant) = match record.placement {
+            DesignConstructionPathPlacement::Transform(transform) => (Some(transform.value), Some(transform.offset), None),
+            DesignConstructionPathPlacement::Compact(variant) => (None, None, Some(variant)),
+        };
+        Self {
+            record_index: record.record_index,
+            byte_offset: record.byte_offset,
+            class_tag: record.class_tag,
+            entity_ref: record.entity_ref,
+            entity_ref_offset: record.entity_ref_offset,
+            transform,
+            transform_offset,
+            compact_variant,
+            scope_record_index: record.scope_record_index,
+            scope_record_index_offset: record.scope_record_index_offset,
+            nested_record_index: record.nested_record_index,
+            nested_record_index_offset: record.nested_record_index_offset,
+            following_record_index: record.following_record_index,
+            following_byte_offset: record.following_byte_offset,
+            following_class_tag: record.following_class_tag,
+        }
+    }
+}
+
+/// Placement layout carried by a persistent-entity selection path.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum DesignConstructionPathPlacement {
+    Transform(Located<[[f64; 4]; 4]>),
+    Compact(bool),
+}
+
 
 /// Nested identity chain named by a construction-operand group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

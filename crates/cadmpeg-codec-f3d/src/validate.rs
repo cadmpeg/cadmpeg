@@ -5043,24 +5043,23 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             header.byte_offset == path.following_byte_offset
                                 && header.class_tag == path.following_class_tag
                         })
-                    && match (&path.transform, path.transform_offset, path.compact_variant) {
-                        (Some(transform), Some(offset), None) => {
-                            offset == path.byte_offset.saturating_add(33)
+                    && match &path.placement {
+                        crate::records::DesignConstructionPathPlacement::Transform(transform) => {
+                            transform.offset == path.byte_offset.saturating_add(33)
                                 && path.scope_record_index_offset
                                     == path.byte_offset.saturating_add(163)
                                 && path.nested_record_index_offset
                                     == path.byte_offset.saturating_add(174)
                                 && path.following_byte_offset
                                     == path.byte_offset.saturating_add(190)
-                                && crate::design::decode::sketch::valid_sketch_transform(transform)
+                                && crate::design::decode::sketch::valid_sketch_transform(&transform.value)
                         }
-                        (None, None, Some(_)) => {
+                        crate::records::DesignConstructionPathPlacement::Compact(_) => {
                             path.scope_record_index_offset == path.byte_offset.saturating_add(35)
                                 && path.nested_record_index_offset
                                     == path.byte_offset.saturating_add(46)
                                 && path.following_byte_offset == path.byte_offset.saturating_add(62)
                         }
-                        _ => false,
                     }
             })
             && frame
