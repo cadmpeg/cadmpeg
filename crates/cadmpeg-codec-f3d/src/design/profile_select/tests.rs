@@ -97,7 +97,7 @@ fn placement() -> DesignSketchPlacement {
 
         visibility: None,
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 20,
         frame_length: 0,
         transform: [
@@ -107,7 +107,7 @@ fn placement() -> DesignSketchPlacement {
             [0.0, 0.0, 0.0, 1.0],
         ],
         transform_offset: None,
-        paired_class_tag: "277".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         paired_byte_offset: 0,
         member_run_head: false,
     }

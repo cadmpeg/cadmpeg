@@ -2296,6 +2296,13 @@ fn sketch_placement_preserves_identity_wire_and_rejects_suffix_mismatch() {
     let placement: super::DesignSketchPlacement = serde_json::from_value(wire.clone()).expect("matching identity");
     assert_eq!(placement.entity_id.suffix(), 7);
     assert_eq!(serde_json::to_value(placement).unwrap(), wire);
+    for field in ["class_tag", "paired_class_tag"] {
+        for invalid in ["", "12", "1234", "1a3", "１２３"] {
+            let mut invalid_wire = wire.clone();
+            invalid_wire[field] = invalid.into();
+            assert!(serde_json::from_value::<super::DesignSketchPlacement>(invalid_wire).unwrap_err().to_string().contains(field));
+        }
+    }
     let mut mismatch = wire;
     mismatch["entity_suffix"] = 8.into();
     assert!(serde_json::from_value::<super::DesignSketchPlacement>(mismatch).expect_err("mismatched suffix").to_string().contains("entity_suffix"));

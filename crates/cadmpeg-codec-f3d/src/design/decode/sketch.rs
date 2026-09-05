@@ -401,9 +401,7 @@ pub(crate) fn parse_member_run_head_placement(
     let paired_at = records.first_at_or_after(start.checked_add(1)?, entity_index)?;
     let (paired_class_tag, paired_after_tag) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
-    if paired_class_tag.len() != 3 || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
+    let paired_class_tag = crate::records::DesignClassTag::try_from(paired_class_tag).ok()?;
     // The paired record's prologue: the u32 index, zero bytes to offset 19,
     // then a marked u64 reference naming the head record.
     if paired_after_tag != paired_at + 7
@@ -419,10 +417,8 @@ pub(crate) fn parse_member_run_head_placement(
     // Locate the head record and decode its transform.
     let head_at = records.offsets(head_index).first().copied()?;
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, head_at, 0..=2000, u8::is_ascii_graphic)?;
-    if after_tag != head_at + 7
-        || class_tag.len() != 3
-        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-    {
+    let class_tag = crate::records::DesignClassTag::try_from(class_tag).ok()?;
+    if after_tag != head_at + 7 {
         return None;
     }
     let head_end = next_indexed_record_offset(bytes, head_at + 11).unwrap_or(bytes.len());
@@ -494,14 +490,12 @@ pub(crate) fn parse_sketch_placement_candidates(
         };
         if after_tag != start + 7
             || paired_after_tag != paired_at + 7
-            || class_tag.len() != 3
-            || paired_class_tag.len() != 3
-            || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
             || View::u32_le_at(bytes, paired_after_tag) != Some(record_index)
         {
             continue;
         }
+        let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag) else { continue; };
+        let Ok(paired_class_tag) = crate::records::DesignClassTag::try_from(paired_class_tag) else { continue; };
         let (transform, transform_offset) = match frame_length {
             201 => (identity_matrix(), None),
             305 | 325 => {

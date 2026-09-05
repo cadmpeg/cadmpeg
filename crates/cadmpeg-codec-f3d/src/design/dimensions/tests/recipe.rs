@@ -20,12 +20,12 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
 
         visibility: None,
         byte_offset: 0,
-        class_tag: "356".into(),
+        class_tag: crate::records::DesignClassTag::try_from("356".to_owned()).unwrap(),
         record_index: 11,
         frame_length: 201,
         transform: identity_matrix(),
         transform_offset: None,
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 201,
     };
     let parameter = DesignParameter {

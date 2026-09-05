@@ -12755,7 +12755,7 @@ pub struct DesignSketchPlacement {
     /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Shared logical record identity.
     pub record_index: u32,
     /// Byte length from the primary header to the paired header.
@@ -12766,7 +12766,7 @@ pub struct DesignSketchPlacement {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform_offset: Option<u64>,
     /// Per-file dynamic class tag of the paired header.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
     /// Whether this placement is the transform-carrying member-run head
@@ -12830,12 +12830,12 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
             entity_id,
             visibility: wire.visibility,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: DesignClassTag::try_from(wire.class_tag)?,
             record_index: wire.record_index,
             frame_length: wire.frame_length,
             transform: wire.transform,
             transform_offset: wire.transform_offset,
-            paired_class_tag: wire.paired_class_tag,
+            paired_class_tag: DesignClassTag::try_from(wire.paired_class_tag).map_err(|error| format!("paired_class_tag: {error}"))?,
             paired_byte_offset: wire.paired_byte_offset,
             member_run_head: wire.member_run_head,
         })
@@ -12852,12 +12852,12 @@ impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
             entity_suffix,
             visibility: value.visibility,
             byte_offset: value.byte_offset,
-            class_tag: value.class_tag,
+            class_tag: value.class_tag.into(),
             record_index: value.record_index,
             frame_length: value.frame_length,
             transform: value.transform,
             transform_offset: value.transform_offset,
-            paired_class_tag: value.paired_class_tag,
+            paired_class_tag: value.paired_class_tag.into(),
             paired_byte_offset: value.paired_byte_offset,
             member_run_head: value.member_run_head,
         }

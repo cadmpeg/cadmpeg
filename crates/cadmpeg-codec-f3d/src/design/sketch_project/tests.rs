@@ -65,7 +65,7 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
 
         visibility: Some(DesignSketchVisibility::new(std::num::NonZeroU32::new(1).unwrap(), 30, false).unwrap()),
         byte_offset: 0,
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 1,
         frame_length: 34,
         transform: [
@@ -75,7 +75,7 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
             [0.0, 0.0, 0.0, 1.0],
         ],
         transform_offset: None,
-        paired_class_tag: "257".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
         paired_byte_offset: 34,
         member_run_head: true,
     };
@@ -95,7 +95,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
 
         visibility: None,
         byte_offset: 0,
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 1,
         frame_length: 0,
         transform: [
@@ -105,7 +105,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             [0.0, 0.0, 0.0, 1.0],
         ],
         transform_offset: None,
-        paired_class_tag: "257".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
         paired_byte_offset: 0,
         member_run_head: false,
     };
@@ -248,7 +248,7 @@ fn point_closure_does_not_mark_construction_geometry() {
 
         visibility: None,
         byte_offset: 0,
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 1,
         frame_length: 0,
         transform: [
@@ -258,7 +258,7 @@ fn point_closure_does_not_mark_construction_geometry() {
             [0.0, 0.0, 0.0, 1.0],
         ],
         transform_offset: None,
-        paired_class_tag: "257".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
         paired_byte_offset: 0,
         member_run_head: false,
     };
@@ -338,7 +338,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
 
         visibility: None,
         byte_offset: 100,
-        class_tag: "356".into(),
+        class_tag: crate::records::DesignClassTag::try_from("356".to_owned()).unwrap(),
         record_index: 185,
         frame_length: 329,
         transform: [
@@ -348,7 +348,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             [0.0, 0.0, 0.0, 1.0],
         ],
         transform_offset: Some(155),
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 429,
     };
     let point = SketchPoint {
@@ -716,7 +716,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
 
         visibility: None,
         byte_offset: 100,
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         record_index: 100,
         frame_length: 329,
         transform: [
@@ -726,7 +726,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             [0.0, 0.0, 0.0, 1.0],
         ],
         transform_offset: Some(155),
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 429,
     };
     let curve = |record_index, primary_id, geometry| SketchCurveIdentity {

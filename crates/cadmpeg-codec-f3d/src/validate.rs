@@ -7649,17 +7649,7 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         })
                 })
         };
-        let valid = placement.class_tag.len() == 3
-            && placement
-                .class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_digit())
-            && placement.paired_class_tag.len() == 3
-            && placement
-                .paired_class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_digit())
-            && frame_valid
+        let valid = frame_valid
             && design::decode::sketch::valid_sketch_transform(&placement.transform)
             && unique_record
             && unique_scope

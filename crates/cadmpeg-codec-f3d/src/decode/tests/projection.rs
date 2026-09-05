@@ -1254,12 +1254,12 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 
         visibility: None,
         byte_offset: 0,
-        class_tag: "000".into(),
+        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         record_index: 10,
         frame_length: 1,
         transform: [[0.0; 4]; 4],
         transform_offset: None,
-        paired_class_tag: "001".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
         paired_byte_offset: 1,
     });
     native.sketch_points.push(SketchPoint {

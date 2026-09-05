@@ -173,7 +173,7 @@ fn occurrence_merge_remaps_and_retains_native_records() {
 
         visibility: None,
         byte_offset: 42,
-        class_tag: "001".into(),
+        class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
         record_index: 7,
         frame_length: 34,
         transform: [
@@ -183,7 +183,7 @@ fn occurrence_merge_remaps_and_retains_native_records() {
             [0.0, 0.0, 0.0, 1.0],
         ],
         transform_offset: None,
-        paired_class_tag: "002".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("002".to_owned()).unwrap(),
         paired_byte_offset: 76,
         member_run_head: true,
     };
