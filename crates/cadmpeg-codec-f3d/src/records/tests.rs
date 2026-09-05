@@ -1803,3 +1803,23 @@ fn dimension_operands_preserve_null_and_required_index_wires() {
         }
     }
 }
+
+#[test]
+fn legacy_extrude_constants_and_geometry_preserve_wire() {
+    for geometry_kind in [0, 1] {
+        let wire = format!(r#"{{"layout":"legacy_distance","prefix_value":0,"prefix_value_offset":21,"operation":"join","operation_offset":25,"extent_kind":2,"extent_kind_offset":29,"direction_reversed":false,"direction_reversed_offset":33,"geometry_kind":{geometry_kind},"geometry_kind_offset":34}}"#);
+        let prologue: super::DesignExtrudePrologue = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&prologue).unwrap(), wire);
+        assert_eq!(prologue.extent(), Some(super::DesignExtrudeExtent::OneSidedDistance));
+        assert_eq!(prologue.solid_operation(), geometry_kind == 1);
+        for (field, before, after) in [
+            ("prefix_value", "\"prefix_value\":0".to_owned(), "\"prefix_value\":1".to_owned()),
+            ("extent_kind", "\"extent_kind\":2".to_owned(), "\"extent_kind\":1".to_owned()),
+            ("geometry_kind", format!("\"geometry_kind\":{geometry_kind}"), "\"geometry_kind\":2".to_owned()),
+        ] {
+            let invalid = wire.replace(&before, &after);
+            let error = serde_json::from_str::<super::DesignExtrudePrologue>(&invalid).unwrap_err().to_string();
+            assert!(error.contains(field));
+        }
+    }
+}

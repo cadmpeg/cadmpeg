@@ -3440,36 +3440,31 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && !scope.kind().is_empty()
             && match scope.extrude_prologue() {
                 Some(records::DesignExtrudePrologue::LegacyDistance {
-                    prefix_value,
+                    prefix_zero_offset,
                     operation_offset,
-                    extent_kind,
                     extent_kind_offset,
                     direction_reversed_offset,
-                    geometry_kind,
-                    geometry_kind_offset,
+                    solid_operation_offset,
                     ..
                 }) => {
                     let marker_offset = scope.byte_offset.saturating_add(20);
-                    let prefix_valid = match prefix_value {
+                    let prefix_valid = match prefix_zero_offset {
                         None => {
                             operation_offset == marker_offset.saturating_add(1)
                                 && scope.reference_count_offset
                                     == scope.byte_offset.saturating_add(208)
                         }
-                        Some(records::Located { value: 0, offset }) => {
+                        Some(offset) => {
                             offset == marker_offset.saturating_add(1)
                                 && operation_offset == offset.saturating_add(4)
                                 && scope.reference_count_offset
                                     == scope.byte_offset.saturating_add(212)
                         }
-                        _ => false,
                     };
                     prefix_valid
-                        && extent_kind == 2
                         && extent_kind_offset == operation_offset.saturating_add(4)
                         && direction_reversed_offset == extent_kind_offset.saturating_add(4)
-                        && matches!(geometry_kind, 0 | 1)
-                        && geometry_kind_offset == direction_reversed_offset.saturating_add(1)
+                        && solid_operation_offset == direction_reversed_offset.saturating_add(1)
                 }
                 Some(records::DesignExtrudePrologue::ShiftedReferenceAware {
                     operation_offset,
