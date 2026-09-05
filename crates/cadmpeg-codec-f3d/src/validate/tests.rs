@@ -545,7 +545,7 @@ fn validation_checks_pipe_path_group_roles() {
     let mut scope =
         DesignParameterScope::empty(&scope_id, crate::records::DesignFeatureKind::Pipe, 10);
     {
-        let value = Some(DesignPathFeatureConstruction::Pipe {
+        let value = Some(DesignPathFeatureConstruction::Pipe(crate::records::DesignPipeConstruction {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 0,
             section_shape: crate::records::DesignPipeSectionShape::Circular,
@@ -555,15 +555,8 @@ fn validation_checks_pipe_path_group_roles() {
             values: [1.0, 1.0, 0.6, 0.15],
             record_indexes: [11, 12, 13, 14],
             value_offsets: [0; 4],
-        });
-        if let crate::records::DesignScopePayload::Loft(slot)
-        | crate::records::DesignScopePayload::Sweep(slot)
-        | crate::records::DesignScopePayload::Revolve(slot)
-        | crate::records::DesignScopePayload::Pipe(slot) = &mut scope.payload
-        {
-            slot.get_or_insert_with(Default::default)
-                .path_feature_construction = value;
-        }
+        }));
+        scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
     }
     scope.reference_members = vec![1, 2, 3, 4, 20, 21];
     let path_group = DesignConstructionOperandGroup {

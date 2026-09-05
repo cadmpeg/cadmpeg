@@ -42,7 +42,7 @@ use crate::records::{
     DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
     DesignFaceOperand, DesignFeatureTimeline, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
     DesignFixedExtrudeDistance, DesignLoftLegacyBodyCarrier, DesignParameter, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignParameterOwner, DesignParameterScope,
     DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceOffsetOperation,
     DesignSurfaceOffsetSupport, DesignSurfaceTrimOperation, SketchCurveGeometry,
     SketchCurveIdentity,
@@ -5541,9 +5541,9 @@ pub(crate) fn project_fixed_revolve_with_entities(
         RevolveConstruction, RevolveExtent,
     };
 
-    let DesignPathFeatureConstruction::Revolve {
+    let crate::records::DesignScopePayload::Revolve(Some(crate::records::DesignRevolveConstruction {
         operation, angle, ..
-    } = scope.path_feature_construction()?
+    })) = &scope.payload
     else {
         return None;
     };
@@ -5933,8 +5933,7 @@ pub(crate) fn project_fixed_loft(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, LoftPointSection, LoftSection, ProfileRef};
 
-    let DesignPathFeatureConstruction::Loft { operation, .. } =
-        scope.path_feature_construction()?
+    let crate::records::DesignScopePayload::Loft(Some(crate::records::DesignLoftConstruction { operation, .. })) = &scope.payload
     else {
         return None;
     };
@@ -6525,9 +6524,9 @@ pub(crate) fn project_fixed_sweep(
         SweepOrientation, SweepPathExtent,
     };
 
-    let DesignPathFeatureConstruction::Sweep {
+    let crate::records::DesignScopePayload::Sweep(Some(crate::records::DesignSweepScope { construction: Some(crate::records::DesignSweepConstruction {
         operation, values, ..
-    } = scope.path_feature_construction()?
+    }), .. })) = &scope.payload
     else {
         return None;
     };
@@ -6673,19 +6672,18 @@ fn project_fixed_pipe(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, GeneratedSweepSection, SweepMode, SweepSection};
 
-    let DesignPathFeatureConstruction::Pipe {
+    let crate::records::DesignScopePayload::Pipe(Some(crate::records::DesignPipeConstruction {
         operation,
         section_shape,
         filled,
         values,
         record_indexes,
         ..
-    } = scope.path_feature_construction()?
+    })) = &scope.payload
     else {
         return None;
     };
-    if scope.kind() != crate::records::DesignFeatureKind::Pipe
-        || *operation != DesignExtrudeOperation::NewBody
+    if *operation != DesignExtrudeOperation::NewBody
         || *section_shape != crate::records::DesignPipeSectionShape::Circular
         || values[0..2] != [1.0, 1.0]
         || values[2] <= 0.0

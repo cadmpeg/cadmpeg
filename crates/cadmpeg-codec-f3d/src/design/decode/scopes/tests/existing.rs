@@ -134,10 +134,10 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
         .expect("compact Loft operation");
         assert_eq!(
             construction,
-            DesignPathFeatureConstruction::Loft {
+            DesignPathFeatureConstruction::Loft(crate::records::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Join,
                 operation_offset: 25,
-            }
+            })
         );
 
         bytes[24] = 0;
