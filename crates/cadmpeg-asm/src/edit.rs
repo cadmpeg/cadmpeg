@@ -44,7 +44,7 @@ pub struct NurbsCurveEdit<'a> {
 
 /// Writable values for one solved NURBS parameter-curve cache.
 #[derive(Clone, Copy)]
-pub struct NurbsPcurveEdit<'a> {
+pub struct InlinePcurveEdit<'a> {
     /// Parameter-curve geometry in the carrier's native chart.
     pub native_geometry: &'a PcurveGeometry,
     /// Optional native periodic flag.
@@ -57,6 +57,18 @@ pub struct NurbsPcurveEdit<'a> {
     pub parameter_range: Option<[f64; 2]>,
     /// Optional solved-cache fit tolerance.
     pub fit_tolerance: Option<f64>,
+}
+
+/// Writable fields selected by the native pcurve form.
+#[derive(Clone, Copy)]
+pub enum PcurveEdit<'a> {
+    /// Geometry and optional metadata of an inline cache.
+    Inline(InlinePcurveEdit<'a>),
+    /// The parameter interval stored by a reference wrapper.
+    Ref {
+        /// The replacement interval, when edited.
+        parameter_range: Option<[f64; 2]>,
+    },
 }
 
 impl AsmEditSet {
@@ -782,24 +794,21 @@ impl AsmEditSet {
         patch_nurbs_curve_record(bytes, self.ref_width, record, &edit, final_cache)
     }
 
-    /// Apply one solved NURBS parameter-curve cache edit.
-    pub fn patch_nurbs_pcurve(
+    /// Apply the fields selected by an inline cache or reference wrapper edit.
+    pub fn patch_pcurve(
         &self,
         bytes: &mut [u8],
         record: &Record,
-        edit: NurbsPcurveEdit<'_>,
+        edit: PcurveEdit<'_>,
     ) -> Result<(), CodecError> {
-        patch_nurbs_pcurve_record(bytes, self.ref_width, record, &edit)
-    }
-
-    /// Apply the writable wrapper fields of a reference-form parameter curve.
-    pub fn patch_ref_pcurve(
-        &self,
-        bytes: &mut [u8],
-        record: &Record,
-        edit: NurbsPcurveEdit<'_>,
-    ) -> Result<(), CodecError> {
-        patch_ref_pcurve_contract(bytes, self.ref_width, record, &edit)
+        match edit {
+            PcurveEdit::Inline(edit) => {
+                patch_nurbs_pcurve_record(bytes, self.ref_width, record, &edit)
+            }
+            PcurveEdit::Ref { parameter_range } => {
+                patch_ref_pcurve_contract(bytes, self.ref_width, record, parameter_range)
+            }
+        }
     }
 }
 
@@ -837,7 +846,11 @@ fn apply_vector_payload(bytes: &mut [u8], base_at: usize, components: [f64; 3]) 
 }
 
 const fn native_bool(value: bool) -> u8 {
-    if value { 0x0a } else { 0x0b }
+    if value {
+        0x0a
+    } else {
+        0x0b
+    }
 }
 
 fn finite_vector(vector: Vector3) -> bool {
@@ -1727,7 +1740,7 @@ fn patch_nurbs_pcurve_record(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    edit: &NurbsPcurveEdit<'_>,
+    edit: &InlinePcurveEdit<'_>,
 ) -> Result<(), CodecError> {
     let geometry = edit.native_geometry;
     let PcurveGeometry::Nurbs { nurbs } = geometry else {
@@ -1894,18 +1907,9 @@ fn patch_ref_pcurve_contract(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    edit: &NurbsPcurveEdit<'_>,
+    parameter_range: Option<[f64; 2]>,
 ) -> Result<(), CodecError> {
-    if edit.wrapper_reversed.is_some()
-        || edit.native_tail_flags.is_some()
-        || edit.fit_tolerance.is_some()
-    {
-        return Err(CodecError::NotImplemented(format!(
-            "ref-form pcurve record {} cannot carry wrapper or inline fit edits",
-            record.index
-        )));
-    }
-    let Some(range) = edit.parameter_range else {
+    let Some(range) = parameter_range else {
         return Ok(());
     };
     let ref_width = stream_width;

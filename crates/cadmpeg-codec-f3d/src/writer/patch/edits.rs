@@ -694,14 +694,20 @@ pub(crate) struct NurbsCurveEdit {
     pub(crate) periodic: Option<bool>,
 }
 
-#[derive(Clone)]
-pub(crate) struct NurbsPcurveEdit {
-    pub(crate) native_geometry: PcurveGeometry,
-    pub(crate) periodic: Option<bool>,
-    pub(crate) wrapper_reversed: Option<bool>,
-    pub(crate) native_tail_flags: Option<[bool; 4]>,
-    pub(crate) parameter_range: Option<[f64; 2]>,
-    pub(crate) fit_tolerance: Option<f64>,
+pub(crate) enum PcurveEdit {
+    Inline {
+        native_geometry: PcurveGeometry,
+        periodic: Option<bool>,
+        wrapper_reversed: Option<bool>,
+        native_tail_flags: Option<[bool; 4]>,
+        parameter_range: Option<[f64; 2]>,
+        fit_tolerance: Option<f64>,
+    },
+    Ref {
+        native_geometry: PcurveGeometry,
+        periodic: Option<bool>,
+        parameter_range: Option<[f64; 2]>,
+    },
 }
 
 #[derive(Clone)]
@@ -2998,7 +3004,7 @@ pub(crate) fn validate_curve_edits(
 pub(crate) fn validate_pcurve_edits(
     baseline_model: &Model,
     target_model: &Model,
-) -> Result<BTreeMap<String, NurbsPcurveEdit>, CodecError> {
+) -> Result<BTreeMap<String, PcurveEdit>, CodecError> {
     let baseline = baseline_model
         .pcurves
         .iter()
@@ -3073,26 +3079,38 @@ pub(crate) fn validate_pcurve_edits(
                 "F3D pcurve edit changes fixed cache structure: {id}"
             )));
         }
-        edits.insert(
-            id.to_owned(),
-            NurbsPcurveEdit {
+        let periodic =
+            (before_nurbs.periodic() != after_nurbs.periodic()).then_some(after_nurbs.periodic());
+        let parameter_range = (before.parameter_range() != after.parameter_range())
+            .then_some(after.parameter_range())
+            .flatten();
+        let edit = match &before.metadata {
+            cadmpeg_ir::geometry::PcurveMetadata::General(metadata)
+                if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance.is_none() =>
+            {
+                PcurveEdit::Ref {
+                    native_geometry: after_native,
+                    periodic,
+                    parameter_range,
+                }
+            }
+            cadmpeg_ir::geometry::PcurveMetadata::AsmInline(_)
+            | cadmpeg_ir::geometry::PcurveMetadata::General(_) => PcurveEdit::Inline {
                 native_geometry: after_native,
-                periodic: (before_nurbs.periodic() != after_nurbs.periodic())
-                    .then_some(after_nurbs.periodic()),
+                periodic,
                 wrapper_reversed: (before.wrapper_reversed() != after.wrapper_reversed())
                     .then_some(after.wrapper_reversed())
                     .flatten(),
                 native_tail_flags: (before.native_tail_flags() != after.native_tail_flags())
                     .then_some(after.native_tail_flags())
                     .flatten(),
-                parameter_range: (before.parameter_range() != after.parameter_range())
-                    .then_some(after.parameter_range())
-                    .flatten(),
+                parameter_range,
                 fit_tolerance: (before.fit_tolerance() != after.fit_tolerance())
                     .then_some(after.fit_tolerance())
                     .flatten(),
             },
-        );
+        };
+        edits.insert(id.to_owned(), edit);
     }
     Ok(edits)
 }
