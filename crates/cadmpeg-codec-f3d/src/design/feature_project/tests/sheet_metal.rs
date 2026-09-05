@@ -115,8 +115,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         member_offsets: vec![0],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: Vec::new(),
             trailing_record_offsets: Vec::new(),
@@ -515,8 +514,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         member_offsets: vec![0],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: Vec::new(),
             trailing_record_offsets: Vec::new(),
@@ -806,8 +804,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
         member_offsets: vec![0],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: Vec::new(),
             trailing_record_offsets: Vec::new(),
@@ -938,8 +935,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             member_offsets: vec![0],
             frame: DesignConstructionOperandGroupFrame {
                 member_count_offset: 0,
-                auxiliary_record_indices: Vec::new(),
-                auxiliary_record_offsets: Vec::new(),
+                auxiliary_records: Vec::new(),
                 auxiliary_paths: Vec::new(),
                 trailing_record_indices: Vec::new(),
                 trailing_record_offsets: Vec::new(),

@@ -887,8 +887,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         member_offsets: vec![0],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: Vec::new(),
             trailing_record_offsets: Vec::new(),
@@ -1212,8 +1211,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         member_offsets: vec![1010],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 1008,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: Vec::new(),
             trailing_record_offsets: Vec::new(),
@@ -1377,8 +1375,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         member_offsets: vec![1_010],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 1_008,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: Vec::new(),
             trailing_record_offsets: Vec::new(),

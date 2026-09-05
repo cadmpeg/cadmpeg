@@ -725,3 +725,18 @@ fn dimension_locus_rows_preserve_return_order_and_derive_state_views() {
         }
     }
 }
+
+#[test]
+fn construction_auxiliary_rows_preserve_wire_and_reject_unequal_offsets() {
+    for fields in ["", r#","auxiliary_record_indices":[103,106],"auxiliary_record_offsets":[37,48]"#] {
+        let wire = format!(r#"{{"member_count_offset":20{fields},"opaque_index":1,"opaque_index_offset":80,"opaque_scalar":0.0,"opaque_scalar_offset":84,"variant":false}}"#);
+        let frame: super::DesignConstructionOperandGroupFrame = serde_json::from_str(&wire).expect("construction frame");
+        assert_eq!(serde_json::to_string(&frame).expect("construction wire"), wire);
+    }
+    for fields in [r#", "auxiliary_record_indices":[103]"#, r#", "auxiliary_record_offsets":[37]"#, r#", "auxiliary_record_indices":[103,106],"auxiliary_record_offsets":[37]"#] {
+        let wire = format!(r#"{{"member_count_offset":20{fields},"opaque_index":1,"opaque_index_offset":80,"opaque_scalar":0.0,"opaque_scalar_offset":84,"variant":false}}"#);
+        let error = serde_json::from_str::<super::DesignConstructionOperandGroupFrame>(&wire).expect_err("unequal auxiliary arrays").to_string();
+        assert!(error.contains("auxiliary_record_indices"));
+        assert!(error.contains("auxiliary_record_offsets"));
+    }
+}

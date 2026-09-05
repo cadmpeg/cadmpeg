@@ -29,8 +29,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         member_offsets: vec![926],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: vec![200],
             trailing_record_offsets: vec![943],
@@ -294,8 +293,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         member_offsets: vec![21],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: Vec::new(),
             trailing_record_offsets: Vec::new(),
@@ -698,8 +696,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         member_offsets: vec![926],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: vec![91],
             trailing_record_offsets: vec![950],
@@ -1551,8 +1548,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         member_offsets: vec![924],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 920,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: vec![91],
             trailing_record_offsets: vec![935],

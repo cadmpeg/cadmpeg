@@ -107,7 +107,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(group.role, 0x0000_0008_0000_0000);
     assert_eq!(group.extrude_role, Some(DesignExtrudeOperandRole::Bodies));
     assert_eq!(group.frame.member_count_offset, 21);
-    assert!(group.frame.auxiliary_record_indices.is_empty());
+    assert!(group.frame.auxiliary_records.is_empty());
     assert_eq!(group.frame.trailing_record_indices, [300]);
     assert_eq!(group.frame.opaque_index, 180);
     assert_eq!(group.frame.opaque_scalar, 0.125);
@@ -304,8 +304,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .expect("Extrude face group carrying both optional references");
     assert_eq!(auxiliary.members, [109]);
     assert_eq!(auxiliary.member_offsets, [26]);
-    assert_eq!(auxiliary.frame.auxiliary_record_indices, [103, 106]);
-    assert_eq!(auxiliary.frame.auxiliary_record_offsets, [37, 48]);
+    assert_eq!(auxiliary.frame.auxiliary_records.iter().map(|record| record.value).collect::<Vec<_>>(), [103, 106]);
+    assert_eq!(auxiliary.frame.auxiliary_records.iter().map(|record| record.offset).collect::<Vec<_>>(), [37, 48]);
     assert!(auxiliary.frame.trailing_record_indices.is_empty());
     assert_eq!(auxiliary.role, 0x0000_0011_0000_0000);
     assert_eq!(

@@ -4916,7 +4916,6 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 .member_offsets
                 .windows(2)
                 .all(|offsets| offsets[1] >= offsets[0].saturating_add(11))
-            && frame.auxiliary_record_offsets.len() == frame.auxiliary_record_indices.len()
             && frame.trailing_record_offsets.len() == frame.trailing_record_indices.len()
             && frame.trailing_record_indices.len() <= 1
             && frame
@@ -4932,8 +4931,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             && frame.opaque_scalar_offset == frame.opaque_index_offset.saturating_add(4)
             && group.paired_byte_offset > frame.opaque_scalar_offset.saturating_add(8)
             && frame
-                .auxiliary_record_indices
-                .iter()
+                .auxiliary_records
+                .iter().map(|record| &record.value)
                 .chain(&frame.trailing_record_indices)
                 .all(|record_index| record_indices.contains(&(native_stream, *record_index)))
             && frame.trailing_transforms.iter().all(|transform| {
@@ -5009,7 +5008,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 .len()
                 == frame.trailing_flags.len()
             && frame.auxiliary_paths.iter().all(|path| {
-                frame.auxiliary_record_indices.contains(&path.record_index)
+                frame.auxiliary_records.iter().any(|record| record.value == path.record_index)
                     && records_by_index
                         .get(&(native_stream, path.record_index))
                         .is_some_and(|header| {

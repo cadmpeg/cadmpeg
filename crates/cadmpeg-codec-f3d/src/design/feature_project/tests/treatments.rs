@@ -497,8 +497,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             member_offsets: vec![1_026 + u64::from(scope_reference_ordinal)],
             frame: crate::records::DesignConstructionOperandGroupFrame {
                 member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
-                auxiliary_record_indices: Vec::new(),
-                auxiliary_record_offsets: Vec::new(),
+                auxiliary_records: Vec::new(),
                 auxiliary_paths: Vec::new(),
                 trailing_record_indices: vec![record_index + 1],
                 trailing_record_offsets: vec![1_050 + u64::from(scope_reference_ordinal)],
@@ -592,8 +591,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         member_offsets: vec![0],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: Vec::new(),
             trailing_record_offsets: Vec::new(),
@@ -908,8 +906,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         lost_edge_references: Vec::new(),
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 1021 + u64::from(ordinal) * 200,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: vec![300 + ordinal],
             trailing_record_offsets: vec![1100 + u64::from(ordinal) * 200],
