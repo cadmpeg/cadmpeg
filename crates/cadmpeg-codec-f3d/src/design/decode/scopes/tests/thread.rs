@@ -37,8 +37,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         form: DesignThreadForm::Standard,
         designation_offset: 38,
         designation: "M30x3.5".into(),
-        nominal_size_text: "30.0".into(),
-        nominal_size: 30.0,
+        nominal_size: crate::records::DesignThreadNominalSize::try_from("30.0".to_owned()).expect("nominal size"),
         profile: "ISO Metric profile".into(),
         major_diameter: 2.97345,
         minor_diameter: 2.5732,
@@ -120,8 +119,7 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
         form: DesignThreadForm::StandardLegacy,
         designation_offset: 38,
         designation: "M7x1".into(),
-        nominal_size_text: "7.0".into(),
-        nominal_size: 7.0,
+        nominal_size: crate::records::DesignThreadNominalSize::try_from("7.0".to_owned()).expect("nominal size"),
         profile: "ISO Metric profile".into(),
         major_diameter: 0.71472,
         minor_diameter: 0.60355,
@@ -157,14 +155,14 @@ fn assert_thread_construction(
     assert_eq!(actual.form, expected.form);
     assert_eq!(actual.designation_offset, expected.designation_offset);
     assert_eq!(actual.designation, expected.designation);
-    assert_eq!(actual.nominal_size_text, expected.nominal_size_text);
+    assert_eq!(actual.nominal_size.text(), expected.nominal_size.text());
     assert_eq!(actual.profile, expected.profile);
     assert_eq!(
         actual.face_group_record_indices,
         expected.face_group_record_indices
     );
     for (actual, expected) in [
-        (actual.nominal_size, expected.nominal_size),
+        (actual.nominal_size.value().expect("actual nominal size"), expected.nominal_size.value().expect("expected nominal size")),
         (actual.major_diameter, expected.major_diameter),
         (actual.minor_diameter, expected.minor_diameter),
         (actual.pitch, expected.pitch),
@@ -199,8 +197,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         form: DesignThreadForm::Compact(None),
         designation_offset: 38,
         designation: "M3.5x0.6".into(),
-        nominal_size_text: "3.5".into(),
-        nominal_size: 3.5,
+        nominal_size: crate::records::DesignThreadNominalSize::try_from("3.5".to_owned()).expect("nominal size"),
         profile: "GB Metric profile".into(),
         major_diameter: 0.35995,
         minor_diameter: 0.293,
@@ -217,7 +214,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     referenced[after_profile + 39..after_profile + 43].copy_from_slice(&2075u32.to_le_bytes());
     referenced[after_profile + 43..after_profile + 49].fill(0);
     let mut referenced_expected = expected.clone();
-    referenced_expected.form = DesignThreadForm::Compact(Some(crate::records::Located { value: 2075, offset: (after_profile + 39) as u64 }));
+    referenced_expected.form = DesignThreadForm::Compact(Some(crate::records::Located { value: std::num::NonZeroU32::new(2075).expect("reference"), offset: (after_profile + 39) as u64 }));
     assert_thread_construction(
         parse_thread_payload(&referenced, 38, ThreadPrefix::Compact, vec![988]),
         &referenced_expected,
@@ -279,8 +276,7 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
         form: DesignThreadForm::CompactLegacy,
         designation_offset: 38,
         designation: "M190x8".into(),
-        nominal_size_text: "190.0".into(),
-        nominal_size: 190.0,
+        nominal_size: crate::records::DesignThreadNominalSize::try_from("190.0".to_owned()).expect("nominal size"),
         profile: "ISO Metric profile".into(),
         major_diameter: 19.08149,
         minor_diameter: 18.18397,

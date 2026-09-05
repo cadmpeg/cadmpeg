@@ -1028,7 +1028,9 @@ pub fn project_parameter_design_with_edge_identities(
                         }
                     },
                 ),
-                Some(DesignFeatureFamily::Thread) => scope.thread_construction().map_or_else(
+                Some(DesignFeatureFamily::Thread) => scope.thread_construction()
+                    .and_then(|construction| construction.nominal_size.value().ok().map(|size| (construction, size)))
+                    .map_or_else(
                     || FeatureDefinition::Native {
                         kind: scope.kind_name().into(),
                         parameters: parameters
@@ -1038,7 +1040,7 @@ pub fn project_parameter_design_with_edge_identities(
                             })
                             .collect(),
                     },
-                    |construction| {
+                    |(construction, nominal_size)| {
                         let face = project_thread_face_selection(
                             scope,
                             &construction.face_group_record_indices,
@@ -1090,7 +1092,7 @@ pub fn project_parameter_design_with_edge_identities(
                             });
                         FeatureDefinition::CosmeticThread {
                             face,
-                            diameter: Some(Length(construction.nominal_size)),
+                            diameter: Some(Length(nominal_size)),
                             extent,
                         }
                     },
