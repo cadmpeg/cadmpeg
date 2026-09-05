@@ -178,12 +178,14 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
             };
             assert!(error.contains(field));
         }
-        if prefix != "{" {
-            let wire = format!("{prefix}{fields},\"curve_secondary_identity\":77,\"curve_secondary_identity_offset\":201{suffix}");
-            let error = serde_json::from_str::<super::DesignEntitySelectionOperand>(&wire).unwrap_err().to_string();
-            assert!(error.contains("secondary_identity"));
-            assert!(error.contains("curve_secondary_identity"));
-        }
+        let wire = format!("{prefix}{fields},\"curve_secondary_identity\":77,\"curve_secondary_identity_offset\":201{suffix}");
+        let error = if prefix == "{" {
+            serde_json::from_str::<super::DesignHoleFaceSelection>(&wire).unwrap_err().to_string()
+        } else {
+            serde_json::from_str::<super::DesignEntitySelectionOperand>(&wire).unwrap_err().to_string()
+        };
+        assert!(error.contains("secondary_identity"));
+        assert!(error.contains("curve_secondary_identity"));
     }
 }
 

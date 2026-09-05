@@ -1845,8 +1845,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
                 identity_record_offset: 0,
                 primary_identity: 18044,
                 primary_identity_offset: 0,
-                secondary_identity: None,
-                curve_secondary_identity: None,
+                secondary: None,
                 historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
                     history_id: "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#2"
                         .into(),

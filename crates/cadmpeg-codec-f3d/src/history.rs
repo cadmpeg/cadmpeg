@@ -6885,7 +6885,7 @@ pub(crate) fn bind_hole_selection_history(
         if selection.historical_face_candidates.is_empty() {
             if let Some(candidate) = hole_transition_face_candidate(
                 selection.primary_identity,
-                selection.secondary_identity.map(|identity| identity.value),
+                selection.secondary.map(|secondary| secondary.identity.value),
                 construction.position,
                 construction.direction,
                 history_state_id,

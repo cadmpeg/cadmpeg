@@ -5042,6 +5042,7 @@ impl From<DesignHoleConstruction> for DesignHoleConstructionWire {
 /// used by grouped operands, but the scope owns the selection directly.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignHoleFaceSelectionWire"))]
 #[serde(try_from = "DesignHoleFaceSelectionWire", into = "DesignHoleFaceSelectionWire")]
 pub struct DesignHoleFaceSelection {
     /// Indexed record carrying the persistent selection envelope.
@@ -5066,12 +5067,8 @@ pub struct DesignHoleFaceSelection {
     pub primary_identity: u64,
     /// Byte offset of the primary persistent identity.
     pub primary_identity_offset: u64,
-    /// Optional secondary persistent identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary_identity: Option<Located<u64>>,
-    /// Optional secondary identity of a selected Sketch curve.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub curve_secondary_identity: Option<Located<u64>>,
+    /// Secondary identity and any dependent curve identity, with their source locations.
+    pub secondary: Option<DesignSecondaryIdentity<Located<u64>>>,
     /// History-qualified face proofs for the primary identity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub historical_face_candidates: Vec<DesignEntitySelectionFaceCandidate>,
@@ -5142,8 +5139,10 @@ impl TryFrom<DesignHoleFaceSelectionWire> for DesignHoleFaceSelection {
             identity_record_offset: wire.identity_record_offset,
             primary_identity: wire.primary_identity,
             primary_identity_offset: wire.primary_identity_offset,
-            secondary_identity: Located::from_wire(wire.secondary_identity, wire.secondary_identity_offset, "secondary_identity")?,
-            curve_secondary_identity: Located::from_wire(wire.curve_secondary_identity, wire.curve_secondary_identity_offset, "curve_secondary_identity")?,
+            secondary: DesignSecondaryIdentity::from_wire(
+                Located::from_wire(wire.secondary_identity, wire.secondary_identity_offset, "secondary_identity")?,
+                Located::from_wire(wire.curve_secondary_identity, wire.curve_secondary_identity_offset, "curve_secondary_identity")?,
+            )?,
             historical_face_candidates: wire.historical_face_candidates,
             next_record_index: wire.next_record_index,
             next_byte_offset: wire.next_byte_offset,
@@ -5165,10 +5164,10 @@ impl From<DesignHoleFaceSelection> for DesignHoleFaceSelectionWire {
             identity_record_offset: record.identity_record_offset,
             primary_identity: record.primary_identity,
             primary_identity_offset: record.primary_identity_offset,
-            secondary_identity: record.secondary_identity.map(|identity| identity.value),
-            secondary_identity_offset: record.secondary_identity.map(|identity| identity.offset),
-            curve_secondary_identity: record.curve_secondary_identity.map(|identity| identity.value),
-            curve_secondary_identity_offset: record.curve_secondary_identity.map(|identity| identity.offset),
+            secondary_identity: record.secondary.map(|secondary| secondary.identity.value),
+            secondary_identity_offset: record.secondary.map(|secondary| secondary.identity.offset),
+            curve_secondary_identity: record.secondary.and_then(|secondary| secondary.curve_identity).map(|identity| identity.value),
+            curve_secondary_identity_offset: record.secondary.and_then(|secondary| secondary.curve_identity).map(|identity| identity.offset),
             historical_face_candidates: record.historical_face_candidates,
             next_record_index: record.next_record_index,
             next_byte_offset: record.next_byte_offset,
