@@ -2617,25 +2617,23 @@ fn legacy_edge_flange_operation_at(
         } else {
             Vec::new()
         };
+    let edges = crate::records::DesignEdgeFlangeEdge::from_columns(
+        edge_wrapper_record_indices,
+        edge_group_record_indices,
+        edge_operand_record_indices,
+        aggregate_operand_record_indices,
+    ).ok()?;
     Some(DesignEdgeFlangeOperation {
-        edges: crate::records::DesignEdgeFlangeEdge::from_columns(
-            edge_wrapper_record_indices,
-            edge_group_record_indices,
-            edge_operand_record_indices,
-            aggregate_operand_record_indices,
+        shape: crate::records::DesignEdgeFlangeShape::from_wire(
+            edges, Some(layout.width_mode),
+            width_distance_owner_record_indices,
+            width_distance_owner_record_indices_by_edge,
+            layout.width_parameter_source, DesignEdgeFlangeHeightExtent::Distance,
         ).ok()?,
         aggregate_group_record_index,
         height_owner_record_index,
-        height_extent: DesignEdgeFlangeHeightExtent::Distance,
         angle_owner_record_index,
-        width: crate::records::DesignEdgeWidth::from_wire(
-            Some(layout.width_mode),
-            width_distance_owner_record_indices,
-            width_distance_owner_record_indices_by_edge,
-        )
-        .ok()?,
         auxiliary_reference_record_indices,
-        width_parameter_source: layout.width_parameter_source,
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
@@ -2737,24 +2735,20 @@ fn edge_flange_operation_at(
         return None;
     }
     Some(DesignEdgeFlangeOperation {
-        edges: vec![crate::records::DesignEdgeFlangeEdge {
-            wrapper_record_index: edge_wrapper_record_index,
-            group_record_index: edge_group_record_index,
-            operand_record_index: edge_operand_record_index,
-            aggregate_operand_record_index,
-        }],
+        shape: crate::records::DesignEdgeFlangeShape::from_wire(
+            vec![crate::records::DesignEdgeFlangeEdge {
+                wrapper_record_index: edge_wrapper_record_index,
+                group_record_index: edge_group_record_index,
+                operand_record_index: edge_operand_record_index,
+                aggregate_operand_record_index,
+            }],
+            None, width_distance_owner_record_indices, Vec::new(),
+            DesignEdgeFlangeWidthParameterSource::EdgeWidth, DesignEdgeFlangeHeightExtent::Distance,
+        ).ok()?,
         aggregate_group_record_index,
         height_owner_record_index,
-        height_extent: DesignEdgeFlangeHeightExtent::Distance,
         angle_owner_record_index,
-        width: crate::records::DesignEdgeWidth::from_wire(
-            None,
-            width_distance_owner_record_indices,
-            Vec::new(),
-        )
-        .ok()?,
         auxiliary_reference_record_indices: Vec::new(),
-        width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
@@ -2902,25 +2896,24 @@ fn edge_flange_to_object_operation_at(
         return None;
     }
     Some(DesignEdgeFlangeOperation {
-        edges: vec![crate::records::DesignEdgeFlangeEdge {
-            wrapper_record_index: edge_wrapper_record_index,
-            group_record_index: edge_group_record_index,
-            operand_record_index: edge_operand_record_index,
-            aggregate_operand_record_index,
-        }],
+        shape: crate::records::DesignEdgeFlangeShape::FullEdge {
+            edges: vec![crate::records::DesignEdgeFlangeEdge {
+                wrapper_record_index: edge_wrapper_record_index,
+                group_record_index: edge_group_record_index,
+                operand_record_index: edge_operand_record_index,
+                aggregate_operand_record_index,
+            }],
+            height: DesignEdgeFlangeHeightExtent::ToObject {
+                target_group_record_index,
+                target_operand_record_index,
+                offset_owner_record_index: *offset_owner_record_index,
+                reference_record_indices,
+            },
+        },
         aggregate_group_record_index,
         height_owner_record_index,
-        height_extent: DesignEdgeFlangeHeightExtent::ToObject {
-            target_group_record_index,
-            target_operand_record_index,
-            offset_owner_record_index: *offset_owner_record_index,
-            reference_record_indices,
-        },
         angle_owner_record_index,
-        width: crate::records::DesignEdgeWidth::from_wire(None, Vec::new(), Vec::new())
-            .expect("edge flange width"),
         auxiliary_reference_record_indices: Vec::new(),
-        width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
