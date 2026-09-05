@@ -1396,7 +1396,7 @@ fn om_index_accepts_length_framed_root_version_text() {
     }
     let sections = super::indexed_sections(&bytes);
     assert_eq!(sections.len(), 1);
-    assert!(sections[0].records[0]
+    assert!(sections[0].as_fixed().expect("fixed store")[0]
         .bytes
         .starts_with(b"\x04\x01\x0fNX 2027.3102 \0"));
 }
@@ -1407,7 +1407,7 @@ fn om_index_discards_nested_indexed_interpretation() {
     let sections = super::indexed_sections(&bytes);
 
     assert_eq!(sections.len(), 1);
-    assert_eq!(sections[0].records.len(), 2);
+    assert_eq!(sections[0].as_fixed().expect("fixed store").len(), 2);
 }
 
 #[test]
@@ -1447,19 +1447,16 @@ fn om_offset_only_index_bounds_storage_blocks() {
     let sections = super::indexed_sections(&bytes);
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].base, 0);
+    let (control, column_storage, records) =
+        sections[0].as_offset_only().expect("offset-only store");
+    assert_eq!(control.bytes, &[0, 0, 0, 0, 0, 1, 0, 0]);
+    assert_eq!(records.len(), 2);
     assert_eq!(
-        sections[0].control.as_ref().unwrap().bytes,
-        &[0, 0, 0, 0, 0, 1, 0, 0]
+        column_storage,
+        [records[0].bytes, records[1].bytes].concat()
     );
-    assert_eq!(sections[0].records.len(), 2);
-    assert_eq!(
-        sections[0].column_storage.unwrap(),
-        [sections[0].records[0].bytes, sections[0].records[1].bytes].concat()
-    );
-    assert_eq!(sections[0].records[0].object_id, None);
-    assert!(sections[0].records[0].bytes.starts_with(b"\x04\x01\x0eNX "));
-    assert_eq!(sections[0].records[1].object_id, None);
-    assert!(sections[0].records[1].bytes.ends_with(b"\0"));
+    assert!(records[0].bytes.starts_with(b"\x04\x01\x0eNX "));
+    assert!(records[1].bytes.ends_with(b"\0"));
     let expressions = sections[0].numeric_expressions();
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].name, "length");
@@ -1484,15 +1481,13 @@ fn om_offset_only_index_accepts_one_root_record_inside_control_block() {
     let sections = super::indexed_sections(&bytes);
 
     assert_eq!(sections.len(), 1);
-    assert!(sections[0]
-        .control
-        .as_ref()
-        .unwrap()
+    let (control, _, records) = sections[0].as_offset_only().expect("offset-only store");
+    assert!(control
         .bytes
         .windows(b"NX 2027.3102".len())
         .any(|window| window == b"NX 2027.3102"));
-    assert_eq!(sections[0].records.len(), 2);
-    assert_eq!(sections[0].records[0].bytes, &[0; 32]);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].bytes, &[0; 32]);
     assert_eq!(sections[0].numeric_expressions()[0].name, "length");
 }
 
@@ -1821,7 +1816,9 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
     assert_eq!(expressions[0].unit, super::ExpressionUnit::Degree);
     assert_eq!(expressions[0].expression, "120");
     assert_eq!(expressions[0].value, Some(120.0));
-    let declaration = super::expression_declaration_name(section.records[1].bytes).unwrap();
+    let declaration =
+        super::expression_declaration_name(section.as_fixed().expect("fixed store")[1].bytes)
+            .unwrap();
     assert_eq!(
         declaration.value,
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"

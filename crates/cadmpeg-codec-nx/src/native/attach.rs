@@ -127,36 +127,57 @@ fn attach_indexed_om_unknowns(
     let object_sections = scan.container.indexed_om_sections();
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (record_index, record) in section
-            .control
-            .iter()
-            .chain(section.records.iter())
-            .enumerate()
-        {
-            let kind = if record.object_id.is_some() {
-                "record"
-            } else {
-                "block"
-            };
-            let id = UnknownId::mint(format!(
-                "nx:om-section-{section_index}:{kind}#{record_index}"
-            ))
-            .expect("identity grammar");
-            let offset = entry_offset + record.offset as u64;
-            annotations
-                .note(&id, annotation_stream, offset)
-                .tag(if record.object_id.is_some() {
-                    "OM_ENTITY_RECORD"
-                } else {
-                    "OM_DATA_BLOCK"
-                });
-            annotations.exactness(&id, Exactness::ByteExact);
-            unknowns.push(UnknownRecord::retained(
-                id,
-                offset,
-                ctx.copy_retained(record.bytes, "retain NX indexed object-model record", None)?,
-                Vec::new(),
-            ));
+        match &section.store {
+            crate::om::IndexedStore::Fixed { records } => {
+                for (record_index, record) in records.iter().enumerate() {
+                    let id = UnknownId::mint(format!(
+                        "nx:om-section-{section_index}:record#{record_index}"
+                    ))
+                    .expect("identity grammar");
+                    let offset = entry_offset + record.offset as u64;
+                    annotations
+                        .note(&id, annotation_stream, offset)
+                        .tag("OM_ENTITY_RECORD");
+                    annotations.exactness(&id, Exactness::ByteExact);
+                    unknowns.push(UnknownRecord::retained(
+                        id,
+                        offset,
+                        ctx.copy_retained(
+                            record.bytes,
+                            "retain NX indexed object-model record",
+                            None,
+                        )?,
+                        Vec::new(),
+                    ));
+                }
+            }
+            crate::om::IndexedStore::OffsetOnly {
+                control, records, ..
+            } => {
+                for (record_index, record) in
+                    std::iter::once(control).chain(records.iter()).enumerate()
+                {
+                    let id = UnknownId::mint(format!(
+                        "nx:om-section-{section_index}:block#{record_index}"
+                    ))
+                    .expect("identity grammar");
+                    let offset = entry_offset + record.offset as u64;
+                    annotations
+                        .note(&id, annotation_stream, offset)
+                        .tag("OM_DATA_BLOCK");
+                    annotations.exactness(&id, Exactness::ByteExact);
+                    unknowns.push(UnknownRecord::retained(
+                        id,
+                        offset,
+                        ctx.copy_retained(
+                            record.bytes,
+                            "retain NX indexed object-model record",
+                            None,
+                        )?,
+                        Vec::new(),
+                    ));
+                }
+            }
         }
     }
     Ok(())

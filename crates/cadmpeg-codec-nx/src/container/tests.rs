@@ -170,10 +170,27 @@ fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
         &first[0].1.types,
         &second[0].1.types
     ));
-    assert!(std::sync::Arc::ptr_eq(
-        &first[0].1.records,
-        &second[0].1.records
-    ));
+    match (&first[0].1.store, &second[0].1.store) {
+        (
+            crate::om::IndexedStore::Fixed {
+                records: first_records,
+            },
+            crate::om::IndexedStore::Fixed {
+                records: second_records,
+            },
+        ) => assert!(std::sync::Arc::ptr_eq(first_records, second_records)),
+        (
+            crate::om::IndexedStore::OffsetOnly {
+                records: first_records,
+                ..
+            },
+            crate::om::IndexedStore::OffsetOnly {
+                records: second_records,
+                ..
+            },
+        ) => assert!(std::sync::Arc::ptr_eq(first_records, second_records)),
+        _ => panic!("indexed section store kind changed between cache hits"),
+    }
 }
 
 #[test]

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container::{DirEntry, Region};
-use crate::om::{EntityRecord, IndexedSection};
+use crate::om::{EntityRecord, IndexedSection, IndexedStore};
 use crate::test_support::*;
 use crate::NxCodec;
 
@@ -25,14 +25,17 @@ fn unique_offset_data_store_rejects_a_second_matching_section() {
         object_id_table_offset: 0,
         types: Arc::from([]),
         fields: Arc::from([]),
-        control: None,
-        column_storage: None,
-        records: Arc::from([EntityRecord {
-            object_id: None,
-            object_id_offset: None,
-            offset: 0,
-            bytes: &[],
-        }]),
+        store: IndexedStore::OffsetOnly {
+            control: EntityRecord {
+                offset: 0,
+                bytes: &[],
+            },
+            column_storage: &[],
+            records: Arc::from([EntityRecord {
+                offset: 0,
+                bytes: &[],
+            }]),
+        },
     };
     let first = section();
     let second = section();
@@ -665,29 +668,18 @@ fn nx_sketch_payload_join_preserves_order_and_cross_block_values() {
 #[test]
 fn nx_offset_store_block_bytes_follow_catalog_identity() {
     let control = crate::om::EntityRecord {
-        object_id: None,
-        object_id_offset: None,
         offset: 5,
         bytes: &[0xaa],
     };
     let first = crate::om::EntityRecord {
-        object_id: None,
-        object_id_offset: None,
         offset: 6,
         bytes: &[0xbb],
     };
     let second = crate::om::EntityRecord {
-        object_id: None,
-        object_id_offset: None,
         offset: 7,
         bytes: &[0xcc],
     };
-    let controlled = super::offset_data_block_bytes_for_section(
-        3,
-        100,
-        Some(&control),
-        &[first.clone(), second.clone()],
-    );
+    let controlled = super::offset_data_block_bytes_for_section(3, 100, &control, &[first, second]);
     assert_eq!(
         controlled["nx:om-data-blocks-3:block#0"],
         (&[0xaa][..], 105)
@@ -699,16 +691,6 @@ fn nx_offset_store_block_bytes_follow_catalog_identity() {
     assert_eq!(
         controlled["nx:om-data-blocks-3:block#2"],
         (&[0xcc][..], 107)
-    );
-
-    let control_free = super::offset_data_block_bytes_for_section(4, 200, None, &[first, second]);
-    assert_eq!(
-        control_free["nx:om-data-blocks-4:block#0"],
-        (&[0xbb][..], 206)
-    );
-    assert_eq!(
-        control_free["nx:om-data-blocks-4:block#1"],
-        (&[0xcc][..], 207)
     );
 }
 

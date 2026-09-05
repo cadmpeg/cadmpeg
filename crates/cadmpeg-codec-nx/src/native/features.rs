@@ -6127,22 +6127,19 @@ pub fn feature_sketch_payload_mixed_pairs(
 pub(crate) fn offset_data_block_bytes_for_section<'a>(
     section_ordinal: usize,
     entry_offset: u64,
-    control: Option<&crate::om::EntityRecord<'a>>,
+    control: &crate::om::EntityRecord<'a>,
     records: &[crate::om::EntityRecord<'a>],
 ) -> BTreeMap<String, (&'a [u8], u64)> {
     let mut blocks = BTreeMap::new();
-    let first_record_ordinal = usize::from(control.is_some());
-    if let Some(control) = control {
-        blocks.insert(
-            format!("nx:om-data-blocks-{section_ordinal}:block#0"),
-            (control.bytes, entry_offset + control.offset as u64),
-        );
-    }
+    blocks.insert(
+        format!("nx:om-data-blocks-{section_ordinal}:block#0"),
+        (control.bytes, entry_offset + control.offset as u64),
+    );
     for (record_ordinal, block) in records.iter().enumerate() {
         blocks.insert(
             format!(
                 "nx:om-data-blocks-{section_ordinal}:block#{}",
-                record_ordinal + first_record_ordinal
+                record_ordinal + 1
             ),
             (block.bytes, entry_offset + block.offset as u64),
         );
@@ -6162,19 +6159,15 @@ fn offset_data_block_bytes<'a>(
     }
     let mut blocks = BTreeMap::new();
     for (section_ordinal, (entry, section)) in indexed.into_iter().enumerate() {
-        if section
-            .records
-            .first()
-            .is_none_or(|record| record.object_id.is_some())
-        {
+        let Some((control, _, records)) = section.as_offset_only() else {
             continue;
-        }
+        };
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         blocks.extend(offset_data_block_bytes_for_section(
             section_ordinal,
             entry_offset,
-            section.control.as_ref(),
-            &section.records,
+            control,
+            records,
         ));
     }
     Cow::Owned(blocks)
@@ -6583,22 +6576,18 @@ pub fn offset_store_named_points(container: &Container) -> Vec<OffsetStoreNamedP
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections().into_iter().enumerate()
     {
-        if section
-            .records
-            .first()
-            .is_none_or(|record| record.object_id.is_some())
-        {
+        let Some((_, _, records)) = section.as_offset_only() else {
             continue;
-        }
+        };
         let section_key = format!("nx:om-data-blocks-{section_ordinal}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for ordinal in 0..section.records.len() {
+        for ordinal in 0..records.len() {
             let Some(point) = crate::om::offset_store_named_point(
-                section.records[ordinal..].iter().map(|record| record.bytes),
+                records[ordinal..].iter().map(|record| record.bytes),
             ) else {
                 continue;
             };
-            let records = &section.records[ordinal..ordinal + point.block_count];
+            let records = &records[ordinal..ordinal + point.block_count];
             let first_source = entry_offset + records[0].offset as u64;
             let value_source_offset = |payload_offset: usize| {
                 let mut relative = payload_offset;
@@ -7888,7 +7877,8 @@ pub fn feature_point_construction_scalar_lanes(
             .iter()
             .enumerate()
             .filter_map(|(section_ordinal, (entry, section))| {
-                if section.records.first()?.object_id.is_some() || target_ordinal < 2 {
+                let records = section.as_offset_only()?.2;
+                if target_ordinal < 2 {
                     return None;
                 }
                 let target_id =
@@ -7896,8 +7886,8 @@ pub fn feature_point_construction_scalar_lanes(
                 if target_id != expected_target {
                     return None;
                 }
-                let preceding = section.records.get(target_ordinal - 2)?;
-                let target = section.records.get(target_ordinal - 1)?;
+                let preceding = records.get(target_ordinal - 2)?;
+                let target = records.get(target_ordinal - 1)?;
                 let lane = crate::om::point_feature_scalar_lane(preceding.bytes, target.bytes)?;
                 Some((section_ordinal, *entry, preceding, target, lane))
             })
@@ -9772,15 +9762,13 @@ fn unique_offset_data_store(
     }
     let mut unique = None;
     for (section_ordinal, (_, candidate)) in indexed.iter().enumerate() {
-        let matches = candidate
-            .records
-            .first()
-            .is_some_and(|record| record.object_id.is_none())
-            && object_indices.iter().all(|object_index| {
+        let matches = candidate.as_offset_only().is_some_and(|(_, _, records)| {
+            object_indices.iter().all(|object_index| {
                 usize::try_from(*object_index)
                     .ok()
-                    .is_some_and(|ordinal| ordinal <= candidate.records.len())
-            });
+                    .is_some_and(|ordinal| ordinal <= records.len())
+            })
+        });
         if !matches {
             continue;
         }

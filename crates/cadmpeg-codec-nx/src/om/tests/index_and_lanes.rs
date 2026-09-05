@@ -11,26 +11,27 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
     let sections = super::indexed_sections(&bytes);
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].base, 8);
-    assert_eq!(sections[0].records.len(), 2);
-    assert_eq!(sections[0].records[0].object_id, Some(0x101));
+    let records = sections[0].as_fixed().expect("fixed store");
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].object_id.0, 0x101);
     assert_eq!(
-        sections[0].records[0].object_id_offset,
-        Some(sections[0].object_id_table_offset + 8)
+        records[0].object_id.1 as usize,
+        sections[0].object_id_table_offset + 8
     );
     assert_eq!(
-        sections[0].records[0].bytes,
+        records[0].bytes,
         b"\x04\x01\x0eNX 2027.3102\x00hostglobalvariables"
     );
-    assert_eq!(sections[0].records[1].object_id, Some(0x102));
+    assert_eq!(records[1].object_id.0, 0x102);
     assert_eq!(
-        sections[0].records[1].object_id_offset,
-        Some(sections[0].object_id_table_offset + 12)
+        records[1].object_id.1 as usize,
+        sections[0].object_id_table_offset + 12
     );
-    assert_eq!(sections[0].column_storage, None);
+    assert!(sections[0].as_offset_only().is_none());
     assert_eq!(sections[0].fields.len(), 1);
     assert_eq!(sections[0].fields[0].name, "m_target");
     assert_eq!(
-        sections[0].records[1].bytes,
+        records[1].bytes,
         b"\x04\x36p8_CircularPattern_pattern_Circular_Dir_offset_angle\x00\x04\x05120\x00\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00\x66\x32\x03\x0cSKETCH_001\0\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0\x01\x02\x90\x00\x00"
     );
 }

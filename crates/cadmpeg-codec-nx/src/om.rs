@@ -8,18 +8,43 @@ use cadmpeg_core::decode::{alloc_filled, View};
 
 pub(crate) mod registry;
 
-/// One NX object-model entity with persistent object identity.
+/// One NX object-model entity payload without a fixed object-id table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntityRecord<'a> {
-    /// NX object identifier paired with this boundary slot, when the section
-    /// carries a fixed-width object-id table.
-    pub object_id: Option<u32>,
-    /// Absolute byte offset of the paired object-id table word, when present.
-    pub object_id_offset: Option<usize>,
     /// Absolute byte offset of the entity payload.
     pub offset: usize,
     /// Exactly bounded serialized entity payload.
     pub bytes: &'a [u8],
+}
+
+/// One NX object-model entity in a fixed-width object-id table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixedEntityRecord<'a> {
+    /// Object identifier and the absolute offset of its table word.
+    pub object_id: (u32, u64),
+    /// Absolute byte offset of the entity payload.
+    pub offset: usize,
+    /// Exactly bounded serialized entity payload.
+    pub bytes: &'a [u8],
+}
+
+/// How one indexed section stores entity identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IndexedStore<'a> {
+    /// Every record carries a fixed-width object id.
+    Fixed {
+        /// Entity records following the reserved zero-offset slot.
+        records: Arc<[FixedEntityRecord<'a>]>,
+    },
+    /// Identity lives in the control block and column storage.
+    OffsetOnly {
+        /// Store-level control block bounded by slot zero.
+        control: EntityRecord<'a>,
+        /// Contiguous column-storage region after the control block.
+        column_storage: &'a [u8],
+        /// Entity records following the reserved zero-offset slot.
+        records: Arc<[EntityRecord<'a>]>,
+    },
 }
 
 /// One length-framed NX object-model class definition.
@@ -1232,15 +1257,8 @@ pub struct IndexedSection<'a> {
     pub types: Arc<[TypeDefinition<'a>]>,
     /// Length-framed member definitions preceding the entity index.
     pub fields: Arc<[FieldDefinition<'a>]>,
-    /// Store-level control block bounded by slot zero in an offset-only index.
-    pub control: Option<EntityRecord<'a>>,
-    /// Contiguous column-storage region after the control block.
-    ///
-    /// Present only for an offset-only store. Physical block boundaries do not
-    /// delimit logical field lanes within this region.
-    pub column_storage: Option<&'a [u8]>,
-    /// Entity records following the reserved zero-offset slot.
-    pub records: Arc<[EntityRecord<'a>]>,
+    /// Identity store used by this section.
+    pub store: IndexedStore<'a>,
 }
 
 /// Byte ranges needed to materialize one indexed section without rescanning
@@ -1263,9 +1281,20 @@ struct IndexedDefinitionLayout {
 /// One cached entity-record range in an indexed section.
 #[derive(Debug, Clone, Copy)]
 struct IndexedRecordLayout {
-    object_id: Option<u32>,
-    object_id_offset: Option<usize>,
+    object_id: Option<(u32, u64)>,
     bytes: IndexedByteRange,
+}
+
+#[derive(Debug, Clone)]
+enum IndexedStoreLayout {
+    Fixed {
+        records: Vec<IndexedRecordLayout>,
+    },
+    OffsetOnly {
+        control: IndexedRecordLayout,
+        column_storage: IndexedByteRange,
+        records: Vec<IndexedRecordLayout>,
+    },
 }
 
 /// Cached indexed-section layout owned by a parsed container.
@@ -1276,9 +1305,7 @@ pub(crate) struct IndexedSectionLayout {
     pub(crate) object_id_table_offset: usize,
     types: Vec<IndexedDefinitionLayout>,
     fields: Vec<IndexedDefinitionLayout>,
-    control: Option<IndexedRecordLayout>,
-    column_storage: Option<IndexedByteRange>,
-    records: Vec<IndexedRecordLayout>,
+    store: IndexedStoreLayout,
 }
 
 impl IndexedSectionLayout {
@@ -1315,46 +1342,107 @@ impl IndexedSectionLayout {
                 }),
             })
             .collect();
-        let record_layout = |record: &EntityRecord<'_>| IndexedRecordLayout {
-            object_id: record.object_id,
-            object_id_offset: record.object_id_offset,
-            bytes: IndexedByteRange {
-                start: record.offset,
-                end: record.offset + record.bytes.len(),
+        let record_layout =
+            |offset: usize, bytes: &[u8], object_id: Option<(u32, u64)>| IndexedRecordLayout {
+                object_id,
+                bytes: IndexedByteRange {
+                    start: offset,
+                    end: offset + bytes.len(),
+                },
+            };
+        let store = match &section.store {
+            IndexedStore::Fixed { records } => IndexedStoreLayout::Fixed {
+                records: records
+                    .iter()
+                    .map(|record| {
+                        record_layout(record.offset, record.bytes, Some(record.object_id))
+                    })
+                    .collect(),
             },
-        };
-        let control = section.control.as_ref().map(record_layout);
-        let column_storage = section.column_storage.map(|storage| {
-            let start = section
-                .records
-                .first()
-                .expect("offset-only indexed section has records")
-                .offset;
-            IndexedByteRange {
-                start,
-                end: start + storage.len(),
+            IndexedStore::OffsetOnly {
+                control,
+                column_storage,
+                records,
+            } => {
+                let start = records
+                    .first()
+                    .expect("offset-only indexed section has records")
+                    .offset;
+                IndexedStoreLayout::OffsetOnly {
+                    control: record_layout(control.offset, control.bytes, None),
+                    column_storage: IndexedByteRange {
+                        start,
+                        end: start + column_storage.len(),
+                    },
+                    records: records
+                        .iter()
+                        .map(|record| record_layout(record.offset, record.bytes, None))
+                        .collect(),
+                }
             }
-        });
+        };
         Self {
             base: section.base,
             entity_index_offset: section.entity_index_offset,
             object_id_table_offset: section.object_id_table_offset,
             types,
             fields,
-            control,
-            column_storage,
-            records: section.records.iter().map(record_layout).collect(),
+            store,
         }
     }
 
     pub(crate) fn materialize<'a>(&self, bytes: &'a [u8]) -> IndexedSection<'a> {
-        let materialize_record = |layout: &IndexedRecordLayout| EntityRecord {
-            object_id: layout.object_id,
-            object_id_offset: layout.object_id_offset,
-            offset: layout.bytes.start,
-            bytes: bytes
-                .get(layout.bytes.start..layout.bytes.end)
-                .expect("cached indexed record remains in source"),
+        let materialize_payload = |layout: &IndexedRecordLayout| {
+            (
+                layout.bytes.start,
+                bytes
+                    .get(layout.bytes.start..layout.bytes.end)
+                    .expect("cached indexed record remains in source"),
+                layout.object_id,
+            )
+        };
+        let store = match &self.store {
+            IndexedStoreLayout::Fixed { records } => IndexedStore::Fixed {
+                records: records
+                    .iter()
+                    .map(|layout| {
+                        let (offset, payload, object_id) = materialize_payload(layout);
+                        FixedEntityRecord {
+                            object_id: object_id.expect("fixed indexed record has object id"),
+                            offset,
+                            bytes: payload,
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .into(),
+            },
+            IndexedStoreLayout::OffsetOnly {
+                control,
+                column_storage,
+                records,
+            } => {
+                let (offset, payload, _) = materialize_payload(control);
+                IndexedStore::OffsetOnly {
+                    control: EntityRecord {
+                        offset,
+                        bytes: payload,
+                    },
+                    column_storage: bytes
+                        .get(column_storage.start..column_storage.end)
+                        .expect("cached indexed column storage remains in source"),
+                    records: records
+                        .iter()
+                        .map(|layout| {
+                            let (offset, payload, _) = materialize_payload(layout);
+                            EntityRecord {
+                                offset,
+                                bytes: payload,
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .into(),
+                }
+            }
         };
         IndexedSection {
             base: self.base,
@@ -1372,18 +1460,7 @@ impl IndexedSectionLayout {
                 .map(|layout| registry::materialize_field_definition(bytes, layout))
                 .collect::<Vec<_>>()
                 .into(),
-            control: self.control.as_ref().map(materialize_record),
-            column_storage: self.column_storage.map(|range| {
-                bytes
-                    .get(range.start..range.end)
-                    .expect("cached indexed column storage remains in source")
-            }),
-            records: self
-                .records
-                .iter()
-                .map(materialize_record)
-                .collect::<Vec<_>>()
-                .into(),
+            store,
         }
     }
 }
@@ -2929,6 +3006,39 @@ impl<'a> IndexedSection<'a> {
         self.base
     }
 
+    /// Fixed-width object-id records, when this section is that store.
+    pub fn as_fixed(&self) -> Option<&[FixedEntityRecord<'a>]> {
+        match &self.store {
+            IndexedStore::Fixed { records } => Some(records.as_ref()),
+            IndexedStore::OffsetOnly { .. } => None,
+        }
+    }
+
+    /// Control block, column storage, and records of an offset-only store.
+    pub fn as_offset_only(&self) -> Option<(&EntityRecord<'a>, &'a [u8], &[EntityRecord<'a>])> {
+        match &self.store {
+            IndexedStore::OffsetOnly {
+                control,
+                column_storage,
+                records,
+            } => Some((control, column_storage, records.as_ref())),
+            IndexedStore::Fixed { .. } => None,
+        }
+    }
+
+    fn record_views(&self) -> Vec<(usize, &'a [u8], Option<u32>)> {
+        match &self.store {
+            IndexedStore::Fixed { records } => records
+                .iter()
+                .map(|record| (record.offset, record.bytes, Some(record.object_id.0)))
+                .collect(),
+            IndexedStore::OffsetOnly { records, .. } => records
+                .iter()
+                .map(|record| (record.offset, record.bytes, None))
+                .collect(),
+        }
+    }
+
     /// Decode explicit numeric-expression text within bounded entity records.
     pub fn numeric_expressions(&self) -> Vec<NumericExpression<'a>> {
         self.numeric_expression_records()
@@ -2939,19 +3049,19 @@ impl<'a> IndexedSection<'a> {
 
     /// Decode expressions together with their owning record ordinal.
     pub fn numeric_expression_records(&self) -> Vec<(usize, NumericExpression<'a>)> {
-        if !self.records.iter().any(|record| {
-            record
-                .bytes
+        let records = self.record_views();
+        if !records.iter().any(|(_, bytes, _)| {
+            bytes
                 .windows(b"hostglobalvariables".len())
                 .any(|window| window == b"hostglobalvariables")
         }) {
             return Vec::new();
         }
-        self.records
-            .iter()
+        records
+            .into_iter()
             .enumerate()
-            .filter_map(|(record_ordinal, record)| {
-                numeric_expression_at(record.bytes, record.offset, record.object_id)
+            .filter_map(|(record_ordinal, (offset, bytes, object_id))| {
+                numeric_expression_at(bytes, offset, object_id)
                     .map(|expression| (record_ordinal, expression))
             })
             .collect()
@@ -2959,43 +3069,33 @@ impl<'a> IndexedSection<'a> {
 
     /// Decode every strictly framed printable string in each bounded record.
     pub fn string_values(&self) -> Vec<(usize, usize, Option<u32>, StringValue<'a>)> {
-        self.records
-            .iter()
+        self.record_views()
+            .into_iter()
             .enumerate()
-            .flat_map(|(record_ordinal, record)| {
-                string_values(record.bytes, record.offset)
-                    .into_iter()
-                    .enumerate()
-                    .map(move |(value_ordinal, value)| {
-                        (record_ordinal, value_ordinal, record.object_id, value)
-                    })
+            .flat_map(|(record_ordinal, (offset, bytes, object_id))| {
+                string_values(bytes, offset).into_iter().enumerate().map(
+                    move |(value_ordinal, value)| (record_ordinal, value_ordinal, object_id, value),
+                )
             })
             .collect()
     }
 
     /// Decode tagged cross-record references from every bounded record.
     pub fn references(&self) -> Vec<(usize, usize, Option<u32>, ReferenceValue)> {
-        self.records
-            .iter()
+        let records = self.record_views();
+        let record_count = records.len();
+        records
+            .into_iter()
             .enumerate()
-            .flat_map(|(record_ordinal, record)| {
-                let mut references = record_references(record.bytes, record.offset);
-                references.extend(counted_record_references(
-                    record.bytes,
-                    record.offset,
-                    self.records.len(),
-                ));
+            .flat_map(|(record_ordinal, (offset, bytes, object_id))| {
+                let mut references = record_references(bytes, offset);
+                references.extend(counted_record_references(bytes, offset, record_count));
                 references.sort_by_key(|reference| reference.offset);
                 references
                     .into_iter()
                     .enumerate()
                     .map(move |(reference_ordinal, reference)| {
-                        (
-                            record_ordinal,
-                            reference_ordinal,
-                            record.object_id,
-                            reference,
-                        )
+                        (record_ordinal, reference_ordinal, object_id, reference)
                     })
             })
             .collect()
@@ -9149,9 +9249,8 @@ fn materialize_indexed_candidate(bytes: &[u8], candidate: IndexedCandidate) -> I
                         .expect("object-id table offset remains bounded");
                     let object_id = View::u32_le_at(bytes, object_id_offset)
                         .expect("validated object-id table remains readable");
-                    EntityRecord {
-                        object_id: Some(object_id),
-                        object_id_offset: Some(object_id_offset),
+                    FixedEntityRecord {
+                        object_id: (object_id, object_id_offset as u64),
                         offset: start,
                         bytes: payload,
                     }
@@ -9163,9 +9262,9 @@ fn materialize_indexed_candidate(bytes: &[u8], candidate: IndexedCandidate) -> I
                 object_id_table_offset,
                 types: type_registry.definitions.into(),
                 fields: fields.into(),
-                control: None,
-                column_storage: None,
-                records: records.into(),
+                store: IndexedStore::Fixed {
+                    records: records.into(),
+                },
             }
         }
         IndexedCandidateKind::OffsetOnly {
@@ -9189,8 +9288,6 @@ fn materialize_indexed_candidate(bytes: &[u8], candidate: IndexedCandidate) -> I
                     let end = entity_index_offset(bytes, entity_index_start, index + 2)
                         .expect("validated offset-only index remains readable");
                     EntityRecord {
-                        object_id: None,
-                        object_id_offset: None,
                         offset: start,
                         bytes: bytes
                             .get(start..end)
@@ -9204,20 +9301,18 @@ fn materialize_indexed_candidate(bytes: &[u8], candidate: IndexedCandidate) -> I
                 object_id_table_offset,
                 types: type_registry.definitions.into(),
                 fields: fields.into(),
-                control: Some(EntityRecord {
-                    object_id: None,
-                    object_id_offset: None,
-                    offset: first,
-                    bytes: bytes
-                        .get(first..first_record)
-                        .expect("validated offset-only control range remains readable"),
-                }),
-                column_storage: Some(
-                    bytes
+                store: IndexedStore::OffsetOnly {
+                    control: EntityRecord {
+                        offset: first,
+                        bytes: bytes
+                            .get(first..first_record)
+                            .expect("validated offset-only control range remains readable"),
+                    },
+                    column_storage: bytes
                         .get(first_record..last)
                         .expect("validated offset-only storage range remains readable"),
-                ),
-                records: records.into(),
+                    records: records.into(),
+                },
             }
         }
     }
