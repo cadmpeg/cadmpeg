@@ -696,8 +696,11 @@ fn resolve_rm_face_color_bindings(
         .map(|definition| (definition.id.as_str(), definition))
         .collect::<BTreeMap<_, _>>();
     let mut face_records_by_node = BTreeMap::<u32, Vec<_>>::new();
-    for record in records.iter().filter(|record| record.family == "FACE") {
-        let Some(node_id) = record.node_id else {
+    for record in records
+        .iter()
+        .filter(|record| record.family_name() == "FACE")
+    {
+        let Some(node_id) = record.node_id() else {
             continue;
         };
         face_records_by_node
