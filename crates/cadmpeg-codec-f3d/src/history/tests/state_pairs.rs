@@ -1336,17 +1336,17 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     assert_eq!(selectors[0].selector, 1);
     assert_eq!(selectors[0].boundary_count_matching_edge_slots, [8]);
     assert_eq!(
-        selectors[0].clause_triplet_edge_slots,
+        selectors[0].clauses.iter().map(|clause| clause.as_ref().map(|clause| clause.triplet_edge_slots.clone())).collect::<Vec<_>>(),
         [Some([vec![7, 8], vec![7, 8]]), Some([vec![8], vec![8]])]
     );
     assert_eq!(selectors[0].incidence_matching_edge_slots, [8]);
-    assert_eq!(selectors[0].unique_incidence_edge_slot, Some(8));
+    assert_eq!(selectors[0].unique_incidence_edge_slot(), Some(8));
     assert_eq!(selectors[1].selector, 2);
     assert_eq!(selectors[1].boundary_count_matching_edge_slots, [7, 8]);
     assert_eq!(selectors[1].incidence_matching_edge_slots, [7, 8]);
-    assert_eq!(selectors[1].unique_incidence_edge_slot, None);
+    assert_eq!(selectors[1].unique_incidence_edge_slot(), None);
     assert_eq!(
-        selectors[1].clause_triplet_edge_slots,
+        selectors[1].clauses.iter().map(|clause| clause.as_ref().map(|clause| clause.triplet_edge_slots.clone())).collect::<Vec<_>>(),
         [Some([vec![7, 8], vec![7, 8]]), None]
     );
     assert!(incident_loop_counts_satisfy_sides(
