@@ -544,12 +544,15 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
         family_discriminator: None,
         family_discriminator_offset: None,
         source_ordinal: 0,
-        owner_record_index: Some(8),
+        owner: crate::records::DesignParameterOwnerKind::from_kind(
+            crate::records::DesignParameterKind::Feature,
+            Some(8),
+        ),
         expression: "12.5 mm".into(),
         expression_offset: 0,
         source_kind: "AlongDistance".into(),
         source_kind_offset: 0,
-        kind: crate::records::DesignParameterKind::Feature,
+
         unit: Some("mm".into()),
         unit_offset: Some(0),
         name: "distance".into(),

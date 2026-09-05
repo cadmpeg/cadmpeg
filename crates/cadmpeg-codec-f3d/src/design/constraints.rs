@@ -283,11 +283,11 @@ pub(crate) fn exact_rectangular_pattern(
             }
             let count_parameter = parameters.iter().find(|parameter| {
                 native_stream(&parameter.id) == Some(scope)
-                    && parameter.owner_record_index == Some(direction.count_parameter)
+                    && parameter.owner_record_index() == Some(direction.count_parameter)
             });
             let distance_parameter = parameters.iter().find(|parameter| {
                 native_stream(&parameter.id) == Some(scope)
-                    && parameter.owner_record_index == Some(direction.distance_parameter)
+                    && parameter.owner_record_index() == Some(direction.distance_parameter)
             });
             let count = direction.evaluated_count;
             if count_parameter
@@ -565,11 +565,11 @@ pub(crate) fn exact_circular_pattern(
     };
     let angle_parameter = parameters.iter().find(|parameter| {
         native_stream(&parameter.id) == Some(scope)
-            && parameter.owner_record_index == Some(*angle_parameter)
+            && parameter.owner_record_index() == Some(*angle_parameter)
     });
     let count_parameter = parameters.iter().find(|parameter| {
         native_stream(&parameter.id) == Some(scope)
-            && parameter.owner_record_index == Some(*count_parameter)
+            && parameter.owner_record_index() == Some(*count_parameter)
     });
     let angle = cadmpeg_ir::features::Angle(*evaluated_angle);
     if !evaluated_angle.is_finite()
@@ -1049,12 +1049,15 @@ mod tests {
             family_discriminator: Some(6),
             family_discriminator_offset: Some(0),
             source_ordinal: 0,
-            owner_record_index: Some(record_index),
+            owner: crate::records::DesignParameterOwnerKind::from_kind(
+                DesignParameterKind::Feature,
+                Some(record_index),
+            ),
             expression: value.to_string(),
             expression_offset: 0,
             source_kind: "R-Pattern1-distance".into(),
             source_kind_offset: 0,
-            kind: DesignParameterKind::Feature,
+
             unit: Some("mm".into()),
             unit_offset: Some(0),
             name: format!("d{record_index}"),

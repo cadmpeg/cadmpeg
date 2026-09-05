@@ -1127,7 +1127,7 @@ fn project_all_dimension_constraints(
         let key = (scope.to_owned(), companion.record_index);
         let owner = owners_by_companion.get(&key)?;
         let (parameter, parameter_id) = parameter_for(scope, companion.record_index)?;
-        if parameter.kind != DesignParameterKind::Dimension
+        if parameter.kind() != DesignParameterKind::Dimension
             || projected_parameters.contains(&parameter_id)
             || container_only_payload_companions.contains(&key)
         {
@@ -2663,7 +2663,7 @@ pub fn project_spatial_dimension_constraints(
     projected.extend(missing.into_iter().filter_map(|parameter_id| {
         let parameter = parameters_by_id.get(&parameter_id)?;
         let scope = native_stream(&parameter.id)?;
-        let owner = owners_by_record.get(&(scope, parameter.owner_record_index?))?;
+        let owner = owners_by_record.get(&(scope, parameter.owner_record_index()?))?;
         let companion = companions_by_record.get(&(scope, owner.companion_record_index))?;
         let sketch = spatial_by_scope
             .get(&(scope, owner.scope_record_index))?

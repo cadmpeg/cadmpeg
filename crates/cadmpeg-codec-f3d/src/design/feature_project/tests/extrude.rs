@@ -472,7 +472,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let mut owned_along = along.clone();
     owned_along.id = "f3d:Design/BulkStream.dat:parameter#45".into();
     owned_along.record_index = 45;
-    owned_along.owner_record_index = Some(44);
+    owned_along.owner = crate::records::DesignParameterOwnerKind::Feature {
+        owner_record_index: 44,
+    };
     let mut owner = parse_parameter_owner(&parameter_owner_frame())
         .expect("generated parameter owner is canonical");
     owner.id = "f3d:Design/BulkStream.dat:owner#44".into();

@@ -43,12 +43,15 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         family_discriminator: None,
         family_discriminator_offset: None,
         source_ordinal: record_index,
-        owner_record_index: None,
+        owner: crate::records::DesignParameterOwnerKind::from_kind(
+            DesignParameterKind::Feature,
+            None,
+        ),
         expression: String::new(),
         expression_offset: 0,
         source_kind: source_kind.into(),
         source_kind_offset: 0,
-        kind: DesignParameterKind::Feature,
+
         unit: unit.map(str::to_owned),
         unit_offset: None,
         name: source_kind.into(),

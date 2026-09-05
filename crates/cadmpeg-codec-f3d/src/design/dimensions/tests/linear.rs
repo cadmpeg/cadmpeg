@@ -721,12 +721,15 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         family_discriminator: Some(0),
         family_discriminator_offset: Some(0),
         source_ordinal: 4,
-        owner_record_index: Some(21),
+        owner: crate::records::DesignParameterOwnerKind::from_kind(
+            DesignParameterKind::Dimension,
+            Some(21),
+        ),
         expression: "2 mm".into(),
         expression_offset: 0,
         source_kind: "Linear Dimension-4".into(),
         source_kind_offset: 0,
-        kind: DesignParameterKind::Dimension,
+
         unit: Some("mm".into()),
         unit_offset: Some(0),
         name: "d4".into(),

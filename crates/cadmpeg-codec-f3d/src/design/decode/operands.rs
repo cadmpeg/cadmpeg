@@ -457,7 +457,7 @@ pub fn bind_work_plane_constructions(
         if !parameters.iter().any(|parameter| {
             native_stream(&parameter.id) == Some(stream.as_str())
                 && parameter.record_index == owner.parameter_record_index
-                && parameter.owner_record_index == Some(owner.record_index)
+                && parameter.owner_record_index() == Some(owner.record_index)
                 && parameter.source_kind == "ExtraOffset"
                 && parameter.evaluated_value.is_finite()
                 && parameter.evaluated_value == 0.0
