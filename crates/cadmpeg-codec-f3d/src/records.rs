@@ -9722,8 +9722,48 @@ pub struct DesignFilletRadiusGroup {
 /// Parameter records defining one Fillet group's radius law.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "schema", schemars(with = "DesignFilletRadiusLawWire"))]
+#[serde(try_from = "DesignFilletRadiusLawWire", into = "DesignFilletRadiusLawWire")]
 pub enum DesignFilletRadiusLaw {
+    /// One radius applies along the complete edge group.
+    Constant {
+        /// Radius parameter record.
+        radius_parameter_record_index: u32,
+    },
+    /// Constant transverse chord length across the fillet surface.
+    Chordal {
+        /// Chord-length parameter record.
+        chord_length_parameter_record_index: u32,
+    },
+    /// Distinct support-face offsets along the complete edge group.
+    Asymmetric {
+        /// First support-face offset parameter record.
+        offset_one_parameter_record_index: u32,
+        /// Second support-face offset parameter record.
+        offset_two_parameter_record_index: u32,
+    },
+    /// Explicit endpoint and optional midpoint radius controls.
+    Variable {
+        /// Radius at normalized parameter zero.
+        start_radius_parameter_record_index: u32,
+        /// Radius at normalized parameter one.
+        end_radius_parameter_record_index: u32,
+        /// Midpoint radius and normalized-parameter records in owner-local order.
+        middle: Vec<DesignFilletMidpoint>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignFilletMidpoint {
+    pub radius_parameter_record_index: u32,
+    pub parameter_record_index: u32,
+}
+
+/// Parameter records defining one Fillet group's radius law.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum DesignFilletRadiusLawWire {
     /// One radius applies along the complete edge group.
     Constant {
         /// Radius parameter record.
@@ -9752,6 +9792,38 @@ pub enum DesignFilletRadiusLaw {
         /// Midpoint normalized-parameter records parallel to the radii.
         middle_parameter_record_indices: Vec<u32>,
     },
+}
+
+impl TryFrom<DesignFilletRadiusLawWire> for DesignFilletRadiusLaw {
+    type Error = String;
+    fn try_from(wire: DesignFilletRadiusLawWire) -> Result<Self, Self::Error> {
+        Ok(match wire {
+            DesignFilletRadiusLawWire::Constant { radius_parameter_record_index } => Self::Constant { radius_parameter_record_index },
+            DesignFilletRadiusLawWire::Chordal { chord_length_parameter_record_index } => Self::Chordal { chord_length_parameter_record_index },
+            DesignFilletRadiusLawWire::Asymmetric { offset_one_parameter_record_index, offset_two_parameter_record_index } => Self::Asymmetric { offset_one_parameter_record_index, offset_two_parameter_record_index },
+            DesignFilletRadiusLawWire::Variable { start_radius_parameter_record_index, end_radius_parameter_record_index, middle_radius_parameter_record_indices, middle_parameter_record_indices } => {
+                if middle_radius_parameter_record_indices.len() != middle_parameter_record_indices.len() {
+                    return Err("middle_radius_parameter_record_indices and middle_parameter_record_indices must have equal lengths".into());
+                }
+                Self::Variable { start_radius_parameter_record_index, end_radius_parameter_record_index,
+                    middle: middle_radius_parameter_record_indices.into_iter().zip(middle_parameter_record_indices).map(|(radius_parameter_record_index, parameter_record_index)| DesignFilletMidpoint { radius_parameter_record_index, parameter_record_index }).collect() }
+            }
+        })
+    }
+}
+
+impl From<DesignFilletRadiusLaw> for DesignFilletRadiusLawWire {
+    fn from(law: DesignFilletRadiusLaw) -> Self {
+        match law {
+            DesignFilletRadiusLaw::Constant { radius_parameter_record_index } => Self::Constant { radius_parameter_record_index },
+            DesignFilletRadiusLaw::Chordal { chord_length_parameter_record_index } => Self::Chordal { chord_length_parameter_record_index },
+            DesignFilletRadiusLaw::Asymmetric { offset_one_parameter_record_index, offset_two_parameter_record_index } => Self::Asymmetric { offset_one_parameter_record_index, offset_two_parameter_record_index },
+            DesignFilletRadiusLaw::Variable { start_radius_parameter_record_index, end_radius_parameter_record_index, middle } => {
+                let (middle_radius_parameter_record_indices, middle_parameter_record_indices) = middle.into_iter().map(|row| (row.radius_parameter_record_index, row.parameter_record_index)).unzip();
+                Self::Variable { start_radius_parameter_record_index, end_radius_parameter_record_index, middle_radius_parameter_record_indices, middle_parameter_record_indices }
+            }
+        }
+    }
 }
 
 /// ASM history family, entity slot, and states for one selected identity.

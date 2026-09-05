@@ -5212,12 +5212,11 @@ fn fillet_law_parameter_records(law: &DesignFilletRadiusLaw) -> Vec<u32> {
         DesignFilletRadiusLaw::Variable {
             start_radius_parameter_record_index,
             end_radius_parameter_record_index,
-            middle_radius_parameter_record_indices,
-            middle_parameter_record_indices,
+            middle,
         } => std::iter::once(*start_radius_parameter_record_index)
             .chain(std::iter::once(*end_radius_parameter_record_index))
-            .chain(middle_radius_parameter_record_indices.iter().copied())
-            .chain(middle_parameter_record_indices.iter().copied())
+            .chain(middle.iter().map(|row| row.radius_parameter_record_index))
+            .chain(middle.iter().map(|row| row.parameter_record_index))
             .collect(),
     }
 }

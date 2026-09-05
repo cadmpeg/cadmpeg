@@ -5756,8 +5756,7 @@ fn validate_fillet_radius_groups<'a>(
                 records::DesignFilletRadiusLaw::Variable {
                     start_radius_parameter_record_index,
                     end_radius_parameter_record_index,
-                    middle_radius_parameter_record_indices,
-                    middle_parameter_record_indices,
+                    middle: midpoint_records,
                 } => {
                     let radius = |record_index: u32, kind: &str| {
                         assignment_parameter(record_index)
@@ -5773,14 +5772,14 @@ fn validate_fillet_radius_groups<'a>(
                     };
                     let start = radius(*start_radius_parameter_record_index, "StartRadius");
                     let end = radius(*end_radius_parameter_record_index, "EndRadius");
-                    let middle = middle_radius_parameter_record_indices
+                    let middle = midpoint_records
                         .iter()
-                        .map(|record_index| radius(*record_index, "MidRadius"))
+                        .map(|row| radius(row.radius_parameter_record_index, "MidRadius"))
                         .collect::<Option<Vec<_>>>();
-                    let positions = middle_parameter_record_indices
+                    let positions = midpoint_records
                         .iter()
-                        .map(|record_index| {
-                            assignment_parameter(*record_index)
+                        .map(|row| {
+                            assignment_parameter(row.parameter_record_index)
                                 .filter(|parameter| {
                                     parameter.source_kind == "MidParams"
                                         && parameter.unit.is_none()
@@ -5792,8 +5791,7 @@ fn validate_fillet_radius_groups<'a>(
                         .collect::<Option<Vec<_>>>();
                     start.zip(end).zip(middle).zip(positions).is_some_and(
                         |(((start, end), middle), positions)| {
-                            middle.len() == positions.len()
-                                && (start > 0.0 || end > 0.0 || middle.iter().any(|r| *r > 0.0))
+                            (start > 0.0 || end > 0.0 || middle.iter().any(|r| *r > 0.0))
                                 && positions.windows(2).all(|pair| pair[0] < pair[1])
                         },
                     )
