@@ -8892,14 +8892,10 @@ fn validate_entity_headers(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut entity_suffixes = HashSet::new();
     for header in &native.design_entity_headers {
         let native_stream = design_stream(&header.id);
-        let count_matches = header
-            .declared_reference_count
-            .is_none_or(|count| count as usize == header.reference_indices.len());
         let references_resolve = header
-            .reference_indices
-            .iter()
+            .references.values()
             .all(|index| record_indices.contains(&(native_stream, *index)));
-        if !count_matches || !references_resolve {
+        if !references_resolve {
             findings.push(Finding {
                 check: Check::ReferentialIntegrity,
                 severity: Severity::Error,
@@ -9238,7 +9234,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let Ok(owner) = u32::try_from(entity.entity_suffix) else {
             continue;
         };
-        for member in &entity.member_indices {
+        for member in entity.members.values() {
             if !typed_sketch_records.contains(&(native_stream, *member)) {
                 continue;
             }

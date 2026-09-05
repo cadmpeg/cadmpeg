@@ -27,11 +27,24 @@ impl<T> Located<T> {
 }
 
 /// An ordered run whose encoding locations are either complete or absent.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum ReferenceRun<T> {
     Unlocated(Vec<T>),
     Located(Vec<Located<T>>),
 }
+
+impl<T: PartialEq> PartialEq for ReferenceRun<T> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Unlocated(left), Self::Unlocated(right)) => left == right,
+            (Self::Located(left), Self::Located(right)) => left == right,
+            // An empty run has no locations in either wire form.
+            _ => self.is_empty() && other.is_empty(),
+        }
+    }
+}
+
+impl<T: Eq> Eq for ReferenceRun<T> {}
 
 impl<T> ReferenceRun<T> {
     pub fn values(&self) -> impl DoubleEndedIterator<Item = &T> {
@@ -40,6 +53,13 @@ impl<T> ReferenceRun<T> {
             Self::Located(values) => (&[], values),
         };
         unlocated.iter().chain(located.iter().map(|row| &row.value))
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Unlocated(values) => values.len(),
+            Self::Located(values) => values.len(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -11089,6 +11109,8 @@ impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
 /// Self-validating entity-bound header in the Design `BulkStream`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignEntityHeaderWire"))]
+#[serde(try_from = "DesignEntityHeaderWire", into = "DesignEntityHeaderWire")]
 pub struct DesignEntityHeader {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -11104,36 +11126,118 @@ pub struct DesignEntityHeader {
     pub optional_slot_present: bool,
     /// Add-in module of the `MetaStream` type whose entity-id list contains this
     /// header's entity, when the `MetaStream` registers that entity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub module: Option<String>,
     /// Index of an associated `BulkStream` record, when the header carries one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record_reference: Option<u32>,
-    /// Byte offset of `record_reference` in the Design `BulkStream`, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Byte offset of the base-record slot, including its no-base-record sentinel.
     pub record_reference_offset: Option<u64>,
-    /// Declared count of reference entries the header claims to own, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub declared_reference_count: Option<u32>,
+    /// Whether the wire includes the reference count; its value is derived from the run.
+    pub reference_count_present: bool,
     /// Padded record-reference run owned by a sketch entity container.
-    #[serde(default)]
-    pub reference_indices: Vec<u32>,
-    /// Byte offsets parallel to `reference_indices`.
-    #[serde(default)]
-    pub reference_offsets: Vec<u64>,
-    /// Counted member-record run from the paired same-index container record
-    /// of an `EntityGenesis`-form sketch entity header.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub member_indices: Vec<u32>,
-    /// Byte offsets parallel to `member_indices`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub member_offsets: Vec<u64>,
+    pub references: ReferenceRun<u32>,
+    /// Counted member-record run from the paired same-index container record.
+    pub members: ReferenceRun<u32>,
 }
 
+
 impl DesignEntityHeader {
+    pub fn declared_reference_count(&self) -> Option<usize> {
+        self.reference_count_present.then(|| self.references.len())
+    }
+
     /// Whether the `MetaStream` registers this entity under the sketch module.
     pub fn in_sketch_module(&self) -> bool {
         self.module.as_deref() == Some(DESIGN_MODULE_SKETCH)
+    }
+}
+
+/// Self-validating entity-bound header in the Design `BulkStream`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignEntityHeaderWire {
+    /// Globally unique deterministic identifier for this native record.
+    id: String,
+    /// Byte offset of this entity header in its Design `BulkStream`.
+    byte_offset: u64,
+    /// Numeric suffix of the owning design-entity id (e.g. the `N` in `Body:N`).
+    entity_suffix: u64,
+    /// Full UTF-16LE-decoded design-entity id string for this header.
+    entity_id: String,
+    /// Source per-file dynamic three-digit ASCII class tag naming this header's record type.
+    class_tag: String,
+    /// Whether the flag-selected four-byte optional slot is present.
+    optional_slot_present: bool,
+    /// Add-in module of the `MetaStream` type whose entity-id list contains this
+    /// header's entity, when the `MetaStream` registers that entity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    module: Option<String>,
+    /// Index of an associated `BulkStream` record, when the header carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    record_reference: Option<u32>,
+    /// Byte offset of `record_reference` in the Design `BulkStream`, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    record_reference_offset: Option<u64>,
+    /// Declared count of reference entries the header claims to own, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    declared_reference_count: Option<usize>,
+    /// Padded record-reference run owned by a sketch entity container.
+    #[serde(default)]
+    reference_indices: Vec<u32>,
+    /// Byte offsets parallel to `reference_indices`.
+    #[serde(default)]
+    reference_offsets: Vec<u64>,
+    /// Counted member-record run from the paired same-index container record
+    /// of an `EntityGenesis`-form sketch entity header.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    member_indices: Vec<u32>,
+    /// Byte offsets parallel to `member_indices`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    member_offsets: Vec<u64>,
+}
+impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
+    type Error = String;
+    fn try_from(wire: DesignEntityHeaderWire) -> Result<Self, Self::Error> {
+        if wire.declared_reference_count.is_some_and(|count| count != wire.reference_indices.len()) {
+            return Err("declared_reference_count must match reference_indices".into());
+        }
+        Ok(Self {
+            reference_count_present: wire.declared_reference_count.is_some(),
+            references: ReferenceRun::from_wire(wire.reference_indices, wire.reference_offsets, "reference_indices/reference_offsets")?,
+            members: ReferenceRun::from_wire(wire.member_indices, wire.member_offsets, "member_indices/member_offsets")?,
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            entity_suffix: wire.entity_suffix,
+            entity_id: wire.entity_id,
+            class_tag: wire.class_tag,
+            optional_slot_present: wire.optional_slot_present,
+            module: wire.module,
+            record_reference: wire.record_reference,
+            record_reference_offset: wire.record_reference_offset,
+        })
+    }
+}
+
+impl From<DesignEntityHeader> for DesignEntityHeaderWire {
+    fn from(header: DesignEntityHeader) -> Self {
+        let declared_reference_count = header.declared_reference_count();
+        let (reference_indices, reference_offsets) = header.references.into_wire();
+        let (member_indices, member_offsets) = header.members.into_wire();
+        Self {
+            declared_reference_count,
+            reference_indices,
+            reference_offsets,
+            member_indices,
+            member_offsets,
+            id: header.id,
+            byte_offset: header.byte_offset,
+            entity_suffix: header.entity_suffix,
+            entity_id: header.entity_id,
+            class_tag: header.class_tag,
+            optional_slot_present: header.optional_slot_present,
+            module: header.module,
+            record_reference: header.record_reference,
+            record_reference_offset: header.record_reference_offset,
+        }
     }
 }
 

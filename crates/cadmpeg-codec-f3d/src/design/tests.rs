@@ -237,11 +237,9 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: None,
         record_reference_offset: None,
-        declared_reference_count: Some(1),
-        reference_indices: vec![30],
-        reference_offsets: vec![0],
-        member_indices: Vec::new(),
-        member_offsets: Vec::new(),
+        reference_count_present: true,
+        references: crate::records::ReferenceRun::Located(vec![30].into_iter().zip(vec![0]).map(|(value, offset)| crate::records::Located { value, offset }).collect()),
+        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
     };
     let point = |stream: &str| SketchPoint {
         id: format!("f3d:{stream}:sketch-point#0"),

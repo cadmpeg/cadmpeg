@@ -848,8 +848,8 @@ pub(crate) fn parse_sketch_member_run(
     bytes: &[u8],
     from: usize,
     entity_suffix: u64,
-) -> (Vec<u32>, Vec<u64>) {
-    let empty = (Vec::new(), Vec::new());
+) -> Vec<crate::records::Located<u32>> {
+    let empty = Vec::new();
     let Some(paired) = next_indexed_record_offset(bytes, from) else {
         return empty;
     };
@@ -870,10 +870,8 @@ pub(crate) fn parse_sketch_member_run(
     let Some(base_point_index) = View::u32_le_at(bytes, paired + 57) else {
         return empty;
     };
-    let mut member_indices = Vec::with_capacity(count + 1);
-    let mut member_offsets = Vec::with_capacity(count + 1);
-    member_indices.push(base_point_index);
-    member_offsets.push((paired + 57) as u64);
+    let mut members = Vec::with_capacity(count + 1);
+    members.push(crate::records::Located { value: base_point_index, offset: (paired + 57) as u64 });
     for ordinal in 0..count {
         let marker = paired + 67 + ordinal * 11;
         if bytes.get(marker) != Some(&1)
@@ -884,10 +882,9 @@ pub(crate) fn parse_sketch_member_run(
         let Some(record_index) = View::u32_le_at(bytes, marker + 1) else {
             return empty;
         };
-        member_indices.push(record_index);
-        member_offsets.push((marker + 1) as u64);
+        members.push(crate::records::Located { value: record_index, offset: (marker + 1) as u64 });
     }
-    (member_indices, member_offsets)
+    members
 }
 
 /// Parse the counted member-record run of a legacy sketch container's paired
@@ -899,7 +896,7 @@ pub(crate) fn parse_legacy_sketch_member_run(
     bytes: &[u8],
     primary_at: usize,
     entity_suffix: u32,
-) -> Option<(Vec<u32>, Vec<u64>)> {
+) -> Option<Vec<crate::records::Located<u32>>> {
     let paired_at = next_indexed_record_offset(bytes, primary_at + 11)?;
     if View::u32_le_at(bytes, paired_at + 7) != Some(entity_suffix)
         || bytes.get(paired_at + 11..paired_at + 19) != Some(&[0u8; 8][..])
@@ -924,8 +921,7 @@ pub(crate) fn parse_legacy_sketch_member_run(
     if run_end > bytes.len() {
         return None;
     }
-    let mut member_indices = Vec::with_capacity(count);
-    let mut member_offsets = Vec::with_capacity(count);
+    let mut members = Vec::with_capacity(count);
     for ordinal in 0..count {
         let marker = paired_at + 45 + ordinal * 11;
         if bytes.get(marker) != Some(&1)
@@ -933,10 +929,9 @@ pub(crate) fn parse_legacy_sketch_member_run(
         {
             return None;
         }
-        member_indices.push(View::u32_le_at(bytes, marker + 1)?);
-        member_offsets.push((marker + 1) as u64);
+        members.push(crate::records::Located { value: View::u32_le_at(bytes, marker + 1)?, offset: (marker + 1) as u64 });
     }
-    Some((member_indices, member_offsets))
+    Some(members)
 }
 
 /// Recognize either legacy sketch-container tail. A counted container owns
@@ -947,7 +942,7 @@ pub(crate) fn parse_legacy_sketch_container_members(
     primary_at: usize,
     entity_suffix: u32,
     records: &IndexedRecordOffsets,
-) -> Option<(Vec<u32>, Vec<u64>)> {
+) -> Option<Vec<crate::records::Located<u32>>> {
     if let Some(members) = parse_legacy_sketch_member_run(bytes, primary_at, entity_suffix) {
         return Some(members);
     }
@@ -961,14 +956,12 @@ pub(crate) fn parse_legacy_sketch_container_members(
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: None,
         record_reference_offset: None,
-        declared_reference_count: None,
-        reference_indices: Vec::new(),
-        reference_offsets: Vec::new(),
-        member_indices: Vec::new(),
-        member_offsets: Vec::new(),
+        reference_count_present: false,
+        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
     };
     parse_member_run_head_placement(bytes, &entity, records)?;
-    Some((Vec::new(), Vec::new()))
+    Some(Vec::new())
 }
 
 /// Decode every self-validating per-entity design `BulkStream` header (spec
@@ -1040,37 +1033,18 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 .and_then(|modules| modules.get(&entity_suffix))
                 .cloned();
             let in_sketch_module = module.as_deref() == Some(DESIGN_MODULE_SKETCH);
-            let (
-                record_reference,
-                record_reference_offset,
-                declared_reference_count,
-                reference_indices,
-                reference_offsets,
-                record_end,
-            ) = if in_sketch_module {
+            let (record_reference, record_reference_offset, reference_count_present, references, record_end) = if in_sketch_module {
                 decode_reference_list(bytes, end).map_or_else(
-                    || (None, None, None, Vec::new(), Vec::new(), end),
-                    |list| {
-                        (
-                            list.record_reference,
-                            Some(list.record_reference_offset as u64),
-                            Some(list.declared_count),
-                            list.references,
-                            list.reference_offsets
-                                .into_iter()
-                                .map(|offset| offset as u64)
-                                .collect(),
-                            list.end,
-                        )
-                    },
+                    || (None, None, false, crate::records::ReferenceRun::Unlocated(Vec::new()), end),
+                    |list| (list.record_reference.value, Some(list.record_reference.offset), true, crate::records::ReferenceRun::Located(list.references), list.end),
                 )
             } else {
-                (None, None, None, Vec::new(), Vec::new(), end)
+                (None, None, false, crate::records::ReferenceRun::Unlocated(Vec::new()), end)
             };
-            let (member_indices, member_offsets) = if genesis_form && in_sketch_module {
+            let members = if genesis_form && in_sketch_module {
                 parse_sketch_member_run(bytes, record_end, entity_suffix)
             } else {
-                (Vec::new(), Vec::new())
+                Vec::new()
             };
             out.push(DesignEntityHeader {
                 id: ids::native_design_entity_header_id(&entry.name, start),
@@ -1082,11 +1056,9 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 module,
                 record_reference,
                 record_reference_offset,
-                declared_reference_count,
-                reference_indices,
-                reference_offsets,
-                member_indices,
-                member_offsets,
+                reference_count_present,
+                references,
+                members: crate::records::ReferenceRun::Located(members),
             });
         }
 
@@ -1127,7 +1099,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             {
                 continue;
             }
-            let Some((member_indices, member_offsets)) =
+            let Some(members) =
                 parse_legacy_sketch_container_members(bytes, start, entity_suffix, &records)
             else {
                 continue;
@@ -1143,11 +1115,9 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 module: Some(DESIGN_MODULE_SKETCH.to_owned()),
                 record_reference: None,
                 record_reference_offset: None,
-                declared_reference_count: None,
-                reference_indices: Vec::new(),
-                reference_offsets: Vec::new(),
-                member_indices,
-                member_offsets,
+                reference_count_present: false,
+                references: crate::records::ReferenceRun::Unlocated(Vec::new()),
+                members: crate::records::ReferenceRun::Located(members),
             });
         }
     }
@@ -1169,8 +1139,7 @@ pub fn decode_record_headers(
             let scope = native_stream(&entity.id)?;
             Some(
                 entity
-                    .reference_indices
-                    .iter()
+                    .references.values()
                     .map(move |record_index| (scope.to_owned(), *record_index)),
             )
         })
@@ -3024,7 +2993,7 @@ pub(crate) fn bind_sketch_graph(
         ) else {
             continue;
         };
-        for record_index in &entity.member_indices {
+        for record_index in entity.members.values() {
             if !typed_records.contains(&(scope, *record_index)) {
                 continue;
             }
@@ -4043,11 +4012,8 @@ fn marked_u32(bytes: &[u8], position: usize) -> Option<(u32, usize)> {
 }
 
 struct SketchReferenceList {
-    record_reference: Option<u32>,
-    record_reference_offset: usize,
-    declared_count: u32,
-    references: Vec<u32>,
-    reference_offsets: Vec<usize>,
+    record_reference: crate::records::Located<Option<u32>>,
+    references: Vec<crate::records::Located<u32>>,
     end: usize,
 }
 
@@ -4069,7 +4035,6 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
     }
     let declared_count = view.u32_le()?;
     let mut references = Vec::new();
-    let mut reference_offsets = Vec::new();
     loop {
         let mut probe = view;
         if probe.u8() != Some(1) {
@@ -4082,16 +4047,12 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
         if probe.take(6) != Some(&[0; 6]) {
             break;
         }
-        reference_offsets.push(offset);
-        references.push(reference);
+        references.push(crate::records::Located { value: reference, offset: offset as u64 });
         view = probe;
     }
     (references.len() == declared_count as usize).then_some(SketchReferenceList {
-        record_reference,
-        record_reference_offset: position,
-        declared_count,
+        record_reference: crate::records::Located { value: record_reference, offset: position as u64 },
         references,
-        reference_offsets,
         end: view.position(),
     })
 }

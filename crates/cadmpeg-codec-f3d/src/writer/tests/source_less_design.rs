@@ -343,11 +343,9 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: Some(584),
         record_reference_offset: None,
-        declared_reference_count: Some(2),
-        reference_indices: vec![33, 44],
-        reference_offsets: Vec::new(),
-        member_indices: Vec::new(),
-        member_offsets: Vec::new(),
+        reference_count_present: true,
+        references: crate::records::ReferenceRun::Unlocated(vec![33, 44]),
+        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
     }];
     native.design_record_headers = vec![
         DesignRecordHeader {
@@ -370,22 +368,8 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Design ownership encode");
-    f3d_native_mut(&mut source_less).design_entity_headers[0].declared_reference_count = Some(3);
-    let mut normalized = Vec::new();
-    F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut normalized))
-        .expect("source sketch reference count is regenerated");
-    let normalized = F3dCodec
-        .decode(&mut Cursor::new(normalized), &DecodeOptions::default())
-        .expect("regenerated sketch reference count round trip");
-    assert_eq!(
-        f3d_native(normalized.ir()).design_entity_headers[0].declared_reference_count,
-        Some(2)
-    );
     {
         let mut native = f3d_native_mut(&mut source_less);
-        native.design_entity_headers[0].declared_reference_count = Some(2);
         native.design_entity_headers[0].module = Some("Body".to_owned());
     }
     let error = F3dCodec
@@ -404,8 +388,9 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     assert_eq!(native.design_body_members[1].flags, 3);
     assert_eq!(native.design_entity_headers.len(), 1);
     assert_eq!(native.design_entity_headers[0].entity_id, "0_277");
+    assert_eq!(native.design_entity_headers[0].declared_reference_count(), Some(2));
     assert_eq!(native.design_entity_headers[0].record_reference, Some(584));
-    assert_eq!(native.design_entity_headers[0].reference_indices, [33, 44]);
+    assert_eq!(native.design_entity_headers[0].references.values().copied().collect::<Vec<_>>(), [33, 44]);
     assert_eq!(native.design_record_headers.len(), 2);
     assert_eq!(native.design_record_headers[0].record_index, 33);
     assert_eq!(native.design_record_headers[1].class_tag, "351");
@@ -512,11 +497,9 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: Some(584),
         record_reference_offset: None,
-        declared_reference_count: Some(1),
-        reference_indices: vec![33],
-        reference_offsets: Vec::new(),
-        member_indices: Vec::new(),
-        member_offsets: Vec::new(),
+        reference_count_present: true,
+        references: crate::records::ReferenceRun::Unlocated(vec![33]),
+        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
     }];
     native.sketch_points = vec![SketchPoint {
         id: "generated:sketch-point#0".into(),
