@@ -14,6 +14,16 @@ const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 const TEST_DISTANCE_EPSILON: f64 = 1.0e-9;
 const TEST_ANGLE_ROUNDING: f64 = 5.0e-7;
 
+fn offset_loci(rows: &[(u32, u32, u32)]) -> Vec<crate::records::DesignDimensionLocus> {
+    rows.iter().map(|&(geometry_record_index, role, returned)| crate::records::DesignDimensionLocus {
+        geometry_record_index,
+        geometry_reference_offset: 0,
+        role,
+        role_offset: 0,
+        returned: crate::records::Located { value: returned, offset: 0 },
+    }).collect()
+}
+
 #[test]
 fn counted_offset_return_run_pairs_sources_and_results() {
     let entity = |id: &str, start, end| {
@@ -46,28 +56,19 @@ fn counted_offset_return_run_pairs_sources_and_results() {
 
     let entities = HashMap::from([(1, &bottom), (2, &top), (3, &inset_top), (4, &inset_bottom)]);
     let definition = exact_counted_offset(
-        &[(1, 3), (2, 2), (3, 0), (4, 0)],
-        &[1, 4, 2, 3],
+        &offset_loci(&[(1, 3, 1), (2, 2, 4), (3, 0, 2), (4, 0, 3)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
     )
     .expect("counted offset graph");
-    let SketchConstraintDefinition::Offset {
-        pairs,
-        distance,
-        parameter,
-    } = definition
-    else {
-        panic!("expected offset")
-    };
+    let crate::design::dimensions::CountedOffset { pairs, distance } = definition;
     assert_eq!(&pairs[0].source, bottom.id());
     assert_eq!(&pairs[0].result, inset_bottom.id());
     assert_eq!(&pairs[1].source, top.id());
     assert_eq!(&pairs[1].result, inset_top.id());
     assert!((distance.0 - 2.0).abs() <= 1.0e-9);
     assert!(pairs.iter().all(|pair| pair.source_reversed));
-    assert_eq!(parameter, None);
 }
 
 #[test]
@@ -89,16 +90,14 @@ fn counted_offset_accepts_primary_to_generated_identity_partition() {
 
     assert!(matches!(
         exact_counted_offset(
-            &[(1, 4), (2, 1)],
-            &[1, 2],
+            &offset_loci(&[(1, 4, 1), (2, 1, 2)]),
             &entities,
             &secondary_ids,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::Offset {
+        Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance: Length(distance),
-            ..
         }) if pairs.len() == 1
             && &pairs[0].source == source.id()
             && &pairs[0].result == result.id()
@@ -107,8 +106,7 @@ fn counted_offset_accepts_primary_to_generated_identity_partition() {
 
     let ambiguous_ids = HashMap::from([(1, 0), (2, 0)]);
     assert!(exact_counted_offset(
-        &[(1, 4), (2, 1)],
-        &[1, 2],
+        &offset_loci(&[(1, 4, 1), (2, 1, 2)]),
         &entities,
         &ambiguous_ids,
         1.0e-6,
@@ -157,16 +155,14 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     let entities = HashMap::from([(1, &source), (2, &result)]);
     assert!(matches!(
         exact_counted_offset(
-            &[(1, 3), (2, 0)],
-            &[1, 2],
+            &offset_loci(&[(1, 3, 1), (2, 0, 2)]),
             &entities,
             &HashMap::new(),
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::Offset {
+        Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance: Length(distance),
-            ..
         }) if pairs.as_slice() == [cadmpeg_ir::sketches::SketchOffsetPair {
             source: source.id().clone(),
             result: result.id().clone(),
@@ -181,8 +177,7 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     control_points.last_mut().expect("result endpoint").u += 0.01;
     let entities = HashMap::from([(1, &source), (2, &skewed)]);
     assert!(exact_counted_offset(
-        &[(1, 3), (2, 0)],
-        &[1, 2],
+        &offset_loci(&[(1, 3, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
@@ -215,8 +210,7 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
     let entities = HashMap::from([(1, &source), (2, &result)]);
 
     let definition = exact_counted_offset(
-        &[(1, 7), (2, 0)],
-        &[1, 2],
+        &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
@@ -224,10 +218,9 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
     .expect("concentric arc offset");
     assert!(matches!(
         definition,
-        SketchConstraintDefinition::Offset {
+        crate::design::dimensions::CountedOffset {
             pairs,
             distance: Length(distance),
-            ..
         } if pairs.len() == 1
             && &pairs[0].source == source.id()
             && &pairs[0].result == result.id()
@@ -244,8 +237,7 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
     };
     let entities = HashMap::from([(1, &source), (2, &mismatched)]);
     assert!(exact_counted_offset(
-        &[(1, 7), (2, 0)],
-        &[1, 2],
+        &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
@@ -271,16 +263,14 @@ fn counted_offset_accepts_concentric_full_circles() {
 
     assert!(matches!(
         exact_counted_offset(
-            &[(1, 7), (2, 0)],
-            &[1, 2],
+            &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
             &entities,
             &HashMap::new(),
             TEST_LINEAR_TOLERANCE,
         ),
-        Some(SketchConstraintDefinition::Offset {
+        Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance: Length(distance),
-            ..
         }) if pairs.as_slice() == [SketchOffsetPair {
             source: source.id().clone(),
             result: result.id().clone(),
@@ -291,16 +281,14 @@ fn counted_offset_accepts_concentric_full_circles() {
     let reversed_entities = HashMap::from([(1, &result), (2, &source)]);
     assert!(matches!(
         exact_counted_offset(
-            &[(1, 7), (2, 0)],
-            &[1, 2],
+            &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
             &reversed_entities,
             &HashMap::new(),
             TEST_LINEAR_TOLERANCE,
         ),
-        Some(SketchConstraintDefinition::Offset {
+        Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance: Length(distance),
-            ..
         }) if pairs.as_slice() == [SketchOffsetPair {
             source: result.id().clone(),
             result: source.id().clone(),
@@ -315,8 +303,7 @@ fn counted_offset_accepts_concentric_full_circles() {
     };
     let entities = HashMap::from([(1, &source), (2, &displaced)]);
     assert!(exact_counted_offset(
-        &[(1, 7), (2, 0)],
-        &[1, 2],
+        &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         TEST_LINEAR_TOLERANCE,
