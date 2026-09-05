@@ -3033,7 +3033,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             && source
                                 .occurrence_guid
                                 .eq_ignore_ascii_case(&operation.source_occurrence_guid)
-                            && source.transform.is_none()
+                            && source.transform().is_none()
                     })
                     && copied.is_some_and(|copied| {
                         copied
@@ -3042,7 +3042,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             && copied
                                 .occurrence_guid
                                 .eq_ignore_ascii_case(&operation.copied_occurrence_guid)
-                            && copied.transform.map(|frame| frame.value) == Some(operation.copied_transform)
+                            && copied.transform().map(|frame| frame.value) == Some(operation.copied_transform)
                     })
             }
         };
@@ -4444,13 +4444,12 @@ fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && crate::bytes::is_guid_relaxed(&occurrence.occurrence_guid)
             && occurrence.component_guid_offset == occurrence.byte_offset + 48
             && occurrence.occurrence_guid_offset == occurrence.byte_offset + 124
-            && occurrence.occurrence_ordinal > 0
-            && match occurrence.transform {
-                None => occurrence.occurrence_ordinal == 1,
-                Some(records::Located { value: transform, offset }) => {
-                    (occurrence.class_tag == "327" || occurrence.occurrence_ordinal > 1)
-                        && offset == occurrence.byte_offset + 209
-                        && design::decode::sketch::valid_sketch_transform(&transform)
+            && match occurrence.placement {
+                records::DesignComponentOccurrencePlacement::Base => true,
+                records::DesignComponentOccurrencePlacement::Explicit { ordinal, transform } => {
+                    (occurrence.class_tag == "327" || ordinal.get() > 1)
+                        && transform.offset == occurrence.byte_offset + 209
+                        && design::decode::sketch::valid_sketch_transform(&transform.value)
                 }
             };
         // The duplicated references must agree within one carrier, which
@@ -4483,16 +4482,15 @@ fn valid_component_pattern_occurrences(
             design_stream(&occurrence.id) == stream
                 && occurrence.component_guid.eq_ignore_ascii_case(component_guid)
                 && occurrence.occurrence_guid.eq_ignore_ascii_case(&seed.occurrence_guid)
-                && occurrence.occurrence_ordinal == 1
-                && occurrence.transform.is_none()
+                && matches!(occurrence.placement, crate::records::DesignComponentOccurrencePlacement::Base)
         })
         && generated.iter().enumerate().all(|(ordinal, row)| {
             native.design_component_occurrences.iter().any(|occurrence| {
                 design_stream(&occurrence.id) == stream
                     && occurrence.component_guid.eq_ignore_ascii_case(component_guid)
                     && occurrence.occurrence_guid.eq_ignore_ascii_case(&row.occurrence_guid)
-                    && occurrence.occurrence_ordinal == ordinal as u32 + 2
-                    && occurrence.transform == Some(row.instance.transform)
+                    && occurrence.occurrence_ordinal() == ordinal as u32 + 2
+                    && occurrence.transform() == Some(row.instance.transform)
             })
         })
 }

@@ -1918,3 +1918,22 @@ fn component_insert_pairs_explicit_matrix_with_scope_and_carrier_locations() {
         assert!(error.to_string().contains("transform_offset"));
     }
 }
+
+#[test]
+fn component_occurrence_derives_base_ordinal_and_requires_nonzero_placed_ordinal() {
+    let prefix = r#"{"id":"occurrence","class_tag":"327","record_index":7,"byte_offset":0,"component_record_index":8,"component_guid":"component","component_guid_offset":48,"occurrence_guid":"placed","occurrence_guid_offset":124,"occurrence_ordinal":"#;
+    let matrix = r#","transform":[[1.0,0.0,0.0,2.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],"transform_offset":209"#;
+    for (ordinal, placed) in [(1, false), (1, true), (2, true), (u32::MAX, true)] {
+        let suffix = if placed { matrix } else { "" };
+        let wire = format!("{prefix}{ordinal}{suffix}}}");
+        let occurrence: super::DesignComponentOccurrence = serde_json::from_str(&wire).expect("component occurrence");
+        assert_eq!(serde_json::to_string(&occurrence).expect("component occurrence wire"), wire);
+        assert_eq!(occurrence.occurrence_ordinal(), ordinal);
+    }
+    for (ordinal, placed) in [(0, false), (0, true), (2, false), (u32::MAX, false)] {
+        let suffix = if placed { matrix } else { "" };
+        let wire = format!("{prefix}{ordinal}{suffix}}}");
+        let error = serde_json::from_str::<super::DesignComponentOccurrence>(&wire).expect_err("invalid occurrence ordinal");
+        assert!(error.to_string().contains("occurrence_ordinal"));
+    }
+}

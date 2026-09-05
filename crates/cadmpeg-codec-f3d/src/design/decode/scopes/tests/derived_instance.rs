@@ -36,7 +36,7 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     assert_eq!(construction.occurrence_guid, OCCURRENCE);
     assert_eq!(
         construction.transform,
-        occurrence.transform.as_ref().copied().unwrap().value
+        occurrence.transform().as_ref().copied().unwrap().value
     );
     assert_eq!(
         construction.transform_offset,
@@ -127,8 +127,10 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
         component_guid_offset: 0,
         occurrence_guid: OCCURRENCE.into(),
         occurrence_guid_offset: 0,
-        occurrence_ordinal: 1,
-        transform: Some(crate::records::Located { value: transform, offset: 209 }),
+        placement: crate::records::DesignComponentOccurrencePlacement::Explicit {
+            ordinal: std::num::NonZeroU32::MIN,
+            transform: crate::records::Located { value: transform, offset: 209 },
+        },
     };
     (bytes, scope, occurrence)
 }

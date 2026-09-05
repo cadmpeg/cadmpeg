@@ -3992,10 +3992,38 @@ pub struct DesignComponentOccurrence {
     pub occurrence_guid: String,
     /// Byte offset of the occurrence GUID payload.
     pub occurrence_guid_offset: u64,
-    /// One-based occurrence ordinal within the component definition.
-    pub occurrence_ordinal: u32,
-    /// Explicit local-to-model placement for placed occurrences.
-    pub transform: Option<Located<[[f64; 4]; 4]>>,
+    /// Base occurrence or a placed occurrence with its ordinal and matrix.
+    pub placement: DesignComponentOccurrencePlacement,
+}
+
+/// Placement envelope of a local component occurrence.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DesignComponentOccurrencePlacement {
+    /// First occurrence, with no explicit matrix payload.
+    Base,
+    /// Explicit matrix and one-based occurrence ordinal.
+    Explicit {
+        ordinal: NonZeroU32,
+        transform: Located<[[f64; 4]; 4]>,
+    },
+}
+
+impl DesignComponentOccurrence {
+    #[must_use]
+    pub fn occurrence_ordinal(&self) -> u32 {
+        match self.placement {
+            DesignComponentOccurrencePlacement::Base => 1,
+            DesignComponentOccurrencePlacement::Explicit { ordinal, .. } => ordinal.get(),
+        }
+    }
+
+    #[must_use]
+    pub fn transform(&self) -> Option<Located<[[f64; 4]; 4]>> {
+        match self.placement {
+            DesignComponentOccurrencePlacement::Base => None,
+            DesignComponentOccurrencePlacement::Explicit { transform, .. } => Some(transform),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -4031,6 +4059,8 @@ struct DesignComponentOccurrenceWire {
 
 impl From<DesignComponentOccurrence> for DesignComponentOccurrenceWire {
     fn from(value: DesignComponentOccurrence) -> Self {
+        let occurrence_ordinal = value.occurrence_ordinal();
+        let transform = value.transform();
         Self {
             id: value.id,
             class_tag: value.class_tag,
@@ -4041,9 +4071,9 @@ impl From<DesignComponentOccurrence> for DesignComponentOccurrenceWire {
             component_guid_offset: value.component_guid_offset,
             occurrence_guid: value.occurrence_guid,
             occurrence_guid_offset: value.occurrence_guid_offset,
-            occurrence_ordinal: value.occurrence_ordinal,
-            transform: value.transform.map(|frame| frame.value),
-            transform_offset: value.transform.map(|frame| frame.offset),
+            occurrence_ordinal,
+            transform: transform.map(|frame| frame.value),
+            transform_offset: transform.map(|frame| frame.offset),
         }
     }
 }
@@ -4051,6 +4081,15 @@ impl From<DesignComponentOccurrence> for DesignComponentOccurrenceWire {
 impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
     type Error = String;
     fn try_from(value: DesignComponentOccurrenceWire) -> Result<Self, Self::Error> {
+        let transform = Located::from_wire(value.transform, value.transform_offset, "transform")?;
+        let placement = match (value.occurrence_ordinal, transform) {
+            (1, None) => DesignComponentOccurrencePlacement::Base,
+            (ordinal, Some(transform)) => DesignComponentOccurrencePlacement::Explicit {
+                ordinal: NonZeroU32::new(ordinal).ok_or("occurrence_ordinal must be nonzero")?,
+                transform,
+            },
+            (_, None) => return Err("occurrence_ordinal must be 1 when transform is absent".into()),
+        };
         Ok(Self {
             id: value.id,
             class_tag: value.class_tag,
@@ -4061,8 +4100,7 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
             component_guid_offset: value.component_guid_offset,
             occurrence_guid: value.occurrence_guid,
             occurrence_guid_offset: value.occurrence_guid_offset,
-            occurrence_ordinal: value.occurrence_ordinal,
-            transform: Located::from_wire(value.transform, value.transform_offset, "transform")?,
+            placement,
         })
     }
 }
