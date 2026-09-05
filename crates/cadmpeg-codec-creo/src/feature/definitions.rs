@@ -11,10 +11,7 @@ use crate::scalar;
 use super::entity::{generated_class_200_source_entity_ids, FeatureEntityTable};
 use super::helpers::{decode_optional_scalars, find_bytes};
 use super::operations::{FeatureOperation, FeatureRecipeKind};
-use super::rows::{
-    FeatureGeometryTable, FeatureGeometryTableKind, FeatureRevolutionExtent,
-    FeatureRevolutionExtentKind,
-};
+use super::rows::{FeatureGeometryTable, FeatureGeometryTableKind, FeatureRevolutionExtent};
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-9;
 
@@ -6063,7 +6060,6 @@ pub fn definition_revolution_extents(
             .collect::<Vec<_>>();
         result.extend(offsets.into_iter().map(|offset| FeatureRevolutionExtent {
             feature_id,
-            kind: FeatureRevolutionExtentKind::FullTurn,
             offset: definition.offset + offset + 6,
         }));
     }

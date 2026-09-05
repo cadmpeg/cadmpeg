@@ -627,7 +627,6 @@ fn named_revolve_transfers_profile_axis() {
         .revolution_extents
         .push(crate::feature::FeatureRevolutionExtent {
             feature_id: 822,
-            kind: crate::feature::FeatureRevolutionExtentKind::FullTurn,
             offset: 1,
         });
     let mut ir = CadIr::empty();

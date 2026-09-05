@@ -153,7 +153,6 @@ fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
         .revolution_extents
         .push(crate::feature::FeatureRevolutionExtent {
             feature_id: 40,
-            kind: crate::feature::FeatureRevolutionExtentKind::FullTurn,
             offset: 0,
         });
     scan.surfaces.rows.push(crate::surface::SurfaceRow {

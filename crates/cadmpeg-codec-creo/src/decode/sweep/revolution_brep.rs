@@ -6,7 +6,7 @@ use super::super::sketch::section_point_in_model;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::sketch_transfer::{
     current_additive_feature_recipe, feature_is_first_material_operation,
-    feature_revolution_extent, unique_feature_revolution_extent_kind,
+    feature_revolution_extent, unique_feature_revolution_extent,
 };
 use super::super::uniqueness::{
     unique_feature_definition_for_transform, unique_feature_section_transform,
@@ -54,8 +54,8 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         if current_additive_feature_recipe(&scan.features.operations, feature_id)
             != Some(crate::feature::FeatureRecipeKind::Revolve)
             || !feature_is_first_material_operation(scan, feature_id)
-            || unique_feature_revolution_extent_kind(&scan.features.revolution_extents, feature_id)
-                != Some(crate::feature::FeatureRevolutionExtentKind::FullTurn)
+            || unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id)
+                .is_none()
         {
             continue;
         }

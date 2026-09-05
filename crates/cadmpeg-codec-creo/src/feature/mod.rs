@@ -55,7 +55,7 @@ pub use rows::{
     surface_merge_replay_affected_ids, AffectedIdKind, FeatureAffectedIds, FeatureChoice,
     FeatureChoiceField, FeatureFieldValue, FeatureGeometryTable, FeatureGeometryTableKind,
     FeatureLoopHistoryBoundary, FeatureLoopHistoryEntry, FeatureLoopRestoreDirection,
-    FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRevolutionExtentKind, FeatureRow,
-    FeatureSurfaceMergeAffectedIds, LoopRestoreDirectionLane, ReplayExtentSource,
+    FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow, FeatureSurfaceMergeAffectedIds,
+    LoopRestoreDirectionLane, ReplayExtentSource,
 };
 pub(crate) use rows::{round_replay_scalars, FeatureRoundReplayScalar};

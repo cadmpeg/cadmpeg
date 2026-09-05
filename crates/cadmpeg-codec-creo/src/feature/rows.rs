@@ -279,20 +279,13 @@ pub enum FeatureLoopHistoryBoundary {
     NamedRecord,
 }
 
-/// Angular termination selected by a rotational feature row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FeatureRevolutionExtentKind {
-    /// Complete 360-degree travel.
-    FullTurn,
-}
-
 /// One resolved rotational extent from an `AllFeatur` feature row.
+///
+/// The stored choice is a full turn; native CADIR still emits `kind: "full_turn"`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureRevolutionExtent {
     /// Owning feature identifier.
     pub feature_id: u32,
-    /// Resolved angular termination.
-    pub kind: FeatureRevolutionExtentKind,
     /// Byte offset of the stored `angle_choice` value.
     pub offset: usize,
 }
@@ -1526,7 +1519,6 @@ pub fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
         }
         result.push(FeatureRevolutionExtent {
             feature_id: row.feature_id,
-            kind: FeatureRevolutionExtentKind::FullTurn,
             offset: row.body_offset + choice_start + 2,
         });
     }
