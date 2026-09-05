@@ -70,7 +70,7 @@ pub fn decode_edge_operands(
             Some((
                 native_stream(&group.id)?.to_owned(),
                 group.scope_record_index,
-                *group.members.last()?,
+                group.members.last()?.value,
             ))
         })
         .collect::<HashSet<_>>();
@@ -98,7 +98,7 @@ pub fn decode_edge_operands(
                 native_stream(&group.id) == native_stream(&scope.id)
                     && group.scope_record_index == scope.record_index
             })
-            .flat_map(|group| group.members.iter().copied())
+            .flat_map(|group| group.members.iter().map(|member| member.value))
             .collect::<HashSet<_>>();
         if let Some(operation) = scope.surface_extend_operation() {
             member_indices.extend(operation.edge_record_indices.iter().copied());
@@ -215,7 +215,7 @@ pub fn decode_edge_treatment_vertex_operands(
                 .filter_map(|group| {
                     let mut ordinals = group
                         .members
-                        .iter()
+                        .iter().map(|member| &member.value)
                         .enumerate()
                         .filter(|(_, member)| **member == record_index);
                     let (ordinal, _) = ordinals.next()?;
@@ -619,7 +619,7 @@ pub fn decode_edge_identity_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+        for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
@@ -769,7 +769,7 @@ pub fn decode_face_operands(
         let records = record_offset_index
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        for (group_member_index, record_index) in group.members.iter().enumerate() {
+        for (group_member_index, record_index) in group.members.iter().map(|member| &member.value).enumerate() {
             if !seen.insert((stream, scope.record_index, *record_index)) {
                 continue;
             }
@@ -782,7 +782,7 @@ pub fn decode_face_operands(
             let next_byte_offset = group
                 .members
                 .get(group_member_index + 1)
-                .and_then(|record_index| headers.get(&(stream, *record_index)))
+                .and_then(|record| headers.get(&(stream, record.value)))
                 .copied()
                 .map(|header| header.byte_offset)
                 .or_else(|| {
@@ -1750,7 +1750,7 @@ pub fn decode_fillet_radius_groups(
                     scope_record_index: scope.record_index,
                     group_ordinal,
                     group_record_index: group.record_index,
-                    edge_operand_record_indices: group.members.clone(),
+                    edge_operand_record_indices: group.members.iter().map(|member| member.value).collect(),
                     law: DesignFilletRadiusLaw::Constant {
                         radius_parameter_record_index: radius.record_index,
                     },
@@ -1783,7 +1783,7 @@ pub fn decode_fillet_radius_groups(
                 scope_record_index: scope.record_index,
                 group_ordinal: 0,
                 group_record_index: group.record_index,
-                edge_operand_record_indices: group.members.clone(),
+                edge_operand_record_indices: group.members.iter().map(|member| member.value).collect(),
                 law: DesignFilletRadiusLaw::Chordal {
                     chord_length_parameter_record_index: *chord_length,
                 },
@@ -1816,7 +1816,7 @@ pub fn decode_fillet_radius_groups(
                     scope_record_index: scope.record_index,
                     group_ordinal: 0,
                     group_record_index: group.record_index,
-                    edge_operand_record_indices: group.members.clone(),
+                    edge_operand_record_indices: group.members.iter().map(|member| member.value).collect(),
                     law: DesignFilletRadiusLaw::Asymmetric {
                         offset_one_parameter_record_index: *offset_one,
                         offset_two_parameter_record_index: *offset_two,
@@ -1858,7 +1858,7 @@ pub fn decode_fillet_radius_groups(
             scope_record_index: scope.record_index,
             group_ordinal: 0,
             group_record_index: group.record_index,
-            edge_operand_record_indices: group.members.clone(),
+            edge_operand_record_indices: group.members.iter().map(|member| member.value).collect(),
             law: DesignFilletRadiusLaw::Variable {
                 start_radius_parameter_record_index: *start,
                 end_radius_parameter_record_index: *end,
@@ -2011,13 +2011,11 @@ pub(crate) fn parse_construction_operand_group(
         return NotAGroup;
     }
     let mut members = Vec::new();
-    let mut member_offsets = Vec::new();
     for _ in 0..member_count {
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        members.push(record_index);
-        member_offsets.push(offset);
+        members.push(crate::records::Located { value: record_index, offset });
     }
     let mut auxiliary_records = Vec::new();
     let mut auxiliary_reference_slots = [false; 2];
@@ -2166,7 +2164,6 @@ pub(crate) fn parse_construction_operand_group(
         class_tag: header.class_tag.clone(),
         members,
         lost_edge_references: Vec::new(),
-        member_offsets,
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset,
             auxiliary_records,
@@ -2930,7 +2927,7 @@ pub fn decode_entity_selection_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+        for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
@@ -3359,7 +3356,7 @@ pub fn decode_body_recipe_operands(
         let records = record_offset_index
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+        for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };

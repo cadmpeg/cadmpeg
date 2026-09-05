@@ -110,9 +110,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         record_index: 385,
         byte_offset: 0,
         class_tag: "000".into(),
-        members: vec![388],
+        members: vec![crate::records::Located { value: 388, offset: 0 }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![0],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
             auxiliary_records: Vec::new(),
@@ -249,7 +248,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let mut second_group = group.clone();
     second_group.id = format!("{stream}:design-construction-operand-group#415");
     second_group.record_index = 415;
-    second_group.members = vec![418];
+    second_group.members = vec![crate::records::Located { value: 418, offset: second_group.members[0].offset }];
     let multi_groups = [group, second_group];
     let multi_inputs = crate::design::feature_project::ProjectInputs {
         native: &parameters,
@@ -501,16 +500,15 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         parameter(429, "ToObjectOffset", "mm", 1.5),
     ];
 
-    let mut edge_group = crate::records::DesignConstructionOperandGroup {
+    let edge_group = crate::records::DesignConstructionOperandGroup {
         id: format!("{stream}:design-construction-operand-group#385"),
         scope_record_index: 382,
         scope_reference_ordinal: 1,
         record_index: 385,
         byte_offset: 0,
         class_tag: "000".into(),
-        members: vec![388],
+        members: vec![crate::records::Located { value: 388, offset: 0 }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![0],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
             auxiliary_records: Vec::new(),
@@ -535,9 +533,8 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     target_group.id = format!("{stream}:design-construction-operand-group#421");
     target_group.scope_reference_ordinal = 2;
     target_group.record_index = 421;
-    target_group.members = vec![424];
+    target_group.members = vec![crate::records::Located { value: 424, offset: target_group.members[0].offset }];
     target_group.role = 0x0000_0021_0000_0000;
-    edge_group.member_offsets = vec![0];
 
     let target_selection = crate::records::DesignEntitySelectionOperand {
         id: format!("{stream}:design-entity-selection-operand#424"),
@@ -797,9 +794,8 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
         record_index,
         byte_offset: 0,
         class_tag: "277".into(),
-        members: vec![member],
+        members: vec![crate::records::Located { value: member, offset: 0 }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![0],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
             auxiliary_records: Vec::new(),
@@ -927,9 +923,8 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             record_index,
             byte_offset: 0,
             class_tag: "000".into(),
-            members: vec![member],
+            members: vec![crate::records::Located { value: member, offset: 0 }],
             lost_edge_references: Vec::new(),
-            member_offsets: vec![0],
             frame: DesignConstructionOperandGroupFrame {
                 member_count_offset: 0,
                 auxiliary_records: Vec::new(),

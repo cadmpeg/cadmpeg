@@ -1514,7 +1514,7 @@ fn exact_surface_offset_face_groups(
         {
             return None;
         }
-        for member in &group.members {
+        for member in group.members.iter().map(|member| &member.value) {
             if *member == *distance_record_index
                 || !support_references.contains(member)
                 || !covered_references.insert(*member)
@@ -5044,7 +5044,7 @@ pub fn bind_mirror_constructions(
         else {
             continue;
         };
-        let [plane_member] = plane_group.members.as_slice() else {
+        let [crate::records::Located { value: plane_member, .. }] = plane_group.members.as_slice() else {
             continue;
         };
         let Some(plane_header) = headers.get(&(stream.as_str(), *plane_member)) else {
@@ -5102,7 +5102,7 @@ pub fn bind_mirror_constructions(
             };
         let seed_feature = match seed_group.members.as_slice() {
             _ if seed_group.role != 0x0000_0008_0000_0000 => None,
-            [member] => headers
+            [crate::records::Located { value: member, .. }] => headers
                 .get(&(stream.as_str(), *member))
                 .and_then(|header| compact_feature_reference(bytes, header))
                 .filter(|(record_index, _)| {

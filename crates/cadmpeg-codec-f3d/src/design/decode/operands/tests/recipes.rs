@@ -24,9 +24,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "269".into(),
-        members: vec![100],
+        members: vec![crate::records::Located { value: 100, offset: 926 }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![926],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
             auxiliary_records: Vec::new(),
@@ -287,9 +286,8 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         record_index: 90,
         byte_offset: 0,
         class_tag: "287".into(),
-        members: vec![100],
+        members: vec![crate::records::Located { value: 100, offset: 21 }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![21],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
             auxiliary_records: Vec::new(),
@@ -689,9 +687,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "288".into(),
-        members: vec![100],
+        members: vec![crate::records::Located { value: 100, offset: 926 }],
         lost_edge_references: vec!["f3d:Design/BulkStream.dat:lost-edge#1".into()],
-        member_offsets: vec![926],
+
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
             auxiliary_records: Vec::new(),
@@ -727,7 +725,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ));
     let mut terminal_group = recovered_group.clone();
     terminal_group.lost_edge_references.clear();
-    terminal_group.members = vec![100, 104];
+    terminal_group.members = vec![100, 104].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
     let mut terminal_resolved = proven_operand.clone();
     terminal_resolved.recipe_state_id = Some(8);
     let mut terminal_unresolved = proven_operand.clone();
@@ -830,7 +828,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             ]
     ));
     let mut chain_group = terminal_group.clone();
-    chain_group.members = vec![100];
+    chain_group.members = vec![100].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
     let mut chain_recipe = recipe_unresolved.clone();
     chain_recipe.changed_boundary_edge_slots = vec![17, 18];
     let mut chain_identity = identity(100, 0, None);
@@ -1146,7 +1144,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     surface_patch_operand.recipe_state_id = Some(8);
     surface_patch_operand.resolved_edge_slot = Some(17);
     let mut surface_patch_group = terminal_group.clone();
-    surface_patch_group.members = vec![100];
+    surface_patch_group.members = vec![100].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
     let surface_selection = crate::design::edge_resolve::resolved_edge_group(
         &surface_patch_group,
         std::slice::from_ref(&surface_patch_group),
@@ -1540,9 +1538,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "306".into(),
-        members: vec![operand.record_index],
+        members: vec![crate::records::Located { value: operand.record_index, offset: 924 }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![924],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 920,
             auxiliary_records: Vec::new(),
@@ -1693,7 +1690,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let mut split_group = group.clone();
     split_group.scope_reference_ordinal = 2;
     split_group.role = 0x0000_0010_0000_0000;
-    split_group.members = vec![operand.record_index, operand.record_index + 1];
+    split_group.members = vec![operand.record_index, operand.record_index + 1].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
     let mut split_selected = operand.clone();
     split_selected.group = Some(crate::records::DesignOperandGroup {
         group_record_index: split_group.record_index,

@@ -755,3 +755,16 @@ fn construction_trailing_rows_preserve_wire_and_reject_unequal_offsets() {
         assert!(error.contains("trailing_record_offsets"));
     }
 }
+
+#[test]
+fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
+    for (members, offsets) in [("[]", "[]"), ("[10]", "[0]"), ("[10,11]", "[26,37]")] {
+        let wire = format!(r#"{{"id":"group","scope_record_index":7,"scope_reference_ordinal":0,"record_index":9,"byte_offset":0,"class_tag":"277","members":{members},"member_offsets":{offsets},"frame":{{"member_count_offset":21,"opaque_index":1,"opaque_index_offset":80,"opaque_scalar":0.0,"opaque_scalar_offset":84,"variant":false}},"role":0,"role_offset":60,"paired_class_tag":"278","paired_byte_offset":100}}"#);
+        let group: super::DesignConstructionOperandGroup = serde_json::from_str(&wire).expect("construction group");
+        assert_eq!(serde_json::to_string(&group).expect("construction wire"), wire);
+        let invalid = wire.replace(&format!("\"member_offsets\":{offsets}"), "\"member_offsets\":[1,2,3]");
+        let error = serde_json::from_str::<super::DesignConstructionOperandGroup>(&invalid).expect_err("unequal member arrays").to_string();
+        assert!(error.contains("members"));
+        assert!(error.contains("member_offsets"));
+    }
+}

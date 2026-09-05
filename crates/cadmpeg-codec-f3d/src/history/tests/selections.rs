@@ -1436,7 +1436,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         [0, 1]
     );
     let mut repeated_child = groups.clone();
-    repeated_child[0].members.push(110);
+    repeated_child[0].members.push(crate::records::Located { value: 110, offset: 0 });
     assert!(
         crate::design::face_resolve::extrude_profile_group_roots(&scope, &repeated_child).is_none()
     );

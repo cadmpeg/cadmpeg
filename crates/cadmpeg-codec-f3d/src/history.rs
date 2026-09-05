@@ -1619,7 +1619,7 @@ fn bind_body_recipe_body_selection(
         return;
     }
     let mut body_slots = Vec::with_capacity(group.members.len());
-    for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+    for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
         let Ok(ordinal) = u32::try_from(ordinal) else {
             return;
         };
@@ -1689,7 +1689,7 @@ fn bind_direct_body_recipe_body_selection(
                 return;
             }
             let mut selected = Vec::with_capacity(group.members.len());
-            for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+            for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
                 let Ok(ordinal) = u32::try_from(ordinal) else {
                     return;
                 };
@@ -2239,7 +2239,7 @@ fn bind_surface_stitch_face_selection(
         || matching_groups.iter().enumerate().any(|(ordinal, group)| {
             u32::try_from(ordinal * 2) != Ok(group.scope_reference_ordinal)
                 || group.record_index != input_references[ordinal * 2]
-                || group.members.as_slice() != [input_references[ordinal * 2 + 1]]
+                || !group.members.iter().map(|member| member.value).eq([input_references[ordinal * 2 + 1]])
         })
     {
         return;
@@ -2282,7 +2282,7 @@ fn bind_entity_face_groups(
         if group.members.is_empty() {
             return;
         }
-        for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+        for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 return;
             };
@@ -2505,7 +2505,7 @@ fn bind_entity_selection_path(
         return;
     }
     let mut edge_slots = Vec::with_capacity(group.members.len());
-    for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+    for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
         let Ok(ordinal) = u32::try_from(ordinal) else {
             return;
         };
@@ -3563,7 +3563,7 @@ fn exact_face_selection_group<'a>(
             && group.scope_record_index == scope.record_index
             && group.record_index == group_record_index
             && group.role == 0x0000_0010_0000_0000
-            && group.members.get(group_member_ordinal) == Some(&operand.record_index)
+            && group.members.get(group_member_ordinal).map(|member| &member.value) == Some(&operand.record_index)
     });
     let group = groups.next()?;
     groups.next().is_none().then_some(group)
@@ -6395,7 +6395,7 @@ fn bind_face_selection(
         return;
     };
     let mut faces = Vec::new();
-    for record_index in &group.members {
+    for record_index in group.members.iter().map(|member| &member.value) {
         let mut matches = operands.iter().filter(|operand| {
             crate::ids::native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == scope.record_index
@@ -6460,7 +6460,7 @@ fn bind_body_recipe_face_selection(
     }
     let stream = crate::ids::native_stream(&scope.id);
     let mut slots = Vec::new();
-    for (ordinal, record_index) in group.members.iter().enumerate() {
+    for (ordinal, record_index) in group.members.iter().map(|member| &member.value).enumerate() {
         let Ok(ordinal) = u32::try_from(ordinal) else {
             return;
         };
@@ -7353,7 +7353,7 @@ pub(crate) fn bind_mirror_selection_planes(
                 && group.scope_record_index == record_index
                 && group.record_index == construction.plane_group_record_index
                 && group.role == 0x0000_0005_0000_0000
-                && group.members == [selection_record_index]
+                && group.members.iter().map(|member| member.value).eq([selection_record_index])
         });
         let Some(group) = matching_groups.next() else {
             continue;

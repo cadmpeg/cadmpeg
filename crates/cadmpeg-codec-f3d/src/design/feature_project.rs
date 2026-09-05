@@ -1075,8 +1075,7 @@ pub fn project_parameter_design_with_edge_identities(
                                                 && group.scope_record_index == scope.record_index
                                                 && group.record_index == *group_record_index
                                                 && group.role == ROLE_0X10
-                                                && group.members.as_slice()
-                                                    == std::slice::from_ref(&member_record_index)
+                                                && group.members.iter().map(|member| member.value).eq([member_record_index])
                                         })
                                 });
                         let extent = parameters
@@ -2379,7 +2378,7 @@ fn project_full_round_fillet(
     {
         return None;
     }
-    let [member] = group.members.as_slice() else {
+    let [crate::records::Located { value: member, .. }] = group.members.as_slice() else {
         return None;
     };
     let mut operands = face_operands.iter().filter(|operand| {
@@ -2850,7 +2849,7 @@ fn project_draft(
     let member_of_scope = |group: &DesignConstructionOperandGroup| {
         group
             .members
-            .iter()
+            .iter().map(|member| &member.value)
             .all(|member| scope.reference_members.contains(member))
     };
     if !scope.reference_members.contains(&faces.record_index) || !member_of_scope(faces) {
@@ -2958,7 +2957,7 @@ fn selected_historical_face_selection(
     let previous_state_id =
         crate::history::effective_scope_previous_history_state_id(scope, histories)?;
     let stream = native_stream(&scope.id)?;
-    let [member] = group.members.as_slice() else {
+    let [crate::records::Located { value: member, .. }] = group.members.as_slice() else {
         return None;
     };
     let selections = entity_selection_operands
@@ -3063,7 +3062,7 @@ fn group_has_entity_selection(
     };
     group
         .members
-        .iter()
+        .iter().map(|member| &member.value)
         .enumerate()
         .any(|(ordinal, record_index)| {
             let Ok(ordinal) = u32::try_from(ordinal) else {
@@ -3104,7 +3103,7 @@ fn selected_work_planes<'a>(
     }
     let mut planes = Vec::with_capacity(group.members.len());
     let mut target_record_indices = HashSet::with_capacity(group.members.len());
-    for (ordinal, member) in group.members.iter().enumerate() {
+    for (ordinal, member) in group.members.iter().map(|member| &member.value).enumerate() {
         let ordinal = u32::try_from(ordinal).ok()?;
         let selections = entity_selection_operands
             .iter()
@@ -3161,7 +3160,7 @@ fn resolved_split_face_path(
         .map_or(feature.0.as_str(), |(_, key)| key);
     let prefix = ids::history_input_prefix(feature_key, previous_state_id);
     let mut edge_slots = Vec::with_capacity(group.members.len());
-    for (ordinal, member) in group.members.iter().enumerate() {
+    for (ordinal, member) in group.members.iter().map(|member| &member.value).enumerate() {
         let ordinal = u32::try_from(ordinal).ok()?;
         let mut selections = entity_selection_operands.iter().filter(|selection| {
             native_stream(&selection.id) == Some(stream)
@@ -3380,7 +3379,7 @@ fn project_base_flange(
     if profile_group.scope_reference_ordinal != 0
         || profile_group.record_index != operation.profile_group_record_index
         || profile_group.role != 0x0000_0041_0000_0000
-        || profile_group.members != [operation.profile_record_index]
+        || !profile_group.members.iter().map(|member| member.value).eq([operation.profile_record_index])
     {
         return None;
     }
@@ -3467,7 +3466,7 @@ pub(crate) fn project_edge_flange(
                         && group.scope_record_index == scope.record_index
                         && group.record_index == *target_group_record_index
                         && group.role == 0x0000_0021_0000_0000
-                        && group.members == [*target_operand_record_index]
+                        && group.members.iter().map(|member| member.value).eq([*target_operand_record_index])
                 })
                 .collect::<Vec<_>>();
             let [target_group] = target_group.as_slice() else {
@@ -3723,7 +3722,7 @@ pub(crate) fn project_hem(
     let edge_group = edge_groups.next()?;
     let edge_has_extra = edge_groups.next().is_some();
     let edge_role_ok = edge_group.role == 0x0000_0008_0000_0000;
-    let edge_members_ok = edge_group.members == [operation.edge_operand_record_index];
+    let edge_members_ok = edge_group.members.iter().map(|member| member.value).eq([operation.edge_operand_record_index]);
     if edge_has_extra || !edge_role_ok || !edge_members_ok {
         return None;
     }
@@ -3737,7 +3736,7 @@ pub(crate) fn project_hem(
     let aggregate_has_extra = aggregate_groups.next().is_some();
     let aggregate_role_ok = aggregate_group.role == 0x0000_0043_0000_0000;
     let aggregate_members_ok =
-        aggregate_group.members == [operation.aggregate_operand_record_index];
+        aggregate_group.members.iter().map(|member| member.value).eq([operation.aggregate_operand_record_index]);
     if aggregate_has_extra || !aggregate_role_ok || !aggregate_members_ok {
         return None;
     }
@@ -3816,7 +3815,7 @@ pub(crate) fn project_surface_stitch(
         || matching.iter().enumerate().any(|(ordinal, group)| {
             u32::try_from(ordinal * 2) != Ok(group.scope_reference_ordinal)
                 || group.record_index != input_references[ordinal * 2]
-                || group.members.as_slice() != [input_references[ordinal * 2 + 1]]
+                || !group.members.iter().map(|member| member.value).eq([input_references[ordinal * 2 + 1]])
                 || group.role != ROLE_0X5
         })
     {
@@ -3890,7 +3889,7 @@ pub(crate) fn project_ruled_surface(
         }
         let reference_ordinal = usize::try_from(group.scope_reference_ordinal).ok()?;
         if scope.reference_members.get(reference_ordinal) != Some(record_index)
-            || scope.reference_members.get(reference_ordinal + 1) != group.members.first()
+            || scope.reference_members.get(reference_ordinal + 1) != group.members.first().map(|member| &member.value)
         {
             return None;
         }
@@ -5572,10 +5571,10 @@ pub(crate) fn project_fixed_revolve_with_entities(
     if bodies.len() != expected_body_groups || groups.len() != 2 + expected_body_groups {
         return None;
     }
-    let [_profile_member] = profile.members.as_slice() else {
+    let [_] = profile.members.as_slice() else {
         return None;
     };
-    let [axis_member] = axis_group.members.as_slice() else {
+    let [crate::records::Located { value: axis_member, .. }] = axis_group.members.as_slice() else {
         return None;
     };
     let matches = edge_operands
@@ -5718,7 +5717,7 @@ pub(crate) fn bind_revolve_face_axes(
         let [group] = groups.as_slice() else {
             continue;
         };
-        let [member] = group.members.as_slice() else {
+        let [crate::records::Located { value: member, .. }] = group.members.as_slice() else {
             continue;
         };
         let selections = entity_selection_operands
@@ -6562,17 +6561,17 @@ pub(crate) fn project_fixed_sweep(
         let sweep_profile = scope.sweep_profile()?;
         let carriers = profiles
             .iter()
-            .filter(|group| group.members.as_slice() == [sweep_profile.record_index])
+            .filter(|group| group.members.iter().map(|member| member.value).eq([sweep_profile.record_index]))
             .collect::<Vec<_>>();
         let selections = profiles
             .iter()
-            .filter(|group| group.members.as_slice() != [sweep_profile.record_index])
+            .filter(|group| !group.members.iter().map(|member| member.value).eq([sweep_profile.record_index]))
             .collect::<Vec<_>>();
         let ([_carrier], [selection]) = (carriers.as_slice(), selections.as_slice()) else {
             return None;
         };
         if selection.members.is_empty()
-            || !selection.members.iter().all(|member| {
+            || !selection.members.iter().map(|member| &member.value).all(|member| {
                 entity_selection_operands.iter().any(|operand| {
                     native_stream(&operand.id) == Some(stream)
                         && operand.scope_record_index == scope.record_index
@@ -6752,7 +6751,7 @@ fn project_fixed_pipe(
             || !claimed.insert(path_group.record_index)
             || path_group
                 .members
-                .iter()
+                .iter().map(|member| &member.value)
                 .any(|record_index| !claimed.insert(*record_index))
             || scope.reference_members.len() != path_group.members.len() + 6
             || scope.reference_members.iter().collect::<HashSet<_>>().len()
@@ -6773,8 +6772,7 @@ fn project_fixed_pipe(
             || scope.reference_members.get(5) != Some(&path_group.record_index)
             || path_group.members.is_empty()
             || scope.reference_members.len() != path_group.members.len() + 8
-            || path_group.members.as_slice()
-                != &scope.reference_members[6..scope.reference_members.len() - 2]
+            || !path_group.members.iter().map(|member| member.value).eq(scope.reference_members[6..scope.reference_members.len() - 2].iter().copied())
         {
             return None;
         }
@@ -6873,8 +6871,7 @@ pub(crate) fn project_surface_patch(
             || group.record_index != scope.reference_members[0]
             || group.role != ROLE_0X4
             || group.members.is_empty()
-            || group.members.as_slice()
-                != &scope.reference_members[1..scope.reference_members.len() - 1]
+            || !group.members.iter().map(|member| member.value).eq(scope.reference_members[1..scope.reference_members.len() - 1].iter().copied())
         {
             return None;
         }
@@ -6924,8 +6921,7 @@ pub(crate) fn project_surface_patch(
         if settings_ordinal >= scope.reference_members.len()
             || boundary.record_index != scope.reference_members[group_ordinal]
             || boundary.role != boundary_role
-            || boundary.members.as_slice()
-                != &scope.reference_members[member_ordinal..=member_ordinal]
+            || !boundary.members.iter().map(|member| member.value).eq(scope.reference_members[member_ordinal..=member_ordinal].iter().copied())
             || occupied[group_ordinal]
             || occupied[member_ordinal]
             || occupied[settings_ordinal]
@@ -7020,7 +7016,7 @@ pub(crate) fn project_boundary_fill(
             .unwrap_or(scope.reference_members.len() - 1);
         if start >= end
             || group.record_index != scope.reference_members[start]
-            || group.members.as_slice() != &scope.reference_members[start + 1..end]
+            || !group.members.iter().map(|member| member.value).eq(scope.reference_members[start + 1..end].iter().copied())
             || (index > 0 && group.role != ROLE_0X5)
         {
             return None;
@@ -7171,11 +7167,11 @@ fn project_replace_face(
     if replacement_group.scope_reference_ordinal != 0
         || replacement_group.record_index != references[0]
         || replacement_group.role != ROLE_0X9
-        || replacement_group.members.as_slice() != &references[1..2]
+        || !replacement_group.members.iter().map(|member| member.value).eq(references[1..2].iter().copied())
         || target_group.scope_reference_ordinal != 2
         || target_group.record_index != references[2]
         || target_group.role != ROLE_0X10
-        || target_group.members.as_slice() != &references[3..4]
+        || !target_group.members.iter().map(|member| member.value).eq(references[3..4].iter().copied())
     {
         return None;
     }
@@ -7222,11 +7218,11 @@ pub(crate) fn project_surface_trim(
     if target_group.scope_reference_ordinal != 0
         || target_group.record_index != references[0]
         || target_group.role != ROLE_0X4
-        || target_group.members.as_slice() != &references[1..2]
+        || !target_group.members.iter().map(|member| member.value).eq(references[1..2].iter().copied())
         || tool_group.scope_reference_ordinal != 2
         || tool_group.record_index != references[2]
         || tool_group.role != ROLE_0X21
-        || tool_group.members.as_slice() != &references[3..4]
+        || !tool_group.members.iter().map(|member| member.value).eq(references[3..4].iter().copied())
     {
         return None;
     }
@@ -7312,18 +7308,18 @@ pub(crate) fn project_split(
     if tool_group.scope_reference_ordinal != 0
         || tool_group.record_index != scope.reference_members[0]
         || tool_group.members.is_empty()
-        || tool_group.members.as_slice() != tool_members
+        || !tool_group.members.iter().map(|member| member.value).eq(tool_members.iter().copied())
         || usize::try_from(targets.scope_reference_ordinal).ok()? != target_ordinal
         || targets.record_index != target_record_index
         || targets.role != ROLE_0X4
         || targets.members.is_empty()
-        || targets.members.as_slice() != target_members
+        || !targets.members.iter().map(|member| member.value).eq(target_members.iter().copied())
     {
         return None;
     }
     let tools = match tool_group.role {
         ROLE_0X9 => {
-            let [tool_record_index] = tool_group.members.as_slice() else {
+            let [crate::records::Located { value: tool_record_index, .. }] = tool_group.members.as_slice() else {
                 return None;
             };
             let matching_tools = face_operands
@@ -7403,12 +7399,12 @@ fn project_split_face(
         || tool.record_index != scope.reference_members[0]
         || tool.role != ROLE_0X21
         || tool.members.is_empty()
-        || tool.members.as_slice() != &scope.reference_members[1..target_ordinal]
+        || !tool.members.iter().map(|member| member.value).eq(scope.reference_members[1..target_ordinal].iter().copied())
         || usize::try_from(targets.scope_reference_ordinal).ok()? != target_ordinal
         || targets.record_index != scope.reference_members[target_ordinal]
         || targets.role != 0x0000_0010_0000_0000
         || targets.members.is_empty()
-        || targets.members.as_slice() != &scope.reference_members[target_ordinal + 1..]
+        || !targets.members.iter().map(|member| member.value).eq(scope.reference_members[target_ordinal + 1..].iter().copied())
     {
         return None;
     }
@@ -7516,7 +7512,7 @@ fn project_delete_face(
     if group.scope_reference_ordinal != 0
         || group.record_index != scope.reference_members[0]
         || group.role != ROLE_0X10
-        || group.members.as_slice() != &scope.reference_members[1..]
+        || !group.members.iter().map(|member| member.value).eq(scope.reference_members[1..].iter().copied())
     {
         return None;
     }

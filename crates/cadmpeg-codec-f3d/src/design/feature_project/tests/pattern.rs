@@ -28,9 +28,8 @@ fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstru
         record_index,
         byte_offset: 0,
         class_tag: "313".into(),
-        members: vec![record_index + 1],
+        members: vec![crate::records::Located { value: record_index + 1, offset: 0 }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![0],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
             auxiliary_records: Vec::new(),

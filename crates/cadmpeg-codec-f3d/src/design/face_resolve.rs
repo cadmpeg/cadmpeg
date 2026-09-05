@@ -42,7 +42,7 @@ pub(crate) fn resolved_face_group(
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     let stream = native_stream(&group.id)?;
     let mut faces = Vec::with_capacity(group.members.len());
-    for record_index in &group.members {
+    for record_index in group.members.iter().map(|member| &member.value) {
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == group.scope_record_index
@@ -88,7 +88,7 @@ pub(crate) fn resolved_explicit_bounded_face_group(
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     let stream = native_stream(&group.id)?;
     let mut faces = Vec::with_capacity(group.members.len());
-    for record_index in &group.members {
+    for record_index in group.members.iter().map(|member| &member.value) {
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == group.scope_record_index
@@ -206,7 +206,7 @@ pub(crate) fn resolved_body_recipe_selection(
     let mut faces = Vec::new();
     let mut state_id = None;
     let mut member_records = HashSet::new();
-    for (ordinal, record_index) in group.members.iter().enumerate() {
+    for (ordinal, record_index) in group.members.iter().map(|member| &member.value).enumerate() {
         if !member_records.insert(*record_index) {
             return None;
         }
@@ -317,7 +317,7 @@ pub(crate) fn extrude_profile_group_roots<'a>(
     }
     let mut parent_by_child = HashMap::new();
     for parent in &profile_groups {
-        for member in &parent.members {
+        for member in parent.members.iter().map(|member| &member.value) {
             let Some(child) = groups_by_record.get(member) else {
                 continue;
             };
@@ -356,7 +356,7 @@ fn visit_extrude_profile_group(
     visited: &mut HashSet<u32>,
 ) -> bool {
     visited.insert(group.record_index)
-        && group.members.iter().all(|member| {
+        && group.members.iter().map(|member| &member.value).all(|member| {
             groups_by_record
                 .get(member)
                 .is_none_or(|child| visit_extrude_profile_group(child, groups_by_record, visited))
@@ -416,7 +416,7 @@ fn collect_extrude_profile_group_operands(
         return None;
     }
     let mut indices = Vec::with_capacity(group.members.len());
-    for (ordinal, record_index) in group.members.iter().enumerate() {
+    for (ordinal, record_index) in group.members.iter().map(|member| &member.value).enumerate() {
         let ordinal = u32::try_from(ordinal).ok()?;
         let direct = operands
             .iter()
@@ -468,7 +468,7 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
         return false;
     };
     !root.members.is_empty()
-        && root.members.iter().all(|record_index| {
+        && root.members.iter().map(|member| &member.value).all(|record_index| {
             let mut children = groups.iter().filter(|group| {
                 native_stream(&group.id) == Some(stream)
                     && group.scope_record_index == root.scope_record_index
@@ -482,7 +482,7 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
             if children.next().is_some() {
                 return false;
             }
-            let [operand_record_index] = child.members.as_slice() else {
+            let [crate::records::Located { value: operand_record_index, .. }] = child.members.as_slice() else {
                 return false;
             };
             let mut leaves = operands.iter().filter(|operand| {
@@ -608,7 +608,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
     let mut member_ids = HashSet::new();
     if group
         .members
-        .iter()
+        .iter().map(|member| &member.value)
         .any(|member| !member_ids.insert(*member))
     {
         return None;
@@ -618,7 +618,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
     }
     let member_operands = group
         .members
-        .iter()
+        .iter().map(|member| &member.value)
         .enumerate()
         .map(|(ordinal, record_index)| {
             let scope_ordinal = group
@@ -926,7 +926,7 @@ fn split_face_updated_target_slots(
     let stream = native_stream(&group.id)?;
     let mut represented = HashSet::new();
     let mut faces = Vec::new();
-    for (ordinal, record_index) in group.members.iter().enumerate() {
+    for (ordinal, record_index) in group.members.iter().map(|member| &member.value).enumerate() {
         let ordinal = u32::try_from(ordinal).ok()?;
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
@@ -961,7 +961,7 @@ fn historical_face_group_slots(
     let stream = native_stream(&group.id)?;
     let mut faces = Vec::with_capacity(group.members.len());
     let mut contributing_members = 0;
-    for (ordinal, record_index) in group.members.iter().enumerate() {
+    for (ordinal, record_index) in group.members.iter().map(|member| &member.value).enumerate() {
         let ordinal = u32::try_from(ordinal).ok()?;
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
@@ -1672,7 +1672,7 @@ fn extrude_start_plane_geometry_candidates(
     operands: &[DesignFaceOperand],
     faces: &[cadmpeg_ir::topology::Face],
 ) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
-    let [record_index] = group.members.as_slice() else {
+    let [crate::records::Located { value: record_index, .. }] = group.members.as_slice() else {
         return None;
     };
     let mut matching = operands.iter().filter(|operand| {
@@ -1762,7 +1762,7 @@ pub(crate) fn bind_extrude_start_planes(
             continue;
         };
         let mut candidates = Vec::new();
-        for record_index in &group.members {
+        for record_index in group.members.iter().map(|member| &member.value) {
             let mut matching_operands = resolution.operands.iter().filter(|operand| {
                 native_stream(&operand.id) == Some(stream)
                     && operand.scope_record_index == group.scope_record_index
@@ -1939,7 +1939,7 @@ fn extrude_target_plane_candidate(
     sketch_origin: Point3,
     sweep_direction: Vector3,
 ) -> Option<cadmpeg_ir::ids::FaceId> {
-    let [record_index] = group.members.as_slice() else {
+    let [crate::records::Located { value: record_index, .. }] = group.members.as_slice() else {
         return None;
     };
     let stream = native_stream(&group.id)?;
@@ -1999,7 +1999,7 @@ pub(crate) fn retain_face_operand_resolution(
     let mut matches = operands.iter_mut().filter(|operand| {
         native_stream(&operand.id) == Some(stream)
             && operand.scope_record_index == group.scope_record_index
-            && group.members.contains(&operand.record_index)
+            && group.members.iter().any(|member| member.value == operand.record_index)
             && (face_operand_candidates(operand).contains(face)
                 || (face_operand_candidates(operand).is_empty()
                     && operand.resolved_face_slots.is_empty()

@@ -180,7 +180,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     group.id == group_id
                         && group.scope_record_index == scope.record_index
                         && group.role == 0x0000_0041_0000_0000
-                        && group.members.as_slice() == [profile_operand.record_index]
+                        && group.members.iter().map(|member| member.value).eq([profile_operand.record_index])
                         && native_stream(&group.id) == Some(stream)
                 });
                 matches!(
@@ -220,7 +220,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     operand.scope_record_index == scope.record_index
                         && operand.group_record_index == group.record_index
                         && operand.group_member_ordinal == 0
-                        && operand.record_index == group.members[0]
+                        && operand.record_index == group.members[0].value
                         && native_stream(&operand.id) == Some(stream)
                 });
                 let operand = matching_operands.next()?;
@@ -1836,7 +1836,7 @@ fn resolve_entity_selection_path(
     let mut primary_identity = None;
     let mut asset_id = None;
     let mut context_id = None;
-    for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+    for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
         let ordinal = u32::try_from(ordinal).ok()?;
         if !member_records.insert(record_index) {
             return None;
@@ -2256,7 +2256,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(header) = headers.get(&(stream, group.members[0])) else {
+        let Some(header) = headers.get(&(stream, group.members[0].value)) else {
             continue;
         };
         let Some(profile) = parse_sketch_profile(
@@ -2332,7 +2332,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                     && operand.scope_record_index == group.scope_record_index
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == 0
-                    && operand.record_index == group.members[0]
+                    && operand.record_index == group.members[0].value
             });
         let Some(operand) = operands.next() else {
             continue;

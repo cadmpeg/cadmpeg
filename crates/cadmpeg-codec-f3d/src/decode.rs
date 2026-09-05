@@ -4354,8 +4354,7 @@ fn extend_related_design_records(
                     .to_owned();
                 group
                     .members
-                    .iter()
-                    .copied()
+                    .iter().map(|member| member.value)
                     .chain(
                         group
                             .frame
@@ -4504,8 +4503,7 @@ fn extend_related_design_records(
                     Some(
                         group
                             .members
-                            .iter()
-                            .copied()
+                            .iter().map(|member| member.value)
                             .map(move |record_index| (stream.clone(), record_index)),
                     )
                 })

@@ -59,14 +59,14 @@ pub(crate) fn resolved_surface_patch_edge_group(
     let mut member_ids = HashSet::new();
     if group
         .members
-        .iter()
+        .iter().map(|member| &member.value)
         .any(|member| !member_ids.insert(*member))
     {
         return fallback();
     }
     let matched_operands = group
         .members
-        .iter()
+        .iter().map(|member| &member.value)
         .map(|member| {
             let mut matches = operands.iter().filter(|operand| {
                 native_stream(&operand.id) == stream
@@ -215,7 +215,7 @@ pub(crate) fn resolved_edge_flange_group(
     let mut members = HashSet::new();
     let candidate_sets = group
         .members
-        .iter()
+        .iter().map(|member| &member.value)
         .map(|member| {
             if !members.insert(*member) {
                 return None;
@@ -344,16 +344,11 @@ pub(crate) fn resolved_edge_treatment_group_with_corners(
     }
     let mut edge_group = group.clone();
     let mut corner_slots = Vec::new();
-    if group.members.len() != group.member_offsets.len() {
-        return EdgeSelection::Native(group.id.clone());
-    }
     edge_group.members.clear();
-    edge_group.member_offsets.clear();
-    for (ordinal, (member, offset)) in group
+    for (ordinal, member) in group
         .members
         .iter()
         .copied()
-        .zip(group.member_offsets.iter().copied())
         .enumerate()
     {
         let edge_count = operands
@@ -361,7 +356,7 @@ pub(crate) fn resolved_edge_treatment_group_with_corners(
             .filter(|operand| {
                 native_stream(&operand.id) == stream
                     && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index == member
+                    && operand.record_index == member.value
             })
             .count();
         let corner = u32::try_from(ordinal).ok().and_then(|ordinal| {
@@ -370,7 +365,7 @@ pub(crate) fn resolved_edge_treatment_group_with_corners(
                     && operand.scope_record_index == group.scope_record_index
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == ordinal
-                    && operand.recipe.record_index == member
+                    && operand.recipe.record_index == member.value
             });
             let corner = matches.next()?;
             matches.next().is_none().then_some(corner)
@@ -378,7 +373,6 @@ pub(crate) fn resolved_edge_treatment_group_with_corners(
         match (edge_count, corner) {
             (1, None) => {
                 edge_group.members.push(member);
-                edge_group.member_offsets.push(offset);
             }
             (0, Some(corner)) => {
                 let (Some(state), Some(vertex)) = (
@@ -513,21 +507,21 @@ fn resolved_edge_group_with_transition_chain(
     let has_surface_patch_operand = operands.iter().any(|operand| {
         native_stream(&operand.id) == stream
             && operand.scope_record_index == group.scope_record_index
-            && group.members.contains(&operand.record_index)
+            && group.members.iter().any(|member| member.value == operand.record_index)
             && operand.surface_patch_recipe_structure.is_some()
     });
     if has_surface_patch_operand {
         let mut member_ids = HashSet::new();
         if group
             .members
-            .iter()
+            .iter().map(|member| &member.value)
             .any(|member| !member_ids.insert(*member))
         {
             return unmatched_selection(previous_state_id);
         }
         let matched_operands = group
             .members
-            .iter()
+            .iter().map(|member| &member.value)
             .map(|member| {
                 let mut matches = operands.iter().filter(|operand| {
                     native_stream(&operand.id) == stream
@@ -593,7 +587,7 @@ fn resolved_edge_group_with_transition_chain(
     }
     let identity_matches = group
         .members
-        .iter()
+        .iter().map(|member| &member.value)
         .map(|member| {
             let mut matches = identity_operands.iter().filter(|operand| {
                 native_stream(&operand.id) == stream
@@ -605,7 +599,7 @@ fn resolved_edge_group_with_transition_chain(
             matches.next().is_none().then_some(operand)
         })
         .collect::<Option<Vec<_>>>();
-    let has_recipe_operands = group.members.iter().all(|member| {
+    let has_recipe_operands = group.members.iter().map(|member| &member.value).all(|member| {
         let matches = operands
             .iter()
             .filter(|operand| {
@@ -616,7 +610,7 @@ fn resolved_edge_group_with_transition_chain(
             .collect::<Vec<_>>();
         matches.len() == 1
     });
-    let has_unstructured_recipe_operand = group.members.iter().any(|member| {
+    let has_unstructured_recipe_operand = group.members.iter().map(|member| &member.value).any(|member| {
         operands.iter().any(|operand| {
             native_stream(&operand.id) == stream
                 && operand.scope_record_index == group.scope_record_index
@@ -628,7 +622,7 @@ fn resolved_edge_group_with_transition_chain(
     if has_recipe_operands && has_unstructured_recipe_operand {
         return unmatched_selection(previous_state_id);
     }
-    let has_standard_recipe_operands = group.members.iter().any(|member| {
+    let has_standard_recipe_operands = group.members.iter().map(|member| &member.value).any(|member| {
         operands.iter().any(|operand| {
             native_stream(&operand.id) == stream
                 && operand.scope_record_index == group.scope_record_index
@@ -636,7 +630,7 @@ fn resolved_edge_group_with_transition_chain(
                 && operand.recipe_structure.is_some()
         })
     });
-    let has_concrete_recipe_evidence = group.members.iter().any(|member| {
+    let has_concrete_recipe_evidence = group.members.iter().map(|member| &member.value).any(|member| {
         let matches = operands
             .iter()
             .filter(|operand| {
@@ -689,7 +683,7 @@ fn resolved_edge_group_with_transition_chain(
     let recipe_supports_transition_chain = |chain: &[i64]| {
         let member_operands = group
             .members
-            .iter()
+            .iter().map(|member| &member.value)
             .map(|member| {
                 let mut matches = operands.iter().filter(|operand| {
                     native_stream(&operand.id) == stream
@@ -851,7 +845,7 @@ fn resolved_edge_group_with_transition_chain(
     }
     let mut matched_operands = Vec::with_capacity(group.members.len());
     let mut member_identities = HashSet::new();
-    for member in &group.members {
+    for member in group.members.iter().map(|member| &member.value) {
         if !member_identities.insert(*member) {
             return unmatched_selection(previous_state_id);
         }
@@ -1057,7 +1051,7 @@ pub(crate) fn resolved_hem_edge_group(
     let Some(previous_state_id) = previous_state_id else {
         return selection;
     };
-    let [member] = group.members.as_slice() else {
+    let [crate::records::Located { value: member, .. }] = group.members.as_slice() else {
         return selection;
     };
     let matching_operands = operands
@@ -1621,7 +1615,7 @@ fn scope_partition_edge_group_candidates(
     }) {
         let mut members = Vec::with_capacity(group.members.len());
         let mut complete = true;
-        for member in &group.members {
+        for member in group.members.iter().map(|member| &member.value) {
             let matches = operands
                 .iter()
                 .filter(|operand| {
@@ -2352,7 +2346,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
         .iter()
         .copied()
         .filter(|group| {
-            group.members.iter().all(|member| {
+            group.members.iter().map(|member| &member.value).all(|member| {
                 edge_operands.iter().any(|operand| {
                     native_stream(&operand.id) == Some(stream)
                         && operand.scope_record_index == scope.record_index
@@ -2379,7 +2373,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
             };
             let identities = group
                 .members
-                .iter()
+                .iter().map(|member| &member.value)
                 .map(|member| {
                     let matches = edge_identity_operands
                         .iter()

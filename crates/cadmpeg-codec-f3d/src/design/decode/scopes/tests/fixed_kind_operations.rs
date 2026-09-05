@@ -586,7 +586,7 @@ pub(super) fn continue_fixed_kind_operations(
     let mut indexed_axis = indexed_profile.clone();
     indexed_axis.id = "stream:indexed-axis".into();
     indexed_axis.record_index = 899;
-    indexed_axis.members = vec![900];
+    indexed_axis.members = vec![crate::records::Located { value: 900, offset: indexed_axis.members[0].offset }];
     indexed_axis.role = 0x0000_0021_0000_0000;
     let mut indexed_bodies = indexed_profile.clone();
     indexed_bodies.id = "stream:indexed-bodies".into();
@@ -1132,10 +1132,10 @@ pub(super) fn continue_fixed_kind_operations(
         &role_shape(&mixed),
     ));
     let mut point = loft_group(0, 0x5_0000_0000);
-    point.members = vec![10];
+    point.members = vec![10].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
     let profile = loft_group(1, 0x43_0000_0000);
     let mut boundary = loft_group(2, 0x5_0000_0000);
-    boundary.members = vec![20, 21, 22];
+    boundary.members = vec![20, 21, 22].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
             &loft_scope,
@@ -1345,11 +1345,11 @@ pub(super) fn continue_fixed_kind_operations(
         }
     }
     let mut selected_profile = profile.clone();
-    selected_profile.members = vec![2788];
+    selected_profile.members = vec![crate::records::Located { value: 2788, offset: selected_profile.members[0].offset }];
     let mut profile_carrier = profile.clone();
     profile_carrier.id = "stream:sweep-profile-carrier".into();
     profile_carrier.scope_reference_ordinal = 3;
-    profile_carrier.members = vec![2795];
+    profile_carrier.members = vec![crate::records::Located { value: 2795, offset: profile_carrier.members[0].offset }];
     let mut guide_surface = sweep_group(4, 0x11_0000_0000);
     guide_surface.id = "stream:sweep-guide-surface".into();
     let entity_selection = crate::records::DesignEntitySelectionOperand {

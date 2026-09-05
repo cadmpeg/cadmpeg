@@ -827,7 +827,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             let native_stream = design_stream(&group.id);
             group
                 .members
-                .iter()
+                .iter().map(|member| &member.value)
                 .map(move |member| (native_stream, group.scope_record_index, *member))
         })
         .collect::<HashSet<_>>();
@@ -1963,7 +1963,7 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .operand_groups_by_index
             .get(&(native_stream, image.target_group_record_index));
         let operand = group.and_then(|group| {
-            let member = *group.members.first()?;
+            let member = group.members.first()?.value;
             ctx.native
                 .design_body_recipe_operands
                 .iter()
@@ -3585,7 +3585,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                             |(scope_reference_ordinal, member_record_index)| {
                                                 group.scope_reference_ordinal
                                                     == scope_reference_ordinal
-                                                    && group.members == [member_record_index]
+                                                    && group.members.iter().map(|member| member.value).eq([member_record_index])
                                             },
                                         )
                                 });
@@ -4889,10 +4889,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
         let header = records_by_index.get(&(native_stream, group.record_index));
         let frame = &group.frame;
         let member_run_end = group
-            .member_offsets
+            .members
             .last()
-            .map_or(frame.member_count_offset.saturating_add(4), |offset| {
-                offset.saturating_add(10)
+            .map_or(frame.member_count_offset.saturating_add(4), |member| {
+                member.offset.saturating_add(10)
             });
         let frame_valid = frame.member_count_offset
             == group.byte_offset.saturating_add(
@@ -4909,13 +4909,13 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 },
             )
             && group
-                .member_offsets
+                .members
                 .first()
-                .is_none_or(|offset| *offset == frame.member_count_offset.saturating_add(5))
+                .is_none_or(|member| member.offset == frame.member_count_offset.saturating_add(5))
             && group
-                .member_offsets
+                .members
                 .windows(2)
-                .all(|offsets| offsets[1] >= offsets[0].saturating_add(11))
+                .all(|members| members[1].offset >= members[0].offset.saturating_add(11))
             && frame.trailing_records.len() <= 1
             && frame
                 .trailing_records
@@ -5065,7 +5065,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         Some(records::DesignExtrudeOperandRole::Profile) => {
                             group.role == 0x0000_0041_0000_0000
                                 && scope.extrude_profile().is_none_or(|profile| {
-                                    group.members.first() == Some(&profile.record_index)
+                                    group.members.first().map(|member| &member.value) == Some(&profile.record_index)
                                 })
                         }
                         Some(records::DesignExtrudeOperandRole::Faces(Some(_))) => {
@@ -5297,7 +5297,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && scope
                                 .base_flange_profile()
                                 .as_ref()
-                                .is_some_and(|profile| group.members == [profile.record_index])
+                                .is_some_and(|profile| group.members.iter().map(|member| member.value).eq([profile.record_index]))
                     }
                     None if scope.kind() == crate::records::DesignFeatureKind::Hem => {
                         matches!(group.role, 0x0000_0008_0000_0000 | 0x0000_0043_0000_0000)
@@ -5326,7 +5326,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         == Some(&group.record_index)
                     && group
                         .members
-                        .iter()
+                        .iter().map(|member| &member.value)
                         .all(|member| scope.reference_members.contains(member))
             })
             && header.is_some_and(|header| {
@@ -5334,11 +5334,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             })
             && frame_valid
             && !group.members.is_empty()
-            && group.members.len() == group.member_offsets.len()
-            && group.members.iter().copied().collect::<HashSet<_>>().len() == group.members.len()
+            && group.members.iter().map(|member| member.value).collect::<HashSet<_>>().len() == group.members.len()
             && group
                 .members
-                .iter()
+                .iter().map(|member| &member.value)
                 .all(|member| record_indices.contains(&(native_stream, *member)))
             && operand_group_slots.insert((
                 native_stream,
@@ -5489,15 +5488,15 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .collect::<Vec<_>>();
                     profile_groups
                         .iter()
-                        .filter(|group| group.members.as_slice() == [profile.record_index])
+                        .filter(|group| group.members.iter().map(|member| member.value).eq([profile.record_index]))
                         .count()
                         == 1
                         && profile_groups
                             .iter()
-                            .filter(|group| group.members.as_slice() != [profile.record_index])
+                            .filter(|group| !group.members.iter().map(|member| member.value).eq([profile.record_index]))
                             .filter(|group| {
                                 !group.members.is_empty()
-                                    && group.members.iter().all(|member| {
+                                    && group.members.iter().map(|member| &member.value).all(|member| {
                                         native.design_entity_selection_operands.iter().any(
                                             |operand| {
                                                 design_stream(&operand.id) == native_stream
@@ -5591,7 +5590,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 .and_then(|ordinal| scope.reference_members.get(ordinal))
                                 == Some(&profile.record_index)
                         }
-                        [group] => group.members.first() == Some(&profile.record_index),
+                        [group] => group.members.first().map(|member| &member.value) == Some(&profile.record_index),
                         [_, _, ..] => false,
                     });
             if !profile_matches_operand {
@@ -5635,7 +5634,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && !group.members.is_empty()
                         && group
                             .members
-                            .iter()
+                            .iter().map(|member| &member.value)
                             .enumerate()
                             .all(|(ordinal, record_index)| {
                                 u32::try_from(ordinal).ok().is_some_and(|ordinal| {
@@ -5897,7 +5896,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let profile_matches_operand = profile_groups.next().is_none()
                 && scope.sweep_profile().is_none_or(|profile| {
                     profile_group
-                        .is_some_and(|group| group.members.as_slice() == [profile.record_index])
+                        .is_some_and(|group| group.members.iter().map(|member| member.value).eq([profile.record_index]))
                 });
             if !profile_matches_operand {
                 findings.push(Finding {
@@ -5950,7 +5949,7 @@ fn validate_fillet_radius_groups<'a>(
         let valid = scope.is_some_and(is_fillet)
             && group.is_some_and(|group| {
                 group.scope_record_index == assignment.scope_record_index
-                    && group.members == assignment.edge_operand_record_indices
+                    && group.members.iter().map(|member| member.value).eq(assignment.edge_operand_record_indices.iter().copied())
             })
             && match &assignment.law {
                 records::DesignFilletRadiusLaw::Constant {
@@ -6093,7 +6092,7 @@ fn validate_fillet_operand_groups<'a>(
                         design_stream(&candidate.id) == native_stream
                             && candidate.scope_record_index == scope.record_index
                             && !candidate.members.is_empty()
-                            && candidate.members.iter().all(|member| {
+                            && candidate.members.iter().map(|member| &member.value).all(|member| {
                                 native.design_edge_operands.iter().any(|operand| {
                                     design_stream(&operand.id) == native_stream
                                         && operand.scope_record_index == scope.record_index
@@ -6123,7 +6122,7 @@ fn validate_fillet_operand_groups<'a>(
                 })
                 .count()
                 == 1
-                && group.members.iter().all(|member| {
+                && group.members.iter().map(|member| &member.value).all(|member| {
                     native.design_edge_identity_operands.iter().any(|operand| {
                         design_stream(&operand.id) == native_stream
                             && operand.scope_record_index == scope.record_index
@@ -6150,14 +6149,14 @@ fn validate_fillet_operand_groups<'a>(
                     && native.design_edge_operands.iter().all(|operand| {
                         design_stream(&operand.id) != native_stream
                             || operand.scope_record_index != scope.record_index
-                            || operand.record_index != group.members[0]
+                            || operand.record_index != group.members[0].value
                     })
                     && native.design_face_operands.iter().any(|operand| {
                         design_stream(&operand.id) == native_stream
                             && operand.scope_record_index == scope.record_index
                             && operand.group_record_index() == Some(group.record_index)
                             && operand.group_member_ordinal() == Some(0)
-                            && operand.record_index == group.members[0]
+                            && operand.record_index == group.members[0].value
                             && operand.recipe_kind == records::ConstructionRecipeKind::BoundedFace
                     })
             });
@@ -6172,7 +6171,7 @@ fn validate_fillet_operand_groups<'a>(
                     && operand.scope_record_index == group.scope_record_index
                     && operand.group_record_index() == Some(group.record_index)
                     && operand.group_member_ordinal() == Some(0)
-                    && operand.record_index == group.members[0]
+                    && operand.record_index == group.members[0].value
                     && !operand.resolved_face_slots.is_empty()
             });
         if full_round_group_shape {
@@ -6500,7 +6499,7 @@ fn validate_edge_identity_operands<'a>(
                 group.scope_record_index == operand.scope_record_index
                     && usize::try_from(operand.group_member_ordinal)
                         .ok()
-                        .and_then(|ordinal| group.members.get(ordinal))
+                        .and_then(|ordinal| group.members.get(ordinal).map(|member| &member.value))
                         == Some(&operand.record_index)
             })
             && header.is_some_and(|header| {
@@ -6582,7 +6581,7 @@ fn validate_body_recipe_operands<'a>(
                     group.scope_record_index == operand.scope_record_index
                         && usize::try_from(group_member_ordinal)
                             .ok()
-                            .and_then(|ordinal| group.members.get(ordinal))
+                            .and_then(|ordinal| group.members.get(ordinal).map(|member| &member.value))
                             == Some(&operand.record_index)
                 }),
             records::DesignOperandOwner::ScopeReference {
@@ -6713,13 +6712,13 @@ fn validate_operand_group_carriers<'a>(
                 .enumerate()
                 .all(|(ordinal, operand)| {
                     usize::try_from(operand.group_member_ordinal) == Ok(ordinal)
-                        && group.members.get(ordinal) == Some(&operand.record_index)
+                        && group.members.get(ordinal).map(|member| &member.value) == Some(&operand.record_index)
                         && edge_identity_records.contains(&(native_stream, operand.record_index))
                 });
         let has_exact_entity_selection_members = !group.members.is_empty()
             && group
                 .members
-                .iter()
+                .iter().map(|member| &member.value)
                 .enumerate()
                 .all(|(ordinal, record_index)| {
                     u32::try_from(ordinal).ok().is_some_and(|ordinal| {
@@ -6738,7 +6737,7 @@ fn validate_operand_group_carriers<'a>(
         let has_exact_face_members = !group.members.is_empty()
             && group
                 .members
-                .iter()
+                .iter().map(|member| &member.value)
                 .enumerate()
                 .all(|(ordinal, record_index)| {
                     u32::try_from(ordinal).ok().is_some_and(|ordinal| {
@@ -6754,7 +6753,7 @@ fn validate_operand_group_carriers<'a>(
         let has_exact_body_recipe_members = !group.members.is_empty()
             && group
                 .members
-                .iter()
+                .iter().map(|member| &member.value)
                 .enumerate()
                 .all(|(ordinal, record_index)| {
                     u32::try_from(ordinal).ok().is_some_and(|ordinal| {
@@ -6769,7 +6768,7 @@ fn validate_operand_group_carriers<'a>(
                     })
                 });
         let has_exact_topology_recipe_members = !group.members.is_empty()
-            && group.members.iter().all(|record_index| {
+            && group.members.iter().map(|member| &member.value).all(|record_index| {
                 edge_operand_records.contains(&(native_stream, *record_index))
                     || edge_treatment_vertex_records.contains(&(native_stream, *record_index))
             });
@@ -6782,10 +6781,10 @@ fn validate_operand_group_carriers<'a>(
                         .extrude_profile()
                         .or(scope.sweep_profile())
                         .or(scope.base_flange_profile())
-                        .is_some_and(|profile| group.members == [profile.record_index])
+                        .is_some_and(|profile| group.members.iter().map(|member| member.value).eq([profile.record_index]))
                 });
         let has_exact_group_members = !group.members.is_empty()
-            && group.members.iter().all(|record_index| {
+            && group.members.iter().map(|member| &member.value).all(|record_index| {
                 native
                     .design_construction_operand_groups
                     .iter()
@@ -7036,7 +7035,7 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 group.scope_record_index == operand.scope_record_index
                     && usize::try_from(operand.group_member_ordinal)
                         .ok()
-                        .and_then(|ordinal| group.members.get(ordinal))
+                        .and_then(|ordinal| group.members.get(ordinal).map(|member| &member.value))
                         == Some(&operand.record_index)
             })
             && header.is_some_and(|header| {
@@ -7235,7 +7234,7 @@ fn validate_edge_operands<'a>(
             .any(|group| {
                 design_stream(&group.id) == native_stream
                     && group.scope_record_index == operand.scope_record_index
-                    && group.members.last() == Some(&operand.record_index)
+                    && group.members.last().map(|member| &member.value) == Some(&operand.record_index)
             });
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -7361,7 +7360,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
             && group.is_some_and(|group| {
                 usize::try_from(operand.group_member_ordinal)
                     .ok()
-                    .and_then(|ordinal| group.members.get(ordinal))
+                    .and_then(|ordinal| group.members.get(ordinal).map(|member| &member.value))
                     == Some(&operand.recipe.record_index)
             })
             && groups.next().is_none()
@@ -7418,13 +7417,13 @@ fn validate_edge_treatment_groups<'a>(
             .collect::<Vec<_>>();
         let complete = !groups.is_empty()
             && groups.iter().all(|group| {
-                let recipe_backed = group.members.iter().all(|member| {
+                let recipe_backed = group.members.iter().map(|member| &member.value).all(|member| {
                     edge_operand_records.contains(&(native_stream, *member))
                         || edge_treatment_vertex_records.contains(&(native_stream, *member))
                 });
                 let identity_backed = group
                     .members
-                    .iter()
+                    .iter().map(|member| &member.value)
                     .all(|member| edge_identity_records.contains(&(native_stream, *member)));
                 recipe_backed || identity_backed
             });
@@ -7612,7 +7611,7 @@ fn validate_face_operands<'a>(
                                     == Some(&group_record_index)
                                 && usize::try_from(group_member_ordinal)
                                     .ok()
-                                    .and_then(|ordinal| group.members.get(ordinal))
+                                    .and_then(|ordinal| group.members.get(ordinal).map(|member| &member.value))
                                     == Some(&operand.record_index)
                         });
                         exact_group_member

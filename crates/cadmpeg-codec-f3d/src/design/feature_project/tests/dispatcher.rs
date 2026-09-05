@@ -435,9 +435,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             record_index,
             byte_offset: 0,
             class_tag: "264".into(),
-            members: members.to_vec(),
+            members: members.to_vec().into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect(),
             lost_edge_references: Vec::new(),
-            member_offsets: vec![0; members.len()],
             frame: DesignConstructionOperandGroupFrame {
                 member_count_offset: 0,
                 auxiliary_records: Vec::new(),
