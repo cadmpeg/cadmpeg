@@ -68,7 +68,10 @@ fn wrapper_directrix_fields_reject_nested_curve_substitution() {
         let subset_decoded =
             procedural_curve_resolving_refs(&subset_tokens, &test_table(&subset, int_width))
                 .unwrap_or_else(|| panic!("nested subset source at width {int_width}"));
-        assert!(subset_decoded.subset.is_none());
+        assert!(!matches!(
+            subset_decoded.construction,
+            crate::nurbs::proc_curve::ProceduralCurveConstruction::Subset(_)
+        ));
 
         let mut offset = vec![0x0f];
         push_ident(&mut offset, "offset_int_cur");
@@ -91,7 +94,10 @@ fn wrapper_directrix_fields_reject_nested_curve_substitution() {
         let offset_decoded =
             procedural_curve_resolving_refs(&offset_tokens, &test_table(&offset, int_width))
                 .unwrap_or_else(|| panic!("nested vector-offset source at width {int_width}"));
-        assert!(offset_decoded.vector_offset.is_none());
+        assert!(!matches!(
+            offset_decoded.construction,
+            crate::nurbs::proc_curve::ProceduralCurveConstruction::VectorOffset(_)
+        ));
     }
 }
 

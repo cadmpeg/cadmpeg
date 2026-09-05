@@ -430,33 +430,20 @@ pub(crate) fn walk_reachable_topology(
                                                 curve_geo.insert(cv, CurveGeometry::Nurbs(curve));
                                                 procedural_curve_defs.insert(
                                                     cv,
-                                                    (
-                                                        decoded.native_kind,
-                                                        decoded.definition,
-                                                        decoded.vector_offset,
-                                                        decoded.subset,
-                                                        decoded.compound,
-                                                        decoded.embedded_two_sided_offset,
-                                                        decoded.embedded_intersection,
-                                                        decoded.embedded_three_surface_intersection,
-                                                        decoded.embedded_surface_curve,
-                                                        decoded.embedded_silhouette,
-                                                        decoded.embedded_surface_offset,
-                                                        decoded.embedded_spring,
-                                                        decoded.embedded_deformable,
-                                                        decoded.embedded_projection,
-                                                        decoded.embedded_law,
-                                                        decoded.cache_fit_tolerance,
-                                                    ),
+                                                    super::ProceduralCurveTail {
+                                                        construction: decoded.construction,
+                                                        cache_fit_tolerance: decoded.cache_fit_tolerance,
+                                                    },
                                                 );
                                                 out.stats.nurbs_curves += 1;
                                                 kept_curves.insert(cv);
-                                            } else if let Some((native_kind, mut definition)) =
+                                            } else if let Some(definition) =
                                                 nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
                                                     &crec.tokens,
                                                     token_table,
                                                 )
                                             {
+                                                let mut definition = definition.into_definition();
                                                 if record_reversed(crec) {
                                                     reverse_procedural_curve_definition(
                                                         &mut definition,
@@ -473,7 +460,7 @@ pub(crate) fn walk_reachable_topology(
                                                     },
                                                 );
                                                 cacheless_procedural_curve_defs
-                                                    .insert(cv, (native_kind, definition));
+                                                    .insert(cv, definition);
                                                 kept_curves.insert(cv);
                                             } else {
                                                 undecoded_carriers.insert(cv);
@@ -723,33 +710,20 @@ fn keep_wire_edge(
                 entry.insert(CurveGeometry::Nurbs(curve));
                 procedural_curve_defs.insert(
                     curve_index,
-                    (
-                        decoded.native_kind,
-                        decoded.definition,
-                        decoded.vector_offset,
-                        decoded.subset,
-                        decoded.compound,
-                        decoded.embedded_two_sided_offset,
-                        decoded.embedded_intersection,
-                        decoded.embedded_three_surface_intersection,
-                        decoded.embedded_surface_curve,
-                        decoded.embedded_silhouette,
-                        decoded.embedded_surface_offset,
-                        decoded.embedded_spring,
-                        decoded.embedded_deformable,
-                        decoded.embedded_projection,
-                        decoded.embedded_law,
-                        decoded.cache_fit_tolerance,
-                    ),
+                    super::ProceduralCurveTail {
+                        construction: decoded.construction,
+                        cache_fit_tolerance: decoded.cache_fit_tolerance,
+                    },
                 );
                 kept_curves.insert(curve_index);
                 out.stats.nurbs_curves += 1;
-            } else if let Some((native_kind, mut definition)) =
+            } else if let Some(definition) =
                 nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
                     &curve_record.tokens,
                     token_table,
                 )
             {
+                let mut definition = definition.into_definition();
                 if record_reversed(curve_record) {
                     reverse_procedural_curve_definition(&mut definition);
                 }
@@ -757,7 +731,7 @@ fn keep_wire_edge(
                     construction: format!("{format}:brep:procedural_curve#{curve_index}").into(),
                     cache: None,
                 });
-                cacheless_procedural_curve_defs.insert(curve_index, (native_kind, definition));
+                cacheless_procedural_curve_defs.insert(curve_index, definition);
                 kept_curves.insert(curve_index);
             } else {
                 undecoded_carriers.insert(curve_index);

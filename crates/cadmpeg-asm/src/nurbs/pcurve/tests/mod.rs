@@ -199,7 +199,10 @@ fn exact_curve_selector_uses_its_cache_first_support_slot() {
         let table = crate::nurbs::toks::test_table(&bytes, int_width);
         let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&toks, &table)
             .unwrap_or_else(|| panic!("exact curve at width {int_width}"));
-        assert_eq!(decoded.native_kind, "exact_int_cur");
+        assert!(matches!(
+            decoded.construction,
+            crate::nurbs::proc_curve::ProceduralCurveConstruction::Exact
+        ));
         let pcurve = crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 1, &table)
             .unwrap_or_else(|| panic!("exact curve pcurve at width {int_width}"));
         assert_eq!(

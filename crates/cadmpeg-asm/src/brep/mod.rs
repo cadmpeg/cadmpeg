@@ -31,12 +31,7 @@ pub mod transfer;
 use crate::asm_header;
 use crate::ids::IdFormat;
 use crate::nurbs;
-use crate::nurbs::proc_curve::{
-    CompoundDefinition, EmbeddedDeformable, EmbeddedIntersection, EmbeddedLawCurve,
-    EmbeddedProjection, EmbeddedSilhouette, EmbeddedSpring, EmbeddedSurfaceCurve,
-    EmbeddedSurfaceOffset, EmbeddedThreeSurfaceIntersection, EmbeddedTwoSidedOffset,
-    SubsetDefinition, VectorOffsetDefinition,
-};
+use crate::nurbs::proc_curve::ProceduralCurveConstruction;
 use crate::nurbs::proc_surface::DecodedProceduralSurface;
 use crate::sab::Record;
 use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
@@ -347,27 +342,11 @@ pub fn id(format: IdFormat<'_>, index: i64) -> String {
     format!("{format}:brep:entity#{index}")
 }
 
-/// Decoded procedural-curve construction fields captured for a cached
-/// `intcurve`, in the declaration order of
-/// [`DecodedProceduralCurve`].
-type ProceduralCurveTail = (
-    String,
-    Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
-    Option<VectorOffsetDefinition>,
-    Option<SubsetDefinition>,
-    Option<CompoundDefinition>,
-    Option<EmbeddedTwoSidedOffset>,
-    Option<(EmbeddedIntersection, bool)>,
-    Option<EmbeddedThreeSurfaceIntersection>,
-    Option<EmbeddedSurfaceCurve>,
-    Option<EmbeddedSilhouette>,
-    Option<EmbeddedSurfaceOffset>,
-    Option<EmbeddedSpring>,
-    Option<EmbeddedDeformable>,
-    Option<EmbeddedProjection>,
-    Option<EmbeddedLawCurve>,
-    Option<f64>,
-);
+/// Construction and fit metadata separated from the cache geometry.
+struct ProceduralCurveTail {
+    construction: ProceduralCurveConstruction,
+    cache_fit_tolerance: Option<f64>,
+}
 
 /// Decoded carrier geometry keyed by `RecordTable` index. The reachability and
 /// emit passes read decoded shapes from here and consume them (`remove`) as the
@@ -378,8 +357,7 @@ pub(crate) struct Carriers {
     procedural_surface_defs: HashMap<i64, DecodedProceduralSurface>,
     curve_geo: HashMap<i64, CurveGeometry>,
     procedural_curve_defs: HashMap<i64, ProceduralCurveTail>,
-    cacheless_procedural_curve_defs:
-        HashMap<i64, (String, cadmpeg_ir::geometry::ProceduralCurveDefinition)>,
+    cacheless_procedural_curve_defs: HashMap<i64, cadmpeg_ir::geometry::ProceduralCurveDefinition>,
     pcurve_geo: HashMap<i64, PcurveGeometry>,
     pcurve_parameter_ranges: HashMap<i64, [f64; 2]>,
 }

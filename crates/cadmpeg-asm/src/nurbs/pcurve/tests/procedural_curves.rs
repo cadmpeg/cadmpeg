@@ -143,16 +143,13 @@ fn decodes_current_cacheless_helix_record() {
     let definition =
         crate::nurbs::proc_curve::helix_definition(&lex_test_span(&bytes, RefWidth::Four))
             .expect("current cache-less helix definition");
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+    let crate::nurbs::proc_curve::HelixDefinition {
         angle_range,
         pitch,
         apex_factor,
         axis,
         ..
-    } = definition
-    else {
-        panic!("expected helix definition")
-    };
+    } = definition;
     assert!(angle_range[0] < angle_range[1]);
     assert_eq!(pitch, Vector3::new(0.0, 0.0, 13.0));
     assert_eq!(apex_factor, 0.0);
