@@ -414,7 +414,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         .chain(
             sketch
                 .entities
-                .references
+                .references()
                 .iter()
                 .map(|reference| reference.index),
         )
@@ -422,7 +422,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             sketch
                 .auxiliary
                 .iter()
-                .flat_map(|list| &list.references)
+                .flat_map(|list| list.references())
                 .map(|reference| reference.index),
         )
         .collect::<Vec<_>>();
@@ -446,7 +446,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             entity.sketch.index,
         ];
         let mut add_list = |list: &PmDcReferenceList| {
-            references.extend(list.references.iter().map(|reference| reference.index));
+            references.extend(list.references().iter().map(|reference| reference.index));
         };
         match &entity.kind {
             PmDcSketchEntityKind::Point {
@@ -525,10 +525,10 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             header.group.index,
             header.parameter.index,
         ];
-        for (key, _) in &header.scalar_map.entries {
+        for (key, _) in header.scalar_map.entries() {
             references.push(key.index);
         }
-        for (key, value) in &header.reference_map.entries {
+        for (key, value) in header.reference_map.entries() {
             references.extend([key.index, value.index]);
         }
         match constraint.kind {
@@ -719,7 +719,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             .chain(
                 feature
                     .properties
-                    .references
+                    .references()
                     .iter()
                     .map(|reference| reference.index),
             );
@@ -742,14 +742,14 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             .chain(
                 feature
                     .properties
-                    .references
+                    .references()
                     .iter()
                     .map(|reference| reference.index),
             )
             .chain(
                 feature
                     .participants
-                    .references
+                    .references()
                     .iter()
                     .map(|reference| reference.index),
             )
@@ -776,7 +776,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         let mut references = vec![property.header.next.index, property.header.context.index];
         match &property.kind {
             PmDcFeaturePropertyKind::References { items, .. } => {
-                references.extend(items.references.iter().map(|reference| reference.index));
+                references.extend(items.references().iter().map(|reference| reference.index));
             }
             PmDcFeaturePropertyKind::SurfaceBody { body } => references.push(body.index),
             PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } => {
@@ -841,7 +841,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .chain(
             label
                 .participants
-                .references
+                .references()
                 .iter()
                 .map(|reference| reference.index),
         );
@@ -961,7 +961,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         }
         let expected_collection = raw_feature
             .properties
-            .references
+            .references()
             .get(output_slot)
             .and_then(|reference| reference.index.checked_sub(1))
             .and_then(|ordinal| {
@@ -1008,7 +1008,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             continue;
         };
         let expected_bodies = items
-            .references
+            .references()
             .iter()
             .filter_map(|reference| {
                 let ordinal = reference.index.checked_sub(1)?;
@@ -1020,7 +1020,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                     .map(|property| property.id.as_str())
             })
             .collect::<Vec<_>>();
-        if expected_bodies.len() != items.references.len()
+        if expected_bodies.len() != items.references().len()
             || expected_bodies != result.bodies.iter().map(String::as_str).collect::<Vec<_>>()
         {
             findings.push(finding(
