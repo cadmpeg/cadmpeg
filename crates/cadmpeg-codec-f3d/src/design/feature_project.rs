@@ -6675,7 +6675,7 @@ fn project_fixed_pipe(
     };
     if scope.kind != "Pipe"
         || *operation != DesignExtrudeOperation::NewBody
-        || *section_shape != 1
+        || *section_shape != crate::records::DesignPipeSectionShape::Circular
         || values[0..2] != [1.0, 1.0]
         || values[2] <= 0.0
         || values[3] <= 0.0

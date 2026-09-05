@@ -1454,7 +1454,7 @@ pub(super) fn continue_fixed_kind_operations(
         Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: (pipe_start + 25) as u64,
-            section_shape: 1,
+            section_shape: crate::records::DesignPipeSectionShape::Circular,
             section_shape_offset: (pipe_start + 29) as u64,
             filled: true,
             filled_offset: (pipe_start + 30) as u64,
@@ -1515,7 +1515,7 @@ pub(super) fn continue_fixed_kind_operations(
         Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: (owner_pipe_start + fixed_pipe_layout::OPERATION) as u64,
-            section_shape: 1,
+            section_shape: crate::records::DesignPipeSectionShape::Circular,
             section_shape_offset: (owner_pipe_start + fixed_pipe_layout::SECTION_SHAPE) as u64,
             filled: true,
             filled_offset: (owner_pipe_start + fixed_pipe_layout::FILLED) as u64,
@@ -1587,7 +1587,7 @@ pub(super) fn continue_fixed_kind_operations(
             Some(DesignPathFeatureConstruction::Pipe {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (legacy_pipe_start + legacy_pipe_layout::OPERATION) as u64,
-                section_shape: 1,
+                section_shape: crate::records::DesignPipeSectionShape::Circular,
                 section_shape_offset: (legacy_pipe_start + legacy_pipe_layout::SECTION_SHAPE)
                     as u64,
                 filled: true,

@@ -2572,7 +2572,7 @@ pub enum DesignPathFeatureConstruction {
         /// Byte offset of the operation u32.
         operation_offset: u64,
         /// Section-shape selector byte.
-        section_shape: u8,
+        section_shape: DesignPipeSectionShape,
         /// Byte offset of the section-shape selector.
         section_shape_offset: u64,
         /// Whether the generated section is filled.
@@ -4246,6 +4246,200 @@ impl DesignPatchContinuity {
             Self::Curvature => 2,
             Self::Unknown(code) => code,
         }
+    }
+}
+
+/// Native member-kind code of a sketch profile-region member.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(from = "u32", into = "u32")]
+pub enum DesignSketchProfileRegionMemberKind {
+    /// Profile-region curve member (serialized value 3).
+    Curve,
+    Unknown(u32),
+}
+
+impl DesignSketchProfileRegionMemberKind {
+    #[must_use]
+    pub fn from_code(code: u32) -> Self {
+        match code {
+            3 => Self::Curve,
+            code => Self::Unknown(code),
+        }
+    }
+
+    #[must_use]
+    pub fn code(self) -> u32 {
+        match self {
+            Self::Curve => 3,
+            Self::Unknown(code) => code,
+        }
+    }
+}
+
+impl From<u32> for DesignSketchProfileRegionMemberKind {
+    fn from(code: u32) -> Self {
+        Self::from_code(code)
+    }
+}
+
+impl From<DesignSketchProfileRegionMemberKind> for u32 {
+    fn from(kind: DesignSketchProfileRegionMemberKind) -> Self {
+        kind.code()
+    }
+}
+
+/// ACT root-component registry flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(from = "u32", into = "u32")]
+pub enum ActRegistryFlag {
+    Off,
+    On,
+    Unknown(u32),
+}
+
+impl ActRegistryFlag {
+    #[must_use]
+    pub fn from_code(code: u32) -> Self {
+        match code {
+            0 => Self::Off,
+            1 => Self::On,
+            code => Self::Unknown(code),
+        }
+    }
+
+    #[must_use]
+    pub fn code(self) -> u32 {
+        match self {
+            Self::Off => 0,
+            Self::On => 1,
+            Self::Unknown(code) => code,
+        }
+    }
+}
+
+impl From<u32> for ActRegistryFlag {
+    fn from(code: u32) -> Self {
+        Self::from_code(code)
+    }
+}
+
+impl From<ActRegistryFlag> for u32 {
+    fn from(flag: ActRegistryFlag) -> Self {
+        flag.code()
+    }
+}
+
+/// Decal image mapping-mode byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(from = "u8", into = "u8")]
+pub enum DesignDecalMappingMode {
+    FitToFaces,
+    Unknown(u8),
+}
+
+impl DesignDecalMappingMode {
+    #[must_use]
+    pub fn from_code(code: u8) -> Self {
+        match code {
+            0x60 => Self::FitToFaces,
+            code => Self::Unknown(code),
+        }
+    }
+
+    #[must_use]
+    pub fn code(self) -> u8 {
+        match self {
+            Self::FitToFaces => 0x60,
+            Self::Unknown(code) => code,
+        }
+    }
+}
+
+impl From<u8> for DesignDecalMappingMode {
+    fn from(code: u8) -> Self {
+        Self::from_code(code)
+    }
+}
+
+impl From<DesignDecalMappingMode> for u8 {
+    fn from(mode: DesignDecalMappingMode) -> Self {
+        mode.code()
+    }
+}
+
+/// Pipe generated-section shape selector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(from = "u8", into = "u8")]
+pub enum DesignPipeSectionShape {
+    Circular,
+    Unknown(u8),
+}
+
+impl DesignPipeSectionShape {
+    #[must_use]
+    pub fn from_code(code: u8) -> Self {
+        match code {
+            1 => Self::Circular,
+            code => Self::Unknown(code),
+        }
+    }
+
+    #[must_use]
+    pub fn code(self) -> u8 {
+        match self {
+            Self::Circular => 1,
+            Self::Unknown(code) => code,
+        }
+    }
+}
+
+impl From<u8> for DesignPipeSectionShape {
+    fn from(code: u8) -> Self {
+        Self::from_code(code)
+    }
+}
+
+impl From<DesignPipeSectionShape> for u8 {
+    fn from(shape: DesignPipeSectionShape) -> Self {
+        shape.code()
+    }
+}
+
+/// Tracking-carrier kind discriminator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(from = "u32", into = "u32")]
+pub enum DesignConstructionTrackingPathKind {
+    Unknown(u32),
+}
+
+impl DesignConstructionTrackingPathKind {
+    #[must_use]
+    pub fn from_code(code: u32) -> Self {
+        Self::Unknown(code)
+    }
+
+    #[must_use]
+    pub fn code(self) -> u32 {
+        match self {
+            Self::Unknown(code) => code,
+        }
+    }
+}
+
+impl From<u32> for DesignConstructionTrackingPathKind {
+    fn from(code: u32) -> Self {
+        Self::from_code(code)
+    }
+}
+
+impl From<DesignConstructionTrackingPathKind> for u32 {
+    fn from(kind: DesignConstructionTrackingPathKind) -> Self {
+        kind.code()
     }
 }
 
@@ -6583,7 +6777,7 @@ pub struct DesignSketchProfileRegion {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSketchProfileRegionMember {
     /// Native member-kind code. Profile-region curve members use value three.
-    pub kind: u32,
+    pub kind: DesignSketchProfileRegionMemberKind,
     /// Byte offset of the member-kind code.
     pub kind_offset: u64,
     /// Primary persistent identity of the selected Sketch curve.
@@ -7016,7 +7210,7 @@ pub struct DesignConstructionTrackingPath {
     /// Byte offset of `selector`.
     pub selector_offset: u64,
     /// Carrier-kind discriminator.
-    pub kind: u32,
+    pub kind: DesignConstructionTrackingPathKind,
     /// Byte offset of `kind`.
     pub kind_offset: u64,
     /// First optional related persistent identity.
@@ -8853,7 +9047,7 @@ pub struct DesignDecalImage {
     /// Byte offset of the scope's marked image-asset reference.
     pub asset_reference_offset: u64,
     /// Source mapping-mode byte.
-    pub mapping_mode: u8,
+    pub mapping_mode: DesignDecalMappingMode,
     /// Byte offset of `mapping_mode`.
     pub mapping_mode_offset: u64,
     /// Target construction-group record index.
@@ -11059,7 +11253,7 @@ pub struct ActRootComponent {
     /// Byte offset of `components_root_record`.
     pub components_root_record_offset: u64,
     /// Source counter/registry flag; 0 and 1 are both valid.
-    pub registry_flag: u32,
+    pub registry_flag: ActRegistryFlag,
     /// Byte offset of `registry_flag`.
     pub registry_flag_offset: u64,
     /// UTF-16LE-decoded design-entity id of the document root entity.

@@ -137,7 +137,7 @@ pub(crate) fn patch_act_roots(
             ),
             (
                 root.registry_flag_offset,
-                root.registry_flag,
+                root.registry_flag.code(),
                 "ACT registry flag",
             ),
         ] {

@@ -946,7 +946,7 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert_eq!(
         f3d_native(result.ir()).act_root_components[0].registry_flag,
-        1
+        crate::records::ActRegistryFlag::On
     );
     assert_eq!(
         f3d_native(result.ir()).act_entities[0].channel_class_tag(),

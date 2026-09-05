@@ -7520,7 +7520,7 @@ pub(crate) fn exact_path_feature_construction(
             Some(DesignPathFeatureConstruction::Pipe {
                 operation: operation(operation_offset)?,
                 operation_offset: u64::try_from(operation_offset).ok()?,
-                section_shape,
+                section_shape: crate::records::DesignPipeSectionShape::from_code(section_shape),
                 section_shape_offset: u64::try_from(section_shape_offset).ok()?,
                 filled,
                 filled_offset: u64::try_from(filled_offset).ok()?,

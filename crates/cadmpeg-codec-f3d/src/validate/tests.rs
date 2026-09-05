@@ -531,7 +531,7 @@ fn validation_checks_pipe_path_group_roles() {
         Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 0,
-            section_shape: 1,
+            section_shape: crate::records::DesignPipeSectionShape::Circular,
             section_shape_offset: 0,
             filled: true,
             filled_offset: 0,

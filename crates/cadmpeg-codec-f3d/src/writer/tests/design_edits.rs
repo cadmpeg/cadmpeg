@@ -79,7 +79,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let act_root = &mut native.act_root_components[0];
     act_root.instance_root_record = 71;
     act_root.components_root_record = 72;
-    act_root.registry_flag = 0;
+    act_root.registry_flag = crate::records::ActRegistryFlag::Off;
     act_root.entity_id = "1_3".into();
     act_root.display_name = "(Renamed)".into();
     let act_entity = &mut native.act_entities[0];
@@ -189,7 +189,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(act_root.record_index, 9);
     assert_eq!(act_root.instance_root_record, 71);
     assert_eq!(act_root.components_root_record, 72);
-    assert_eq!(act_root.registry_flag, 0);
+    assert_eq!(act_root.registry_flag, crate::records::ActRegistryFlag::Off);
     assert_eq!(act_root.entity_id, "1_3");
     assert_eq!(act_root.display_name, "(Renamed)");
     assert_eq!(

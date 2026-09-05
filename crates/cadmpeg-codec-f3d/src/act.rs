@@ -636,7 +636,7 @@ fn decode_component_link(
         tracked_entity_record_offset: tracked_entity_record_offset as u64,
         components_root_record,
         components_root_record_offset: (components_marker + 1) as u64,
-        registry_flag,
+        registry_flag: crate::records::ActRegistryFlag::from_code(registry_flag),
         registry_flag_offset: registry_flag_offset as u64,
         entity_id,
         entity_id_offset: entity_id_offset as u64,
