@@ -825,9 +825,83 @@ impl TryFrom<TextEdgeRepresentationWire> for TextEdgeRepresentation {
 }
 
 /// Geometry and flags specific to a topology record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TextTShapeGeometry {
+    Vertex {
+        tolerance: f64,
+        point: Point3,
+        representations: Vec<TextPointRepresentation>,
+    },
+    Edge {
+        tolerance: f64,
+        same_parameter: bool,
+        same_range: bool,
+        degenerated: bool,
+        representations: Vec<TextEdgeRepresentation>,
+    },
+    Face {
+        natural_restriction: bool,
+        tolerance: f64,
+        surface: usize,
+        location: usize,
+        triangulation: Option<usize>,
+    },
+    Wire,
+    Shell,
+    Solid,
+    CompSolid,
+    Compound,
+}
+
+impl TextTShapeGeometry {
+    /// Shape family retained as `kind` on the CADIR wire.
+    pub const fn kind(&self) -> TextShapeKind {
+        match self {
+            Self::Vertex { .. } => TextShapeKind::Vertex,
+            Self::Edge { .. } => TextShapeKind::Edge,
+            Self::Face { .. } => TextShapeKind::Face,
+            Self::Wire => TextShapeKind::Wire,
+            Self::Shell => TextShapeKind::Shell,
+            Self::Solid => TextShapeKind::Solid,
+            Self::CompSolid => TextShapeKind::CompSolid,
+            Self::Compound => TextShapeKind::Compound,
+        }
+    }
+}
+
+/// One subshape-first topology record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "TextTShapeWire", into = "TextTShapeWire")]
+pub struct TextTShape {
+    /// One-based table index.
+    pub index: usize,
+    /// Family-specific geometry, including geometry-less families.
+    pub geometry: TextTShapeGeometry,
+    /// Free, modified, checked, orientable, closed, infinite, convex flags.
+    pub flags: [bool; 7],
+    /// Ordered child uses.
+    pub children: Vec<TextShapeUse>,
+}
+
+impl TextTShape {
+    /// Shape family retained as `kind` on the CADIR wire.
+    pub const fn kind(&self) -> TextShapeKind {
+        self.geometry.kind()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct TextTShapeWire {
+    index: usize,
+    kind: TextShapeKind,
+    geometry: TextTShapeGeometryWire,
+    flags: [bool; 7],
+    children: Vec<TextShapeUse>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum TextTShapeGeometryWire {
     Vertex {
         tolerance: f64,
         point: Point3,
@@ -850,19 +924,128 @@ pub enum TextTShapeGeometry {
     Empty,
 }
 
-/// One subshape-first topology record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextTShape {
-    /// One-based table index.
-    pub index: usize,
-    /// Shape family.
-    pub kind: TextShapeKind,
-    /// Family-specific geometry.
-    pub geometry: TextTShapeGeometry,
-    /// Free, modified, checked, orientable, closed, infinite, convex flags.
-    pub flags: [bool; 7],
-    /// Ordered child uses.
-    pub children: Vec<TextShapeUse>,
+impl From<TextTShape> for TextTShapeWire {
+    fn from(value: TextTShape) -> Self {
+        let kind = value.kind();
+        let geometry = match value.geometry {
+            TextTShapeGeometry::Vertex {
+                tolerance,
+                point,
+                representations,
+            } => TextTShapeGeometryWire::Vertex {
+                tolerance,
+                point,
+                representations,
+            },
+            TextTShapeGeometry::Edge {
+                tolerance,
+                same_parameter,
+                same_range,
+                degenerated,
+                representations,
+            } => TextTShapeGeometryWire::Edge {
+                tolerance,
+                same_parameter,
+                same_range,
+                degenerated,
+                representations,
+            },
+            TextTShapeGeometry::Face {
+                natural_restriction,
+                tolerance,
+                surface,
+                location,
+                triangulation,
+            } => TextTShapeGeometryWire::Face {
+                natural_restriction,
+                tolerance,
+                surface,
+                location,
+                triangulation,
+            },
+            TextTShapeGeometry::Wire
+            | TextTShapeGeometry::Shell
+            | TextTShapeGeometry::Solid
+            | TextTShapeGeometry::CompSolid
+            | TextTShapeGeometry::Compound => TextTShapeGeometryWire::Empty,
+        };
+        Self {
+            index: value.index,
+            kind,
+            geometry,
+            flags: value.flags,
+            children: value.children,
+        }
+    }
+}
+
+impl TryFrom<TextTShapeWire> for TextTShape {
+    type Error = String;
+
+    fn try_from(wire: TextTShapeWire) -> Result<Self, Self::Error> {
+        let geometry = match (wire.kind, wire.geometry) {
+            (
+                TextShapeKind::Vertex,
+                TextTShapeGeometryWire::Vertex {
+                    tolerance,
+                    point,
+                    representations,
+                },
+            ) => TextTShapeGeometry::Vertex {
+                tolerance,
+                point,
+                representations,
+            },
+            (
+                TextShapeKind::Edge,
+                TextTShapeGeometryWire::Edge {
+                    tolerance,
+                    same_parameter,
+                    same_range,
+                    degenerated,
+                    representations,
+                },
+            ) => TextTShapeGeometry::Edge {
+                tolerance,
+                same_parameter,
+                same_range,
+                degenerated,
+                representations,
+            },
+            (
+                TextShapeKind::Face,
+                TextTShapeGeometryWire::Face {
+                    natural_restriction,
+                    tolerance,
+                    surface,
+                    location,
+                    triangulation,
+                },
+            ) => TextTShapeGeometry::Face {
+                natural_restriction,
+                tolerance,
+                surface,
+                location,
+                triangulation,
+            },
+            (TextShapeKind::Wire, TextTShapeGeometryWire::Empty) => TextTShapeGeometry::Wire,
+            (TextShapeKind::Shell, TextTShapeGeometryWire::Empty) => TextTShapeGeometry::Shell,
+            (TextShapeKind::Solid, TextTShapeGeometryWire::Empty) => TextTShapeGeometry::Solid,
+            (TextShapeKind::CompSolid, TextTShapeGeometryWire::Empty) => {
+                TextTShapeGeometry::CompSolid
+            }
+            (TextShapeKind::Compound, TextTShapeGeometryWire::Empty) => {
+                TextTShapeGeometry::Compound
+            }
+            _ => return Err("TShape kind disagrees with geometry".to_owned()),
+        };
+        Ok(Self {
+            index: wire.index,
+            geometry,
+            flags: wire.flags,
+            children: wire.children,
+        })
+    }
 }
 
 /// One standalone 3D polygon carrier.
@@ -1283,7 +1466,7 @@ pub fn carrier_census(payloads: &[ShapePayloadRecord]) -> Vec<crate::native::Car
             for shape in tshapes {
                 increment(
                     &mut record.topology,
-                    match shape.kind {
+                    match shape.kind() {
                         TextShapeKind::Vertex => "vertex",
                         TextShapeKind::Edge => "edge",
                         TextShapeKind::Wire => "wire",
@@ -1959,11 +2142,11 @@ fn parse_binary_tshape(
                 triangulation,
             }
         }
-        TextShapeKind::Wire
-        | TextShapeKind::Shell
-        | TextShapeKind::Solid
-        | TextShapeKind::CompSolid
-        | TextShapeKind::Compound => TextTShapeGeometry::Empty,
+        TextShapeKind::Wire => TextTShapeGeometry::Wire,
+        TextShapeKind::Shell => TextTShapeGeometry::Shell,
+        TextShapeKind::Solid => TextTShapeGeometry::Solid,
+        TextShapeKind::CompSolid => TextTShapeGeometry::CompSolid,
+        TextShapeKind::Compound => TextTShapeGeometry::Compound,
     };
     let mut flags = [false; 7];
     for flag in &mut flags {
@@ -2000,7 +2183,6 @@ fn parse_binary_tshape(
     }
     Ok(TextTShape {
         index,
-        kind,
         geometry,
         flags,
         children,
@@ -3341,7 +3523,6 @@ fn parse_tshapes(
         }
         shapes.push(TextTShape {
             index,
-            kind,
             geometry,
             flags,
             children,
@@ -3389,11 +3570,11 @@ fn parse_tshape_geometry(
         TextShapeKind::Vertex => parse_vertex_geometry(cursor, counts),
         TextShapeKind::Edge => parse_edge_geometry(cursor, counts, topology_version),
         TextShapeKind::Face => parse_face_geometry(cursor, counts),
-        TextShapeKind::Wire
-        | TextShapeKind::Shell
-        | TextShapeKind::Solid
-        | TextShapeKind::CompSolid
-        | TextShapeKind::Compound => Ok(TextTShapeGeometry::Empty),
+        TextShapeKind::Wire => Ok(TextTShapeGeometry::Wire),
+        TextShapeKind::Shell => Ok(TextTShapeGeometry::Shell),
+        TextShapeKind::Solid => Ok(TextTShapeGeometry::Solid),
+        TextShapeKind::CompSolid => Ok(TextTShapeGeometry::CompSolid),
+        TextShapeKind::Compound => Ok(TextTShapeGeometry::Compound),
     }
 }
 
@@ -5393,7 +5574,7 @@ pub(crate) mod tests {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 1\n1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 8\nVe 0.001 0 0 0 0 0 1001000 *\nVe 0.001 1 0 0 0 0 1001000 *\nEd 0.001 1 1 0 1 1 0 0 1 0 1001000 +8 0 +7 0 *\nWi 1001000 +6 0 *\nFa 0 0.001 1 0 1001000 +5 0 *\nSh 1001000 +4 0 *\nSo 1001000 +3 0 *\nCo 1001000 +2 0 *\n+1 0 *";
         let facts = parse_text(input.as_bytes()).expect("topology table").0;
         assert_eq!(facts.tshapes.len(), 8);
-        assert_eq!(facts.tshapes[2].kind, TextShapeKind::Edge);
+        assert_eq!(facts.tshapes[2].kind(), TextShapeKind::Edge);
         assert_eq!(facts.tshapes[2].children[0].shape, 1);
         assert_eq!(facts.tshapes[2].children[1].shape, 2);
         let TextTShapeGeometry::Edge {

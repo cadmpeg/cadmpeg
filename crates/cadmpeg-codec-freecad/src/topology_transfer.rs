@@ -367,7 +367,7 @@ impl<'a> Builder<'a> {
         self.vertices.clear();
         self.edges.clear();
         let root_shape = self.shape(root.shape)?;
-        let root_kind = root_shape.kind;
+        let root_kind = root_shape.kind();
         if root_kind == TextShapeKind::Edge && root_shape.children.is_empty() {
             let TextTShapeGeometry::Edge {
                 degenerated,
@@ -446,7 +446,7 @@ impl<'a> Builder<'a> {
         let _depth = ctx.enter_nested("transfer FCStd topology nesting", None)?;
         let shape = self.shape(shape_index)?.clone();
         if matches!(
-            shape.kind,
+            shape.kind(),
             TextShapeKind::Compound | TextShapeKind::CompSolid
         ) {
             for child in &shape.children {
@@ -466,11 +466,11 @@ impl<'a> Builder<'a> {
         let region_id = RegionId::mint(crate::native::model_id("region", &self.payload.id, &key))
             .expect("identity grammar");
         let mut shells = Vec::new();
-        if shape.kind == TextShapeKind::Solid {
+        if shape.kind() == TextShapeKind::Solid {
             for child in shape
                 .children
                 .iter()
-                .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Shell)
+                .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Shell)
             {
                 shells.extend(self.append_shell(ir, &region_id, child, transform, reversed)?);
             }
@@ -489,7 +489,7 @@ impl<'a> Builder<'a> {
                 body: body.clone(),
                 shells,
             });
-            if shape.kind == TextShapeKind::Solid {
+            if shape.kind() == TextShapeKind::Solid {
                 self.bind_topology(
                     TextShapeKind::Solid,
                     shape_index,
@@ -532,11 +532,11 @@ impl<'a> Builder<'a> {
         let key = self.topology_label(shape_index, transform);
         let shell_id = ShellId::mint(crate::native::model_id("shell", &self.payload.id, &key))
             .expect("identity grammar");
-        if shape.kind == TextShapeKind::Shell {
+        if shape.kind() == TextShapeKind::Shell {
             let face_uses = shape
                 .children
                 .iter()
-                .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Face)
+                .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Face)
                 .collect::<Vec<_>>();
             let components = self.face_components(&face_uses, transform)?;
             let mut shell_ids = Vec::with_capacity(components.len());
@@ -582,7 +582,7 @@ impl<'a> Builder<'a> {
         }
         let mut faces = Vec::new();
         let mut wire_edges = Vec::new();
-        match shape.kind {
+        match shape.kind() {
             TextShapeKind::Face => {
                 let shape_use = TextShapeUse {
                     shape: shape_index,
@@ -597,7 +597,7 @@ impl<'a> Builder<'a> {
             }
             TextShapeKind::Wire => {
                 for child in &shape.children {
-                    if self.shape(child.shape)?.kind == TextShapeKind::Edge {
+                    if self.shape(child.shape)?.kind() == TextShapeKind::Edge {
                         wire_edges.push(self.ensure_edge(ir, child, transform)?);
                     }
                 }
@@ -639,8 +639,8 @@ impl<'a> Builder<'a> {
             wire_edges,
             free_vertices: Vec::new(),
         });
-        if shape.kind == TextShapeKind::Wire {
-            self.bind_topology(shape.kind, shape_index, transform, shell_id.0.clone());
+        if shape.kind() == TextShapeKind::Wire {
+            self.bind_topology(shape.kind(), shape_index, transform, shell_id.0.clone());
         }
         Ok(vec![shell_id])
     }
@@ -661,13 +661,13 @@ impl<'a> Builder<'a> {
             for wire_use in face
                 .children
                 .iter()
-                .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Wire)
+                .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Wire)
             {
                 let wire_transform =
                     face_transform.compose(self.tables.location(wire_use.location));
                 let wire = self.shape(wire_use.shape)?;
                 for edge_use in wire.children.iter().filter(|child| {
-                    self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Edge
+                    self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Edge
                 }) {
                     let edge_transform =
                         wire_transform.compose(self.tables.location(edge_use.location));
@@ -676,7 +676,7 @@ impl<'a> Builder<'a> {
                     keys.insert(format!("edge:{}", edge_key.0));
                     let edge = self.shape(edge_use.shape)?;
                     for vertex_use in edge.children.iter().filter(|child| {
-                        self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Vertex
+                        self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Vertex
                     }) {
                         let vertex_transform =
                             edge_transform.compose(self.tables.location(vertex_use.location));
@@ -805,7 +805,7 @@ impl<'a> Builder<'a> {
         for (loop_index, wire_use) in shape
             .children
             .iter()
-            .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Wire)
+            .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Wire)
             .enumerate()
         {
             let wire_transform = face_transform.compose(self.tables.location(wire_use.location));
@@ -813,7 +813,7 @@ impl<'a> Builder<'a> {
             let mut edge_uses = wire
                 .children
                 .iter()
-                .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Edge)
+                .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Edge)
                 .cloned()
                 .collect::<Vec<_>>();
             let wire_reversed = face_reversed ^ is_reversed(wire_use.orientation);
@@ -1640,7 +1640,7 @@ fn source_topology_indices(
             while let Some((shape_use, parent)) = stack.pop() {
                 let transform = parent.compose(tables.location(shape_use.location));
                 let shape = &tables.tshapes[shape_use.shape - 1];
-                if shape.kind == target {
+                if shape.kind() == target {
                     let key = SourceOccurrenceKey::new(shape_use.shape, transform);
                     if let std::collections::hash_map::Entry::Vacant(entry) =
                         indices.entry((target, key))
@@ -1650,7 +1650,7 @@ fn source_topology_indices(
                     }
                     continue;
                 }
-                if topology_rank(shape.kind) < topology_rank(target) {
+                if topology_rank(shape.kind()) < topology_rank(target) {
                     stack.extend(
                         shape
                             .children
