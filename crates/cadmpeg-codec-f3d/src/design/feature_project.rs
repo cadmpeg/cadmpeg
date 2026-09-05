@@ -1015,7 +1015,8 @@ pub fn project_parameter_design_with_edge_identities(
                                         operation.center_record_index
                                     ))
                                 },
-                                |position| {
+                                |center| {
+                                    let position = center.value;
                                     cadmpeg_ir::features::ScaleCenter::Point(Point3::new(
                                         position[0] * 10.0,
                                         position[1] * 10.0,

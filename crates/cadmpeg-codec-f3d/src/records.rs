@@ -3226,6 +3226,7 @@ pub struct DesignDerivedInstanceConstruction {
 /// One exact local component-occurrence carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignComponentOccurrenceWire", into = "DesignComponentOccurrenceWire")]
 pub struct DesignComponentOccurrence {
     /// Stable native record identity.
     pub id: String,
@@ -3248,11 +3249,76 @@ pub struct DesignComponentOccurrence {
     /// One-based occurrence ordinal within the component definition.
     pub occurrence_ordinal: u32,
     /// Explicit local-to-model placement for placed occurrences.
+    pub transform: Option<Located<[[f64; 4]; 4]>>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignComponentOccurrenceWire {
+    /// Stable native record identity.
+    id: String,
+    /// Indexed-record class carrying this occurrence.
+    class_tag: String,
+    /// Indexed carrier record.
+    record_index: u32,
+    /// Byte offset of the indexed header.
+    byte_offset: u64,
+    /// Referenced component-definition record.
+    component_record_index: u64,
+    /// Stable component-definition GUID.
+    component_guid: String,
+    /// Byte offset of the component GUID payload.
+    component_guid_offset: u64,
+    /// Stable placed-occurrence GUID.
+    occurrence_guid: String,
+    /// Byte offset of the occurrence GUID payload.
+    occurrence_guid_offset: u64,
+    /// One-based occurrence ordinal within the component definition.
+    occurrence_ordinal: u32,
+    /// Explicit local-to-model placement for placed occurrences.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<[[f64; 4]; 4]>,
+    transform: Option<[[f64; 4]; 4]>,
     /// Byte offset of the explicit placement.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform_offset: Option<u64>,
+    transform_offset: Option<u64>,
+}
+
+impl From<DesignComponentOccurrence> for DesignComponentOccurrenceWire {
+    fn from(value: DesignComponentOccurrence) -> Self {
+        Self {
+            id: value.id,
+            class_tag: value.class_tag,
+            record_index: value.record_index,
+            byte_offset: value.byte_offset,
+            component_record_index: value.component_record_index,
+            component_guid: value.component_guid,
+            component_guid_offset: value.component_guid_offset,
+            occurrence_guid: value.occurrence_guid,
+            occurrence_guid_offset: value.occurrence_guid_offset,
+            occurrence_ordinal: value.occurrence_ordinal,
+            transform: value.transform.map(|frame| frame.value),
+            transform_offset: value.transform.map(|frame| frame.offset),
+        }
+    }
+}
+
+impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
+    type Error = String;
+    fn try_from(value: DesignComponentOccurrenceWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: value.id,
+            class_tag: value.class_tag,
+            record_index: value.record_index,
+            byte_offset: value.byte_offset,
+            component_record_index: value.component_record_index,
+            component_guid: value.component_guid,
+            component_guid_offset: value.component_guid_offset,
+            occurrence_guid: value.occurrence_guid,
+            occurrence_guid_offset: value.occurrence_guid_offset,
+            occurrence_ordinal: value.occurrence_ordinal,
+            transform: Located::from_wire(value.transform, value.transform_offset, "transform")?,
+        })
+    }
 }
 
 /// Legacy component copy/paste construction.
@@ -7687,6 +7753,7 @@ impl From<DesignHemOperation> for DesignHemOperationWire {
 /// Fixed construction carried by a uniform body-scale scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignScaleOperationWire", into = "DesignScaleOperationWire")]
 pub struct DesignScaleOperation {
     /// Counted construction group selecting the transformed bodies.
     pub body_group_record_index: u32,
@@ -7694,15 +7761,57 @@ pub struct DesignScaleOperation {
     pub center_record_index: u32,
     /// Explicit center position carried by legacy point-data centers, in source
     /// model centimetres.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub center_position: Option<[f64; 3]>,
-    /// Byte offset of the explicit center position.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub center_position_offset: Option<u64>,
+    pub center_position: Option<Located<[f64; 3]>>,
     /// Positive uniform scale factor.
     pub uniform_factor: f64,
     /// Byte offset of `uniform_factor`.
     pub uniform_factor_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignScaleOperationWire {
+    /// Counted construction group selecting the transformed bodies.
+    body_group_record_index: u32,
+    /// Native reference selecting the fixed scale center.
+    center_record_index: u32,
+    /// Explicit center position carried by legacy point-data centers, in source
+    /// model centimetres.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    center_position: Option<[f64; 3]>,
+    /// Byte offset of the explicit center position.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    center_position_offset: Option<u64>,
+    /// Positive uniform scale factor.
+    uniform_factor: f64,
+    /// Byte offset of `uniform_factor`.
+    uniform_factor_offset: u64,
+}
+
+impl From<DesignScaleOperation> for DesignScaleOperationWire {
+    fn from(value: DesignScaleOperation) -> Self {
+        Self {
+            body_group_record_index: value.body_group_record_index,
+            center_record_index: value.center_record_index,
+            center_position: value.center_position.map(|center| center.value),
+            center_position_offset: value.center_position.map(|center| center.offset),
+            uniform_factor: value.uniform_factor,
+            uniform_factor_offset: value.uniform_factor_offset,
+        }
+    }
+}
+
+impl TryFrom<DesignScaleOperationWire> for DesignScaleOperation {
+    type Error = String;
+    fn try_from(value: DesignScaleOperationWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            body_group_record_index: value.body_group_record_index,
+            center_record_index: value.center_record_index,
+            center_position: Located::from_wire(value.center_position, value.center_position_offset, "center_position")?,
+            uniform_factor: value.uniform_factor,
+            uniform_factor_offset: value.uniform_factor_offset,
+        })
+    }
 }
 
 /// Source and copied Design body identities carried by `CopyPasteBodies`.

@@ -2018,7 +2018,7 @@ pub(crate) fn exact_derived_instance_construction(
                 && occurrence.class_tag == "380"
                 && occurrence.record_index == carrier_record_index
                 && occurrence.byte_offset < relation_at as u64
-                && occurrence.transform == Some(transform)
+                && occurrence.transform.map(|frame| frame.value) == Some(transform)
         })
         .collect::<Vec<_>>();
     let [carrier] = candidates.as_slice() else {
@@ -2812,7 +2812,7 @@ fn exact_copy_paste_component_operation(
             native_stream(&occurrence.id) == Some(stream)
                 && occurrence.record_index == copied_occurrence_record_index
                 && occurrence.byte_offset < relation_at as u64
-                && occurrence.transform == Some(copied_transform)
+                && occurrence.transform.map(|frame| frame.value) == Some(copied_transform)
         })
         .collect::<Vec<_>>();
     let [copied] = copied_candidates.as_slice() else {
@@ -2866,7 +2866,7 @@ fn bind_component_pattern_occurrences(
             .iter()
             .filter(|occurrence| {
                 native_stream(&occurrence.id) == Some(stream.as_str())
-                    && occurrence.transform_offset == Some(*transform_offset)
+                    && occurrence.transform.map(|frame| frame.offset) == Some(*transform_offset)
                     && occurrence.occurrence_ordinal == ordinal as u32 + 1
             })
             .collect::<Vec<_>>();
@@ -7008,8 +7008,7 @@ pub(crate) fn exact_scale_operation(
     Some(DesignScaleOperation {
         body_group_record_index,
         center_record_index,
-        center_position: center.map(|(position, _)| position),
-        center_position_offset: center.map(|(_, offset)| offset),
+        center_position: center.map(|(value, offset)| crate::records::Located { value, offset }),
         uniform_factor,
         uniform_factor_offset: uniform_factor_offset as u64,
     })

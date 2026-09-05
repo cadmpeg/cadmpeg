@@ -50,7 +50,7 @@ pub(crate) fn project_local_components(
                     &native_by_guid,
                     &root.component_guid,
                     &root.occurrence_guid,
-                    root.transform.unwrap_or([
+                    root.transform.map(|frame| frame.value).unwrap_or([
                         [1.0, 0.0, 0.0, 0.0],
                         [0.0, 1.0, 0.0, 0.0],
                         [0.0, 0.0, 1.0, 0.0],
@@ -312,7 +312,6 @@ mod tests {
                 occurrence_guid_offset: 124,
                 occurrence_ordinal: 1,
                 transform: None,
-                transform_offset: None,
             }
         };
         let native_occurrences = [occurrence(100, 700, SOURCE), occurrence(101, 701, COPY)];
@@ -379,8 +378,7 @@ mod tests {
             occurrence_guid: OCCURRENCE.into(),
             occurrence_guid_offset: 0,
             occurrence_ordinal: 1,
-            transform: Some(identity_matrix()),
-            transform_offset: Some(209),
+            transform: Some(crate::records::Located { value: identity_matrix(), offset: 209 }),
         };
         let (definitions, occurrences) =
             super::project_local_components(&[scope.clone()], &[native_occurrence]);

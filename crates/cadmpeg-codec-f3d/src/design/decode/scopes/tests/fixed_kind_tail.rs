@@ -892,7 +892,6 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             body_group_record_index: 102,
             center_record_index: 105,
             center_position: None,
-            center_position_offset: None,
             uniform_factor: 1.5,
             uniform_factor_offset: (scale_at + 25) as u64,
         })
