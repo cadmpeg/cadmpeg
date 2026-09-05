@@ -135,7 +135,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             id: "generated:persistent-design-link#0".into(),
             target: AttributeTarget::Body(body_id.clone()),
             design_id: "311".into(),
-            entity_kind: (),
+
             design_reference: 7,
             ordinal: 0,
             is_current: false,
@@ -144,7 +144,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             id: "generated:persistent-design-link#1".into(),
             target: AttributeTarget::Body(body_id.clone()),
             design_id: "322".into(),
-            entity_kind: (),
+
             design_reference: 8,
             ordinal: 1,
             is_current: true,
@@ -361,7 +361,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
         id: "generated:persistent-design-link#0".into(),
         target: AttributeTarget::Body(body),
         design_id: "311".into(),
-        entity_kind: (),
+
         design_reference: 7,
         ordinal: 1,
         is_current: false,

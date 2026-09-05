@@ -8,46 +8,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
-fn deserialize_ignore_u32<'de, D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
-    u32::deserialize(deserializer).map(|_| ())
-}
-
-fn deserialize_ignore_u8<'de, D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
-    u8::deserialize(deserializer).map(|_| ())
-}
-
-fn serialize_u32_1<S: Serializer>(_: &(), serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_u32(1)
-}
-
-fn serialize_u32_3<S: Serializer>(_: &(), serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_u32(3)
-}
-
-fn serialize_u32_4<S: Serializer>(_: &(), serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_u32(4)
-}
-
-fn serialize_u8_0<S: Serializer>(_: &(), serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_u8(0)
-}
-
-fn serialize_i64_3<S: Serializer>(_: &(), serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_i64(3)
-}
-
-fn deserialize_i64_3<'de, D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
-    let value = i64::deserialize(deserializer)?;
-    if value == 3 {
-        Ok(())
-    } else {
-        Err(serde::de::Error::invalid_value(
-            serde::de::Unexpected::Signed(value),
-            &"entity_kind 3",
-        ))
-    }
-}
-
 fn serialize_absent_u64_offset<S: Serializer>(
     value: &Option<u64>,
     serializer: S,
@@ -108,6 +68,11 @@ pub struct SketchCurveLink {
 /// Persistent Fusion design identifier attached to a solved B-rep entity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "PersistentDesignLinkWire"))]
+#[serde(
+    try_from = "PersistentDesignLinkWire",
+    into = "PersistentDesignLinkWire"
+)]
 pub struct PersistentDesignLink {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -115,14 +80,6 @@ pub struct PersistentDesignLink {
     pub target: AttributeTarget,
     /// Fusion persistent design-entity id string, stable across regeneration.
     pub design_id: String,
-    /// CADIR `entity_kind`. Always body `3` on the wire; the producer keeps only
-    /// body groups.
-    #[serde(
-        serialize_with = "serialize_i64_3",
-        deserialize_with = "deserialize_i64_3"
-    )]
-    #[cfg_attr(feature = "schema", schemars(with = "i64"))]
-    pub entity_kind: (),
     /// Design-stream reference paired with this persistent identifier.
     pub design_reference: i64,
     /// Position of this id in the entity's persistent-id history, in assignment order.
@@ -130,6 +87,57 @@ pub struct PersistentDesignLink {
     /// Whether this is the active persistent id for `target`, as opposed to a
     /// superseded historical id retained for provenance.
     pub is_current: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct PersistentDesignLinkWire {
+    /// Globally unique deterministic identifier for this native record.
+    id: String,
+    /// Solved B-rep entity this persistent Fusion design id is attached to.
+    target: AttributeTarget,
+    /// Fusion persistent design-entity id string, stable across regeneration.
+    design_id: String,
+    entity_kind: i64,
+    /// Design-stream reference paired with this persistent identifier.
+    design_reference: i64,
+    /// Position of this id in the entity's persistent-id history, in assignment order.
+    ordinal: u32,
+    /// Whether this is the active persistent id for `target`, as opposed to a
+    /// superseded historical id retained for provenance.
+    is_current: bool,
+}
+
+impl TryFrom<PersistentDesignLinkWire> for PersistentDesignLink {
+    type Error = String;
+
+    fn try_from(wire: PersistentDesignLinkWire) -> Result<Self, Self::Error> {
+        if wire.entity_kind != 3 {
+            return Err("entity_kind must be 3".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            target: wire.target,
+            design_id: wire.design_id,
+            design_reference: wire.design_reference,
+            ordinal: wire.ordinal,
+            is_current: wire.is_current,
+        })
+    }
+}
+
+impl From<PersistentDesignLink> for PersistentDesignLinkWire {
+    fn from(record: PersistentDesignLink) -> Self {
+        Self {
+            id: record.id,
+            target: record.target,
+            design_id: record.design_id,
+            entity_kind: 3,
+            design_reference: record.design_reference,
+            ordinal: record.ordinal,
+            is_current: record.is_current,
+        }
+    }
 }
 
 /// Native face/edge tag group linking a solved subentity to design records.
@@ -6206,8 +6214,6 @@ pub struct DesignEdgeFlangeOperation {
     pub bend_radius: f64,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
-    /// CADIR `reference_side_code`. Always `4` on the wire (DR-09A).
-    pub(crate) reference_side_code: (),
     /// Face pair the flange height is measured from.
     pub height_datum: DesignSheetMetalHeightDatum,
     /// Bend position relative to the selected edge.
@@ -6253,12 +6259,7 @@ struct DesignEdgeFlangeOperationSerde {
     settings_record_index: u32,
     bend_radius: f64,
     bend_radius_offset: u64,
-    #[serde(
-        serialize_with = "serialize_u32_4",
-        deserialize_with = "deserialize_ignore_u32"
-    )]
-    #[cfg_attr(feature = "schema", schemars(with = "u32"))]
-    reference_side_code: (),
+    reference_side_code: u32,
     height_datum: DesignSheetMetalHeightDatum,
     bend_position: DesignBendPosition,
 }
@@ -6267,6 +6268,9 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
     type Error = String;
 
     fn try_from(wire: DesignEdgeFlangeOperationSerde) -> Result<Self, Self::Error> {
+        if wire.reference_side_code != 4 {
+            return Err("reference_side_code must be 4".into());
+        }
         let width = DesignEdgeWidth::from_wire(
             wire.width_mode,
             wire.width_distance_owner_record_indices,
@@ -6287,7 +6291,6 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
             settings_record_index: wire.settings_record_index,
             bend_radius: wire.bend_radius,
             bend_radius_offset: wire.bend_radius_offset,
-            reference_side_code: wire.reference_side_code,
             height_datum: wire.height_datum,
             bend_position: wire.bend_position,
         })
@@ -6316,7 +6319,7 @@ impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
             settings_record_index: operation.settings_record_index,
             bend_radius: operation.bend_radius,
             bend_radius_offset: operation.bend_radius_offset,
-            reference_side_code: operation.reference_side_code,
+            reference_side_code: 4,
             height_datum: operation.height_datum,
             bend_position: operation.bend_position,
         }
@@ -6357,6 +6360,8 @@ pub enum DesignHemParameterOwners {
 /// `Hem` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignHemOperationWire"))]
+#[serde(try_from = "DesignHemOperationWire", into = "DesignHemOperationWire")]
 pub struct DesignHemOperation {
     /// Selection-wrapper record for the hem edge.
     pub edge_wrapper_record_index: u32,
@@ -6376,34 +6381,83 @@ pub struct DesignHemOperation {
     pub bend_radius: f64,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
-    /// CADIR `form_code`. Always `3` on the wire (DR-09A).
-    #[serde(
-        serialize_with = "serialize_u32_3",
-        deserialize_with = "deserialize_ignore_u32"
-    )]
-    #[cfg_attr(feature = "schema", schemars(with = "u32"))]
-    pub(crate) form_code: (),
-    /// CADIR `direction_code`. Always `1` on the wire (DR-09A).
-    #[serde(
-        serialize_with = "serialize_u32_1",
-        deserialize_with = "deserialize_ignore_u32"
-    )]
-    #[cfg_attr(feature = "schema", schemars(with = "u32"))]
-    pub(crate) direction_code: (),
-    /// CADIR `direction_reversal_byte`. Always `0` on the wire (DR-09A).
-    #[serde(
-        serialize_with = "serialize_u8_0",
-        deserialize_with = "deserialize_ignore_u8"
-    )]
-    #[cfg_attr(feature = "schema", schemars(with = "u8"))]
-    pub(crate) direction_reversal_byte: (),
-    /// CADIR `reference_side_code`. Always `4` on the wire (DR-09A).
-    #[serde(
-        serialize_with = "serialize_u32_4",
-        deserialize_with = "deserialize_ignore_u32"
-    )]
-    #[cfg_attr(feature = "schema", schemars(with = "u32"))]
-    pub(crate) reference_side_code: (),
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignHemOperationWire {
+    /// Selection-wrapper record for the hem edge.
+    edge_wrapper_record_index: u32,
+    /// Role-`0x08` operand-group record.
+    edge_group_record_index: u32,
+    /// Recipe-backed role-`0x08` operand record.
+    edge_operand_record_index: u32,
+    /// Role-`0x43` aggregate operand-group record.
+    aggregate_group_record_index: u32,
+    /// Recipe-backed role-`0x43` operand record.
+    aggregate_operand_record_index: u32,
+    /// Parameter-owner layout selected by the owned source kinds.
+    parameter_owners: DesignHemParameterOwners,
+    /// Indexed operation-settings record.
+    settings_record_index: u32,
+    /// Positive rule-derived inside bend radius in centimetres.
+    bend_radius: f64,
+    /// Byte offset of `bend_radius`.
+    bend_radius_offset: u64,
+    form_code: u32,
+    direction_code: u32,
+    direction_reversal_byte: u8,
+    reference_side_code: u32,
+}
+
+impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
+    type Error = String;
+
+    fn try_from(wire: DesignHemOperationWire) -> Result<Self, Self::Error> {
+        if wire.form_code != 3 {
+            return Err("form_code must be 3".into());
+        }
+        if wire.direction_code != 1 {
+            return Err("direction_code must be 1".into());
+        }
+        if wire.direction_reversal_byte != 0 {
+            return Err("direction_reversal_byte must be 0".into());
+        }
+        if wire.reference_side_code != 4 {
+            return Err("reference_side_code must be 4".into());
+        }
+        Ok(Self {
+            edge_wrapper_record_index: wire.edge_wrapper_record_index,
+            edge_group_record_index: wire.edge_group_record_index,
+            edge_operand_record_index: wire.edge_operand_record_index,
+            aggregate_group_record_index: wire.aggregate_group_record_index,
+            aggregate_operand_record_index: wire.aggregate_operand_record_index,
+            parameter_owners: wire.parameter_owners,
+            settings_record_index: wire.settings_record_index,
+            bend_radius: wire.bend_radius,
+            bend_radius_offset: wire.bend_radius_offset,
+        })
+    }
+}
+
+impl From<DesignHemOperation> for DesignHemOperationWire {
+    fn from(record: DesignHemOperation) -> Self {
+        Self {
+            edge_wrapper_record_index: record.edge_wrapper_record_index,
+            edge_group_record_index: record.edge_group_record_index,
+            edge_operand_record_index: record.edge_operand_record_index,
+            aggregate_group_record_index: record.aggregate_group_record_index,
+            aggregate_operand_record_index: record.aggregate_operand_record_index,
+            parameter_owners: record.parameter_owners,
+            settings_record_index: record.settings_record_index,
+            bend_radius: record.bend_radius,
+            bend_radius_offset: record.bend_radius_offset,
+            form_code: 3,
+            direction_code: 1,
+            direction_reversal_byte: 0,
+            reference_side_code: 4,
+        }
+    }
 }
 
 /// Fixed construction carried by a uniform body-scale scope.
