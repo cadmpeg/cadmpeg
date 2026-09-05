@@ -183,8 +183,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
             context_record_index: 17,
             context_record_index_offset: 220,
             item_count_offset: 240,
-            item_record_indices: vec![101],
-            item_record_index_offsets: vec![245],
+            items: vec![crate::records::Located { value: 101, offset: 245 }],
         }],
         ..crate::native::F3dNative::default()
     };
@@ -216,7 +215,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     }));
 
     let mut invalid_offsets = native.clone();
-    invalid_offsets.design_feature_timelines[0].item_record_index_offsets[0] = 244;
+    invalid_offsets.design_feature_timelines[0].items[0].offset = 244;
     invalid_offsets
         .store(ir.native.namespace_mut("f3d", std::num::NonZeroU32::MIN))
         .unwrap();
@@ -225,7 +224,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
             && finding.message == "Fusion Design feature timeline has an invalid typed frame"
     }));
 
-    native.design_feature_timelines[0].item_record_indices[0] = 102;
+    native.design_feature_timelines[0].items[0].value = 102;
     native
         .store(ir.native.namespace_mut("f3d", std::num::NonZeroU32::MIN))
         .unwrap();

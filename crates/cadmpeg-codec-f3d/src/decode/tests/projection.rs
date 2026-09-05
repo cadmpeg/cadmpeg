@@ -1599,8 +1599,7 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
         context_record_index: 2,
         context_record_index_offset: 0,
         item_count_offset: 0,
-        item_record_indices: vec![100, 200],
-        item_record_index_offsets: vec![0, 0],
+        items: vec![crate::records::Located { value: 100, offset: 0 }, crate::records::Located { value: 200, offset: 0 }],
     };
     let (features, _) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(

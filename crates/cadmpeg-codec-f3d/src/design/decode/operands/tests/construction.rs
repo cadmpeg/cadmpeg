@@ -436,11 +436,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         context_record_index: 1,
         context_record_index_offset: 0,
         item_count_offset: 0,
-        item_record_indices: plane_scopes
-            .iter()
-            .map(|scope| u64::from(scope.record_index))
-            .collect(),
-        item_record_index_offsets: vec![0; plane_scopes.len()],
+        items: plane_scopes.iter().map(|scope| crate::records::Located { value: u64::from(scope.record_index), offset: 0 }).collect(),
     };
     let (plane_features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {

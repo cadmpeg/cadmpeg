@@ -10650,6 +10650,8 @@ impl From<SegmentType> for SegmentTypeWire {
 /// Counted Design timeline-item list that carries authored feature order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignFeatureTimelineWire"))]
+#[serde(try_from = "DesignFeatureTimelineWire", into = "DesignFeatureTimelineWire")]
 pub struct DesignFeatureTimeline {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -10670,9 +10672,72 @@ pub struct DesignFeatureTimeline {
     /// Byte offset of the timeline-item count.
     pub item_count_offset: u64,
     /// Design record indices in authored timeline order.
-    pub item_record_indices: Vec<u64>,
+    pub items: Vec<Located<u64>>,
+}
+
+/// Counted Design timeline-item list that carries authored feature order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignFeatureTimelineWire {
+    /// Globally unique deterministic identifier for this native record.
+    id: String,
+    /// Byte offset of this record in its Design `BulkStream`.
+    byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    class_tag: String,
+    /// Design entity identity of the timeline record.
+    record_index: u64,
+    /// Zero-based position in the `MetaStream` timeline-record list.
+    source_ordinal: u32,
+    /// Complete top-level record length.
+    frame_length: u64,
+    /// Same-segment context record referenced before the scope list.
+    context_record_index: u64,
+    /// Byte offset of `context_record_index`.
+    context_record_index_offset: u64,
+    /// Byte offset of the timeline-item count.
+    item_count_offset: u64,
+    /// Design record indices in authored timeline order.
+    item_record_indices: Vec<u64>,
     /// Byte offsets parallel to `item_record_indices`.
-    pub item_record_index_offsets: Vec<u64>,
+    item_record_index_offsets: Vec<u64>,
+}
+
+impl TryFrom<DesignFeatureTimelineWire> for DesignFeatureTimeline {
+    type Error = String;
+    fn try_from(wire: DesignFeatureTimelineWire) -> Result<Self, Self::Error> {
+        if wire.item_record_indices.len() != wire.item_record_index_offsets.len() {
+            return Err("item_record_indices and item_record_index_offsets must have equal lengths".into());
+        }
+        Ok(Self {
+            items: wire.item_record_indices.into_iter().zip(wire.item_record_index_offsets).map(|(value, offset)| Located { value, offset }).collect(),
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            record_index: wire.record_index,
+            source_ordinal: wire.source_ordinal,
+            frame_length: wire.frame_length,
+            context_record_index: wire.context_record_index,
+            context_record_index_offset: wire.context_record_index_offset,
+            item_count_offset: wire.item_count_offset,
+        })
+    }
+}
+impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
+    fn from(value: DesignFeatureTimeline) -> Self {
+        let (item_record_indices, item_record_index_offsets) = value.items.into_iter().map(|item| (item.value, item.offset)).unzip();
+        Self { item_record_indices, item_record_index_offsets,
+            id: value.id,
+            byte_offset: value.byte_offset,
+            class_tag: value.class_tag,
+            record_index: value.record_index,
+            source_ordinal: value.source_ordinal,
+            frame_length: value.frame_length,
+            context_record_index: value.context_record_index,
+            context_record_index_offset: value.context_record_index_offset,
+            item_count_offset: value.item_count_offset,
+        }
+    }
 }
 
 /// Self-validating entity-bound header in the Design `BulkStream`.

@@ -228,8 +228,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         context_record_index: 1,
         context_record_index_offset: 0,
         item_count_offset: 0,
-        item_record_indices: vec![100, 200],
-        item_record_index_offsets: vec![0, 0],
+        items: vec![crate::records::Located { value: 100, offset: 0 }, crate::records::Located { value: 200, offset: 0 }],
     };
     let mut scopes = vec![extrude, work_point];
 

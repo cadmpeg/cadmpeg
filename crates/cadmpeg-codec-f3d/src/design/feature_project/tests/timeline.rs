@@ -113,7 +113,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     later.byte_offset = 100;
     later.previous_history_state_id = Some(7);
     let scopes = vec![later.clone(), earlier.clone()];
-    let timeline = |items| DesignFeatureTimeline {
+    let timeline = |items: Vec<u64>| DesignFeatureTimeline {
         id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 10),
         byte_offset: 10,
         class_tag: "256".into(),
@@ -123,8 +123,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
         context_record_index: 17,
         context_record_index_offset: 0,
         item_count_offset: 0,
-        item_record_indices: items,
-        item_record_index_offsets: vec![0; 3],
+        items: items.into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect(),
     };
     let authored = timeline(vec![100, 150, 200]);
     let project = |timeline: &DesignFeatureTimeline| {
@@ -166,8 +165,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
 
     let unrelated = DesignFeatureTimeline {
         id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:Other/BulkStream.dat", 10),
-        item_record_indices: vec![9000],
-        item_record_index_offsets: vec![0],
+        items: vec![crate::records::Located { value: 9000, offset: 0 }],
         ..authored.clone()
     };
     let ordinals = crate::design::feature_project::authored_scope_ordinals(
@@ -178,8 +176,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     assert_eq!(ordinals[&(stream, 100)], 0);
     assert_eq!(ordinals[&(stream, 200)], 2);
 
-    let mut reversed = timeline(vec![200, 150, 100]);
-    reversed.item_record_index_offsets = vec![0; reversed.item_record_indices.len()];
+    let reversed = timeline(vec![200, 150, 100]);
     let error = project(&reversed).expect_err("forward history edge must be rejected");
     assert!(error
         .to_string()
@@ -188,8 +185,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     let second = DesignFeatureTimeline {
         source_ordinal: 1,
         record_index: 36,
-        item_record_indices: vec![300],
-        item_record_index_offsets: vec![0],
+        items: vec![crate::records::Located { value: 300, offset: 0 }],
         ..authored.clone()
     };
     let error = project_parameter_design_with_edge_identities(
@@ -254,8 +250,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
         context_record_index: 17,
         context_record_index_offset: 0,
         item_count_offset: 0,
-        item_record_indices: vec![100, 200],
-        item_record_index_offsets: vec![0, 0],
+        items: vec![crate::records::Located { value: 100, offset: 0 }, crate::records::Located { value: 200, offset: 0 }],
     };
     let mut parameter = parse_design_parameter(&parameter_record(
         Some(40),
@@ -378,8 +373,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
         context_record_index: 2,
         context_record_index_offset: 0,
         item_count_offset: 0,
-        item_record_indices: vec![10],
-        item_record_index_offsets: vec![0],
+        items: vec![crate::records::Located { value: 10, offset: 0 }],
     };
     let (features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
@@ -420,10 +414,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     );
 
     let mut directly_listed = timeline;
-    directly_listed
-        .item_record_indices
-        .push(origin.record_index.into());
-    directly_listed.item_record_index_offsets.push(0);
+    directly_listed.items.push(crate::records::Located { value: origin.record_index.into(), offset: 0 });
     let (features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
             native: &[],
@@ -494,8 +485,7 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
         context_record_index: 2,
         context_record_index_offset: 0,
         item_count_offset: 0,
-        item_record_indices: vec![10, 11],
-        item_record_index_offsets: vec![0, 0],
+        items: vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }],
     };
     let result = crate::design::feature_project::authored_scope_ordinals(
         &scopes,
@@ -542,8 +532,7 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
         context_record_index: 2,
         context_record_index_offset: 0,
         item_count_offset: 0,
-        item_record_indices: vec![30],
-        item_record_index_offsets: vec![0],
+        items: vec![crate::records::Located { value: 30, offset: 0 }],
     };
     let result = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
@@ -610,8 +599,7 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
         context_record_index: 2,
         context_record_index_offset: 0,
         item_count_offset: 0,
-        item_record_indices: vec![100, 200],
-        item_record_index_offsets: vec![0, 0],
+        items: vec![crate::records::Located { value: 100, offset: 0 }, crate::records::Located { value: 200, offset: 0 }],
     };
     let (features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
@@ -795,8 +783,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         context_record_index: 1,
         context_record_index_offset: 0,
         item_count_offset: 0,
-        item_record_indices: vec![12, 22],
-        item_record_index_offsets: vec![0, 0],
+        items: vec![crate::records::Located { value: 12, offset: 0 }, crate::records::Located { value: 22, offset: 0 }],
     };
     let (features, parameters) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
