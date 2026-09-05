@@ -11,13 +11,6 @@ pub struct LoadedDocument {
     pub ir: CadIr,
     /// Whether the document came from neutral JSON or a native decoder.
     pub origin: LoadOrigin,
-    selection: LoadSelection,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LoadSelection {
-    Neutral,
-    Native(Selection),
 }
 
 /// Source information attached to a loaded document.
@@ -26,8 +19,17 @@ enum LoadSelection {
 pub enum LoadOrigin {
     /// The document was loaded without native decode metadata.
     Neutral,
+    /// Decode metadata restored from a neutral document sidecar.
+    Restored {
+        /// What the decoder transferred and omitted.
+        report: DecodeReport,
+        /// Decode-time annotations and retained native records.
+        fidelity: SourceFidelity,
+    },
     /// The document was produced by a native decoder.
     Decoded {
+        /// How the native decoder was selected.
+        selection: Selection,
         /// What the decoder transferred and omitted.
         report: DecodeReport,
         /// Decode-time annotations and retained native records.
@@ -41,7 +43,6 @@ impl LoadedDocument {
         Self {
             ir,
             origin: LoadOrigin::Neutral,
-            selection: LoadSelection::Neutral,
         }
     }
 
@@ -50,8 +51,11 @@ impl LoadedDocument {
         let (ir, report, fidelity) = result.into_parts();
         Self {
             ir,
-            origin: LoadOrigin::Decoded { report, fidelity },
-            selection: LoadSelection::Native(selection),
+            origin: LoadOrigin::Decoded {
+                report,
+                fidelity,
+                selection,
+            },
         }
     }
 
@@ -59,16 +63,7 @@ impl LoadedDocument {
     pub fn restored(ir: CadIr, report: DecodeReport, fidelity: SourceFidelity) -> Self {
         Self {
             ir,
-            origin: LoadOrigin::Decoded { report, fidelity },
-            selection: LoadSelection::Neutral,
-        }
-    }
-
-    /// Returns how a native codec was selected for this load.
-    pub const fn selection(&self) -> Option<Selection> {
-        match self.selection {
-            LoadSelection::Neutral => None,
-            LoadSelection::Native(selection) => Some(selection),
+            origin: LoadOrigin::Restored { report, fidelity },
         }
     }
 
@@ -76,7 +71,9 @@ impl LoadedDocument {
     pub const fn decode_report(&self) -> Option<&DecodeReport> {
         match &self.origin {
             LoadOrigin::Neutral => None,
-            LoadOrigin::Decoded { report, .. } => Some(report),
+            LoadOrigin::Decoded { report, .. } | LoadOrigin::Restored { report, .. } => {
+                Some(report)
+            }
         }
     }
 
@@ -84,7 +81,9 @@ impl LoadedDocument {
     pub const fn fidelity(&self) -> Option<&SourceFidelity> {
         match &self.origin {
             LoadOrigin::Neutral => None,
-            LoadOrigin::Decoded { fidelity, .. } => Some(fidelity),
+            LoadOrigin::Decoded { fidelity, .. } | LoadOrigin::Restored { fidelity, .. } => {
+                Some(fidelity)
+            }
         }
     }
 }

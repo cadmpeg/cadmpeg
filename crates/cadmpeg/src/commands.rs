@@ -59,14 +59,16 @@ pub struct AppCatalogs {
 }
 
 fn print_load_notice(document: &LoadedDocument) {
-    let Some(Selection::Detected { confidence }) = document.selection() else {
+    let crate::application::LoadOrigin::Decoded {
+        selection: Selection::Detected { confidence },
+        report,
+        ..
+    } = &document.origin
+    else {
         return;
     };
-    if confidence < Confidence::High {
-        let format_id = document
-            .decode_report()
-            .expect("a native selection always has a decode report")
-            .format();
+    if *confidence < Confidence::High {
+        let format_id = report.format();
         eprintln!(
             "warning: detected {format_id} with {confidence} confidence; use --input-format to override"
         );
@@ -74,8 +76,6 @@ fn print_load_notice(document: &LoadedDocument) {
 }
 
 /// CLI-facing conversion arguments assembled from argv.
-// Independent argv flags are converted to typed policy and destination states in `convert`.
-#[allow(clippy::struct_excessive_bools)]
 pub struct ConversionArgs {
     /// Decode and export loss refusal.
     pub losses: crate::application::LossPolicy,
@@ -83,12 +83,10 @@ pub struct ConversionArgs {
     pub allow_errors: bool,
     /// Permit a geometry export when decode transferred no geometry.
     pub allow_empty: bool,
-    /// Optional CAD output path.
-    pub output: Option<PathBuf>,
-    /// Permit binary output on standard output.
-    pub binary_stdout: bool,
-    /// Replace an existing CAD output or command report.
-    pub force: bool,
+    /// CAD output destination and its overwrite policy.
+    pub destination: DestinationPolicy,
+    /// Replace an existing command report.
+    pub overwrite_report: bool,
     /// Optional path for the versioned JSON command report.
     pub report: Option<PathBuf>,
     /// Explicit input format selected by the user.
@@ -418,11 +416,7 @@ pub fn convert(
         losses: conversion.losses,
         allow_errors: conversion.allow_errors,
         allow_empty: conversion.allow_empty,
-        destination: DestinationPolicy::new(
-            conversion.output.clone(),
-            conversion.force,
-            conversion.binary_stdout,
-        ),
+        destination: conversion.destination.clone(),
     };
     let selection = match TargetSelection::resolve(to, policy.destination.path()) {
         Ok(selection) => selection,
@@ -431,7 +425,7 @@ pub fn convert(
                 write_refusal_command_report(
                     path,
                     conversion.report.as_deref(),
-                    conversion.force,
+                    conversion.overwrite_report,
                     "convert",
                     refusal,
                 );
@@ -441,7 +435,7 @@ pub fn convert(
     };
     let target = export_target(selection);
     if let Some(report_path) = conversion.report.as_deref() {
-        ArtifactStore::check_output_path(path, report_path, conversion.force)?;
+        ArtifactStore::check_output_path(path, report_path, conversion.overwrite_report)?;
         if let Some(destination) = policy.destination.path() {
             ArtifactStore::check_distinct_output_paths(
                 destination,
@@ -474,7 +468,7 @@ pub fn convert(
         write_refusal_command_report(
             path,
             conversion.report.as_deref(),
-            conversion.force,
+            conversion.overwrite_report,
             "convert",
             refusal,
         );
@@ -520,7 +514,7 @@ pub fn convert(
     if let Err(error) = write_command_report(
         path,
         conversion.report.as_deref(),
-        conversion.force,
+        conversion.overwrite_report,
         "convert",
         CommandReportBody::Ok {
             decode_report: decode_report.as_ref(),

@@ -12,6 +12,7 @@ mod inspect;
 mod loader;
 mod query;
 mod registry_view;
+mod reject_json;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -129,16 +130,8 @@ enum Command {
     Convert {
         #[command(flatten)]
         file: inspect::FileArg,
-        /// Rejected placeholder: the artifact format comes from --format/-o and
-        /// the machine-readable report from --report.
-        #[arg(
-            long,
-            hide = true,
-            num_args = 0,
-            default_missing_value = "true",
-            value_parser = reject_convert_json
-        )]
-        json: Option<std::convert::Infallible>,
+        #[command(flatten)]
+        _reject_json: crate::reject_json::RejectJson,
         /// Stream a binary output format to standard output anyway.
         #[arg(long, hide = true)]
         binary_stdout: bool,
@@ -242,15 +235,8 @@ enum Command {
     Dump {
         #[command(flatten)]
         file: inspect::FileArg,
-        /// Rejected placeholder: dump's stdout is already CADIR JSON; dump report goes to --report.
-        #[arg(
-            long,
-            hide = true,
-            num_args = 0,
-            default_missing_value = "true",
-            value_parser = reject_dump_json
-        )]
-        json: Option<std::convert::Infallible>,
+        #[command(flatten)]
+        _reject_json: crate::reject_json::RejectJson,
         /// Output file; omit to write CADIR to standard output.
         #[arg(short, long)]
         output: Option<PathBuf>,
@@ -343,26 +329,6 @@ enum Command {
     },
 }
 
-/// Rejects `--json` on convert. Pinned by `json_on_artifact_commands_is_a_teaching_error`.
-fn reject_convert_json(_: &str) -> Result<std::convert::Infallible, String> {
-    Err(
-        "--json is not an output selector on convert; the artifact format comes from \
-         --format/-o, and the machine-readable report from --report FILE, projected \
-         with `cadmpeg query`"
-            .into(),
-    )
-}
-
-/// Rejects `--json` on dump. Pinned by `json_on_artifact_commands_is_a_teaching_error`.
-fn reject_dump_json(_: &str) -> Result<std::convert::Infallible, String> {
-    Err(
-        "dump writes the CADIR JSON artifact itself; its standard output is \
-         already JSON when -o is omitted; the dump report goes to --report FILE, \
-         projected with `cadmpeg query`"
-            .into(),
-    )
-}
-
 /// Restore `SIG_DFL` so a closed stdout pipe delivers SIGPIPE instead of a
 /// `print!` panic (`failed printing to stdout: Broken pipe`).
 #[cfg(unix)]
@@ -414,7 +380,7 @@ fn main() -> ExitCode {
         },
         Command::Dump {
             file,
-            json: _,
+            _reject_json: _,
             output,
             force,
             report,
@@ -476,7 +442,7 @@ fn main() -> ExitCode {
         ),
         Command::Convert {
             file,
-            json: _,
+            _reject_json: _,
             binary_stdout,
             format,
             output,
@@ -492,9 +458,8 @@ fn main() -> ExitCode {
                 losses: reject_lossy.unwrap_or_default(),
                 allow_errors,
                 allow_empty,
-                output,
-                binary_stdout,
-                force,
+                destination: application::DestinationPolicy::new(output, force, binary_stdout),
+                overwrite_report: force,
                 report,
                 forced_input: input_args.forced(),
             };

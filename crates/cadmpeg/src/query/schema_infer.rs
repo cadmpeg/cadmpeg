@@ -46,16 +46,12 @@ pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
     let doc = CadirDocument::from_bytes(&bytes, path)?;
 
     let Some(spec) = arena else {
-        bail!("{}", need_arena_message(&doc.addressable));
+        bail!("{}", need_arena_message(&doc.addressable()));
     };
 
     let target = ArenaTarget::parse(spec)?;
-    let Some(arena_rec) = doc
-        .arenas
-        .iter()
-        .find(|arena| arena.dotted == target.dotted())
-    else {
-        bail!("{}", unknown_arena_message(&target, &doc.addressable));
+    let Some(arena_rec) = doc.arenas().iter().find(|arena| arena.target == target) else {
+        bail!("{}", unknown_arena_message(&target, &doc.addressable()));
     };
 
     let entry_count = arena_rec.records.len() as u64;
@@ -76,7 +72,7 @@ pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
             entry_count,
             cell(&row.type_label),
             cell(&row.example),
-            row.relation.unwrap_or("")
+            row.relation.map(Relation::as_str).unwrap_or("")
         );
     }
     if entry_count == 0 {
@@ -92,12 +88,29 @@ pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Relation {
+    Id,
+    Ref,
+    Refs,
+}
+
+impl Relation {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Id => "id",
+            Self::Ref => "ref",
+            Self::Refs => "refs",
+        }
+    }
+}
+
 struct FieldRow {
     path: String,
     present: u64,
     type_label: String,
     example: String,
-    relation: Option<&'static str>,
+    relation: Option<Relation>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -165,16 +178,16 @@ fn infer_fields(records: &[Value], doc_ids: &BTreeSet<String>) -> Vec<FieldRow> 
         .collect()
 }
 
-fn relation_of(path: &str, stat: &PathStat, doc_ids: &BTreeSet<String>) -> Option<&'static str> {
+fn relation_of(path: &str, stat: &PathStat, doc_ids: &BTreeSet<String>) -> Option<Relation> {
     let is_ref = |s: &str| doc_ids.contains(s) || is_valid_identity(s);
     if path == "id" && stat.types.contains(&JsonType::String) {
-        return Some("id");
+        return Some(Relation::Id);
     }
     if stat.types.contains(&JsonType::Array) && stat.strings.iter().any(|s| is_ref(s)) {
-        return Some("refs");
+        return Some(Relation::Refs);
     }
     if stat.types.contains(&JsonType::String) && stat.strings.iter().any(|s| is_ref(s)) {
-        return Some("ref");
+        return Some(Relation::Ref);
     }
     None
 }
@@ -271,7 +284,7 @@ fn json_payload(arena: &str, records: u64, rows: &[FieldRow]) -> Value {
                 "records": records,
                 "type": row.type_label,
                 "example": row.example,
-                "relation": row.relation,
+                "relation": row.relation.map(Relation::as_str),
             })
         })
         .collect();
@@ -408,16 +421,16 @@ mod tests {
         doc_ids.insert("nat#1".to_owned());
         doc_ids.insert("nat#2".to_owned());
         let rows = infer_fields(&records, &doc_ids);
-        let by_path: BTreeMap<&str, Option<&'static str>> = rows
+        let by_path: BTreeMap<&str, Option<Relation>> = rows
             .iter()
             .map(|row| (row.path.as_str(), row.relation))
             .collect();
-        assert_eq!(by_path["id"], Some("id"));
-        assert_eq!(by_path["native_ref"], Some("ref"));
-        assert_eq!(by_path["links"], Some("refs"));
+        assert_eq!(by_path["id"], Some(Relation::Id));
+        assert_eq!(by_path["native_ref"], Some(Relation::Ref));
+        assert_eq!(by_path["links"], Some(Relation::Refs));
         assert_eq!(by_path["numeric_links"], None);
         assert_eq!(by_path["name"], None);
-        assert_eq!(by_path["identity_shaped"], Some("ref"));
+        assert_eq!(by_path["identity_shaped"], Some(Relation::Ref));
         assert_eq!(by_path["child.id"], None);
         assert!(!by_path.contains_key("links.0"));
     }
@@ -444,7 +457,7 @@ mod tests {
         assert_eq!(by_path["pcurves"].relation, None);
         assert_eq!(by_path["pcurves.pcurve"].present, 1);
         assert_eq!(by_path["pcurves.pcurve"].type_label, "string");
-        assert_eq!(by_path["pcurves.pcurve"].relation, Some("ref"));
+        assert_eq!(by_path["pcurves.pcurve"].relation, Some(Relation::Ref));
         assert_eq!(by_path["pcurves.isoparametric"].present, 1);
         assert!(!by_path.contains_key("pcurves.0"));
         assert!(!by_path.contains_key("pcurves.0.pcurve"));

@@ -146,22 +146,18 @@ impl FieldKind {
 
 /// One named field and its byte offset inside the record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Field {
+struct Field {
     /// Field name, defaulted to `f<index>` when the spec omits one.
-    pub name: String,
+    name: String,
     /// What the field reads.
-    pub kind: FieldKind,
-    /// Byte offset of the field from the start of the record.
-    pub offset: usize,
+    kind: FieldKind,
 }
 
 /// A parsed record layout.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Layout {
     /// Fields in spec order, including `padN` runs.
-    pub fields: Vec<Field>,
-    /// Total record size in bytes.
-    pub size: usize,
+    fields: Vec<Field>,
 }
 
 impl Layout {
@@ -192,51 +188,59 @@ impl Layout {
                 });
             }
             let name = name.unwrap_or_else(|| format!("f{index}"));
-            fields.push(Field { name, kind, offset });
+            fields.push(Field { name, kind });
             offset = offset
                 .checked_add(kind.width())
                 .ok_or_else(|| LayoutError::SizeOverflow {
                     token: token.to_string(),
                 })?;
         }
-        Ok(Self {
-            fields,
-            size: offset,
+        Ok(Self { fields })
+    }
+
+    /// Returns the total record size in bytes.
+    pub fn size(&self) -> usize {
+        self.fields.iter().map(|field| field.kind.width()).sum()
+    }
+
+    /// Returns the field names in layout order, including padding.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.fields.iter().map(|field| field.name.as_str())
+    }
+
+    fn fields_with_offsets(&self) -> impl Iterator<Item = (usize, &Field)> {
+        self.fields.iter().scan(0, |offset, field| {
+            let start = *offset;
+            *offset += field.kind.width();
+            Some((start, field))
         })
     }
 
-    /// Decodes one record from a slice of exactly [`Layout::size`] bytes.
+    /// Decodes one record from a slice of at least [`Layout::size`] bytes.
     ///
     /// # Panics
     ///
-    /// Panics when `record` is not exactly the record size. Callers bounds-check
+    /// Panics when `record` is shorter than the layout. Callers bounds-check
     /// against the file length before slicing.
     pub fn decode(&self, record: &[u8]) -> Vec<DecodedField> {
-        assert_eq!(
-            record.len(),
-            self.size,
-            "record slice must match the layout"
-        );
-        self.fields
-            .iter()
-            .filter(|field| !matches!(field.kind, FieldKind::Pad(_)))
-            .map(|field| {
-                let bytes = &record[field.offset..field.offset + field.kind.width()];
+        self.fields_with_offsets()
+            .filter_map(|(offset, field)| {
+                let bytes = &record[offset..offset + field.kind.width()];
                 let (decimal, hex) = match field.kind {
                     FieldKind::Scalar(ty, endian) => {
                         let value = ty.read(bytes, endian);
                         (value.decimal(), value.hex())
                     }
                     FieldKind::Bytes(_) => (String::new(), hex_bytes(bytes)),
-                    FieldKind::Pad(_) => unreachable!("pad fields are filtered out"),
+                    FieldKind::Pad(_) => return None,
                 };
-                DecodedField {
+                Some(DecodedField {
                     name: field.name.clone(),
                     type_name: field.kind.type_name(),
-                    offset: field.offset,
+                    offset,
                     decimal,
                     hex,
-                }
+                })
             })
             .collect()
     }
@@ -364,14 +368,17 @@ mod tests {
     #[test]
     fn parses_the_documented_example() {
         let layout = Layout::parse("u32le:count,pad4,f64le:x,f64le:y,bytes4:tag").unwrap();
-        assert_eq!(layout.size, 4 + 4 + 8 + 8 + 4);
+        assert_eq!(layout.size(), 4 + 4 + 8 + 8 + 4);
         let names: Vec<&str> = layout
             .fields
             .iter()
             .map(|field| field.name.as_str())
             .collect();
         assert_eq!(names, ["count", "f1", "x", "y", "tag"]);
-        let offsets: Vec<usize> = layout.fields.iter().map(|field| field.offset).collect();
+        let offsets: Vec<usize> = layout
+            .fields_with_offsets()
+            .map(|(offset, _)| offset)
+            .collect();
         assert_eq!(offsets, [0, 4, 8, 16, 24]);
     }
 
@@ -398,7 +405,7 @@ mod tests {
     #[test]
     fn tolerates_whitespace_around_tokens_and_names() {
         let layout = Layout::parse(" u32le : count , f64be:x ").unwrap();
-        assert_eq!(layout.size, 12);
+        assert_eq!(layout.size(), 12);
         assert_eq!(layout.fields[0].name, "count");
         assert_eq!(layout.fields[1].name, "x");
     }
@@ -527,7 +534,7 @@ mod tests {
     #[test]
     fn decode_reads_hand_built_bytes_and_drops_pad() {
         let layout = Layout::parse("u32le:count,pad2,i16be:delta,bytes2:tag").unwrap();
-        assert_eq!(layout.size, 10);
+        assert_eq!(layout.size(), 10);
         // count = 0x0000002a = 42, pad, delta = 0xfffe = -2, tag = ab cd.
         let record = [0x2a, 0x00, 0x00, 0x00, 0xee, 0xee, 0xff, 0xfe, 0xab, 0xcd];
         let decoded = layout.decode(&record);
