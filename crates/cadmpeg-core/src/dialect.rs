@@ -74,8 +74,11 @@ impl DialectId {
 
     /// Returns the id as a string slice.
     #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
+    pub const fn as_str(&self) -> &str {
+        match &self.0 {
+            Cow::Borrowed(id) => id,
+            Cow::Owned(id) => id.as_str(),
+        }
     }
 
     /// Returns the format namespace before the id's validated separator.

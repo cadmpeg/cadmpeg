@@ -62,7 +62,7 @@ pub trait TargetDomain: domain_sealed::Sealed {
     type Resolved<'a>: TargetResolution;
 
     /// The static catalog of output flavors this domain lists.
-    fn targets(&self) -> TargetCatalog;
+    fn targets(&self, format: &'static str) -> TargetCatalog;
 
     /// Resolves one request against this domain.
     #[doc(hidden)]
@@ -84,8 +84,8 @@ pub struct DialectFree;
 impl TargetDomain for DialectFree {
     type Resolved<'a> = ();
 
-    fn targets(&self) -> TargetCatalog {
-        TargetCatalog::EMPTY
+    fn targets(&self, format: &'static str) -> TargetCatalog {
+        TargetCatalog::empty(format)
     }
 
     fn resolve<'a>(
@@ -97,7 +97,7 @@ impl TargetDomain for DialectFree {
         match request {
             TargetRequest::Inherit => Ok(()),
             TargetRequest::Explicit(id) => {
-                Err(TargetRefusal::unknown_explicit(format, id, TargetCatalog::EMPTY).into())
+                Err(TargetRefusal::unknown_explicit(id, TargetCatalog::empty(format)).into())
             }
         }
     }
@@ -122,7 +122,7 @@ impl Catalog {
 impl TargetDomain for Catalog {
     type Resolved<'a> = ResolvedWrite<'a>;
 
-    fn targets(&self) -> TargetCatalog {
+    fn targets(&self, _format: &'static str) -> TargetCatalog {
         self.0
     }
 
@@ -130,9 +130,9 @@ impl TargetDomain for Catalog {
         &self,
         ir: &'a CadIr,
         request: TargetRequest<'a>,
-        format: &'static str,
+        _format: &'static str,
     ) -> Result<ResolvedWrite<'a>, CodecError> {
-        resolve_write_request(ir, request, format, self.0)
+        resolve_write_request(ir, request, self.0)
     }
 }
 
@@ -193,7 +193,7 @@ impl<E: EncoderBackend> Encoder for E {
     }
 
     fn targets(&self) -> TargetCatalog {
-        E::TARGET.targets()
+        E::TARGET.targets(E::FORMAT)
     }
 
     fn plan(

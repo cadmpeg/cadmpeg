@@ -36,56 +36,97 @@ impl TargetDescriptor {
 /// constructed. A catalog may have no default when the encoder cannot
 /// synthesize a document from a source of another format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TargetCatalog {
-    targets: &'static [TargetDescriptor],
-    default: Option<usize>,
+pub struct TargetCatalog(CatalogEntries);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CatalogEntries {
+    Empty(&'static str),
+    Rows {
+        targets: &'static [TargetDescriptor],
+        default: Option<usize>,
+    },
 }
 
 impl TargetCatalog {
-    /// The empty catalog used by a dialect-free encoder.
-    pub const EMPTY: Self = Self::new(&[], None);
+    /// Builds an empty catalog for a dialect-free format.
+    #[must_use]
+    pub const fn empty(namespace: &'static str) -> Self {
+        Self(CatalogEntries::Empty(namespace))
+    }
 
-    /// Builds a catalog whose optional default indexes one of its rows.
+    /// Builds a nonempty catalog with one namespace and an optional default row.
+    ///
+    /// Panics if rows have different namespaces or the default is out of bounds.
     #[must_use]
     pub const fn new(targets: &'static [TargetDescriptor], default: Option<usize>) -> Self {
+        let [first, rest @ ..] = targets else {
+            panic!("use TargetCatalog::empty for a dialect-free format");
+        };
+        let first = first.id.as_str().as_bytes();
+        let mut row = 0;
+        while row < rest.len() {
+            let other = rest[row].id.as_str().as_bytes();
+            let mut byte = 0;
+            while byte < first.len() && byte < other.len() {
+                assert!(
+                    first[byte] == other[byte],
+                    "target catalog rows must share a namespace"
+                );
+                if first[byte] == b':' {
+                    break;
+                }
+                byte += 1;
+            }
+            row += 1;
+        }
         if let Some(index) = default {
             assert!(
                 index < targets.len(),
                 "target catalog default is out of bounds"
             );
         }
-        Self { targets, default }
+        Self(CatalogEntries::Rows { targets, default })
+    }
+
+    /// Returns the format namespace owned by this catalog.
+    #[must_use]
+    pub fn namespace(self) -> &'static str {
+        match self.0 {
+            CatalogEntries::Empty(namespace) => namespace,
+            CatalogEntries::Rows { targets, .. } => targets[0].id.namespace(),
+        }
     }
 
     /// Returns all synthesis targets in catalog order.
     #[must_use]
     pub const fn targets(self) -> &'static [TargetDescriptor] {
-        self.targets
+        match self.0 {
+            CatalogEntries::Empty(_) => &[],
+            CatalogEntries::Rows { targets, .. } => targets,
+        }
     }
 
     /// Returns whether this catalog has no synthesis targets.
     #[must_use]
     pub const fn is_empty(self) -> bool {
-        self.targets.is_empty()
+        matches!(self.0, CatalogEntries::Empty(_))
     }
 
     /// Returns the number of synthesis targets.
     #[must_use]
     pub const fn len(self) -> usize {
-        self.targets.len()
+        self.targets().len()
     }
 
     /// Iterates over synthesis targets in catalog order.
     pub fn iter(self) -> std::slice::Iter<'static, TargetDescriptor> {
-        self.targets.iter()
+        self.targets().iter()
     }
 
-    /// Returns the row named by a full id, format-local id, or alias, with its
-    /// position in the catalog.
+    /// Returns the row named by a full id, format-local id, or alias, with its position.
     #[must_use]
     pub fn find(self, token: &str) -> Option<(usize, &'static TargetDescriptor)> {
-        self.targets
-            .iter()
+        self.iter()
             .enumerate()
             .find(|(_, target)| target.accepted_tokens().any(|accepted| accepted == token))
     }
@@ -93,7 +134,12 @@ impl TargetCatalog {
     /// Returns the cross-format default and its position, when declared.
     #[must_use]
     pub fn default(self) -> Option<(usize, &'static TargetDescriptor)> {
-        self.default.map(|index| (index, &self.targets[index]))
+        match self.0 {
+            CatalogEntries::Empty(_) => None,
+            CatalogEntries::Rows { targets, default } => {
+                default.map(|index| (index, &targets[index]))
+            }
+        }
     }
 }
 
@@ -102,7 +148,7 @@ impl IntoIterator for TargetCatalog {
     type IntoIter = std::slice::Iter<'static, TargetDescriptor>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.targets.iter()
+        self.iter()
     }
 }
 
@@ -118,12 +164,12 @@ impl Serialize for TargetCatalog {
             default: bool,
         }
 
-        let mut sequence = serializer.serialize_seq(Some(self.targets.len()))?;
-        for (index, target) in self.targets.iter().enumerate() {
+        let mut sequence = serializer.serialize_seq(Some(self.len()))?;
+        for (index, target) in self.iter().enumerate() {
             sequence.serialize_element(&TargetDescriptorWire {
                 id: &target.id,
                 aliases: target.aliases,
-                default: self.default == Some(index),
+                default: self.default().is_some_and(|(default, _)| default == index),
             })?;
         }
         sequence.end()
@@ -231,14 +277,29 @@ pub enum TargetRefusalKind {
 ///
 /// The refusal carries the encoder catalog once, beside the request-state
 /// reason, so every reason is rendered and reported against the same catalog.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct TargetRefusal {
-    /// Refusing encoder format, stated once for every request state.
-    format: String,
-    #[serde(flatten)]
     kind: TargetRefusalKind,
     available: TargetCatalog,
+}
+
+impl Serialize for TargetRefusal {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            format: &'a str,
+            #[serde(flatten)]
+            kind: &'a TargetRefusalKind,
+            available: TargetCatalog,
+        }
+        Wire {
+            format: self.format(),
+            kind: &self.kind,
+            available: self.available,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Why inheritance must select an encoder catalog default.
@@ -252,37 +313,16 @@ pub enum DefaultSource {
 }
 
 impl TargetRefusal {
-    /// Associates one request-state reason with the refusing encoder format
-    /// and catalog.
+    /// Associates one request-state reason with the refusing encoder catalog.
     #[must_use]
-    pub fn new(
-        format: impl Into<String>,
-        kind: TargetRefusalKind,
-        available: TargetCatalog,
-    ) -> Self {
-        let format = format.into();
-        debug_assert!(
-            available
-                .iter()
-                .all(|target| target.id.namespace() == format),
-            "target refusal format must own every available target"
-        );
-        Self {
-            format,
-            kind,
-            available,
-        }
+    pub fn new(kind: TargetRefusalKind, available: TargetCatalog) -> Self {
+        Self { kind, available }
     }
 
     /// Builds the refusal for an explicit token outside an encoder catalog.
     #[must_use]
-    pub fn unknown_explicit(
-        format: impl Into<String>,
-        requested: impl Into<String>,
-        available: TargetCatalog,
-    ) -> Self {
+    pub fn unknown_explicit(requested: impl Into<String>, available: TargetCatalog) -> Self {
         Self::new(
-            format,
             TargetRefusalKind::UnknownExplicit {
                 requested: TargetToken::new(requested),
             },
@@ -299,7 +339,7 @@ impl TargetRefusal {
     /// Returns the refusing encoder format.
     #[must_use]
     pub fn format(&self) -> &str {
-        &self.format
+        self.available.namespace()
     }
 
     /// Returns the encoder's structured synthesis catalog.
@@ -355,7 +395,7 @@ impl TargetRefusal {
 
 impl fmt::Display for TargetRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let format = &self.format;
+        let format = self.format();
         match &self.kind {
             TargetRefusalKind::UnknownExplicit { requested } => write!(
                 f,
@@ -429,7 +469,6 @@ mod tests {
     #[test]
     fn target_refusal_serializes_request_state_and_the_complete_catalog() {
         let refusal = TargetRefusal::new(
-            "fcstd",
             TargetRefusalKind::ExplicitUnavailable {
                 target: DialectId::pinned("fcstd:schema-4"),
                 requested: TargetToken::new("4"),
@@ -456,13 +495,23 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "target refusal format must own every available target")]
-    fn target_refusal_rejects_a_foreign_catalog() {
-        let _ = TargetRefusal::new(
-            "step",
-            TargetRefusalKind::UnrecordedSource,
-            TargetCatalog::new(TARGETS, None),
+    #[should_panic(expected = "target catalog rows must share a namespace")]
+    fn target_catalog_rejects_mixed_namespaces() {
+        static MIXED: &[TargetDescriptor] =
+            &[target("fcstd:schema-4", &[]), target("step:ap242-e3", &[])];
+        let _ = TargetCatalog::new(MIXED, None);
+    }
+
+    #[test]
+    fn empty_catalog_refusal_retains_its_format() {
+        let refusal = TargetRefusal::unknown_explicit("future", TargetCatalog::empty("cadir"));
+        assert_eq!(
+            serde_json::to_value(&refusal).unwrap(),
+            serde_json::json!({
+                "format": "cadir", "kind": "unknown_explicit", "requested": "future", "available": []
+            })
         );
+        assert_eq!(refusal.to_string(), "cadir cannot write future: not a target this encoder can synthesize; available targets: none");
     }
 
     #[test]
@@ -533,7 +582,6 @@ mod tests {
     #[test]
     fn missing_default_names_a_foreign_source_without_inventing_a_dialect() {
         let refusal = TargetRefusal::new(
-            "fcstd",
             TargetRefusalKind::NoDefault {
                 source: DefaultSource::ForeignFormat("step".into()),
             },
@@ -551,7 +599,6 @@ mod tests {
     #[test]
     fn unrecorded_same_format_source_is_not_a_missing_default() {
         let refusal = TargetRefusal::new(
-            "fcstd",
             TargetRefusalKind::UnrecordedSource,
             TargetCatalog::new(TARGETS, None),
         );
