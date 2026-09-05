@@ -349,7 +349,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .collect::<Vec<_>>();
         let expected_side_entries = owned
             .iter()
-            .flat_map(|property| property.side_entries.iter().map(String::as_str))
+            .flat_map(|property| property.side_entries().iter().map(String::as_str))
             .collect::<Vec<_>>();
         let expected_inert_payload = owned.iter().any(|property| {
             property.family == native::PropertyFamily::PythonObject
@@ -707,7 +707,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(property.id.clone()),
             ));
         }
-        for target in property.links.iter().filter_map(|link| link.object()) {
+        for target in property.links().iter().filter_map(|link| link.object()) {
             if target.starts_with("fcstd:native:object#") && !object_ids.contains(target) {
                 findings.push(finding(
                     Check::ReferentialIntegrity,
@@ -834,7 +834,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .collect::<HashSet<_>>();
     let mut expected_references = HashMap::<String, Vec<String>>::new();
     for property in &properties {
-        for entry_name in &property.side_entries {
+        for entry_name in property.side_entries() {
             let owners = expected_references.entry(entry_name.clone()).or_default();
             if !owners.contains(&property.id) {
                 owners.push(property.id.clone());
@@ -1110,7 +1110,7 @@ impl CodecBackend for FcstdCodec {
                 })?;
             let graph = persistence::parse_with_context(document_bytes, &scan.document, Some(ctx))?;
             for property in &graph.properties {
-                for side_entry in &property.side_entries {
+                for side_entry in property.side_entries() {
                     if !scan.data.contains_key(side_entry) {
                         return Err(CodecError::malformed(format_args!(
                             "property {} references missing side entry {side_entry}",
@@ -1136,7 +1136,7 @@ impl CodecBackend for FcstdCodec {
                     let referenced_by = graph
                         .properties
                         .iter()
-                        .filter(|property| property.side_entries.contains(&entry.name))
+                        .filter(|property| property.side_entries().contains(&entry.name))
                         .map(|property| property.id.clone())
                         .collect();
                     ctx.charge_retained(bytes.len() as u64, "retain FCStd entry", None)?;

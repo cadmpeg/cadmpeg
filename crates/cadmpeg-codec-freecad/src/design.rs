@@ -68,7 +68,7 @@ pub(crate) fn transfer(
                 .get(body.id.as_str())
                 .and_then(|properties| body_membership_property(properties))
                 .into_iter()
-                .flat_map(|property| &property.links)
+                .flat_map(|property| property.links())
                 .filter_map(|link| link.object())
                 .map(move |member| (member, feature_id(body)))
         })
@@ -414,7 +414,7 @@ pub(crate) fn transfer(
                 .chain(
                     owned
                         .iter()
-                        .flat_map(|property| &property.links)
+                        .flat_map(|property| property.links())
                         .filter_map(|link| link.object())
                         .map(|dependency| (dependency, false)),
                 )
@@ -525,7 +525,7 @@ fn body_definition(
     }
     let children = body_membership_property(properties).map_or_else(Vec::new, |property| {
         property
-            .links
+            .links()
             .iter()
             .filter_map(|link| link.object())
             .filter_map(|target| feature_ids.get(target).cloned())
@@ -557,7 +557,7 @@ fn body_tip(
     if property.type_name != "App::PropertyLink" {
         return BodyTipResolution::Invalid;
     }
-    match property.links.as_slice() {
+    match property.links() {
         [] => BodyTipResolution::Valid(None),
         [link]
             if link.subelements.is_empty()
@@ -634,7 +634,7 @@ fn feature_ordinals<'a>(
                     .get(object.id.as_str())
                     .into_iter()
                     .flatten()
-                    .flat_map(|property| &property.values)
+                    .flat_map(|property| property.values())
                     .filter_map(|value| value.attributes.get("expression"))
                     .flat_map(|expression| expression_identifiers(expression))
                     .filter_map(|identifier| identifier.split_once('.').map(|(owner, _)| owner))
@@ -655,7 +655,7 @@ fn feature_ordinals<'a>(
                     .flatten()
                     .flat_map(|property| {
                         property
-                            .links
+                            .links()
                             .iter()
                             .map(move |link| (property.name.as_str(), link))
                     })
@@ -1328,7 +1328,7 @@ fn external_link_indices(
 ) -> Result<HashMap<String, usize>, CodecError> {
     let mut indices = HashMap::new();
     if let Some(references) = references {
-        for (index, reference) in references.links.iter().enumerate() {
+        for (index, reference) in references.links().iter().enumerate() {
             let Some(key) = external_link_key(reference) else {
                 continue;
             };
@@ -1478,7 +1478,9 @@ fn parse_sketch(
                 .with_geometry_ref(references.map(|property| property.id.clone()))
                 .with_endpoint_refs(
                     reference_index
-                        .and_then(|index| references.and_then(|property| property.links.get(index)))
+                        .and_then(|index| {
+                            references.and_then(|property| property.links().get(index))
+                        })
                         .map(|reference| reference.subelements.clone())
                         .unwrap_or_default(),
                 ),
@@ -1486,7 +1488,7 @@ fn parse_sketch(
         }
     }
     if let Some(references) = property(properties, "ExternalGeometry") {
-        for (external_index, reference) in references.links.iter().enumerate() {
+        for (external_index, reference) in references.links().iter().enumerate() {
             if matched_references.contains(&external_index) {
                 continue;
             }
@@ -1747,7 +1749,7 @@ fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, V
         .or_else(|| property(properties, "AttachmentOffset"))
         .and_then(|property| {
             property
-                .values
+                .values()
                 .iter()
                 .find(|value| value.tag == "PropertyPlacement")
         })?;
@@ -1820,7 +1822,7 @@ fn validate_sketch_placement(properties: &[&PropertyRecord]) -> Result<(), Codec
             "sketch {} placement carrier has runtime type {}",
             property.name, property.type_name
         ))
-    } else if property.values.len() != 1 || property.values[0].tag != "PropertyPlacement" {
+    } else if property.values().len() != 1 || property.values()[0].tag != "PropertyPlacement" {
         Some(format!(
             "sketch {} placement carrier requires one PropertyPlacement value",
             property.name
@@ -1877,7 +1879,7 @@ fn feature_state(properties: &[&PropertyRecord]) -> BTreeMap<String, String> {
         .filter(|property| STATE_NAMES.contains(&property.name.as_str()))
         .map(|property| {
             let value = property
-                .links
+                .links()
                 .first()
                 .and_then(|link| link.object().map(str::to_owned))
                 .or_else(|| scalar_text(property))
@@ -2292,7 +2294,7 @@ fn nonempty_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<String> {
 fn expression_binding(properties: &[&PropertyRecord], path: &str) -> Option<(String, String)> {
     let engine = property(properties, "ExpressionEngine")?;
     engine
-        .values
+        .values()
         .iter()
         .find(|value| {
             value.tag == "Expression"
@@ -3306,7 +3308,7 @@ fn revolution_definition(
     axis.reference = match axis_reference_properties.as_slice() {
         [] => None,
         [property] => {
-            if property.links.iter().any(nonempty_link) {
+            if property.links().iter().any(nonempty_link) {
                 singular_reference_link(property)?;
                 Some(PathRef::Native(property.id.clone()))
             } else {
@@ -3394,9 +3396,9 @@ fn vector_list_property(
         .get("file")
         .cloned()?;
     if file.is_empty() {
-        return property.side_entries.is_empty().then(Vec::new);
+        return property.side_entries().is_empty().then(Vec::new);
     }
-    if property.side_entries.as_slice() != [file.as_str()] {
+    if property.side_entries() != [file.as_str()] {
         return None;
     }
     let data = entries
@@ -3493,7 +3495,7 @@ fn part_construction_geometry_definition(
         }),
         "Part::Face" => {
             let sources = property(properties, "Sources")?;
-            if sources.links.is_empty() {
+            if sources.links().is_empty() {
                 return None;
             }
             Some(FeatureDefinition::FaceFromShapes {
@@ -3594,7 +3596,7 @@ fn extrusion_definition(
             0 => (raw_direction?.unit()?, ExtrusionDirectionSource::Custom),
             1 => {
                 let reference = property(properties, "DirLink")?;
-                if reference.links.len() != 1 {
+                if reference.links().len() != 1 {
                     return None;
                 }
                 (
@@ -3841,10 +3843,10 @@ fn extrusion_definition(
     let is_nonempty_link =
         |link: &crate::native::LinkTarget| link.document.is_some() || link.object().is_some();
     let reference_axis = property(properties, "ReferenceAxis")
-        .filter(|property| property.links.iter().any(is_nonempty_link));
+        .filter(|property| property.links().iter().any(is_nonempty_link));
     if reference_axis.is_some_and(|property| {
         property
-            .links
+            .links()
             .iter()
             .filter(|link| is_nonempty_link(link))
             .count()
@@ -4043,7 +4045,7 @@ fn part_fillet_edge_values(
     entries: &[EntryRecord],
 ) -> Option<Vec<(u32, f64, f64)>> {
     let property = property(properties, "Edges")?;
-    let entry_name = property.side_entries.as_slice().first()?;
+    let entry_name = property.side_entries().first()?;
     let data = &entries.iter().find(|entry| entry.name == *entry_name)?.data;
     let mut view = View::over_retained(data);
     let count = view.u32_le()?;
@@ -4087,7 +4089,7 @@ fn thickness_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
         "Base"
     };
     let selection = property(properties, source_name)?;
-    if selection.links.is_empty() {
+    if selection.links().is_empty() {
         return None;
     }
     Some(FeatureDefinition::Shell {
@@ -4140,7 +4142,7 @@ fn derived_shape_definition(
             let Some(links) = property(properties, "Links") else {
                 return property(properties, "Shape").map(|_| FeatureDefinition::StoredGeometry);
             };
-            if links.links.is_empty() {
+            if links.links().is_empty() {
                 return None;
             }
             Some(FeatureDefinition::Compound {
@@ -4149,7 +4151,7 @@ fn derived_shape_definition(
         }
         "Part::Refine" | "Part::Reverse" => {
             let source = property(properties, "Source")?;
-            if source.links.len() != 1 {
+            if source.links().len() != 1 {
                 return None;
             }
             let source = BodySelection::Native(source.id.clone());
@@ -4165,14 +4167,14 @@ fn derived_shape_definition(
 
 fn cached_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     property(properties, "Shape")
-        .filter(|shape| !shape.side_entries.is_empty())
+        .filter(|shape| !shape.side_entries().is_empty())
         .map(|_| FeatureDefinition::StoredGeometry)
 }
 
 fn ruled_surface_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let curve = |name| {
         let property = property(properties, name)?;
-        (property.links.len() == 1).then(|| PathRef::Native(property.id.clone()))
+        (property.links().len() == 1).then(|| PathRef::Native(property.id.clone()))
     };
     let orientation = match integer_property(properties, "Orientation").unwrap_or(0) {
         0 => RuledCurveOrientation::Automatic,
@@ -4190,7 +4192,7 @@ fn ruled_surface_definition(properties: &[&PropertyRecord]) -> Option<FeatureDef
 fn section_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let operand = |name| {
         let property = property(properties, name)?;
-        (property.links.len() == 1).then(|| BodySelection::Native(property.id.clone()))
+        (property.links().len() == 1).then(|| BodySelection::Native(property.id.clone()))
     };
     Some(FeatureDefinition::SectionShape {
         first: operand("Base")?,
@@ -4201,12 +4203,12 @@ fn section_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDef
 
 fn mirror_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let source = property(properties, "Source")?;
-    if source.links.len() != 1 {
+    if source.links().len() != 1 {
         return None;
     }
     let origin = vector_property(properties, "Base")?;
     let plane_reference = property(properties, "MirrorPlane")
-        .filter(|property| property.links.iter().any(nonempty_link))
+        .filter(|property| property.links().iter().any(nonempty_link))
         .map(|property| cadmpeg_ir::features::FaceSelection::Native(property.id.clone()));
     Some(FeatureDefinition::MirrorShape {
         source: BodySelection::Native(source.id.clone()),
@@ -4218,11 +4220,11 @@ fn mirror_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefi
 
 fn project_on_surface_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let sources = property(properties, "Projection")?;
-    if sources.links.is_empty() {
+    if sources.links().is_empty() {
         return None;
     }
     let support = property(properties, "SupportFace")?;
-    if support.links.len() != 1 {
+    if support.links().len() != 1 {
         return None;
     }
     let mode = match enumeration_selector(properties, "Mode", 0)? {
@@ -4261,7 +4263,7 @@ fn draft_definition(
     let plane_normal = plane_reference(properties, "NeutralPlane", objects, properties_by_owner)
         .map(|(_, normal)| normal);
     let pull_direction = if property(properties, "PullDirection")
-        .is_some_and(|property| property.links.iter().any(nonempty_link))
+        .is_some_and(|property| property.links().iter().any(nonempty_link))
     {
         axis_reference(properties, "PullDirection", objects, properties_by_owner)
             .map(|(_, direction)| direction)
@@ -4338,7 +4340,7 @@ fn singular_operand<'a>(
     name: &str,
 ) -> Option<&'a PropertyRecord> {
     let property = property(properties, name)?;
-    let [link] = property.links.as_slice() else {
+    let [link] = property.links() else {
         return None;
     };
     link.object().map(|_| property)
@@ -4642,11 +4644,11 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
     };
     let (target, tools) = if kind == "PartDesign::Boolean" {
         let group = property(properties, "Group")?;
-        if group.links.is_empty() {
+        if group.links().is_empty() {
             return None;
         }
         if property(properties, "BaseFeature")
-            .is_some_and(|property| property.links.iter().any(nonempty_link))
+            .is_some_and(|property| property.links().iter().any(nonempty_link))
         {
             let base = singular_operand(properties, "BaseFeature")?;
             (
@@ -4654,7 +4656,7 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
                 BodySelection::Native(group.id.clone()),
             )
         } else {
-            let last = group.links.len() - 1;
+            let last = group.links().len() - 1;
             (
                 BodySelection::Native(format!("{}:link:{last}", group.id)),
                 BodySelection::Native(format!("{}:links:0..{last}", group.id)),
@@ -4669,12 +4671,12 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
         )
     } else {
         let shapes = property(properties, "Shapes")?;
-        if shapes.links.len() < 2 {
+        if shapes.links().len() < 2 {
             return None;
         }
         (
             BodySelection::Native(format!("{}:link:0", shapes.id)),
-            BodySelection::Native(format!("{}:links:1..{}", shapes.id, shapes.links.len())),
+            BodySelection::Native(format!("{}:links:1..{}", shapes.id, shapes.links().len())),
         )
     };
     Some(FeatureDefinition::Combine {
@@ -4693,7 +4695,7 @@ fn loft_definition(
     let profiles = property(properties, "Profile")
         .into_iter()
         .chain(property(properties, "Sections"))
-        .flat_map(|property| &property.links)
+        .flat_map(|property| property.links())
         .filter_map(|link| link.object())
         .map(|object| {
             sketches
@@ -4755,7 +4757,7 @@ fn sweep_definition(
     let mut profiles = property(properties, "Profile")
         .into_iter()
         .chain(property(properties, "Sections"))
-        .flat_map(|property| &property.links)
+        .flat_map(|property| property.links())
         .filter_map(|link| link.object())
         .map(profile_ref)
         .collect::<Vec<_>>();
@@ -5119,7 +5121,7 @@ fn binder_definition(
     features: &HashMap<&str, FeatureId>,
 ) -> Option<FeatureDefinition> {
     let sources = property(properties, "Support")?
-        .links
+        .links()
         .iter()
         .filter(|link| link.object().is_some())
         .map(|link| {
@@ -5164,11 +5166,11 @@ fn binder_definition(
             [] => None,
             [property]
                 if property.type_name == "App::PropertyXLink"
-                    && property.links.len() == 1
-                    && property.links[0].subelements.is_empty() =>
+                    && property.links().len() == 1
+                    && property.links()[0].subelements.is_empty() =>
             {
                 property
-                    .links
+                    .links()
                     .first()
                     .filter(|link| link.object().is_some_and(|object| !object.is_empty()))
                     .and_then(|link| binder_target(link, features))
@@ -5294,18 +5296,18 @@ fn pattern_definition(
     entries: &[EntryRecord],
 ) -> Option<FeatureDefinition> {
     let originals = property(properties, "Originals")
-        .filter(|property| !property.links.is_empty())
+        .filter(|property| !property.links().is_empty())
         .or_else(|| {
             property(properties, "BaseFeature").filter(|property| {
                 property
-                    .links
+                    .links()
                     .iter()
                     .any(|link| link.object().is_some_and(|object| !object.is_empty()))
             })
         });
     let seeds = if let Some(originals) = originals {
         let seeds = originals
-            .links
+            .links()
             .iter()
             .filter_map(|link| link.object())
             .map(|target| {
@@ -5345,11 +5347,11 @@ fn pattern_definition(
 
     let pattern = if kind.ends_with("MultiTransform") {
         let transformations = property(properties, "Transformations")?;
-        if transformations.links.is_empty() {
+        if transformations.links().is_empty() {
             return None;
         }
         let stages = transformations
-            .links
+            .links()
             .iter()
             .enumerate()
             .map(|(index, link)| {
@@ -5396,15 +5398,15 @@ fn multi_transform_stage_seeds(
         let owned = properties_by_owner.get(consumer.id.as_str())?;
         let transformations = property(owned, "Transformations")?;
         transformations
-            .links
+            .links()
             .iter()
             .any(|link| link.object() == Some(stage))
             .then_some(())?;
         let originals = property(owned, "Originals")
-            .filter(|property| !property.links.is_empty())
+            .filter(|property| !property.links().is_empty())
             .or_else(|| property(owned, "BaseFeature"))?;
         let seeds = originals
-            .links
+            .links()
             .iter()
             .filter_map(|link| link.object())
             .map(|object| features.get(object).cloned())
@@ -5423,10 +5425,10 @@ fn implicit_body_predecessor(
         let owned = properties_by_owner.get(object.id.as_str())?;
         let members = body_membership_property(owned)?;
         let position = members
-            .links
+            .links()
             .iter()
             .position(|link| link.object() == Some(owner))?;
-        members.links[..position]
+        members.links()[..position]
             .iter()
             .rev()
             .filter_map(|link| link.object())
@@ -5761,7 +5763,7 @@ fn scalar_link(property: &PropertyRecord) -> Option<&crate::native::LinkTarget> 
     ) {
         return None;
     }
-    let [link] = property.links.as_slice() else {
+    let [link] = property.links() else {
         return None;
     };
     Some(link)
@@ -5855,9 +5857,9 @@ fn numeric_list(property: &PropertyRecord, entries: &[EntryRecord]) -> Option<Ve
         .get("file")
         .cloned()?;
     if file.is_empty() {
-        return property.side_entries.is_empty().then(Vec::new);
+        return property.side_entries().is_empty().then(Vec::new);
     }
-    if property.side_entries.len() != 1 || property.side_entries[0] != file {
+    if property.side_entries().len() != 1 || property.side_entries()[0] != file {
         return None;
     }
     let data = entries
@@ -5903,10 +5905,10 @@ fn feature_base_definition(
     let [property] = base_properties.as_slice() else {
         return None;
     };
-    if property.type_name != "App::PropertyLink" || property.links.len() != 1 {
+    if property.type_name != "App::PropertyLink" || property.links().len() != 1 {
         return None;
     }
-    let source = property.links[0].object()?;
+    let source = property.links()[0].object()?;
     Some(FeatureDefinition::DerivedGeometry {
         source: feature_ids.get(source)?.clone(),
     })

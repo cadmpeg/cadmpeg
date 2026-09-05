@@ -30,16 +30,16 @@ pub(crate) fn transfer(
             "Points::PropertyPointKernel" => GeometryKind::Points,
             _ => continue,
         };
-        if property.side_entries.len() > 1 {
+        if property.side_entries().len() > 1 {
             return Err(CodecError::malformed(format_args!(
                 "geometry property {} references more than one side entry",
                 property.id
             )));
         }
         let root_entry = validate_value_root(property, geometry_kind.value_tag())?;
-        let side_entry_matches_root = property.side_entries.len()
+        let side_entry_matches_root = property.side_entries().len()
             == usize::from(root_entry.is_some())
-            && property.side_entries.first() == root_entry.as_ref();
+            && property.side_entries().first() == root_entry.as_ref();
         if !side_entry_matches_root {
             return Err(CodecError::Malformed(
                 "geometry property has an unowned side-entry reference".into(),

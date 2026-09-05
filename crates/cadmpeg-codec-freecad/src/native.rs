@@ -1707,8 +1707,27 @@ pub struct ValueRecord {
     pub raw_xml: String,
 }
 
+/// Persisted values of a property, or a status-only transient declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PropertyBody {
+    /// Status-only transient property declaration.
+    Transient,
+    /// Persisted property payload.
+    Persisted {
+        /// Ordered value elements.
+        values: Vec<ValueRecord>,
+        /// Generically recovered ordered link targets.
+        links: Vec<LinkTarget>,
+        /// Referenced archive entries.
+        side_entries: Vec<String>,
+        /// Dynamic-property metadata, when carried.
+        dynamic: Option<DynamicPropertyMeta>,
+    },
+}
+
 /// One persisted property.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "PropertyRecordWire", into = "PropertyRecordWire")]
 pub struct PropertyRecord {
     /// Stable native identity.
     pub id: String,
@@ -1722,24 +1741,144 @@ pub struct PropertyRecord {
     pub family: PropertyFamily,
     /// Native status bits.
     pub status: Option<u64>,
-    /// Whether this is a status-only transient property declaration.
-    pub transient: bool,
-    /// Dynamic-property metadata, when carried.
-    pub dynamic: Option<DynamicPropertyMeta>,
+    /// Transient declaration or persisted payload.
+    pub body: PropertyBody,
     /// Source-order index within the owner.
     pub order: usize,
-    /// Ordered value elements.
-    pub values: Vec<ValueRecord>,
-    /// Generically recovered ordered link targets.
-    pub links: Vec<LinkTarget>,
-    /// Referenced archive entries.
-    pub side_entries: Vec<String>,
     /// Exact property XML.
     pub raw_xml: String,
     /// Inclusive byte offset in `Document.xml`.
     pub byte_start: u64,
     /// Exclusive byte offset in `Document.xml`.
     pub byte_end: u64,
+}
+
+impl PropertyRecord {
+    /// Whether this is a status-only transient property declaration.
+    pub fn is_transient(&self) -> bool {
+        matches!(self.body, PropertyBody::Transient)
+    }
+
+    /// Ordered value elements; empty for a transient declaration.
+    pub fn values(&self) -> &[ValueRecord] {
+        match &self.body {
+            PropertyBody::Persisted { values, .. } => values,
+            PropertyBody::Transient => &[],
+        }
+    }
+
+    /// Recovered link targets; empty for a transient declaration.
+    pub fn links(&self) -> &[LinkTarget] {
+        match &self.body {
+            PropertyBody::Persisted { links, .. } => links,
+            PropertyBody::Transient => &[],
+        }
+    }
+
+    /// Referenced archive entries; empty for a transient declaration.
+    pub fn side_entries(&self) -> &[String] {
+        match &self.body {
+            PropertyBody::Persisted { side_entries, .. } => side_entries,
+            PropertyBody::Transient => &[],
+        }
+    }
+
+    pub(crate) fn values_mut(&mut self) -> Option<&mut Vec<ValueRecord>> {
+        match &mut self.body {
+            PropertyBody::Persisted { values, .. } => Some(values),
+            PropertyBody::Transient => None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct PropertyRecordWire {
+    id: String,
+    owner: String,
+    name: String,
+    type_name: String,
+    family: PropertyFamily,
+    status: Option<u64>,
+    transient: bool,
+    dynamic: Option<DynamicPropertyMeta>,
+    order: usize,
+    values: Vec<ValueRecord>,
+    links: Vec<LinkTarget>,
+    side_entries: Vec<String>,
+    raw_xml: String,
+    byte_start: u64,
+    byte_end: u64,
+}
+
+impl From<PropertyRecord> for PropertyRecordWire {
+    fn from(value: PropertyRecord) -> Self {
+        let (transient, values, links, side_entries, dynamic) = match value.body {
+            PropertyBody::Transient => (true, Vec::new(), Vec::new(), Vec::new(), None),
+            PropertyBody::Persisted {
+                values,
+                links,
+                side_entries,
+                dynamic,
+            } => (false, values, links, side_entries, dynamic),
+        };
+        Self {
+            id: value.id,
+            owner: value.owner,
+            name: value.name,
+            type_name: value.type_name,
+            family: value.family,
+            status: value.status,
+            transient,
+            dynamic,
+            order: value.order,
+            values,
+            links,
+            side_entries,
+            raw_xml: value.raw_xml,
+            byte_start: value.byte_start,
+            byte_end: value.byte_end,
+        }
+    }
+}
+
+impl TryFrom<PropertyRecordWire> for PropertyRecord {
+    type Error = String;
+
+    fn try_from(wire: PropertyRecordWire) -> Result<Self, Self::Error> {
+        let body = if wire.transient {
+            if !wire.values.is_empty()
+                || !wire.links.is_empty()
+                || !wire.side_entries.is_empty()
+                || wire.dynamic.is_some()
+            {
+                return Err(
+                    "transient property cannot carry values, links, side entries, or dynamic metadata"
+                        .to_owned(),
+                );
+            }
+            PropertyBody::Transient
+        } else {
+            PropertyBody::Persisted {
+                values: wire.values,
+                links: wire.links,
+                side_entries: wire.side_entries,
+                dynamic: wire.dynamic,
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            owner: wire.owner,
+            name: wire.name,
+            type_name: wire.type_name,
+            family: wire.family,
+            status: wire.status,
+            body,
+            order: wire.order,
+            raw_xml: wire.raw_xml,
+            byte_start: wire.byte_start,
+            byte_end: wire.byte_end,
+        })
+    }
 }
 
 /// Format-level property value families.

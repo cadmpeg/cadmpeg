@@ -24,14 +24,15 @@ pub(crate) fn set_value_attribute(
 ) -> Result<(), CodecError> {
     valid_xml_name(attribute, "attribute")?;
     mutate_property(ir, owner, property_name, |property| {
+        let property_id = property.id.clone();
         let value_record = property
-            .values
-            .iter_mut()
+            .values_mut()
+            .into_iter()
+            .flatten()
             .find(|record| record.order == value_order)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
-                    "FCStd property {} has no value at order {value_order}",
-                    property.id
+                    "FCStd property {property_id} has no value at order {value_order}"
                 ))
             })?;
         value_record.attributes.insert(attribute.to_owned(), value);
@@ -47,14 +48,15 @@ pub(crate) fn set_value_text(
     text: Option<String>,
 ) -> Result<(), CodecError> {
     mutate_property(ir, owner, property_name, |property| {
+        let property_id = property.id.clone();
         let value_record = property
-            .values
-            .iter_mut()
+            .values_mut()
+            .into_iter()
+            .flatten()
             .find(|record| record.order == value_order)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
-                    "FCStd property {} has no value at order {value_order}",
-                    property.id
+                    "FCStd property {property_id} has no value at order {value_order}"
                 ))
             })?;
         value_record.text = text;

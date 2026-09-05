@@ -402,7 +402,10 @@ fn parse_document(
         }
     }
     for property in &mut properties {
-        for link in &mut property.links {
+        let crate::native::PropertyBody::Persisted { links, .. } = &mut property.body else {
+            continue;
+        };
+        for link in links {
             if let Some(target) = link.object() {
                 if declared_names.contains(target) {
                     link.object = cadmpeg_ir::products::NonEmptyString::new(object_id(target));
@@ -478,12 +481,8 @@ fn parse_properties(
             status: node
                 .attribute("status")
                 .and_then(|value| value.parse().ok()),
-            transient: true,
-            dynamic: None,
+            body: crate::native::PropertyBody::Transient,
             order,
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: Vec::new(),
             raw_xml: text[node.range()].to_owned(),
             byte_start: node.range().start as u64,
             byte_end: node.range().end as u64,
@@ -557,18 +556,19 @@ fn parse_properties(
             status: node
                 .attribute("status")
                 .and_then(|value| value.parse().ok()),
-            transient: false,
-            dynamic: node.attribute("group").map(|group| DynamicPropertyMeta {
-                group: group.to_owned(),
-                documentation: node.attribute("doc").map(str::to_owned),
-                attributes: node.attribute("attr").and_then(|value| value.parse().ok()),
-                read_only: bool_attr(node.attribute("ro")),
-                hidden: bool_attr(node.attribute("hide")),
-            }),
+            body: crate::native::PropertyBody::Persisted {
+                values,
+                links,
+                side_entries,
+                dynamic: node.attribute("group").map(|group| DynamicPropertyMeta {
+                    group: group.to_owned(),
+                    documentation: node.attribute("doc").map(str::to_owned),
+                    attributes: node.attribute("attr").and_then(|value| value.parse().ok()),
+                    read_only: bool_attr(node.attribute("ro")),
+                    hidden: bool_attr(node.attribute("hide")),
+                }),
+            },
             order,
-            values,
-            links,
-            side_entries,
             raw_xml: text[node.range()].to_owned(),
             byte_start: node.range().start as u64,
             byte_end: node.range().end as u64,

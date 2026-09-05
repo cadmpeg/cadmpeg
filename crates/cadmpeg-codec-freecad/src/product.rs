@@ -660,13 +660,13 @@ fn side_bytes<'a>(
     entries: &BTreeMap<String, View<'a>>,
 ) -> Result<Option<View<'a>>, CodecError> {
     require_root(property, expected_type, name, name)?;
-    if property.side_entries.len() > 1 {
+    if property.side_entries().len() > 1 {
         return Err(malformed(format!(
             "product property {} has multiple {name} side entries",
             property.id
         )));
     }
-    let Some(entry) = property.side_entries.first() else {
+    let Some(entry) = property.side_entries().first() else {
         return Ok(None);
     };
     entries.get(entry).copied().map(Some).ok_or_else(|| {
@@ -684,14 +684,14 @@ fn single_link<'a>(
     name: &str,
 ) -> Result<&'a crate::native::LinkTarget, CodecError> {
     require_root(property, expected_type, name, root)?;
-    if property.links.len() != 1 {
+    if property.links().len() != 1 {
         return Err(malformed(format!(
             "product property {} requires one {name} target, found {}",
             property.id,
-            property.links.len()
+            property.links().len()
         )));
     }
-    Ok(&property.links[0])
+    Ok(&property.links()[0])
 }
 
 fn link_list<'a>(
@@ -701,7 +701,7 @@ fn link_list<'a>(
 ) -> Result<&'a [crate::native::LinkTarget], CodecError> {
     require_root(property, expected_type, name, "LinkList")?;
     if property
-        .values
+        .values()
         .iter()
         .skip(1)
         .any(|value| value.tag != "Link")
@@ -711,7 +711,7 @@ fn link_list<'a>(
             property.id
         )));
     }
-    Ok(&property.links)
+    Ok(property.links())
 }
 
 fn require_root(
@@ -726,9 +726,9 @@ fn require_root(
             property.id, property.type_name
         )));
     }
-    if property.values.first().map(|value| value.tag.as_str()) != Some(root)
+    if property.values().first().map(|value| value.tag.as_str()) != Some(root)
         || property
-            .values
+            .values()
             .iter()
             .filter(|value| value.tag == root)
             .count()
@@ -749,13 +749,13 @@ fn single_value<'a>(
     root: &str,
 ) -> Result<&'a crate::native::ValueRecord, CodecError> {
     require_root(property, expected_type, name, root)?;
-    if property.values.len() != 1 {
+    if property.values().len() != 1 {
         return Err(malformed(format!(
             "product property {} has multiple values for {name}",
             property.id
         )));
     }
-    Ok(&property.values[0])
+    Ok(&property.values()[0])
 }
 
 fn unique_property<'a>(
@@ -1043,13 +1043,13 @@ pub(crate) fn placement_matrix(
             property.id
         )));
     }
-    if property.values.len() != 1 {
+    if property.values().len() != 1 {
         return Err(malformed(format!(
             "placement property {} requires one placement value",
             property.id
         )));
     }
-    let value = &property.values[0];
+    let value = &property.values()[0];
     if value.tag != "PropertyPlacement" {
         return Err(malformed(format!(
             "placement property {} requires one PropertyPlacement value",

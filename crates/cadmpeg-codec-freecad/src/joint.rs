@@ -37,8 +37,8 @@ pub(crate) fn transfer(
         }
         if let Some(property) = grounded_property {
             let legacy_empty_sub = property.type_name == "App::PropertyLinkSub"
-                && property.links.len() == 1
-                && property.links[0].subelements.iter().all(String::is_empty);
+                && property.links().len() == 1
+                && property.links()[0].subelements.iter().all(String::is_empty);
             if !matches!(
                 property.type_name.as_str(),
                 "App::PropertyLinkGlobal" | "App::PropertyLink"
@@ -507,7 +507,7 @@ fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecEr
             property.id, property.type_name
         )));
     }
-    let [value] = property.values.as_slice() else {
+    let [value] = property.values() else {
         return Err(malformed(format!(
             "joint parameter property {} requires one {expected_tag} value",
             property.id
@@ -557,7 +557,7 @@ fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkT
         .find(|property| property.name == name)
         .map(|property| {
             property
-                .links
+                .links()
                 .iter()
                 .filter(|link| link.document.is_some() || link.object().is_some())
                 .cloned()
@@ -583,7 +583,7 @@ fn connector(
         )));
     }
     if property
-        .values
+        .values()
         .first()
         .is_none_or(|value| value.tag != "XLink")
     {
@@ -592,14 +592,14 @@ fn connector(
             property.id
         )));
     }
-    if property.links.len() != 1 {
+    if property.links().len() != 1 {
         return Err(malformed(format!(
             "joint connector {} requires one target, found {}",
             property.id,
-            property.links.len()
+            property.links().len()
         )));
     }
-    Ok(property.links.clone())
+    Ok(property.links().to_vec())
 }
 
 fn placement(
