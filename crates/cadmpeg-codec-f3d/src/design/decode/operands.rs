@@ -39,7 +39,7 @@ use crate::records::{
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
     DesignFaceOperand, DesignFaceSourceGroup, DesignFaceSourceMember, DesignFilletRadiusGroup,
     DesignFilletRadiusLaw, DesignLoftLegacyBodyCarrier, DesignOperandOwner, DesignParameter,
-    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
     DesignSketchProfileOperand, DesignSketchProfileRegion, DesignSketchProfileRegionMember,
     DesignSketchProfileRegionSelection, DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry,
     DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, DesignVertexRecipe,
@@ -1304,10 +1304,7 @@ pub fn bind_sketch_profiles(
             } else if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep) {
                 {
                     let value = Some(profile.clone());
-                    if let crate::records::DesignScopePayload::Loft(slot)
-                    | crate::records::DesignScopePayload::Sweep(slot)
-                    | crate::records::DesignScopePayload::Revolve(slot)
-                    | crate::records::DesignScopePayload::Pipe(slot) = &mut scope.payload
+                    if let crate::records::DesignScopePayload::Sweep(slot) = &mut scope.payload
                     {
                         slot.get_or_insert_with(Default::default).sweep_profile = value;
                     }
@@ -1472,10 +1469,9 @@ pub fn decode_loft_legacy_body_carriers(
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
     for scope in scopes.iter().filter(|scope| {
-        design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Loft)
-            && matches!(
-                scope.path_feature_construction(),
-                Some(DesignPathFeatureConstruction::Loft { operation, .. })
+        matches!(
+                &scope.payload,
+                crate::records::DesignScopePayload::Loft(Some(crate::records::DesignLoftConstruction { operation, .. }))
                     if *operation != crate::records::DesignExtrudeOperation::NewBody
             )
     }) {

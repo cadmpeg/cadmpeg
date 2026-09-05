@@ -1453,18 +1453,11 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         12,
     );
     {
-        let value = Some(crate::records::DesignPathFeatureConstruction::Loft {
+        let value = Some(crate::records::DesignPathFeatureConstruction::Loft(crate::records::DesignLoftConstruction {
             operation: crate::records::DesignExtrudeOperation::Cut,
             operation_offset: 0,
-        });
-        if let crate::records::DesignScopePayload::Loft(slot)
-        | crate::records::DesignScopePayload::Sweep(slot)
-        | crate::records::DesignScopePayload::Revolve(slot)
-        | crate::records::DesignScopePayload::Pipe(slot) = &mut scope.payload
-        {
-            slot.get_or_insert_with(Default::default)
-                .path_feature_construction = value;
-        }
+        }));
+        scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
     }
 
     let class_322 = carrier(b"322", b"262", 12, 100, false);

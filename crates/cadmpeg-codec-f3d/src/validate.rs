@@ -2272,11 +2272,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .all(|byte| byte.is_ascii_digit())
         };
         let extrude_profile_link = scope.extrude_profile().is_none_or(valid_sketch_profile);
-        let is_sweep = design::design_feature_family(&scope.kind())
-            == Some(design::DesignFeatureFamily::Sweep);
         let sweep_profile_link = scope
             .sweep_profile()
-            .is_none_or(|profile| is_sweep && valid_sketch_profile(profile));
+            .is_none_or(valid_sketch_profile);
         let is_base_flange = scope.kind() == crate::records::DesignFeatureKind::BaseFlange;
         let base_flange_profile_link = scope
             .base_flange_profile()
@@ -5200,7 +5198,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Loft) => {
-                        (scope.path_feature_construction().is_none()
+                        (!scope.has_path_construction()
                             || matches!(
                                 group.role,
                                 0x0000_0004_0000_0000
@@ -5213,7 +5211,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Sweep) => {
-                        (scope.path_feature_construction().is_none()
+                        (!scope.has_path_construction()
                             || matches!(
                                 group.role,
                                 0x0000_0004_0000_0000
@@ -5493,15 +5491,7 @@ pub(crate) fn loft_operand_roles_are_valid(
 fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     for scope in native.design_parameter_scopes.iter().filter(|scope| {
-        matches!(
-            design::design_feature_family(&scope.kind()),
-            Some(
-                design::DesignFeatureFamily::Revolve
-                    | design::DesignFeatureFamily::Loft
-                    | design::DesignFeatureFamily::Sweep
-                    | design::DesignFeatureFamily::Pipe
-            )
-        ) && scope.path_feature_construction().is_some()
+        scope.has_path_construction()
     }) {
         let native_stream = design_stream(&scope.id);
         let groups = native
@@ -5517,15 +5507,15 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .iter()
             .map(|group| (group.role, group.members.len()))
             .collect::<Vec<_>>();
-        let valid = match scope.path_feature_construction() {
-            Some(records::DesignPathFeatureConstruction::Revolve {
+        let valid = match &scope.payload {
+            records::DesignScopePayload::Revolve(Some(crate::records::DesignRevolveConstruction {
                 operation,
                 angle,
                 angle_record_index,
                 opposite_angle_record_index,
                 opposite_angle_offset,
                 ..
-            }) => {
+            })) => {
                 let body_count =
                     role_count(0x0000_0004_0000_0000) + role_count(0x0000_0008_0000_0000);
                 let expected_body_count =
@@ -5545,10 +5535,10 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && role_count(0x0000_0041_0000_0000) == 1
                     && body_count == expected_body_count
             }
-            Some(records::DesignPathFeatureConstruction::Loft { operation, .. }) => {
+            records::DesignScopePayload::Loft(Some(crate::records::DesignLoftConstruction { operation, .. })) => {
                 loft_operand_roles_are_valid(*operation, &group_roles)
             }
-            Some(records::DesignPathFeatureConstruction::Sweep { operation, .. }) => {
+            records::DesignScopePayload::Sweep(Some(records::DesignSweepScope { construction: Some(records::DesignSweepConstruction { operation, .. }), .. })) => {
                 let path_count = role_count(0x0000_0005_0000_0000);
                 let profile_count = role_count(0x0000_0041_0000_0000);
                 let guide_surface_count = role_count(0x0000_0011_0000_0000);
@@ -5604,13 +5594,13 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         }
                     }
             }
-            Some(records::DesignPathFeatureConstruction::Pipe { operation, .. }) => {
+            records::DesignScopePayload::Pipe(Some(crate::records::DesignPipeConstruction { operation, .. })) => {
                 *operation == records::DesignExtrudeOperation::NewBody
                     && groups.len() == 1
                     && role_count(0x0000_0005_0000_0000) == 1
                     && !groups[0].members.is_empty()
             }
-            None => false,
+            _ => false,
         };
         if !valid {
             findings.push(Finding {

@@ -2534,68 +2534,89 @@ pub struct DesignFixedChamferDistance {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DesignPathFeatureConstruction {
     /// One-sided fixed-angle revolution result operation.
-    Revolve {
-        /// Boolean result operation.
-        operation: DesignExtrudeOperation,
-        /// Byte offset of the operation u32.
-        operation_offset: u64,
-        /// Positive angular travel in radians.
-        angle: f64,
-        /// Referenced angular-travel scalar record.
-        angle_record_index: u32,
-        /// Byte offset of the angular-travel scalar.
-        angle_offset: u64,
-        /// Zero-valued opposite-side angle scalar record, when serialized.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        opposite_angle_record_index: Option<u32>,
-        /// Byte offset of the opposite-side angle scalar, when serialized.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        opposite_angle_offset: Option<u64>,
-    },
+    Revolve(DesignRevolveConstruction),
     /// Loft result operation.
-    Loft {
-        /// Boolean result operation.
-        operation: DesignExtrudeOperation,
-        /// Byte offset of the operation u32.
-        operation_offset: u64,
-    },
+    Loft(DesignLoftConstruction),
     /// Sweep result operation and fixed dimension lanes.
-    Sweep {
-        /// Boolean result operation.
-        operation: DesignExtrudeOperation,
-        /// Byte offset of the operation u32.
-        operation_offset: u64,
-        /// Six scalar values in `AlongDistance`, `AgainstDistance`,
-        /// `AlongRailDistance`, `AgainstRailDistance`, `TwistAngle`, and `TaperAngle` order.
-        values: [f64; 6],
-        /// Referenced scalar records in lane order.
-        record_indexes: [u32; 6],
-        /// Byte offsets of the scalar values in lane order.
-        value_offsets: [u64; 6],
-    },
+    Sweep(DesignSweepConstruction),
     /// Generated-section Pipe result and fixed dimension lanes.
-    Pipe {
-        /// Boolean result operation.
-        operation: DesignExtrudeOperation,
-        /// Byte offset of the operation u32.
-        operation_offset: u64,
-        /// Section-shape selector byte.
-        section_shape: DesignPipeSectionShape,
-        /// Byte offset of the section-shape selector.
-        section_shape_offset: u64,
-        /// Whether the generated section is filled.
-        filled: bool,
-        /// Byte offset of the filled-section flag.
-        filled_offset: u64,
-        /// Four scalar values in path-fraction, reverse-path-fraction,
-        /// section-size, and section-thickness order.
-        values: [f64; 4],
-        /// Referenced scalar records in lane order.
-        record_indexes: [u32; 4],
-        /// Byte offsets of the scalar values in lane order.
-        value_offsets: [u64; 4],
-    },
+    Pipe(DesignPipeConstruction),
 }
+
+/// Fixed construction of a `Revolve` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignRevolveConstruction {
+    /// Boolean result operation.
+    pub operation: DesignExtrudeOperation,
+    /// Byte offset of the operation u32.
+    pub operation_offset: u64,
+    /// Positive angular travel in radians.
+    pub angle: f64,
+    /// Referenced angular-travel scalar record.
+    pub angle_record_index: u32,
+    /// Byte offset of the angular-travel scalar.
+    pub angle_offset: u64,
+    /// Zero-valued opposite-side angle scalar record, when serialized.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opposite_angle_record_index: Option<u32>,
+    /// Byte offset of the opposite-side angle scalar, when serialized.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opposite_angle_offset: Option<u64>,
+}
+
+/// Fixed construction of a `Loft` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignLoftConstruction {
+    /// Boolean result operation.
+    pub operation: DesignExtrudeOperation,
+    /// Byte offset of the operation u32.
+    pub operation_offset: u64,
+}
+
+/// Fixed construction of a `Sweep` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignSweepConstruction {
+    /// Boolean result operation.
+    pub operation: DesignExtrudeOperation,
+    /// Byte offset of the operation u32.
+    pub operation_offset: u64,
+    /// Six scalar values in `AlongDistance`, `AgainstDistance`,
+    /// `AlongRailDistance`, `AgainstRailDistance`, `TwistAngle`, and `TaperAngle` order.
+    pub values: [f64; 6],
+    /// Referenced scalar records in lane order.
+    pub record_indexes: [u32; 6],
+    /// Byte offsets of the scalar values in lane order.
+    pub value_offsets: [u64; 6],
+}
+
+/// Fixed construction of a `Pipe` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignPipeConstruction {
+    /// Boolean result operation.
+    pub operation: DesignExtrudeOperation,
+    /// Byte offset of the operation u32.
+    pub operation_offset: u64,
+    /// Section-shape selector byte.
+    pub section_shape: DesignPipeSectionShape,
+    /// Byte offset of the section-shape selector.
+    pub section_shape_offset: u64,
+    /// Whether the generated section is filled.
+    pub filled: bool,
+    /// Byte offset of the filled-section flag.
+    pub filled_offset: u64,
+    /// Four scalar values in path-fraction, reverse-path-fraction,
+    /// section-size, and section-thickness order.
+    pub values: [f64; 4],
+    /// Referenced scalar records in lane order.
+    pub record_indexes: [u32; 4],
+    /// Byte offsets of the scalar values in lane order.
+    pub value_offsets: [u64; 4],
+}
+
 
 /// Serialized prologue form of a `Combine` scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -3350,15 +3371,15 @@ design_feature_kinds! {
         Move => "Move": Option<DesignMoveOperation>,
         OffsetFaces => "OffsetFaces": Option<DesignDirectFaceOperation>,
         DecalerLesFaces => "DécalerLesFaces": Option<DesignDirectFaceOperation>,
-        Revolve => "Revolve": Option<DesignPathFeatureScope>,
+        Revolve => "Revolve": Option<DesignRevolveConstruction>,
         Shell => "Shell": Option<DesignDirectFaceOperation>,
         Schale => "Schale": Option<DesignDirectFaceOperation>,
         Thicken => "Thicken": Option<DesignDirectFaceOperation>,
         SpirePrimitive => "SpirePrimitive": Option<DesignCoilScope>,
         CoilPrimitive => "CoilPrimitive": Option<DesignCoilScope>,
-        Loft => "Loft": Option<DesignPathFeatureScope>,
-        Sweep => "Sweep": Option<DesignPathFeatureScope>,
-        Pipe => "Pipe": Option<DesignPathFeatureScope>,
+        Loft => "Loft": Option<DesignLoftConstruction>,
+        Sweep => "Sweep": Option<DesignSweepScope>,
+        Pipe => "Pipe": Option<DesignPipeConstruction>,
         SurfacePatch => "SurfacePatch": Vec<DesignSurfacePatchBoundary>,
         SurfaceExtend => "SurfaceExtend": Option<DesignSurfaceExtendOperation>,
         SurfaceOffset => "SurfaceOffset": Option<DesignSurfaceOffsetOperation>,
@@ -3470,7 +3491,7 @@ pub struct DesignParameterScope {
 /// Wire form of [`DesignParameterScope`] with the historical flat field set.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub(crate) struct DesignParameterScopeSerde {
+struct DesignParameterScopeSerde {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// Byte offset of the primary indexed record header.
@@ -3566,7 +3587,7 @@ pub(crate) struct DesignParameterScopeSerde {
     /// Path-feature construction and Sweep sketch profile.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "path_feature_scope_is_absent")]
-    pub path_feature: Option<DesignPathFeatureScope>,
+    pub path_feature: Option<DesignPathFeatureWire>,
     /// Exact Boolean construction carried by a `Combine` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub combine_operation: Option<DesignCombineOperation>,
@@ -3676,7 +3697,7 @@ fn extrude_scope_is_absent(extrude: &Option<DesignExtrudeScope>) -> bool {
     }
 }
 
-fn path_feature_scope_is_absent(path_feature: &Option<DesignPathFeatureScope>) -> bool {
+fn path_feature_scope_is_absent(path_feature: &Option<DesignPathFeatureWire>) -> bool {
     match path_feature {
         None => true,
         Some(path_feature) => {
@@ -3712,10 +3733,29 @@ pub struct DesignExtrudeScope {
     pub extrude_profile: Option<DesignSketchProfileOperand>,
 }
 
-/// Path-feature construction and Sweep profile carried by a Loft, Sweep, Revolve, or Pipe scope.
+/// Sweep construction and its independently decoded profile operand.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DesignPathFeatureScope {
+pub struct DesignSweepScope {
+    pub construction: Option<DesignSweepConstruction>,
+    pub sweep_profile: Option<DesignSketchProfileOperand>,
+}
+
+impl From<DesignPathFeatureConstruction> for DesignScopePayload {
+    fn from(value: DesignPathFeatureConstruction) -> Self {
+        match value {
+            DesignPathFeatureConstruction::Revolve(value) => Self::Revolve(Some(value)),
+            DesignPathFeatureConstruction::Loft(value) => Self::Loft(Some(value)),
+            DesignPathFeatureConstruction::Pipe(value) => Self::Pipe(Some(value)),
+            DesignPathFeatureConstruction::Sweep(value) => Self::Sweep(Some(DesignSweepScope { construction: Some(value), sweep_profile: None })),
+        }
+    }
+}
+
+/// Flat wire fields for path construction and the Sweep profile.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignPathFeatureWire {
     /// Exact fixed construction carried by a Loft, Sweep, Revolve, or Pipe scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path_feature_construction: Option<DesignPathFeatureConstruction>,
@@ -4681,7 +4721,11 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::DecalerLesFaces => {
                 DesignScopePayload::DecalerLesFaces(wire.direct_face_operation.take())
             }
-            DesignFeatureKind::Revolve => DesignScopePayload::Revolve(wire.path_feature.take()),
+            DesignFeatureKind::Revolve => DesignScopePayload::Revolve(match wire.path_feature.take() {
+                None => None,
+                Some(DesignPathFeatureWire { path_feature_construction: Some(DesignPathFeatureConstruction::Revolve(value)), sweep_profile: None }) => Some(value),
+                Some(_) => return Err(DesignParameterScopePayloadError("path_feature_construction or sweep_profile does not match Revolve".into())),
+            }),
             DesignFeatureKind::Shell => {
                 DesignScopePayload::Shell(wire.direct_face_operation.take())
             }
@@ -4695,9 +4739,27 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignScopePayload::SpirePrimitive(wire.coil.take())
             }
             DesignFeatureKind::CoilPrimitive => DesignScopePayload::CoilPrimitive(wire.coil.take()),
-            DesignFeatureKind::Loft => DesignScopePayload::Loft(wire.path_feature.take()),
-            DesignFeatureKind::Sweep => DesignScopePayload::Sweep(wire.path_feature.take()),
-            DesignFeatureKind::Pipe => DesignScopePayload::Pipe(wire.path_feature.take()),
+            DesignFeatureKind::Loft => DesignScopePayload::Loft(match wire.path_feature.take() {
+                None => None,
+                Some(DesignPathFeatureWire { path_feature_construction: Some(DesignPathFeatureConstruction::Loft(value)), sweep_profile: None }) => Some(value),
+                Some(_) => return Err(DesignParameterScopePayloadError("path_feature_construction or sweep_profile does not match Loft".into())),
+            }),
+            DesignFeatureKind::Sweep => DesignScopePayload::Sweep(match wire.path_feature.take() {
+                None => None,
+                Some(DesignPathFeatureWire { path_feature_construction, sweep_profile }) => {
+                    let construction = match path_feature_construction {
+                        None => None,
+                        Some(DesignPathFeatureConstruction::Sweep(value)) => Some(value),
+                        Some(_) => return Err(DesignParameterScopePayloadError("path_feature_construction.kind does not match Sweep".into())),
+                    };
+                    Some(DesignSweepScope { construction, sweep_profile })
+                }
+            }),
+            DesignFeatureKind::Pipe => DesignScopePayload::Pipe(match wire.path_feature.take() {
+                None => None,
+                Some(DesignPathFeatureWire { path_feature_construction: Some(DesignPathFeatureConstruction::Pipe(value)), sweep_profile: None }) => Some(value),
+                Some(_) => return Err(DesignParameterScopePayloadError("path_feature_construction or sweep_profile does not match Pipe".into())),
+            }),
             DesignFeatureKind::SurfacePatch => {
                 DesignScopePayload::SurfacePatch(std::mem::take(&mut wire.surface_patch_boundaries))
             }
@@ -4913,10 +4975,10 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::SpirePrimitive(value)
             | DesignScopePayload::CoilPrimitive(value) => wire.coil = value,
             DesignScopePayload::BaseFlange(value) => wire.base_flange = value,
-            DesignScopePayload::Loft(value)
-            | DesignScopePayload::Sweep(value)
-            | DesignScopePayload::Revolve(value)
-            | DesignScopePayload::Pipe(value) => wire.path_feature = value,
+            DesignScopePayload::Revolve(value) => wire.path_feature = value.map(|value| DesignPathFeatureWire { path_feature_construction: Some(DesignPathFeatureConstruction::Revolve(value)), sweep_profile: None }),
+            DesignScopePayload::Loft(value) => wire.path_feature = value.map(|value| DesignPathFeatureWire { path_feature_construction: Some(DesignPathFeatureConstruction::Loft(value)), sweep_profile: None }),
+            DesignScopePayload::Sweep(value) => wire.path_feature = value.map(|sweep| DesignPathFeatureWire { path_feature_construction: sweep.construction.map(DesignPathFeatureConstruction::Sweep), sweep_profile: sweep.sweep_profile }),
+            DesignScopePayload::Pipe(value) => wire.path_feature = value.map(|value| DesignPathFeatureWire { path_feature_construction: Some(DesignPathFeatureConstruction::Pipe(value)), sweep_profile: None }),
             DesignScopePayload::WorkPlane(value) => wire.work_plane_frame = value,
             DesignScopePayload::JointOrigin(value) => wire.joint_origin_frame = value,
             DesignScopePayload::Sketch(value)
@@ -5052,26 +5114,6 @@ impl DesignParameterScope {
     pub(crate) fn base_flange_mut(&mut self) -> Option<&mut DesignBaseFlangeScope> {
         match &mut self.payload {
             DesignScopePayload::BaseFlange(value) => value.as_mut(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn path_feature(&self) -> Option<&DesignPathFeatureScope> {
-        match &self.payload {
-            DesignScopePayload::Loft(value)
-            | DesignScopePayload::Sweep(value)
-            | DesignScopePayload::Revolve(value)
-            | DesignScopePayload::Pipe(value) => value.as_ref(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn path_feature_mut(&mut self) -> Option<&mut DesignPathFeatureScope> {
-        match &mut self.payload {
-            DesignScopePayload::Loft(value)
-            | DesignScopePayload::Sweep(value)
-            | DesignScopePayload::Revolve(value)
-            | DesignScopePayload::Pipe(value) => value.as_mut(),
             _ => None,
         }
     }
@@ -5676,14 +5718,21 @@ impl DesignParameterScope {
         self.coil().and_then(|coil| coil.coil_transform.as_ref())
     }
 
-    pub(crate) fn path_feature_construction(&self) -> Option<&DesignPathFeatureConstruction> {
-        self.path_feature()
-            .and_then(|path_feature| path_feature.path_feature_construction.as_ref())
+    pub(crate) fn has_path_construction(&self) -> bool {
+        match &self.payload {
+            DesignScopePayload::Revolve(value) => value.is_some(),
+            DesignScopePayload::Loft(value) => value.is_some(),
+            DesignScopePayload::Pipe(value) => value.is_some(),
+            DesignScopePayload::Sweep(value) => value.as_ref().is_some_and(|sweep| sweep.construction.is_some()),
+            _ => false,
+        }
     }
 
     pub(crate) fn sweep_profile(&self) -> Option<&DesignSketchProfileOperand> {
-        self.path_feature()
-            .and_then(|path_feature| path_feature.sweep_profile.as_ref())
+        match &self.payload {
+            DesignScopePayload::Sweep(value) => value.as_ref().and_then(|sweep| sweep.sweep_profile.as_ref()),
+            _ => None,
+        }
     }
 
     pub(crate) fn work_plane_transform(&self) -> Option<[[f64; 4]; 4]> {
@@ -10939,3 +10988,4 @@ pub struct XrefReference {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform: Option<[[f64; 4]; 4]>,
 }
+
