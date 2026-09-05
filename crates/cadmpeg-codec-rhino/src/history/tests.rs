@@ -327,11 +327,13 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     let polyedge_value = value(13, &anonymous_value(0, &polyedges));
     let (parsed, _) = parse_value(&polyedge_value, 0, polyedge_value.len(), ArchiveVersion::V8)
         .expect("polyedge");
-    assert!(matches!(parsed.value, Value::PolyEdges(values)
-        if values.len() == 1
-            && values[0].segments.is_empty()
-            && values[0].parameters == [0.25, 0.75]
-            && values[0].evaluation_mode == 3));
+    let Value::PolyEdges(values) = parsed.value else {
+        panic!("expected polyedges");
+    };
+    assert_eq!(values.len(), 1);
+    assert!(values[0].segments.is_empty());
+    assert_eq!(values[0].parameters, [0.25, 0.75]);
+    assert_eq!(values[0].evaluation_mode, Some(3));
 
     let subd_id = id(42);
     let mut chain = [0_u8; 16].to_vec();
