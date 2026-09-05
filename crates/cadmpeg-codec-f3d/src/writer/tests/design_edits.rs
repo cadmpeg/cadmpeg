@@ -83,9 +83,9 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     act_root.entity_id = "1_3".into();
     act_root.display_name = "(Renamed)".into();
     let act_entity = &mut native.act_entities[0];
-    assert!(act_entity.table_entity_id_offset.is_some());
-    assert!(act_entity.channel_entity_id_offset.is_some());
-    act_entity.channels.insert(
+    assert!(act_entity.table_entity_id_offset().is_some());
+    assert!(act_entity.channel_entity_id_offset().is_some());
+    act_entity.channel_group_mut().unwrap().channels.insert(
         "Appearance".into(),
         "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
     );
@@ -199,7 +199,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let act_entity = &f3d_native(round_trip.ir()).act_entities[0];
     assert_eq!(act_entity.entity_id, "0_985");
     assert_eq!(
-        act_entity.channels.get("Appearance").map(String::as_str),
+        act_entity.channels().get("Appearance").map(String::as_str),
         Some("dddddddd-1111-2222-3333-eeeeeeeeeeee")
     );
     let binding = &round_trip.ir().model.appearance_bindings[0];

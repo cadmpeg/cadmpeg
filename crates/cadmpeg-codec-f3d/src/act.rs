@@ -9,7 +9,10 @@ use cadmpeg_core::CodecError;
 use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
 use crate::metastream::MetaStream;
-use crate::records::{ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference};
+use crate::records::{
+    ActChannelGroup, ActEntity, ActEntityMembership, ActGuid, ActRegistryChannel, ActRootComponent,
+    ActTableReference, ActTableRow,
+};
 
 pub struct DecodedAct {
     pub entities: Vec<ActEntity>,
@@ -435,17 +438,11 @@ fn merge_entities(
         let entity = ActEntity {
             id: crate::ids::native_scoped_id(stream, "act-entity", record_index),
             record_index,
-            table_record_index_offset: Some(item.record_index_offset as u64),
-            channel_record_index_offset: None,
             entity_id: item.entity_id,
-            table_entity_id_offset: Some(item.entity_id_offset as u64),
-            channel_entity_id_offset: None,
-            in_table: true,
-            channel_class_tag: None,
-            channels: BTreeMap::new(),
-            channel_guid_offsets: BTreeMap::new(),
-            channel_class_tail: Vec::new(),
-            channel_class_tail_offset: None,
+            membership: ActEntityMembership::TableOnly(ActTableRow {
+                record_index_offset: item.record_index_offset as u64,
+                entity_id_offset: item.entity_id_offset as u64,
+            }),
         };
         if by_index.insert(record_index, entity).is_some() {
             return Err(CodecError::malformed(format_args!(
@@ -465,43 +462,44 @@ fn merge_entities(
                     group.record_index
                 )));
             }
-            if entity.channel_class_tag.is_some() {
+            let attached = ActChannelGroup {
+                record_index_offset: group.record_index_offset as u64,
+                entity_id_offset: group.entity_id_offset.map(|offset| offset as u64),
+                class_tag: group.class_tag,
+                channels: group.channels,
+                guid_offsets: group.guid_offsets,
+                class_tail: group.class_tail,
+                class_tail_offset: group.class_tail_offset,
+            };
+            if !entity.attach_channel_group(attached) {
                 return Err(CodecError::malformed(format_args!(
                     "duplicate F3D ACT change group {stream}:{}",
                     group.record_index
                 )));
             }
-            entity.channel_class_tag = Some(group.class_tag);
-            entity.channels = group.channels;
-            entity.channel_record_index_offset = Some(group.record_index_offset as u64);
-            entity.channel_entity_id_offset = group.entity_id_offset.map(|offset| offset as u64);
-            entity.channel_guid_offsets = group.guid_offsets;
-            entity.channel_class_tail = group.class_tail;
-            entity.channel_class_tail_offset = group.class_tail_offset;
         } else if let Some(entity_id) = group.entity_id {
             by_index.insert(
                 group.record_index,
                 ActEntity {
                     id: crate::ids::native_scoped_id(stream, "act-entity", group.record_index),
                     record_index: group.record_index,
-                    table_record_index_offset: None,
-                    channel_record_index_offset: Some(group.record_index_offset as u64),
                     entity_id,
-                    table_entity_id_offset: None,
-                    channel_entity_id_offset: group.entity_id_offset.map(|offset| offset as u64),
-                    in_table: false,
-                    channel_class_tag: Some(group.class_tag),
-                    channels: group.channels,
-                    channel_guid_offsets: group.guid_offsets,
-                    channel_class_tail: group.class_tail,
-                    channel_class_tail_offset: group.class_tail_offset,
+                    membership: ActEntityMembership::GroupOnly(ActChannelGroup {
+                        record_index_offset: group.record_index_offset as u64,
+                        entity_id_offset: group.entity_id_offset.map(|offset| offset as u64),
+                        class_tag: group.class_tag,
+                        channels: group.channels,
+                        guid_offsets: group.guid_offsets,
+                        class_tail: group.class_tail,
+                        class_tail_offset: group.class_tail_offset,
+                    }),
                 },
             );
         }
     }
     if let Some(entity) = by_index
         .values()
-        .find(|entity| entity.channel_class_tag.is_none())
+        .find(|entity| entity.channel_group().is_none())
     {
         return Err(CodecError::malformed(format_args!(
             "F3D ACTTable reference has no change group: {stream}:{}",
@@ -737,7 +735,7 @@ mod tests {
         )
         .expect("matching table and change group");
         assert_eq!(entities.len(), 1);
-        assert!(entities[0].in_table);
+        assert!(entities[0].in_table());
         assert_eq!(entities[0].record_index, 7);
 
         let mismatch = merge_entities(
@@ -764,8 +762,8 @@ mod tests {
 
         let group_only = merge_entities(stream, Vec::new(), vec![channel_group("0_985")])
             .expect("a change group need not have an inline ACTTable row");
-        assert!(!group_only[0].in_table);
-        assert!(group_only[0].table_record_index_offset.is_none());
+        assert!(!group_only[0].in_table());
+        assert!(group_only[0].table_record_index_offset().is_none());
 
         let mut table_keyed_group = channel_group("0_985");
         table_keyed_group.entity_id = None;
@@ -773,7 +771,7 @@ mod tests {
         let entities = merge_entities(stream, vec![table_entry("0_985")], vec![table_keyed_group])
             .expect("the table can supply an omitted group key");
         assert_eq!(entities[0].entity_id, "0_985");
-        assert!(entities[0].channel_entity_id_offset.is_none());
+        assert!(entities[0].channel_entity_id_offset().is_none());
     }
 
     #[test]

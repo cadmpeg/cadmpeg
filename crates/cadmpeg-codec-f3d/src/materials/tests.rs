@@ -922,7 +922,7 @@ fn decode_transfers_generated_protein_appearance() {
         f3d_native(result.ir()).act_registry_channels[1].name,
         "PhysicalMaterial"
     );
-    assert!(f3d_native(result.ir()).act_entities[0].in_table);
+    assert!(f3d_native(result.ir()).act_entities[0].in_table());
     assert_eq!(f3d_native(result.ir()).act_root_components.len(), 1);
     assert_eq!(
         f3d_native(result.ir()).act_root_components[0].entity_id,
@@ -949,9 +949,7 @@ fn decode_transfers_generated_protein_appearance() {
         1
     );
     assert_eq!(
-        f3d_native(result.ir()).act_entities[0]
-            .channel_class_tag
-            .as_deref(),
+        f3d_native(result.ir()).act_entities[0].channel_class_tag(),
         Some("261")
     );
     assert_eq!(
@@ -1179,12 +1177,7 @@ fn generated_act_native_validation_rejects_structural_drift() {
 
     let mut table_only = decoded.ir().clone();
     update_f3d_native(&mut table_only, |native| {
-        let entity = &mut native.act_entities[0];
-        entity.channel_class_tag = None;
-        entity.channel_record_index_offset = None;
-        entity.channel_entity_id_offset = None;
-        entity.channels.clear();
-        entity.channel_guid_offsets.clear();
+        native.act_entities[0].strip_channel_group();
     });
     assert!(crate::validate::validate_native(&table_only)
         .iter()
@@ -1192,9 +1185,9 @@ fn generated_act_native_validation_rejects_structural_drift() {
 
     let mut shifted_table_row = decoded.ir().clone();
     update_f3d_native(&mut shifted_table_row, |native| {
-        native.act_entities[0].table_entity_id_offset = native.act_entities[0]
-            .table_entity_id_offset
-            .and_then(|offset| offset.checked_add(1));
+        if let Some(row) = native.act_entities[0].table_row_mut() {
+            row.entity_id_offset = row.entity_id_offset.checked_add(1).unwrap();
+        }
     });
     assert!(crate::validate::validate_native(&shifted_table_row)
         .iter()

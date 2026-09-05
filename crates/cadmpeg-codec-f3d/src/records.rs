@@ -9613,51 +9613,273 @@ pub struct BodyVisibility {
     pub visible: bool,
 }
 
+/// Inline `ACTTable` row attached to one change group.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActTableRow {
+    pub record_index_offset: u64,
+    pub entity_id_offset: u64,
+}
+
+/// Channel-group payload owned by one ACT entity.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActChannelGroup {
+    pub record_index_offset: u64,
+    pub entity_id_offset: Option<u64>,
+    pub class_tag: String,
+    pub channels: BTreeMap<String, String>,
+    pub guid_offsets: BTreeMap<String, u64>,
+    pub class_tail: Vec<u8>,
+    pub class_tail_offset: Option<u64>,
+}
+
+/// Whether an ACT entity is keyed in `ACTTable`, has a channel group, or both.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ActEntityMembership {
+    TableOnly(ActTableRow),
+    GroupOnly(ActChannelGroup),
+    Both(ActTableRow, ActChannelGroup),
+}
+
 /// One Fusion ACT change-version channel group and its optional inline table row.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "ActEntitySerde"))]
+#[serde(try_from = "ActEntitySerde", into = "ActEntitySerde")]
 pub struct ActEntity {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// Record index of this entity's change group. Its inline `ACTTable` row,
     /// when present, contains the same index.
     pub record_index: u32,
-    /// Byte offset of the inline table row's change-group reference, when
-    /// present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub table_record_index_offset: Option<u64>,
-    /// Byte offset of the channel-group record index.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub channel_record_index_offset: Option<u64>,
     /// UTF-16LE-decoded design-entity key this change group tracks.
     pub entity_id: String,
-    /// Byte offset of the inline table row's UTF-16 entity-id code units, when
-    /// present.
+    /// Table-row and/or channel-group membership for this entity.
+    pub membership: ActEntityMembership,
+}
+
+impl ActEntity {
+    pub(crate) fn in_table(&self) -> bool {
+        !matches!(self.membership, ActEntityMembership::GroupOnly(_))
+    }
+
+    pub(crate) fn table_row(&self) -> Option<&ActTableRow> {
+        match &self.membership {
+            ActEntityMembership::TableOnly(row) | ActEntityMembership::Both(row, _) => Some(row),
+            ActEntityMembership::GroupOnly(_) => None,
+        }
+    }
+
+    pub(crate) fn table_row_mut(&mut self) -> Option<&mut ActTableRow> {
+        match &mut self.membership {
+            ActEntityMembership::TableOnly(row) | ActEntityMembership::Both(row, _) => Some(row),
+            ActEntityMembership::GroupOnly(_) => None,
+        }
+    }
+
+    pub(crate) fn channel_group(&self) -> Option<&ActChannelGroup> {
+        match &self.membership {
+            ActEntityMembership::GroupOnly(group) | ActEntityMembership::Both(_, group) => {
+                Some(group)
+            }
+            ActEntityMembership::TableOnly(_) => None,
+        }
+    }
+
+    pub(crate) fn channel_group_mut(&mut self) -> Option<&mut ActChannelGroup> {
+        match &mut self.membership {
+            ActEntityMembership::GroupOnly(group) | ActEntityMembership::Both(_, group) => {
+                Some(group)
+            }
+            ActEntityMembership::TableOnly(_) => None,
+        }
+    }
+
+    pub(crate) fn table_record_index_offset(&self) -> Option<u64> {
+        self.table_row().map(|row| row.record_index_offset)
+    }
+
+    pub(crate) fn table_entity_id_offset(&self) -> Option<u64> {
+        self.table_row().map(|row| row.entity_id_offset)
+    }
+
+    pub(crate) fn channel_record_index_offset(&self) -> Option<u64> {
+        self.channel_group().map(|group| group.record_index_offset)
+    }
+
+    pub(crate) fn channel_entity_id_offset(&self) -> Option<u64> {
+        self.channel_group()
+            .and_then(|group| group.entity_id_offset)
+    }
+
+    pub(crate) fn channel_class_tag(&self) -> Option<&str> {
+        self.channel_group().map(|group| group.class_tag.as_str())
+    }
+
+    pub(crate) fn channels(&self) -> &BTreeMap<String, String> {
+        self.channel_group()
+            .map(|group| &group.channels)
+            .unwrap_or(&EMPTY_ACT_CHANNELS)
+    }
+
+    pub(crate) fn channel_guid_offsets(&self) -> &BTreeMap<String, u64> {
+        self.channel_group()
+            .map(|group| &group.guid_offsets)
+            .unwrap_or(&EMPTY_ACT_GUID_OFFSETS)
+    }
+
+    pub(crate) fn channel_class_tail(&self) -> &[u8] {
+        self.channel_group()
+            .map(|group| group.class_tail.as_slice())
+            .unwrap_or(&[])
+    }
+
+    pub(crate) fn channel_class_tail_offset(&self) -> Option<u64> {
+        self.channel_group()
+            .and_then(|group| group.class_tail_offset)
+    }
+
+    pub(crate) fn attach_channel_group(&mut self, group: ActChannelGroup) -> bool {
+        match &self.membership {
+            ActEntityMembership::TableOnly(row) => {
+                self.membership = ActEntityMembership::Both(row.clone(), group);
+                true
+            }
+            ActEntityMembership::GroupOnly(_) | ActEntityMembership::Both(_, _) => false,
+        }
+    }
+
+    pub(crate) fn strip_channel_group(&mut self) {
+        if let ActEntityMembership::Both(row, _) = &self.membership {
+            self.membership = ActEntityMembership::TableOnly(row.clone());
+        }
+    }
+}
+
+static EMPTY_ACT_CHANNELS: BTreeMap<String, String> = BTreeMap::new();
+static EMPTY_ACT_GUID_OFFSETS: BTreeMap<String, u64> = BTreeMap::new();
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ActEntitySerde {
+    id: String,
+    record_index: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub table_entity_id_offset: Option<u64>,
-    /// Byte offset of the channel-group UTF-16 entity-id code units.
+    table_record_index_offset: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub channel_entity_id_offset: Option<u64>,
-    /// Whether this entity has an inline keyed row in `ACTTable`.
-    pub in_table: bool,
-    /// Source per-file dynamic three-digit ASCII class tag of this entity's
-    /// channel-group record.
+    channel_record_index_offset: Option<u64>,
+    entity_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub channel_class_tag: Option<String>,
-    /// Named channel/GUID pairs from this entity's channel-group record; each GUID is a
-    /// change-version handle, not a visibility or suppression flag.
+    table_entity_id_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    channel_entity_id_offset: Option<u64>,
+    in_table: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    channel_class_tag: Option<String>,
     #[serde(default)]
-    pub channels: BTreeMap<String, String>,
-    /// Byte offsets of UTF-16 GUID code units, keyed parallel to `channels`.
+    channels: BTreeMap<String, String>,
     #[serde(default)]
-    pub channel_guid_offsets: BTreeMap<String, u64>,
-    /// Class-owned bytes after the optional entity key. An empty vector means
-    /// that the record ends with zero padding only.
+    channel_guid_offsets: BTreeMap<String, u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub channel_class_tail: Vec<u8>,
-    /// Byte offset of `channel_class_tail` in the ACT `BulkStream`.
+    channel_class_tail: Vec<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub channel_class_tail_offset: Option<u64>,
+    channel_class_tail_offset: Option<u64>,
+}
+
+impl TryFrom<ActEntitySerde> for ActEntity {
+    type Error = String;
+
+    fn try_from(wire: ActEntitySerde) -> Result<Self, Self::Error> {
+        let table = match (
+            wire.in_table,
+            wire.table_record_index_offset,
+            wire.table_entity_id_offset,
+        ) {
+            (true, Some(record_index_offset), Some(entity_id_offset)) => Some(ActTableRow {
+                record_index_offset,
+                entity_id_offset,
+            }),
+            (false, None, None) => None,
+            _ => {
+                return Err(
+                    "act entity in_table disagrees with table_record_index_offset/table_entity_id_offset"
+                        .into(),
+                );
+            }
+        };
+        let group = match (wire.channel_class_tag, wire.channel_record_index_offset) {
+            (None, None)
+                if wire.channels.is_empty()
+                    && wire.channel_guid_offsets.is_empty()
+                    && wire.channel_class_tail.is_empty()
+                    && wire.channel_entity_id_offset.is_none()
+                    && wire.channel_class_tail_offset.is_none() =>
+            {
+                None
+            }
+            (Some(class_tag), Some(record_index_offset)) => Some(ActChannelGroup {
+                record_index_offset,
+                entity_id_offset: wire.channel_entity_id_offset,
+                class_tag,
+                channels: wire.channels,
+                guid_offsets: wire.channel_guid_offsets,
+                class_tail: wire.channel_class_tail,
+                class_tail_offset: wire.channel_class_tail_offset,
+            }),
+            _ => {
+                return Err(
+                    "act entity channel_class_tag disagrees with channel_record_index_offset"
+                        .into(),
+                );
+            }
+        };
+        let membership = match (table, group) {
+            (Some(row), None) => ActEntityMembership::TableOnly(row),
+            (None, Some(group)) => ActEntityMembership::GroupOnly(group),
+            (Some(row), Some(group)) => ActEntityMembership::Both(row, group),
+            (None, None) => {
+                return Err("act entity has neither an ACTTable row nor a channel group".into());
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            record_index: wire.record_index,
+            entity_id: wire.entity_id,
+            membership,
+        })
+    }
+}
+
+impl From<ActEntity> for ActEntitySerde {
+    fn from(entity: ActEntity) -> Self {
+        let in_table = entity.in_table();
+        let table_record_index_offset = entity.table_record_index_offset();
+        let table_entity_id_offset = entity.table_entity_id_offset();
+        let channel_record_index_offset = entity.channel_record_index_offset();
+        let channel_entity_id_offset = entity.channel_entity_id_offset();
+        let channel_class_tag = entity.channel_class_tag().map(str::to_owned);
+        let channel_class_tail_offset = entity.channel_class_tail_offset();
+        let (channels, channel_guid_offsets, channel_class_tail) = match entity.membership {
+            ActEntityMembership::TableOnly(_) => (BTreeMap::new(), BTreeMap::new(), Vec::new()),
+            ActEntityMembership::GroupOnly(group) | ActEntityMembership::Both(_, group) => {
+                (group.channels, group.guid_offsets, group.class_tail)
+            }
+        };
+        Self {
+            id: entity.id,
+            record_index: entity.record_index,
+            table_record_index_offset,
+            channel_record_index_offset,
+            entity_id: entity.entity_id,
+            table_entity_id_offset,
+            channel_entity_id_offset,
+            in_table,
+            channel_class_tag,
+            channels,
+            channel_guid_offsets,
+            channel_class_tail,
+            channel_class_tail_offset,
+        }
+    }
 }
 
 /// One GUID in the ordered ACT stream-wide asset/change-version pool.
