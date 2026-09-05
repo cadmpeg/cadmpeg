@@ -26,3 +26,5 @@ pub(crate) mod layout;
 pub mod nurbs;
 pub mod sab;
 pub mod sat;
+
+pub mod stream_error;

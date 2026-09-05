@@ -4474,3 +4474,31 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::write::TargetDomain::targets"
 reason = "CORE-05: pass the backend format for dialect-free catalogs"
+
+[[change]]
+commit = "eaf21751c23ce1255ac8adfa3bfafeadca0e5fe8"
+crate = "cadmpeg-asm"
+kind = "move"
+item = "cadmpeg_asm::sat::SatError"
+reason = "ASM-19: replace the text-only error with stream_error::StreamError"
+
+[[change]]
+commit = "eaf21751c23ce1255ac8adfa3bfafeadca0e5fe8"
+crate = "cadmpeg-asm"
+kind = "move"
+item = "cadmpeg_asm::sab::FrameError"
+reason = "ASM-19: replace the binary-only error with stream_error::StreamError"
+
+[[change]]
+commit = "eaf21751c23ce1255ac8adfa3bfafeadca0e5fe8"
+crate = "cadmpeg-asm"
+kind = "variant"
+item = "cadmpeg_asm::stream_error::StreamFormat"
+reason = "ASM-19: carry Text or Binary in the shared error"
+
+[[change]]
+commit = "eaf21751c23ce1255ac8adfa3bfafeadca0e5fe8"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::stream_error::StreamError::format"
+reason = "ASM-19: one error structure owns offset and reason for both encodings"
