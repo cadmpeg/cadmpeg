@@ -7009,29 +7009,45 @@ impl From<ActRegistryFlag> for u32 {
     }
 }
 
+const DESIGN_DECAL_FIT_TO_FACES_CODE: u8 = 0x60;
+
+/// A Decal mapping byte other than the fit-to-faces code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "u8"))]
+pub struct UnrecognizedDecalMappingMode(u8);
+impl TryFrom<u8> for UnrecognizedDecalMappingMode {
+    type Error = String;
+    fn try_from(code: u8) -> Result<Self, Self::Error> {
+        if code == DESIGN_DECAL_FIT_TO_FACES_CODE {
+            Err("mapping_mode unknown payload must exclude the fit-to-faces code".into())
+        } else { Ok(Self(code)) }
+    }
+}
+
 /// Decal image mapping-mode byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(from = "u8", into = "u8")]
 pub enum DesignDecalMappingMode {
     FitToFaces,
-    Unknown(u8),
+    Unknown(UnrecognizedDecalMappingMode),
 }
 
 impl DesignDecalMappingMode {
     #[must_use]
     pub fn from_code(code: u8) -> Self {
         match code {
-            0x60 => Self::FitToFaces,
-            code => Self::Unknown(code),
+            DESIGN_DECAL_FIT_TO_FACES_CODE => Self::FitToFaces,
+            code => Self::Unknown(UnrecognizedDecalMappingMode(code)),
         }
     }
 
     #[must_use]
     pub fn code(self) -> u8 {
         match self {
-            Self::FitToFaces => 0x60,
-            Self::Unknown(code) => code,
+            Self::FitToFaces => DESIGN_DECAL_FIT_TO_FACES_CODE,
+            Self::Unknown(code) => code.0,
         }
     }
 }
@@ -15212,48 +15228,190 @@ impl From<DesignCanvasImage> for DesignCanvasImageWire {
     }
 }
 
+/// Primary Decal asset and its consecutive image-name record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignDecalAsset {
+    class_tags: [String; 2],
+    record_index: u32,
+    byte_offset: u64,
+    entity_suffix: u32,
+    name: String,
+}
+impl DesignDecalAsset {
+    pub fn new(class_tags: [String; 2], record_indices: [u32; 2], byte_offset: u64,
+        entity_suffix: u32, name: String) -> Result<Self, String> {
+        if record_indices[0].checked_add(1) != Some(record_indices[1]) {
+            return Err("name_record_index must immediately follow asset_record_index".into());
+        }
+        for (field, tag) in ["asset_class_tag", "name_class_tag"].into_iter().zip(&class_tags) {
+            if tag.is_empty() || !tag.bytes().all(|byte| byte.is_ascii_graphic()) {
+                return Err(format!("{field} must contain printable ASCII characters"));
+            }
+        }
+        if name.is_empty() { return Err("asset_name must be nonempty".into()); }
+        let units = u32::try_from(name.encode_utf16().count()).map_err(|_| "asset_name UTF-16 count must fit u32")?;
+        let length = crate::layout::design_decal_image_asset_record::LEN as u64
+            + crate::layout::design_decal_image_name_prefix::LEN as u64 + 2 * u64::from(units);
+        byte_offset.checked_add(length).ok_or("asset_byte_offset and asset_name must leave a complete name record")?;
+        Ok(Self { class_tags, record_index: record_indices[0], byte_offset, entity_suffix, name })
+    }
+    pub fn record_index(&self) -> u32 { self.record_index }
+    pub fn entity_suffix(&self) -> u32 { self.entity_suffix }
+    pub fn name(&self) -> &str { &self.name }
+    pub fn primary_frame_length(&self) -> u64 { crate::layout::design_decal_image_asset_record::LEN as u64 }
+    pub fn name_frame_length(&self) -> u64 {
+        crate::layout::design_decal_image_name_prefix::LEN as u64 + 2 * self.name.encode_utf16().count() as u64
+    }
+    fn name_record_index(&self) -> u32 { self.record_index + 1 }
+    fn name_byte_offset(&self) -> u64 { self.byte_offset + self.primary_frame_length() }
+    fn entity_reference_offset(&self) -> u64 {
+        self.byte_offset + crate::layout::design_decal_image_asset_record::DESIGN_ENTITY_SUFFIX_REFERENCE as u64 + 1
+    }
+    fn name_offset(&self) -> u64 { self.name_byte_offset() + crate::layout::design_decal_image_name_prefix::LEN as u64 }
+}
+
 /// Exact image and target binding owned by one Design `Decal` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignDecalImageWire"))]
+#[serde(try_from = "DesignDecalImageWire", into = "DesignDecalImageWire")]
 pub struct DesignDecalImage {
-    /// Globally unique deterministic identifier for this native binding.
+    /// Globally unique native binding identity.
     pub id: String,
-    /// Decal scope record index.
-    pub scope_record_index: u32,
-    /// Byte offset of the scope's marked image-asset reference.
-    pub asset_reference_offset: u64,
+    scope: Located<u32>,
     /// Source mapping-mode byte.
     pub mapping_mode: DesignDecalMappingMode,
-    /// Byte offset of `mapping_mode`.
-    pub mapping_mode_offset: u64,
     /// Target construction-group record index.
     pub target_group_record_index: u32,
+    /// Consecutive asset and image-name records.
+    pub asset: DesignDecalAsset,
+}
+impl DesignDecalImage {
+    pub fn new(id: String, scope: Located<u32>, mapping_mode: DesignDecalMappingMode,
+        target_group_record_index: u32, asset: DesignDecalAsset) -> Result<Self, String> {
+        scope.offset.checked_add(crate::layout::design_decal_scope_prefix::LEN as u64)
+            .ok_or("asset_reference_offset must belong to a complete Decal scope prefix")?;
+        Ok(Self { id, scope, mapping_mode, target_group_record_index, asset })
+    }
+    pub fn scope_record_index(&self) -> u32 { self.scope.value }
+    pub fn scope_byte_offset(&self) -> u64 { self.scope.offset }
+    fn asset_reference_offset(&self) -> u64 {
+        self.scope.offset + crate::layout::design_decal_scope_prefix::ASSET_REFERENCE as u64 + 1
+    }
+    fn mapping_mode_offset(&self) -> u64 { self.scope.offset + crate::layout::design_decal_scope_prefix::MAPPING_MODE as u64 }
+    fn target_group_reference_offset(&self) -> u64 {
+        self.scope.offset + crate::layout::design_decal_scope_prefix::TARGET_GROUP_REFERENCE as u64 + 1
+    }
+}
+
+/// Exact image and target binding owned by one Design `Decal` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignDecalImageWire {
+    /// Globally unique deterministic identifier for this native binding.
+    id: String,
+    /// Decal scope record index.
+    scope_record_index: u32,
+    /// Byte offset of the scope's marked image-asset reference.
+    asset_reference_offset: u64,
+    /// Source mapping-mode byte.
+    mapping_mode: DesignDecalMappingMode,
+    /// Byte offset of `mapping_mode`.
+    mapping_mode_offset: u64,
+    /// Target construction-group record index.
+    target_group_record_index: u32,
     /// Byte offset of the scope's marked target-group reference.
-    pub target_group_reference_offset: u64,
+    target_group_reference_offset: u64,
     /// Dynamic class tag of the primary image-asset record.
-    pub asset_class_tag: String,
+    asset_class_tag: String,
     /// Primary image-asset record index.
-    pub asset_record_index: u32,
+    asset_record_index: u32,
     /// Byte offset of the primary image-asset record.
-    pub asset_byte_offset: u64,
+    asset_byte_offset: u64,
     /// Byte length from the primary image header to the name-record header.
-    pub asset_frame_length: u64,
+    asset_frame_length: u64,
     /// Design entity suffix carried by the primary image record.
-    pub asset_entity_suffix: u32,
+    asset_entity_suffix: u32,
     /// Byte offset of the marked Design entity-suffix reference.
-    pub asset_entity_reference_offset: u64,
+    asset_entity_reference_offset: u64,
     /// Dynamic class tag of the image-name record.
-    pub name_class_tag: String,
+    name_class_tag: String,
     /// Image-name record index.
-    pub name_record_index: u32,
+    name_record_index: u32,
     /// Byte offset of the image-name record.
-    pub name_byte_offset: u64,
+    name_byte_offset: u64,
     /// Byte length of the complete image-name record.
-    pub name_frame_length: u64,
+    name_frame_length: u64,
     /// Archive entry basename stored by the image-name record.
-    pub asset_name: String,
+    asset_name: String,
     /// Byte offset of the asset name's UTF-16LE code units.
-    pub asset_name_offset: u64,
+    asset_name_offset: u64,
+}
+
+impl TryFrom<DesignDecalImageWire> for DesignDecalImage {
+    type Error = String;
+    fn try_from(wire: DesignDecalImageWire) -> Result<Self, Self::Error> {
+        let scope_offset = wire.asset_reference_offset
+            .checked_sub(crate::layout::design_decal_scope_prefix::ASSET_REFERENCE as u64 + 1)
+            .ok_or("asset_reference_offset precedes the Decal scope prefix")?;
+        let asset = DesignDecalAsset::new([wire.asset_class_tag, wire.name_class_tag],
+            [wire.asset_record_index, wire.name_record_index], wire.asset_byte_offset,
+            wire.asset_entity_suffix, wire.asset_name)?;
+        let image = Self::new(wire.id, Located { value: wire.scope_record_index, offset: scope_offset },
+            wire.mapping_mode, wire.target_group_record_index, asset)?;
+        for (name, declared, derived) in [
+            ("mapping_mode_offset", wire.mapping_mode_offset, image.mapping_mode_offset()),
+            ("target_group_reference_offset", wire.target_group_reference_offset, image.target_group_reference_offset()),
+            ("asset_frame_length", wire.asset_frame_length, image.asset.primary_frame_length()),
+            ("asset_entity_reference_offset", wire.asset_entity_reference_offset, image.asset.entity_reference_offset()),
+            ("name_byte_offset", wire.name_byte_offset, image.asset.name_byte_offset()),
+            ("name_frame_length", wire.name_frame_length, image.asset.name_frame_length()),
+            ("asset_name_offset", wire.asset_name_offset, image.asset.name_offset()),
+        ] {
+            if declared != derived { return Err(format!("{name} must match the Decal record layout")); }
+        }
+        Ok(image)
+    }
+}
+
+impl From<DesignDecalImage> for DesignDecalImageWire {
+    fn from(value: DesignDecalImage) -> Self {
+        let scope_record_index = value.scope_record_index();
+        let asset_reference_offset = value.asset_reference_offset();
+        let mapping_mode_offset = value.mapping_mode_offset();
+        let target_group_reference_offset = value.target_group_reference_offset();
+        let asset_record_index = value.asset.record_index;
+        let asset_byte_offset = value.asset.byte_offset;
+        let asset_frame_length = value.asset.primary_frame_length();
+        let asset_entity_suffix = value.asset.entity_suffix;
+        let asset_entity_reference_offset = value.asset.entity_reference_offset();
+        let name_record_index = value.asset.name_record_index();
+        let name_byte_offset = value.asset.name_byte_offset();
+        let name_frame_length = value.asset.name_frame_length();
+        let asset_name_offset = value.asset.name_offset();
+        let [asset_class_tag, name_class_tag] = value.asset.class_tags;
+        Self {
+            id: value.id,
+            scope_record_index,
+            asset_reference_offset,
+            mapping_mode: value.mapping_mode,
+            mapping_mode_offset,
+            target_group_record_index: value.target_group_record_index,
+            target_group_reference_offset,
+            asset_class_tag,
+            asset_record_index,
+            asset_byte_offset,
+            asset_frame_length,
+            asset_entity_suffix,
+            asset_entity_reference_offset,
+            name_class_tag,
+            name_record_index,
+            name_byte_offset,
+            name_frame_length,
+            asset_name: value.asset.name,
+            asset_name_offset,
+        }
+    }
 }
 
 /// One indexed record header in the recursive Design `BulkStream` tree.

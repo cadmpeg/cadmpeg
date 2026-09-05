@@ -12,7 +12,7 @@ use crate::layout::design_decal_image_asset_record as decal_asset;
 use crate::layout::design_decal_image_name_prefix as decal_name;
 use crate::layout::design_decal_scope_prefix as decal_scope;
 use crate::records::{
-    DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignDecalImage, DesignParameterScope,
+    DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignDecalAsset, DesignDecalImage, DesignParameterScope,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -20,18 +20,6 @@ use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{DecalMapping, FaceSelection, Feature, FeatureDefinition};
 
 const DECAL_TARGET_ROLE: u64 = 0x0000_0004_0000_0000;
-
-struct DecalAssetRecord {
-    asset_class_tag: String,
-    asset_at: usize,
-    asset_entity_suffix: u32,
-    asset_entity_reference_at: usize,
-    name_class_tag: String,
-    name_record_index: u32,
-    name_at: usize,
-    next_at: usize,
-    asset_name: String,
-}
 
 /// Decode every structurally complete Decal image record.
 pub fn decode_decal_images(
@@ -77,7 +65,7 @@ pub fn project_decal_images(
         }
         let native_stream = ids::native_stream(&image.id);
         let Some(scope) = scopes.iter().find(|scope| {
-            scope.record_index == image.scope_record_index
+            scope.record_index == image.scope_record_index()
                 && ids::native_stream(&scope.id) == native_stream
         }) else {
             continue;
@@ -109,7 +97,7 @@ pub fn project_decal_images(
         if faces.is_empty() {
             continue;
         }
-        let Some(asset) = embedded_image_asset(scan, &image.asset_name)? else {
+        let Some(asset) = embedded_image_asset(scan, image.asset.name())? else {
             continue;
         };
         let Some(feature) = features
@@ -190,46 +178,18 @@ fn parse_decal_image_frame(
             return None;
         }
     }
-    let DecalAssetRecord {
-        asset_class_tag,
-        asset_at,
-        asset_entity_suffix,
-        asset_entity_reference_at,
-        name_class_tag,
-        name_record_index,
-        name_at,
-        next_at,
-        asset_name,
-    } = asset_record?;
-
-    Some(DesignDecalImage {
-        id: ids::native_design_decal_image_id(stream, scope_at),
-        scope_record_index,
-        asset_reference_offset: u64::try_from(asset_reference_at + 1).ok()?,
-        mapping_mode: crate::records::DesignDecalMappingMode::from_code(mapping_mode),
-        mapping_mode_offset: u64::try_from(mapping_mode_at).ok()?,
-        target_group_record_index,
-        target_group_reference_offset: u64::try_from(target_group_reference_at + 1).ok()?,
-        asset_class_tag,
-        asset_record_index,
-        asset_byte_offset: u64::try_from(asset_at).ok()?,
-        asset_frame_length: u64::try_from(name_at.checked_sub(asset_at)?).ok()?,
-        asset_entity_suffix,
-        asset_entity_reference_offset: u64::try_from(asset_entity_reference_at + 1).ok()?,
-        name_class_tag,
-        name_record_index,
-        name_byte_offset: u64::try_from(name_at).ok()?,
-        name_frame_length: u64::try_from(next_at.checked_sub(name_at)?).ok()?,
-        asset_name,
-        asset_name_offset: u64::try_from(name_at + decal_name::LEN).ok()?,
-    })
+    DesignDecalImage::new(
+        ids::native_design_decal_image_id(stream, scope_at),
+        crate::records::Located { value: scope_record_index, offset: u64::try_from(scope_at).ok()? },
+        crate::records::DesignDecalMappingMode::from_code(mapping_mode), target_group_record_index, asset_record?,
+    ).ok()
 }
 
 fn parse_decal_asset_record(
     bytes: &[u8],
     asset_at: usize,
     asset_record_index: u32,
-) -> Option<DecalAssetRecord> {
+) -> Option<DesignDecalAsset> {
     let (asset_class_tag, after_asset_tag) =
         lp_ascii_filtered(bytes, asset_at, 0..=2000, u8::is_ascii_graphic)?;
     if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
@@ -252,8 +212,7 @@ fn parse_decal_asset_record(
     let (name_class_tag, after_name_tag) =
         lp_ascii_filtered(bytes, name_at, 0..=2000, u8::is_ascii_graphic)?;
     let name_record_index = View::u32_le_at(bytes, after_name_tag)?;
-    if name_record_index != asset_record_index.checked_add(1)?
-        || bytes.get(
+    if bytes.get(
             name_at + decal_name::ZERO_RUN_10..name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
         )? != [0; 10]
     {
@@ -269,17 +228,8 @@ fn parse_decal_asset_record(
         return None;
     }
 
-    Some(DecalAssetRecord {
-        asset_class_tag,
-        asset_at,
-        asset_entity_suffix,
-        asset_entity_reference_at,
-        name_class_tag,
-        name_record_index,
-        name_at,
-        next_at,
-        asset_name,
-    })
+    DesignDecalAsset::new([asset_class_tag, name_class_tag], [asset_record_index, name_record_index],
+        u64::try_from(asset_at).ok()?, asset_entity_suffix, asset_name).ok()
 }
 
 fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
@@ -332,16 +282,16 @@ mod tests {
         let (bytes, scope_at) = fixture();
         let image = parse_decal_image_frame(&bytes, "Design/BulkStream.dat", 23, scope_at)
             .expect("complete synthetic Decal frame");
-        assert_eq!(image.asset_record_index, 17);
-        assert_eq!(image.asset_entity_suffix, 50);
-        assert_eq!(image.asset_name, "mark.png");
+        assert_eq!(image.asset.record_index(), 17);
+        assert_eq!(image.asset.entity_suffix(), 50);
+        assert_eq!(image.asset.name(), "mark.png");
         assert_eq!(
             image.mapping_mode,
             crate::records::DesignDecalMappingMode::FitToFaces
         );
         assert_eq!(image.target_group_record_index, 24);
-        assert_eq!(image.asset_frame_length, 30);
-        assert_eq!(image.name_frame_length, 41);
+        assert_eq!(image.asset.primary_frame_length(), 30);
+        assert_eq!(image.asset.name_frame_length(), 41);
     }
 
     #[test]

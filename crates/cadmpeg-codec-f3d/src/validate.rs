@@ -1612,7 +1612,7 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
 }
 
-/// Validate exact Decal frames and their native and neutral object joins.
+/// Validate Decal native and neutral object joins.
 fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
     const TARGET_ROLE: u64 = 0x0000_0004_0000_0000;
     let mut scope_bindings = HashSet::new();
@@ -1634,7 +1634,7 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let design_segment = ids::design_segment(&image.id);
         let scope = ctx
             .scopes_by_index
-            .get(&(native_stream, image.scope_record_index));
+            .get(&(native_stream, image.scope_record_index()));
         let group = ctx
             .operand_groups_by_index
             .get(&(native_stream, image.target_group_record_index));
@@ -1645,7 +1645,7 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .iter()
                 .find(|operand| {
                     design_stream(&operand.id) == native_stream
-                        && operand.scope_record_index == image.scope_record_index
+                        && operand.scope_record_index == image.scope_record_index()
                         && operand.record_index == member
                         && operand.owner.group() == Some((group.record_index, 0))
                 })
@@ -1680,7 +1680,7 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 && native == &operand.id
                                 && ctx.ir.model.assets.iter().any(|candidate| {
                                     candidate.id == *asset
-                                        && candidate.name.as_deref() == Some(image.asset_name.as_str())
+                                        && candidate.name.as_deref() == Some(image.asset.name())
                                 })
                         )
                 })
@@ -1688,44 +1688,12 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
         });
         let valid = scope
             .is_some_and(|scope| scope.kind() == crate::records::DesignFeatureKind::Decal)
-            && scope_bindings.insert((native_stream, image.scope_record_index))
-            && asset_records.insert((native_stream, image.asset_record_index))
-            && image.asset_reference_offset
-                == scope
-                    .map(|scope| scope.byte_offset.saturating_add(22))
-                    .unwrap_or_default()
-            && image.mapping_mode_offset
-                == scope
-                    .map(|scope| scope.byte_offset.saturating_add(32))
-                    .unwrap_or_default()
-            && image.target_group_reference_offset
-                == scope
-                    .map(|scope| scope.byte_offset.saturating_add(34))
-                    .unwrap_or_default()
-            && image.asset_frame_length == 30
-            && image.name_byte_offset == image.asset_byte_offset.saturating_add(30)
-            && image.asset_entity_reference_offset == image.asset_byte_offset.saturating_add(20)
-            && image.name_record_index == image.asset_record_index.saturating_add(1)
-            && image.asset_name_offset == image.name_byte_offset.saturating_add(25)
-            && u64::try_from(image.asset_name.encode_utf16().count())
-                .ok()
-                .and_then(|units| units.checked_mul(2))
-                .and_then(|bytes| bytes.checked_add(25))
-                == Some(image.name_frame_length)
-            && !image.asset_class_tag.is_empty()
-            && image
-                .asset_class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_graphic())
-            && !image.name_class_tag.is_empty()
-            && image
-                .name_class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_graphic())
-            && !image.asset_name.is_empty()
-            && fusion_entities.contains(&(design_segment, u64::from(image.asset_entity_suffix)))
+            && scope_bindings.insert((native_stream, image.scope_record_index()))
+            && asset_records.insert((native_stream, image.asset.record_index()))
+            && scope.is_some_and(|scope| scope.byte_offset == image.scope_byte_offset())
+            && fusion_entities.contains(&(design_segment, u64::from(image.asset.entity_suffix())))
             && group.is_some_and(|group| {
-                group.scope_record_index == image.scope_record_index
+                group.scope_record_index == image.scope_record_index()
                     && group.role == TARGET_ROLE
                     && group.members.len() == 1
             })
