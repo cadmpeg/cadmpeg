@@ -1512,3 +1512,46 @@ fn selector_context_wire_rejects_partial_clauses_and_derives_singleton() {
         }
     }
 }
+
+#[test]
+fn circular_pattern_axis_wire_preserves_shared_identity_and_rejects_partial_rows() {
+    let inline = serde_json::json!({
+        "kind": "inline", "origin": [1.0, 2.0, 3.0], "origin_offset": 12,
+        "direction": [0.0, 0.0, 1.0], "direction_offset": 36
+    });
+    let axis: super::DesignCircularPatternAxis = serde_json::from_value(inline.clone()).unwrap();
+    assert_eq!(serde_json::to_value(axis).unwrap(), inline);
+    for count in [1_u32, 2] {
+        for resolved in [false, true] {
+            let mut wire = serde_json::json!({
+                "kind": "historical_edge",
+                "wrapper_record_indices": (0..count).map(|index| 10 + index).collect::<Vec<_>>(),
+                "persistent_identities": [17],
+                "identity_offsets": (0..count).map(|index| 100 + index * 8).collect::<Vec<_>>()
+            });
+            if resolved {
+                wire["resolved_origin"] = serde_json::to_value(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).unwrap();
+                wire["resolved_direction"] = serde_json::to_value(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap();
+            }
+            let axis: super::DesignCircularPatternAxis = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(axis).unwrap(), wire);
+            for field in ["wrapper_record_indices", "identity_offsets", "persistent_identities"] {
+                let mut invalid = wire.clone();
+                invalid[field].as_array_mut().unwrap().push(serde_json::json!(99));
+                assert!(serde_json::from_value::<super::DesignCircularPatternAxis>(invalid).unwrap_err().to_string().contains(field));
+            }
+            let mut invalid = wire.clone();
+            invalid["persistent_identities"] = serde_json::json!([]);
+            assert!(serde_json::from_value::<super::DesignCircularPatternAxis>(invalid).unwrap_err().to_string().contains("persistent_identities"));
+            for field in ["resolved_origin", "resolved_direction"] {
+                let mut invalid = wire.clone();
+                invalid.as_object_mut().unwrap().remove("resolved_origin");
+                invalid.as_object_mut().unwrap().remove("resolved_direction");
+                invalid[field] = serde_json::to_value(cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0)).unwrap();
+                let error = serde_json::from_value::<super::DesignCircularPatternAxis>(invalid).unwrap_err().to_string();
+                assert!(error.contains("resolved_origin"));
+                assert!(error.contains("resolved_direction"));
+            }
+        }
+    }
+}

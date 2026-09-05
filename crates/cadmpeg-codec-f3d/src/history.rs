@@ -7067,7 +7067,7 @@ pub(crate) fn bind_circular_pattern_axes(
             continue;
         };
         let DesignCircularPatternAxis::HistoricalEdge {
-            persistent_identities,
+            persistent_identity,
             resolved,
             ..
         } = &mut construction.axis
@@ -7077,25 +7077,16 @@ pub(crate) fn bind_circular_pattern_axes(
         *resolved = None;
         let identities = HistoricalIdentityIndex::build(
             std::slice::from_ref(*history),
-            persistent_identities.iter().copied(),
+            [*persistent_identity],
         );
-        let axes = persistent_identities
-            .iter()
-            .map(|identity| {
-                historical_pattern_identity_axes(*identity, &identities, history, input_state_id)
-            })
-            .collect::<Vec<_>>();
-        if axes.iter().any(Vec::is_empty) {
-            continue;
-        }
-        let mut axes = axes.into_iter().flatten();
+        let mut axes = historical_pattern_identity_axes(*persistent_identity, &identities, history, input_state_id).into_iter();
         let Some((origin, direction)) = axes.next() else {
             continue;
         };
         if axes.any(|candidate| !same_axis_line((origin, direction), candidate)) {
             continue;
         }
-        *resolved = Some(crate::records::DesignAxis { origin, direction }.into());
+        *resolved = Some(crate::records::DesignAxis { origin, direction });
     }
 }
 

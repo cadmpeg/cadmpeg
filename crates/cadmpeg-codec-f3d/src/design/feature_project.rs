@@ -6288,7 +6288,7 @@ fn circular_pattern_axis(
         DesignCircularPatternAxis::HistoricalEdge {
             resolved: Some(axis),
             ..
-        } => Some((axis.resolved_origin, axis.resolved_direction)),
+        } => Some((axis.origin, axis.direction)),
         DesignCircularPatternAxis::HistoricalEdge { .. } => None,
     }
 }

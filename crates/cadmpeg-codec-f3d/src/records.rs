@@ -2403,7 +2403,8 @@ pub struct DesignPlane {
 /// Axis construction carried by a fixed circular-pattern scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(try_from = "DesignCircularPatternAxisWire", into = "DesignCircularPatternAxisWire")]
+#[cfg_attr(feature = "schema", schemars(with = "DesignCircularPatternAxisWire"))]
 pub enum DesignCircularPatternAxis {
     /// Axis coordinates stored directly in the Design record.
     Inline {
@@ -2416,41 +2417,98 @@ pub enum DesignCircularPatternAxis {
         /// Byte offset of the first direction coordinate.
         direction_offset: u64,
     },
-    /// Axis selected through one or two persistent historical topology identities.
+    /// Axis selected through wrappers of one persistent historical topology identity.
+    HistoricalEdge {
+        /// Referenced wrappers and the offsets of their shared identity.
+        wrappers: Vec<DesignPatternAxisWrapper>,
+        /// Persistent ASM identity shared by the wrappers.
+        persistent_identity: u64,
+        /// Resolved model-space axis, when exact.
+        resolved: Option<DesignAxis>,
+    },
+}
+
+/// One historical axis wrapper and the location of its persistent identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DesignPatternAxisWrapper {
+    pub record_index: u32,
+    pub identity_offset: u64,
+}
+
+/// Axis construction carried by a fixed circular-pattern scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum DesignCircularPatternAxisWire {
+    /// Axis coordinates stored directly in the Design record.
+    Inline {
+        /// Axis origin in source centimetres.
+        origin: [f64; 3],
+        /// Byte offset of the first origin coordinate.
+        origin_offset: u64,
+        /// Unit axis direction derived from the serialized displacement.
+        direction: [f64; 3],
+        /// Byte offset of the first direction coordinate.
+        direction_offset: u64,
+    },
+    /// Axis selected through wrappers of one persistent historical topology identity.
     HistoricalEdge {
         /// Referenced Design wrapper records, in serialized order.
         wrapper_record_indices: Vec<u32>,
         /// Persistent ASM identities carried by the wrappers.
         persistent_identities: Vec<u64>,
-        /// Byte offsets parallel to `persistent_identities`.
+        /// Identity byte offsets parallel to `wrapper_record_indices`.
         identity_offsets: Vec<u64>,
         /// Resolved model-space axis, when exact.
-        #[serde(flatten)]
-        resolved: Option<HistoricalResolvedAxisWire>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resolved_origin: Option<Point3>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resolved_direction: Option<Vector3>,
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub(crate) struct HistoricalResolvedAxisWire {
-    pub resolved_origin: Point3,
-    pub resolved_direction: Vector3,
-}
+impl TryFrom<DesignCircularPatternAxisWire> for DesignCircularPatternAxis {
+    type Error = String;
 
-impl From<DesignAxis> for HistoricalResolvedAxisWire {
-    fn from(axis: DesignAxis) -> Self {
-        Self {
-            resolved_origin: axis.origin,
-            resolved_direction: axis.direction,
+    fn try_from(wire: DesignCircularPatternAxisWire) -> Result<Self, Self::Error> {
+        match wire {
+            DesignCircularPatternAxisWire::Inline { origin, origin_offset, direction, direction_offset } =>
+                Ok(Self::Inline { origin, origin_offset, direction, direction_offset }),
+            DesignCircularPatternAxisWire::HistoricalEdge { wrapper_record_indices, persistent_identities, identity_offsets, resolved_origin, resolved_direction } => {
+                if wrapper_record_indices.len() != identity_offsets.len() {
+                    return Err("wrapper_record_indices and identity_offsets must have equal lengths".into());
+                }
+                let [persistent_identity] = persistent_identities.as_slice() else {
+                    return Err("persistent_identities must contain one shared identity".into());
+                };
+                let resolved = match (resolved_origin, resolved_direction) {
+                    (None, None) => None,
+                    (Some(origin), Some(direction)) => Some(DesignAxis { origin, direction }),
+                    _ => return Err("resolved_origin and resolved_direction must occur together".into()),
+                };
+                Ok(Self::HistoricalEdge {
+                    wrappers: wrapper_record_indices.into_iter().zip(identity_offsets)
+                        .map(|(record_index, identity_offset)| DesignPatternAxisWrapper { record_index, identity_offset }).collect(),
+                    persistent_identity: *persistent_identity,
+                    resolved,
+                })
+            }
         }
     }
 }
 
-impl From<HistoricalResolvedAxisWire> for DesignAxis {
-    fn from(axis: HistoricalResolvedAxisWire) -> Self {
-        Self {
-            origin: axis.resolved_origin,
-            direction: axis.resolved_direction,
+impl From<DesignCircularPatternAxis> for DesignCircularPatternAxisWire {
+    fn from(axis: DesignCircularPatternAxis) -> Self {
+        match axis {
+            DesignCircularPatternAxis::Inline { origin, origin_offset, direction, direction_offset } =>
+                Self::Inline { origin, origin_offset, direction, direction_offset },
+            DesignCircularPatternAxis::HistoricalEdge { wrappers, persistent_identity, resolved } => Self::HistoricalEdge {
+                wrapper_record_indices: wrappers.iter().map(|wrapper| wrapper.record_index).collect(),
+                persistent_identities: vec![persistent_identity],
+                identity_offsets: wrappers.iter().map(|wrapper| wrapper.identity_offset).collect(),
+                resolved_origin: resolved.map(|axis| axis.origin),
+                resolved_direction: resolved.map(|axis| axis.direction),
+            },
         }
     }
 }

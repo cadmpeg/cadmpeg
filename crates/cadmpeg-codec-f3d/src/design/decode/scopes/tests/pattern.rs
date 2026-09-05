@@ -15,9 +15,8 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
     use crate::records::DesignCircularPatternAxis;
 
     let historical = DesignCircularPatternAxis::HistoricalEdge {
-        wrapper_record_indices: vec![11],
-        persistent_identities: vec![17],
-        identity_offsets: vec![23],
+        wrappers: vec![crate::records::DesignPatternAxisWrapper { record_index: 11, identity_offset: 23 }],
+        persistent_identity: 17,
         resolved: None,
     };
     let inline = DesignCircularPatternAxis::Inline {
