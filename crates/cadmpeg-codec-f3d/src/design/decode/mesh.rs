@@ -907,20 +907,9 @@ fn parse_scene_bounds_payload(
     }
     let maximum = [values[0], values[1], values[2]];
     let minimum = [values[3], values[4], values[5]];
-    (values.iter().all(|value| value.is_finite())
-        && minimum
-            .iter()
-            .zip(maximum)
-            .all(|(minimum, maximum)| *minimum <= maximum))
-    .then_some(())?;
-    Some(Some(DesignMeshSceneBounds {
-        maximum,
-        minimum,
-        offsets: [
-            source_offset(frame_start, payload_at)?,
-            source_offset(frame_start, payload_at.checked_add(24)?)?,
-        ],
-    }))
+    Some(Some(DesignMeshSceneBounds::new(
+        maximum, minimum, source_offset(frame_start, payload_at)?,
+    ).ok()?))
 }
 
 fn parse_mesh_scene_state_record(
@@ -2714,10 +2703,10 @@ mod tests {
 
         let parsed = parse_scene_node_record(&graph.bytes, frame).expect("finite Scene bounds");
         let bounds = parsed.bounds.expect("present bounds");
-        assert_eq!(bounds.maximum, [1.0, 2.0, 3.0]);
-        assert_eq!(bounds.minimum, [-4.0, -5.0, -6.0]);
+        assert_eq!(bounds.maximum(), [1.0, 2.0, 3.0]);
+        assert_eq!(bounds.minimum(), [-4.0, -5.0, -6.0]);
         assert_eq!(
-            bounds.offsets,
+            bounds.offsets(),
             [
                 u64::try_from(payload_at).unwrap(),
                 u64::try_from(payload_at + 24).unwrap()
@@ -2762,8 +2751,8 @@ mod tests {
             Some(placed_scene_node::TRANSFORM as u64)
         );
         let bounds = parsed.bounds.expect("placed bounds");
-        assert_eq!(bounds.maximum, [4.0, 5.0, 6.0]);
-        assert_eq!(bounds.minimum, [1.0, 2.0, 3.0]);
+        assert_eq!(bounds.maximum(), [4.0, 5.0, 6.0]);
+        assert_eq!(bounds.minimum(), [1.0, 2.0, 3.0]);
     }
 
     #[test]
