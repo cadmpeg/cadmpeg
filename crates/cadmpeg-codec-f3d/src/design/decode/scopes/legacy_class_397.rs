@@ -133,7 +133,6 @@ pub(crate) fn exact_symmetric_extrude_prologue(
 
     Some(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker: None,
-        operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
         direction_face_extend_values,
