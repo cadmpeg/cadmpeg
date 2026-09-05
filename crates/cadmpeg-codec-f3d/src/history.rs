@@ -5669,7 +5669,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 .and_then(|edge| historical_edge_axis(edge, topology))
             {
                 operand.resolved_axis =
-                    Some(crate::records::DesignAxis { origin, direction }.into());
+                    Some(crate::records::DesignAxis { origin, direction });
             }
             continue;
         }
@@ -5768,7 +5768,7 @@ fn bind_active_edge_operand_for_scope(
             .zip(topology)
             .and_then(|(edge, topology)| historical_edge_axis(edge, topology))
         {
-            operand.resolved_axis = Some(crate::records::DesignAxis { origin, direction }.into());
+            operand.resolved_axis = Some(crate::records::DesignAxis { origin, direction });
         }
     }
 }
