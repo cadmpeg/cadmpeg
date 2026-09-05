@@ -1768,3 +1768,17 @@ fn coil_selection_preserves_wire_and_rejects_dependent_fields_without_identity()
         assert!(error.contains("recipe_kind"));
     }
 }
+
+#[test]
+fn companion_timestamp_preserves_wire_and_rejects_zero() {
+    let wire = r#"{"id":"companion","byte_offset":0,"class_tag":"123","record_index":3,"owner_record_index":2,"timestamp_micros":1,"timestamp_micros_offset":42,"payload_byte_offset":58,"payload_byte_length":0}"#;
+    let companion: super::DesignParameterCompanion = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&companion).unwrap(), wire);
+    let legacy = wire.replace("timestamp_micros_offset", "opaque_value_offset").replace("timestamp_micros", "opaque_value");
+    let companion: super::DesignParameterCompanion = serde_json::from_str(&legacy).unwrap();
+    assert_eq!(serde_json::to_string(&companion).unwrap(), wire);
+    for invalid in [wire.replace("\"timestamp_micros\":1", "\"timestamp_micros\":0"), legacy.replace("\"opaque_value\":1", "\"opaque_value\":0")] {
+        let error = serde_json::from_str::<super::DesignParameterCompanion>(&invalid).unwrap_err().to_string();
+        assert!(error.contains("timestamp_micros"));
+    }
+}

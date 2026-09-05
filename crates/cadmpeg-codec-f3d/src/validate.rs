@@ -7900,7 +7900,6 @@ fn validate_parameter_companions(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .class_tag
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
-            && companion.timestamp_micros != 0
             && companion.timestamp_micros_offset == companion.byte_offset.saturating_add(42)
             && companion.payload_byte_offset == companion.byte_offset.saturating_add(58)
             && payload_end.is_some()

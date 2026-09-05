@@ -751,7 +751,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         class_tag: "408".into(),
         record_index: 22,
         owner_record_index: 21,
-        timestamp_micros: 1,
+        timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
         timestamp_micros_offset: 42,
         payload_byte_offset: 58,
         payload_byte_length: 0,

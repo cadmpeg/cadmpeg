@@ -763,7 +763,7 @@ fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
     let parsed = parse_parameter_companion(&prefix).unwrap();
     assert_eq!(parsed.record_index, 46);
     assert_eq!(parsed.owner_record_index, 44);
-    assert_eq!(parsed.timestamp_micros, 1_678_000_000_000_000);
+    assert_eq!(parsed.timestamp_micros.get(), 1_678_000_000_000_000);
     assert_eq!(parsed.timestamp_micros_offset, 42);
 
     prefix[32..36].copy_from_slice(&45u32.to_le_bytes());
@@ -925,7 +925,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
         class_tag: "408".into(),
         record_index: 22,
         owner_record_index: 21,
-        timestamp_micros: 1,
+        timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
         timestamp_micros_offset: 50,
         payload_byte_offset: 0,
         payload_byte_length: 0,

@@ -810,7 +810,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         class_tag: "408".into(),
         record_index: 22,
         owner_record_index: 21,
-        timestamp_micros: 1,
+        timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
         timestamp_micros_offset: 42,
         payload_byte_offset: 58,
         payload_byte_length: 0,

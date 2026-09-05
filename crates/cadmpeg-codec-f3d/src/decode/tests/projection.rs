@@ -1674,7 +1674,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             class_tag: "408".into(),
             record_index: 30,
             owner_record_index: 20,
-            timestamp_micros: 1,
+            timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
             timestamp_micros_offset: 262,
             payload_byte_offset: 278,
             payload_byte_length: 100,

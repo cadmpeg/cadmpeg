@@ -785,10 +785,9 @@ pub(crate) fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameter
     {
         return None;
     }
-    let timestamp_micros = View::u64_le_at(prefix, companion_prefix::TIMESTAMP_MICROS)?;
-    if timestamp_micros == 0 {
-        return None;
-    }
+    let timestamp_micros = std::num::NonZeroU64::new(
+        View::u64_le_at(prefix, companion_prefix::TIMESTAMP_MICROS)?,
+    )?;
     Some(DesignParameterCompanion {
         id: String::new(),
         byte_offset: 0,

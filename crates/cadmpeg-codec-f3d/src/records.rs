@@ -6,7 +6,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 
 /// A source value and the byte offset of its encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -784,8 +784,8 @@ pub struct DesignParameterCompanion {
     /// Indexed parameter-owner record referenced by this prefix.
     pub owner_record_index: u32,
     /// Nonzero Unix-epoch timestamp in microseconds.
-    #[serde(alias = "opaque_value")]
-    pub timestamp_micros: u64,
+    #[serde(alias = "opaque_value", deserialize_with = "deserialize_companion_timestamp")]
+    pub timestamp_micros: NonZeroU64,
     /// Byte offset of `timestamp_micros`.
     #[serde(alias = "opaque_value_offset")]
     pub timestamp_micros_offset: u64,
@@ -798,6 +798,11 @@ pub struct DesignParameterCompanion {
     /// Construction recipes contained by the owned payload, in byte order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub owned_recipe_ids: Vec<String>,
+}
+
+fn deserialize_companion_timestamp<'de, D: Deserializer<'de>>(deserializer: D) -> Result<NonZeroU64, D::Error> {
+    NonZeroU64::new(u64::deserialize(deserializer)?)
+        .ok_or_else(|| serde::de::Error::custom("timestamp_micros must be nonzero"))
 }
 
 /// Indexed record that directly contains one construction recipe owned by a
