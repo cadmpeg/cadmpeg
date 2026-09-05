@@ -2622,3 +2622,24 @@ fn mesh_texture_file_derives_basename_and_offset_without_wire_changes() {
     bad["filename_record"]["byte_offset"] = (u64::MAX - 20).into();
     assert!(serde_json::from_value::<super::DesignMeshTextureResource>(bad).is_err());
 }
+
+#[test]
+fn mesh_texture_map_location_checks_span_and_redundant_wire_offsets() {
+    let location = super::DesignMeshTextureMapLocation::new(200).unwrap();
+    assert_eq!(location.guid_offset(), 200);
+    assert_eq!(location.payload_offset(), 236);
+    assert!(super::DesignMeshTextureMapLocation::new(u64::MAX - 35).is_err());
+    assert!(super::DesignMeshTextureMapLocation::from_wire(200, 235, "flags_offset").is_err());
+    assert!(super::DesignMeshTextureMapLocation::from_wire(200, 237, "filename_record_reference_offset").is_err());
+    assert_eq!(super::DesignMeshTextureMapLocation::from_wire(200, 236, "flags_offset").unwrap(), location);
+}
+
+#[test]
+fn design_guid_text_preserves_case_and_rejects_non_guids() {
+    let wire = "\"aAaAaAaA-bBbB-4cCc-8dDd-eEeEeEeEeEeE\"";
+    let value: super::DesignGuidText = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&value).unwrap(), wire);
+    for invalid in ["", "AAAAAAAA_BBBB-4CCC-8DDD-EEEEEEEEEEEE", "GAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"] {
+        assert!(super::DesignGuidText::try_from(invalid.to_owned()).is_err());
+    }
+}

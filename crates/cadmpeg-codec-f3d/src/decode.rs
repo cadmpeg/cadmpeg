@@ -3255,7 +3255,7 @@ fn project_mesh_bodies(
                         "F3D mesh texture ordinals do not match flags-map order".into(),
                     ));
                 }
-                Ok((texture.resource_guid.clone(), texture.asset.clone()))
+                Ok((texture.resource_guid.as_str().to_owned(), texture.asset.clone()))
             })
             .collect::<Result<Vec<_>, _>>()?;
         for body in &feature.bodies {
