@@ -207,8 +207,6 @@ pub(crate) struct RawBrepFace {
 pub(crate) struct RawBrepMeshSlot {
     /// Present mesh child, if it passed class validation.
     pub(crate) mesh: Option<RawBrepChild>,
-    /// Whether the archive supplied a nonzero presence byte.
-    pub(crate) present: bool,
     /// Class-userdata descriptors attached to the mesh object wrapper.
     pub(crate) userdata: Vec<UserdataDescriptor>,
 }
@@ -1492,11 +1490,7 @@ fn read_legacy_mesh_sides(
         } else {
             (None, Vec::new())
         };
-        slots.push(RawBrepMeshSlot {
-            mesh,
-            present,
-            userdata,
-        });
+        slots.push(RawBrepMeshSlot { mesh, userdata });
     }
     Ok((slots, start..reader.position()))
 }
@@ -1506,7 +1500,6 @@ fn empty_mesh_slots(count: usize) -> Vec<RawBrepMeshSlot> {
     for _ in 0..count {
         slots.push(RawBrepMeshSlot {
             mesh: None,
-            present: false,
             userdata: Vec::new(),
         });
     }
@@ -1889,7 +1882,6 @@ fn read_mesh_sides(
                                 source_range: start..object.next_offset(),
                                 base_type: RawBrepBaseType::Other,
                             }),
-                            present: true,
                             userdata,
                         });
                         continue;
@@ -1908,7 +1900,6 @@ fn read_mesh_sides(
             };
             result.push(RawBrepMeshSlot {
                 mesh,
-                present,
                 userdata: Vec::new(),
             });
         }
@@ -1925,7 +1916,6 @@ fn read_mesh_sides(
                     face_count,
                     RawBrepMeshSlot {
                         mesh: None,
-                        present: false,
                         userdata: Vec::new(),
                     },
                     "Rhino Brep degraded mesh slots",
@@ -3291,7 +3281,7 @@ mod tests {
                 .expect("legacy cache degradation");
         assert_eq!(range, 0..bytes.len());
         assert_eq!(slots.len(), 1);
-        assert!(!slots[0].present);
+        assert!(slots[0].mesh.is_none());
         assert!(!warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
     }
@@ -3304,7 +3294,7 @@ mod tests {
         let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
             .expect("empty cache slot");
         assert_eq!(slots.len(), 1);
-        assert!(!slots[0].present);
+        assert!(slots[0].mesh.is_none());
         assert!(warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
     }
@@ -3319,7 +3309,6 @@ mod tests {
         let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
             .expect("mesh cache with userdata");
         assert_eq!(slots.len(), 1);
-        assert!(slots[0].present);
         assert!(slots[0].mesh.is_some(), "warnings: {warnings:?}");
         assert_eq!(slots[0].userdata.len(), 1);
         assert_eq!(
