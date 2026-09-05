@@ -213,8 +213,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
             bulletin_boards: Vec::new(),
             records: Vec::new(),
             entity_versions: Vec::new(),
-            record_table_complete: true,
-            topology: Some(topology),
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
             transition: None,
         }],
     };
@@ -331,8 +330,7 @@ fn feature_input_topology_projects_historical_vertices() {
             bulletin_boards: Vec::new(),
             records: Vec::new(),
             entity_versions: Vec::new(),
-            record_table_complete: true,
-            topology: Some(AsmHistoricalTopology {
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology {
                 vertices: vec![43, 59],
                 ..AsmHistoricalTopology::default()
             }),
@@ -793,8 +791,7 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(topology),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition,
     };
     let previous = state(1, topology.clone(), None);
@@ -1276,8 +1273,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
         transition,
     };
     let history = AsmHistory {
@@ -1457,8 +1453,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(topology),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition,
     };
     let history = AsmHistory {
@@ -1536,8 +1531,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     let mut cylinder_history = history.clone();
     cylinder_history.id = "f3d:Breps.BlobParts/BREP.input:asm-history#1".into();
     let cylinder_topology = cylinder_history.states[1]
-        .topology
-        .as_mut()
+        .topology_mut()
         .expect("preceding topology");
     cylinder_topology.face_surfaces = vec![
         AsmHistoricalCarrierBinding {
@@ -1599,8 +1593,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         .updated
         .push(8);
     ambiguous_geometry_history.states[1]
-        .topology
-        .as_mut()
+        .topology_mut()
         .expect("preceding topology")
         .surface_cylinders[1]
         .radius = 1.6;
@@ -1918,8 +1911,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
         transition,
     };
     let history = AsmHistory {

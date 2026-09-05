@@ -30,8 +30,7 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
         transition: previous_state_id.map(|previous_state_id| {
             crate::history_records::AsmHistoricalTransition {
                 previous_state_id: Some(previous_state_id),
@@ -101,8 +100,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
         transition: previous_state_id.map(|previous_state_id| {
             crate::history_records::AsmHistoricalTransition {
                 previous_state_id: Some(previous_state_id),
@@ -216,8 +214,7 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: false,
-        topology: None,
+        topology_cache: crate::history_records::AsmTopologyCache::Absent,
         transition: None,
     };
     let history = AsmHistory {
@@ -506,8 +503,7 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
             bulletin_boards: Vec::new(),
             records: Vec::new(),
             entity_versions: Vec::new(),
-            record_table_complete: true,
-            topology: Some(topology.clone()),
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology.clone()),
             transition: None,
         }],
     };
@@ -521,8 +517,7 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
 
     let mut planar_history = history.clone();
     let planar_topology = planar_history.states[0]
-        .topology
-        .as_mut()
+        .topology_mut()
         .expect("planar test topology");
     planar_topology.surface_axes.clear();
     planar_topology.surface_planes = vec![crate::history_records::AsmHistoricalPlane {
@@ -545,7 +540,7 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
     });
     let ambiguous_history = AsmHistory {
         states: vec![AsmDeltaState {
-            topology: Some(ambiguous),
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(ambiguous),
             ..history.states[0].clone()
         }],
         ..history.clone()
@@ -560,7 +555,7 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
     missing_carrier.states.push(AsmDeltaState {
         state_id: 2,
         node_index: 1,
-        topology: Some(AsmHistoricalTopology {
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology {
             faces: vec![11],
             ..AsmHistoricalTopology::default()
         }),
@@ -613,8 +608,7 @@ fn snapshot_edge_identity_requires_one_edge_record_and_positive_revision() {
             bulletin_boards: Vec::new(),
             records,
             entity_versions: Vec::new(),
-            record_table_complete: false,
-            topology: None,
+            topology_cache: crate::history_records::AsmTopologyCache::Absent,
             transition: None,
         }],
     };
@@ -910,8 +904,7 @@ fn bound_state_pair_keeps_repeated_numeric_ids_in_one_history() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: None,
+        topology_cache: crate::history_records::AsmTopologyCache::Absent,
         transition: previous_state_id.map(|previous_state_id| AsmHistoricalTransition {
             previous_state_id: Some(previous_state_id),
             records: Default::default(),
@@ -1012,8 +1005,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(topology),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition: None,
     };
     let active = AsmHistoricalTopology {
@@ -1064,7 +1056,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
     );
 
     let mut variant = history;
-    variant.states[1].topology.as_mut().unwrap().face_surfaces[0].carrier = 21;
+    variant.states[1].topology_mut().unwrap().face_surfaces[0].carrier = 21;
     assert_eq!(
         historical_face_support_contexts(
             &[FaceId::mint("f3d:brep:entity#4").expect("identity grammar")],
@@ -1106,8 +1098,7 @@ fn topology_changes_span_only_complete_acyclic_state_chains() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
         transition: None,
     };
     let preceding = state(1);
@@ -1531,8 +1522,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(topology),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition: None,
     };
     let history = AsmHistory {
@@ -1618,7 +1608,9 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         Some((AsmHistoricalEntityKind::Edge, 42, vec![3, 5]))
     );
     let mut incomplete_revision_history = reconstructed_revision_history.clone();
-    incomplete_revision_history.states[1].record_table_complete = false;
+    incomplete_revision_history.states[1].topology_cache = crate::history_records::AsmTopologyCache::Retained(
+        incomplete_revision_history.states[1].topology().unwrap().clone(),
+    );
     assert_eq!(
         historical_selection_identity_kind(std::slice::from_ref(&incomplete_revision_history), 700,),
         None
@@ -1746,8 +1738,7 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
                     record_ref: 800,
                 },
             ],
-            record_table_complete: true,
-            topology: Some(topology.clone()),
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology.clone()),
             transition: None,
         }],
     };

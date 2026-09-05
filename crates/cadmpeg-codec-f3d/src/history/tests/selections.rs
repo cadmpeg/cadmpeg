@@ -29,8 +29,7 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(topology),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition: None,
     };
     let history = |id: &str, state| AsmHistory {
@@ -110,8 +109,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(AsmHistoricalTopology {
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology {
             faces: vec![30],
             loops: vec![20],
             coedges: vec![10],
@@ -272,8 +270,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(topology),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition,
     };
     let previous = state(
@@ -332,8 +329,7 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(AsmHistoricalTopology {
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology {
             bodies: vec![7],
             ..AsmHistoricalTopology::default()
         }),
@@ -386,7 +382,7 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
         ..AsmHistoricalTopology::default()
     };
     let mut split_previous = state(20, None);
-    split_previous.topology = Some(topology(&[7, 8]));
+    split_previous.topology_cache = crate::history_records::AsmTopologyCache::Complete(topology(&[7, 8]));
     let mut split_transition = AsmHistoricalTransition {
         previous_state_id: Some(20),
         records: AsmHistoricalEntityDelta::default(),
@@ -395,7 +391,7 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
     split_transition.topology.bodies.updated.push(7);
     split_transition.topology.bodies.inserted.push(9);
     let mut split_result = state(21, Some(split_transition.clone()));
-    split_result.topology = Some(topology(&[7, 8, 9]));
+    split_result.topology_cache = crate::history_records::AsmTopologyCache::Complete(topology(&[7, 8, 9]));
     let split_states = HashMap::from([(20, Some(&split_previous)), (21, Some(&split_result))]);
     assert_eq!(
         singleton_revised_input_body_across_state_chain(&split_result, 20, &split_states),
@@ -404,7 +400,7 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
 
     split_transition.topology.bodies.updated.push(8);
     let mut ambiguous_split = state(21, Some(split_transition));
-    ambiguous_split.topology = Some(topology(&[7, 8, 9]));
+    ambiguous_split.topology_cache = crate::history_records::AsmTopologyCache::Complete(topology(&[7, 8, 9]));
     let ambiguous_states =
         HashMap::from([(20, Some(&split_previous)), (21, Some(&ambiguous_split))]);
     assert_eq!(
@@ -650,8 +646,7 @@ fn historical_transition_separates_membership_and_revision_changes() {
                 record_ref,
             })
             .collect(),
-        record_table_complete: true,
-        topology: Some(topology),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition: None,
     };
     let previous = state(
@@ -736,8 +731,7 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
             })
             .collect(),
         entity_versions: Vec::new(),
-        record_table_complete: false,
-        topology: None,
+        topology_cache: crate::history_records::AsmTopologyCache::Absent,
         transition: None,
     };
 
@@ -799,8 +793,7 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
                 raw_bytes: vec![0x11],
             }],
             entity_versions: Vec::new(),
-            record_table_complete: false,
-            topology: None,
+            topology_cache: crate::history_records::AsmTopologyCache::Absent,
             transition: None,
         }
     };
@@ -866,8 +859,7 @@ fn insert_only_history_rejects_gaps_and_updates() {
             raw_bytes: vec![0x11],
         }],
         entity_versions: Vec::new(),
-        record_table_complete: false,
-        topology: None,
+        topology_cache: crate::history_records::AsmTopologyCache::Absent,
         transition: None,
     };
     let board = AsmBulletinBoard {
@@ -952,8 +944,7 @@ fn materialized_record_table_normalizes_revision_references() {
                 record_ref: 2,
             },
         ],
-        record_table_complete: false,
-        topology: None,
+        topology_cache: crate::history_records::AsmTopologyCache::Absent,
         transition: None,
     };
     let active = ["asmheader", "edge"]
@@ -1046,8 +1037,7 @@ fn qualified_history_marker_remains_an_archived_record() {
                 record_ref: 2,
             },
         ],
-        record_table_complete: false,
-        topology: None,
+        topology_cache: crate::history_records::AsmTopologyCache::Absent,
         transition: None,
     };
     let active = ["asmheader", "body"]
@@ -1115,8 +1105,7 @@ fn reverse_history_builds_complete_entity_version_maps() {
             }],
             records: Vec::new(),
             entity_versions: Vec::new(),
-            record_table_complete: false,
-            topology: None,
+            topology_cache: crate::history_records::AsmTopologyCache::Absent,
             transition: None,
         }
     };
@@ -1458,7 +1447,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         ],
         ..AsmHistoricalTopology::default()
     };
-    let state = |state_id, topology, transition| AsmDeltaState {
+    let state = |state_id, topology_cache, transition| AsmDeltaState {
         id: format!("f3d:history:state#{state_id}"),
         parent: "f3d:history".into(),
         byte_offset: 0,
@@ -1473,18 +1462,17 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology,
+        topology_cache,
         transition,
     };
-    let previous = state(1, Some(previous_topology), None);
+    let previous = state(1, crate::history_records::AsmTopologyCache::Complete(previous_topology), None);
     let mut transition = AsmHistoricalTransition {
         previous_state_id: Some(1),
         records: AsmHistoricalEntityDelta::default(),
         topology: AsmHistoricalTopologyDelta::default(),
     };
     transition.topology.faces.deleted = vec![11, 10];
-    let current = state(2, None, Some(transition));
+    let current = state(2, crate::history_records::AsmTopologyCache::Absent, Some(transition));
     let history = AsmHistory {
         id: "f3d:history".into(),
         byte_offset: 0,
@@ -1497,8 +1485,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     let mut unrelated_history = history.clone();
     unrelated_history.id = "f3d:other-history".into();
     unrelated_history.states[0]
-        .topology
-        .as_mut()
+        .topology_mut()
         .expect("unrelated preceding topology")
         .faces = vec![30, 31, 40];
     let histories = vec![history, unrelated_history];
@@ -1643,8 +1630,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(topology),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition,
     };
     let history = crate::history_records::AsmHistory {
@@ -1841,8 +1827,7 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(topology),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition: None,
     };
     let candidate = crate::records::DesignEntitySelectionFaceCandidate {
@@ -1874,19 +1859,18 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
         }
     );
     assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_some());
-    history.states[0].topology.as_mut().unwrap().surface_planes[0]
+    history.states[0].topology_mut().unwrap().surface_planes[0]
         .normal
         .z = -1.0;
     assert!(historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history)).is_some());
     assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_some());
-    history.states[0].topology.as_mut().unwrap().surface_planes[0]
+    history.states[0].topology_mut().unwrap().surface_planes[0]
         .origin
         .z = 4.0;
     assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_none());
-    let duplicate = history.states[1].topology.as_ref().unwrap().face_surfaces[0].clone();
+    let duplicate = history.states[1].topology().unwrap().face_surfaces[0].clone();
     history.states[1]
-        .topology
-        .as_mut()
+        .topology_mut()
         .unwrap()
         .face_surfaces
         .push(duplicate);

@@ -627,7 +627,7 @@ fn historical_face_profile_selection(
         .iter()
         .flat_map(|history| &history.states)
         .filter(|state| state.state_id == previous_state_id);
-    let topology = states.next()?.topology.as_ref()?;
+    let topology = states.next()?.topology()?;
     if states.next().is_some() {
         return None;
     }
@@ -968,7 +968,7 @@ fn transition_profile_selection(
     {
         return None;
     }
-    let topology = state.topology.as_ref()?;
+    let topology = state.topology()?;
     let inserted_faces = &state.transition.as_ref()?.topology.faces.inserted;
     let tolerance = resolution
         .linear_tolerance
@@ -1006,7 +1006,7 @@ fn transition_profile_selection(
     if previous_states.next().is_some() {
         return None;
     }
-    let previous_topology = previous.topology.as_ref()?;
+    let previous_topology = previous.topology()?;
     let deleted = &state.transition.as_ref()?.topology.faces.deleted;
     let faces = unique_multi_face_deleted_carrier_family(deleted, previous_topology)?;
     ordered_unique_profile_selections(faces.into_iter().map(|face| {
@@ -1205,7 +1205,7 @@ fn transition_spatial_profile_selection(
     {
         return None;
     }
-    let topology = state.topology.as_ref()?;
+    let topology = state.topology()?;
     let tolerance =
         linear_tolerance.max(EPS_PROFILE_SELECT_TRANSITION_SPATIAL_PROFILE_SELECTION_E7);
     let unique = |faces: &[i64], topology: &crate::history_records::AsmHistoricalTopology| {
@@ -1236,7 +1236,7 @@ fn transition_spatial_profile_selection(
     }
     unique(
         &state.transition.as_ref()?.topology.faces.deleted,
-        previous.topology.as_ref()?,
+        previous.topology()?,
     )
 }
 
@@ -1492,7 +1492,7 @@ fn historical_selection_regions(
     let state_selections = state_ids
         .into_iter()
         .filter_map(|state_id| {
-            let topology = states.get(&state_id)?.as_ref()?.topology.as_ref()?;
+            let topology = states.get(&state_id)?.as_ref()?.topology()?;
             let member_points = members
                 .iter()
                 .map(|member| {

@@ -49,8 +49,7 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
                 entity_ref: 10,
                 record_ref: 30,
             }],
-            record_table_complete: true,
-            topology: Some(topology),
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
             transition: None,
         }],
     }];
@@ -58,8 +57,7 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
     discard_projection_caches(&mut histories);
 
     let retained = histories[0].states[0]
-        .topology
-        .as_ref()
+        .topology()
         .expect("plane topology remains available to late Mirror binding");
     assert_eq!(retained.bodies, [99]);
     assert_eq!(retained.faces, [10]);
@@ -163,8 +161,7 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
             bulletin_boards: Vec::new(),
             records: Vec::new(),
             entity_versions: Vec::new(),
-            record_table_complete: true,
-            topology: Some(topology),
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
             transition: None,
         }],
     };
@@ -176,8 +173,7 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
 
     let mut noncoincident = history;
     noncoincident.states[0]
-        .topology
-        .as_mut()
+        .topology_mut()
         .expect("topology")
         .surface_planes[1]
         .origin
@@ -279,8 +275,7 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
             bulletin_boards: Vec::new(),
             records: Vec::new(),
             entity_versions: Vec::new(),
-            record_table_complete: true,
-            topology: Some(topology.clone()),
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology.clone()),
             transition: None,
         }],
     };

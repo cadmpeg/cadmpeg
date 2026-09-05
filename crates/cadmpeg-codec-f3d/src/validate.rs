@@ -4454,7 +4454,7 @@ fn valid_vertex_recipe(
                 .filter(|state| state.state_id == state_id);
             states.next().is_some_and(|state| {
                 states.next().is_none()
-                    && state.topology.as_ref().map_or_else(
+                    && state.topology().map_or_else(
                         || history::projection_was_finalized(&native.asm_histories),
                         |topology| topology.vertices.contains(&vertex_slot),
                     )
