@@ -13,7 +13,7 @@ use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-const CARD_WIDTH: usize = 80;
+pub(crate) const CARD_WIDTH: usize = 80;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]

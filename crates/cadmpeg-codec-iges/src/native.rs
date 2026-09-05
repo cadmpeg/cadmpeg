@@ -1607,9 +1607,9 @@ pub(crate) fn store(
             id: record.identity(),
             section: "parameter-data",
             sequence: record.sequence,
-            source_offset: record.source_offset,
-            cards: record.cards,
-            bytes: record.bytes.clone(),
+            source_offset: record.source_offset(),
+            cards: record.cards(),
+            bytes: record.bytes().to_vec(),
             defect: record.defect.key(),
         })
         .collect::<Vec<_>>();
