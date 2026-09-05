@@ -19,8 +19,12 @@ use crate::parameter::{
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
+
+fn serialize_not_attempted<S: Serializer>(_: &(), serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str("not_attempted")
+}
 
 mod annotations;
 mod fem;
@@ -497,7 +501,8 @@ struct NativeExternalReference {
     file_identifier: Option<Vec<u8>>,
     symbolic_name: Option<Vec<u8>>,
     library_name: Option<Vec<u8>>,
-    resolution_state: String,
+    #[serde(serialize_with = "serialize_not_attempted")]
+    resolution_state: (),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -2940,7 +2945,7 @@ pub(crate) fn store(
                         .and_then(|record| record.string(index))
                         .map(<[u8]>::to_vec)
                 }),
-                resolution_state: "not_attempted".into(),
+                resolution_state: (),
             })
         })
         .collect::<Vec<_>>();
