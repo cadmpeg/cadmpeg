@@ -23,13 +23,76 @@ const FULL_CREASE_SHARPNESS: f64 = 1.0;
 const EDGE_KNOT_MIRROR_RELATIVE_EPS: f64 = 1.0e-12;
 const SYMMETRY_FRAME_EPS: f64 = 1.0e-9;
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct HalfEdgeId(usize);
+
 #[derive(Clone, Copy)]
 struct HalfEdge {
+    next: HalfEdgeId,
+    previous: HalfEdgeId,
+    mate: HalfEdgeId,
+    vertex: usize,
+    face: i64,
+}
+
+impl HalfEdgeId {
+    fn index(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ParsedHalfEdge {
     next: usize,
     previous: usize,
     mate: usize,
     vertex: usize,
     face: i64,
+}
+
+fn compact_half_edges(
+    name: &str,
+    slots: Vec<Option<ParsedHalfEdge>>,
+    face_roots: &mut [Option<usize>],
+    edge_roots: &mut [Option<usize>],
+    vertex_roots: &mut [Option<(usize, SubdGripDirection)>],
+) -> Result<Vec<HalfEdge>, CodecError> {
+    let mut map = vec![None; slots.len()];
+    let mut dense = Vec::new();
+    for (old, half) in slots.iter().enumerate() {
+        if let Some(half) = half {
+            map[old] = Some(HalfEdgeId(dense.len()));
+            dense.push(*half);
+        }
+    }
+    let remap = |index: usize| {
+        map.get(index)
+            .copied()
+            .flatten()
+            .ok_or_else(|| malformed(name, "half-edge names a deleted slot"))
+    };
+    let half_edges = dense
+        .into_iter()
+        .map(|half| {
+            Ok(HalfEdge {
+                next: remap(half.next)?,
+                previous: remap(half.previous)?,
+                mate: remap(half.mate)?,
+                vertex: half.vertex,
+                face: half.face,
+            })
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    for root in face_roots.iter_mut().flatten() {
+        *root = remap(*root)?.index();
+    }
+    for root in edge_roots.iter_mut().flatten() {
+        *root = remap(*root)?.index();
+    }
+    for root in vertex_roots.iter_mut().flatten() {
+        root.0 = remap(root.0)?.index();
+    }
+    Ok(half_edges)
 }
 
 #[derive(Clone, Copy)]
@@ -354,12 +417,12 @@ fn build_fan(
     name: &str,
     vertex: usize,
     root: usize,
-    half_edges: &[Option<HalfEdge>],
+    half_edges: &[HalfEdge],
     face_live: &[bool],
 ) -> Result<Vec<FanSlot>, CodecError> {
+    let root_id = HalfEdgeId(root);
     let root_half = half_edges
         .get(root)
-        .and_then(Option::as_ref)
         .ok_or_else(|| malformed(name, "vertex root names a deleted half-edge"))?;
     if root_half.vertex != vertex {
         return Err(malformed(
@@ -370,10 +433,10 @@ fn build_fan(
 
     let mut fan = Vec::new();
     let mut seen = BTreeSet::new();
-    let mut current = root;
+    let mut current = root_id;
     loop {
         if !seen.insert(current) {
-            if current == root {
+            if current == root_id {
                 break;
             }
             return Err(malformed(
@@ -382,8 +445,7 @@ fn build_fan(
             ));
         }
         let half = half_edges
-            .get(current)
-            .and_then(Option::as_ref)
+            .get(current.index())
             .ok_or_else(|| malformed(name, "vertex half-edge fan names a deleted slot"))?;
         if half.vertex != vertex {
             return Err(malformed(
@@ -404,32 +466,24 @@ fn build_fan(
             }
         };
         fan.push(FanSlot::Slot {
-            half_edge: current,
+            half_edge: current.index(),
             face,
         });
 
         let next = half_edges
-            .get(half.next)
-            .and_then(Option::as_ref)
+            .get(half.next.index())
             .ok_or_else(|| malformed(name, "vertex fan next half-edge is deleted"))?;
-        current = half_edges
-            .get(next.mate)
-            .and_then(Option::as_ref)
-            .map(|mate| {
-                if mate.vertex == vertex {
-                    next.mate
-                } else {
-                    usize::MAX
-                }
-            })
+        let mate = half_edges
+            .get(next.mate.index())
             .ok_or_else(|| malformed(name, "vertex fan mate half-edge is deleted"))?;
-        if current == usize::MAX {
+        let Some(rotated) = (mate.vertex == vertex).then_some(next.mate) else {
             return Err(malformed(
                 name,
                 "vertex fan rotation leaves its terminal vertex",
             ));
-        }
-        if current == root {
+        };
+        current = rotated;
+        if current == root_id {
             break;
         }
         if seen.len() >= half_edges.len() {
@@ -539,7 +593,7 @@ struct SecondaryLayoutContext<'a> {
     vertex_ir: &'a [Option<u32>],
     face_live: &'a [bool],
     face_ir: &'a [Option<u32>],
-    half_edges: &'a [Option<HalfEdge>],
+    half_edges: &'a [HalfEdge],
     edge_by_half: &'a [Option<(u32, bool)>],
     grip_vertices: &'a [GripVertexMarker],
     grip_points: &'a [Option<GripPoint>],
@@ -707,7 +761,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut edge_knot_records = Vec::new();
     let mut vertex_roots: Vec<Option<(usize, SubdGripDirection)>> = Vec::new();
     let mut vertex_live: Vec<bool> = Vec::new();
-    let mut half_edges: Vec<Option<HalfEdge>> = Vec::new();
+    let mut half_edges: Vec<Option<ParsedHalfEdge>> = Vec::new();
     let mut crease_edges = BTreeSet::new();
     let mut grip_vertices: Vec<GripVertexMarker> = Vec::new();
     let mut grip_points: Vec<Option<GripPoint>> = Vec::new();
@@ -799,7 +853,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             Some("l") => match fields.next() {
                 None => half_edges.push(None),
                 next => {
-                    let half = HalfEdge {
+                    let half = ParsedHalfEdge {
                         next: parse_usize(name, next, "half-edge next index")?,
                         previous: parse_usize(name, fields.next(), "half-edge previous index")?,
                         mate: parse_usize(name, fields.next(), "half-edge mate index")?,
@@ -1074,7 +1128,13 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     {
         return Err(malformed(name, "control cage is incomplete"));
     }
-    let populated = |half: usize| half_edges.get(half).is_some_and(Option::is_some);
+    let half_edges = compact_half_edges(
+        name,
+        half_edges,
+        &mut face_roots,
+        &mut edge_roots,
+        &mut vertex_roots,
+    )?;
 
     let face_live = face_roots.iter().map(Option::is_some).collect::<Vec<_>>();
     let edge_live = edge_roots.iter().map(Option::is_some).collect::<Vec<_>>();
@@ -1165,17 +1225,19 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         }
     }
     for (index, half) in half_edges.iter().enumerate() {
-        let Some(half) = half else { continue };
-        if !populated(half.mate) || !populated(half.next) || !populated(half.previous) {
-            return Err(malformed(name, "half-edge names a deleted slot"));
-        }
-        let mate = half_edges[half.mate].expect("invariant: populated() checked half.mate");
-        let next = half_edges[half.next].expect("invariant: populated() checked half.next");
-        let previous =
-            half_edges[half.previous].expect("invariant: populated() checked half.previous");
-        if mate.mate != index
-            || next.previous != index
-            || previous.next != index
+        let id = HalfEdgeId(index);
+        let mate = half_edges
+            .get(half.mate.index())
+            .ok_or_else(|| malformed(name, "half-edge names a deleted slot"))?;
+        let next = half_edges
+            .get(half.next.index())
+            .ok_or_else(|| malformed(name, "half-edge names a deleted slot"))?;
+        let previous = half_edges
+            .get(half.previous.index())
+            .ok_or_else(|| malformed(name, "half-edge names a deleted slot"))?;
+        if mate.mate != id
+            || next.previous != id
+            || previous.next != id
             || !vertex_live.get(half.vertex).copied().unwrap_or(false)
         {
             return Err(malformed(name, "half-edge topology is inconsistent"));
@@ -1281,24 +1343,23 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut edge_vertices = Vec::with_capacity(live_vertices);
     for (edge_slot, root) in edge_roots.iter().copied().enumerate() {
         let Some(root) = root else { continue };
-        if !populated(root) {
-            return Err(malformed(name, "edge root names a deleted slot"));
-        }
-        let half = half_edges[root].expect("invariant: populated() checked the edge root");
+        let half = half_edges
+            .get(root)
+            .ok_or_else(|| malformed(name, "edge root names a deleted slot"))?;
         let edge = edge_ir[edge_slot].expect("invariant: compact() populated this edge slot");
         if edge_by_half[root].replace((edge, false)).is_some()
-            || edge_by_half[half.mate].replace((edge, true)).is_some()
+            || edge_by_half[half.mate.index()]
+                .replace((edge, true))
+                .is_some()
         {
             return Err(malformed(name, "edge roots reuse a half-edge"));
         }
-        let mate = half_edges[half.mate].expect("invariant: half-edge validation checked the mate");
+        let mate = half_edges
+            .get(half.mate.index())
+            .ok_or_else(|| malformed(name, "half-edge names a deleted slot"))?;
         edge_vertices.push([vertex_of(mate.vertex)?, vertex_of(half.vertex)?]);
     }
-    if half_edges
-        .iter()
-        .zip(&edge_by_half)
-        .any(|(half, edge)| half.is_some() && edge.is_none())
-    {
+    if edge_by_half.iter().any(Option::is_none) {
         return Err(malformed(name, "edge roots do not cover every half-edge"));
     }
     if edge_knot_intervals_ir.len() != edge_vertices.len() {
@@ -1325,21 +1386,21 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut faces = Vec::new();
     for (face_slot, start) in face_roots.iter().copied().enumerate() {
         let Some(start) = start else { continue };
-        if !populated(start) {
-            return Err(malformed(name, "face root names a deleted slot"));
-        }
+        let start_id = HalfEdgeId(start);
         let mut ring = Vec::new();
-        let mut current = start;
+        let mut current = start_id;
         loop {
-            let half = half_edges[current].expect("invariant: rings only walk populated slots");
+            let half = half_edges
+                .get(current.index())
+                .ok_or_else(|| malformed(name, "face root names a deleted slot"))?;
             if half.face != face_slot as i64 {
                 return Err(malformed(name, "face ring carries a different face index"));
             }
-            let (edge, reversed) = edge_by_half[current]
+            let (edge, reversed) = edge_by_half[current.index()]
                 .ok_or_else(|| malformed(name, "face half-edge has no edge"))?;
             ring.push(SubdEdgeUse { edge, reversed });
             current = half.next;
-            if current == start {
+            if current == start_id {
                 break;
             }
             if ring.len() > half_edges.len() {
