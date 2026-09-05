@@ -10677,25 +10677,161 @@ pub struct DesignHistoricalFaceBoundaryContext {
     pub loops: Vec<DesignHistoricalFaceLoopContext>,
 }
 
+/// Ordered topology and available geometry of one historical face loop.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignHistoricalFaceLoopWire"))]
+#[serde(try_from = "DesignHistoricalFaceLoopWire", into = "DesignHistoricalFaceLoopWire")]
+pub struct DesignHistoricalFaceLoopContext {
+    pub loop_slot: i64,
+    pub boundary: DesignHistoricalLoopBoundary,
+}
+
+/// Complete runs of the available loop member bindings.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DesignHistoricalLoopBoundary {
+    Coedges(Vec<DesignHistoricalLoopCoedge>),
+    Vertices(Vec<DesignHistoricalLoopVertex>),
+    Points(Vec<DesignHistoricalLoopPoint>),
+    Positions(Vec<DesignHistoricalLoopPosition>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignHistoricalLoopCoedge {
+    pub coedge_slot: i64,
+    pub edge_slot: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignHistoricalLoopVertex {
+    pub coedge: DesignHistoricalLoopCoedge,
+    pub vertex_slot: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignHistoricalLoopPoint {
+    pub vertex: DesignHistoricalLoopVertex,
+    pub point_slot: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignHistoricalLoopPosition {
+    pub point: DesignHistoricalLoopPoint,
+    pub position: Point3,
+}
+
+impl DesignHistoricalLoopBoundary {
+    pub(crate) fn coedges(&self) -> impl Iterator<Item = &DesignHistoricalLoopCoedge> {
+        let (mut coedges, mut vertices, mut points, mut positions): (&[_], &[_], &[_], &[_]) = (&[], &[], &[], &[]);
+        match self {
+            Self::Coedges(rows) => coedges = rows,
+            Self::Vertices(rows) => vertices = rows,
+            Self::Points(rows) => points = rows,
+            Self::Positions(rows) => positions = rows,
+        }
+        coedges.iter().chain(vertices.iter().map(|row| &row.coedge))
+            .chain(points.iter().map(|row| &row.vertex.coedge))
+            .chain(positions.iter().map(|row| &row.point.vertex.coedge))
+    }
+}
+
 /// Ordered coedge and edge membership of one historical face loop.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DesignHistoricalFaceLoopContext {
+struct DesignHistoricalFaceLoopWire {
     /// Stable ASM loop slot.
-    pub loop_slot: i64,
+    loop_slot: i64,
     /// Stable coedge slots in cyclic loop order.
-    pub coedge_slots: Vec<i64>,
+    coedge_slots: Vec<i64>,
     /// Stable edge slots aligned one-to-one with `coedge_slots`.
-    pub edge_slots: Vec<i64>,
+    edge_slots: Vec<i64>,
     /// Stable boundary-vertex slots preceding the aligned coedges.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub vertex_slots: Vec<i64>,
+    vertex_slots: Vec<i64>,
     /// Stable point-carrier slots aligned one-to-one with `vertex_slots`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub point_slots: Vec<i64>,
+    point_slots: Vec<i64>,
     /// Model-space positions aligned one-to-one with `point_slots`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub positions: Vec<cadmpeg_ir::math::Point3>,
+    positions: Vec<cadmpeg_ir::math::Point3>,
+}
+
+impl TryFrom<DesignHistoricalFaceLoopWire> for DesignHistoricalFaceLoopContext {
+    type Error = String;
+
+    fn try_from(wire: DesignHistoricalFaceLoopWire) -> Result<Self, Self::Error> {
+        let count = wire.coedge_slots.len();
+        if wire.edge_slots.len() != count {
+            return Err("coedge_slots and edge_slots must have equal lengths".into());
+        }
+        if !wire.vertex_slots.is_empty() && wire.vertex_slots.len() != count {
+            return Err("vertex_slots must be empty or match coedge_slots".into());
+        }
+        if !wire.point_slots.is_empty() && wire.point_slots.len() != wire.vertex_slots.len() {
+            return Err("point_slots must be empty or match vertex_slots".into());
+        }
+        if !wire.positions.is_empty() && wire.positions.len() != wire.point_slots.len() {
+            return Err("positions must be empty or match point_slots".into());
+        }
+        let coedges = wire.coedge_slots.into_iter().zip(wire.edge_slots)
+            .map(|(coedge_slot, edge_slot)| DesignHistoricalLoopCoedge { coedge_slot, edge_slot });
+        let boundary = if wire.vertex_slots.is_empty() {
+            DesignHistoricalLoopBoundary::Coedges(coedges.collect())
+        } else {
+            let vertices = coedges.zip(wire.vertex_slots).map(|(coedge, vertex_slot)| DesignHistoricalLoopVertex { coedge, vertex_slot });
+            if wire.point_slots.is_empty() {
+                DesignHistoricalLoopBoundary::Vertices(vertices.collect())
+            } else {
+                let points = vertices.zip(wire.point_slots).map(|(vertex, point_slot)| DesignHistoricalLoopPoint { vertex, point_slot });
+                if wire.positions.is_empty() {
+                    DesignHistoricalLoopBoundary::Points(points.collect())
+                } else {
+                    DesignHistoricalLoopBoundary::Positions(points.zip(wire.positions)
+                        .map(|(point, position)| DesignHistoricalLoopPosition { point, position }).collect())
+                }
+            }
+        };
+        Ok(Self { loop_slot: wire.loop_slot, boundary })
+    }
+}
+
+impl From<DesignHistoricalFaceLoopContext> for DesignHistoricalFaceLoopWire {
+    fn from(context: DesignHistoricalFaceLoopContext) -> Self {
+        let mut wire = Self { loop_slot: context.loop_slot, coedge_slots: Vec::new(), edge_slots: Vec::new(), vertex_slots: Vec::new(), point_slots: Vec::new(), positions: Vec::new() };
+        match context.boundary {
+            DesignHistoricalLoopBoundary::Coedges(rows) => {
+                for row in rows {
+                    wire.coedge_slots.push(row.coedge_slot);
+                    wire.edge_slots.push(row.edge_slot);
+                }
+            }
+            DesignHistoricalLoopBoundary::Vertices(rows) => {
+                for row in rows {
+                    wire.coedge_slots.push(row.coedge.coedge_slot);
+                    wire.edge_slots.push(row.coedge.edge_slot);
+                    wire.vertex_slots.push(row.vertex_slot);
+                }
+            }
+            DesignHistoricalLoopBoundary::Points(rows) => {
+                for row in rows {
+                    wire.coedge_slots.push(row.vertex.coedge.coedge_slot);
+                    wire.edge_slots.push(row.vertex.coedge.edge_slot);
+                    wire.vertex_slots.push(row.vertex.vertex_slot);
+                    wire.point_slots.push(row.point_slot);
+                }
+            }
+            DesignHistoricalLoopBoundary::Positions(rows) => {
+                for row in rows {
+                    wire.coedge_slots.push(row.point.vertex.coedge.coedge_slot);
+                    wire.edge_slots.push(row.point.vertex.coedge.edge_slot);
+                    wire.vertex_slots.push(row.point.vertex.vertex_slot);
+                    wire.point_slots.push(row.point.point_slot);
+                    wire.positions.push(row.position);
+                }
+            }
+        }
+        wire
+    }
 }
 
 /// Historical topology surrounding one candidate edge.

@@ -4408,8 +4408,8 @@ fn resolve_bounded_face_recipe_target(
         let [loop_] = context.loops.as_slice() else {
             return None;
         };
-        (!loop_.positions.is_empty() && loop_.positions.len() == loop_.edge_slots.len())
-            .then(|| (loop_.edge_slots.len(), loop_.positions.clone()))
+        let crate::records::DesignHistoricalLoopBoundary::Positions(rows) = &loop_.boundary else { return None; };
+        (!rows.is_empty()).then(|| (rows.len(), rows.iter().map(|row| row.position).collect::<Vec<_>>()))
     };
     let mut matches = target_candidates
         .into_iter()
@@ -5203,60 +5203,13 @@ fn face_boundary_contexts_for_slots(
                     if loop_relations.next().is_some() {
                         return None;
                     }
-                    let edge_slots = loop_relation
-                        .member_refs
-                        .iter()
-                        .map(|coedge_slot| {
-                            let mut coedges = topology
-                                .coedge_topology
-                                .iter()
-                                .filter(|coedge| coedge.coedge == *coedge_slot);
-                            let edge = coedges.next()?.edge;
-                            (coedges.next().is_none()).then_some(edge)
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    let vertex_slots =
-                        ordered_loop_vertices(&edge_slots, topology).unwrap_or_default();
-                    let point_slots = (!vertex_slots.is_empty())
-                        .then(|| {
-                            vertex_slots
-                                .iter()
-                                .map(|vertex| {
-                                    let mut bindings = topology
-                                        .vertex_points
-                                        .iter()
-                                        .filter(|binding| binding.entity == *vertex);
-                                    let point = bindings.next()?.carrier;
-                                    (bindings.next().is_none()).then_some(point)
-                                })
-                                .collect::<Option<Vec<_>>>()
-                        })
-                        .flatten()
-                        .unwrap_or_default();
-                    let positions = (point_slots.len() == vertex_slots.len())
-                        .then(|| {
-                            point_slots
-                                .iter()
-                                .map(|point| {
-                                    let mut values = topology
-                                        .point_positions
-                                        .iter()
-                                        .filter(|value| value.point == *point);
-                                    let position = values.next()?.position;
-                                    (values.next().is_none()).then_some(position)
-                                })
-                                .collect::<Option<Vec<_>>>()
-                        })
-                        .flatten()
-                        .unwrap_or_default();
-                    Some(crate::records::DesignHistoricalFaceLoopContext {
-                        loop_slot: *loop_slot,
-                        coedge_slots: loop_relation.member_refs.clone(),
-                        edge_slots,
-                        vertex_slots,
-                        point_slots,
-                        positions,
-                    })
+                    let coedges = loop_relation.member_refs.iter().map(|coedge_slot| {
+                        let mut matches = topology.coedge_topology.iter().filter(|coedge| coedge.coedge == *coedge_slot);
+                        let edge_slot = matches.next()?.edge;
+                        matches.next().is_none().then_some(crate::records::DesignHistoricalLoopCoedge { coedge_slot: *coedge_slot, edge_slot })
+                    }).collect::<Option<Vec<_>>>()?;
+                    let boundary = historical_loop_boundary(coedges, topology);
+                    Some(crate::records::DesignHistoricalFaceLoopContext { loop_slot: *loop_slot, boundary })
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(crate::records::DesignHistoricalFaceBoundaryContext {
@@ -5267,37 +5220,44 @@ fn face_boundary_contexts_for_slots(
         .collect()
 }
 
-fn ordered_loop_vertices(edge_slots: &[i64], topology: &AsmHistoricalTopology) -> Option<Vec<i64>> {
-    if edge_slots.is_empty() {
-        return Some(Vec::new());
+fn historical_loop_boundary(
+    coedges: Vec<crate::records::DesignHistoricalLoopCoedge>,
+    topology: &AsmHistoricalTopology,
+) -> crate::records::DesignHistoricalLoopBoundary {
+    use crate::records::{DesignHistoricalLoopBoundary, DesignHistoricalLoopPoint, DesignHistoricalLoopPosition, DesignHistoricalLoopVertex};
+    let vertices = coedges.iter().enumerate().map(|(ordinal, coedge)| {
+        let previous = coedges[(ordinal + coedges.len() - 1) % coedges.len()].edge_slot;
+        let endpoints = |slot| {
+            let mut edges = topology.edge_vertices.iter().filter(|candidate| candidate.edge == slot);
+            let edge = edges.next()?;
+            edges.next().is_none().then_some([edge.start_vertex, edge.end_vertex])
+        };
+        let previous = endpoints(previous)?;
+        let current = endpoints(coedge.edge_slot)?;
+        let mut shared = previous.into_iter().filter(|vertex| current.contains(vertex)).collect::<Vec<_>>();
+        shared.sort_unstable();
+        shared.dedup();
+        let [vertex_slot] = shared.as_slice() else { return None; };
+        Some(DesignHistoricalLoopVertex { coedge: coedge.clone(), vertex_slot: *vertex_slot })
+    }).collect::<Option<Vec<_>>>();
+    let Some(vertices) = vertices.filter(|rows| !rows.is_empty()) else {
+        return DesignHistoricalLoopBoundary::Coedges(coedges);
+    };
+    let points = vertices.iter().map(|vertex| {
+        let mut bindings = topology.vertex_points.iter().filter(|binding| binding.entity == vertex.vertex_slot);
+        let point_slot = bindings.next()?.carrier;
+        bindings.next().is_none().then_some(DesignHistoricalLoopPoint { vertex: vertex.clone(), point_slot })
+    }).collect::<Option<Vec<_>>>();
+    let Some(points) = points else { return DesignHistoricalLoopBoundary::Vertices(vertices); };
+    let positions = points.iter().map(|point| {
+        let mut values = topology.point_positions.iter().filter(|value| value.point == point.point_slot);
+        let position = values.next()?.position;
+        values.next().is_none().then_some(DesignHistoricalLoopPosition { point: point.clone(), position })
+    }).collect::<Option<Vec<_>>>();
+    match positions {
+        Some(positions) => DesignHistoricalLoopBoundary::Positions(positions),
+        None => DesignHistoricalLoopBoundary::Points(points),
     }
-    edge_slots
-        .iter()
-        .enumerate()
-        .map(|(ordinal, edge)| {
-            let previous = edge_slots[(ordinal + edge_slots.len() - 1) % edge_slots.len()];
-            let endpoints = |slot| {
-                let mut edges = topology
-                    .edge_vertices
-                    .iter()
-                    .filter(|candidate| candidate.edge == slot);
-                let edge = edges.next()?;
-                (edges.next().is_none()).then_some([edge.start_vertex, edge.end_vertex])
-            };
-            let previous = endpoints(previous)?;
-            let current = endpoints(*edge)?;
-            let mut shared = previous
-                .into_iter()
-                .filter(|vertex| current.contains(vertex))
-                .collect::<Vec<_>>();
-            shared.sort_unstable();
-            shared.dedup();
-            match shared.as_slice() {
-                [vertex] => Some(*vertex),
-                _ => None,
-            }
-        })
-        .collect()
 }
 
 fn preceding_support_face_slots(
@@ -5384,7 +5344,7 @@ fn edge_recipe_reference_context(
     let support_edges = preceding_support_face_boundaries
         .iter()
         .flat_map(|face| &face.loops)
-        .flat_map(|face_loop| face_loop.edge_slots.iter().copied())
+        .flat_map(|face_loop| face_loop.boundary.coedges().map(|row| row.edge_slot))
         .collect::<HashSet<_>>();
     let mut changed_reference_edge_slots = preceding_edges
         .iter()
@@ -8175,8 +8135,7 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
                     != 1
                     || !support.preceding_face_slots.contains(&boundary.face_slot)
                     || boundary.loops.iter().any(|loop_| {
-                        loop_.edge_slots.len() != loop_.coedge_slots.len()
-                            || loop_.edge_slots.is_empty()
+                        loop_.boundary.coedges().next().is_none()
                     })
             })
         {
@@ -8195,8 +8154,7 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
             .preceding_face_boundaries
             .iter()
             .flat_map(|boundary| &boundary.loops)
-            .flat_map(|loop_| &loop_.edge_slots)
-            .copied()
+            .flat_map(|loop_| loop_.boundary.coedges().map(|row| row.edge_slot))
             .filter(|edge| transition.contains(edge) && seen.insert(*edge))
             .collect();
         if !operand.resolved_edge_slots.is_empty() {
