@@ -2927,7 +2927,7 @@ pub(crate) fn exact_hem_operation(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    references: &[u32],
+    references: impl ExactSizeIterator<Item = u32> + Clone,
     parameter_source_kinds: &[(u32, &str)],
 ) -> Option<DesignHemOperation> {
     // The header shift and form are recovered by agreement, so all candidates
@@ -2935,9 +2935,9 @@ pub(crate) fn exact_hem_operation(
     let mut resolved = None;
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
         for candidate in [
-            hem_gap_length_operation_at(bytes, start, paired_at, references, header_shift),
-            hem_radius_angle_operation_at(bytes, start, paired_at, references, header_shift),
-            hem_gap_length_radius_operation_at(bytes, start, paired_at, references, header_shift),
+            hem_gap_length_operation_at(bytes, start, paired_at, references.clone(), header_shift),
+            hem_radius_angle_operation_at(bytes, start, paired_at, references.clone(), header_shift),
+            hem_gap_length_radius_operation_at(bytes, start, paired_at, references.clone(), header_shift),
         ]
         .into_iter()
         .flatten()
@@ -3006,7 +3006,7 @@ pub(super) fn bind_hem_operation_from_parameters(
         .filter(|owner| {
             native_stream(&owner.id) == Some(stream)
                 && owner.scope_record_index == scope.record_index
-                && scope.reference_members.contains(&owner.record_index)
+                && scope.reference_members.values().any(|value| value == &owner.record_index)
         })
         .flat_map(|owner| {
             parameters
@@ -3029,7 +3029,7 @@ pub(super) fn bind_hem_operation_from_parameters(
             bytes,
             start,
             paired_at,
-            &scope.reference_members,
+            scope.reference_members.values().copied(),
             &parameter_source_kinds,
         );
         if let crate::records::DesignScopePayload::Hem(slot) = &mut scope.payload {
@@ -3049,7 +3049,7 @@ fn hem_gap_length_operation_at(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    references: &[u32],
+    references: impl ExactSizeIterator<Item = u32>,
     header_shift: usize,
 ) -> Option<DesignHemOperation> {
     if references.len() != 8
@@ -3062,7 +3062,7 @@ fn hem_gap_length_operation_at(
         return None;
     }
 
-    let mut unclaimed: Vec<u32> = references.to_vec();
+    let mut unclaimed: Vec<u32> = references.collect::<Vec<_>>();
     let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
         let at = pool.iter().position(|entry| *entry == index)?;
         pool.remove(at);
@@ -3123,7 +3123,7 @@ fn hem_radius_angle_operation_at(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    references: &[u32],
+    references: impl ExactSizeIterator<Item = u32>,
     header_shift: usize,
 ) -> Option<DesignHemOperation> {
     if references.len() != 8
@@ -3136,7 +3136,7 @@ fn hem_radius_angle_operation_at(
         return None;
     }
 
-    let mut unclaimed = references.to_vec();
+    let mut unclaimed = references.collect::<Vec<_>>();
     let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
         let at = pool.iter().position(|entry| *entry == index)?;
         pool.remove(at);
@@ -3189,7 +3189,7 @@ fn hem_gap_length_radius_operation_at(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    references: &[u32],
+    references: impl ExactSizeIterator<Item = u32>,
     header_shift: usize,
 ) -> Option<DesignHemOperation> {
     if references.len() != 9
@@ -3202,7 +3202,7 @@ fn hem_gap_length_radius_operation_at(
         return None;
     }
 
-    let mut unclaimed = references.to_vec();
+    let mut unclaimed = references.collect::<Vec<_>>();
     let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
         let at = pool.iter().position(|entry| *entry == index)?;
         pool.remove(at);

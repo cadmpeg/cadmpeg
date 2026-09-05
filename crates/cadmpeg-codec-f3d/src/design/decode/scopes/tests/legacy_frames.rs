@@ -76,7 +76,7 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
     scope.class_tag = "369".into();
     scope.paired_class_tag = "261".into();
     scope.frame_length = shell_369_261::LEN as u64;
-    scope.reference_members = vec![9_000, 200, 201];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![9_000, 200, 201]);
     let records = IndexedRecordOffsets::build(&bytes);
     assert!(matches!(
         exact_direct_face_operation(&bytes, &records, &scope),
@@ -123,7 +123,7 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
         crate::records::DesignFeatureKind::WorkPlane,
         1,
     );
-    scope.reference_members = vec![85];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![85]);
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-322/261 WorkPlane frame");
     assert_eq!(decoded.transform, transform);
@@ -173,7 +173,7 @@ fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
         crate::records::DesignFeatureKind::WorkPlane,
         1,
     );
-    scope.reference_members = vec![76];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![76]);
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-350 WorkPlane frame");
     for (actual_row, expected_row) in decoded.transform.iter().zip(transform.iter()) {
@@ -210,7 +210,7 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
         crate::records::DesignFeatureKind::WorkPlane,
         1,
     );
-    scope.reference_members = vec![72];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![72]);
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-400 WorkPlane frame");
     assert_eq!(decoded.transform, transform);
@@ -258,7 +258,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
             crate::records::DesignFeatureKind::Move,
             1_000 + u32::try_from(ordinal).expect("small test ordinal"),
         );
-        scope.reference_members = vec![record_index];
+        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![record_index]);
         let decoded = crate::design::decode::scopes::exact_move_operation(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
@@ -353,7 +353,7 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
         scope.class_tag = scope_class.into();
         scope.paired_class_tag = scope_paired_class.into();
         scope.frame_length = scope_length as u64;
-        scope.reference_members = vec![carrier_record_index, support_record_index];
+        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![carrier_record_index, support_record_index]);
         let construction =
             exact_work_axis_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
                 .expect("direct WorkAxis carrier");
@@ -452,7 +452,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
         crate::records::DesignFeatureKind::Extrude,
         12,
     );
-    scope.reference_members = vec![80, 82];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![80, 82]);
     if let crate::records::DesignScopePayload::Extrude(slot)
     | crate::records::DesignScopePayload::Extrusion(slot)
     | crate::records::DesignScopePayload::Extrusao(slot) = &mut scope.payload

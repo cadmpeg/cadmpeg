@@ -35,7 +35,7 @@ pub(crate) fn exact_surface_trim_operation(
     {
         return None;
     }
-    let selection_record_index = *scope.reference_members.get(3)?;
+    let selection_record_index = *scope.reference_members.values().nth(3)?;
     let (selection_byte_offset, _) = records.frames(selection_record_index).next()?;
     let selection_class_tag =
         exact_indexed_header_at(bytes, selection_byte_offset, selection_record_index)?;

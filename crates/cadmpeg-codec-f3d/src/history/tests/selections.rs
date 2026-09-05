@@ -1400,8 +1400,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     );
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
-    scope.reference_members = vec![100, 110, 111, 120, 121];
-    scope.reference_member_offsets = vec![0; scope.reference_members.len()];
+    scope.reference_members = { let reference_values: Vec<u32> = vec![100, 110, 111, 120, 121]; let reference_offsets = vec![0; reference_values.len()]; crate::records::ReferenceRun::from_columns(reference_values, reference_offsets, "reference_members").unwrap() };
     let groups = vec![
         group(100, 0, vec![110, 120]),
         group(110, 1, vec![111]),

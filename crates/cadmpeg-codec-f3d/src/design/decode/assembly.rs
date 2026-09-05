@@ -41,9 +41,10 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
         &scope.class_tag,
         &scope.paired_class_tag,
     )?;
+    let crate::records::ReferenceRun::Located(references) = &scope.reference_members else { return None; };
     if scope.kind() != crate::records::DesignFeatureKind::AsBuilt
         || lanes.len() != 6
-        || scope.reference_members.len() != 11
+        || references.len() != 11
     {
         return None;
     }
@@ -60,13 +61,12 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
     {
         return None;
     }
-    for (ordinal, record_index) in scope.reference_members.iter().enumerate() {
+    for (ordinal, reference) in references.iter().enumerate() {
         let reference_at = start
             .checked_add(as_built_421::REFERENCE_ENTRIES.checked_add(ordinal.checked_mul(11)?)?)?;
-        if marked_record_reference(bytes, reference_at)? != *record_index
+        if marked_record_reference(bytes, reference_at)? != reference.value
             || bytes.get(reference_at.checked_add(5)?..reference_at.checked_add(11)?)? != [0; 6]
-            || scope.reference_member_offsets.get(ordinal).copied()
-                != Some(u64::try_from(reference_at.checked_add(1)?).ok()?)
+            || reference.offset != u64::try_from(reference_at.checked_add(1)?).ok()?
         {
             return None;
         }
@@ -97,8 +97,8 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
         angle.record_index,
     ];
     let source_limit_owner_record_indices = [limit_first.record_index, limit_second.record_index];
-    if scope.reference_members.get(4..8) != Some(alignment_owner_record_indices.as_slice())
-        || scope.reference_members.get(9..11) != Some(source_limit_owner_record_indices.as_slice())
+    if !scope.reference_members.values().skip(4).take(4).eq(alignment_owner_record_indices.iter())
+        || !scope.reference_members.values().skip(9).take(2).eq(source_limit_owner_record_indices.iter())
     {
         return None;
     }
@@ -157,13 +157,13 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
         &scope.class_tag,
         &scope.paired_class_tag,
     )?;
+    let crate::records::ReferenceRun::Located(references) = &scope.reference_members else { return None; };
+    let [_, _, _, _, _, _, _, _, frame_reference, _, _] = references.as_slice() else { return None; };
     if scope.kind() != crate::records::DesignFeatureKind::AsBuilt
-        || scope.reference_members.len() != 11
-        || scope.reference_member_offsets.len() != 11
     {
         return None;
     }
-    let frame_record_index = *scope.reference_members.get(8)?;
+    let frame_record_index = frame_reference.value;
     let expected_class_tag = generation.frame_class_tag();
     let mut frame_candidates =
         records
@@ -229,7 +229,7 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
     let transform_at = frame_start.checked_add(transform_offset)?;
     Some(DesignAssemblySolvedFrame {
         reference_record_index: frame_record_index,
-        reference_offset: scope.reference_member_offsets[8],
+        reference_offset: frame_reference.offset,
         record_byte_offset: u64::try_from(frame_start).ok()?,
         class_tag: expected_class_tag.into(),
         transform: rigid_transform_at(bytes, transform_at)?,
@@ -256,17 +256,17 @@ pub(crate) fn exact_legacy_as_built_421_operands(
         &scope.class_tag,
         &scope.paired_class_tag,
     )?;
+    let crate::records::ReferenceRun::Located(references) = &scope.reference_members else { return None; };
+    let [point_reference, first_selection_reference, hole_reference, second_selection_reference, _, _, _, _, frame_reference, _, _] = references.as_slice() else { return None; };
     if scope.kind() != crate::records::DesignFeatureKind::AsBuilt
-        || scope.reference_members.len() != 11
-        || scope.reference_member_offsets.len() != 11
-        || solved_frame.reference_record_index != *scope.reference_members.get(8)?
+        || solved_frame.reference_record_index != frame_reference.value
     {
         return None;
     }
-    let point_record_index = *scope.reference_members.first()?;
-    let first_selection_record_index = *scope.reference_members.get(1)?;
-    let hole_record_index = *scope.reference_members.get(2)?;
-    let second_selection_record_index = *scope.reference_members.get(3)?;
+    let point_record_index = point_reference.value;
+    let first_selection_record_index = first_selection_reference.value;
+    let hole_record_index = hole_reference.value;
+    let second_selection_record_index = second_selection_reference.value;
     let point = exact_point_data_construction(bytes, records, &[point_record_index], stream_types)?;
     let mut hole_scope = scope.clone();
     hole_scope.payload = crate::records::DesignFeatureKind::Hole.into();
@@ -318,13 +318,13 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     let hole_class_tag = indexed_class_at(bytes, hole.point_record_byte_offset)?;
     let first_frame = legacy_as_built_operand_frame(
         point_record_index,
-        *scope.reference_member_offsets.first()?,
+        point_reference.offset,
         point.position,
         solved_frame,
     );
     let second_frame = legacy_as_built_operand_frame(
         hole_record_index,
-        *scope.reference_member_offsets.get(2)?,
+        hole_reference.offset,
         hole.position,
         solved_frame,
     );
@@ -406,8 +406,7 @@ fn exact_legacy_as_built_face_selection(
 ) -> Option<DesignAssemblyLegacySelection> {
     let scope_start = usize::try_from(scope.byte_offset).ok()?;
     let next_byte_offset = scope
-        .reference_members
-        .get(
+        .reference_members.values().nth(
             usize::try_from(scope_reference_ordinal)
                 .ok()?
                 .checked_add(1)?,

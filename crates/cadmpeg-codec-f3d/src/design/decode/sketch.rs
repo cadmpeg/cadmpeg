@@ -13,7 +13,7 @@ use crate::layout::sketch_container_visibility_member_prefix as visibility_membe
 use crate::records::{
     DesignEntityHeader, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
     DesignSketchVisibility, LostEdgeReference, PersistentReference, PersistentReferenceKind,
-    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
     SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
     SketchPointRecordForm, SketchRelation, SketchRelationOperand, SketchSurface, SketchText,
     DESIGN_MODULE_SKETCH,
@@ -1389,10 +1389,6 @@ pub(crate) fn decode_pattern_definition(
         }
     }
     None
-}
-
-pub(crate) fn decode_constraint_kinds(state: u64) -> (Vec<SketchConstraintKind>, u64) {
-    crate::records::constraint_kinds_from_state(state)
 }
 
 pub(crate) fn trailing_sketch_owner_reference(record: &[u8]) -> Option<u32> {

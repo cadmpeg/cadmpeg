@@ -68,7 +68,7 @@ fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
         crate::records::DesignFeatureKind::SurfaceTrim,
         800,
     );
-    scope.reference_members = vec![801, 804, 808, 811];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![801, 804, 808, 811]);
     (bytes, scope)
 }
 

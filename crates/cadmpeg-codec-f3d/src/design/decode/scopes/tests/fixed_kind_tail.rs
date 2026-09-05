@@ -57,8 +57,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(scope.history_state_id, Some(7));
     assert_eq!(scope.previous_history_state_id, Some(2));
     assert_eq!(scope.reference_count_offset, reference_count_at as u64);
-    assert_eq!(scope.reference_members, [55]);
-    assert_eq!(scope.reference_member_offsets, [reference_at as u64]);
+    assert_eq!(scope.reference_members.values().copied().collect::<Vec<_>>(), [55]);
+    assert_eq!(scope.reference_members.offsets().copied().collect::<Vec<_>>(), [reference_at as u64]);
     assert_eq!(scope.frame_length, paired_at as u64);
     assert_eq!(scope.paired_class_tag, "261");
     assert_eq!(scope.paired_byte_offset, paired_at as u64);
@@ -216,7 +216,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let mut operation_scope = copy.clone();
     operation_scope.byte_offset = 0;
     operation_scope.paired_byte_offset = 60;
-    operation_scope.reference_members = vec![55, 66];
+    operation_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![55, 66]);
     let operation = crate::design::decode::scopes::exact_copy_paste_bodies_operation(
         &operation_bytes,
         &IndexedRecordOffsets::build(&operation_bytes),
@@ -251,7 +251,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         generic_scope.kind(),
         crate::records::DesignFeatureKind::Sketch
     );
-    assert_eq!(generic_scope.reference_members, [55, 56]);
+    assert_eq!(generic_scope.reference_members.values().copied().collect::<Vec<_>>(), [55, 56]);
 
     let work_plane_at = bytes.len();
     let mut work_plane = vec![0; 362];
@@ -297,7 +297,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     extended.extend_from_slice(&57u32.to_le_bytes());
     bytes.extend_from_slice(&extended);
     let mut extended_scope = scope.clone();
-    extended_scope.reference_members = vec![57];
+    extended_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![57]);
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -323,7 +323,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     direct.extend_from_slice(&56u32.to_le_bytes());
     bytes.extend_from_slice(&direct);
     let mut direct_scope = scope.clone();
-    direct_scope.reference_members = vec![56];
+    direct_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![56]);
     let decoded =
         exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &direct_scope)
             .expect("direct WorkPlane frame");
@@ -346,7 +346,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     extended_direct.extend_from_slice(&61u32.to_le_bytes());
     bytes.extend_from_slice(&extended_direct);
     let mut extended_direct_scope = scope.clone();
-    extended_direct_scope.reference_members = vec![61];
+    extended_direct_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![61]);
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -372,7 +372,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     large_direct.extend_from_slice(&62u32.to_le_bytes());
     bytes.extend_from_slice(&large_direct);
     let mut large_direct_scope = scope.clone();
-    large_direct_scope.reference_members = vec![62];
+    large_direct_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![62]);
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -419,7 +419,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let mut axis_scope = scope.clone();
     axis_scope.id = "f3d:native:parameter-scope#55".into();
     axis_scope.payload = crate::records::DesignFeatureKind::WorkAxis.into();
-    axis_scope.reference_members = vec![100, 101, 102, 103, 104];
+    axis_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 101, 102, 103, 104]);
     let construction = exact_work_axis_construction(
         &axis_bytes,
         &IndexedRecordOffsets::build(&axis_bytes),
@@ -473,7 +473,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact.extend_from_slice(&58u32.to_le_bytes());
     bytes.extend_from_slice(&compact);
     let mut compact_scope = scope.clone();
-    compact_scope.reference_members = vec![58];
+    compact_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![58]);
     let decoded =
         exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &compact_scope)
             .expect("compact direct WorkPlane frame");
@@ -495,7 +495,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_431.extend_from_slice(&67u32.to_le_bytes());
     bytes.extend_from_slice(&compact_431);
     let mut compact_431_scope = scope.clone();
-    compact_431_scope.reference_members = vec![67];
+    compact_431_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![67]);
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -521,7 +521,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_364.extend_from_slice(&65u32.to_le_bytes());
     bytes.extend_from_slice(&compact_364);
     let mut compact_364_scope = scope.clone();
-    compact_364_scope.reference_members = vec![65];
+    compact_364_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![65]);
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -547,7 +547,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_364_variant.extend_from_slice(&66u32.to_le_bytes());
     bytes.extend_from_slice(&compact_364_variant);
     let mut compact_364_variant_scope = scope.clone();
-    compact_364_variant_scope.reference_members = vec![66];
+    compact_364_variant_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![66]);
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -575,7 +575,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_450.extend_from_slice(&59u32.to_le_bytes());
     bytes.extend_from_slice(&compact_450);
     let mut compact_450_scope = scope.clone();
-    compact_450_scope.reference_members = vec![59];
+    compact_450_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![59]);
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -600,7 +600,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     class_279.extend_from_slice(&69u32.to_le_bytes());
     bytes.extend_from_slice(&class_279);
     let mut class_279_scope = scope.clone();
-    class_279_scope.reference_members = vec![69];
+    class_279_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![69]);
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -619,7 +619,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_409_short[333..337].copy_from_slice(&64u32.to_le_bytes());
     bytes.extend_from_slice(&compact_409_short);
     let mut compact_409_short_scope = scope.clone();
-    compact_409_short_scope.reference_members = vec![64];
+    compact_409_short_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![64]);
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -644,7 +644,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_409.extend_from_slice(&63u32.to_le_bytes());
     bytes.extend_from_slice(&compact_409);
     let mut compact_409_scope = scope.clone();
-    compact_409_scope.reference_members = vec![63];
+    compact_409_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![63]);
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -672,7 +672,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&joint_origin);
     let mut joint_origin_scope = scope.clone();
     joint_origin_scope.payload = crate::records::DesignFeatureKind::JointOrigin.into();
-    joint_origin_scope.reference_members = vec![60];
+    joint_origin_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![60]);
     let decoded = exact_joint_origin_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -713,7 +713,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&compact_joint_origin);
     let mut compact_joint_origin_scope = scope.clone();
     compact_joint_origin_scope.payload = crate::records::DesignFeatureKind::JointOrigin.into();
-    compact_joint_origin_scope.reference_members = vec![67];
+    compact_joint_origin_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![67]);
     let decoded = exact_joint_origin_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -745,7 +745,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&legacy_joint_origin);
     let mut legacy_joint_origin_scope = scope.clone();
     legacy_joint_origin_scope.payload = crate::records::DesignFeatureKind::JointOrigin.into();
-    legacy_joint_origin_scope.reference_members = vec![72];
+    legacy_joint_origin_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![72]);
     let decoded = exact_joint_origin_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -790,7 +790,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&move_frame);
     let mut move_scope = scope.clone();
     move_scope.payload = crate::records::DesignFeatureKind::Move.into();
-    move_scope.reference_members = vec![90];
+    move_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![90]);
     let decoded = crate::design::decode::scopes::exact_move_operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -817,7 +817,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&compact_move);
     let mut compact_move_scope = scope.clone();
     compact_move_scope.payload = crate::records::DesignFeatureKind::Move.into();
-    compact_move_scope.reference_members = vec![91];
+    compact_move_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![91]);
     let decoded = crate::design::decode::scopes::exact_move_operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -856,7 +856,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&class_433_move);
     let mut class_433_move_scope = scope.clone();
     class_433_move_scope.payload = crate::records::DesignFeatureKind::Move.into();
-    class_433_move_scope.reference_members = vec![92];
+    class_433_move_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![92]);
     let decoded = crate::design::decode::scopes::exact_move_operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -884,7 +884,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     scale_scope.byte_offset = scale_at as u64;
     scale_scope.payload = crate::records::DesignFeatureKind::Massstab.into();
     scale_scope.frame_length = 317;
-    scale_scope.reference_members = vec![101, 102, 103, 104, 105];
+    scale_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![101, 102, 103, 104, 105]);
     let scale_records = IndexedRecordOffsets::build(&bytes);
     assert_eq!(
         exact_scale_operation(&bytes, &scale_records, &scale_scope, &HashMap::new()),
@@ -1007,7 +1007,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     offset_scope.byte_offset = offset_at as u64;
     offset_scope.payload = crate::records::DesignFeatureKind::OffsetFaces.into();
     offset_scope.frame_length = 286;
-    offset_scope.reference_members = vec![1, 2, 3, 73];
+    offset_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![1, 2, 3, 73]);
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
         Some(DesignDirectFaceOperation::OffsetFaces(crate::records::DesignOffsetFacesOperation {
@@ -1035,7 +1035,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&compact_distance);
     offset_scope.byte_offset = compact_offset_at as u64;
     offset_scope.frame_length = 275;
-    offset_scope.reference_members = vec![1, 2, 1_777];
+    offset_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![1, 2, 1_777]);
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
         Some(DesignDirectFaceOperation::OffsetFaces(crate::records::DesignOffsetFacesOperation {
@@ -1063,7 +1063,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     thicken_scope.byte_offset = thicken_at as u64;
     thicken_scope.payload = crate::records::DesignFeatureKind::Thicken.into();
     thicken_scope.frame_length = 301;
-    thicken_scope.reference_members = vec![1, 2, 74];
+    thicken_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![1, 2, 74]);
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
         Some(DesignDirectFaceOperation::Thicken(crate::records::DesignThickenOperation {
@@ -1102,7 +1102,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let shifted_thicken_scope = DesignParameterScope {
         byte_offset: shifted_thicken_at as u64,
         frame_length: 312,
-        reference_members: vec![74, 200, 201, 202],
+        reference_members: crate::records::ReferenceRun::Unlocated(vec![74, 200, 201, 202]),
         ..thicken_scope.clone()
     };
     assert!(matches!(
@@ -1205,7 +1205,7 @@ _ => {},
     shell_scope.byte_offset = shell_at as u64;
     shell_scope.payload = crate::records::DesignFeatureKind::Shell.into();
     shell_scope.frame_length = 278;
-    shell_scope.reference_members = vec![200, 201, 1_778];
+    shell_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![200, 201, 1_778]);
     {
         let construction =
             exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &shell_scope);
@@ -1271,7 +1271,7 @@ _ => {},
     let mut compact_shell_scope = DesignParameterScope {
         byte_offset: compact_shell_at as u64,
         frame_length: 268,
-        reference_members: vec![200, 201, 9_000],
+        reference_members: crate::records::ReferenceRun::Unlocated(vec![200, 201, 9_000]),
         ..shell_scope.clone()
     };
     assert!(matches!(
@@ -1297,7 +1297,7 @@ _ => {},
     let shifted_shell_scope = DesignParameterScope {
         byte_offset: shifted_shell_at as u64,
         frame_length: 278,
-        reference_members: vec![9_000, 200, 201],
+        reference_members: crate::records::ReferenceRun::Unlocated(vec![9_000, 200, 201]),
         ..shell_scope.clone()
     };
     assert!(matches!(
@@ -1418,7 +1418,7 @@ _ => {},
                 start_offset: 42,
             });
     }
-    extrude_scope.reference_members = vec![50, 75, 76, 51];
+    extrude_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 75, 76, 51]);
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
@@ -1442,7 +1442,7 @@ _ => {},
             }),
         })
     );
-    extrude_scope.reference_members = vec![50, 75, 51];
+    extrude_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 75, 51]);
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
@@ -1462,8 +1462,8 @@ _ => {},
             taper_angle: None,
         })
     );
-    extrude_scope.reference_members = vec![50, 75, 76, 51];
-    extrude_scope.reference_members.push(75);
+    extrude_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 75, 76, 51]);
+    extrude_scope.reference_members = { let mut values: Vec<u32> = extrude_scope.reference_members.values().copied().collect(); values.push(75); crate::records::ReferenceRun::Unlocated(values) };
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
@@ -1548,12 +1548,12 @@ _ => {},
     let mut extend_scope = scope.clone();
     extend_scope.id = "f3d:native:parameter-scope#12".into();
     extend_scope.payload = crate::records::DesignFeatureKind::SurfaceExtend.into();
-    extend_scope.reference_members = vec![
+    extend_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
         extend_distance_record_index,
         extend_boundary_record_index,
         extend_edge_record_indices[0],
         extend_edge_record_indices[1],
-    ];
+    ]);
     let operation =
         exact_surface_extend_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &extend_scope)
             .expect("exact SurfaceExtend construction");
@@ -1688,11 +1688,11 @@ _ => {},
     grouped.extend_from_slice(&grouped_record_index.to_le_bytes());
     bytes.extend_from_slice(&grouped);
     let mut grouped_scope = extend_scope.clone();
-    grouped_scope.reference_members = vec![
+    grouped_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
         extend_distance_record_index,
         grouped_record_index,
         grouped_member_record_index,
-    ];
+    ]);
     let grouped_operation = exact_surface_offset_operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -1757,7 +1757,7 @@ _ => {},
     embedded_distance.extend_from_slice(b"258");
     embedded_distance.extend_from_slice(&embedded_distance_record_index.to_le_bytes());
     bytes.extend_from_slice(&embedded_distance);
-    extrude_scope.reference_members = vec![50, 273, 274, embedded_distance_record_index, 51];
+    extrude_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 273, 274, embedded_distance_record_index, 51]);
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
@@ -1781,7 +1781,7 @@ _ => {},
             }),
         })
     );
-    extrude_scope.reference_members.insert(2, 273);
+    extrude_scope.reference_members = { let mut values: Vec<u32> = extrude_scope.reference_members.values().copied().collect(); values.insert(2, 273); crate::records::ReferenceRun::Unlocated(values) };
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
@@ -1812,7 +1812,7 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
         scope.kind(),
         crate::records::DesignFeatureKind::CopyPasteBodies
     );
-    assert_eq!(scope.reference_members, [1_500, 1_600]);
+    assert_eq!(scope.reference_members.values().copied().collect::<Vec<_>>(), [1_500, 1_600]);
     assert_eq!(scope.frame_length, 225);
     let operation =
         crate::design::decode::scopes::exact_copy_paste_bodies_operation(&bytes, &records, &scope)
@@ -1844,7 +1844,7 @@ fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
         1,
     );
     let mut scope = scope;
-    scope.reference_members = vec![71];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![71]);
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-380 WorkPlane frame");
     assert_eq!(decoded.transform, transform);
@@ -1881,7 +1881,7 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
             crate::records::DesignFeatureKind::WorkPlane,
             1,
         );
-        scope.reference_members = vec![71];
+        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![71]);
         let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
             .expect("class-256 WorkPlane frame");
         assert_eq!(decoded.transform, transform);
@@ -1905,7 +1905,7 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
         crate::records::DesignFeatureKind::WorkPlane,
         2,
     );
-    scope.reference_members = vec![71];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![71]);
     assert_eq!(
         exact_work_plane_frame(&invalid, &IndexedRecordOffsets::build(&invalid), &scope),
         None
@@ -1969,7 +1969,7 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
             crate::records::DesignFeatureKind::WorkPlane,
             1,
         );
-        scope.reference_members = vec![record_index];
+        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![record_index]);
         let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
             .expect("opaque-prefix WorkPlane frame");
         assert_eq!(decoded.transform, transform);
@@ -1992,7 +1992,7 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
         crate::records::DesignFeatureKind::WorkPlane,
         2,
     );
-    scope.reference_members = vec![84];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![84]);
     assert_eq!(
         exact_work_plane_frame(&invalid, &IndexedRecordOffsets::build(&invalid), &scope),
         None

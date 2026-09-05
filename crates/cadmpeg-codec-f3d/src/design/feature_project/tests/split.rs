@@ -60,7 +60,7 @@ fn class_277_258_compact_split_face_frame_projects() {
     scope.class_tag = "277".into();
     scope.paired_class_tag = "258".into();
     scope.frame_length = 407;
-    scope.reference_members = (100..112).collect();
+    scope.reference_members = crate::records::ReferenceRun::Unlocated((100..112).collect());
 
     let groups = [
         group(scope_record_index, 0, 100, vec![101], 0x0000_0021_0000_0000),
@@ -105,7 +105,7 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
     scope.paired_class_tag = "258".into();
     scope.frame_length = 407;
     scope.previous_history_state_id = Some(7);
-    scope.reference_members = (100..112).collect();
+    scope.reference_members = crate::records::ReferenceRun::Unlocated((100..112).collect());
 
     let groups = [
         group(scope_record_index, 0, 100, vec![101], 0x0000_0021_0000_0000),

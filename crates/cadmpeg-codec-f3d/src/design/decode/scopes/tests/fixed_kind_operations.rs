@@ -35,7 +35,7 @@ pub(super) fn continue_fixed_kind_operations(
     let mut draft_scope = scope.clone();
     draft_scope.payload = crate::records::DesignFeatureKind::Draft.into();
     draft_scope.frame_length = 361;
-    draft_scope.reference_members = vec![175, 176, 181, 182, 186, 190, 193];
+    draft_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![175, 176, 181, 182, 186, 190, 193]);
     let expected = Some(DesignDraftOperation {
         angle: 0.4,
         angle_record_index: 175,
@@ -56,7 +56,7 @@ pub(super) fn continue_fixed_kind_operations(
     // The ordered reference table is in record-index order, so the scalar lanes
     // hold no fixed position in it. Their local ordinals order them, and moving
     // them within the table must not change the recovered operation.
-    draft_scope.reference_members = vec![181, 182, 186, 190, 193, 175, 176];
+    draft_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![181, 182, 186, 190, 193, 175, 176]);
     assert_eq!(
         exact_draft_operation_with_owners(
             &bytes,
@@ -68,7 +68,7 @@ pub(super) fn continue_fixed_kind_operations(
     );
 
     // A table that reaches only one of the two lanes has no complete operation.
-    draft_scope.reference_members = vec![175, 181, 182, 186, 190, 193];
+    draft_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![175, 181, 182, 186, 190, 193]);
     assert_eq!(
         exact_draft_operation_with_owners(
             &bytes,
@@ -79,7 +79,7 @@ pub(super) fn continue_fixed_kind_operations(
         None
     );
 
-    draft_scope.reference_members = vec![175, 176, 181, 182, 186];
+    draft_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![175, 176, 181, 182, 186]);
     assert_eq!(
         exact_draft_operation_with_owners(
             &bytes,
@@ -89,7 +89,7 @@ pub(super) fn continue_fixed_kind_operations(
         ),
         None
     );
-    draft_scope.reference_members = vec![175, 176, 181, 182, 186, 190, 193];
+    draft_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![175, 176, 181, 182, 186, 190, 193]);
 
     let fillet_start = bytes.len();
     for (record_index, ordinal, value) in [
@@ -114,7 +114,7 @@ pub(super) fn continue_fixed_kind_operations(
     }
     let mut fillet_scope = scope.clone();
     fillet_scope.payload = crate::records::DesignFeatureKind::Fillet.into();
-    fillet_scope.reference_members = vec![77, 50, 78, 79, 87, 88];
+    fillet_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![77, 50, 78, 79, 87, 88]);
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
@@ -137,7 +137,7 @@ pub(super) fn continue_fixed_kind_operations(
             }],
         })
     );
-    fillet_scope.reference_members = vec![50, 77];
+    fillet_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 77]);
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
@@ -174,7 +174,7 @@ pub(super) fn continue_fixed_kind_operations(
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"259");
     bytes.extend_from_slice(&89u32.to_le_bytes());
-    fillet_scope.reference_members = vec![89];
+    fillet_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![89]);
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
@@ -210,7 +210,7 @@ pub(super) fn continue_fixed_kind_operations(
         scalar.extend_from_slice(&record_index.to_le_bytes());
         bytes.extend_from_slice(&scalar);
     }
-    fillet_scope.reference_members = vec![92, 93, 94, 95];
+    fillet_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![92, 93, 94, 95]);
     let fixed =
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope)
             .expect("two constant-radius Fillet scalar groups");
@@ -240,7 +240,7 @@ pub(super) fn continue_fixed_kind_operations(
     bytes.extend_from_slice(&chamfer_scalar);
     let mut chamfer_scope = scope.clone();
     chamfer_scope.payload = crate::records::DesignFeatureKind::Chamfer.into();
-    chamfer_scope.reference_members = vec![86];
+    chamfer_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![86]);
     assert_eq!(
         exact_fixed_chamfer_parameters(
             &bytes,
@@ -265,7 +265,7 @@ pub(super) fn continue_fixed_kind_operations(
     second_chamfer_scalar.extend_from_slice(b"261");
     second_chamfer_scalar.extend_from_slice(&96u32.to_le_bytes());
     bytes.extend_from_slice(&second_chamfer_scalar);
-    chamfer_scope.reference_members = vec![86, 96];
+    chamfer_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![86, 96]);
     assert_eq!(
         exact_fixed_chamfer_parameters(
             &bytes,
@@ -337,7 +337,7 @@ pub(super) fn continue_fixed_kind_operations(
     revolve_scope.byte_offset = revolve_start as u64;
     revolve_scope.payload = crate::records::DesignFeatureKind::Revolve.into();
     revolve_scope.frame_length = 386;
-    revolve_scope.reference_members = vec![200, 201, 202, 203, 1_779, 1_780, 204];
+    revolve_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, 1_779, 1_780, 204]);
     let revolve_construction = exact_path_feature_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -370,7 +370,7 @@ pub(super) fn continue_fixed_kind_operations(
     indexed_revolve_scope.class_tag = "407".into();
     indexed_revolve_scope.paired_class_tag = "258".into();
     indexed_revolve_scope.frame_length = 377;
-    indexed_revolve_scope.reference_members = vec![200, 201, 202, 203, 204, 205, 1_790, 1_791];
+    indexed_revolve_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, 204, 205, 1_790, 1_791]);
     let indexed_angle = DesignParameterOwner {
         id: indexed_revolve_scope.id.clone(),
         byte_offset: 0,
@@ -420,7 +420,7 @@ pub(super) fn continue_fixed_kind_operations(
     class403_scope.paired_class_tag = "258".into();
     class403_scope.byte_offset = class403_start as u64;
     class403_scope.frame_length = 387;
-    class403_scope.reference_members = vec![
+    class403_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
         200,
         201,
         202,
@@ -429,7 +429,7 @@ pub(super) fn continue_fixed_kind_operations(
         205,
         206,
         indexed_angle_record_index,
-    ];
+    ]);
     let mut class403_angle = indexed_angle.clone();
     class403_angle.scope_record_index = class403_scope.record_index;
     class403_angle.evaluated_value_offset = (class403_start + 40) as u64;
@@ -475,7 +475,7 @@ pub(super) fn continue_fixed_kind_operations(
     legacy_revolve_scope.paired_class_tag = "257".into();
     legacy_revolve_scope.frame_length = 359;
     legacy_revolve_scope.reference_members =
-        vec![200, 201, 202, 203, legacy_angle_record_index, 204];
+        crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, legacy_angle_record_index, 204]);
     let legacy_angle = DesignParameterOwner {
         id: legacy_revolve_scope.id.clone(),
         byte_offset: 0,
@@ -511,7 +511,7 @@ pub(super) fn continue_fixed_kind_operations(
     legacy_revolve_scope.paired_class_tag = "260".into();
     legacy_revolve_scope.frame_length = 381;
     legacy_revolve_scope.reference_members =
-        vec![legacy_angle_record_index, 200, 201, 202, 203, 204, 205, 206];
+        crate::records::ReferenceRun::Unlocated(vec![legacy_angle_record_index, 200, 201, 202, 203, 204, 205, 206]);
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -532,7 +532,7 @@ pub(super) fn continue_fixed_kind_operations(
     legacy_revolve_scope.paired_class_tag = "262".into();
     legacy_revolve_scope.frame_length = 369;
     legacy_revolve_scope.reference_members =
-        vec![200, 201, 202, 203, legacy_angle_record_index, 204];
+        crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, legacy_angle_record_index, 204]);
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -1189,7 +1189,7 @@ pub(super) fn continue_fixed_kind_operations(
     sweep_scope.byte_offset = sweep_start as u64;
     sweep_scope.payload = crate::records::DesignFeatureKind::Sweep.into();
     sweep_scope.frame_length = 499;
-    sweep_scope.reference_members = (80..86).collect();
+    sweep_scope.reference_members = crate::records::ReferenceRun::Unlocated((80..86).collect());
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -1457,7 +1457,7 @@ pub(super) fn continue_fixed_kind_operations(
     pipe_scope.byte_offset = pipe_start as u64;
     pipe_scope.payload = crate::records::DesignFeatureKind::Pipe.into();
     pipe_scope.frame_length = 464;
-    pipe_scope.reference_members = (170..174).collect();
+    pipe_scope.reference_members = crate::records::ReferenceRun::Unlocated((170..174).collect());
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -1518,7 +1518,7 @@ pub(super) fn continue_fixed_kind_operations(
     owner_pipe_scope.paired_class_tag = "257".into();
     owner_pipe_scope.payload = crate::records::DesignFeatureKind::Pipe.into();
     owner_pipe_scope.frame_length = 405;
-    owner_pipe_scope.reference_members = owner_pipe_record_indexes.into();
+    owner_pipe_scope.reference_members = crate::records::ReferenceRun::Unlocated(owner_pipe_record_indexes.into());
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -1590,7 +1590,7 @@ pub(super) fn continue_fixed_kind_operations(
         legacy_scope.paired_class_tag = paired_class_tag.into();
         legacy_scope.payload = crate::records::DesignFeatureKind::Pipe.into();
         legacy_scope.frame_length = 383;
-        legacy_scope.reference_members = (first_record_index..first_record_index + 4).collect();
+        legacy_scope.reference_members = crate::records::ReferenceRun::Unlocated((first_record_index..first_record_index + 4).collect());
         assert_eq!(
             exact_path_feature_construction(
                 &bytes,

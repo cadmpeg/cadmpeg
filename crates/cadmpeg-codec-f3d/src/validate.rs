@@ -392,10 +392,8 @@ fn valid_axial_selector_identity(
     else {
         return false;
     };
-    let selector_pair_is_referenced = scope
-        .reference_members
-        .windows(2)
-        .filter(|members| *members == [selector.axis_record_index, selector.selector_record_index])
+    let selector_pair_is_referenced = scope.reference_members.values().zip(scope.reference_members.values().skip(1))
+        .filter(|(first, second)| [**first, **second] == [selector.axis_record_index, selector.selector_record_index])
         .count()
         == 1;
     let selector_records_are_unique = [selector.axis_record_index, selector.selector_record_index]
@@ -403,7 +401,7 @@ fn valid_axial_selector_identity(
         .all(|record_index| {
             scope
                 .reference_members
-                .iter()
+                .values()
                 .filter(|member| *member == record_index)
                 .count()
                 == 1
@@ -515,7 +513,7 @@ fn valid_axial_assembly_targets(
                 frame.reference_record_index == *construction_record_index
                     && scope
                         .reference_members
-                        .iter()
+                        .values()
                         .filter(|record_index| **record_index == *construction_record_index)
                         .count()
                         == 1
@@ -2232,7 +2230,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let entity = entities_by_suffix.get(&(native_stream, profile.entity_suffix));
             usize::try_from(profile.scope_reference_ordinal)
                 .ok()
-                .and_then(|ordinal| scope.reference_members.get(ordinal))
+                .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
                 == Some(&profile.record_index)
                 && header.is_some_and(|header| {
                     header.byte_offset == profile.byte_offset
@@ -2265,13 +2263,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let base_flange_link = match scope.base_flange_operation() {
             None => scope.kind() != crate::records::DesignFeatureKind::BaseFlange,
             Some(operation) => {
-                scope.reference_members
-                    == [
+                scope.reference_members.values().copied().eq([
                         operation.profile_group_record_index,
                         operation.profile_record_index,
                         operation.thickness_record_index,
                         operation.settings_record_index,
-                    ]
+                    ])
                     && scope.base_flange_profile().is_some_and(|profile| {
                         profile.record_index == operation.profile_record_index
                             && profile.scope_reference_ordinal == 1
@@ -2326,7 +2323,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && claimed.iter().copied().collect::<HashSet<_>>().len() == claimed.len()
                     && claimed
                         .iter()
-                        .all(|index| scope.reference_members.contains(index))
+                        .all(|index| scope.reference_members.values().any(|value| value == index))
                     && operation.shape.edges().all(|edge| {
                         edge.operand_record_index == edge.group_record_index.saturating_add(3)
                     })
@@ -2375,7 +2372,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && claimed.len() == scope.reference_members.len()
                     && claimed
                         .iter()
-                        .all(|index| scope.reference_members.contains(index))
+                        .all(|index| scope.reference_members.values().any(|value| value == index))
                     && operation.edge_operand_record_index
                         == operation.edge_group_record_index.saturating_add(3)
                     && operation.aggregate_operand_record_index
@@ -2395,8 +2392,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let relation_header =
                     records_by_index.get(&(native_stream, operation.relation_record_index));
                 body_count > 0
-                    && scope.reference_members.first() == Some(&operation.body_group_record_index)
-                    && scope.reference_members[1..].iter().copied().eq(operation.bodies.iter().map(|body| body.operand.value))
+                    && scope.reference_members.values().next() == Some(&operation.body_group_record_index)
+                    && scope.reference_members.values().skip(1).copied().eq(operation.bodies.iter().map(|body| body.operand.value))
                     && operation.bodies.first().map(|body| body.operand.offset)
                         == Some(operation.body_group_byte_offset.saturating_add(26))
                     && operation
@@ -2459,12 +2456,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     };
                     let expected_records = scope
                         .reference_members
-                        .first()
+                        .values().next()
                         .into_iter()
                         .chain(
                             scope
                                 .reference_members
-                                .get(6..count.saturating_add(5))
+                                .values_in(6..count.saturating_add(5))
                                 .into_iter()
                                 .flatten(),
                         )
@@ -2539,7 +2536,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .owner_record_indices
                         .iter()
                         .all(|record_index| {
-                            scope.reference_members.contains(record_index)
+                            scope.reference_members.values().any(|value| value == record_index)
                                 && record_indices.contains(&(native_stream, *record_index))
                         })
                     && construction
@@ -2617,11 +2614,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     frame == &carrier.frame
                                         && frame.reference_record_index
                                             == carrier.construction_record_index
-                                        && scope.reference_members.get(reference_ordinal).copied()
+                                        && scope.reference_members.values().nth(reference_ordinal).copied()
                                             == Some(frame.reference_record_index)
                                         && scope
-                                            .reference_member_offsets
-                                            .get(reference_ordinal)
+                                            .reference_members.offsets().nth(reference_ordinal)
                                             .copied()
                                             == Some(frame.reference_offset)
                                         && alignment.solved_frame().is_some_and(|solved| {
@@ -2709,9 +2705,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         return false;
                     };
                     as_built_421
-                        && scope.reference_members.get(8).copied()
+                        && scope.reference_members.values().nth(8).copied()
                             == Some(frame.reference_record_index)
-                        && scope.reference_member_offsets.get(8).copied()
+                        && scope.reference_members.offsets().nth(8).copied()
                             == Some(frame.reference_offset)
                         && header.class_tag == generation.frame_class_tag()
                         && frame.class_tag == header.class_tag
@@ -3043,33 +3039,26 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             limits.owner_record_indices
                         };
                         alignment.owner_record_indices.len() == 4
-                            && scope.reference_members.get(4..8)
-                                == Some(
-                                    [
-                                        alignment.owner_record_indices[1],
-                                        alignment.owner_record_indices[2],
-                                        alignment.owner_record_indices[3],
-                                        alignment.owner_record_indices[0],
-                                    ]
-                                    .as_slice(),
-                                )
-                            && scope.reference_members.get(9..11)
-                                == Some(limit_reference_indices.as_slice())
+                            && scope.reference_members.values().skip(4).take(4).copied().eq([
+                                    alignment.owner_record_indices[1],
+                                    alignment.owner_record_indices[2],
+                                    alignment.owner_record_indices[3],
+                                    alignment.owner_record_indices[0],
+                                ])
+                            && scope.reference_members.values().skip(9).take(2).eq(limit_reference_indices.iter())
                     })
                 } else if design::assembly::variable_reference_assembly_generation(
                     &scope.class_tag,
                     &scope.paired_class_tag,
                 ) {
-                    scope
-                        .reference_members
-                        .windows(alignment.owner_record_indices.len())
-                        .filter(|members| *members == alignment.owner_record_indices.as_slice())
+                    (0..scope.reference_members.len())
+                        .filter(|&start| scope.reference_members.values_in(start..start + alignment.owner_record_indices.len())
+                            .is_some_and(|values| values.eq(alignment.owner_record_indices.iter())))
                         .count()
                         == 1
                 } else {
-                    scope
-                        .reference_members
-                        .ends_with(&alignment.owner_record_indices)
+                    scope.reference_members.values().rev().take(alignment.owner_record_indices.len())
+                        .eq(alignment.owner_record_indices.iter().rev())
                 };
                 values.iter().all(|value| value.is_finite())
                     && operand_frames_link
@@ -3180,7 +3169,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             .neutron_role
                             .get(37..)
                             .is_some_and(|suffix| suffix.starts_with("urn:")));
-                scope.reference_members == [construction.relation_record_index]
+                scope.reference_members.values().copied().eq([construction.relation_record_index])
                     && construction.carrier_record_index != construction.relation_record_index
                     && role_valid
                     && design::decode::sketch::valid_sketch_transform(&construction.transform)
@@ -3221,7 +3210,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     _ => 0,
                 };
                 source_at != 0
-                    && scope.reference_members == [operation.relation_record_index]
+                    && scope.reference_members.values().copied().eq([operation.relation_record_index])
                     && operation.source_occurrence_record_index
                         != operation.copied_occurrence_record_index
                     && operation.source_transform_offset == scope.byte_offset + source_at
@@ -3257,10 +3246,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 scope.reference_members.len() >= 6
                     && scope
                         .reference_members
-                        .contains(&operation.angle_record_index)
+                        .values().any(|value| value == &operation.angle_record_index)
                     && scope
                         .reference_members
-                        .contains(&operation.opposite_angle_record_index)
+                        .values().any(|value| value == &operation.opposite_angle_record_index)
                     && operation.angle_record_index != operation.opposite_angle_record_index
                     && operation.angle.is_finite()
                     && operation.angle_offset > scope.paired_byte_offset
@@ -3275,7 +3264,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             Some(operation) => {
                 let expected_selections = scope
                     .reference_members
-                    .iter()
+                    .values()
                     .skip(1)
                     .step_by(2)
                     .copied()
@@ -3425,13 +3414,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     records::DesignThreadForm::Standard
                     | records::DesignThreadForm::StandardLegacy => scope
                         .reference_members
-                        .first()
+                        .values().next()
                         .copied()
                         .into_iter()
                         .collect(),
                     records::DesignThreadForm::Compact(_)
                     | records::DesignThreadForm::CompactLegacy => {
-                        scope.reference_members.iter().step_by(2).copied().collect()
+                        scope.reference_members.values().step_by(2).copied().collect()
                     }
                 };
                 scope.reference_members.len() >= 2
@@ -3493,8 +3482,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             ) {
                                 let reference_ordinal = group_ordinal.saturating_mul(2);
                                 let Some(member_record_index) = scope
-                                    .reference_members
-                                    .get(reference_ordinal.saturating_add(1))
+                                    .reference_members.values().nth(reference_ordinal.saturating_add(1))
                                 else {
                                     return false;
                                 };
@@ -3534,7 +3522,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 (336 | 347, Some(reference)) => {
                     transform_offset == scope.byte_offset + 60
                         && reference.joint_origin_reference_offset == scope.byte_offset + 46
-                        && scope.reference_members.contains(&reference.joint_origin_reference)
+                        && scope.reference_members.values().any(|value| value == &reference.joint_origin_reference)
                 }
                 _ => false,
             };
@@ -3560,7 +3548,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && assembly.paired_class_tag == "258"
                         && assembly.frame_length == 604
                         && transform_offset == assembly.byte_offset + 36
-                        && assembly.reference_members.contains(&reference.joint_origin_reference)
+                        && assembly.reference_members.values().any(|value| value == &reference.joint_origin_reference)
                         && reference.joint_origin_reference_offset == assembly.byte_offset + 25
                 })
             });
@@ -3741,13 +3729,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             reference.record_index_offset == scope.byte_offset.saturating_add(26)
                                 && matches!(reference.trailing_zero_count, 7 | 8)
                                 && marker_valid
-                                && scope.reference_members.contains(&reference.record_index)
+                                && scope.reference_members.values().any(|value| value == &reference.record_index)
                         },
                     );
                     let target_ordinal_valid = first_side_target_ordinal.is_none_or(|target| {
                         usize::try_from(target.scope_reference_ordinal)
                             .ok()
-                            .and_then(|ordinal| scope.reference_members.get(ordinal).copied())
+                            .and_then(|ordinal| scope.reference_members.values().nth(ordinal).copied())
                             .is_some_and(|record_index| {
                                 let mut groups = native
                                     .design_construction_operand_groups
@@ -4237,9 +4225,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && operation.gap_tolerance_offset > scope.paired_byte_offset
                         && scope.reference_members.len() >= 4
                         && scope.reference_members.len().is_multiple_of(2)
-                        && scope.reference_members[scope.reference_members.len() - 2]
-                            == operation.tolerance_record_index
-                        && scope.reference_members.last() == Some(&operation.settings_record_index)
+                        && scope.reference_members.values().rev().nth(1)
+                            == Some(&operation.tolerance_record_index)
+                        && scope.reference_members.values().next_back() == Some(&operation.settings_record_index)
                 }
                 records::DesignScopePayload::SurfaceStitch(None) => false,
                 _ => true,
@@ -4249,9 +4237,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     operation.method_offset == scope.byte_offset.saturating_add(20)
                         && operation.alternate_face_offset == scope.byte_offset.saturating_add(27)
                         && operation.corner_offset == scope.byte_offset.saturating_add(50)
-                        && scope.reference_members.first()
+                        && scope.reference_members.values().next()
                             == Some(&operation.distance_owner_record_index)
-                        && scope.reference_members.get(1)
+                        && scope.reference_members.values().nth(1)
                             == Some(&operation.angle_owner_record_index)
                         && operation.distance_owner_record_index
                             != operation.angle_owner_record_index
@@ -4259,7 +4247,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && operation
                             .edge_group_record_indices
                             .iter()
-                            .all(|record_index| scope.reference_members.contains(record_index))
+                            .all(|record_index| scope.reference_members.values().any(|value| value == record_index))
                         && match operation.method {
                             records::DesignRuledSurfaceMethod::Direction => {
                                 operation.direction_entity_id.is_some()
@@ -4314,23 +4302,19 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && scope.reference_count_offset > scope.byte_offset
             && scope.reference_count_offset < scope.kind_offset
             && !scope.reference_members.is_empty()
-            && scope.reference_members.len() == scope.reference_member_offsets.len()
-            && scope.reference_member_offsets.first()
+            && scope.reference_members.offsets().next()
                 == Some(&scope.reference_count_offset.saturating_add(5))
+            && scope.reference_members.offsets().zip(scope.reference_members.offsets().skip(1))
+                .all(|(first, second)| *second == first.saturating_add(11))
             && scope
-                .reference_member_offsets
-                .windows(2)
-                .all(|offsets| offsets[1] == offsets[0].saturating_add(11))
-            && scope
-                .reference_member_offsets
-                .last()
+                .reference_members.offsets().next_back()
                 .is_some_and(|offset| offset.saturating_add(18) == scope.kind_offset)
-            && scope.reference_member_offsets.iter().all(|offset| {
+            && scope.reference_members.offsets().all(|offset| {
                 *offset > scope.reference_count_offset && *offset < scope.kind_offset
             })
             && scope
                 .reference_members
-                .iter()
+                .values()
                 .all(|record_index| record_indices.contains(&(native_stream, *record_index)))
             && record_indices.contains(&(native_stream, scope.record_index))
             && entity_link.unwrap_or(scope.kind() != crate::records::DesignFeatureKind::Sketch)
@@ -4379,7 +4363,7 @@ fn valid_work_point_construction(
         || construction.position_offset >= construction.reference_type_offset
         || !scope
             .reference_members
-            .contains(&construction.point_record_index)
+            .values().any(|value| value == &construction.point_record_index)
         || ctx
             .records_by_index
             .get(&(native_stream, construction.point_record_index))
@@ -4392,7 +4376,7 @@ fn valid_work_point_construction(
         let header = ctx
             .records_by_index
             .get(&(native_stream, input.record_index));
-        scope.reference_members.contains(&input.record_index)
+        scope.reference_members.values().any(|value| value == &input.record_index)
             && input.reference_offset > construction.reference_type_offset
             && header.is_some()
             && match input.carrier.as_deref() {
@@ -4493,7 +4477,7 @@ fn valid_work_plane_construction(
     else {
         return true;
     };
-    let [placement, first, second, third, extra_offset] = scope.reference_members.as_slice() else {
+    let Some([placement, first, second, third, extra_offset]) = scope.reference_members.values_array() else {
         return false;
     };
     let Some(placement_header) = ctx
@@ -4733,7 +4717,7 @@ fn validate_extrude_selection_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     == Some(design::DesignFeatureFamily::Extrude)
                     && usize::try_from(group.scope_reference_ordinal)
                         .ok()
-                        .and_then(|ordinal| scope.reference_members.get(ordinal))
+                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
                         == Some(&group.record_index)
             })
             && header.is_some_and(|header| {
@@ -5224,12 +5208,12 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     && role_is_valid
                     && usize::try_from(group.scope_reference_ordinal)
                         .ok()
-                        .and_then(|ordinal| scope.reference_members.get(ordinal))
+                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
                         == Some(&group.record_index)
                     && group
                         .members
                         .iter().map(|member| &member.value)
-                        .all(|member| scope.reference_members.contains(member))
+                        .all(|member| scope.reference_members.values().any(|value| value == member))
             })
             && header.is_some_and(|header| {
                 header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
@@ -5368,9 +5352,9 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     usize::from(*operation != records::DesignExtrudeOperation::NewBody);
                 angle.is_finite()
                     && *angle > 0.0
-                    && scope.reference_members.contains(angle_record_index)
+                    && scope.reference_members.values().any(|value| value == angle_record_index)
                     && opposite_angle
-                        .is_none_or(|located| scope.reference_members.contains(&located.value))
+                        .is_none_or(|located| scope.reference_members.values().any(|value| value == &located.value))
                     && groups.len() == 2 + expected_body_count
                     && role_count(0x0000_0021_0000_0000) == 1
                     && role_count(0x0000_0041_0000_0000) == 1
@@ -5489,7 +5473,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         [] => {
                             usize::try_from(profile.scope_reference_ordinal)
                                 .ok()
-                                .and_then(|ordinal| scope.reference_members.get(ordinal))
+                                .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
                                 == Some(&profile.record_index)
                         }
                         [group] => group.members.first().map(|member| &member.value) == Some(&profile.record_index),
@@ -6134,7 +6118,7 @@ fn validate_fillet_operand_groups<'a>(
                     .all(|record_index| {
                         scope
                             .reference_members
-                            .iter()
+                            .values()
                             .filter(|member| **member == record_index)
                             .count()
                             == 1
@@ -6500,7 +6484,7 @@ fn validate_body_recipe_operands<'a>(
                         })))
                     && usize::try_from(scope_reference_ordinal)
                         .ok()
-                        .and_then(|ordinal| scope.reference_members.get(ordinal))
+                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
                         == Some(&operand.record_index)
             }
         });
@@ -7149,7 +7133,7 @@ fn validate_edge_operands<'a>(
                 design::decode::operands::has_edge_recipe_operands(&scope.kind())
                     && usize::try_from(operand.scope_reference_ordinal)
                         .ok()
-                        .and_then(|ordinal| scope.reference_members.get(ordinal))
+                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
                         == Some(&operand.record_index)
             })
             && header.is_some_and(|header| {
@@ -7256,7 +7240,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
                 design::decode::operands::has_edge_recipe_operands(&scope.kind())
                     && usize::try_from(operand.scope_reference_ordinal)
                         .ok()
-                        .and_then(|ordinal| scope.reference_members.get(ordinal))
+                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
                         == Some(&operand.recipe.record_index)
             })
             && group.is_some_and(|group| {
@@ -7509,7 +7493,7 @@ fn validate_face_operands<'a>(
                             group.scope_record_index == operand.scope_record_index
                                 && usize::try_from(operand.scope_reference_ordinal)
                                     .ok()
-                                    .and_then(|ordinal| scope.reference_members.get(ordinal))
+                                    .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
                                     == Some(&group_record_index)
                                 && usize::try_from(group_member_ordinal)
                                     .ok()
@@ -7633,7 +7617,7 @@ fn validate_face_operands<'a>(
                     (None, None) => {
                         let direct_member = usize::try_from(operand.scope_reference_ordinal)
                             .ok()
-                            .and_then(|ordinal| scope.reference_members.get(ordinal))
+                            .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
                             == Some(&operand.record_index);
                         direct_member
                             && match family {
@@ -7797,11 +7781,11 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
         );
         let scope_links_valid = scope.is_some_and(|scope| {
             scope.kind() == crate::records::DesignFeatureKind::Face
-                && carrier_ordinal.and_then(|ordinal| scope.reference_members.get(ordinal))
+                && carrier_ordinal.and_then(|ordinal| scope.reference_members.values().nth(ordinal))
                     == Some(&group.carrier_record_index)
                 && carrier_ordinal
                     .and_then(|ordinal| ordinal.checked_add(1))
-                    .and_then(|ordinal| scope.reference_members.get(ordinal))
+                    .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
                     == Some(&group.paired_record_index)
         });
         let headers_valid = carrier_header.is_some_and(|header| {

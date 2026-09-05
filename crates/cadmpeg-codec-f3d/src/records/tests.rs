@@ -1128,3 +1128,31 @@ fn edge_flange_rows_preserve_wire_and_reject_parallel_mismatch() {
         }
     }
 }
+
+#[test]
+fn scope_reference_runs_preserve_wire_and_reject_partial_locations() {
+    let empty = serde_json::to_string(&DesignParameterScope::empty("scope", DesignFeatureKind::Sketch, 1)).unwrap();
+    for (values, offsets) in [
+        ("[]", "[]"),
+        ("[10]", "[]"),
+        ("[10]", "[0]"),
+        ("[10,20,30]", "[]"),
+        ("[10,20,30]", "[0,11,22]"),
+    ] {
+        let wire = empty.replace("\"reference_members\":[]", &format!("\"reference_members\":{values}"))
+            .replace("\"reference_member_offsets\":[]", &format!("\"reference_member_offsets\":{offsets}"));
+        let scope: DesignParameterScope = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&scope).unwrap(), wire);
+        assert_eq!(scope.reference_members.values().len(), scope.reference_members.len());
+        assert_eq!(scope.reference_members.values_in(0..scope.reference_members.len()).unwrap().copied().collect::<Vec<_>>(),
+            serde_json::from_str::<Vec<u32>>(values).unwrap());
+        assert!(scope.reference_members.values_in(0..scope.reference_members.len() + 1).is_none());
+    }
+    for (values, offsets) in [("[]", "[0]"), ("[10]", "[0,11]"), ("[10,20,30]", "[0,11]")] {
+        let wire = empty.replace("\"reference_members\":[]", &format!("\"reference_members\":{values}"))
+            .replace("\"reference_member_offsets\":[]", &format!("\"reference_member_offsets\":{offsets}"));
+        let error = serde_json::from_str::<DesignParameterScope>(&wire).unwrap_err().to_string();
+        assert!(error.contains("reference_members"));
+        assert!(error.contains("reference_member_offsets"));
+    }
+}

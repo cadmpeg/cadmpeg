@@ -79,8 +79,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
     scope.frame_length = 261;
     scope.kind_offset = 252;
     scope.reference_count_offset = 229;
-    scope.reference_members = vec![167];
-    scope.reference_member_offsets = vec![234];
+    scope.reference_members = crate::records::ReferenceRun::from_columns(vec![167], vec![234], "reference_members").unwrap();
     scope.paired_class_tag = "261".into();
     scope.paired_byte_offset = 361;
     scope.feature_ordinal = 1;
@@ -300,11 +299,11 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             },
             scope_record_index,
         );
-        scope.reference_members = if hole_scope {
+        scope.reference_members = crate::records::ReferenceRun::Unlocated(if hole_scope {
             vec![1, 2, 3, 4, 5, 6, operand_record_index]
         } else {
             vec![1, 2, 3, 4, 5, operand_record_index]
-        };
+        });
         if let crate::records::DesignScopePayload::Combine(slot) = &mut scope.payload {
             *slot = (!hole_scope).then_some(DesignCombineOperation {
                 form: DesignCombineForm::Standard,
@@ -421,7 +420,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         crate::records::DesignFeatureKind::Hole,
         10,
     );
-    scope.reference_members = vec![100, 101, 200, 201];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 101, 200, 201]);
     let group = |record_index: u32,
                  scope_reference_ordinal: u32,
                  member: u32,
@@ -548,7 +547,7 @@ fn validation_checks_pipe_path_group_roles() {
         }));
         scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
     }
-    scope.reference_members = vec![1, 2, 3, 4, 20, 21];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![1, 2, 3, 4, 20, 21]);
     let path_group = DesignConstructionOperandGroup {
         id: format!("{stream}:design-construction-operand-group#20"),
         scope_record_index: 10,
@@ -1038,8 +1037,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         previous_history_state_id: None,
         previous_history_state_id_offset: Some(228),
         reference_count_offset: 180,
-        reference_members: vec![20, 30],
-        reference_member_offsets: vec![184, 195],
+        reference_members: crate::records::ReferenceRun::from_columns(vec![20, 30], vec![184, 195], "reference_members").unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: 300,

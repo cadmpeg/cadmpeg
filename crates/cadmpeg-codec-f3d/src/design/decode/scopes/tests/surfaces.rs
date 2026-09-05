@@ -151,8 +151,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         previous_history_state_id: Some(2),
         previous_history_state_id_offset: None,
         reference_count_offset: 0,
-        reference_members: vec![301],
-        reference_member_offsets: vec![0],
+        reference_members: crate::records::ReferenceRun::from_columns(vec![301], vec![0], "reference_members").unwrap(),
         payload: crate::records::DesignFeatureKind::BaseFeature.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
@@ -320,8 +319,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     snapshot_scope.previous_history_state_id = None;
     snapshot_scope.previous_history_state_id_offset = None;
     snapshot_scope.reference_count_offset = 350;
-    snapshot_scope.reference_members = vec![301];
-    snapshot_scope.reference_member_offsets = vec![355];
+    snapshot_scope.reference_members = crate::records::ReferenceRun::from_columns(vec![301], vec![355], "reference_members").unwrap();
     snapshot_scope.paired_class_tag = "259".into();
     snapshot_scope.paired_byte_offset = 485;
     let construction = exact_base_feature_construction(&snapshot_bytes, &snapshot_scope)
@@ -381,7 +379,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert_eq!(related_guid_offsets, [67, 143, 275]);
 
     let mut invalid_scope = snapshot_scope;
-    invalid_scope.reference_members = vec![302];
+    invalid_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![302]);
     assert!(exact_base_feature_construction(&snapshot_bytes, &invalid_scope).is_none());
 }
 
@@ -424,7 +422,7 @@ fn base_feature_scope_decodes_class_452_compact_result_body_run() {
     scope.class_tag = "452".into();
     scope.frame_length = 314;
     scope.kind_offset = 213;
-    scope.reference_members = vec![301];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![301]);
     scope.paired_class_tag = "266".into();
     scope.paired_byte_offset = 314;
     let construction = exact_base_feature_construction(&bytes, &scope)
@@ -500,7 +498,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         scope.frame_length = frame_length as u64;
         scope.kind_offset = (frame_length + 102) as u64;
         scope.paired_byte_offset = frame_length as u64;
-        scope.reference_members = vec![301];
+        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![301]);
         assert!(cursor <= frame_length);
         (bytes, scope)
     }
@@ -563,7 +561,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
     zero_scope.frame_length = 258;
     zero_scope.kind_offset = (prefix + 157) as u64;
     zero_scope.paired_byte_offset = (prefix + 258) as u64;
-    zero_scope.reference_members = vec![701];
+    zero_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![701]);
     let construction = exact_base_feature_construction(&zero_body, &zero_scope)
         .expect("class-409/class-262 zero-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
@@ -639,7 +637,7 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
     scope.frame_length = frame_length as u64;
     scope.kind_offset = (frame_length + 102) as u64;
     scope.paired_byte_offset = frame_length as u64;
-    scope.reference_members = vec![301];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![301]);
     assert_eq!(cursor, 155);
 
     let construction = exact_base_feature_construction(&bytes, &scope)
@@ -713,7 +711,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         scope.frame_length = frame_length as u64;
         scope.kind_offset = (frame_length + 102) as u64;
         scope.paired_byte_offset = frame_length as u64;
-        scope.reference_members = vec![301];
+        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![301]);
         assert!(cursor <= frame_length);
         (bytes, scope)
     }
@@ -778,8 +776,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
     zero_scope.kind_offset = (prefix + 157) as u64;
     zero_scope.paired_byte_offset = (prefix + 258) as u64;
     zero_scope.reference_count_offset = (prefix + 134) as u64;
-    zero_scope.reference_members = vec![701];
-    zero_scope.reference_member_offsets = vec![(prefix + 139) as u64];
+    zero_scope.reference_members = crate::records::ReferenceRun::from_columns(vec![701], vec![(prefix + 139) as u64], "reference_members").unwrap();
     let construction = exact_base_feature_construction(&zero_body, &zero_scope)
         .expect("class-444/class-263 zero-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
@@ -892,8 +889,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     scope.previous_history_state_id = Some(19);
     scope.previous_history_state_id_offset = Some(class_377::PREVIOUS_HISTORY_STATE_ID as u64);
     scope.reference_count_offset = class_377::REFERENCE_COUNT as u64;
-    scope.reference_members = vec![196];
-    scope.reference_member_offsets = vec![class_377::GENERIC_SCOPE_REFERENCE_RECORD as u64];
+    scope.reference_members = crate::records::ReferenceRun::from_columns(vec![196], vec![class_377::GENERIC_SCOPE_REFERENCE_RECORD as u64], "reference_members").unwrap();
 
     let construction = exact_base_feature_construction(&bytes, &scope)
         .expect("class-377/class-259 Base Feature frame is canonical");
@@ -1041,9 +1037,9 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         scope.byte_offset = 0;
         scope.class_tag = "452".into();
         scope.paired_class_tag = "262".into();
-        scope.reference_members = vec![scope_reference];
+        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![scope_reference]);
         scope.reference_count_offset = reference_count as u64;
-        scope.reference_member_offsets = vec![generic_record as u64];
+        scope.reference_members = crate::records::ReferenceRun::from_columns(scope.reference_members.values().copied().collect(), vec![generic_record as u64], "reference_members").unwrap();
         scope.history_state_id = Some(i64::from(current_state));
         scope.history_state_id_offset = history_state_id as u64;
         scope.previous_history_state_id = Some(i64::from(previous_state));
@@ -1103,9 +1099,9 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     compact_scope.paired_class_tag = "262".into();
     compact_scope.frame_length = compact::LEN as u64;
     compact_scope.paired_byte_offset = compact::LEN as u64;
-    compact_scope.reference_members = vec![196];
+    compact_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![196]);
     compact_scope.reference_count_offset = compact::REFERENCE_COUNT as u64;
-    compact_scope.reference_member_offsets = vec![compact::GENERIC_SCOPE_REFERENCE_RECORD as u64];
+    compact_scope.reference_members = crate::records::ReferenceRun::from_columns(compact_scope.reference_members.values().copied().collect(), vec![compact::GENERIC_SCOPE_REFERENCE_RECORD as u64], "reference_members").unwrap();
     compact_scope.history_state_id = Some(20);
     compact_scope.history_state_id_offset = compact::HISTORY_STATE_ID as u64;
     compact_scope.previous_history_state_id = Some(19);
@@ -1253,7 +1249,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     expanded_scope.frame_length = expanded::LEN as u64;
     expanded_scope.paired_byte_offset = expanded::LEN as u64;
     expanded_scope.reference_count_offset = expanded::REFERENCE_COUNT as u64;
-    expanded_scope.reference_member_offsets = vec![expanded::GENERIC_SCOPE_REFERENCE_RECORD as u64];
+    expanded_scope.reference_members = crate::records::ReferenceRun::from_columns(expanded_scope.reference_members.values().copied().collect(), vec![expanded::GENERIC_SCOPE_REFERENCE_RECORD as u64], "reference_members").unwrap();
     expanded_scope.history_state_id_offset = expanded::HISTORY_STATE_ID as u64;
     expanded_scope.previous_history_state_id_offset =
         Some(expanded::PREVIOUS_HISTORY_STATE_ID as u64);

@@ -55,8 +55,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 1080,
-        reference_members: vec![100, 200, 201],
-        reference_member_offsets: vec![1085, 1096, 1107],
+        reference_members: crate::records::ReferenceRun::from_columns(vec![100, 200, 201], vec![1085, 1096, 1107], "reference_members").unwrap(),
         payload: crate::records::DesignFeatureKind::Extrude.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
@@ -317,8 +316,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut split_scope = scope.clone();
     split_scope.payload = crate::records::DesignFeatureKind::SplitFace.into();
     split_scope.frame_length = 334;
-    split_scope.reference_members = vec![100, 200, 201, 400, 500];
-    split_scope.reference_member_offsets = vec![1085, 1096, 1107, 1118, 1129];
+    split_scope.reference_members = crate::records::ReferenceRun::from_columns(vec![100, 200, 201, 400, 500], vec![1085, 1096, 1107, 1118, 1129], "reference_members").unwrap();
     let mut tool_group = group.clone();
     tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
     tool_group.role = 0x0000_0021_0000_0000;
@@ -492,8 +490,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut split_body_scope = scope.clone();
     split_body_scope.payload = crate::records::DesignFeatureKind::Split.into();
     split_body_scope.frame_length = 325;
-    split_body_scope.reference_members = vec![100, 200, 400, 500];
-    split_body_scope.reference_member_offsets = vec![1085, 1096, 1107, 1118];
+    split_body_scope.reference_members = crate::records::ReferenceRun::from_columns(vec![100, 200, 400, 500], vec![1085, 1096, 1107, 1118], "reference_members").unwrap();
     let mut split_tool_group = group.clone();
     split_tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
     split_tool_group.record_index = 100;
@@ -587,7 +584,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 
     let mut multiple_targets_scope = split_body_scope.clone();
     multiple_targets_scope.frame_length = 358;
-    multiple_targets_scope.reference_members = vec![100, 200, 400, 500, 501];
+    multiple_targets_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 400, 500, 501]);
     let mut multiple_targets = split_target_group.clone();
     multiple_targets.members = vec![500, 501].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
     assert!(matches!(
@@ -601,7 +598,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 
     let mut construction_tool_scope = split_body_scope.clone();
     construction_tool_scope.frame_length = 347;
-    construction_tool_scope.reference_members = vec![100, 200, 201, 400, 500];
+    construction_tool_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 201, 400, 500]);
     let mut construction_tool = split_tool_group.clone();
     construction_tool.role = 0x0000_0021_0000_0000;
     construction_tool.members = vec![200, 201].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
@@ -665,8 +662,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     delete_scope.payload = crate::records::DesignFeatureKind::DeleteFace.into();
     delete_scope.frame_length = 258;
     delete_scope.kind_offset = 1161;
-    delete_scope.reference_members = vec![100, 200];
-    delete_scope.reference_member_offsets = vec![1085, 1096];
+    delete_scope.reference_members = crate::records::ReferenceRun::from_columns(vec![100, 200], vec![1085, 1096], "reference_members").unwrap();
     let mut delete_group = group.clone();
     delete_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
     delete_group.members = vec![crate::records::Located { value: 200, offset: 1096 }];
@@ -943,7 +939,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 
     let mut stitch_scope = scope;
     stitch_scope.payload = crate::records::DesignFeatureKind::SurfaceStitch.into();
-    stitch_scope.reference_members = vec![100, 200, 300, 301];
+    stitch_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 300, 301]);
     if let crate::records::DesignScopePayload::SurfaceStitch(slot) = &mut stitch_scope.payload {
         *slot = Some(DesignSurfaceStitchOperation {
             gap_tolerance: 0.01,
@@ -1049,7 +1045,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
             scope_kind,
             scope_record_index,
         );
-        scope.reference_members = vec![group_record_index];
+        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![group_record_index]);
         let record = DesignRecordHeader {
             id: format!("f3d:test:legacy-body-record#{group_record_index}"),
             byte_offset: frame_at,
@@ -1079,7 +1075,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     scope.paired_class_tag = "261".into();
     scope.frame_length = 536;
     scope.reference_count_offset = 1291;
-    scope.reference_members = (0..13).map(|index| 296_500 + index).collect();
+    scope.reference_members = crate::records::ReferenceRun::Unlocated((0..13).map(|index| 296_500 + index).collect());
     if let crate::records::DesignScopePayload::Extrude(slot)
     | crate::records::DesignScopePayload::Extrusion(slot)
     | crate::records::DesignScopePayload::Extrusao(slot) = &mut scope.payload

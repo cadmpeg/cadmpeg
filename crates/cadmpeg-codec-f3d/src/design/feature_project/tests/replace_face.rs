@@ -63,7 +63,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
     scope.paired_class_tag = "258".into();
     scope.frame_length = 290;
     scope.previous_history_state_id = Some(254);
-    scope.reference_members = vec![1130, 1133, 1137, 1140];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![1130, 1133, 1137, 1140]);
 
     let replacement_group = group(1129, 0, 1130, 1133, 0x0000_0009_0000_0000);
     let target_group = group(1129, 2, 1137, 1140, 0x0000_0010_0000_0000);
@@ -178,7 +178,7 @@ fn surface_trim_projects_body_target_and_curve_tool() {
         crate::records::DesignFeatureKind::SurfaceTrim,
         1200,
     );
-    scope.reference_members = vec![1201, 1202, 1203, 1204];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![1201, 1202, 1203, 1204]);
     let target_group = group(1200, 0, 1201, 1202, 0x0000_0004_0000_0000);
     let tool_group = group(1200, 2, 1203, 1204, 0x0000_0021_0000_0000);
     let body = DesignBodyRecipeOperand {

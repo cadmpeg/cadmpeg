@@ -503,14 +503,14 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         crate::records::DesignFeatureKind::RemoveBody,
         20,
     );
-    remove_body.reference_members = vec![200];
+    remove_body.reference_members = crate::records::ReferenceRun::Unlocated(vec![200]);
 
     let mut surface_stitch = DesignParameterScope::empty(
         &format!("{stream}:scope#surface-stitch"),
         crate::records::DesignFeatureKind::SurfaceStitch,
         30,
     );
-    surface_stitch.reference_members = vec![300, 301, 302, 303];
+    surface_stitch.reference_members = crate::records::ReferenceRun::Unlocated(vec![300, 301, 302, 303]);
     if let crate::records::DesignScopePayload::SurfaceStitch(slot) = &mut surface_stitch.payload {
         *slot = Some(DesignSurfaceStitchOperation {
             gap_tolerance: 0.01,
@@ -597,7 +597,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             face_group_record_indices: vec![701],
         });
     }
-    thread.reference_members = vec![701, 702];
+    thread.reference_members = crate::records::ReferenceRun::Unlocated(vec![701, 702]);
 
     let scopes = vec![
         base_flange,
@@ -783,7 +783,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
         crate::records::DesignFeatureKind::Form,
         201,
     );
-    scope.reference_members = vec![205];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![205]);
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
         id: feature_id,
@@ -863,7 +863,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
         crate::records::DesignFeatureKind::Form,
         201,
     );
-    scope.reference_members = vec![205];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![205]);
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
         id: feature_id,

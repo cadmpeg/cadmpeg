@@ -928,7 +928,7 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("compact mixed Extrude scope");
     assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
-    assert_eq!(scope.reference_members, reference_members);
+    assert_eq!(scope.reference_members.values().copied().collect::<Vec<_>>(), reference_members);
     assert_eq!(
         scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
@@ -1316,7 +1316,7 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
     let to_face = parse(&make_bytes(true, &TO_FACE_REFERENCES));
     assert_eq!(to_face.frame_length, 481);
     assert_eq!(to_face.reference_count_offset, 278);
-    assert_eq!(to_face.reference_members, TO_FACE_REFERENCES);
+    assert_eq!(to_face.reference_members.values().copied().collect::<Vec<_>>(), TO_FACE_REFERENCES);
     let Some(DesignExtrudePrologue::ReferenceAware {
         operation,
         direction_face_extend_values,
@@ -1339,7 +1339,7 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
     let distance = parse(&make_bytes(false, &DISTANCE_REFERENCES));
     assert_eq!(distance.frame_length, 449);
     assert_eq!(distance.reference_count_offset, 268);
-    assert_eq!(distance.reference_members, DISTANCE_REFERENCES);
+    assert_eq!(distance.reference_members.values().copied().collect::<Vec<_>>(), DISTANCE_REFERENCES);
     let Some(DesignExtrudePrologue::ReferenceAware {
         direction_face_extend_values,
         side_extent_discriminators,

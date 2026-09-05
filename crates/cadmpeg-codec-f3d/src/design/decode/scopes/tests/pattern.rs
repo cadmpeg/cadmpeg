@@ -182,13 +182,12 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         previous_history_state_id: Some(1),
         previous_history_state_id_offset: None,
         reference_count_offset: 0,
-        reference_members: vec![
+        reference_members: crate::records::ReferenceRun::from_columns(vec![
             count_record_index,
             angle_record_index,
             axis_record_index,
             selection_record_index,
-        ],
-        reference_member_offsets: vec![0; 4],
+        ], vec![0; 4], "reference_members").unwrap(),
         payload: crate::records::DesignFeatureKind::CPattern.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "258".into(),
@@ -314,9 +313,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         None
     );
     bytes[axis_start + 57..axis_start + 65].fill(0);
-    scope
-        .reference_members
-        .extend([axis_record_index, selection_record_index]);
+    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.extend([axis_record_index, selection_record_index]); crate::records::ReferenceRun::Unlocated(values) };
     assert_eq!(
         exact_circular_pattern_construction_with_owners(
             &bytes,
@@ -357,7 +354,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     append_transform_record(&mut bytes, 120, [2.0, 3.0, 9.0]);
     append_transform_record(&mut bytes, 130, [2.0, 3.0, 14.0]);
     append_header(&mut bytes, 140);
-    scope.reference_members = vec![100, 50, 51, 52, 53, 110, 120, 130, 140];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 50, 51, 52, 53, 110, 120, 130, 140]);
     let rectangular = exact_rectangular_pattern_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -409,7 +406,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
 
     scope.payload = crate::records::DesignFeatureKind::Assemble.into();
     scope.frame_length = 627;
-    scope.reference_members = vec![50, 51, 52, 53];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53]);
     let alignment = exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -430,7 +427,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         owner(62, 6, 5.0, 603),
         owner(63, 7, 6.0, 604),
     ]);
-    scope.reference_members = vec![50, 51, 52, 53, 60, 61, 62, 63];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53, 60, 61, 62, 63]);
     assert!(exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -467,7 +464,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
 
     let mut short_axial_owners = rectangular_owners.to_vec();
     short_axial_owners.extend([owner(64, 4, 0.5, 605), owner(65, 5, 2.0, 606)]);
-    scope.reference_members = vec![50, 51, 52, 53, 64, 65];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53, 64, 65]);
     assert!(exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -488,7 +485,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
 
     let mut legacy_alignment_owners = placement_and_alignment_owners.clone();
     legacy_alignment_owners.extend([owner(64, 8, 0.5, 605), owner(65, 9, 2.0, 606)]);
-    scope.reference_members = vec![50, 51, 52, 53, 60, 61, 62, 63, 64, 65];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53, 60, 61, 62, 63, 64, 65]);
     assert!(exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -508,7 +505,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(alignment.offset, [0.0, 0.0, 2.0]);
     assert_eq!(alignment.owner_record_indices, [64, 65]);
     assert_eq!(alignment.value_offsets, [605, 606]);
-    scope.reference_members = vec![50, 51, 52, 53];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53]);
 
     let assembly_bytes = assembly_operand_frame_fixture(scope_record_index);
     scope.frame_length = 637;
@@ -614,7 +611,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         frame_length: 772,
         paired_byte_offset: 772,
         paired_class_tag: "261".into(),
-        reference_members: vec![50, 51, 52, 53, 60, 61, 62, 63, 64, 65],
+        reference_members: crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53, 60, 61, 62, 63, 64, 65]),
         ..scope.clone()
     };
     let axial_alignment = exact_assembly_alignment(
@@ -640,7 +637,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         frame_length: 705,
         paired_byte_offset: 705,
         paired_class_tag: "261".into(),
-        reference_members: vec![50, 51, 52, 53, 64, 65],
+        reference_members: crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53, 64, 65]),
         ..scope.clone()
     };
     let short_axial_alignment = exact_assembly_alignment(
@@ -665,7 +662,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut first_joint_origin = scope.clone();
     first_joint_origin.payload = crate::records::DesignFeatureKind::JointOrigin.into();
     first_joint_origin.record_index = 70;
-    first_joint_origin.reference_members.clear();
+    first_joint_origin.reference_members = crate::records::ReferenceRun::Unlocated(Vec::new());
     let mut second_joint_origin = first_joint_origin.clone();
     second_joint_origin.record_index = 80;
     let mut linked_assembly = axial_assembly_scope.clone();
@@ -706,10 +703,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     single_frame_assembly.paired_class_tag = "258".into();
     single_frame_assembly.frame_length = 604;
     single_frame_assembly.paired_byte_offset = 604;
-    single_frame_assembly.reference_members = placement_and_alignment_owners
+    single_frame_assembly.reference_members = crate::records::ReferenceRun::Unlocated(placement_and_alignment_owners
         .iter()
         .map(|owner| owner.record_index)
-        .collect();
+        .collect());
     if let crate::records::DesignScopePayload::Assemble(slot)
     | crate::records::DesignScopePayload::AsBuilt(slot) = &mut single_frame_assembly.payload
     {
@@ -718,7 +715,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut single_frame_joint_origin = scope.clone();
     single_frame_joint_origin.payload = crate::records::DesignFeatureKind::JointOrigin.into();
     single_frame_joint_origin.record_index = 91;
-    single_frame_joint_origin.reference_members.clear();
+    single_frame_joint_origin.reference_members = crate::records::ReferenceRun::Unlocated(Vec::new());
     let mut single_frame_scopes = [single_frame_assembly, single_frame_joint_origin];
     bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut single_frame_scopes);
     assert_eq!(
