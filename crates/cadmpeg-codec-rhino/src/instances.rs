@@ -87,6 +87,42 @@ pub(crate) struct FileReference {
     pub(crate) embedded_file_id: Option<Uuid>,
 }
 
+/// Source of an instance-definition external link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum LinkSource {
+    /// No linked path or structured file reference.
+    None,
+    /// V5 packed path. Userdata may fill the unused slot, so both strings can be nonempty.
+    Legacy {
+        /// Full linked path.
+        full_path: String,
+        /// Relative linked path.
+        relative_path: String,
+        /// Whether the packed V5 path was the relative slot.
+        relative_preferred: bool,
+    },
+    /// Structured ON_FileReference payload.
+    Structured(FileReference),
+}
+
+impl LinkSource {
+    fn from_legacy(full_path: String, relative_path: String, relative_preferred: bool) -> Self {
+        if full_path.is_empty() && relative_path.is_empty() {
+            Self::None
+        } else {
+            Self::Legacy {
+                full_path,
+                relative_path,
+                relative_preferred,
+            }
+        }
+    }
+
+    fn from_file_reference(value: Option<FileReference>) -> Self {
+        value.map_or(Self::None, Self::Structured)
+    }
+}
+
 /// Complete parsed instance-definition table record.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct InstanceDefinition {
@@ -110,24 +146,45 @@ pub(crate) struct InstanceDefinition {
     pub(crate) kind: DefinitionKind,
     /// Definition units.
     pub(crate) units: UnitDetail,
-    /// V5 linked full path.
-    pub(crate) legacy_linked_path: String,
-    /// V5 linked relative path.
-    pub(crate) legacy_relative_linked_path: String,
-    /// Exact serialized V5 linked-file checksum range.
-    pub(crate) legacy_checksum_range: Option<Range<usize>>,
-    /// Legacy relative-path selector.
-    pub(crate) legacy_relative_path: bool,
     /// Nested linked-definition depth.
     pub(crate) linked_depth: i32,
     /// Linked-component appearance selector.
     pub(crate) linked_appearance: u32,
-    /// Complete structured linked-file-reference chunk.
-    pub(crate) file_reference_range: Option<Range<usize>>,
-    /// Structured linked-file reference.
-    pub(crate) file_reference: Option<FileReference>,
-    /// Referenced-component settings retained as a complete bounded chunk.
-    pub(crate) reference_settings_range: Option<Range<usize>>,
+    /// Exclusive linked-file source.
+    pub(crate) link: LinkSource,
+}
+
+#[cfg(test)]
+impl InstanceDefinition {
+    pub(crate) fn file_reference(&self) -> Option<&FileReference> {
+        match &self.link {
+            LinkSource::Structured(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn legacy_linked_path(&self) -> &str {
+        match &self.link {
+            LinkSource::Legacy { full_path, .. } => full_path,
+            _ => "",
+        }
+    }
+
+    pub(crate) fn legacy_relative_linked_path(&self) -> &str {
+        match &self.link {
+            LinkSource::Legacy { relative_path, .. } => relative_path,
+            _ => "",
+        }
+    }
+
+    pub(crate) fn legacy_relative_path(&self) -> bool {
+        match &self.link {
+            LinkSource::Legacy {
+                relative_preferred, ..
+            } => *relative_preferred,
+            _ => false,
+        }
+    }
 }
 
 /// Parsed and validated instance-reference payload.
@@ -645,7 +702,7 @@ fn parse_v5(
     ) {
         legacy_linked_path.clear();
     }
-    let legacy_checksum_range = Some(legacy_checksum(&mut reader)?);
+    let _ = legacy_checksum(&mut reader)?;
     let unit = i32::try_from(reader.u32()?)
         .map_err(|_| FramingError::structural(reader.position(), "unit value overflow"))?;
     let meters_per_unit = reader.f64()?;
@@ -689,17 +746,16 @@ fn parse_v5(
         url_tag,
         kind,
         units,
-        legacy_linked_path,
-        legacy_relative_linked_path,
-        legacy_checksum_range,
-        legacy_relative_path,
         linked_depth,
         linked_appearance,
-        file_reference_range: file_reference
-            .as_ref()
-            .map(|value| value.source_range.clone()),
-        file_reference,
-        reference_settings_range: None,
+        link: match file_reference {
+            Some(value) => LinkSource::Structured(value),
+            None => LinkSource::from_legacy(
+                legacy_linked_path,
+                legacy_relative_linked_path,
+                legacy_relative_path,
+            ),
+        },
     })
 }
 
@@ -752,7 +808,6 @@ fn parse_v6(
     let mut linked_depth = 0;
     let mut linked_appearance = 0;
     let mut linked_file = None;
-    let mut reference_settings_range = None;
     if reader.bool()? {
         let (linked_chunk, mut linked, linked_version) =
             anonymous_versioned(data, &mut reader, archive, "linked type", false, warnings)?;
@@ -771,14 +826,7 @@ fn parse_v6(
         linked_depth = linked.i32()?;
         linked_appearance = linked.u32()?;
         if linked.bool()? {
-            reference_settings_range =
-                Some(reference_settings(data, &mut linked, archive, warnings)?);
-            linked_children.push(
-                reference_settings_range
-                    .as_ref()
-                    .expect("reference settings assigned")
-                    .clone(),
-            );
+            linked_children.push(reference_settings(data, &mut linked, archive, warnings)?);
         }
         finish(&mut linked, "linked type")?;
         checksum_warning_excluding(
@@ -809,15 +857,9 @@ fn parse_v6(
         url_tag,
         kind,
         units,
-        legacy_linked_path: String::new(),
-        legacy_relative_linked_path: String::new(),
-        legacy_checksum_range: None,
-        legacy_relative_path: false,
         linked_depth,
         linked_appearance,
-        file_reference_range: linked_file.as_ref().map(|value| value.source_range.clone()),
-        file_reference: linked_file,
-        reference_settings_range,
+        link: LinkSource::from_file_reference(linked_file),
     })
 }
 
@@ -936,21 +978,37 @@ fn apply_idef_alternative_path(
         if path.is_empty() {
             continue;
         }
-        if let Some(reference) = definition.file_reference.as_mut() {
-            if relative {
-                if reference.relative_path.is_empty() {
-                    path.clone_into(&mut reference.relative_path);
+        match &mut definition.link {
+            LinkSource::Structured(reference) => {
+                if relative {
+                    if reference.relative_path.is_empty() {
+                        path.clone_into(&mut reference.relative_path);
+                    }
+                } else if reference.full_path.is_empty() {
+                    path.clone_into(&mut reference.full_path);
                 }
-            } else if reference.full_path.is_empty() {
-                path.clone_into(&mut reference.full_path);
             }
-        } else if relative {
-            if definition.legacy_relative_linked_path.is_empty() {
-                path.clone_into(&mut definition.legacy_relative_linked_path);
-                definition.legacy_relative_path = true;
+            LinkSource::Legacy {
+                full_path,
+                relative_path,
+                relative_preferred,
+            } => {
+                if relative {
+                    if relative_path.is_empty() {
+                        path.clone_into(relative_path);
+                        *relative_preferred = true;
+                    }
+                } else if full_path.is_empty() {
+                    path.clone_into(full_path);
+                }
             }
-        } else if definition.legacy_linked_path.is_empty() {
-            path.clone_into(&mut definition.legacy_linked_path);
+            LinkSource::None => {
+                definition.link = if relative {
+                    LinkSource::from_legacy(String::new(), path.to_string(), true)
+                } else {
+                    LinkSource::from_legacy(path.to_string(), String::new(), false)
+                };
+            }
         }
     }
     degraded

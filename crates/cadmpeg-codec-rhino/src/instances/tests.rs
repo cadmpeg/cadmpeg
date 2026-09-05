@@ -201,7 +201,7 @@ fn instance_definition_readers_follow_source_minor_boundaries() {
     ))
     .expect("required invariant");
     assert_eq!(scan.definitions.definitions.len(), 1);
-    assert!(scan.definitions.definitions[0].file_reference.is_some());
+    assert!(scan.definitions.definitions[0].file_reference().is_some());
 
     let mut future_payload =
         v5_definition_payload(ArchiveVersion::V5, 6, definition_id, &[], false);
@@ -293,7 +293,7 @@ fn obsolete_idef_layer_settings_are_consumed_without_definition_fields() {
         assert_eq!(scan.definitions.definitions.len(), 1);
         let definition = &scan.definitions.definitions[0];
         assert_eq!(definition.kind, super::DefinitionKind::Linked);
-        assert_eq!(definition.legacy_linked_path, "/full/source.3dm");
+        assert_eq!(definition.legacy_linked_path(), "/full/source.3dm");
         assert!(scan.definitions.diagnostics.is_empty());
         assert!(scan.opaque_records.is_empty());
     }
@@ -362,9 +362,9 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
             .expect("V5 alternate-path witness");
     let parsed = &scan.definitions.definitions[0];
     assert_eq!(parsed.kind, crate::instances::DefinitionKind::Linked);
-    assert_eq!(parsed.legacy_linked_path, "/full/source.3dm");
-    assert_eq!(parsed.legacy_relative_linked_path, "relative/source.3dm");
-    assert!(parsed.legacy_relative_path);
+    assert_eq!(parsed.legacy_linked_path(), "/full/source.3dm");
+    assert_eq!(parsed.legacy_relative_linked_path(), "relative/source.3dm");
+    assert!(parsed.legacy_relative_path());
     assert!(scan.definitions.diagnostics.is_empty());
     set_test_units(&mut scan, 1.0);
     let result = crate::decode::decode_for_test(&scan);
@@ -405,8 +405,8 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     ))
     .expect("occupied full-path witness");
     let parsed = &scan.definitions.definitions[0];
-    assert_eq!(parsed.legacy_linked_path, "/full/original.3dm");
-    assert!(parsed.legacy_relative_linked_path.is_empty());
+    assert_eq!(parsed.legacy_linked_path(), "/full/original.3dm");
+    assert!(parsed.legacy_relative_linked_path().is_empty());
 
     let relative_base = v5_definition_payload_with_paths(
         archive,
@@ -427,9 +427,9 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     ))
     .expect("relative-base witness");
     let parsed = &scan.definitions.definitions[0];
-    assert_eq!(parsed.legacy_linked_path, "/replacement/source.3dm");
-    assert_eq!(parsed.legacy_relative_linked_path, "relative/base.3dm");
-    assert!(parsed.legacy_relative_path);
+    assert_eq!(parsed.legacy_linked_path(), "/replacement/source.3dm");
+    assert_eq!(parsed.legacy_relative_linked_path(), "relative/base.3dm");
+    assert!(parsed.legacy_relative_path());
 
     let static_payload = v5_definition_payload_with_paths(
         archive,
@@ -450,8 +450,8 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     .expect("static-path witness");
     let parsed = &scan.definitions.definitions[0];
     assert_eq!(parsed.kind, crate::instances::DefinitionKind::Static);
-    assert!(parsed.legacy_linked_path.is_empty());
-    assert!(parsed.legacy_relative_linked_path.is_empty());
+    assert!(parsed.legacy_linked_path().is_empty());
+    assert!(parsed.legacy_relative_linked_path().is_empty());
 
     let malformed_body = utf16_bytes("/ignored/malformed.3dm");
     let malformed_carrier =
@@ -472,8 +472,8 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     let mut scan = crate::container::scan_owned(malformed_document)
         .expect("malformed optional carrier remains framed");
     let parsed = &scan.definitions.definitions[0];
-    assert_eq!(parsed.legacy_linked_path, "/retained/source.3dm");
-    assert!(parsed.legacy_relative_linked_path.is_empty());
+    assert_eq!(parsed.legacy_linked_path(), "/retained/source.3dm");
+    assert!(parsed.legacy_relative_linked_path().is_empty());
     assert!(scan
         .definitions
         .diagnostics
@@ -532,8 +532,8 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     let mut future_scan = crate::container::scan_owned(future_document)
         .expect("future optional carrier remains framed");
     let future_definition = &future_scan.definitions.definitions[0];
-    assert_eq!(future_definition.legacy_linked_path, "/future/full.3dm");
-    assert!(future_definition.legacy_relative_linked_path.is_empty());
+    assert_eq!(future_definition.legacy_linked_path(), "/future/full.3dm");
+    assert!(future_definition.legacy_relative_linked_path().is_empty());
     assert!(future_scan
         .definitions
         .diagnostics
@@ -592,15 +592,7 @@ pub(crate) fn parses_source_shaped_v5_minor_6_and_7_definition_records() {
     assert_eq!(parsed.units.unit, 2);
     assert_eq!(parsed.units.meters_per_unit, 0.001);
     assert_eq!(parsed.linked_appearance, 2);
-    assert_eq!(
-        parsed
-            .legacy_checksum_range
-            .as_ref()
-            .expect("required invariant")
-            .len(),
-        48
-    );
-    assert!(parsed.file_reference_range.is_none());
+    assert!(parsed.file_reference().is_none());
 
     let v6 = definition_record(
         ArchiveVersion::V6,
@@ -614,7 +606,7 @@ pub(crate) fn parses_source_shaped_v5_minor_6_and_7_definition_records() {
     ))
     .expect("required invariant");
     let parsed = &scan.definitions.definitions[0];
-    assert!(parsed.file_reference_range.is_some());
+    assert!(parsed.file_reference().is_some());
 }
 
 #[test]
@@ -665,8 +657,7 @@ pub(crate) fn parses_source_shaped_v6_v7_v8_static_and_linked_definitions() {
         assert!(linked.members.is_empty());
         assert_eq!(linked.linked_depth, 2);
         assert_eq!(linked.linked_appearance, 2);
-        assert!(linked.reference_settings_range.is_some());
-        assert!(linked.file_reference_range.is_some());
+        assert!(linked.file_reference().is_some());
         assert_eq!(
             scan.definitions.definitions[2].kind,
             crate::instances::DefinitionKind::LinkedAndEmbedded

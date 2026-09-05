@@ -7,7 +7,7 @@ use cadmpeg_ir::document::CadIr;
 use serde::Serialize;
 
 use crate::container::Scan;
-use crate::instances::{DefinitionKind, FileReference};
+use crate::instances::{DefinitionKind, LinkSource};
 use crate::wire::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -97,19 +97,11 @@ fn hex(bytes: &[u8]) -> String {
         })
 }
 
-fn external_record(
-    definition_uuid: Uuid,
-    legacy_full_path: &str,
-    legacy_relative_path: &str,
-    legacy_relative_preferred: bool,
-    value: Option<&FileReference>,
-) -> Option<ExternalReferenceRecord> {
-    if value.is_none() && legacy_full_path.is_empty() && legacy_relative_path.is_empty() {
-        return None;
-    }
+fn external_record(definition_uuid: Uuid, link: &LinkSource) -> Option<ExternalReferenceRecord> {
     let definition = definition_id(definition_uuid);
-    Some(match value {
-        Some(value) => ExternalReferenceRecord {
+    Some(match link {
+        LinkSource::None => return None,
+        LinkSource::Structured(value) => ExternalReferenceRecord {
             id: external_id(definition_uuid),
             definition_uuid: definition_uuid.to_string(),
             full_path: value.full_path.clone(),
@@ -124,12 +116,16 @@ fn external_record(
             embedded_file_uuid: value.embedded_file_id.map(|id| id.to_string()),
             links: vec![definition],
         },
-        None => ExternalReferenceRecord {
+        LinkSource::Legacy {
+            full_path,
+            relative_path,
+            relative_preferred,
+        } => ExternalReferenceRecord {
             id: external_id(definition_uuid),
             definition_uuid: definition_uuid.to_string(),
-            full_path: legacy_full_path.to_string(),
-            relative_path: legacy_relative_path.to_string(),
-            relative_path_preferred: legacy_relative_preferred,
+            full_path: full_path.clone(),
+            relative_path: relative_path.clone(),
+            relative_path_preferred: *relative_preferred,
             byte_count: None,
             hash_time: None,
             content_time: None,
@@ -157,13 +153,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let mut definitions = Vec::new();
     let mut external = Vec::new();
     for definition in &scan.definitions.definitions {
-        let external_reference = external_record(
-            definition.id,
-            &definition.legacy_linked_path,
-            &definition.legacy_relative_linked_path,
-            definition.legacy_relative_path,
-            definition.file_reference.as_ref(),
-        );
+        let external_reference = external_record(definition.id, &definition.link);
         let external_id = external_reference.as_ref().map(|value| value.id.clone());
         if let Some(value) = external_reference {
             external.push(value);
