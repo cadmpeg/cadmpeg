@@ -1457,9 +1457,12 @@ fn om_size_frame_accepts_exact_terminal_twelve_byte_envelope() {
 fn om_size_frame_uses_validated_internal_record_area_pointer() {
     let bytes = size_framed_om_section_with_record_area();
     let section = super::sections(&bytes).remove(0);
-    let offset = section.record_area_offset.expect("record area");
+    let offset = section.record_area.expect("record area").offset;
     assert_eq!(offset, size_framed_om_section().len() + 20);
-    assert_eq!(section.record_area.unwrap(), &bytes[offset..]);
+    assert_eq!(
+        section.record_area.expect("record area").bytes,
+        &bytes[offset..]
+    );
     assert_eq!(&bytes[offset + 12..offset + 15], &[0x05, 0x01, 0x0e]);
 
     let mut invalid = bytes;
@@ -1495,7 +1498,7 @@ fn legacy_feature_om_section_with_record_area() -> Vec<u8> {
 fn om_feature_section_accepts_the_legacy_record_area_pointer_and_product_frame() {
     let bytes = legacy_feature_om_section_with_record_area();
     let section = super::sections(&bytes).remove(0);
-    let record_area_offset = section.record_area_offset.expect("record area");
+    let record_area_offset = section.record_area.expect("record area").offset;
     assert_eq!(
         record_area_offset,
         16 + 3 + 1 + b"UGS::FEATURE_RECORD".len() + 1 + 12 + 20
@@ -1549,7 +1552,10 @@ fn om_registry_uses_the_bounded_record_area_as_its_registry_end() {
         section.fields.last().expect("late field").name,
         "m_lateField"
     );
-    assert_eq!(section.record_area_offset, Some(record_area_offset));
+    assert_eq!(
+        section.record_area.map(|area| area.offset),
+        Some(record_area_offset)
+    );
 }
 
 #[test]

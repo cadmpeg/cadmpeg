@@ -381,7 +381,7 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
                 .1
                 .clone();
             let header = section.record_area_header()?;
-            let bytes = section.record_area?;
+            let bytes = section.record_area?.bytes;
             let entry_offset = link.section_offset.checked_sub(section.offset as u64)?;
             let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
             Some(OmRecordArea {
@@ -3957,9 +3957,8 @@ pub fn rm_creation_display_data_relations(
         let Some(record_area) = section.record_area else {
             continue;
         };
-        let Some(record_area_offset) = section.record_area_offset else {
-            continue;
-        };
+        let record_area_offset = record_area.offset;
+        let record_area = record_area.bytes;
         let Some((class_ordinal, definition)) = section
             .types
             .iter()
@@ -4164,11 +4163,11 @@ pub fn rm_display_color_assignments(
         .into_iter()
         .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")
     {
-        let (Some(record_area), Some(record_area_offset)) =
-            (section.record_area, section.record_area_offset)
-        else {
+        let Some(record_area) = section.record_area else {
             continue;
         };
+        let record_area_offset = record_area.offset;
+        let record_area = record_area.bytes;
         let source_base =
             entry.file_span.map_or(0, |(offset, _)| offset) + record_area_offset as u64;
         for row in crate::om::offset_store_linked_index_rows(record_area) {

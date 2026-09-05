@@ -3358,9 +3358,8 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
         let Some(record_area) = section.record_area else {
             continue;
         };
-        let Some(record_area_offset) = section.record_area_offset else {
-            continue;
-        };
+        let record_area_offset = record_area.offset;
+        let record_area = record_area.bytes;
         labels.extend(
             section
                 .operation_records_with_label_ordinals()
@@ -4922,23 +4921,24 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
                 let Some(data_block) = unique_offset_data_block(&indexed, object_index) else {
                     continue;
                 };
-                let Some(record_area_offset) = section.record_area_offset else {
+                let Some(record_area) = section.record_area else {
                     continue;
                 };
+                let record_area_offset = record_area.offset;
                 let token_offset = label.object_index_offsets[input_slot];
                 let token_end = label
                     .object_index_offsets
                     .get(input_slot + 1)
                     .copied()
                     .unwrap_or(label.offset);
-                let Some(raw_object_index) = section.record_area.and_then(|record_area| {
-                    record_area
-                        .get(
-                            token_offset.checked_sub(record_area_offset)?
-                                ..token_end.checked_sub(record_area_offset)?,
-                        )
-                        .map(<[u8]>::to_vec)
-                }) else {
+                let Some(start) = token_offset.checked_sub(record_area_offset) else {
+                    continue;
+                };
+                let Some(end) = token_end.checked_sub(record_area_offset) else {
+                    continue;
+                };
+                let Some(raw_object_index) = record_area.bytes.get(start..end).map(<[u8]>::to_vec)
+                else {
                     continue;
                 };
                 let operation_label = format!(

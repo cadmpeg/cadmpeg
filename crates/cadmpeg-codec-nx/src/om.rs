@@ -1465,6 +1465,15 @@ impl IndexedSectionLayout {
     }
 }
 
+/// Internally pointed record-area bytes with their absolute offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordArea<'a> {
+    /// Absolute offset of the record-area start.
+    pub offset: usize,
+    /// Exact record-area bytes, including the 12-byte control prefix.
+    pub bytes: &'a [u8],
+}
+
 /// One size-framed NX object-model section.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Section<'a> {
@@ -1476,10 +1485,8 @@ pub struct Section<'a> {
     pub types: Arc<[TypeDefinition<'a>]>,
     /// Member declarations in the section's field registry.
     pub fields: Arc<[FieldDefinition<'a>]>,
-    /// Absolute offset of the section's internally pointed record area.
-    pub record_area_offset: Option<usize>,
-    /// Exact record-area bytes, including its 12-byte control prefix.
-    pub record_area: Option<&'a [u8]>,
+    /// Internally pointed record area, when the section carries one.
+    pub record_area: Option<RecordArea<'a>>,
     /// Operation labels decoded while the section's record area is framed.
     cached_operation_labels: Arc<[OperationLabel<'a>]>,
 }
@@ -1495,47 +1502,38 @@ pub(crate) struct SectionLayout {
     byte_len: usize,
     types: Vec<IndexedDefinitionLayout>,
     fields: Vec<IndexedDefinitionLayout>,
-    record_area_offset: Option<usize>,
     record_area: Option<IndexedByteRange>,
     operation_labels: Vec<OperationLabelLayout>,
 }
 
 impl SectionLayout {
     pub(crate) fn from_section(section: &Section<'_>) -> Self {
-        let record_area = section.record_area.map(|bytes| {
-            let start = section
-                .record_area_offset
-                .expect("record area has an absolute offset");
-            IndexedByteRange {
-                start,
-                end: start + bytes.len(),
-            }
+        let record_area = section.record_area.map(|area| IndexedByteRange {
+            start: area.offset,
+            end: area.offset + area.bytes.len(),
         });
         Self {
             offset: section.offset,
             byte_len: section.byte_len,
             types: registry::type_definition_layouts(&section.types),
             fields: registry::field_definition_layouts(&section.fields),
-            record_area_offset: section.record_area_offset,
             record_area,
             operation_labels: operation_label_layouts(&section.cached_operation_labels),
         }
     }
 
     pub(crate) fn materialize<'a>(&self, bytes: &'a [u8]) -> Section<'a> {
-        let record_area = self.record_area.map(|range| {
-            bytes
+        let record_area = self.record_area.map(|range| RecordArea {
+            offset: range.start,
+            bytes: bytes
                 .get(range.start..range.end)
-                .expect("cached section record area remains in source")
+                .expect("cached section record area remains in source"),
         });
-        let cached_operation_labels = match (record_area, self.record_area_offset) {
-            (Some(record_area), Some(record_area_offset)) => materialize_operation_labels(
-                record_area,
-                record_area_offset,
-                &self.operation_labels,
-            )
-            .into(),
-            _ => Arc::from([]),
+        let cached_operation_labels = match record_area {
+            Some(area) => {
+                materialize_operation_labels(area.bytes, area.offset, &self.operation_labels).into()
+            }
+            None => Arc::from([]),
         };
         Section {
             offset: self.offset,
@@ -1552,7 +1550,6 @@ impl SectionLayout {
                 .map(|layout| registry::materialize_field_definition(bytes, layout))
                 .collect::<Vec<_>>()
                 .into(),
-            record_area_offset: self.record_area_offset,
             record_area,
             cached_operation_labels,
         }
@@ -3103,10 +3100,13 @@ impl<'a> IndexedSection<'a> {
 }
 
 impl<'a> Section<'a> {
+    fn record_area_parts(&self) -> Option<(usize, &'a [u8])> {
+        self.record_area.map(|area| (area.offset, area.bytes))
+    }
+
     /// Decode the validated record-area control and product header.
     pub fn record_area_header(&self) -> Option<RecordAreaHeader<'a>> {
-        let bytes = self.record_area?;
-        let offset = self.record_area_offset?;
+        let (offset, bytes) = self.record_area_parts()?;
         let control_words = [
             View::u32_le_at(bytes, 0)?,
             View::u32_le_at(bytes, 4)?,
@@ -3138,10 +3138,7 @@ impl<'a> Section<'a> {
 
     /// Decode fully framed Boolean operations from the pointed record area.
     pub fn boolean_operations(&self) -> Vec<BooleanOperation> {
-        let Some(bytes) = self.record_area else {
-            return Vec::new();
-        };
-        let Some(base_offset) = self.record_area_offset else {
+        let Some((base_offset, bytes)) = self.record_area_parts() else {
             return Vec::new();
         };
         boolean_operations_with_labels(bytes, base_offset, &self.cached_operation_labels)
@@ -3149,10 +3146,7 @@ impl<'a> Section<'a> {
 
     /// Bound operation records and retain their ordinal in the complete label sequence.
     pub fn operation_records_with_label_ordinals(&self) -> Vec<(usize, OperationRecord<'a>)> {
-        let Some(bytes) = self.record_area else {
-            return Vec::new();
-        };
-        let Some(base_offset) = self.record_area_offset else {
+        let Some((base_offset, bytes)) = self.record_area_parts() else {
             return Vec::new();
         };
         operation_records_with_labels_and_ordinals(
@@ -3166,10 +3160,7 @@ impl<'a> Section<'a> {
     pub fn unlabeled_operation_records_with_ordinals(
         &self,
     ) -> Vec<(usize, UnlabeledOperationRecord<'a>)> {
-        let Some(bytes) = self.record_area else {
-            return Vec::new();
-        };
-        let Some(base_offset) = self.record_area_offset else {
+        let Some((base_offset, bytes)) = self.record_area_parts() else {
             return Vec::new();
         };
         unlabeled_operation_records_with_ordinals(bytes, base_offset, &self.cached_operation_labels)
@@ -3191,8 +3182,7 @@ impl<'a> Section<'a> {
         if !is_feature_history {
             return None;
         }
-        let bytes = self.record_area?;
-        let base_offset = self.record_area_offset?;
+        let (base_offset, bytes) = self.record_area_parts()?;
         operation_state_counter_map(bytes, base_offset)
     }
 
@@ -3207,8 +3197,7 @@ impl<'a> Section<'a> {
             return None;
         }
         let map = self.operation_state_counter_map()?;
-        let bytes = self.record_area?;
-        let base_offset = self.record_area_offset?;
+        let (base_offset, bytes) = self.record_area_parts()?;
         let map_start = map.offset.checked_sub(base_offset)?;
         operation_state_group_table_before_counter_map(bytes, map_start, base_offset)
     }
@@ -3228,8 +3217,7 @@ impl<'a> Section<'a> {
         if !is_feature_history {
             return None;
         }
-        let bytes = self.record_area?;
-        let base_offset = self.record_area_offset?;
+        let (base_offset, bytes) = self.record_area_parts()?;
         let header = self.record_area_header()?;
         let product = header.product.offset.checked_sub(base_offset)?;
         let product_end = record_area_product_end(bytes, product)?;
@@ -3244,8 +3232,7 @@ impl<'a> Section<'a> {
 
     fn operation_state_block(&self) -> Option<OperationStateBlock<'a>> {
         let map = self.operation_state_counter_map()?;
-        let bytes = self.record_area?;
-        let base_offset = self.record_area_offset?;
+        let (base_offset, bytes) = self.record_area_parts()?;
         let (_, last_record) = self
             .operation_records_with_label_ordinals()
             .into_iter()
@@ -3269,8 +3256,7 @@ impl<'a> Section<'a> {
 
     /// Decode the bounded per-object status lane after the operation records.
     pub fn operation_state_status_table(&self) -> Option<OperationStateStatusTable<'a>> {
-        let bytes = self.record_area?;
-        let base_offset = self.record_area_offset?;
+        let (base_offset, bytes) = self.record_area_parts()?;
         let block = self.operation_state_block()?;
         let status_after = block.status_end_offset.checked_sub(base_offset)?;
         let message_start = match block.messages.first() {
@@ -3314,8 +3300,7 @@ impl<'a> Section<'a> {
         if !has_audit_marker || has_specialized_marker {
             return None;
         }
-        let bytes = self.record_area?;
-        let base_offset = self.record_area_offset?;
+        let (base_offset, bytes) = self.record_area_parts()?;
         let header = self.record_area_header()?;
         let product = header.product.offset.checked_sub(base_offset)?;
         let product_end = record_area_product_end(bytes, product)?;
@@ -8998,27 +8983,29 @@ pub(crate) fn sections_with_operation_label_layouts<'a>(
             } else {
                 (registry::field_definitions(bytes, field_start, end), None)
             };
-        let record_area = record_area_offset.map(|start| &bytes[start..end]);
-        let cached_operation_labels = match (record_area, record_area_offset) {
-            (Some(record_area), Some(record_area_offset)) => cached_operation_label_layouts
+        let record_area = record_area_offset.map(|start| RecordArea {
+            offset: start,
+            bytes: &bytes[start..end],
+        });
+        let cached_operation_labels = match record_area {
+            Some(area) => cached_operation_label_layouts
                 .iter()
                 .find(|(cached_entry, offset, _)| {
-                    Some(*cached_entry) == entry_index && *offset == record_area_offset
+                    Some(*cached_entry) == entry_index && *offset == area.offset
                 })
                 .map_or_else(
-                    || operation_labels(record_area, record_area_offset),
+                    || operation_labels(area.bytes, area.offset),
                     |(_, _, layouts)| {
-                        materialize_operation_labels(record_area, record_area_offset, layouts)
+                        materialize_operation_labels(area.bytes, area.offset, layouts)
                     },
                 ),
-            _ => Vec::new(),
+            None => Vec::new(),
         };
         out.push(Section {
             offset,
             byte_len: end - offset,
             types: types.into(),
             fields: fields.into(),
-            record_area_offset,
             record_area,
             cached_operation_labels: cached_operation_labels.into(),
         });
