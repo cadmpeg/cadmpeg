@@ -559,7 +559,7 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
     };
     let scope = crate::records::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#9",
-        crate::records::DesignFeatureKind::Native("Unsupported".into()),
+        crate::records::DesignFeatureKind::try_from("Unsupported".to_owned()).expect("native family name"),
         9,
     );
 

@@ -2115,3 +2115,34 @@ fn work_point_rules_preserve_supported_and_native_forms_without_aliases() {
         assert_eq!(serde_json::to_value(rule).expect("serialize native form"), wire);
     }
 }
+
+#[test]
+fn feature_kind_classifies_nonempty_native_names_at_construction() {
+    for name in ["Fillet", "Esboço", "Extrusão", "Thread", "Unsupported", "fillet", " "] {
+        let kind = DesignFeatureKind::try_from(name.to_owned()).expect("nonempty name");
+        assert_eq!(kind.as_str(), name);
+        assert_eq!(serde_json::to_value(&kind).expect("serialize kind"), serde_json::json!(name));
+        let decoded: DesignFeatureKind = serde_json::from_value(serde_json::json!(name)).expect("decode kind");
+        assert_eq!(decoded, kind);
+        assert_eq!(matches!(kind, DesignFeatureKind::Native(_)), matches!(name, "Unsupported" | "fillet" | " "));
+    }
+    assert!(DesignFeatureKind::try_from(String::new()).is_err());
+    let error = serde_json::from_value::<DesignFeatureKind>(serde_json::json!("")).expect_err("empty name rejected");
+    assert!(error.to_string().contains("kind"));
+}
+
+#[test]
+fn scope_feature_ordinal_preserves_positive_wire_values_and_rejects_zero() {
+    let base = empty_scope(DesignFeatureKind::Fillet);
+    for ordinal in [1, u32::MAX] {
+        let mut wire = base.clone();
+        wire["feature_ordinal"] = ordinal.into();
+        let scope: DesignParameterScope = serde_json::from_value(wire.clone()).expect("positive ordinal");
+        assert_eq!(scope.feature_ordinal.get(), ordinal);
+        assert_eq!(serde_json::to_value(scope).expect("serialize scope"), wire);
+    }
+    let mut wire = base;
+    wire["feature_ordinal"] = 0.into();
+    let error = serde_json::from_value::<DesignParameterScope>(wire).expect_err("zero ordinal rejected");
+    assert!(error.to_string().contains("feature_ordinal"));
+}

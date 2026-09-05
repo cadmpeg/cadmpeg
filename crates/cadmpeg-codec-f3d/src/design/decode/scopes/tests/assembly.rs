@@ -544,7 +544,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     scope.paired_class_tag = "266".into();
     scope.frame_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
     scope.paired_byte_offset = scope.frame_length;
-    scope.feature_ordinal = 4;
+    scope.feature_ordinal = std::num::NonZeroU32::new(4).expect("nonzero ordinal");
     scope.reference_members = crate::records::ReferenceRun::Unlocated((0..24)
         .map(|ordinal| 1_000 + ordinal)
         .chain([1_200, 1_201, 1_202, 1_203, 1_204, 1_205])
@@ -624,7 +624,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     for (ordinal, code_unit) in "Assemble".encode_utf16().enumerate() {
         bytes[875 + ordinal * 2..877 + ordinal * 2].copy_from_slice(&code_unit.to_le_bytes());
     }
-    bytes[891..895].copy_from_slice(&scope.feature_ordinal.to_le_bytes());
+    bytes[891..895].copy_from_slice(&scope.feature_ordinal.get().to_le_bytes());
 
     let alignment = exact_assembly_alignment(
         &bytes,

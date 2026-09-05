@@ -5866,6 +5866,10 @@ impl From<DesignHoleFaceSelection> for DesignHoleFaceSelectionWire {
     }
 }
 
+/// Nonempty source spelling outside the specialized feature-family names.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DesignNativeFeatureName(std::sync::Arc<str>);
+
 macro_rules! design_feature_kinds {
     (data { $($variant:ident => $lit:literal : $payload:ty),+ $(,)? }
      names { $($unit:ident => $unit_lit:literal),+ $(,)? }) => {
@@ -5873,12 +5877,12 @@ macro_rules! design_feature_kinds {
         #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[cfg_attr(feature = "schema", schemars(with = "String"))]
-        #[serde(from = "String", into = "String")]
+        #[serde(try_from = "String", into = "String")]
         pub enum DesignFeatureKind {
             $($variant,)+
             $($unit,)+
             /// Source name without a specialized construction grammar.
-            Native(std::sync::Arc<str>),
+            Native(DesignNativeFeatureName),
         }
 
         impl DesignFeatureKind {
@@ -5887,20 +5891,21 @@ macro_rules! design_feature_kinds {
                 match self {
                     $(Self::$variant => $lit,)+
                     $(Self::$unit => $unit_lit,)+
-                    Self::Native(name) => name,
+                    Self::Native(name) => &name.0,
                 }
             }
 
-            /// Whether the source spelling is empty.
-            pub fn is_empty(&self) -> bool { self.as_str().is_empty() }
         }
 
-        impl From<String> for DesignFeatureKind {
-            fn from(name: String) -> Self {
+        impl TryFrom<String> for DesignFeatureKind {
+            type Error = &'static str;
+
+            fn try_from(name: String) -> Result<Self, Self::Error> {
                 match name.as_str() {
-                    $($lit => Self::$variant,)+
-                    $($unit_lit => Self::$unit,)+
-                    _ => Self::Native(name.into()),
+                    "" => Err("Design feature kind must not be empty"),
+                    $($lit => Ok(Self::$variant),)+
+                    $($unit_lit => Ok(Self::$unit),)+
+                    _ => Ok(Self::Native(DesignNativeFeatureName(name.into()))),
                 }
             }
         }
@@ -5922,7 +5927,7 @@ macro_rules! design_feature_kinds {
             $($variant($payload),)+
             $($unit,)+
             /// Source name without a specialized construction grammar.
-            Native(std::sync::Arc<str>),
+            Native(DesignNativeFeatureName),
         }
 
         impl From<DesignFeatureKind> for DesignScopePayload {
@@ -5948,7 +5953,7 @@ macro_rules! design_feature_kinds {
                 match self {
                     $(Self::$variant(_) => $lit,)+
                     $(Self::$unit => $unit_lit,)+
-                    Self::Native(name) => name,
+                    Self::Native(name) => &name.0,
                 }
             }
         }
@@ -6071,7 +6076,7 @@ pub struct DesignParameterScope {
     /// Byte offset of the kind's UTF-16LE code units.
     pub kind_offset: u64,
     /// One-based ordinal among scopes of the same feature family.
-    pub feature_ordinal: u32,
+    pub feature_ordinal: std::num::NonZeroU32,
     /// Byte offset of `feature_ordinal`.
     pub feature_ordinal_offset: u64,
     /// ASM delta-state identity produced by this scope, when active.
@@ -7673,7 +7678,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             record_index: wire.record_index,
             frame_length: wire.frame_length,
             kind_offset: wire.kind_offset,
-            feature_ordinal: wire.feature_ordinal,
+            feature_ordinal: std::num::NonZeroU32::new(wire.feature_ordinal).ok_or_else(|| DesignParameterScopePayloadError("feature_ordinal must be nonzero".into()))?,
             feature_ordinal_offset: wire.feature_ordinal_offset,
             history_state_id: wire.history_state_id,
             history_state_id_offset: wire.history_state_id_offset,
@@ -7704,7 +7709,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             kind_offset: scope.kind_offset,
             extrude: None,
             coil: None,
-            feature_ordinal: scope.feature_ordinal,
+            feature_ordinal: scope.feature_ordinal.get(),
             feature_ordinal_offset: scope.feature_ordinal_offset,
             history_state_id: scope.history_state_id,
             history_state_id_offset: scope.history_state_id_offset,
@@ -8559,7 +8564,7 @@ impl DesignParameterScope {
             record_index,
             frame_length: 0,
             kind_offset: 0,
-            feature_ordinal: 0,
+            feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
             history_state_id: None,
             history_state_id_offset: 0,

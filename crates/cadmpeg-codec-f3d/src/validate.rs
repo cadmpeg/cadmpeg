@@ -3363,7 +3363,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .paired_class_tag
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
-            && !scope.kind().is_empty()
             && match scope.extrude_prologue() {
                 Some(records::DesignExtrudePrologue::LegacyDistance {
                     prefix_zero_offset,
@@ -4058,7 +4057,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && scope.paired_byte_offset == scope.byte_offset.saturating_add(scope.frame_length)
             && scope.kind_offset > scope.byte_offset
             && scope.kind_offset < scope.feature_ordinal_offset
-            && scope.feature_ordinal > 0
             && scope
                 .paired_byte_offset
                 .checked_sub(scope.feature_ordinal_offset)

@@ -191,7 +191,7 @@ fn authored_scope_ordinals_for_stream<'a>(
             u32::try_from(ordinal)
                 .ok()
                 .and_then(|ordinal| ordinal.checked_add(1))
-                == Some(scope.feature_ordinal)
+                == Some(scope.feature_ordinal.get())
         });
         if !homogeneous || !complete_ordinals {
             return Err(CodecError::NotImplemented(

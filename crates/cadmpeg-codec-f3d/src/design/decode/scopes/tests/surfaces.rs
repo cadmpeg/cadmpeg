@@ -144,7 +144,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         record_index: 1,
         frame_length: 375,
         kind_offset: 273,
-        feature_ordinal: 1,
+        feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: Some(2),
         history_state_id_offset: 0,
@@ -882,7 +882,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     scope.paired_byte_offset = class_377::LEN as u64;
     scope.frame_length = class_377::LEN as u64;
     scope.kind_offset = class_377::KIND as u64;
-    scope.feature_ordinal = 1;
+    scope.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     scope.feature_ordinal_offset = class_377::FEATURE_ORDINAL as u64;
     scope.history_state_id = Some(20);
     scope.history_state_id_offset = class_377::HISTORY_STATE_ID as u64;
@@ -1045,7 +1045,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         scope.previous_history_state_id = Some(i64::from(previous_state));
         scope.previous_history_state_id_offset = None;
         scope.kind_offset = kind as u64;
-        scope.feature_ordinal = ordinal;
+        scope.feature_ordinal = std::num::NonZeroU32::new(ordinal).expect("nonzero ordinal");
         scope.feature_ordinal_offset = feature_ordinal as u64;
         scope
     }
@@ -1108,7 +1108,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     compact_scope.previous_history_state_id_offset =
         Some(compact::PREVIOUS_HISTORY_STATE_ID as u64);
     compact_scope.kind_offset = compact::KIND as u64;
-    compact_scope.feature_ordinal = 1;
+    compact_scope.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     compact_scope.feature_ordinal_offset = compact::FEATURE_ORDINAL as u64;
     let compact_construction = exact_base_feature_construction(&compact_bytes, &compact_scope)
         .expect("class-452 compact Base Feature frame is canonical");

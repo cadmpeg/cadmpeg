@@ -632,13 +632,13 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
         crate::records::DesignFeatureKind::Extrude,
         100,
     );
-    first.feature_ordinal = 1;
+    first.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     let mut second = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
         crate::records::DesignFeatureKind::Extrude,
         200,
     );
-    second.feature_ordinal = 2;
+    second.feature_ordinal = std::num::NonZeroU32::new(2).expect("nonzero ordinal");
     let scopes = vec![second.clone(), first.clone()];
     let ordinals = crate::design::feature_project::authored_scope_ordinals(&scopes, &[])
         .expect("complete family ordinals carry exact order");
@@ -662,13 +662,13 @@ fn authored_scope_validation_orders_independent_streams_separately() {
         crate::records::DesignFeatureKind::Extrude,
         10,
     );
-    first.feature_ordinal = 1;
+    first.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     let mut second = DesignParameterScope::empty(
         "f3d:DesignB/BulkStream.dat:design-parameter-scope#10",
         crate::records::DesignFeatureKind::Fillet,
         10,
     );
-    second.feature_ordinal = 1;
+    second.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     let scopes = vec![first, second];
 
     let ordinals = crate::design::feature_project::authored_scope_ordinals_per_stream(&scopes, &[])
@@ -713,7 +713,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         record_index,
         frame_length: 200,
         kind_offset: byte_offset + 100,
-        feature_ordinal: 1,
+        feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: current,
         history_state_id_offset: byte_offset + 60,
@@ -721,7 +721,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         previous_history_state_id_offset: Some(byte_offset + 120),
         reference_count_offset: byte_offset + 80,
         reference_members: crate::records::ReferenceRun::from_columns(Vec::new(), Vec::new(), "reference_members").unwrap(),
-        payload: crate::records::DesignFeatureKind::from(kind.to_owned()).into(),
+        payload: crate::records::DesignFeatureKind::try_from(kind.to_owned()).expect("nonempty family name").into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: byte_offset + 200,

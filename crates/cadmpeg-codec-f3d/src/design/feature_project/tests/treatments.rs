@@ -51,7 +51,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         record_index,
         frame_length: 200,
         kind_offset: byte_offset + 100,
-        feature_ordinal: 1,
+        feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: None,
         history_state_id_offset: 0,
@@ -59,7 +59,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         previous_history_state_id_offset: None,
         reference_count_offset: byte_offset + 80,
         reference_members: crate::records::ReferenceRun::from_columns(vec![record_index + 1], vec![byte_offset + 85], "reference_members").unwrap(),
-        payload: crate::records::DesignFeatureKind::from(kind.to_owned()).into(),
+        payload: crate::records::DesignFeatureKind::try_from(kind.to_owned()).expect("nonempty family name").into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: byte_offset + 200,
@@ -564,7 +564,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         crate::records::DesignFeatureKind::Draft,
         100,
     );
-    scope.feature_ordinal = 1;
+    scope.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     scope.previous_history_state_id = Some(7);
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![101, 111, 102, 112]);
     if let crate::records::DesignScopePayload::Draft(slot) = &mut scope.payload {
@@ -872,7 +872,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         record_index: 12,
         frame_length: 200,
         kind_offset: 210,
-        feature_ordinal: 1,
+        feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: None,
         history_state_id_offset: 0,

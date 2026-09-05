@@ -52,7 +52,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let scope =
         parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap();
     assert_eq!(scope.kind(), crate::records::DesignFeatureKind::Sketch);
-    assert_eq!(scope.feature_ordinal, 1);
+    assert_eq!(scope.feature_ordinal.get(), 1);
     assert_eq!(scope.feature_ordinal_offset, feature_ordinal_at as u64);
     assert_eq!(scope.history_state_id, Some(7));
     assert_eq!(scope.previous_history_state_id, Some(2));
@@ -175,7 +175,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         copy.kind(),
         crate::records::DesignFeatureKind::CopyPasteBodies
     );
-    assert_eq!(copy.feature_ordinal, 2);
+    assert_eq!(copy.feature_ordinal.get(), 2);
     assert_eq!(copy.feature_ordinal_offset, copy_feature_ordinal_at as u64);
     assert_eq!(copy.history_state_id, None);
     assert_eq!(copy.previous_history_state_id, None);

@@ -107,7 +107,7 @@ fn exact_base_feature_scope_tail(
     )?;
     if kind_text != "Base Feature"
         || kind_end != start + layout.feature_ordinal
-        || View::u32_le_at(bytes, start + layout.feature_ordinal)? != scope.feature_ordinal
+        || View::u32_le_at(bytes, start + layout.feature_ordinal)? != scope.feature_ordinal.get()
     {
         return None;
     }
@@ -582,7 +582,7 @@ fn exact_base_feature_direct_body_based_on_faces(
     )?;
     if kind != "Base Feature"
         || kind_end != start + class_377::FEATURE_ORDINAL
-        || View::u32_le_at(bytes, start + class_377::FEATURE_ORDINAL)? != scope.feature_ordinal
+        || View::u32_le_at(bytes, start + class_377::FEATURE_ORDINAL)? != scope.feature_ordinal.get()
     {
         return None;
     }
