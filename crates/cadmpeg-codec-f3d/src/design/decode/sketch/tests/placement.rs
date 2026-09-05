@@ -504,8 +504,15 @@ fn retained_compact_planar_line_edit_preserves_its_reference_tail() {
         ),
         normal: Vector3::new(0.0, 0.0, 1.0),
     };
-    crate::writer::patch::records::patch_sketch_curves(&mut bytes, &[(0, 0, geometry)])
-        .expect("compact planar line edit");
+    crate::writer::patch::records::patch_sketch_curves(
+        &mut bytes,
+        &[crate::writer::patch::edits::SketchCurveEdit {
+            offset: 0,
+            geometry_offset: 0,
+            geometry,
+        }],
+    )
+    .expect("compact planar line edit");
     assert_eq!(&bytes[72..], tail);
     assert_eq!(f64::from_le_bytes(bytes[0..8].try_into().unwrap()), 1.0);
     assert_eq!(f64::from_le_bytes(bytes[24..32].try_into().unwrap()), 2.0);

@@ -1367,12 +1367,14 @@ fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
         None
     );
     let deleted = vec![17, 18, 19, 20];
+    let member = |identity, resolved_edge| crate::design::edge_resolve::EdgeGroupMember {
+        identity,
+        resolved_edge,
+        deleted_boundary_edges: deleted.clone(),
+    };
     let groups = vec![
-        vec![
-            (10, Some(17), deleted.clone()),
-            (11, Some(19), deleted.clone()),
-        ],
-        vec![(12, None, deleted.clone()), (13, None, deleted.clone())],
+        vec![member(10, Some(17)), member(11, Some(19))],
+        vec![member(12, None), member(13, None)],
     ];
     assert_eq!(
         crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &groups),
@@ -1383,13 +1385,13 @@ fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
         None
     );
     let mut two_incomplete = groups.clone();
-    two_incomplete[0][0].1 = None;
+    two_incomplete[0][0].resolved_edge = None;
     assert_eq!(
         crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &two_incomplete),
         None
     );
     let mut duplicate_identity = groups;
-    duplicate_identity[1][0].0 = 11;
+    duplicate_identity[1][0].identity = 11;
     assert_eq!(
         crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &duplicate_identity),
         None
