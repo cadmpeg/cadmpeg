@@ -1108,29 +1108,28 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         .expect("class-452 compact Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
         form,
-        body_entity_suffixes,
-        body_entity_suffix_offsets,
-        body_entity_fields,
-        body_reference_records,
-        parameter_body_records,
-        parameter_body_record_offsets,
-        auxiliary_records,
-        auxiliary_record_offsets,
         scope_reference,
         scope_reference_offset,
         envelope_guid,
         envelope_guid_offset,
-        tag_body_based_on_faces,
         tag_body_based_on_faces_offset,
         ..
     } = &compact_construction
     else {
         panic!("class-452 compact frame selected the wrong form");
     };
-    assert_eq!(*form, DesignBaseFeatureBodyReferenceForm::CompactOneBody(crate::records::Located {
-        value: 0,
-        offset: compact::MODE as u64,
-    }));
+    let DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, body } = form else {
+        panic!("compact frame requires one body");
+    };
+    assert_eq!(*mode, crate::records::Located { value: 0, offset: compact::MODE as u64 });
+    let body_entity_suffixes = &[u64::from(body.entity.value)];
+    let body_entity_suffix_offsets = &[body.entity.offset];
+    let body_entity_fields = &[body.entity.field];
+    let body_reference_records = &[body.entity.value];
+    let parameter_body_records = &[body.parameter_body.value];
+    let parameter_body_record_offsets = &[body.parameter_body.offset];
+    let auxiliary_records = &[body.auxiliary.value];
+    let auxiliary_record_offsets = &[body.auxiliary.offset];
     assert_eq!(body_entity_suffixes, &[201]);
     assert_eq!(
         body_entity_suffix_offsets,
@@ -1152,7 +1151,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     assert_eq!(*scope_reference_offset, compact::SCOPE_REFERENCE as u64);
     assert_eq!(envelope_guid, "fcec56e3-832f-4468-88a4-d710e62e629f");
     assert_eq!(*envelope_guid_offset, compact::ENVELOPE_GUID as u64);
-    assert!(*tag_body_based_on_faces);
+    assert_eq!(serde_json::to_value(&compact_construction).unwrap()["tag_body_based_on_faces"], true);
     assert_eq!(
         *tag_body_based_on_faces_offset,
         compact::TAG_BODY_BASED_ON_FACES_VALUE as u64
@@ -1170,7 +1169,8 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces { form, .. } = mode_one else {
         panic!("class-452 compact mode-one frame selected the wrong form");
     };
-    assert_eq!(form, DesignBaseFeatureBodyReferenceForm::CompactOneBody(crate::records::Located { value: 1, offset: compact::MODE as u64 }));
+    let DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, .. } = form else { panic!("compact mode-one form"); };
+    assert_eq!(mode, crate::records::Located { value: 1, offset: compact::MODE as u64 });
 
     let mut expanded_bytes = vec![0_u8; expanded::LEN];
     expanded_bytes[expanded::BODY_COUNT_MARKER] = expanded::BODY_COUNT_MARKER_VALUE;
@@ -1253,17 +1253,19 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         .expect("class-452 expanded Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
         form,
-        body_entity_suffixes,
-        body_entity_fields,
-        parameter_body_records,
-        auxiliary_records,
         scope_reference,
         ..
     } = &expanded_construction
     else {
         panic!("class-452 expanded frame selected the wrong form");
     };
-    assert_eq!(*form, DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody);
+    let DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody { bodies } = form else {
+        panic!("expanded frame requires two bodies");
+    };
+    let body_entity_suffixes = &bodies.map(|body| u64::from(body.entity.value));
+    let body_entity_fields = &bodies.map(|body| body.entity.field);
+    let parameter_body_records = &bodies.map(|body| body.parameter_body.value);
+    let auxiliary_records = &bodies.map(|body| body.auxiliary.value);
     assert_eq!(body_entity_suffixes, &[401, 402]);
     assert_eq!(body_entity_fields, &[[0; 6], [0; 6]]);
     assert_eq!(parameter_body_records, &[301, 302]);

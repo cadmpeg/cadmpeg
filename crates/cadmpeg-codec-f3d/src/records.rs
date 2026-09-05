@@ -7410,9 +7410,27 @@ pub struct DesignCopyPasteBodiesOperation {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum DesignBaseFeatureBodyReferenceForm {
     /// One output body with an encoded compact mode.
-    CompactOneBody(Located<u8>),
+    CompactOneBody { mode: Located<u8>, body: DesignLegacyBaseFeatureBody },
     /// Two output bodies with no mode slot.
-    ExpandedTwoBody,
+    ExpandedTwoBody { bodies: [DesignLegacyBaseFeatureBody; 2] },
+}
+
+/// One body in a legacy Base Feature envelope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignLegacyBaseFeatureBody {
+    pub entity: DesignBaseFeatureEntry<u32>,
+    pub parameter_body: Located<u64>,
+    pub auxiliary: Located<u64>,
+}
+
+impl DesignBaseFeatureBodyReferenceForm {
+    fn bodies(&self) -> &[DesignLegacyBaseFeatureBody] {
+        match self {
+            Self::CompactOneBody { body, .. } => std::slice::from_ref(body),
+            Self::ExpandedTwoBody { bodies } => bodies,
+        }
+    }
 }
 
 /// Typed construction data carried by a Fusion direct-modeling Base Feature.
@@ -7473,24 +7491,6 @@ pub enum DesignBaseFeatureConstruction {
     LegacyBodyBasedOnFaces {
         /// Compact one-body or expanded two-body source envelope form.
         form: DesignBaseFeatureBodyReferenceForm,
-        /// Ordered Design body entity suffixes exposed by the envelope.
-        body_entity_suffixes: Vec<u64>,
-        /// Byte offsets parallel to `body_entity_suffixes`.
-        body_entity_suffix_offsets: Vec<u64>,
-        /// Six-byte source fields parallel to `body_entity_suffixes`.
-        body_entity_fields: Vec<[u8; 6]>,
-        /// Body suffixes used by history-to-BREP resolution for this form.
-        body_reference_records: Vec<u32>,
-        /// Byte offsets parallel to `body_reference_records`.
-        body_reference_record_offsets: Vec<u64>,
-        /// Ordered PM body-reference records carried by the envelope.
-        parameter_body_records: Vec<u64>,
-        /// Byte offsets parallel to `parameter_body_records`.
-        parameter_body_record_offsets: Vec<u64>,
-        /// Ordered DM body-reference records carried by the envelope.
-        auxiliary_records: Vec<u64>,
-        /// Byte offsets parallel to `auxiliary_records`.
-        auxiliary_record_offsets: Vec<u64>,
         /// Scope record repeated by the envelope's explicit scope-reference lane.
         scope_reference: u64,
         /// Byte offset of `scope_reference`.
@@ -7499,8 +7499,6 @@ pub enum DesignBaseFeatureConstruction {
         envelope_guid: String,
         /// Byte offset of the first code unit of `envelope_guid`.
         envelope_guid_offset: u64,
-        /// Stored body-source property value.
-        tag_body_based_on_faces: bool,
         /// Byte offset of `tag_body_based_on_faces`.
         tag_body_based_on_faces_offset: u64,
     },
@@ -7524,7 +7522,7 @@ pub enum DesignBaseFeatureConstruction {
 }
 
 /// One Base Feature reference value, its location, and its six-byte field.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignBaseFeatureEntry<T> {
     pub value: T,
@@ -7691,12 +7689,41 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                 Self::BodyBasedOnFaces { body: Located { value: *reference, offset: *offset }, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset }
             },
             DesignBaseFeatureConstructionWire::LegacyBodyBasedOnFaces { form, mode, mode_offset, body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, parameter_body_records, parameter_body_record_offsets, auxiliary_records, auxiliary_record_offsets, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset } => {
-                let form = match (form, mode, mode_offset) {
-                    (DesignBaseFeatureBodyReferenceFormWire::CompactOneBody, Some(value), Some(offset)) => DesignBaseFeatureBodyReferenceForm::CompactOneBody(Located { value, offset }),
-                    (DesignBaseFeatureBodyReferenceFormWire::ExpandedTwoBody, None, None) => DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody,
-                    _ => return Err("form requires mode and mode_offset only for compact_one_body".into()),
+                let count = body_entity_suffixes.len();
+                for (field, len) in [
+                    ("body_entity_suffix_offsets", body_entity_suffix_offsets.len()),
+                    ("body_entity_fields", body_entity_fields.len()),
+                    ("body_reference_records", body_reference_records.len()),
+                    ("body_reference_record_offsets", body_reference_record_offsets.len()),
+                    ("parameter_body_records", parameter_body_records.len()),
+                    ("parameter_body_record_offsets", parameter_body_record_offsets.len()),
+                    ("auxiliary_records", auxiliary_records.len()),
+                    ("auxiliary_record_offsets", auxiliary_record_offsets.len()),
+                ] {
+                    if len != count {
+                        return Err(format!("{field} must have the same length as body_entity_suffixes"));
+                    }
+                }
+                if !tag_body_based_on_faces {
+                    return Err("tag_body_based_on_faces must be true for LegacyBodyBasedOnFaces".into());
+                }
+                let mut bodies = Vec::with_capacity(count);
+                for index in 0..count {
+                    if body_entity_suffixes[index] != u64::from(body_reference_records[index]) || body_entity_suffix_offsets[index] != body_reference_record_offsets[index] {
+                        return Err("body_reference_records and body_reference_record_offsets must match body_entity_suffixes and body_entity_suffix_offsets".into());
+                    }
+                    bodies.push(DesignLegacyBaseFeatureBody {
+                        entity: DesignBaseFeatureEntry { value: body_reference_records[index], offset: body_entity_suffix_offsets[index], field: body_entity_fields[index] },
+                        parameter_body: Located { value: parameter_body_records[index], offset: parameter_body_record_offsets[index] },
+                        auxiliary: Located { value: auxiliary_records[index], offset: auxiliary_record_offsets[index] },
+                    });
+                }
+                let form = match (form, mode, mode_offset, bodies.as_slice()) {
+                    (DesignBaseFeatureBodyReferenceFormWire::CompactOneBody, Some(value), Some(offset), [body]) => DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode: Located { value, offset }, body: *body },
+                    (DesignBaseFeatureBodyReferenceFormWire::ExpandedTwoBody, None, None, [first, second]) => DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody { bodies: [*first, *second] },
+                    _ => return Err("form requires one body with mode and mode_offset for compact_one_body, or two bodies without mode for expanded_two_body".into()),
                 };
-                Self::LegacyBodyBasedOnFaces { form, body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, parameter_body_records, parameter_body_record_offsets, auxiliary_records, auxiliary_record_offsets, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset }
+                Self::LegacyBodyBasedOnFaces { form, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset }
             },
             DesignBaseFeatureConstructionWire::BodySnapshot { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, related_guids, related_guid_offsets, linkage_record, linkage_record_offset, auxiliary_record, auxiliary_record_offset } => {
                 if body_entity_suffixes.len() != body_entity_suffix_offsets.len() || body_entity_suffixes.len() != body_entity_fields.len() {
@@ -7719,12 +7746,22 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
             DesignBaseFeatureConstruction::BodyBasedOnFaces { body, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset } => {
                 Self::BodyBasedOnFaces { body_entity_suffixes: vec![u64::from(body.value)], body_entity_suffix_offsets: vec![body.offset], body_reference_records: vec![body.value], body_reference_record_offsets: vec![body.offset], tag_body_based_on_faces: true, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset }
             },
-            DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces { form, body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, parameter_body_records, parameter_body_record_offsets, auxiliary_records, auxiliary_record_offsets, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset } => {
+            DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces { form, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset } => {
+                let bodies = form.bodies();
+                let body_entity_suffixes = bodies.iter().map(|body| u64::from(body.entity.value)).collect();
+                let body_entity_suffix_offsets = bodies.iter().map(|body| body.entity.offset).collect();
+                let body_entity_fields = bodies.iter().map(|body| body.entity.field).collect();
+                let body_reference_records = bodies.iter().map(|body| body.entity.value).collect();
+                let body_reference_record_offsets = bodies.iter().map(|body| body.entity.offset).collect();
+                let parameter_body_records = bodies.iter().map(|body| body.parameter_body.value).collect();
+                let parameter_body_record_offsets = bodies.iter().map(|body| body.parameter_body.offset).collect();
+                let auxiliary_records = bodies.iter().map(|body| body.auxiliary.value).collect();
+                let auxiliary_record_offsets = bodies.iter().map(|body| body.auxiliary.offset).collect();
                 let (form, mode, mode_offset) = match form {
-                    DesignBaseFeatureBodyReferenceForm::CompactOneBody(mode) => (DesignBaseFeatureBodyReferenceFormWire::CompactOneBody, Some(mode.value), Some(mode.offset)),
-                    DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody => (DesignBaseFeatureBodyReferenceFormWire::ExpandedTwoBody, None, None),
+                    DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, .. } => (DesignBaseFeatureBodyReferenceFormWire::CompactOneBody, Some(mode.value), Some(mode.offset)),
+                    DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody { .. } => (DesignBaseFeatureBodyReferenceFormWire::ExpandedTwoBody, None, None),
                 };
-                Self::LegacyBodyBasedOnFaces { form, mode, mode_offset, body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, parameter_body_records, parameter_body_record_offsets, auxiliary_records, auxiliary_record_offsets, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset }
+                Self::LegacyBodyBasedOnFaces { form, mode, mode_offset, body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, parameter_body_records, parameter_body_record_offsets, auxiliary_records, auxiliary_record_offsets, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces: true, tag_body_based_on_faces_offset }
             },
             DesignBaseFeatureConstruction::BodySnapshot { bodies, related_guids, related_guid_offsets, linkage_record, linkage_record_offset, auxiliary_record, auxiliary_record_offset } => {
                 let mut body_entity_suffixes = Vec::with_capacity(bodies.len());
@@ -7747,26 +7784,26 @@ impl DesignBaseFeatureConstruction {
         let count = match self {
             Self::BodySnapshot { bodies, .. } => bodies.len(),
             Self::BodyBasedOnFaces { .. } => 1,
-            Self::ResultBodies { body_entity_suffixes, .. }
-            | Self::LegacyBodyBasedOnFaces { body_entity_suffixes, .. } => body_entity_suffixes.len(),
+            Self::ResultBodies { body_entity_suffixes, .. } => body_entity_suffixes.len(),
+            Self::LegacyBodyBasedOnFaces { form, .. } => form.bodies().len(),
         };
         (0..count).map(move |index| match self {
             Self::BodySnapshot { bodies, .. } => bodies[index].value,
             Self::BodyBasedOnFaces { body, .. } => u64::from(body.value),
-            Self::ResultBodies { body_entity_suffixes, .. }
-            | Self::LegacyBodyBasedOnFaces { body_entity_suffixes, .. } => body_entity_suffixes[index],
+            Self::ResultBodies { body_entity_suffixes, .. } => body_entity_suffixes[index],
+            Self::LegacyBodyBasedOnFaces { form, .. } => u64::from(form.bodies()[index].entity.value),
         })
     }
 
     /// Return passive body-reference records for forms that carry them.
     pub(crate) fn body_reference_records(&self) -> impl Iterator<Item = u32> + '_ {
-        let (records, single): (&[u32], Option<u32>) = match self {
-            Self::ResultBodies { body_reference_records, .. }
-            | Self::LegacyBodyBasedOnFaces { body_reference_records, .. } => (body_reference_records, None),
-            Self::BodyBasedOnFaces { body, .. } => (&[], Some(body.value)),
-            Self::BodySnapshot { .. } => (&[], None),
+        let (records, legacy, single): (&[u32], &[DesignLegacyBaseFeatureBody], Option<u32>) = match self {
+            Self::ResultBodies { body_reference_records, .. } => (body_reference_records, &[], None),
+            Self::LegacyBodyBasedOnFaces { form, .. } => (&[], form.bodies(), None),
+            Self::BodyBasedOnFaces { body, .. } => (&[], &[], Some(body.value)),
+            Self::BodySnapshot { .. } => (&[], &[], None),
         };
-        records.iter().copied().chain(single)
+        records.iter().copied().chain(legacy.iter().map(|body| body.entity.value)).chain(single)
     }
 
 }
