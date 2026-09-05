@@ -864,7 +864,7 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         class_tag: "258".into(),
         record_index: 102,
         owner_record_index: 100,
-        timestamp_micros: 1,
+        timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
         timestamp_micros_offset: 1_242,
         payload_byte_offset: 1_258,
         payload_byte_length: 0,

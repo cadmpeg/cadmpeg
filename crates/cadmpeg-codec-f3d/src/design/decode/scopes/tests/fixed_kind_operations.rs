@@ -1612,7 +1612,7 @@ pub(super) fn continue_fixed_kind_operations(
         class_tag: "300".into(),
         record_index: 11,
         owner_record_index: 10,
-        timestamp_micros: 1,
+        timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
         timestamp_micros_offset: 42,
         payload_byte_offset: 58,
         payload_byte_length: 0,
