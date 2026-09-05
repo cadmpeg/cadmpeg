@@ -1046,8 +1046,7 @@ mod tests {
             byte_offset: 0,
             class_tag: "373".into(),
             record_index,
-            family_discriminator: Some(6),
-            family_discriminator_offset: Some(0),
+            family_discriminator: Some(crate::records::Located { value: 6, offset: 0 }),
             source_ordinal: 0,
             owner: crate::records::DesignParameterOwnerKind::from_kind(
                 DesignParameterKind::Feature,

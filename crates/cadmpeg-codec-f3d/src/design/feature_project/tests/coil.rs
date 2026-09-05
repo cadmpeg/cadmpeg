@@ -28,7 +28,6 @@ fn parameter(
         class_tag: "000".into(),
         record_index,
         family_discriminator: None,
-        family_discriminator_offset: None,
         source_ordinal: 0,
         owner: crate::records::DesignParameterOwnerKind::from_kind(
             DesignParameterKind::Feature,

@@ -817,8 +817,7 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
         byte_offset: 100,
         class_tag: "305".into(),
         record_index: 900,
-        family_discriminator: Some(0),
-        family_discriminator_offset: Some(122),
+        family_discriminator: Some(crate::records::Located { value: 0, offset: 122 }),
         source_ordinal: 0,
         owner: crate::records::DesignParameterOwnerKind::from_kind(
             crate::records::DesignParameterKind::User,
@@ -839,18 +838,17 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
     f3d_native_mut(&mut ir).design_parameters.push(parameter);
     assert!(crate::validate::validate_native(&ir).is_empty());
 
-    f3d_native_mut(&mut ir).design_parameters[0].family_discriminator = Some(7);
+    f3d_native_mut(&mut ir).design_parameters[0].family_discriminator = Some(crate::records::Located { value: 7, offset: 122 });
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some("generated:design-parameter#0")
             && finding.message.contains("family discriminator")
     }));
-    f3d_native_mut(&mut ir).design_parameters[0].family_discriminator = Some(0);
+    f3d_native_mut(&mut ir).design_parameters[0].family_discriminator = Some(crate::records::Located { value: 0, offset: 122 });
 
     {
         let parameter = &mut f3d_native_mut(&mut ir).design_parameters[0];
         parameter.family_discriminator = None;
-        parameter.family_discriminator_offset = None;
     }
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::NativeLinks
@@ -859,8 +857,7 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
     }));
     {
         let parameter = &mut f3d_native_mut(&mut ir).design_parameters[0];
-        parameter.family_discriminator = Some(0);
-        parameter.family_discriminator_offset = Some(122);
+        parameter.family_discriminator = Some(crate::records::Located { value: 0, offset: 122 });
     }
 
     {
@@ -890,7 +887,6 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         class_tag: "305".into(),
         record_index: 101,
         family_discriminator: None,
-        family_discriminator_offset: None,
         source_ordinal: 0,
         owner: crate::records::DesignParameterOwnerKind::from_kind(
             DesignParameterKind::Feature,
@@ -941,7 +937,6 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         class_tag: "287".into(),
         record_index: 201,
         family_discriminator: None,
-        family_discriminator_offset: None,
         source_ordinal: 1,
         owner: crate::records::DesignParameterOwnerKind::from_kind(
             DesignParameterKind::Feature,

@@ -33,8 +33,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 20,
-        family_discriminator: Some(0),
-        family_discriminator_offset: Some(0),
+        family_discriminator: Some(crate::records::Located { value: 0, offset: 0 }),
         source_ordinal: 4,
         owner: crate::records::DesignParameterOwnerKind::from_kind(
             DesignParameterKind::Dimension,
@@ -766,8 +765,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 1,
-        family_discriminator: Some(0),
-        family_discriminator_offset: Some(0),
+        family_discriminator: Some(crate::records::Located { value: 0, offset: 0 }),
         source_ordinal: 1,
         owner: crate::records::DesignParameterOwnerKind::from_kind(
             DesignParameterKind::Dimension,
@@ -960,8 +958,7 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 1,
-        family_discriminator: Some(0),
-        family_discriminator_offset: Some(0),
+        family_discriminator: Some(crate::records::Located { value: 0, offset: 0 }),
         source_ordinal: 1,
         owner: crate::records::DesignParameterOwnerKind::from_kind(
             DesignParameterKind::Dimension,
