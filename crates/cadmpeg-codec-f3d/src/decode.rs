@@ -1765,7 +1765,7 @@ fn report_design_projection_gaps(report: &mut DecodeBody, ir: &CadIr, native: &F
         .iter()
         .flat_map(|history| &history.states)
         .flat_map(|state| &state.records)
-        .filter_map(|record| record.framing_error.as_deref())
+        .filter_map(|record| record.framing_error())
     {
         report
             .losses
@@ -4039,7 +4039,7 @@ fn populate_annotations(
                     }
                 }
                 for record in &state.records {
-                    note(&record.id, &record.name);
+                    note(&record.id, record.name());
                 }
             }
         }

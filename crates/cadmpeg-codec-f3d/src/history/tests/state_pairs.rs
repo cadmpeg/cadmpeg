@@ -580,11 +580,8 @@ fn snapshot_edge_identity_requires_one_edge_record_and_positive_revision() {
         id: format!("record-{index}-{name}"),
         parent: "state".into(),
         revision_id,
-        index,
         byte_offset: 0,
-        name: name.into(),
-        framing_error: None,
-        entity_references: Vec::new(),
+        framing: crate::history_records::AsmHistoryRecordFraming::Framed { index: index, name: name.into(), entity_references: Vec::new() },
         raw_bytes: Vec::new(),
     };
     let history = |records| AsmHistory {

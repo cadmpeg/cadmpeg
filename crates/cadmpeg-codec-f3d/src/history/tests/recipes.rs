@@ -1168,10 +1168,9 @@ fn opaque_history_span_retains_the_precise_framing_error() {
     let [record] = records.as_slice() else {
         panic!("one opaque record");
     };
-    assert_eq!(record.name, "opaque_history_payload");
+    assert_eq!(record.name(), "opaque_history_payload");
     assert!(record
-        .framing_error
-        .as_deref()
+        .framing_error()
         .is_some_and(|error| error.contains("byte 0") && error.contains("0x33")));
 }
 

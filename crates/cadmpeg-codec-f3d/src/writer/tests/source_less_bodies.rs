@@ -577,7 +577,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     assert_eq!(actual.states[0].bulletin_boards.len(), 1);
     assert_eq!(actual.states[0].bulletin_boards[0].changes.len(), 2);
     assert_eq!(actual.states[0].records.len(), 1);
-    assert_eq!(actual.states[0].records[0].name, "history_payload");
+    assert_eq!(actual.states[0].records[0].name(), "history_payload");
 }
 
 #[test]
