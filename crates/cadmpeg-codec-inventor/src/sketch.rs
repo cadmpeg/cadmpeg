@@ -386,14 +386,7 @@ pub(crate) struct PmDcDirection {
     pub(crate) direction: [f64; 3],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct SketchRecordIssue {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
-    pub(crate) detail: String,
-}
+pub(crate) use crate::native::TypedRecordIssue as SketchRecordIssue;
 
 pub(crate) fn inventory(
     ctx: &DecodeContext<'_>,

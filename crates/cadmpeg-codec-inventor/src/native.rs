@@ -818,8 +818,20 @@ pub(crate) struct AssemblyPlacementRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct AssemblyRecordIssueRecord {
+pub(crate) struct RecordIssueRecord {
     pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) detail: String,
+}
+
+pub(crate) type AssemblyRecordIssueRecord = RecordIssueRecord;
+pub(crate) type PresentationRecordIssueRecord = RecordIssueRecord;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct TypedRecordIssue {
+    pub(crate) id: String,
+    pub(crate) type_id: String,
     pub(crate) segment_token: String,
     pub(crate) record_ordinal: u32,
     pub(crate) detail: String,
@@ -1193,14 +1205,6 @@ pub(crate) struct PmGraphicsPrimaryColorStyleRecord {
     pub(crate) state: u8,
     pub(crate) values: [u16; 2],
     pub(crate) terminal_state: u8,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct PresentationRecordIssueRecord {
-    pub(crate) id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
-    pub(crate) detail: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

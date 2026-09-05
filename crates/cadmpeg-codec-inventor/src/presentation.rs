@@ -148,12 +148,7 @@ pub(crate) struct RenderingStyleExtension {
     pub(crate) guid: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PresentationRecordIssue {
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
-    pub(crate) detail: String,
-}
+pub(crate) use crate::assembly::AssemblyRecordIssue as PresentationRecordIssue;
 
 pub(crate) struct PresentationProjection {
     pub(crate) appearances: Vec<Appearance>,

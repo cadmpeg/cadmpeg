@@ -298,14 +298,7 @@ pub(crate) struct PmDcFeatureTerminator {
     pub(crate) state: i32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct FeatureRecordIssue {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
-    pub(crate) detail: String,
-}
+pub(crate) use crate::native::TypedRecordIssue as FeatureRecordIssue;
 
 pub(crate) fn inventory(
     ctx: &DecodeContext<'_>,

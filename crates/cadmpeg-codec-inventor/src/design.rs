@@ -173,14 +173,7 @@ pub(crate) enum PmDcUnitDimension {
     Dimensionless,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct DesignRecordIssue {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
-    pub(crate) detail: String,
-}
+pub(crate) use crate::native::TypedRecordIssue as DesignRecordIssue;
 
 pub(crate) fn inventory(
     ctx: &DecodeContext<'_>,
