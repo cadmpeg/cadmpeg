@@ -7,7 +7,7 @@ use super::*;
 use cadmpeg_core::decode::View;
 
 use crate::native::segments::segment_om_links;
-use crate::om::TypeDefinition as OmTypeDefinition;
+use crate::om::{IndexedStore, TypeDefinition as OmTypeDefinition};
 
 /// Semantic family declared by a linked OM section's class registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1127,16 +1127,13 @@ pub(crate) fn stable_object_record_identity(source_entry: &str, bytes: &[u8]) ->
 /// serialized bytes: no cross-record owner relation proves that they are
 /// position-independent. A shared finite work budget returns no identity when
 /// canonicalization would exceed the decoder's bounded resource policy.
-fn stable_object_record_identities(
-    source_entry: &str,
-    records: &[crate::om::EntityRecord<'_>],
-) -> Vec<Option<String>> {
+fn stable_object_record_identities(source_entry: &str, records: &[&[u8]]) -> Vec<Option<String>> {
     const MAX_GRAPH_WORK: usize = 8 * 1024 * 1024;
 
     let references = records
         .iter()
-        .map(|record| {
-            crate::om::counted_record_references(record.bytes, 0, records.len())
+        .map(|bytes| {
+            crate::om::counted_record_references(bytes, 0, records.len())
                 .into_iter()
                 .map(|reference| (reference.offset, reference.value as usize))
                 .collect::<Vec<_>>()
@@ -1147,10 +1144,7 @@ fn stable_object_record_identities(
     (0..records.len())
         .map(|root| {
             if references[root].is_empty() {
-                return Some(stable_object_record_identity(
-                    source_entry,
-                    records[root].bytes,
-                ));
+                return Some(stable_object_record_identity(source_entry, records[root]));
             }
             stable_object_record_graph_identity(
                 source_entry,
@@ -1184,7 +1178,7 @@ const STABLE_GRAPH_NODE_START: u8 = 0xf0;
 /// Encode one rooted object-record graph without depending on local ordinals.
 fn stable_object_record_graph_identity(
     source_entry: &str,
-    records: &[crate::om::EntityRecord<'_>],
+    records: &[&[u8]],
     references: &[Vec<(usize, usize)>],
     root: usize,
     graph_work: &mut usize,
@@ -1225,7 +1219,7 @@ fn stable_object_record_graph_identity(
             let frame = stack.get(frame_index)?;
             (frame.record, frame.next_reference, frame.raw_cursor)
         };
-        let record_bytes = records.get(record)?.bytes;
+        let record_bytes = *records.get(record)?;
         let record_references = references.get(record)?;
         if let Some(&(reference_offset, target)) = record_references.get(next_reference) {
             let reference_end = reference_offset.checked_add(3)?;
@@ -2993,16 +2987,16 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections().into_iter().enumerate()
     {
-        if section
-            .records
-            .first()
-            .is_none_or(|record| record.object_id.is_none())
-        {
+        let Some(records) = section.as_fixed() else {
             continue;
-        }
+        };
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
-        let stable_identities = stable_object_record_identities(&entry.name, &section.records);
+        let record_bytes = records
+            .iter()
+            .map(|record| record.bytes)
+            .collect::<Vec<_>>();
+        let stable_identities = stable_object_record_identities(&entry.name, &record_bytes);
         let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
         let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
         for (source, _, _, reference) in section.references() {
@@ -3019,7 +3013,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                 incoming.push(source);
             }
         }
-        for (record_ordinal, record) in section.records.iter().cloned().enumerate() {
+        for (record_ordinal, record) in records.iter().cloned().enumerate() {
             let record_id =
                 |ordinal| format!("nx:om-record-directory-{section_ordinal}:entry#{ordinal}");
             candidates.push((
@@ -3075,10 +3069,8 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                 });
                 ObjectRecord {
                     id: format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
-                    object_id: record.object_id,
-                    object_id_source_offset: record
-                        .object_id_offset
-                        .map(|offset| entry_offset + offset as u64),
+                    object_id: Some(record.object_id.0),
+                    object_id_source_offset: Some(entry_offset + record.object_id.1),
                     section_ordinal: section_ordinal as u32,
                     record_ordinal: record_ordinal as u32,
                     section_offset,
@@ -3151,39 +3143,37 @@ pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections().into_iter().enumerate()
     {
-        if section
-            .records
-            .first()
-            .is_none_or(|record| record.object_id.is_some())
-        {
+        let Some((control, _, records)) = section.as_offset_only() else {
             continue;
-        }
+        };
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
-        if let Some(control) = section.control {
-            candidates.push((
-                section_ordinal,
-                0usize,
-                DataBlockRole::Control,
-                entry.name.clone(),
-                section_offset,
-                entry_offset,
-                control,
-            ));
-        }
-        candidates.extend(section.records.iter().cloned().enumerate().map(
-            |(record_ordinal, block)| {
-                (
-                    section_ordinal,
-                    record_ordinal + 1,
-                    DataBlockRole::Column,
-                    entry.name.clone(),
-                    section_offset,
-                    entry_offset,
-                    block,
-                )
-            },
+        candidates.push((
+            section_ordinal,
+            0usize,
+            DataBlockRole::Control,
+            entry.name.clone(),
+            section_offset,
+            entry_offset,
+            control.clone(),
         ));
+        candidates.extend(
+            records
+                .iter()
+                .cloned()
+                .enumerate()
+                .map(|(record_ordinal, block)| {
+                    (
+                        section_ordinal,
+                        record_ordinal + 1,
+                        DataBlockRole::Column,
+                        entry.name.clone(),
+                        section_offset,
+                        entry_offset,
+                        block,
+                    )
+                }),
+        );
     }
 
     let mut identity_counts = BTreeMap::<String, usize>::new();
@@ -3231,11 +3221,11 @@ pub fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlFo
         .into_iter()
         .enumerate()
         .filter_map(|(section_ordinal, (entry, section))| {
-            let control = section.control?;
+            let (control, _, records) = section.as_offset_only()?;
             let (kind, leading_value_width, leading_value, value_count) =
                 match crate::om::offset_store_control_form(
                     control.bytes,
-                    section.records.first().map(|record| record.bytes),
+                    records.first().map(|record| record.bytes),
                 )? {
                     crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => (
                         DataBlockControlFormKind::ZeroPrefixed,
@@ -3281,13 +3271,13 @@ pub fn data_block_control_values(container: &Container) -> Vec<DataBlockControlV
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(control) = section.control else {
+            let Some((control, _, records)) = section.as_offset_only() else {
                 return Vec::new();
             };
             let Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { values }) =
                 crate::om::offset_store_control_form(
                     control.bytes,
-                    section.records.first().map(|record| record.bytes),
+                    records.first().map(|record| record.bytes),
                 )
             else {
                 return Vec::new();
@@ -3320,13 +3310,13 @@ pub fn data_block_control_class_references(
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(control) = section.control else {
+            let Some((control, _, records)) = section.as_offset_only() else {
                 return Vec::new();
             };
             if !matches!(
                 crate::om::offset_store_control_form(
                     control.bytes,
-                    section.records.first().map(|record| record.bytes),
+                    records.first().map(|record| record.bytes),
                 ),
                 Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { .. })
             ) {
@@ -3395,7 +3385,7 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(control) = section.control else {
+            let Some((control, _, records)) = section.as_offset_only() else {
                 return Vec::new();
             };
             let Some(crate::om::OffsetStoreControlForm::ProductAnchored {
@@ -3403,7 +3393,7 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
                 values,
             }) = crate::om::offset_store_control_form(
                 control.bytes,
-                section.records.first().map(|record| record.bytes),
+                records.first().map(|record| record.bytes),
             )
             else {
                 return Vec::new();
@@ -3411,7 +3401,7 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
             let leading_value_width = leading_value.map_or(0, |(width, _)| width);
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
-            let block_count = section.records.len() + 1;
+            let block_count = records.len() + 1;
             values
                 .into_iter()
                 .enumerate()
@@ -3475,7 +3465,7 @@ pub fn data_block_control_references(container: &Container) -> Vec<DataBlockCont
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(control) = section.control else {
+            let Some((control, _, _)) = section.as_offset_only() else {
                 return Vec::new();
             };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
@@ -3559,12 +3549,12 @@ pub fn data_block_references(
     object_records: &[ObjectRecord],
     expression_declarations: &[ExpressionDeclaration],
 ) -> Vec<DataBlockReference> {
-    let mut records = BTreeMap::<(String, u32), Vec<String>>::new();
+    let mut target_records = BTreeMap::<(String, u32), Vec<String>>::new();
     for record in object_records {
         let Some(object_id) = record.object_id else {
             continue;
         };
-        records
+        target_records
             .entry((record.source_entry.clone(), object_id))
             .or_default()
             .push(record.id.clone());
@@ -3581,19 +3571,13 @@ pub fn data_block_references(
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            if section
-                .records
-                .first()
-                .is_none_or(|record| record.object_id.is_some())
-            {
+            let Some((control, _, records)) = section.as_offset_only() else {
                 return Vec::new();
-            }
+            };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            let mut source_blocks = Vec::with_capacity(section.records.len() + 1);
-            if let Some(control) = section.control {
-                source_blocks.push(control);
-            }
-            source_blocks.extend(section.records.iter().cloned());
+            let mut source_blocks = Vec::with_capacity(records.len() + 1);
+            source_blocks.push(control.clone());
+            source_blocks.extend(records.iter().cloned());
             source_blocks
                 .into_iter()
                 .enumerate()
@@ -3619,7 +3603,7 @@ pub fn data_block_references(
                                 ordinal: ordinal as u32,
                                 object_id: reference.object_index,
                                 raw_object_id: reference.raw_object_index,
-                                target_record: unique(records.get(&key)),
+                                target_record: unique(target_records.get(&key)),
                                 target_expression_declaration: unique(declarations.get(&key)),
                                 source_offset: entry_offset
                                     + block.offset as u64
@@ -3640,17 +3624,12 @@ pub fn data_block_counted_index_lanes(container: &Container) -> Vec<DataBlockCou
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            if section
-                .records
-                .first()
-                .is_none_or(|record| record.object_id.is_some())
-            {
+            let Some((_, _, records)) = section.as_offset_only() else {
                 return Vec::new();
-            }
+            };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            let block_count = section.records.len() + 1;
-            section
-                .records
+            let block_count = records.len() + 1;
+            records
                 .iter()
                 .cloned()
                 .enumerate()
@@ -3725,15 +3704,15 @@ pub fn data_block_abr_reference_lanes(container: &Container) -> Vec<DataBlockAbr
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(storage) = section.column_storage else {
+            let Some((_, storage, records)) = section.as_offset_only() else {
                 return Vec::new();
             };
-            let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
+            let Some(storage_offset) = records.first().map(|record| record.offset) else {
                 return Vec::new();
             };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let source_base = entry_offset + storage_offset as u64;
-            let block_count = section.records.len() + 1;
+            let block_count = records.len() + 1;
             crate::om::offset_store_abr_reference_lanes(storage)
                 .into_iter()
                 .filter_map(|lane| {
@@ -3781,15 +3760,15 @@ pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(storage) = section.column_storage else {
+            let Some((_, storage, records)) = section.as_offset_only() else {
                 return Vec::new();
             };
-            let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
+            let Some(storage_offset) = records.first().map(|record| record.offset) else {
                 return Vec::new();
             };
             let source_base =
                 entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
-            let block_count = section.records.len() + 1;
+            let block_count = records.len() + 1;
             crate::om::offset_store_index_rows(storage)
                 .into_iter()
                 .filter_map(|row| {
@@ -3803,7 +3782,7 @@ pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
                         .and_then(|blocks| blocks.try_into().ok())?;
                     let opening = column_storage_block_at(
                         section_ordinal,
-                        &section.records,
+                        records,
                         storage_offset + row.offset,
                     )?;
                     Some((row, data_blocks, opening))
@@ -3840,15 +3819,15 @@ pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinke
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(storage) = section.column_storage else {
+            let Some((_, storage, records)) = section.as_offset_only() else {
                 return Vec::new();
             };
-            let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
+            let Some(storage_offset) = records.first().map(|record| record.offset) else {
                 return Vec::new();
             };
             let source_base =
                 entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
-            let block_count = section.records.len() + 1;
+            let block_count = records.len() + 1;
             crate::om::offset_store_linked_index_rows(storage)
                 .into_iter()
                 .filter_map(|row| {
@@ -3860,7 +3839,7 @@ pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinke
                         .and_then(|blocks| blocks.try_into().ok())?;
                     let opening = column_storage_block_at(
                         section_ordinal,
-                        &section.records,
+                        records,
                         storage_offset + row.offset,
                     )?;
                     Some((row, data_blocks, opening))
@@ -3906,15 +3885,15 @@ pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTarge
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(storage) = section.column_storage else {
+            let Some((_, storage, records)) = section.as_offset_only() else {
                 return Vec::new();
             };
-            let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
+            let Some(storage_offset) = records.first().map(|record| record.offset) else {
                 return Vec::new();
             };
             let source_base =
                 entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
-            let block_count = section.records.len() + 1;
+            let block_count = records.len() + 1;
             crate::om::offset_store_target_index_rows(storage)
                 .into_iter()
                 .filter_map(|row| {
@@ -3926,7 +3905,7 @@ pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTarge
                         .and_then(|blocks| blocks.try_into().ok())?;
                     let opening = column_storage_block_at(
                         section_ordinal,
-                        &section.records,
+                        records,
                         storage_offset + row.offset,
                     )?;
                     Some((row, data_blocks, opening))
@@ -4103,10 +4082,10 @@ pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<Par
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections().into_iter().enumerate()
     {
-        let Some(storage) = section.column_storage else {
+        let Some((_, storage, records)) = section.as_offset_only() else {
             continue;
         };
-        let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
+        let Some(storage_offset) = records.first().map(|record| record.offset) else {
             continue;
         };
         let Some(class) = section
@@ -4363,22 +4342,36 @@ pub fn store_headers(container: &Container) -> Vec<StoreHeader> {
         .enumerate()
         .filter_map(|(section_ordinal, (entry, section))| {
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            section
-                .control
-                .iter()
-                .chain(section.records.iter())
-                .find_map(|record| {
+            match &section.store {
+                IndexedStore::Fixed { records } => records.iter().find_map(|record| {
                     crate::om::store_version(record.bytes, record.offset).map(|version| {
                         StoreHeader {
                             id: format!("nx:om-store-headers:store#{section_ordinal}"),
                             section_ordinal: section_ordinal as u32,
-                            object_id: record.object_id,
+                            object_id: Some(record.object_id.0),
                             version: version.value.to_string(),
                             source_entry: entry.name.clone(),
                             source_offset: entry_offset + version.offset as u64,
                         }
                     })
-                })
+                }),
+                IndexedStore::OffsetOnly {
+                    control, records, ..
+                } => std::iter::once(control)
+                    .chain(records.iter())
+                    .find_map(|record| {
+                        crate::om::store_version(record.bytes, record.offset).map(|version| {
+                            StoreHeader {
+                                id: format!("nx:om-store-headers:store#{section_ordinal}"),
+                                section_ordinal: section_ordinal as u32,
+                                object_id: None,
+                                version: version.value.to_string(),
+                                source_entry: entry.name.clone(),
+                                source_offset: entry_offset + version.offset as u64,
+                            }
+                        })
+                    }),
+            }
         })
         .collect()
 }
@@ -4390,11 +4383,7 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            if section
-                .records
-                .first()
-                .is_none_or(|record| record.object_id.is_none())
-            {
+            if section.as_fixed().is_none() {
                 return Vec::new();
             }
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
@@ -4431,17 +4420,18 @@ pub fn object_uuid_values(container: &Container) -> Vec<ObjectUuidValue> {
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(first) = section.records.first() else {
+            let Some(records) = section.as_fixed() else {
                 return Vec::new();
             };
-            let Some(last) = section.records.last() else {
+            let Some(first) = records.first() else {
                 return Vec::new();
             };
-            if first.object_id.is_none()
-                || section.records.windows(2).any(|records| {
-                    records[0].offset.checked_add(records[0].bytes.len()) != Some(records[1].offset)
-                })
-            {
+            let Some(last) = records.last() else {
+                return Vec::new();
+            };
+            if records.windows(2).any(|window| {
+                window[0].offset.checked_add(window[0].bytes.len()) != Some(window[1].offset)
+            }) {
                 return Vec::new();
             }
             let Some(end) = last.offset.checked_add(last.bytes.len()) else {
@@ -4466,8 +4456,7 @@ pub fn object_uuid_values(container: &Container) -> Vec<ObjectUuidValue> {
                 .into_iter()
                 .filter_map(|value| {
                     let frame_end = value.offset.checked_add(FRAME_LEN)?;
-                    let records = section
-                        .records
+                    let records = records
                         .iter()
                         .enumerate()
                         .filter(|(_, record)| {
@@ -4507,11 +4496,7 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            if section
-                .records
-                .first()
-                .is_none_or(|record| record.object_id.is_none())
-            {
+            if section.as_fixed().is_none() {
                 return Vec::new();
             }
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
@@ -4692,13 +4677,15 @@ pub fn expression_declarations(container: &Container) -> Vec<ExpressionDeclarati
                 return Vec::new();
             }
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            section
-                .records
+            let Some(records) = section.as_fixed() else {
+                return Vec::new();
+            };
+            records
                 .iter()
                 .cloned()
                 .enumerate()
                 .filter_map(|(record_ordinal, record)| {
-                    let object_id = record.object_id?;
+                    let object_id = record.object_id.0;
                     let declaration = crate::om::expression_declaration_name(record.bytes)?;
                     let record_id =
                         format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
@@ -6414,7 +6401,7 @@ mod rmfastload;
 
 #[cfg(test)]
 mod object_record_identity_tests {
-    use crate::om::EntityRecord;
+
     use crate::test_support::prt_with_indexed_om_section;
 
     #[test]
@@ -6449,75 +6436,27 @@ mod object_record_identity_tests {
 
     #[test]
     fn graph_identity_ignores_same_section_record_reordering() {
-        let first = [0x01, 0x02, 0x90, 0x00, 0x01, 0xa0];
-        let second = [0x01, 0x02, 0x90, 0x00, 0x00, 0xb0];
-        let original = [
-            EntityRecord {
-                object_id: Some(11),
-                object_id_offset: Some(0),
-                offset: 0,
-                bytes: &first,
-            },
-            EntityRecord {
-                object_id: Some(12),
-                object_id_offset: Some(4),
-                offset: 6,
-                bytes: &second,
-            },
-        ];
+        let first: &[u8] = &[0x01, 0x02, 0x90, 0x00, 0x01, 0xa0];
+        let second: &[u8] = &[0x01, 0x02, 0x90, 0x00, 0x00, 0xb0];
+        let original = [first, second];
 
-        let reordered_first = [0x01, 0x02, 0x90, 0x00, 0x01, 0xb0];
-        let reordered_second = [0x01, 0x02, 0x90, 0x00, 0x00, 0xa0];
-        let reordered = [
-            EntityRecord {
-                object_id: Some(12),
-                object_id_offset: Some(0),
-                offset: 0,
-                bytes: &reordered_first,
-            },
-            EntityRecord {
-                object_id: Some(11),
-                object_id_offset: Some(4),
-                offset: 6,
-                bytes: &reordered_second,
-            },
-        ];
+        let reordered_first: &[u8] = &[0x01, 0x02, 0x90, 0x00, 0x01, 0xb0];
+        let reordered_second: &[u8] = &[0x01, 0x02, 0x90, 0x00, 0x00, 0xa0];
+        let reordered = [reordered_first, reordered_second];
 
         let original_identities = super::stable_object_record_identities("/entry", &original);
         let reordered_identities = super::stable_object_record_identities("/entry", &reordered);
         assert_eq!(original_identities[0], reordered_identities[1]);
         assert_eq!(original_identities[1], reordered_identities[0]);
 
-        let unrelated = [0xd0];
-        let with_unrelated = [
-            original[0].clone(),
-            original[1].clone(),
-            EntityRecord {
-                object_id: Some(13),
-                object_id_offset: Some(8),
-                offset: 12,
-                bytes: &unrelated,
-            },
-        ];
+        let unrelated: &[u8] = &[0xd0];
+        let with_unrelated = [original[0], original[1], unrelated];
         let with_unrelated_identities =
             super::stable_object_record_identities("/entry", &with_unrelated);
         assert_eq!(original_identities[0], with_unrelated_identities[0]);
         assert_eq!(original_identities[1], with_unrelated_identities[1]);
 
-        let changed = [
-            EntityRecord {
-                object_id: Some(12),
-                object_id_offset: Some(0),
-                offset: 0,
-                bytes: &reordered_first,
-            },
-            EntityRecord {
-                object_id: Some(11),
-                object_id_offset: Some(4),
-                offset: 6,
-                bytes: &[0x01, 0x02, 0x90, 0x00, 0x00, 0xc0],
-            },
-        ];
+        let changed = [reordered_first, &[0x01, 0x02, 0x90, 0x00, 0x00, 0xc0][..]];
         let changed_identities = super::stable_object_record_identities("/entry", &changed);
         assert_ne!(original_identities[0], changed_identities[1]);
     }

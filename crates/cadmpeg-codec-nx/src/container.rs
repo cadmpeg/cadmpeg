@@ -425,30 +425,23 @@ impl<'a> Container<'a> {
             let offset_data_block_bytes = materialized.as_ref().map(|sections| {
                 let mut blocks = BTreeMap::new();
                 for (section_ordinal, (entry_index, section)) in sections.iter().enumerate() {
-                    if section
-                        .records
-                        .first()
-                        .is_none_or(|record| record.object_id.is_some())
-                    {
+                    let Some((control, _, records)) = section.as_offset_only() else {
                         continue;
-                    }
+                    };
                     let entry_offset = self
                         .entries
                         .get(*entry_index)
                         .and_then(|entry| entry.file_span)
                         .map_or(0, |(offset, _)| offset);
-                    let first_record_ordinal = usize::from(section.control.is_some());
-                    if let Some(control) = section.control.as_ref() {
-                        blocks.insert(
-                            format!("nx:om-data-blocks-{section_ordinal}:block#0"),
-                            (control.bytes, entry_offset + control.offset as u64),
-                        );
-                    }
-                    for (record_ordinal, block) in section.records.iter().enumerate() {
+                    blocks.insert(
+                        format!("nx:om-data-blocks-{section_ordinal}:block#0"),
+                        (control.bytes, entry_offset + control.offset as u64),
+                    );
+                    for (record_ordinal, block) in records.iter().enumerate() {
                         blocks.insert(
                             format!(
                                 "nx:om-data-blocks-{section_ordinal}:block#{}",
-                                record_ordinal + first_record_ordinal
+                                record_ordinal + 1
                             ),
                             (block.bytes, entry_offset + block.offset as u64),
                         );

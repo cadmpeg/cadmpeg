@@ -354,9 +354,9 @@ fn offset_store_control_counts(container: &Container) -> (usize, usize) {
         .indexed_om_sections()
         .into_iter()
         .filter_map(|(_, section)| {
-            section
-                .control
-                .map(|control| (control, section.records.first().map(|record| record.bytes)))
+            section.as_offset_only().map(|(control, _, records)| {
+                (control.clone(), records.first().map(|record| record.bytes))
+            })
         })
         .fold((0, 0), |(total, classified), (control, first_record)| {
             (
@@ -539,23 +539,13 @@ pub fn summarize(scan: &Scan) -> (crate::dialect::LayerClassification, Vec<Strin
     if !om_sections.is_empty() {
         let entities = om_sections
             .iter()
-            .filter(|(_, section)| {
-                section
-                    .records
-                    .first()
-                    .is_some_and(|record| record.object_id.is_some())
-            })
-            .map(|(_, section)| section.records.len())
+            .filter_map(|(_, section)| section.as_fixed())
+            .map(|records| records.len())
             .sum::<usize>();
         let blocks = om_sections
             .iter()
-            .filter(|(_, section)| {
-                section
-                    .records
-                    .first()
-                    .is_some_and(|record| record.object_id.is_none())
-            })
-            .map(|(_, section)| section.records.len() + usize::from(section.control.is_some()))
+            .filter_map(|(_, section)| section.as_offset_only())
+            .map(|(_control, _, records)| records.len() + 1)
             .sum::<usize>();
         if blocks == 0 {
             notes.push(format!(
