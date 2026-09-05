@@ -929,67 +929,54 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
         }
         let unique_index =
             stream.is_some_and(|stream| record_indices.insert((stream, entity.record_index)));
-        let valid_table = if entity.in_table {
-            entity
-                .table_record_index_offset
-                .zip(entity.table_entity_id_offset)
-                .is_some_and(|(index, key)| index.checked_add(14) == Some(key))
-        } else {
-            entity.table_record_index_offset.is_none() && entity.table_entity_id_offset.is_none()
+        let valid_table = entity.table_row().is_none_or(|row| {
+            row.record_index_offset.checked_add(14) == Some(row.entity_id_offset)
+        });
+        let valid_class_tail = match entity.channel_group() {
+            None => true,
+            Some(group) if group.class_tail.is_empty() => group.class_tail_offset.is_none(),
+            Some(group) => {
+                group.class_tail.iter().any(|byte| *byte != 0)
+                    && group.class_tail_offset.is_some_and(|tail_offset| {
+                        group.record_index_offset < tail_offset
+                            && group
+                                .entity_id_offset
+                                .is_none_or(|entity_offset| entity_offset < tail_offset)
+                            && group.guid_offsets.values().all(|guid_offset| {
+                                guid_offset
+                                    .checked_add(72)
+                                    .is_some_and(|guid_end| guid_end <= tail_offset)
+                            })
+                            && u64::try_from(group.class_tail.len())
+                                .ok()
+                                .and_then(|tail_len| tail_offset.checked_add(tail_len))
+                                .is_some()
+                    })
+            }
         };
-        let valid_class_tail = if entity.channel_class_tail.is_empty() {
-            entity.channel_class_tail_offset.is_none()
-        } else {
-            entity.channel_class_tail.iter().any(|byte| *byte != 0)
-                && entity.channel_class_tail_offset.is_some_and(|tail_offset| {
-                    entity
-                        .channel_record_index_offset
-                        .is_some_and(|record_offset| record_offset < tail_offset)
-                        && entity
-                            .channel_entity_id_offset
-                            .is_none_or(|entity_offset| entity_offset < tail_offset)
-                        && entity.channel_guid_offsets.values().all(|guid_offset| {
-                            guid_offset
-                                .checked_add(72)
-                                .is_some_and(|guid_end| guid_end <= tail_offset)
-                        })
-                        && u64::try_from(entity.channel_class_tail.len())
-                            .ok()
-                            .and_then(|tail_len| tail_offset.checked_add(tail_len))
-                            .is_some()
-                })
-        };
-        let valid_group = match entity.channel_class_tag.as_deref() {
-            Some(class_tag) => {
-                valid_dynamic_class_tag(class_tag)
+        let valid_group = match entity.channel_group() {
+            Some(group) => {
+                valid_dynamic_class_tag(&group.class_tag)
                     && valid_class_tail
-                    && !entity.channels.is_empty()
-                    && entity.channels.len() <= 8
-                    && entity
-                        .channel_record_index_offset
-                        .zip(entity.channel_entity_id_offset)
-                        .is_some_and(|(index, key)| index < key)
-                    && entity
-                        .channels
-                        .keys()
-                        .eq(entity.channel_guid_offsets.keys())
-                    && entity
+                    && !group.channels.is_empty()
+                    && group.channels.len() <= 8
+                    && group
+                        .entity_id_offset
+                        .is_some_and(|key| group.record_index_offset < key)
+                    && group.channels.keys().eq(group.guid_offsets.keys())
+                    && group
                         .channels
                         .keys()
                         .all(|name| !name.is_empty() && name.len() <= 128 && name.is_ascii())
-                    && entity.channels.values().all(|guid| valid_design_guid(guid))
-                    && entity
-                        .channel_entity_id_offset
-                        .is_some_and(|entity_offset| {
-                            entity.channel_guid_offsets.values().all(|guid_offset| {
-                                entity
-                                    .channel_record_index_offset
-                                    .is_some_and(|record_offset| record_offset < *guid_offset)
-                                    && guid_offset
-                                        .checked_add(72)
-                                        .is_some_and(|guid_end| guid_end <= entity_offset)
-                            })
+                    && group.channels.values().all(|guid| valid_design_guid(guid))
+                    && group.entity_id_offset.is_some_and(|entity_offset| {
+                        group.guid_offsets.values().all(|guid_offset| {
+                            group.record_index_offset < *guid_offset
+                                && guid_offset
+                                    .checked_add(72)
+                                    .is_some_and(|guid_end| guid_end <= entity_offset)
                         })
+                    })
             }
             None => false,
         };

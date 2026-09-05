@@ -1049,13 +1049,13 @@ pub(crate) fn validate_act_appearance_bindings(
                 entities
                     .iter()
                     .copied()
-                    .find(|entity| before.channels == entity.channels)
+                    .find(|entity| &before.channels == entity.channels())
             });
         let after_entity = before_entity.and_then(|before_entity| {
             target_entities_by_id
                 .get(before_entity.id.as_str())
                 .copied()
-                .filter(|entity| after.channels == entity.channels)
+                .filter(|entity| &after.channels == entity.channels())
         });
         if before_entity.is_none() || after_entity.is_none() {
             return Err(CodecError::NotImplemented(format!(
@@ -1101,7 +1101,7 @@ pub(crate) fn validate_act_appearance_bindings(
         let derived_binding = matching_bindings.is_some_and(|bindings| {
             bindings
                 .iter()
-                .any(|(channels, _)| channels == &before.channels)
+                .any(|(channels, _)| channels == before.channels())
         });
         let assignment_synchronized = assignment_entities.contains(after.entity_id.as_str());
         if before.entity_id != after.entity_id && derived_binding && !assignment_synchronized {
@@ -1119,11 +1119,11 @@ pub(crate) fn validate_act_appearance_bindings(
                     ))
                     .is_some_and(|binding| {
                         binding.source_entity_id.as_deref() == Some(after.entity_id.as_str())
-                            && binding.channels == after.channels
+                            && &binding.channels == after.channels()
                     })
             })
         });
-        if (before.entity_id != after.entity_id || before.channels != after.channels)
+        if (before.entity_id != after.entity_id || before.channels() != after.channels())
             && derived_binding
             && !synchronized
         {
@@ -1167,7 +1167,11 @@ pub(crate) fn validate_act_entity_edits(
         let after = target_by_id[id];
         let mut normalized = after.clone();
         normalized.entity_id.clone_from(&before.entity_id);
-        normalized.channels.clone_from(&before.channels);
+        if let Some(group) = normalized.channel_group_mut() {
+            if let Some(before_group) = before.channel_group() {
+                group.channels.clone_from(&before_group.channels);
+            }
+        }
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity edit changes fields other than entity_id or channel GUIDs: {id}"
@@ -1181,15 +1185,18 @@ pub(crate) fn validate_act_entity_edits(
                 "F3D ACT entity id {id} must retain its UTF-16 length"
             )));
         }
-        if after.channels.keys().ne(before.channels.keys())
-            || after.channels.keys().ne(after.channel_guid_offsets.keys())
+        if after.channels().keys().ne(before.channels().keys())
+            || after
+                .channels()
+                .keys()
+                .ne(after.channel_guid_offsets().keys())
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity {id} must retain its channel set and offsets"
             )));
         }
-        for (name, guid) in &after.channels {
-            let before_guid = &before.channels[name];
+        for (name, guid) in after.channels() {
+            let before_guid = &before.channels()[name];
             if guid.encode_utf16().count() != before_guid.encode_utf16().count()
                 || !canonical_guid(guid)
             {

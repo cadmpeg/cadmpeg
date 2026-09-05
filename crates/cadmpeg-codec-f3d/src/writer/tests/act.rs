@@ -30,17 +30,11 @@ fn generated_source_less_rejects_act_without_segment_metadata() {
     native.act_entities = vec![ActEntity {
         id: "generated:act-entity#0".into(),
         record_index: 7,
-        table_record_index_offset: None,
-        channel_record_index_offset: None,
         entity_id: "0_985".into(),
-        table_entity_id_offset: None,
-        channel_entity_id_offset: None,
-        in_table: true,
-        channel_class_tag: None,
-        channels: Default::default(),
-        channel_guid_offsets: Default::default(),
-        channel_class_tail: Vec::new(),
-        channel_class_tail_offset: None,
+        membership: crate::records::ActEntityMembership::TableOnly(crate::records::ActTableRow {
+            record_index_offset: 0,
+            entity_id_offset: 14,
+        }),
     }];
     drop(native);
     let error = F3dCodec
@@ -60,10 +54,14 @@ fn generated_f3d_rejects_act_binding_divergence() {
         .expect("generated ACT decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     update_f3d_native(&mut edited, |native| {
-        native.act_entities[0].channels.insert(
-            "Appearance".into(),
-            "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
-        );
+        native.act_entities[0]
+            .channel_group_mut()
+            .unwrap()
+            .channels
+            .insert(
+                "Appearance".into(),
+                "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
+            );
     });
 
     let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
