@@ -814,7 +814,7 @@ pub(crate) fn validate_material_assignment_appearances(
             let selected =
                 crate::materials::appearance_for_assignment(&target.model.appearances, assignment)?;
             if selected.is_some_and(|appearance| appearance.id == after.id)
-                && after.physical_token == assignment.physical_token
+                && after.physical_token.as_deref() == assignment.physical_token.as_ref().map(|field| field.value.as_str())
             {
                 synchronized = true;
                 break;
@@ -835,8 +835,10 @@ pub(crate) fn validate_material_assignment_appearances(
         };
         let selected =
             crate::materials::appearance_for_assignment(&target.model.appearances, after)?;
-        if after.physical_token != before.physical_token
-            && selected.is_none_or(|appearance| appearance.physical_token != after.physical_token)
+        let before_token = before.physical_token.as_ref().map(|field| field.value.as_str());
+        let after_token = after.physical_token.as_ref().map(|field| field.value.as_str());
+        if after_token != before_token
+            && selected.is_none_or(|appearance| appearance.physical_token.as_deref() != after_token)
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D material assignment {} changed without its appearance physical token",
@@ -883,8 +885,14 @@ pub(crate) fn validate_material_assignment_edits(
         }
         let mut normalized = after.clone();
         normalized.visual_guid.clone_from(&before.visual_guid);
-        normalized.physical_token.clone_from(&before.physical_token);
-        normalized.visual_preset.clone_from(&before.visual_preset);
+        normalized.physical_token = before.physical_token.as_ref().map(|field| crate::records::RecordedValue {
+            value: field.value.clone(),
+            offset: after.physical_token.as_ref().and_then(|field| field.offset),
+        });
+        normalized.visual_preset = before.visual_preset.as_ref().map(|field| crate::records::RecordedValue {
+            value: field.value.clone(),
+            offset: after.visual_preset.as_ref().and_then(|field| field.offset),
+        });
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D material-assignment edit changes fields outside writable strings: {id}"
@@ -909,13 +917,13 @@ pub(crate) fn validate_material_assignment_edits(
         validate_utf16_replacement(id, &before.visual_guid, &after.visual_guid)?;
         validate_optional_utf16_replacement(
             id,
-            before.physical_token.as_deref(),
-            after.physical_token.as_deref(),
+            before.physical_token.as_ref().map(|field| field.value.as_str()),
+            after.physical_token.as_ref().map(|field| field.value.as_str()),
         )?;
         validate_optional_utf16_replacement(
             id,
-            before.visual_preset.as_deref(),
-            after.visual_preset.as_deref(),
+            before.visual_preset.as_ref().map(|field| field.value.as_str()),
+            after.visual_preset.as_ref().map(|field| field.value.as_str()),
         )?;
         edits
             .entry(native_stream(id, ":material-assignment#")?)

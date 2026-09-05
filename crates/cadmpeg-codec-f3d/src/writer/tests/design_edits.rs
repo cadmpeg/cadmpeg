@@ -102,8 +102,8 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let assignment = &mut native.design_material_assignments[0];
     assert!(assignment.entity_id_offset > 0);
     assert!(assignment.asm_body_key_offset > 0);
-    assignment.physical_token = Some("PrismMaterial-019".into());
-    assignment.visual_preset = Some("Prism-002".into());
+    assignment.physical_token.as_mut().expect("material field").value = "PrismMaterial-019".into();
+    assignment.visual_preset.as_mut().expect("material field").value = "Prism-002".into();
     native.body_native_keys[0].asm_body_key = Some(84);
     edited.model.appearances[0].physical_token = Some("PrismMaterial-019".into());
     edited.model.appearances[0].base_color = Some(cadmpeg_ir::topology::Color {
@@ -218,7 +218,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(
         f3d_native(round_trip.ir()).design_material_assignments[0]
             .visual_preset
-            .as_deref(),
+            .as_ref().map(|field| field.value.as_str()),
         Some("Prism-002")
     );
     assert_eq!(

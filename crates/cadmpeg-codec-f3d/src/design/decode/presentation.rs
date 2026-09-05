@@ -39,8 +39,7 @@ pub(crate) struct PresentationMaterial {
     pub physical_token_offset: u64,
     pub visual_guid: String,
     pub visual_guid_offset: u64,
-    pub visual_preset: Option<String>,
-    pub visual_preset_offset: Option<u64>,
+    pub visual_preset: Option<crate::records::Located<String>>,
 }
 
 /// One body record, its exact owner header, and its browser-node join.
@@ -391,8 +390,7 @@ fn presentation_material(
             physical_token_offset: (token_at + 4) as u64,
             visual_guid,
             visual_guid_offset: (visual_at + 4) as u64,
-            visual_preset: visual_preset.as_ref().map(|(_, value)| value.clone()),
-            visual_preset_offset: visual_preset.map(|(at, _)| (at + 4) as u64),
+            visual_preset: visual_preset.map(|(at, value)| crate::records::Located { value, offset: (at + 4) as u64 }),
         });
     }
     match candidates.as_slice() {
@@ -493,7 +491,6 @@ fn bare_presentation_material(
             visual_guid,
             visual_guid_offset: (*visual_at + 4) as u64,
             visual_preset: None,
-            visual_preset_offset: None,
         });
     }
     match candidates.as_slice() {
@@ -797,7 +794,7 @@ mod tests {
             presentations[0]
                 .material
                 .as_ref()
-                .and_then(|material| material.visual_preset.as_deref()),
+                .and_then(|material| material.visual_preset.as_ref().map(|field| field.value.as_str())),
             Some("Prism-001")
         );
     }
