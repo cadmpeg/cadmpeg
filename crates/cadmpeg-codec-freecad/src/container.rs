@@ -13,8 +13,8 @@ use cadmpeg_ir::ContainerSummary;
 use crate::brep::ShapePayloadRecord;
 use crate::gui;
 use crate::native::{
-    ArchiveSpan, ByteCoverageRecord, DocumentFacts, ElementMapRecord, EntryRecord, LogicalSpan,
-    PropertyFamily, PropertyRecord, StringTableRecord,
+    ArchiveSpan, ByteCoverageRecord, DocumentFacts, ElementMapRecord, EntryRecord,
+    LogicalClassification, LogicalSpan, PropertyFamily, PropertyRecord, StringTableRecord,
 };
 
 const DETECTION_XML_BYTES: usize = 8 * 1024;
@@ -305,8 +305,9 @@ pub(crate) fn logical_ledger(
                 entry,
                 0,
                 entry.byte_len,
-                "typed",
-                Some(entry.id.clone()),
+                LogicalClassification::Typed {
+                    owner: entry.id.clone(),
+                },
             );
         } else if entry.name == "Document.xml" || entry.name == "GuiDocument.xml" {
             let mut ranges = if entry.name == "Document.xml" {
@@ -359,8 +360,18 @@ pub(crate) fn logical_ledger(
                         entry.name
                     )));
                 }
-                push_logical_span(&mut output, entry, cursor, start, "structural", None);
-                push_logical_span(&mut output, entry, start, end, classification, Some(owner));
+                push_logical_span(
+                    &mut output,
+                    entry,
+                    cursor,
+                    start,
+                    LogicalClassification::Structural,
+                );
+                let classification = match classification {
+                    "typed" => LogicalClassification::Typed { owner },
+                    _ => LogicalClassification::NamedOpaque { owner },
+                };
+                push_logical_span(&mut output, entry, start, end, classification);
                 cursor = end;
             }
             push_logical_span(
@@ -368,8 +379,7 @@ pub(crate) fn logical_ledger(
                 entry,
                 cursor,
                 entry.byte_len,
-                "structural",
-                None,
+                LogicalClassification::Structural,
             );
         } else {
             push_logical_span(
@@ -377,8 +387,9 @@ pub(crate) fn logical_ledger(
                 entry,
                 0,
                 entry.byte_len,
-                "named_opaque",
-                Some(entry.id.clone()),
+                LogicalClassification::NamedOpaque {
+                    owner: entry.id.clone(),
+                },
             );
         }
     }
@@ -395,9 +406,12 @@ pub(crate) fn byte_coverage(
     let mut named_opaque_entries = BTreeSet::new();
     for span in logical {
         *classification_bytes
-            .entry(span.classification.clone())
+            .entry(span.classification.as_str().to_owned())
             .or_insert(0) += span.end.saturating_sub(span.start);
-        if span.classification == "named_opaque" {
+        if matches!(
+            span.classification,
+            LogicalClassification::NamedOpaque { .. }
+        ) {
             named_opaque_entries.insert(span.entry.clone());
         }
     }
@@ -411,27 +425,23 @@ pub(crate) fn byte_coverage(
         && ordered_physical
             .last()
             .is_some_and(|span| span.end == physical_byte_len);
-    let logical_exact = logical.iter().all(|span| {
-        entries.iter().any(|entry| entry.name == span.entry)
-            && span.start < span.end
-            && matches!(
-                span.classification.as_str(),
-                "structural" | "typed" | "named_opaque"
-            )
-    }) && entries.iter().all(|entry| {
-        let mut spans = logical
-            .iter()
-            .filter(|span| span.entry == entry.name)
-            .collect::<Vec<_>>();
-        spans.sort_by_key(|span| span.start);
-        if entry.byte_len == 0 {
-            spans.is_empty()
-        } else {
-            spans.first().is_some_and(|span| span.start == 0)
-                && spans.windows(2).all(|pair| pair[0].end == pair[1].start)
-                && spans.last().is_some_and(|span| span.end == entry.byte_len)
-        }
-    });
+    let logical_exact = logical
+        .iter()
+        .all(|span| entries.iter().any(|entry| entry.name == span.entry) && span.start < span.end)
+        && entries.iter().all(|entry| {
+            let mut spans = logical
+                .iter()
+                .filter(|span| span.entry == entry.name)
+                .collect::<Vec<_>>();
+            spans.sort_by_key(|span| span.start);
+            if entry.byte_len == 0 {
+                spans.is_empty()
+            } else {
+                spans.first().is_some_and(|span| span.start == 0)
+                    && spans.windows(2).all(|pair| pair[0].end == pair[1].start)
+                    && spans.last().is_some_and(|span| span.end == entry.byte_len)
+            }
+        });
     ByteCoverageRecord {
         id: crate::native::native_id("byte-coverage", "0"),
         physical_byte_len,
@@ -450,8 +460,7 @@ fn push_logical_span(
     entry: &EntryRecord,
     start: u64,
     end: u64,
-    classification: &str,
-    owner: Option<String>,
+    classification: LogicalClassification,
 ) {
     if start < end {
         output.push(LogicalSpan {
@@ -459,8 +468,7 @@ fn push_logical_span(
             entry: entry.name.clone(),
             start,
             end,
-            classification: classification.into(),
-            owner,
+            classification,
         });
     }
 }

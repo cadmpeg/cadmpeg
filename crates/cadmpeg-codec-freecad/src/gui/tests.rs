@@ -881,9 +881,9 @@ fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
         .expect("logical ledger");
     let span = logical
         .iter()
-        .find(|span| span.owner.as_deref() == Some(property.id.as_str()))
+        .find(|span| span.classification.owner() == Some(property.id.as_str()))
         .expect("visual layer span");
-    assert_eq!(span.classification, "typed");
+    assert_eq!(span.classification.as_str(), "typed");
     assert!(crate::validate_native(result.ir()).is_empty());
 
     for value in [
@@ -1401,7 +1401,8 @@ fn validates_the_complete_loaded_dynamic_gui_registry() {
         .expect("logical ledger");
     assert!(properties.iter().all(|property| {
         logical.iter().any(|span| {
-            span.owner.as_deref() == Some(property.id.as_str()) && span.classification == "typed"
+            span.classification.owner() == Some(property.id.as_str())
+                && span.classification.as_str() == "typed"
         })
     }));
 }
@@ -1507,8 +1508,8 @@ fn retains_unregistered_gui_side_entries_as_opaque_archive_members() {
         .iter()
         .find(|span| span.entry == entry.name)
         .expect("state span");
-    assert_eq!(span.classification, "named_opaque");
-    assert_eq!(span.owner.as_deref(), Some(entry.id.as_str()));
+    assert_eq!(span.classification.as_str(), "named_opaque");
+    assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
     assert!(crate::validate_native(result.ir()).is_empty());
 }
 

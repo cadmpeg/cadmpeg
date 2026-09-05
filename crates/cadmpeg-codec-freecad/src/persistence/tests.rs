@@ -413,17 +413,17 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(ledger
         .iter()
         .filter(|span| span.entry == "Shape.brp")
-        .all(|span| span.classification == "typed"));
+        .all(|span| span.classification.as_str() == "typed"));
     assert!(ledger
         .iter()
         .filter(|span| span.entry == "Payload.bin")
-        .all(|span| span.classification == "named_opaque"));
+        .all(|span| span.classification.as_str() == "named_opaque"));
     assert!(ledger
         .iter()
-        .any(|span| span.entry == "Document.xml" && span.classification == "typed"));
-    assert!(ledger
-        .iter()
-        .any(|span| span.entry == "Document.xml" && span.classification == "structural"));
+        .any(|span| span.entry == "Document.xml" && span.classification.as_str() == "typed"));
+    assert!(ledger.iter().any(|span| {
+        span.entry == "Document.xml" && span.classification.as_str() == "structural"
+    }));
     let coverage = namespace
         .arena_as::<crate::native::ByteCoverageRecord>("byte_coverage")
         .expect("byte coverage");
@@ -460,22 +460,6 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .any(|finding| finding
             .message
             .contains("logical ledger omits nonempty entry Payload.bin")));
-
-    let mut corrupted = result.ir().clone();
-    let mut invalid_owner = ledger.clone();
-    invalid_owner
-        .iter_mut()
-        .find(|span| span.classification == "typed")
-        .expect("typed span")
-        .owner = None;
-    corrupted
-        .native
-        .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
-        .set_arena("logical_ledger", &invalid_owner)
-        .expect("replace logical ledger");
-    assert!(crate::validate_native(&corrupted)
-        .iter()
-        .any(|finding| finding.message.contains("invalid logical entry or owner")));
 
     let mut corrupted = result.ir().clone();
     let mut invalid_objects = objects.clone();

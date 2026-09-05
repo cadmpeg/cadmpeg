@@ -1234,6 +1234,7 @@ pub struct EntryRecord {
 
 /// One non-overlapping logical-entry byte span.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "LogicalSpanWire", into = "LogicalSpanWire")]
 pub struct LogicalSpan {
     /// Stable span identity.
     pub id: String,
@@ -1243,10 +1244,95 @@ pub struct LogicalSpan {
     pub start: u64,
     /// Exclusive logical byte offset.
     pub end: u64,
-    /// `structural`, `typed`, or `named_opaque`.
-    pub classification: String,
+    /// Span family and owner.
+    pub classification: LogicalClassification,
+}
+
+/// Logical-entry family. Typed and named-opaque spans own a native record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LogicalClassification {
+    /// Framing bytes with no native owner.
+    Structural,
+    /// Typed native record bytes.
+    Typed {
+        /// Native record that owns the bytes.
+        owner: String,
+    },
+    /// Named opaque payload bytes.
+    NamedOpaque {
+        /// Native record that owns the bytes.
+        owner: String,
+    },
+}
+
+impl LogicalClassification {
+    /// Classification string retained on the CADIR wire.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Structural => "structural",
+            Self::Typed { .. } => "typed",
+            Self::NamedOpaque { .. } => "named_opaque",
+        }
+    }
+
     /// Native record that owns typed or opaque bytes.
-    pub owner: Option<String>,
+    pub fn owner(&self) -> Option<&str> {
+        match self {
+            Self::Structural => None,
+            Self::Typed { owner } | Self::NamedOpaque { owner } => Some(owner.as_str()),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct LogicalSpanWire {
+    id: String,
+    entry: String,
+    start: u64,
+    end: u64,
+    classification: String,
+    owner: Option<String>,
+}
+
+impl From<LogicalSpan> for LogicalSpanWire {
+    fn from(value: LogicalSpan) -> Self {
+        let classification = value.classification.as_str().to_owned();
+        let owner = value.classification.owner().map(str::to_owned);
+        Self {
+            id: value.id,
+            entry: value.entry,
+            start: value.start,
+            end: value.end,
+            classification,
+            owner,
+        }
+    }
+}
+
+impl TryFrom<LogicalSpanWire> for LogicalSpan {
+    type Error = String;
+
+    fn try_from(wire: LogicalSpanWire) -> Result<Self, Self::Error> {
+        let classification = match (wire.classification.as_str(), wire.owner) {
+            ("structural", None) => LogicalClassification::Structural,
+            ("typed", Some(owner)) => LogicalClassification::Typed { owner },
+            ("named_opaque", Some(owner)) => LogicalClassification::NamedOpaque { owner },
+            ("structural", Some(_)) => {
+                return Err("structural logical span cannot carry an owner".to_owned())
+            }
+            ("typed" | "named_opaque", None) => {
+                return Err("typed and named_opaque logical spans require an owner".to_owned())
+            }
+            _ => return Err("unknown logical classification".to_owned()),
+        };
+        Ok(Self {
+            id: wire.id,
+            entry: wire.entry,
+            start: wire.start,
+            end: wire.end,
+            classification,
+        })
+    }
 }
 
 /// Deterministic whole-archive byte-accounting summary.

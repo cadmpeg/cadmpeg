@@ -921,22 +921,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let mut logical_by_entry = BTreeMap::<&str, Vec<&native::LogicalSpan>>::new();
     for span in &logical {
         logical_by_entry.entry(&span.entry).or_default().push(span);
-        if !matches!(
-            span.classification.as_str(),
-            "structural" | "typed" | "named_opaque"
-        ) {
-            findings.push(finding(
-                Check::PayloadIntegrity,
-                format!("{} has invalid logical classification", span.id),
-                Some(span.id.clone()),
-            ));
-        }
-        let owner_valid = if span.classification == "structural" {
-            span.owner.is_none()
-        } else {
-            span.owner
-                .as_ref()
-                .is_some_and(|owner| logical_owner_ids.contains(owner.as_str()))
+        let owner_valid = match &span.classification {
+            native::LogicalClassification::Structural => true,
+            native::LogicalClassification::Typed { owner }
+            | native::LogicalClassification::NamedOpaque { owner } => {
+                logical_owner_ids.contains(owner.as_str())
+            }
         };
         if !entry_lengths.contains_key(span.entry.as_str()) || !owner_valid {
             findings.push(finding(
