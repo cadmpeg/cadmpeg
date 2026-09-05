@@ -4236,3 +4236,17 @@ crate = "cadmpeg-asm"
 kind = "field"
 item = "cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::knots"
 reason = "pcurve patch knot lanes are KnotLayout so a copy type cannot omit the expanded run lengths"
+
+[[change]]
+commit = "309c67f894b82878d2ccdc9b548cfe349b716b41"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::core::SurfacePatchLayout::{u_count,v_count}"
+reason = "surface patch layout is the decoded block so pole counts cannot disagree with the carried NurbsSurface"
+
+[[change]]
+commit = "309c67f894b82878d2ccdc9b548cfe349b716b41"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::core::CurvePatchLayout::control_count"
+reason = "curve patch layout is the decoded block so control count cannot disagree with the carried NurbsCurve"

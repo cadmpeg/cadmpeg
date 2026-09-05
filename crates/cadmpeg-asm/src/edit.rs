@@ -1580,8 +1580,8 @@ fn patch_nurbs_surface_record(
         .map_err(|_| CodecError::Malformed("NURBS u pole count exceeds address space".into()))?;
     let v_count = usize::try_from(surface.v_count())
         .map_err(|_| CodecError::Malformed("NURBS v pole count exceeds address space".into()))?;
-    if layout.u_count != u_count
-        || layout.v_count != v_count
+    if usize::try_from(layout.surface.u_count()).ok() != Some(u_count)
+        || usize::try_from(layout.surface.v_count()).ok() != Some(v_count)
         || layout.rational != surface.weights().is_some()
     {
         return Err(CodecError::NotImplemented(format!(
@@ -1667,7 +1667,7 @@ fn patch_nurbs_curve_record(
             record.index
         ))
     })?;
-    if layout.control_count != curve.control_points().len()
+    if layout.curve.control_points().len() != curve.control_points().len()
         || layout.rational != curve.weights().is_some()
     {
         return Err(CodecError::NotImplemented(format!(
