@@ -2524,7 +2524,13 @@ pub(crate) fn brep_body(
         } else {
             &edge.end
         };
-        let (next, previous) = cadmpeg_ir::topology::coedge_ring_neighbors(&ir.model.loops, coedge);
+        let (next, previous) = cadmpeg_ir::topology::coedge_ring_neighbors(&ir.model.loops, coedge)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "coedge {} is absent from its owning loop ring",
+                    coedge.id
+                ))
+            })?;
         for value in [
             0,
             loops[&coedge.owner_loop],
