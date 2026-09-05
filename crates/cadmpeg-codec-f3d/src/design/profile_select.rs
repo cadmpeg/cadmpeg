@@ -170,7 +170,7 @@ pub(crate) fn bind_sweep_sketch_selections(
             continue;
         };
         if let (Some(ProfileRef::Native(group_id)), Some(profile_operand)) =
-            (section.referenced_profile(), scope.sweep_profile.as_ref())
+            (section.referenced_profile(), scope.sweep_profile())
         {
             let group_id = group_id.clone();
             let group_matches = {

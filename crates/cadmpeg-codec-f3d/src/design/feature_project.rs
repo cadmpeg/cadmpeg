@@ -5568,7 +5568,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
 
     let DesignPathFeatureConstruction::Revolve {
         operation, angle, ..
-    } = scope.path_feature_construction.as_ref()?
+    } = scope.path_feature_construction()?
     else {
         return None;
     };
@@ -5959,7 +5959,7 @@ pub(crate) fn project_fixed_loft(
     use cadmpeg_ir::features::{FeatureDefinition, LoftPointSection, LoftSection, ProfileRef};
 
     let DesignPathFeatureConstruction::Loft { operation, .. } =
-        scope.path_feature_construction.as_ref()?
+        scope.path_feature_construction()?
     else {
         return None;
     };
@@ -6557,7 +6557,7 @@ pub(crate) fn project_fixed_sweep(
 
     let DesignPathFeatureConstruction::Sweep {
         operation, values, ..
-    } = scope.path_feature_construction.as_ref()?
+    } = scope.path_feature_construction()?
     else {
         return None;
     };
@@ -6592,7 +6592,7 @@ pub(crate) fn project_fixed_sweep(
         _ => return None,
     };
     let profile = if guide_surface_form {
-        let sweep_profile = scope.sweep_profile.as_ref()?;
+        let sweep_profile = scope.sweep_profile()?;
         let carriers = profiles
             .iter()
             .filter(|group| group.members.as_slice() == [sweep_profile.record_index])
@@ -6710,7 +6710,7 @@ fn project_fixed_pipe(
         values,
         record_indexes,
         ..
-    } = scope.path_feature_construction.as_ref()?
+    } = scope.path_feature_construction()?
     else {
         return None;
     };

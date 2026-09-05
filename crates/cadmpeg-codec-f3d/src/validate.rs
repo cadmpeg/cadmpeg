@@ -2289,8 +2289,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let is_sweep =
             design::design_feature_family(&scope.kind) == Some(design::DesignFeatureFamily::Sweep);
         let sweep_profile_link = scope
-            .sweep_profile
-            .as_ref()
+            .sweep_profile()
             .is_none_or(|profile| is_sweep && valid_sketch_profile(profile));
         let is_base_flange = scope.kind == "BaseFlange";
         let base_flange_profile_link = scope
@@ -5281,7 +5280,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::Loft) => {
-                        (scope.path_feature_construction.is_none()
+                        (scope.path_feature_construction().is_none()
                             || matches!(
                                 group.role,
                                 0x0000_0004_0000_0000
@@ -5294,7 +5293,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::Sweep) => {
-                        (scope.path_feature_construction.is_none()
+                        (scope.path_feature_construction().is_none()
                             || matches!(
                                 group.role,
                                 0x0000_0004_0000_0000
@@ -5583,7 +5582,7 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     | design::DesignFeatureFamily::Sweep
                     | design::DesignFeatureFamily::Pipe
             )
-        ) && scope.path_feature_construction.is_some()
+        ) && scope.path_feature_construction().is_some()
     }) {
         let native_stream = design_stream(&scope.id);
         let groups = native
@@ -5599,7 +5598,7 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .iter()
             .map(|group| (group.role, group.members.len()))
             .collect::<Vec<_>>();
-        let valid = match scope.path_feature_construction.as_ref() {
+        let valid = match scope.path_feature_construction() {
             Some(records::DesignPathFeatureConstruction::Revolve {
                 operation,
                 angle,
@@ -5634,7 +5633,7 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let path_count = role_count(0x0000_0005_0000_0000);
                 let profile_count = role_count(0x0000_0041_0000_0000);
                 let guide_surface_count = role_count(0x0000_0011_0000_0000);
-                let guide_profile_frame = scope.sweep_profile.as_ref().is_some_and(|profile| {
+                let guide_profile_frame = scope.sweep_profile().is_some_and(|profile| {
                     let profile_groups = groups
                         .iter()
                         .filter(|group| group.role == 0x0000_0041_0000_0000)
@@ -6041,7 +6040,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     });
             let profile_group = profile_groups.next();
             let profile_matches_operand = profile_groups.next().is_none()
-                && scope.sweep_profile.as_ref().is_none_or(|profile| {
+                && scope.sweep_profile().is_none_or(|profile| {
                     profile_group
                         .is_some_and(|group| group.members.as_slice() == [profile.record_index])
                 });
@@ -6960,7 +6959,7 @@ fn validate_operand_group_carriers<'a>(
                 .is_some_and(|scope| {
                     scope
                         .extrude_profile()
-                        .or(scope.sweep_profile.as_ref())
+                        .or(scope.sweep_profile())
                         .or(scope.base_flange_profile())
                         .is_some_and(|profile| group.members == [profile.record_index])
                 });

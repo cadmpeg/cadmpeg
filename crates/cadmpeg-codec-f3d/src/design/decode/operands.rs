@@ -1268,7 +1268,7 @@ pub fn bind_sketch_profiles(
             if scope.kind == "BaseFlange" {
                 scope.ensure_base_flange().base_flange_profile = Some(profile.clone());
             } else if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep) {
-                scope.sweep_profile = Some(profile.clone());
+                scope.ensure_path_feature().sweep_profile = Some(profile.clone());
             } else {
                 scope.ensure_extrude().extrude_profile = Some(profile.clone());
             }
@@ -1418,7 +1418,7 @@ pub fn decode_loft_legacy_body_carriers(
     for scope in scopes.iter().filter(|scope| {
         design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Loft)
             && matches!(
-                scope.path_feature_construction.as_ref(),
+                scope.path_feature_construction(),
                 Some(DesignPathFeatureConstruction::Loft { operation, .. })
                     if *operation != crate::records::DesignExtrudeOperation::NewBody
             )

@@ -320,8 +320,11 @@ pub fn decode_parameter_scopes(
             scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &records, &scope);
             scope.fixed_chamfer_parameters =
                 exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
-            scope.path_feature_construction =
-                exact_path_feature_construction(bytes, &records, &scope, parameter_owners);
+            if let Some(construction) =
+                exact_path_feature_construction(bytes, &records, &scope, parameter_owners)
+            {
+                scope.ensure_path_feature().path_feature_construction = Some(construction);
+            }
             scope.combine_operation = exact_combine_operation(bytes, &records, &scope);
             scope.thread_construction = exact_thread_construction(bytes, &scope);
             scope.draft_operation =
@@ -9135,7 +9138,7 @@ pub(crate) fn parse_parameter_scope(
         hem_operation: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
-        path_feature_construction: None,
+        path_feature: None,
         combine_operation: None,
         thread_construction: None,
         draft_operation: None,
@@ -9147,7 +9150,6 @@ pub(crate) fn parse_parameter_scope(
         work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
         hole_construction: None,
-        sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
         assembly_alignment: None,

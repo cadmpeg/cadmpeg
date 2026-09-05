@@ -556,7 +556,9 @@ pub(super) fn continue_fixed_kind_operations(
         })
     );
     revolve_scope.id = "stream:scope".into();
-    revolve_scope.path_feature_construction = revolve_construction;
+    revolve_scope
+        .ensure_path_feature()
+        .path_feature_construction = revolve_construction;
     let mut revolve_profile = thicken_group.clone();
     revolve_profile.id = "stream:profile".into();
     revolve_profile.scope_record_index = revolve_scope.record_index;
@@ -578,7 +580,9 @@ pub(super) fn continue_fixed_kind_operations(
     );
 
     indexed_revolve_scope.id = "stream:indexed-revolve".into();
-    indexed_revolve_scope.path_feature_construction = indexed_revolve_construction;
+    indexed_revolve_scope
+        .ensure_path_feature()
+        .path_feature_construction = indexed_revolve_construction;
     let mut indexed_profile = thicken_group.clone();
     indexed_profile.id = "stream:indexed-profile".into();
     indexed_profile.scope_record_index = indexed_revolve_scope.record_index;
@@ -924,14 +928,16 @@ pub(super) fn continue_fixed_kind_operations(
         })
     );
     loft_scope.id = "stream:loft-scope".into();
-    loft_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Loft {
-        operation: DesignExtrudeOperation::NewBody,
-        operation_offset: (loft_start + 29) as u64,
-    });
+    loft_scope.ensure_path_feature().path_feature_construction =
+        Some(DesignPathFeatureConstruction::Loft {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: (loft_start + 29) as u64,
+        });
+    let loft_record_index = loft_scope.record_index;
     let loft_group = |ordinal: u32, role: u64| {
         let mut group = thicken_group.clone();
         group.id = format!("stream:loft-group-{ordinal}");
-        group.scope_record_index = loft_scope.record_index;
+        group.scope_record_index = loft_record_index;
         group.scope_reference_ordinal = ordinal;
         group.role = role;
         group
@@ -977,10 +983,11 @@ pub(super) fn continue_fixed_kind_operations(
         DesignExtrudeOperation::NewBody,
         &role_shape(&guided_role_41),
     ));
-    loft_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Loft {
-        operation: DesignExtrudeOperation::Cut,
-        operation_offset: (loft_start + 29) as u64,
-    });
+    loft_scope.ensure_path_feature().path_feature_construction =
+        Some(DesignPathFeatureConstruction::Loft {
+            operation: DesignExtrudeOperation::Cut,
+            operation_offset: (loft_start + 29) as u64,
+        });
     let cut = [
         loft_group(0, 0x4_0000_0000),
         loft_group(1, 0x41_0000_0000),
@@ -1066,10 +1073,11 @@ pub(super) fn continue_fixed_kind_operations(
         ),
         None
     );
-    loft_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Loft {
-        operation: DesignExtrudeOperation::NewBody,
-        operation_offset: (loft_start + 29) as u64,
-    });
+    loft_scope.ensure_path_feature().path_feature_construction =
+        Some(DesignPathFeatureConstruction::Loft {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: (loft_start + 29) as u64,
+        });
     let role_5 = [
         loft_group(0, 0x5_0000_0000),
         loft_group(1, 0x5_0000_0000),
@@ -1199,16 +1207,17 @@ pub(super) fn continue_fixed_kind_operations(
         })
     );
     sweep_scope.id = "stream:sweep-scope".into();
-    sweep_scope.path_feature_construction = exact_path_feature_construction(
+    sweep_scope.ensure_path_feature().path_feature_construction = exact_path_feature_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &sweep_scope,
         &[],
     );
+    let sweep_record_index = sweep_scope.record_index;
     let sweep_group = |ordinal: u32, role: u64| {
         let mut group = thicken_group.clone();
         group.id = format!("stream:sweep-group-{ordinal}");
-        group.scope_record_index = sweep_scope.record_index;
+        group.scope_record_index = sweep_record_index;
         group.scope_reference_ordinal = ordinal;
         group.role = role;
         group
@@ -1236,15 +1245,16 @@ pub(super) fn continue_fixed_kind_operations(
         })
     ));
     let rail = sweep_group(2, 0x5_0000_0000);
-    sweep_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Sweep {
-        operation: DesignExtrudeOperation::NewBody,
-        operation_offset: (sweep_start + 25) as u64,
-        values: [0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
-        record_indexes: [80, 81, 82, 83, 84, 85],
-        value_offsets: std::array::from_fn(|ordinal| {
-            (sweep_scalar_start + ordinal * 111 + 40) as u64
-        }),
-    });
+    sweep_scope.ensure_path_feature().path_feature_construction =
+        Some(DesignPathFeatureConstruction::Sweep {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: (sweep_start + 25) as u64,
+            values: [0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
+            record_indexes: [80, 81, 82, 83, 84, 85],
+            value_offsets: std::array::from_fn(|ordinal| {
+                (sweep_scalar_start + ordinal * 111 + 40) as u64
+            }),
+        });
     assert!(matches!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
@@ -1271,15 +1281,16 @@ pub(super) fn continue_fixed_kind_operations(
         }) if path == "stream:sweep-group-1" && rail == "stream:sweep-group-2"
     ));
     let complete_sweep_values = [1.0, 1.0, 1.0, 1.0, sweep_values[4], 0.0];
-    sweep_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Sweep {
-        operation: DesignExtrudeOperation::NewBody,
-        operation_offset: (sweep_start + 25) as u64,
-        values: complete_sweep_values,
-        record_indexes: [80, 81, 82, 83, 84, 85],
-        value_offsets: std::array::from_fn(|ordinal| {
-            (sweep_scalar_start + ordinal * 111 + 40) as u64
-        }),
-    });
+    sweep_scope.ensure_path_feature().path_feature_construction =
+        Some(DesignPathFeatureConstruction::Sweep {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: (sweep_start + 25) as u64,
+            values: complete_sweep_values,
+            record_indexes: [80, 81, 82, 83, 84, 85],
+            value_offsets: std::array::from_fn(|ordinal| {
+                (sweep_scalar_start + ordinal * 111 + 40) as u64
+            }),
+        });
     assert!(matches!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
@@ -1305,20 +1316,21 @@ pub(super) fn continue_fixed_kind_operations(
         ),
         None
     );
-    sweep_scope.sweep_profile = Some(crate::records::DesignSketchProfileOperand {
-        scope_reference_ordinal: 3,
-        record_index: 2795,
-        byte_offset: 32_000,
-        class_tag: "312".into(),
-        asset_id: "asset".into(),
-        asset_id_offset: 32_040,
-        entity_id: "0_2718".into(),
-        entity_suffix: 2718,
-        entity_reference_offset: 32_080,
-        region_selection: None,
-        paired_class_tag: "258".into(),
-        paired_byte_offset: 32_180,
-    });
+    sweep_scope.ensure_path_feature().sweep_profile =
+        Some(crate::records::DesignSketchProfileOperand {
+            scope_reference_ordinal: 3,
+            record_index: 2795,
+            byte_offset: 32_000,
+            class_tag: "312".into(),
+            asset_id: "asset".into(),
+            asset_id_offset: 32_040,
+            entity_id: "0_2718".into(),
+            entity_suffix: 2718,
+            entity_reference_offset: 32_080,
+            region_selection: None,
+            paired_class_tag: "258".into(),
+            paired_byte_offset: 32_180,
+        });
     let mut selected_profile = profile.clone();
     selected_profile.members = vec![2788];
     let mut profile_carrier = profile.clone();
@@ -1373,16 +1385,17 @@ pub(super) fn continue_fixed_kind_operations(
             ..
         }) if profile == "stream:sweep-group-0" && faces == "stream:sweep-guide-surface"
     ));
-    sweep_scope.sweep_profile = None;
-    sweep_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Sweep {
-        operation: DesignExtrudeOperation::Cut,
-        operation_offset: (sweep_start + 25) as u64,
-        values: complete_sweep_values,
-        record_indexes: [80, 81, 82, 83, 84, 85],
-        value_offsets: std::array::from_fn(|ordinal| {
-            (sweep_scalar_start + ordinal * 111 + 40) as u64
-        }),
-    });
+    sweep_scope.ensure_path_feature().sweep_profile = None;
+    sweep_scope.ensure_path_feature().path_feature_construction =
+        Some(DesignPathFeatureConstruction::Sweep {
+            operation: DesignExtrudeOperation::Cut,
+            operation_offset: (sweep_start + 25) as u64,
+            values: complete_sweep_values,
+            record_indexes: [80, 81, 82, 83, 84, 85],
+            value_offsets: std::array::from_fn(|ordinal| {
+                (sweep_scalar_start + ordinal * 111 + 40) as u64
+            }),
+        });
     assert!(matches!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
