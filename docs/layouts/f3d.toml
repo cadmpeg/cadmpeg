@@ -17,7 +17,7 @@ compact `Loft` prefix and nested profile-region frames, the class-418
 operation prologues and cross-document selector, the axial `Assemble` carrier
 and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
-(§3.1), plus the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, and the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
+(§3.1), plus the `Canvas` geometry and scope records, the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, and the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 """
@@ -15959,3 +15959,241 @@ offset = 53
 type = "f64[3]"
 source = "spec"
 anchor = "Three consecutive f64 triples begin at payload offsets 5, 29, and 53."
+
+[[record]]
+name = "canvas_geometry_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "Its first ten bytes and bytes 11 through 13 are zero, byte 10 is zero or one, and byte 14 is the Canvas visibility Boolean."
+size = 15
+
+[[record.field]]
+name = "zero_run_10"
+offset = 0
+type = "bytes[10]"
+source = "spec"
+anchor = "Its first ten bytes and bytes 11 through 13 are zero, byte 10 is zero or one, and byte 14 is the Canvas visibility Boolean."
+
+[[record.field]]
+name = "first_flag"
+offset = 10
+type = "u8"
+source = "spec"
+anchor = "Its first ten bytes and bytes 11 through 13 are zero, byte 10 is zero or one, and byte 14 is the Canvas visibility Boolean."
+
+[[record.field]]
+name = "zero_run_3"
+offset = 11
+type = "bytes[3]"
+source = "spec"
+anchor = "Its first ten bytes and bytes 11 through 13 are zero, byte 10 is zero or one, and byte 14 is the Canvas visibility Boolean."
+
+[[record.field]]
+name = "visibility"
+offset = 14
+type = "u8"
+source = "spec"
+anchor = "Its first ten bytes and bytes 11 through 13 are zero, byte 10 is zero or one, and byte 14 is the Canvas visibility Boolean."
+
+[[record]]
+name = "canvas_geometry_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The referenced geometry record stores a 15-byte prologue after its eleven-byte indexed header."
+size = 217
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The referenced geometry record stores a 15-byte prologue after its eleven-byte indexed header."
+
+[[record.field]]
+name = "geometry_prologue"
+offset = 11
+type = "bytes[15]"
+source = "spec"
+anchor = "The referenced geometry record stores a 15-byte prologue after its eleven-byte indexed header."
+
+[[record.field]]
+name = "first_boundary"
+offset = 26
+type = "f64[4]"
+source = "spec"
+anchor = "Four f64 values at record offsets 26, 34, 42, and 50 form the first plane-local boundary segment."
+
+[[record.field]]
+name = "plane_reference"
+offset = 58
+type = "bytes[11]"
+source = "spec"
+anchor = "A marked supporting-plane entity suffix occurs at offset 58 with six trailing zero bytes."
+
+[[record.field]]
+name = "geometry_payload"
+offset = 69
+type = "bytes[77]"
+source = "spec"
+anchor = "A 77-byte fixed payload occupies offsets 69 through 145."
+
+[[record.field]]
+name = "scope_reference"
+offset = 146
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references at record offsets 146, 157, and 169 name the Canvas scope, owning component entity suffix, and image-asset record; their trailing fields contain six, seven, and six zero bytes respectively."
+
+[[record.field]]
+name = "component_reference"
+offset = 157
+type = "bytes[12]"
+source = "spec"
+anchor = "Marked references at record offsets 146, 157, and 169 name the Canvas scope, owning component entity suffix, and image-asset record; their trailing fields contain six, seven, and six zero bytes respectively."
+
+[[record.field]]
+name = "asset_reference"
+offset = 169
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references at record offsets 146, 157, and 169 name the Canvas scope, owning component entity suffix, and image-asset record; their trailing fields contain six, seven, and six zero bytes respectively."
+
+[[record.field]]
+name = "second_boundary_present"
+offset = 180
+type = "u8"
+source = "spec"
+anchor = "The image-asset reference is followed by `01` at offset 180 and four f64 values at offsets 181, 189, 197, and 205 forming the opposite boundary segment."
+
+[[record.field]]
+name = "second_boundary"
+offset = 181
+type = "f64[4]"
+source = "spec"
+anchor = "The image-asset reference is followed by `01` at offset 180 and four f64 values at offsets 181, 189, 197, and 205 forming the opposite boundary segment."
+
+[[record.field]]
+name = "label_code_unit_count"
+offset = 213
+type = "u32"
+source = "spec"
+anchor = "An LP-UTF16 persistent label begins at offset 213 and ends at the paired same-index geometry header."
+
+[[record]]
+name = "canvas_geometry_base"
+kind = "byte"
+section = "3.1"
+anchor = "The paired header is followed by eight zero bytes and a marked reference to the same owning component with six trailing zero bytes."
+size = 30
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The paired header is followed by eight zero bytes and a marked reference to the same owning component with six trailing zero bytes."
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "The paired header is followed by eight zero bytes and a marked reference to the same owning component with six trailing zero bytes."
+
+[[record.field]]
+name = "component_reference"
+offset = 19
+type = "bytes[11]"
+source = "spec"
+anchor = "The paired header is followed by eight zero bytes and a marked reference to the same owning component with six trailing zero bytes."
+
+[[record]]
+name = "canvas_image_asset_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A standalone image-asset record follows immediately; its eleven-byte indexed header is followed by ten zero bytes and an LP-UTF16 archive-entry basename ending at the Canvas scope header."
+size = 25
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A standalone image-asset record follows immediately; its eleven-byte indexed header is followed by ten zero bytes and an LP-UTF16 archive-entry basename ending at the Canvas scope header."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "A standalone image-asset record follows immediately; its eleven-byte indexed header is followed by ten zero bytes and an LP-UTF16 archive-entry basename ending at the Canvas scope header."
+
+[[record.field]]
+name = "name_code_unit_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "A standalone image-asset record follows immediately; its eleven-byte indexed header is followed by ten zero bytes and an LP-UTF16 archive-entry basename ending at the Canvas scope header."
+
+[[record]]
+name = "canvas_scope_compact_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The compact prologue has ten zero bytes at offsets 11 through 20 and the marked geometry-record reference at offset 21."
+size = 26
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact prologue has ten zero bytes at offsets 11 through 20 and the marked geometry-record reference at offset 21."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The compact prologue has ten zero bytes at offsets 11 through 20 and the marked geometry-record reference at offset 21."
+
+[[record.field]]
+name = "geometry_reference"
+offset = 21
+type = "bytes[5]"
+source = "spec"
+anchor = "The compact prologue has ten zero bytes at offsets 11 through 20 and the marked geometry-record reference at offset 21."
+
+[[record]]
+name = "canvas_scope_expanded_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25."
+size = 30
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25."
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25."
+
+[[record.field]]
+name = "null_reference"
+offset = 20
+type = "bytes[5]"
+source = "spec"
+anchor = "The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25."
+
+[[record.field]]
+name = "geometry_reference"
+offset = 25
+type = "bytes[5]"
+source = "spec"
+anchor = "The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25."

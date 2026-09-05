@@ -14906,70 +14906,122 @@ impl DesignCanvasPrologue {
     }
 }
 
+const CANVAS_GEOMETRY_PREFIX_BYTES: u64 = 217;
+const CANVAS_PAIRED_GEOMETRY_BYTES: u64 = 30;
+const CANVAS_IMAGE_ASSET_PREFIX_BYTES: u64 = 25;
+
+/// Canvas geometry and its same-index closing record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignCanvasGeometry {
+    class_tags: [String; 2],
+    record_index: u32,
+    byte_offset: u64,
+    label: String,
+    /// Flags from the fixed geometry prologue.
+    pub prologue: DesignCanvasPrologue,
+    /// Authored image boundaries and their orientation.
+    pub boundary: DesignCanvasBounds,
+    /// Opacity and source-space image frame.
+    pub payload: DesignCanvasGeometryPayload,
+}
+impl DesignCanvasGeometry {
+    pub fn new(class_tags: [String; 2], record_index: u32, byte_offset: u64, label: String,
+        prologue: DesignCanvasPrologue, boundary: DesignCanvasBounds, payload: DesignCanvasGeometryPayload) -> Result<Self, String> {
+        for (name, tag) in ["geometry_class_tag", "paired_geometry_class_tag"].into_iter().zip(&class_tags) {
+            if tag.is_empty() || !tag.bytes().all(|byte| byte.is_ascii_graphic()) {
+                return Err(format!("{name} must contain printable ASCII characters"));
+            }
+        }
+        if label.is_empty() { return Err("label must be nonempty".into()); }
+        let units = u32::try_from(label.encode_utf16().count()).map_err(|_| "label UTF-16 count must fit u32")?;
+        let frame_length = CANVAS_GEOMETRY_PREFIX_BYTES + 2 * u64::from(units);
+        byte_offset.checked_add(frame_length).and_then(|end| end.checked_add(CANVAS_PAIRED_GEOMETRY_BYTES))
+            .ok_or("geometry_byte_offset and label must leave a complete paired geometry record")?;
+        Ok(Self { class_tags, record_index, byte_offset, label, prologue, boundary, payload })
+    }
+    pub fn record_index(&self) -> u32 { self.record_index }
+    fn frame_length(&self) -> u64 { CANVAS_GEOMETRY_PREFIX_BYTES + 2 * self.label.encode_utf16().count() as u64 }
+    fn paired_byte_offset(&self) -> u64 { self.byte_offset + self.frame_length() }
+    fn scope_reference_offset(&self) -> u64 { self.byte_offset + 147 }
+    fn visibility_offset(&self) -> u64 { self.byte_offset + 25 }
+    fn paired_component_reference_offset(&self) -> u64 { self.paired_byte_offset() + 20 }
+    fn boundary_coordinate_offsets(&self) -> [u64; 8] {
+        [26, 34, 42, 50, 181, 189, 197, 205].map(|relative| self.byte_offset + relative)
+    }
+    fn second_boundary_present_offset(&self) -> u64 { self.byte_offset + 180 }
+    fn plane_reference_offset(&self) -> u64 { self.byte_offset + 59 }
+    fn component_reference_offset(&self) -> u64 { self.byte_offset + 158 }
+    fn asset_reference_offset(&self) -> u64 { self.byte_offset + 170 }
+    fn label_offset(&self) -> u64 { self.byte_offset + CANVAS_GEOMETRY_PREFIX_BYTES }
+}
+
+/// Canvas image-asset record with a nonempty UTF-16 name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignCanvasAsset {
+    class_tag: String,
+    record_index: u32,
+    name: String,
+}
+impl DesignCanvasAsset {
+    pub fn new(class_tag: String, record_index: u32, name: String) -> Result<Self, String> {
+        if class_tag.is_empty() || !class_tag.bytes().all(|byte| byte.is_ascii_graphic()) {
+            return Err("asset_class_tag must contain printable ASCII characters".into());
+        }
+        if name.is_empty() { return Err("asset_name must be nonempty".into()); }
+        u32::try_from(name.encode_utf16().count()).map_err(|_| "asset_name UTF-16 count must fit u32")?;
+        Ok(Self { class_tag, record_index, name })
+    }
+    fn frame_length(&self) -> u64 { CANVAS_IMAGE_ASSET_PREFIX_BYTES + 2 * self.name.encode_utf16().count() as u64 }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DesignCanvasScopeForm { Compact, Expanded }
+impl DesignCanvasScopeForm {
+    fn reference_offset(self) -> u64 { match self { Self::Compact => 22, Self::Expanded => 26 } }
+}
+
 /// Exact image-plane binding owned by one Design `Canvas` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "DesignCanvasImageWire"))]
 #[serde(try_from = "DesignCanvasImageWire", into = "DesignCanvasImageWire")]
 pub struct DesignCanvasImage {
-    /// Globally unique deterministic identifier for this native binding.
+    /// Globally unique native binding identity.
     pub id: String,
-    /// Canvas scope record index.
+    /// Owning Canvas scope.
     pub scope_record_index: u32,
-    /// Byte offset of the marked scope reference in the geometry record.
-    pub scope_reference_offset: u64,
-    /// Dynamic class tag of the primary geometry record.
-    pub geometry_class_tag: String,
-    /// Geometry record index.
-    pub geometry_record_index: u32,
-    /// Byte offset of the scope's marked geometry-record reference.
-    pub geometry_reference_offset: u64,
-    /// Byte offset of the primary geometry record.
-    pub geometry_byte_offset: u64,
-    /// Fixed geometry prologue immediately following the primary record header.
-    pub geometry_prologue: DesignCanvasPrologue,
-    /// Byte offset of the visibility byte in the geometry prologue.
-    pub visibility_offset: u64,
-    /// Byte length from the primary geometry header to its paired header.
-    pub geometry_frame_length: u64,
-    /// Dynamic class tag of the paired geometry record.
-    pub paired_geometry_class_tag: String,
-    /// Byte offset of the paired geometry record.
-    pub paired_geometry_byte_offset: u64,
-    /// Byte offset of the paired record's marked component reference.
-    pub paired_component_reference_offset: u64,
-    /// Two opposite boundary segments in plane-local coordinates.
-    pub boundary: DesignCanvasBounds,
-    /// Byte offsets of the eight boundary-coordinate f64 values.
-    pub boundary_coordinate_offsets: [u64; 8],
-    /// Byte offset of the presence marker preceding the second boundary segment.
-    pub second_boundary_present_offset: u64,
-    /// Design entity suffix of the supporting construction plane.
+    /// Supporting construction-plane entity.
     pub plane_entity_suffix: u32,
-    /// Byte offset of the marked construction-plane reference.
-    pub plane_reference_offset: u64,
-    /// Design entity suffix of the component owning the Canvas.
+    /// Component entity owning the Canvas.
     pub component_entity_suffix: u32,
-    /// Byte offset of the marked component reference.
-    pub component_reference_offset: u64,
-    /// Dynamic class tag of the standalone image-asset record.
-    pub asset_class_tag: String,
-    /// Image-asset record index.
-    pub asset_record_index: u32,
-    /// Byte offset of the marked image-asset reference.
-    pub asset_reference_offset: u64,
-    /// Byte offset of the image-asset record.
-    pub asset_byte_offset: u64,
-    /// Archive entry basename stored by the image-asset record.
-    pub asset_name: String,
-    /// Byte offset of the asset name's UTF-16LE code units.
-    pub asset_name_offset: u64,
-    /// Persistent Canvas label stored after the boundary segments.
-    pub label: String,
-    /// Byte offset of the label's UTF-16LE code units.
-    pub label_offset: u64,
-    /// Decoded opacity and frame with exact fixed-payload serialization.
-    pub geometry_payload: DesignCanvasGeometryPayload,
+    geometry: DesignCanvasGeometry,
+    asset: DesignCanvasAsset,
+    scope_form: DesignCanvasScopeForm,
+}
+impl DesignCanvasImage {
+    pub fn new(id: String, scope_record_index: u32, geometry_reference_offset: u64,
+        geometry: DesignCanvasGeometry, asset: DesignCanvasAsset,
+        plane_entity_suffix: u32, component_entity_suffix: u32) -> Result<Self, String> {
+        if geometry.record_index == asset.record_index {
+            return Err("asset_record_index must differ from geometry_record_index".into());
+        }
+        let scope_offset = geometry.paired_byte_offset().checked_add(CANVAS_PAIRED_GEOMETRY_BYTES)
+            .and_then(|offset| offset.checked_add(asset.frame_length()))
+            .ok_or("asset_name must end at a representable scope byte offset")?;
+        let scope_form = match geometry_reference_offset.checked_sub(scope_offset) {
+            Some(22) => DesignCanvasScopeForm::Compact,
+            Some(26) => DesignCanvasScopeForm::Expanded,
+            _ => return Err("geometry_reference_offset must locate a compact or expanded Canvas scope reference".into()),
+        };
+        geometry_reference_offset.checked_add(4).ok_or("geometry_reference_offset must leave a complete u32 reference")?;
+        Ok(Self { id, scope_record_index, plane_entity_suffix, component_entity_suffix, geometry, asset, scope_form })
+    }
+    pub fn geometry(&self) -> &DesignCanvasGeometry { &self.geometry }
+    pub fn asset_name(&self) -> &str { &self.asset.name }
+    pub fn scope_byte_offset(&self) -> u64 { self.asset_byte_offset() + self.asset.frame_length() }
+    fn asset_byte_offset(&self) -> u64 { self.geometry.paired_byte_offset() + CANVAS_PAIRED_GEOMETRY_BYTES }
+    fn asset_name_offset(&self) -> u64 { self.asset_byte_offset() + CANVAS_IMAGE_ASSET_PREFIX_BYTES }
+    fn geometry_reference_offset(&self) -> u64 { self.scope_byte_offset() + self.scope_form.reference_offset() }
 }
 
 /// Exact image-plane binding owned by one Design `Canvas` scope.
@@ -15067,78 +15119,95 @@ impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
                 return Err(format!("{name} must match geometry_payload"));
             }
         }
-        Ok(Self {
-            id: wire.id,
-            scope_record_index: wire.scope_record_index,
-            scope_reference_offset: wire.scope_reference_offset,
-            geometry_class_tag: wire.geometry_class_tag,
-            geometry_record_index: wire.geometry_record_index,
-            geometry_reference_offset: wire.geometry_reference_offset,
-            geometry_byte_offset: wire.geometry_byte_offset,
-            geometry_prologue,
-            visibility_offset: wire.visibility_offset,
-            geometry_frame_length: wire.geometry_frame_length,
-            paired_geometry_class_tag: wire.paired_geometry_class_tag,
-            paired_geometry_byte_offset: wire.paired_geometry_byte_offset,
-            paired_component_reference_offset: wire.paired_component_reference_offset,
-            boundary: DesignCanvasBounds::try_from(wire.boundary_segments)?,
-            boundary_coordinate_offsets: wire.boundary_coordinate_offsets,
-            second_boundary_present_offset: wire.second_boundary_present_offset,
-            plane_entity_suffix: wire.plane_entity_suffix,
-            plane_reference_offset: wire.plane_reference_offset,
-            component_entity_suffix: wire.component_entity_suffix,
-            component_reference_offset: wire.component_reference_offset,
-            asset_class_tag: wire.asset_class_tag,
-            asset_record_index: wire.asset_record_index,
-            asset_reference_offset: wire.asset_reference_offset,
-            asset_byte_offset: wire.asset_byte_offset,
-            asset_name: wire.asset_name,
-            asset_name_offset: wire.asset_name_offset,
-            label: wire.label,
-            label_offset: wire.label_offset,
-            geometry_payload,
-        })
+        let geometry = DesignCanvasGeometry::new([wire.geometry_class_tag, wire.paired_geometry_class_tag],
+            wire.geometry_record_index, wire.geometry_byte_offset, wire.label, geometry_prologue,
+            DesignCanvasBounds::try_from(wire.boundary_segments)?, geometry_payload)?;
+        let asset = DesignCanvasAsset::new(wire.asset_class_tag, wire.asset_record_index, wire.asset_name)?;
+        let image = Self::new(wire.id, wire.scope_record_index, wire.geometry_reference_offset,
+            geometry, asset, wire.plane_entity_suffix, wire.component_entity_suffix)?;
+        for (name, declared, derived) in [
+            ("scope_reference_offset", wire.scope_reference_offset, image.geometry.scope_reference_offset()),
+            ("visibility_offset", wire.visibility_offset, image.geometry.visibility_offset()),
+            ("geometry_frame_length", wire.geometry_frame_length, image.geometry.frame_length()),
+            ("paired_geometry_byte_offset", wire.paired_geometry_byte_offset, image.geometry.paired_byte_offset()),
+            ("paired_component_reference_offset", wire.paired_component_reference_offset, image.geometry.paired_component_reference_offset()),
+            ("second_boundary_present_offset", wire.second_boundary_present_offset, image.geometry.second_boundary_present_offset()),
+            ("plane_reference_offset", wire.plane_reference_offset, image.geometry.plane_reference_offset()),
+            ("component_reference_offset", wire.component_reference_offset, image.geometry.component_reference_offset()),
+            ("asset_reference_offset", wire.asset_reference_offset, image.geometry.asset_reference_offset()),
+            ("asset_byte_offset", wire.asset_byte_offset, image.asset_byte_offset()),
+            ("asset_name_offset", wire.asset_name_offset, image.asset_name_offset()),
+            ("label_offset", wire.label_offset, image.geometry.label_offset()),
+        ] {
+            if declared != derived { return Err(format!("{name} must match the Canvas record layout")); }
+        }
+        if wire.boundary_coordinate_offsets != image.geometry.boundary_coordinate_offsets() {
+            return Err("boundary_coordinate_offsets must match the Canvas record layout".into());
+        }
+        Ok(image)
     }
 }
 
 impl From<DesignCanvasImage> for DesignCanvasImageWire {
     fn from(value: DesignCanvasImage) -> Self {
-        let (opacity, origin, u_axis, v_axis) = value.geometry_payload.decoded();
+        let (opacity, origin, u_axis, v_axis) = value.geometry.payload.decoded();
+        let scope_reference_offset = value.geometry.scope_reference_offset();
+        let geometry_record_index = value.geometry.record_index;
+        let geometry_reference_offset = value.geometry_reference_offset();
+        let geometry_byte_offset = value.geometry.byte_offset;
+        let geometry_prologue = value.geometry.prologue.bytes();
+        let visible = value.geometry.prologue.visible();
+        let visibility_offset = value.geometry.visibility_offset();
+        let geometry_frame_length = value.geometry.frame_length();
+        let paired_geometry_byte_offset = value.geometry.paired_byte_offset();
+        let paired_component_reference_offset = value.geometry.paired_component_reference_offset();
+        let boundary_segments = value.geometry.boundary.segments();
+        let boundary_coordinate_offsets = value.geometry.boundary_coordinate_offsets();
+        let second_boundary_present_offset = value.geometry.second_boundary_present_offset();
+        let plane_reference_offset = value.geometry.plane_reference_offset();
+        let component_reference_offset = value.geometry.component_reference_offset();
+        let asset_record_index = value.asset.record_index;
+        let asset_reference_offset = value.geometry.asset_reference_offset();
+        let asset_byte_offset = value.asset_byte_offset();
+        let asset_name_offset = value.asset_name_offset();
+        let label_offset = value.geometry.label_offset();
+        let geometry_payload = value.geometry.payload.bytes().to_vec();
+        let [geometry_class_tag, paired_geometry_class_tag] = value.geometry.class_tags;
         Self {
             id: value.id,
             scope_record_index: value.scope_record_index,
-            scope_reference_offset: value.scope_reference_offset,
-            geometry_class_tag: value.geometry_class_tag,
-            geometry_record_index: value.geometry_record_index,
-            geometry_reference_offset: value.geometry_reference_offset,
-            geometry_byte_offset: value.geometry_byte_offset,
-            geometry_prologue: value.geometry_prologue.bytes(),
-            visible: value.geometry_prologue.visible(),
-            visibility_offset: value.visibility_offset,
-            geometry_frame_length: value.geometry_frame_length,
-            paired_geometry_class_tag: value.paired_geometry_class_tag,
-            paired_geometry_byte_offset: value.paired_geometry_byte_offset,
-            paired_component_reference_offset: value.paired_component_reference_offset,
-            boundary_segments: value.boundary.segments(),
-            boundary_coordinate_offsets: value.boundary_coordinate_offsets,
-            second_boundary_present_offset: value.second_boundary_present_offset,
+            scope_reference_offset,
+            geometry_class_tag,
+            geometry_record_index,
+            geometry_reference_offset,
+            geometry_byte_offset,
+            geometry_prologue,
+            visible,
+            visibility_offset,
+            geometry_frame_length,
+            paired_geometry_class_tag,
+            paired_geometry_byte_offset,
+            paired_component_reference_offset,
+            boundary_segments,
+            boundary_coordinate_offsets,
+            second_boundary_present_offset,
             plane_entity_suffix: value.plane_entity_suffix,
-            plane_reference_offset: value.plane_reference_offset,
+            plane_reference_offset,
             component_entity_suffix: value.component_entity_suffix,
-            component_reference_offset: value.component_reference_offset,
-            asset_class_tag: value.asset_class_tag,
-            asset_record_index: value.asset_record_index,
-            asset_reference_offset: value.asset_reference_offset,
-            asset_byte_offset: value.asset_byte_offset,
-            asset_name: value.asset_name,
-            asset_name_offset: value.asset_name_offset,
-            label: value.label,
-            label_offset: value.label_offset,
+            component_reference_offset,
+            asset_class_tag: value.asset.class_tag,
+            asset_record_index,
+            asset_reference_offset,
+            asset_byte_offset,
+            asset_name: value.asset.name,
+            asset_name_offset,
+            label: value.geometry.label,
+            label_offset,
             opacity,
             origin,
             u_axis,
             v_axis,
-            geometry_payload: value.geometry_payload.bytes().to_vec(),
+            geometry_payload,
         }
     }
 }

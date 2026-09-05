@@ -8,7 +8,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::ids;
-use crate::records::{DesignCanvasImage, DesignCanvasBounds, DesignCanvasGeometryPayload, DesignCanvasPrologue, DesignParameterScope};
+use crate::records::{DesignCanvasImage, DesignCanvasGeometry, DesignCanvasAsset, DesignCanvasBounds, DesignCanvasGeometryPayload, DesignCanvasPrologue, DesignParameterScope};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
@@ -67,9 +67,9 @@ pub fn project_canvas_images(
         else {
             continue;
         };
-        let (mirror_u, mirror_v) = image.boundary.mirroring();
-        let [minimum, maximum] = image.boundary.extents();
-        let Some(asset) = embedded_image_asset(scan, &image.asset_name)? else {
+        let (mirror_u, mirror_v) = image.geometry().boundary.mirroring();
+        let [minimum, maximum] = image.geometry().boundary.extents();
+        let Some(asset) = embedded_image_asset(scan, image.asset_name())? else {
             continue;
         };
         let asset_id = asset.id.clone();
@@ -79,10 +79,10 @@ pub fn project_canvas_images(
         {
             assets.push(asset);
         }
-        let (opacity, origin, u_axis, v_axis) = image.geometry_payload.decoded();
+        let (opacity, origin, u_axis, v_axis) = image.geometry().payload.decoded();
         feature.definition = FeatureDefinition::ReferenceImage {
             asset: asset_id,
-            visible: image.geometry_prologue.visible(),
+            visible: image.geometry().prologue.visible(),
             mirror_u,
             mirror_v,
             origin,
@@ -207,37 +207,14 @@ fn parse_canvas_image(
         return None;
     }
 
-    Some(DesignCanvasImage {
-        id: ids::native_design_canvas_image_id(stream, geometry_at),
-        scope_record_index: scope.record_index,
-        scope_reference_offset: u64::try_from(scope_reference_at + 1).ok()?,
-        geometry_class_tag,
-        geometry_record_index,
-        geometry_reference_offset: u64::try_from(geometry_reference_at + 1).ok()?,
-        geometry_byte_offset: u64::try_from(geometry_at).ok()?,
-        geometry_prologue,
-        visibility_offset: u64::try_from(geometry_at + 25).ok()?,
-        geometry_frame_length: u64::try_from(paired_at.checked_sub(geometry_at)?).ok()?,
-        paired_geometry_class_tag,
-        paired_geometry_byte_offset: u64::try_from(paired_at).ok()?,
-        paired_component_reference_offset: u64::try_from(paired_component_at + 1).ok()?,
-        boundary,
-        boundary_coordinate_offsets: boundary_offsets.map(|offset| offset as u64),
-        second_boundary_present_offset: u64::try_from(asset_at + 11).ok()?,
-        plane_entity_suffix,
-        plane_reference_offset: u64::try_from(plane_at + 1).ok()?,
-        component_entity_suffix,
-        component_reference_offset: u64::try_from(component_at + 1).ok()?,
-        asset_class_tag,
-        asset_record_index,
-        asset_reference_offset: u64::try_from(asset_at + 1).ok()?,
-        asset_byte_offset: u64::try_from(asset_record_at).ok()?,
-        asset_name,
-        asset_name_offset: u64::try_from(asset_record_at + 25).ok()?,
-        label,
-        label_offset: u64::try_from(geometry_at + 217).ok()?,
-        geometry_payload,
-    })
+    DesignCanvasImage::new(
+        ids::native_design_canvas_image_id(stream, geometry_at), scope.record_index,
+        u64::try_from(geometry_reference_at + 1).ok()?,
+        DesignCanvasGeometry::new([geometry_class_tag, paired_geometry_class_tag], geometry_record_index,
+            u64::try_from(geometry_at).ok()?, label, geometry_prologue, boundary, geometry_payload).ok()?,
+        DesignCanvasAsset::new(asset_class_tag, asset_record_index, asset_name).ok()?,
+        plane_entity_suffix, component_entity_suffix,
+    ).ok()
 }
 
 fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
