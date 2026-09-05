@@ -881,7 +881,8 @@ pub(crate) struct BoundaryVertexSourceEndpoint {
     pub(crate) position: Point3,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum BoundaryEndpoint {
     Start,
     End,

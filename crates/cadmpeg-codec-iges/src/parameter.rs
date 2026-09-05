@@ -2506,6 +2506,12 @@ pub(crate) enum ParameterDefect {
     OwnershipConflict,
 }
 
+impl Serialize for ParameterDefect {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.key())
+    }
+}
+
 impl ParameterDefect {
     pub(crate) fn key(self) -> &'static str {
         match self {
