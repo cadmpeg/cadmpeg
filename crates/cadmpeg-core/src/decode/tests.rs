@@ -343,12 +343,10 @@ fn unresolved_address_does_not_invent_a_root_step() {
 fn nested_member_address_is_inspect_replayable() {
     let descriptors = vec![
         SpaceDescriptor {
-            id: SpaceId::ROOT,
             label: "root".into(),
             derivation: SpaceDerivation::Root,
         },
         SpaceDescriptor {
-            id: SpaceId::from_index(1),
             label: "GuiDocument.xml".into(),
             derivation: SpaceDerivation::Expanded {
                 parent: SpaceId::ROOT,
@@ -373,4 +371,15 @@ fn nested_member_address_is_inspect_replayable() {
             "cadmpeg inspect hex part.FCStd.member --offset 120 --len 64".to_string(),
         ]
     );
+}
+
+#[test]
+fn forced_child_exhaustion_charges_its_full_slice() {
+    let parent = WorkBudget::new(10);
+    let child = parent.child_slice(4);
+    assert!(child.charge());
+    child.exhaust();
+    assert!(parent.consume_child(&child));
+    assert_eq!(parent.remaining(), 6);
+    assert!(!child.charge_by(0));
 }

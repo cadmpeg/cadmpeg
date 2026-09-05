@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode state, decompression limits, and session lifecycle.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::io::SeekFrom;
 
 use crate::{CodecError, ReadSeek};
@@ -29,7 +29,6 @@ pub struct DecodeContext<'a> {
     policy: DecodePolicy,
     container_only: bool,
     budget: DecodeBudget,
-    next_space: Cell<u32>,
     spaces: RefCell<Vec<SpaceDescriptor>>,
 }
 
@@ -130,9 +129,7 @@ impl<'a> DecodeContext<'a> {
             policy: *policy,
             container_only,
             budget: DecodeBudget::new(*policy, length),
-            next_space: Cell::new(1),
             spaces: RefCell::new(vec![SpaceDescriptor {
-                id: SpaceId::ROOT,
                 label: "root".into(),
                 derivation: SpaceDerivation::Root,
             }]),
@@ -165,14 +162,9 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn allocate_space(&self, label: String, derivation: SpaceDerivation) -> SpaceId {
-        let index = self.next_space.get();
-        self.next_space.set(index.saturating_add(1));
-        let id = SpaceId::from_index(index);
-        self.spaces.borrow_mut().push(SpaceDescriptor {
-            id,
-            label,
-            derivation,
-        });
+        let mut spaces = self.spaces.borrow_mut();
+        let id = SpaceId::from_index(spaces.len());
+        spaces.push(SpaceDescriptor { label, derivation });
         id
     }
 
@@ -410,11 +402,8 @@ impl<'a> DecodeContext<'a> {
             spec,
             location: source.location(),
             label: label.into(),
-            source_space: source.space(),
-            source_start: source.start() as u64,
             source_end: source.end() as u64,
             buffer,
-            written: 0,
         })
     }
 
@@ -563,18 +552,15 @@ pub struct ExpandWriter<'ctx, 'a> {
     spec: ExpandSpec,
     location: SourceLocation,
     label: String,
-    source_space: SpaceId,
-    source_start: u64,
     source_end: u64,
     buffer: Vec<u8>,
-    written: u64,
 }
 
 impl<'a> ExpandWriter<'_, 'a> {
     /// Appends decompressed output, charging before it is retained.
     pub fn write(&mut self, data: &[u8]) -> Result<(), CodecError> {
         let len = data.len() as u64;
-        let new_written = self.written.saturating_add(len);
+        let new_written = self.written().saturating_add(len);
         match self.spec {
             ExpandSpec::Exact(size) if new_written > size => {
                 return Err(CodecError::malformed(format_args!(
@@ -606,17 +592,16 @@ impl<'a> ExpandWriter<'_, 'a> {
             )
         })?;
         self.buffer.extend_from_slice(data);
-        self.written = new_written;
         Ok(())
     }
 
     /// Finalizes the expansion, stores it in the arena, and registers its space.
     pub fn finalize(self) -> Result<View<'a>, CodecError> {
         if let ExpandSpec::Exact(size) = self.spec {
-            if self.written != size {
+            if self.written() != size {
                 return Err(CodecError::malformed(format_args!(
                     "expansion produced {} of declared exact {size} bytes",
-                    self.written
+                    self.written()
                 )));
             }
         }
@@ -624,9 +609,9 @@ impl<'a> ExpandWriter<'_, 'a> {
         let space = self.ctx.allocate_space(
             self.label,
             SpaceDerivation::Expanded {
-                parent: self.source_space,
+                parent: self.location.space,
                 source_range: ByteRange {
-                    start: self.source_start,
+                    start: self.location.offset,
                     end: self.source_end,
                 },
             },
@@ -636,6 +621,6 @@ impl<'a> ExpandWriter<'_, 'a> {
 
     /// Returns how many bytes have been written so far.
     pub fn written(&self) -> u64 {
-        self.written
+        self.buffer.len() as u64
     }
 }
