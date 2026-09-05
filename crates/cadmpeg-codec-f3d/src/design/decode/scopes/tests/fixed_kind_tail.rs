@@ -934,12 +934,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &sphere_scope,
             &[],
         ),
-        Some(DesignSolidPrimitive::Sphere {
+        Some(DesignSolidPrimitive::Sphere(crate::records::DesignSpherePrimitive {
             diameter: 8.0,
             diameter_record_index: 70,
             operation: DesignExtrudeOperation::NewBody,
             ..
-        })
+        }))
     ));
 
     let torus_at = bytes.len();
@@ -982,12 +982,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &torus_scope,
             &[],
         ),
-        Some(DesignSolidPrimitive::Torus {
+        Some(DesignSolidPrimitive::Torus(crate::records::DesignTorusPrimitive {
             major_diameter: 15.0,
             minor_diameter: 4.0,
             operation: DesignExtrudeOperation::NewBody,
             ..
-        })
+        }))
     ));
 
     let offset_at = bytes.len();

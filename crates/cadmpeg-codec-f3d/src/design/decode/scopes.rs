@@ -329,16 +329,8 @@ pub fn decode_parameter_scopes(
                     slot.get_or_insert_with(Default::default).coil_placement = Some(placement);
                 }
             }
-            {
-                let construction = exact_solid_primitive(bytes, &records, &scope, parameter_owners);
-                if let crate::records::DesignScopePayload::SpherePrimitive(slot)
-                | crate::records::DesignScopePayload::TorusPrimitive(slot)
-                | crate::records::DesignScopePayload::BoxPrimitive(slot)
-                | crate::records::DesignScopePayload::CylinderPrimitive(slot) =
-                    &mut scope.payload
-                {
-                    *slot = construction;
-                }
+            if let Some(construction) = exact_solid_primitive(bytes, &records, &scope, parameter_owners) {
+                scope.payload = construction.into();
             }
             {
                 let construction = exact_direct_face_operation(bytes, &records, &scope);
@@ -6107,7 +6099,7 @@ pub(crate) fn exact_solid_primitive(
             let (diameter, diameter_offset) =
                 exact_primitive_diameter(bytes, records, diameter_record_index)?;
             let (transform, transform_offset) = matrix(64)?;
-            Some(DesignSolidPrimitive::Sphere {
+            Some(DesignSolidPrimitive::Sphere(crate::records::DesignSpherePrimitive {
                 transform,
                 transform_offset,
                 diameter,
@@ -6115,7 +6107,7 @@ pub(crate) fn exact_solid_primitive(
                 diameter_offset,
                 operation,
                 operation_offset: operation_offset as u64,
-            })
+            }))
         }
         "TorusPrimitive"
             if scope.frame_length == 486
@@ -6135,7 +6127,7 @@ pub(crate) fn exact_solid_primitive(
             let (minor_diameter, minor_diameter_offset) =
                 exact_primitive_diameter(bytes, records, minor_diameter_record_index)?;
             let (transform, transform_offset) = matrix(75)?;
-            Some(DesignSolidPrimitive::Torus {
+            Some(DesignSolidPrimitive::Torus(crate::records::DesignTorusPrimitive {
                 transform,
                 transform_offset,
                 major_diameter,
@@ -6146,7 +6138,7 @@ pub(crate) fn exact_solid_primitive(
                 minor_diameter_offset,
                 operation,
                 operation_offset: operation_offset as u64,
-            })
+            }))
         }
         "BoxPrimitive" => {
             if scope.frame_length < 78 || scope.reference_members.len() < 5 {
@@ -6159,7 +6151,7 @@ pub(crate) fn exact_solid_primitive(
             (length.evaluated_value > 0.0
                 && width.evaluated_value > 0.0
                 && height.evaluated_value > 0.0)
-                .then_some(DesignSolidPrimitive::Box {
+                .then_some(DesignSolidPrimitive::Box(crate::records::DesignBoxPrimitive {
                     length: length.evaluated_value,
                     length_record_index: length.record_index,
                     length_offset: length.evaluated_value_offset,
@@ -6177,7 +6169,7 @@ pub(crate) fn exact_solid_primitive(
                     offset_y_offset: offset_y.evaluated_value_offset,
                     operation,
                     operation_offset: operation_offset as u64,
-                })
+                }))
         }
         "CylinderPrimitive" => {
             if scope.frame_length < 78 || scope.reference_members.len() < 2 {
@@ -6188,7 +6180,7 @@ pub(crate) fn exact_solid_primitive(
                 return None;
             };
             (height.evaluated_value > 0.0 && diameter.evaluated_value > 0.0).then_some(
-                DesignSolidPrimitive::Cylinder {
+                DesignSolidPrimitive::Cylinder(crate::records::DesignCylinderPrimitive {
                     height: height.evaluated_value,
                     height_record_index: height.record_index,
                     height_offset: height.evaluated_value_offset,
@@ -6199,7 +6191,7 @@ pub(crate) fn exact_solid_primitive(
                     transform_offset: cylinder_transform_offset,
                     operation,
                     operation_offset: operation_offset as u64,
-                },
+                }),
             )
         }
         _ => None,
