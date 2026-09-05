@@ -6,12 +6,25 @@ use std::collections::HashMap;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) struct CurveIndex(pub(super) usize);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) struct SurfaceIndex(pub(super) usize);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) struct PointIndex(pub(super) usize);
+
+pub(super) struct PointCarrier {
+    pub(super) index: PointIndex,
+    position: Point3,
+}
+
 /// Decode-local lookup tables for STEP carrier instance ids.
 pub(super) struct CarrierIndex {
-    pub(super) curves: HashMap<u64, usize>,
-    pub(super) points: HashMap<u64, usize>,
-    pub(super) surfaces: HashMap<u64, usize>,
-    point_positions: Vec<Point3>,
+    pub(super) curves: HashMap<u64, CurveIndex>,
+    pub(super) points: HashMap<u64, PointCarrier>,
+    pub(super) surfaces: HashMap<u64, SurfaceIndex>,
 }
 
 impl CarrierIndex {
@@ -23,7 +36,7 @@ impl CarrierIndex {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, curve)| {
-                    step_instance_id(&curve.id.as_str()).map(|id| (id, index))
+                    step_instance_id(&curve.id.as_str()).map(|id| (id, CurveIndex(index)))
                 })
                 .collect(),
             points: ir
@@ -32,7 +45,15 @@ impl CarrierIndex {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, point)| {
-                    step_instance_id(&point.id.as_str()).map(|id| (id, index))
+                    step_instance_id(&point.id.as_str()).map(|id| {
+                        (
+                            id,
+                            PointCarrier {
+                                index: PointIndex(index),
+                                position: point.position,
+                            },
+                        )
+                    })
                 })
                 .collect(),
             surfaces: ir
@@ -41,17 +62,14 @@ impl CarrierIndex {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, surface)| {
-                    step_instance_id(&surface.id.as_str()).map(|id| (id, index))
+                    step_instance_id(&surface.id.as_str()).map(|id| (id, SurfaceIndex(index)))
                 })
                 .collect(),
-            point_positions: ir.model.points.iter().map(|point| point.position).collect(),
         }
     }
 
     pub(super) fn get(&self, id: u64) -> Option<&Point3> {
-        self.points
-            .get(&id)
-            .and_then(|index| self.point_positions.get(*index))
+        self.points.get(&id).map(|point| &point.position)
     }
 
     pub(super) fn contains_key(&self, id: u64) -> bool {
