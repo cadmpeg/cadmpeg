@@ -3961,7 +3961,7 @@ mod color_tests {
 #[cfg(test)]
 mod shape_association_tests {
     use super::displayed_shape_group;
-    use crate::brep::{ShapePayloadForm, ShapePayloadRecord};
+    use crate::brep::{ShapePayload, ShapePayloadRecord};
     use crate::native::{
         ElementMapGroup, ElementMapNode, ElementMapRecord, PropertyFamily, PropertyRecord,
     };
@@ -3991,9 +3991,7 @@ mod shape_association_tests {
             id: id.into(),
             property: property.into(),
             entry: "Shape.brp".into(),
-            form: ShapePayloadForm::Empty,
-            text: None,
-            binary: None,
+            payload: ShapePayload::Empty,
         }
     }
 

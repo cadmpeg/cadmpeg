@@ -101,33 +101,18 @@ struct Tables<'a> {
 
 impl<'a> Tables<'a> {
     fn from_payload(payload: &'a ShapePayloadRecord) -> Option<Self> {
-        payload
-            .text
-            .as_ref()
-            .map(|text| Self {
-                locations: &text.locations,
-                curve2ds: &text.curve2ds,
-                curves: &text.curves,
-                surfaces: &text.surfaces,
-                polygons3d: &text.polygons3d,
-                polygons_on_triangulations: &text.polygons_on_triangulations,
-                tshapes: &text.tshapes,
-                triangulations: &text.triangulations,
-                roots: &text.roots,
-            })
-            .or_else(|| {
-                payload.binary.as_ref().map(|binary| Self {
-                    locations: &binary.locations,
-                    curve2ds: &binary.curve2ds,
-                    curves: &binary.curves,
-                    surfaces: &binary.surfaces,
-                    polygons3d: &binary.polygons3d,
-                    polygons_on_triangulations: &binary.polygons_on_triangulations,
-                    tshapes: &binary.tshapes,
-                    triangulations: &binary.triangulations,
-                    roots: &binary.roots,
-                })
-            })
+        let set = payload.payload.shape_set()?;
+        Some(Self {
+            locations: &set.locations,
+            curve2ds: &set.curve2ds,
+            curves: &set.curves,
+            surfaces: &set.surfaces,
+            polygons3d: &set.polygons3d,
+            polygons_on_triangulations: &set.polygons_on_triangulations,
+            tshapes: &set.tshapes,
+            triangulations: &set.triangulations,
+            roots: &set.roots,
+        })
     }
 
     fn location(&self, index: usize) -> Transform {
