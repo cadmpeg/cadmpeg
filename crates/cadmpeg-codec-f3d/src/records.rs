@@ -14762,9 +14762,37 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
     }
 }
 
+/// Canvas geometry flags; all other prologue bytes are fixed zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DesignCanvasPrologue {
+    first_flag: bool,
+    visible: bool,
+}
+impl TryFrom<[u8; 15]> for DesignCanvasPrologue {
+    type Error = String;
+    fn try_from(bytes: [u8; 15]) -> Result<Self, Self::Error> {
+        if bytes[..10] != [0; 10] || !matches!(bytes[10], 0 | 1)
+            || bytes[11..14] != [0; 3] || !matches!(bytes[14], 0 | 1) {
+            return Err("geometry_prologue must contain only its two boolean flags and fixed zero bytes".into());
+        }
+        Ok(Self { first_flag: bytes[10] != 0, visible: bytes[14] != 0 })
+    }
+}
+impl DesignCanvasPrologue {
+    pub fn visible(self) -> bool { self.visible }
+    pub fn bytes(self) -> [u8; 15] {
+        let mut bytes = [0; 15];
+        bytes[10] = u8::from(self.first_flag);
+        bytes[14] = u8::from(self.visible);
+        bytes
+    }
+}
+
 /// Exact image-plane binding owned by one Design `Canvas` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignCanvasImageWire"))]
+#[serde(try_from = "DesignCanvasImageWire", into = "DesignCanvasImageWire")]
 pub struct DesignCanvasImage {
     /// Globally unique deterministic identifier for this native binding.
     pub id: String,
@@ -14781,9 +14809,7 @@ pub struct DesignCanvasImage {
     /// Byte offset of the primary geometry record.
     pub geometry_byte_offset: u64,
     /// Fixed geometry prologue immediately following the primary record header.
-    pub geometry_prologue: [u8; 15],
-    /// Whether the Canvas raster is visible.
-    pub visible: bool,
+    pub geometry_prologue: DesignCanvasPrologue,
     /// Byte offset of the visibility byte in the geometry prologue.
     pub visibility_offset: u64,
     /// Byte length from the primary geometry header to its paired header.
@@ -14834,6 +14860,166 @@ pub struct DesignCanvasImage {
     pub v_axis: Vector3,
     /// Uninterpreted fixed geometry payload between the plane reference and scope link.
     pub geometry_payload: Vec<u8>,
+}
+
+/// Exact image-plane binding owned by one Design `Canvas` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignCanvasImageWire {
+    /// Globally unique deterministic identifier for this native binding.
+    id: String,
+    /// Canvas scope record index.
+    scope_record_index: u32,
+    /// Byte offset of the marked scope reference in the geometry record.
+    scope_reference_offset: u64,
+    /// Dynamic class tag of the primary geometry record.
+    geometry_class_tag: String,
+    /// Geometry record index.
+    geometry_record_index: u32,
+    /// Byte offset of the scope's marked geometry-record reference.
+    geometry_reference_offset: u64,
+    /// Byte offset of the primary geometry record.
+    geometry_byte_offset: u64,
+    /// Fixed geometry prologue immediately following the primary record header.
+    geometry_prologue: [u8; 15],
+    /// Whether the Canvas raster is visible.
+    visible: bool,
+    /// Byte offset of the visibility byte in the geometry prologue.
+    visibility_offset: u64,
+    /// Byte length from the primary geometry header to its paired header.
+    geometry_frame_length: u64,
+    /// Dynamic class tag of the paired geometry record.
+    paired_geometry_class_tag: String,
+    /// Byte offset of the paired geometry record.
+    paired_geometry_byte_offset: u64,
+    /// Byte offset of the paired record's marked component reference.
+    paired_component_reference_offset: u64,
+    /// Two opposite boundary segments in plane-local coordinates.
+    boundary_segments: [[Point2; 2]; 2],
+    /// Byte offsets of the eight boundary-coordinate f64 values.
+    boundary_coordinate_offsets: [u64; 8],
+    /// Byte offset of the presence marker preceding the second boundary segment.
+    second_boundary_present_offset: u64,
+    /// Design entity suffix of the supporting construction plane.
+    plane_entity_suffix: u32,
+    /// Byte offset of the marked construction-plane reference.
+    plane_reference_offset: u64,
+    /// Design entity suffix of the component owning the Canvas.
+    component_entity_suffix: u32,
+    /// Byte offset of the marked component reference.
+    component_reference_offset: u64,
+    /// Dynamic class tag of the standalone image-asset record.
+    asset_class_tag: String,
+    /// Image-asset record index.
+    asset_record_index: u32,
+    /// Byte offset of the marked image-asset reference.
+    asset_reference_offset: u64,
+    /// Byte offset of the image-asset record.
+    asset_byte_offset: u64,
+    /// Archive entry basename stored by the image-asset record.
+    asset_name: String,
+    /// Byte offset of the asset name's UTF-16LE code units.
+    asset_name_offset: u64,
+    /// Persistent Canvas label stored after the boundary segments.
+    label: String,
+    /// Byte offset of the label's UTF-16LE code units.
+    label_offset: u64,
+    /// Normalized raster opacity.
+    opacity: f32,
+    /// Image-plane origin in model-space millimeters.
+    origin: Point3,
+    /// Unit direction of increasing image u coordinate.
+    u_axis: Vector3,
+    /// Unit direction of increasing image v coordinate.
+    v_axis: Vector3,
+    /// Uninterpreted fixed geometry payload between the plane reference and scope link.
+    geometry_payload: Vec<u8>,
+}
+
+impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
+    type Error = String;
+    fn try_from(wire: DesignCanvasImageWire) -> Result<Self, Self::Error> {
+        let geometry_prologue = DesignCanvasPrologue::try_from(wire.geometry_prologue)?;
+        if geometry_prologue.visible() != wire.visible {
+            return Err("visible must match geometry_prologue".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            scope_record_index: wire.scope_record_index,
+            scope_reference_offset: wire.scope_reference_offset,
+            geometry_class_tag: wire.geometry_class_tag,
+            geometry_record_index: wire.geometry_record_index,
+            geometry_reference_offset: wire.geometry_reference_offset,
+            geometry_byte_offset: wire.geometry_byte_offset,
+            geometry_prologue,
+            visibility_offset: wire.visibility_offset,
+            geometry_frame_length: wire.geometry_frame_length,
+            paired_geometry_class_tag: wire.paired_geometry_class_tag,
+            paired_geometry_byte_offset: wire.paired_geometry_byte_offset,
+            paired_component_reference_offset: wire.paired_component_reference_offset,
+            boundary_segments: wire.boundary_segments,
+            boundary_coordinate_offsets: wire.boundary_coordinate_offsets,
+            second_boundary_present_offset: wire.second_boundary_present_offset,
+            plane_entity_suffix: wire.plane_entity_suffix,
+            plane_reference_offset: wire.plane_reference_offset,
+            component_entity_suffix: wire.component_entity_suffix,
+            component_reference_offset: wire.component_reference_offset,
+            asset_class_tag: wire.asset_class_tag,
+            asset_record_index: wire.asset_record_index,
+            asset_reference_offset: wire.asset_reference_offset,
+            asset_byte_offset: wire.asset_byte_offset,
+            asset_name: wire.asset_name,
+            asset_name_offset: wire.asset_name_offset,
+            label: wire.label,
+            label_offset: wire.label_offset,
+            opacity: wire.opacity,
+            origin: wire.origin,
+            u_axis: wire.u_axis,
+            v_axis: wire.v_axis,
+            geometry_payload: wire.geometry_payload,
+        })
+    }
+}
+
+impl From<DesignCanvasImage> for DesignCanvasImageWire {
+    fn from(value: DesignCanvasImage) -> Self {
+        Self {
+            id: value.id,
+            scope_record_index: value.scope_record_index,
+            scope_reference_offset: value.scope_reference_offset,
+            geometry_class_tag: value.geometry_class_tag,
+            geometry_record_index: value.geometry_record_index,
+            geometry_reference_offset: value.geometry_reference_offset,
+            geometry_byte_offset: value.geometry_byte_offset,
+            geometry_prologue: value.geometry_prologue.bytes(),
+            visible: value.geometry_prologue.visible(),
+            visibility_offset: value.visibility_offset,
+            geometry_frame_length: value.geometry_frame_length,
+            paired_geometry_class_tag: value.paired_geometry_class_tag,
+            paired_geometry_byte_offset: value.paired_geometry_byte_offset,
+            paired_component_reference_offset: value.paired_component_reference_offset,
+            boundary_segments: value.boundary_segments,
+            boundary_coordinate_offsets: value.boundary_coordinate_offsets,
+            second_boundary_present_offset: value.second_boundary_present_offset,
+            plane_entity_suffix: value.plane_entity_suffix,
+            plane_reference_offset: value.plane_reference_offset,
+            component_entity_suffix: value.component_entity_suffix,
+            component_reference_offset: value.component_reference_offset,
+            asset_class_tag: value.asset_class_tag,
+            asset_record_index: value.asset_record_index,
+            asset_reference_offset: value.asset_reference_offset,
+            asset_byte_offset: value.asset_byte_offset,
+            asset_name: value.asset_name,
+            asset_name_offset: value.asset_name_offset,
+            label: value.label,
+            label_offset: value.label_offset,
+            opacity: value.opacity,
+            origin: value.origin,
+            u_axis: value.u_axis,
+            v_axis: value.v_axis,
+            geometry_payload: value.geometry_payload,
+        }
+    }
 }
 
 /// Exact image and target binding owned by one Design `Decal` scope.

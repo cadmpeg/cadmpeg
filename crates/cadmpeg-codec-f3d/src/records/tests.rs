@@ -2873,3 +2873,22 @@ fn mesh_collection_constructs_only_complete_nested_body_runs() {
         assert!(super::DesignMeshCollection::new(identity(104, 100, length), identity(104, 138, length - 38)).is_err());
     }
 }
+
+#[test]
+fn canvas_prologue_reconstructs_both_flags_and_fixed_zero_bytes() {
+    for first_flag in [0, 1] {
+        for visible in [0, 1] {
+            let mut bytes = [0; 15];
+            bytes[10] = first_flag;
+            bytes[14] = visible;
+            let prologue = super::DesignCanvasPrologue::try_from(bytes).expect("Canvas prologue");
+            assert_eq!(prologue.bytes(), bytes);
+            assert_eq!(prologue.visible(), visible != 0);
+        }
+    }
+    for offset in 0..15 {
+        let mut bytes = [0; 15];
+        bytes[offset] = if matches!(offset, 10 | 14) { 2 } else { 1 };
+        assert!(super::DesignCanvasPrologue::try_from(bytes).is_err());
+    }
+}

@@ -8,7 +8,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::ids;
-use crate::records::{DesignCanvasImage, DesignParameterScope};
+use crate::records::{DesignCanvasImage, DesignCanvasPrologue, DesignParameterScope};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
@@ -106,7 +106,7 @@ pub fn project_canvas_images(
         }
         feature.definition = FeatureDefinition::ReferenceImage {
             asset: asset_id,
-            visible: image.visible,
+            visible: image.geometry_prologue.visible(),
             mirror_u,
             mirror_v,
             origin: image.origin,
@@ -146,7 +146,7 @@ fn parse_canvas_image(
         .get(geometry_at + 11..geometry_at + 26)?
         .try_into()
         .ok()?;
-    let visible = geometry_prologue_visibility(&geometry_prologue)?;
+    let geometry_prologue = DesignCanvasPrologue::try_from(geometry_prologue).ok()?;
     if View::u32_le_at(bytes, after_geometry_tag)? != geometry_record_index {
         return None;
     }
@@ -243,7 +243,6 @@ fn parse_canvas_image(
         geometry_reference_offset: u64::try_from(geometry_reference_at + 1).ok()?,
         geometry_byte_offset: u64::try_from(geometry_at).ok()?,
         geometry_prologue,
-        visible,
         visibility_offset: u64::try_from(geometry_at + 25).ok()?,
         geometry_frame_length: u64::try_from(paired_at.checked_sub(geometry_at)?).ok()?,
         paired_geometry_class_tag,
@@ -312,18 +311,6 @@ fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
     (bytes.get(at) == Some(&1)).then(|| View::u32_le_at(bytes, at + 1))?
 }
 
-pub(crate) fn valid_geometry_prologue(prologue: &[u8; 15]) -> bool {
-    geometry_prologue_visibility(prologue).is_some()
-}
-
-pub(crate) fn geometry_prologue_visibility(prologue: &[u8; 15]) -> Option<bool> {
-    (prologue[..10] == [0; 10]
-        && matches!(prologue[10], 0 | 1)
-        && prologue[11..14] == [0; 3]
-        && matches!(prologue[14], 0 | 1))
-    .then_some(prologue[14] != 0)
-}
-
 pub(crate) fn canvas_mirroring(segments: [[Point2; 2]; 2]) -> Option<(bool, bool)> {
     let [[a, b], [c, d]] = segments;
     let close = |left: f64, right: f64| {
@@ -351,8 +338,7 @@ pub(crate) fn canvas_mirroring(segments: [[Point2; 2]; 2]) -> Option<(bool, bool
 #[cfg(test)]
 mod tests {
     use super::{
-        canvas_mirroring, decode_geometry_payload, geometry_prologue_visibility,
-        valid_geometry_prologue,
+        canvas_mirroring, decode_geometry_payload, DesignCanvasPrologue,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -458,21 +444,21 @@ mod tests {
     fn canvas_geometry_prologue_decodes_visibility_in_both_forms() {
         let mut expanded = [0; 15];
         expanded[14] = 1;
-        assert!(valid_geometry_prologue(&expanded));
-        assert_eq!(geometry_prologue_visibility(&expanded), Some(true));
+        assert!(DesignCanvasPrologue::try_from(expanded).is_ok());
+        assert_eq!(DesignCanvasPrologue::try_from(expanded).ok().map(DesignCanvasPrologue::visible), Some(true));
 
         expanded[14] = 0;
-        assert_eq!(geometry_prologue_visibility(&expanded), Some(false));
+        assert_eq!(DesignCanvasPrologue::try_from(expanded).ok().map(DesignCanvasPrologue::visible), Some(false));
 
         let mut compact = [0; 15];
         compact[10] = 1;
-        assert!(valid_geometry_prologue(&compact));
-        assert_eq!(geometry_prologue_visibility(&compact), Some(false));
+        assert!(DesignCanvasPrologue::try_from(compact).is_ok());
+        assert_eq!(DesignCanvasPrologue::try_from(compact).ok().map(DesignCanvasPrologue::visible), Some(false));
 
         compact[14] = 1;
-        assert_eq!(geometry_prologue_visibility(&compact), Some(true));
+        assert_eq!(DesignCanvasPrologue::try_from(compact).ok().map(DesignCanvasPrologue::visible), Some(true));
 
         compact[11] = 1;
-        assert!(!valid_geometry_prologue(&compact));
+        assert!(DesignCanvasPrologue::try_from(compact).is_err());
     }
 }
