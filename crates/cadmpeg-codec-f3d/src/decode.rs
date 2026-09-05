@@ -3249,7 +3249,7 @@ fn project_mesh_bodies(
             .into_iter()
             .map(|texture| (texture.resource_guid.as_str().to_owned(), texture.asset.clone()))
             .collect::<Vec<_>>();
-        for body in &feature.bodies {
+        for body in feature.bodies() {
             if let Some(tessellation_id) = &body.tessellation_id {
                 if texture_tables
                     .insert(tessellation_id.clone(), texture_table.clone())
@@ -3338,7 +3338,7 @@ fn project_mesh_bodies(
     }
     for feature in &native.design_mesh_features {
         let tessellations = feature
-            .bodies
+            .bodies()
             .iter()
             .filter_map(|body| body.tessellation_id.clone())
             .collect::<Vec<_>>();
@@ -3350,7 +3350,7 @@ fn project_mesh_bodies(
             .to_owned();
         if projection
             .tessellations_by_scope
-            .insert((stream, feature.scope.record().record_index()), tessellations)
+            .insert((stream, feature.scope().record().record_index()), tessellations)
             .is_some()
         {
             return Err(CodecError::Malformed(

@@ -882,8 +882,8 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
     let base = serde_json::json!({
         "id": "mesh-feature", "scope_record": identity, "scope_base_record": {"class_tag": "256", "record_index": 104, "byte_offset": 270, "frame_length": 30},
         "collection_record": {"class_tag": "256", "record_index": 104, "byte_offset": 0, "frame_length": 95}, "collection_base_record": {"class_tag": "256", "record_index": 104, "byte_offset": 38, "frame_length": 57},
-        "texture_table_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 29}, "body_count_offsets": [21, 31, 41],
-        "body_record_indices": [104, 104], "scope_body_reference_offsets": [25, 36],
+        "texture_table_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 29}, "body_count_offsets": [121, 21, 58],
+        "body_record_indices": [104, 104], "scope_body_reference_offsets": [125, 136],
         "collection_body_reference_offsets": [62, 73], "texture_table_reference_offset": 27,
         "collection_owner_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 273}, "collection_owner_reference_offset": 84,
         "collection_owner_backlink_offset": 362, "scope_owner_record_index": 109,
@@ -895,6 +895,9 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         for field in ["bodies", "body_record_indices", "scope_body_reference_offsets", "collection_body_reference_offsets"] {
             value[field].as_array_mut().expect("wire array").truncate(count);
         }
+        value["collection_record"]["frame_length"] = serde_json::json!(73 + 11 * count);
+        value["collection_base_record"]["frame_length"] = serde_json::json!(35 + 11 * count);
+        value["collection_owner_reference_offset"] = serde_json::json!(62 + 11 * count);
         let wire: super::DesignMeshFeatureWire = serde_json::from_value(value).expect("mesh wire");
         let expected = serde_json::to_string(&wire).expect("original mesh wire");
         let feature: super::DesignMeshFeature = serde_json::from_str(&expected).expect("mesh body rows");
@@ -905,6 +908,24 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         value[field].as_array_mut().expect("wire array").pop();
         assert!(serde_json::from_value::<super::DesignMeshFeature>(value).is_err());
     }
+    for field in ["body_count_offsets", "scope_body_reference_offsets", "collection_body_reference_offsets"] {
+        let mut value = base.clone();
+        value[field][0] = serde_json::json!(0);
+        let error = serde_json::from_value::<super::DesignMeshFeature>(value).expect_err("misplaced body reference").to_string();
+        assert!(error.contains(field));
+    }
+    let mut wrong_count = base.clone();
+    wrong_count["collection_record"]["frame_length"] = serde_json::json!(84);
+    wrong_count["collection_base_record"]["frame_length"] = serde_json::json!(46);
+    wrong_count["collection_owner_reference_offset"] = serde_json::json!(73);
+    let error = serde_json::from_value::<super::DesignMeshFeature>(wrong_count).expect_err("body count mismatch").to_string();
+    assert!(error.contains("bodies count"));
+    let mut short_scope = base.clone();
+    short_scope["scope_record"]["frame_length"] = serde_json::json!(76);
+    short_scope["scope_base_record"]["byte_offset"] = serde_json::json!(146);
+    short_scope["scope_owner_reference_offset"] = serde_json::json!(165);
+    let error = serde_json::from_value::<super::DesignMeshFeature>(short_scope).expect_err("body references overlap base").to_string();
+    assert!(error.contains("bodies reference run"));
     let mut changed_identity = base;
     changed_identity["body_record_indices"][0] = serde_json::json!(105);
     let error = serde_json::from_value::<super::DesignMeshFeature>(changed_identity).expect_err("conflicting body identity").to_string();

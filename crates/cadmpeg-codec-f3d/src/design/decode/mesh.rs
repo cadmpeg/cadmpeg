@@ -250,8 +250,7 @@ struct MeshBodyRecord {
 struct MeshCollectionRecord {
     collection: DesignMeshCollection,
     texture_table_record_index: u32,
-    body_records: Vec<crate::records::Located<u32>>,
-    count_offsets: [u64; 2],
+    body_records: Vec<u32>,
     owner_record_index: u32,
 }
 
@@ -292,8 +291,7 @@ struct MeshSceneNodeRecord {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshScopeRecord {
     scope: DesignMeshScope,
-    body_records: Vec<crate::records::Located<u32>>,
-    body_count_offset: u64,
+    body_records: Vec<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -485,18 +483,14 @@ fn exact_local_record_index(record: &[u8], at: usize) -> Option<u32> {
 
 fn counted_local_record_indices(
     record: &[u8],
-    frame_start: usize,
     count_at: usize,
-) -> Option<(Vec<crate::records::Located<u32>>, usize)> {
+) -> Option<(Vec<u32>, usize)> {
     let count = usize::try_from(View::u32_le_at(record, count_at)?).ok()?;
     let mut at = count_at.checked_add(4)?;
     (count <= record.len().saturating_sub(at) / SAME_SEGMENT_REFERENCE_BYTES).then_some(())?;
     let mut references = Vec::with_capacity(count);
     for _ in 0..count {
-        references.push(crate::records::Located {
-            value: exact_local_record_index(record, at)?,
-            offset: source_offset(frame_start, at)?,
-        });
+        references.push(exact_local_record_index(record, at)?);
         at = at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?;
     }
     Some((references, at))
@@ -643,7 +637,6 @@ fn parse_mesh_collection_record(
         .then_some(())?;
         let (body_records, owner_at) = counted_local_record_indices(
             record,
-            frame.start,
             mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
         )?;
         (first_count == body_records.len()).then_some(())?;
@@ -653,13 +646,6 @@ fn parse_mesh_collection_record(
             collection: DesignMeshCollection::new(identity, base_record).ok()?,
             texture_table_record_index,
             body_records,
-            count_offsets: [
-                source_offset(frame.start, mesh_collection::BODY_COUNT)?,
-                source_offset(
-                    frame.start,
-                    mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
-                )?,
-            ],
             owner_record_index,
         })
     })();
@@ -909,7 +895,7 @@ fn parse_mesh_scope_record(
         (record.get(feature_scope::ZERO_RUN_10..feature_scope::BODY_COUNT) == Some(&[0; 10]))
             .then_some(())?;
         let (body_records, body_list_end) =
-            counted_local_record_indices(record, frame.start, feature_scope::BODY_COUNT)?;
+            counted_local_record_indices(record, feature_scope::BODY_COUNT)?;
         let header = DesignRecordHeader {
             id: String::new(),
             record_index: identity.record_index(),
@@ -947,7 +933,6 @@ fn parse_mesh_scope_record(
         Some(MeshScopeRecord {
             scope: DesignMeshScope::new(identity, base_record, owner_record_index).ok()?,
             body_records,
-            body_count_offset: source_offset(frame.start, feature_scope::BODY_COUNT)?,
         })
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-feature-scope", frame.entity_id))
@@ -1216,9 +1201,9 @@ where
         let stream_error = |invariant| malformed_mesh_graph(&stream, invariant);
         let candidate_scopes = scopes
             .iter()
-            .filter(|(_, scope)| scope.body_records.iter().map(|row| row.value).eq(collection.body_records.iter().map(|row| row.value)))
+            .filter(|(_, scope)| scope.body_records == collection.body_records)
             .filter(|(scope_index, _)| {
-                collection.body_records.iter().map(|row| &row.value).all(|body_index| {
+                collection.body_records.iter().all(|body_index| {
                     bodies.get(body_index).is_some_and(|body| {
                         body.scope_record_index == **scope_index
                             && body.collection_record_index == collection.collection.record().record_index()
@@ -1230,11 +1215,11 @@ where
         let [scope_record_index] = candidate_scopes.as_slice() else {
             let scope_lists = scopes
                 .iter()
-                .map(|(index, scope)| (*index, scope.body_records.iter().map(|row| row.value).collect::<Vec<_>>()))
+                .map(|(index, scope)| (*index, scope.body_records.clone()))
                 .collect::<Vec<_>>();
             let body_links = collection
                 .body_records
-                .iter().map(|row| &row.value)
+                .iter()
                 .filter_map(|index| {
                     bodies.get(index).map(|body| {
                         (
@@ -1248,7 +1233,7 @@ where
             return Err(CodecError::malformed(format_args!(
                 "F3D Design mesh feature graph violates `each mesh collection has exactly one scope with the same ordered body list` in {stream}: collection {} bodies {:?}, scope lists {:?}, body links {:?}",
                 collection.collection.record().record_index(),
-                collection.body_records.iter().map(|row| row.value).collect::<Vec<_>>(),
+                collection.body_records,
                 scope_lists,
                 body_links,
             )));
@@ -1309,8 +1294,7 @@ where
         }
 
         let mut feature_bodies = Vec::with_capacity(collection.body_records.len());
-        for (collection_reference, scope_reference) in collection.body_records.iter().zip(&scope.body_records) {
-            let body_record_index = &collection_reference.value;
+        for body_record_index in &collection.body_records {
             let body = bodies.remove(body_record_index).ok_or_else(|| {
                 stream_error("each collection body reference targets one unused mesh body")
             })?;
@@ -1361,8 +1345,6 @@ where
                 "mesh-body-owner",
             )?;
             feature_bodies.push(DesignMeshBody {
-                scope_body_reference_offset: scope_reference.offset,
-                collection_body_reference_offset: collection_reference.offset,
                 placement: body.placement,
                 entry: entry_name.entry,
                 guid: guid.guid,
@@ -1378,20 +1360,13 @@ where
         let scope_offset = usize::try_from(scope.scope.record().byte_offset()).map_err(|_| {
             stream_error("mesh feature scope byte offsets fit the platform address domain")
         })?;
-        features.push(DesignMeshFeature {
-            id: ids::native_design_mesh_feature_id(source_entry_name, scope_offset),
-            scope: scope.scope,
-            collection: collection.collection,
-            texture_table: DesignMeshTextureTable::new(texture_table.identity, textures)
+        features.push(DesignMeshFeature::new(
+            ids::native_design_mesh_feature_id(source_entry_name, scope_offset),
+            scope.scope, collection.collection,
+            DesignMeshTextureTable::new(texture_table.identity, textures)
                 .map_err(|message| malformed_mesh_graph(&stream, &message))?,
-            body_count_offsets: [
-                scope.body_count_offset,
-                collection.count_offsets[0],
-                collection.count_offsets[1],
-            ],
-            collection_owner: collection_owner.owner.clone(),
-            bodies: feature_bodies,
-        });
+            collection_owner.owner.clone(), feature_bodies,
+        ).map_err(|message| malformed_mesh_graph(&stream, &message))?);
     }
     if !entry_names.is_empty()
         || !guids.is_empty()
@@ -1454,7 +1429,7 @@ fn resolve_mesh_body(
     let mut matches = Vec::new();
     for (design_ordinal, design) in records.iter().enumerate() {
         for (feature_ordinal, feature) in design.features.iter().enumerate() {
-            for (body_ordinal, body) in feature.bodies.iter().enumerate() {
+            for (body_ordinal, body) in feature.bodies().iter().enumerate() {
                 if body.tessellation_id.is_none()
                     && body.entry.name() == entry_name
                     && body.guid.value().eq_ignore_ascii_case(fusion_uuid)
@@ -1503,9 +1478,9 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
             });
             continue;
         };
-        design_records[design_ordinal].features[feature_ordinal].bodies[body_ordinal]
+        design_records[design_ordinal].features[feature_ordinal].bodies_mut()[body_ordinal]
             .container_mesh_uuid = Some(container.mesh_uuid.clone());
-        let body = &design_records[design_ordinal].features[feature_ordinal].bodies[body_ordinal];
+        let body = &design_records[design_ordinal].features[feature_ordinal].bodies()[body_ordinal];
         let projected = match MeshBody::from_container(
             &entry.name,
             body.placement.record().byte_offset(),
@@ -1521,14 +1496,14 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
                 continue;
             }
         };
-        design_records[design_ordinal].features[feature_ordinal].bodies[body_ordinal]
+        design_records[design_ordinal].features[feature_ordinal].bodies_mut()[body_ordinal]
             .tessellation_id = Some(projected.id.clone());
         outcomes.push(MeshContainerOutcome::Joined(projected));
     }
     for body in design_records
         .iter()
         .flat_map(|design| &design.features)
-        .flat_map(|feature| &feature.bodies)
+        .flat_map(|feature| feature.bodies())
         .filter(|body| body.tessellation_id.is_none())
     {
         outcomes.push(MeshContainerOutcome::Missing {
@@ -2270,12 +2245,12 @@ mod tests {
         let [feature] = design.features.as_slice() else {
             panic!("one mesh feature");
         };
-        assert_eq!(feature.scope.record().record_index(), 109);
-        assert_eq!(feature.collection.record().record_index(), 100);
+        assert_eq!(feature.scope().record().record_index(), 109);
+        assert_eq!(feature.collection().record().record_index(), 100);
         assert_eq!(feature.texture_table.record().record_index(), 101);
-        assert_eq!(feature.bodies.iter().map(|body| body.placement.record().record_index()).collect::<Vec<_>>(), [104]);
+        assert_eq!(feature.bodies().iter().map(|body| body.placement.record().record_index()).collect::<Vec<_>>(), [104]);
         assert!(feature.texture_table.resources().is_empty());
-        let [body] = feature.bodies.as_slice() else {
+        let [body] = feature.bodies() else {
             panic!("one mesh body");
         };
         assert_eq!(body.entry.name(), ENTRY_NAME);
@@ -2355,11 +2330,11 @@ mod tests {
         let [feature] = design.features.as_slice() else {
             panic!("one mesh feature");
         };
-        let [first, second] = feature.bodies.as_slice() else {
+        let [first, second] = feature.bodies() else {
             panic!("two mesh bodies");
         };
 
-        assert_eq!(feature.bodies.iter().map(|body| body.placement.record().record_index()).collect::<Vec<_>>(), [104, 117]);
+        assert_eq!(feature.bodies().iter().map(|body| body.placement.record().record_index()).collect::<Vec<_>>(), [104, 117]);
         assert_eq!(first.owner_record, second.owner_record);
         assert_ne!(first.placement.record(), second.placement.record());
     }

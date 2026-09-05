@@ -1472,45 +1472,15 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let stream = design_stream(&feature.id);
         let scope = ctx
             .scopes_by_index
-            .get(&(stream, feature.scope.record().record_index()));
-        let body_count = feature.bodies.len();
-        let body_count_u64 = u64::try_from(body_count).unwrap_or(u64::MAX);
-        let expected_scope_offsets = (0..body_count)
-            .filter_map(|ordinal| {
-                u64::try_from(ordinal)
-                    .ok()?
-                    .checked_mul(11)?
-                    .checked_add(feature.scope.record().byte_offset().checked_add(25)?)
-            });
-        let expected_collection_offsets = (0..body_count)
-            .filter_map(|ordinal| {
-                u64::try_from(ordinal)
-                    .ok()?
-                    .checked_mul(11)?
-                    .checked_add(feature.collection.record().byte_offset().checked_add(62)?)
-            });
+            .get(&(stream, feature.scope().record().record_index()));
         let mut valid = feature_ids.insert(feature.id.as_str())
-            && scope_records.insert((stream, feature.scope.record().record_index()))
-            && collection_records.insert((stream, feature.collection.record().record_index()))
+            && scope_records.insert((stream, feature.scope().record().record_index()))
+            && collection_records.insert((stream, feature.collection().record().record_index()))
             && texture_table_records.insert((stream, feature.texture_table.record().record_index()))
             && collection_owner_records
                 .insert((stream, feature.collection_owner.record().record_index()))
-            && feature.scope.record().byte_offset().checked_add(scope.map_or(0, |scope| scope.frame_length))
-                == Some(feature.scope.base_record().byte_offset())
-            && feature.collection.body_count() == body_count_u64
-            && mesh_record_offset_is(feature.scope.record(), 21, feature.body_count_offsets[0])
-            && mesh_record_offset_is(
-                feature.collection.record(),
-                21,
-                feature.body_count_offsets[1],
-            )
-            && mesh_record_offset_is(
-                feature.collection.record(),
-                58,
-                feature.body_count_offsets[2],
-            )
-            && feature.bodies.iter().map(|body| body.scope_body_reference_offset).eq(expected_scope_offsets)
-            && feature.bodies.iter().map(|body| body.collection_body_reference_offset).eq(expected_collection_offsets)
+            && feature.scope().record().byte_offset().checked_add(scope.map_or(0, |scope| scope.frame_length))
+                == Some(feature.scope().base_record().byte_offset())
             && mesh_record_offset_is(
                 feature.collection_owner.record(),
                 262,
@@ -1518,8 +1488,8 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             )
             && scope.is_some_and(|scope| {
                 scope.kind() == crate::records::DesignFeatureKind::BaseMeshFeature
-                    && scope.byte_offset == feature.scope.record().byte_offset()
-                    && scope.paired_byte_offset == feature.scope.base_record().byte_offset()
+                    && scope.byte_offset == feature.scope().record().byte_offset()
+                    && scope.paired_byte_offset == feature.scope().base_record().byte_offset()
             });
 
         let mut resources = feature.texture_table.resources().iter().collect::<Vec<_>>();
@@ -1533,7 +1503,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             filename_record_consistent && asset_ids.contains(&resource.asset)
         });
 
-        for body in &feature.bodies {
+        for body in feature.bodies() {
             let owner_key = (stream, body.owner_record.record_index());
             let owner_consistent = body_owner_records
                 .get(&owner_key)
@@ -1555,7 +1525,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 });
         }
         let projected = feature
-            .bodies
+            .bodies()
             .iter()
             .filter_map(|body| body.tessellation_id.as_deref())
             .collect::<Vec<_>>();
