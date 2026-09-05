@@ -2371,9 +2371,9 @@ fn project_full_round_fillet(
     if groups.next().is_some()
         || group.role != ROLE_0X4
         || group.members.len() != 1
-        || group.frame.trailing_record_indices.len() != 1
+        || group.frame.trailing_records.len() != 1
         || group.frame.trailing_flags.len() != 1
-        || group.frame.trailing_record_indices[0] != group.frame.trailing_flags[0].record_index
+        || group.frame.trailing_records[0].value != group.frame.trailing_flags[0].record_index
         || !group.frame.trailing_flags[0].value
         || group.frame.variant
     {

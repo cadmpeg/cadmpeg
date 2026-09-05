@@ -2039,14 +2039,12 @@ pub(crate) fn parse_construction_operand_group(
     if usize::try_from(trailing_count).unwrap_or(usize::MAX) > bytes.len().saturating_sub(cursor) {
         return NotAGroup;
     }
-    let mut trailing_record_indices = Vec::new();
-    let mut trailing_record_offsets = Vec::new();
+    let mut trailing_records = Vec::new();
     for _ in 0..trailing_count {
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        trailing_record_indices.push(record_index);
-        trailing_record_offsets.push(offset);
+        trailing_records.push(crate::records::Located { value: record_index, offset });
     }
     let legacy_move_class_328 = scope.kind() == crate::records::DesignFeatureKind::Move
         && header.class_tag == "328"
@@ -2173,8 +2171,7 @@ pub(crate) fn parse_construction_operand_group(
             member_count_offset,
             auxiliary_records,
             auxiliary_paths: Vec::new(),
-            trailing_record_indices,
-            trailing_record_offsets,
+            trailing_records,
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -2288,8 +2285,8 @@ pub fn bind_construction_operand_trailing_records(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        for record_index in &group.frame.trailing_record_indices {
-            let Some(header) = headers.get(&(stream, *record_index)) else {
+        for record in &group.frame.trailing_records {
+            let Some(header) = headers.get(&(stream, record.value)) else {
                 continue;
             };
             if let Some(transform) = parse_construction_operand_transform(bytes, header) {
@@ -2526,7 +2523,7 @@ pub fn decode_construction_operand_identities(
         else {
             continue;
         };
-        let Some(trailing_record_index) = group.frame.trailing_record_indices.first() else {
+        let Some(trailing_record_index) = group.frame.trailing_records.first().map(|record| &record.value) else {
             continue;
         };
         let Some(wrapper_header) = headers.get(&(stream, *trailing_record_index)) else {

@@ -4916,12 +4916,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 .member_offsets
                 .windows(2)
                 .all(|offsets| offsets[1] >= offsets[0].saturating_add(11))
-            && frame.trailing_record_offsets.len() == frame.trailing_record_indices.len()
-            && frame.trailing_record_indices.len() <= 1
+            && frame.trailing_records.len() <= 1
             && frame
-                .trailing_record_offsets
+                .trailing_records
                 .first()
-                .is_none_or(|offset| *offset == group.role_offset.saturating_sub(10))
+                .is_none_or(|record| record.offset == group.role_offset.saturating_sub(10))
             && group.role_offset >= member_run_end
             && group.role.trailing_zeros() >= 32
             && frame.opaque_index != 0
@@ -4933,12 +4932,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             && frame
                 .auxiliary_records
                 .iter().map(|record| &record.value)
-                .chain(&frame.trailing_record_indices)
+                .chain(frame.trailing_records.iter().map(|record| &record.value))
                 .all(|record_index| record_indices.contains(&(native_stream, *record_index)))
             && frame.trailing_transforms.iter().all(|transform| {
                 frame
-                    .trailing_record_indices
-                    .contains(&transform.record_index)
+                    .trailing_records.iter().any(|record| record.value == transform.record_index)
                     && records_by_index
                         .get(&(native_stream, transform.record_index))
                         .is_some_and(|header| {
@@ -4965,8 +4963,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 == frame.trailing_transforms.len()
             && frame.trailing_dual_transforms.iter().all(|transform| {
                 frame
-                    .trailing_record_indices
-                    .contains(&transform.record_index)
+                    .trailing_records.iter().any(|record| record.value == transform.record_index)
                     && records_by_index
                         .get(&(native_stream, transform.record_index))
                         .is_some_and(|header| {
@@ -4991,7 +4988,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 .len()
                 == frame.trailing_dual_transforms.len()
             && frame.trailing_flags.iter().all(|flag| {
-                frame.trailing_record_indices.contains(&flag.record_index)
+                frame.trailing_records.iter().any(|record| record.value == flag.record_index)
                     && records_by_index
                         .get(&(native_stream, flag.record_index))
                         .is_some_and(|header| {
@@ -6166,9 +6163,9 @@ fn validate_fillet_operand_groups<'a>(
             });
         let valid_full_round_group = full_round_group_shape
             && !group.frame.variant
-            && group.frame.trailing_record_indices.len() == 1
+            && group.frame.trailing_records.len() == 1
             && group.frame.trailing_flags.len() == 1
-            && group.frame.trailing_record_indices[0] == group.frame.trailing_flags[0].record_index
+            && group.frame.trailing_records[0].value == group.frame.trailing_flags[0].record_index
             && group.frame.trailing_flags[0].value
             && native.design_face_operands.iter().any(|operand| {
                 design_stream(&operand.id) == native_stream
@@ -6343,7 +6340,7 @@ fn validate_construction_operand_identities<'a>(
                 || (identity.wrappers.is_empty()
                     && transform.is_none()
                     && group.is_some_and(|group| {
-                        group.frame.trailing_record_indices.first()
+                        group.frame.trailing_records.first().map(|record| &record.value)
                             == Some(&path.wrapper_record_index)
                     }))
         } else {
@@ -6407,7 +6404,7 @@ fn validate_construction_operand_identities<'a>(
                         .is_none_or(|header| header.byte_offset == persistent.next_byte_offset)
             });
         let valid = group.is_some_and(|group| {
-            let trailing = group.frame.trailing_record_indices.first();
+            let trailing = group.frame.trailing_records.first().map(|record| &record.value);
             identity.wrappers.first().map(|wrapper| &wrapper.record_index)
                 .or_else(|| {
                     group
@@ -6799,16 +6796,16 @@ fn validate_operand_group_carriers<'a>(
                             && member.record_index == *record_index
                     })
             });
-        let has_exact_trailing_carrier = group.frame.trailing_record_indices.is_empty()
+        let has_exact_trailing_carrier = group.frame.trailing_records.is_empty()
             || operand_identity_groups.contains(&(native_stream, group.record_index))
             || (group.frame.trailing_transforms.len()
                 + group.frame.trailing_dual_transforms.len()
                 + group.frame.trailing_flags.len()
-                == group.frame.trailing_record_indices.len()
+                == group.frame.trailing_records.len()
                 && group
                     .frame
-                    .trailing_record_indices
-                    .iter()
+                    .trailing_records
+                    .iter().map(|record| &record.value)
                     .all(|record_index| {
                         group
                             .frame

@@ -8594,9 +8594,7 @@ pub struct DesignConstructionOperandGroupFrame {
     /// grammar is selected by the owning operand family: persistent-selection
     /// groups name identity wrappers and placed-selection groups name affine
     /// transforms.
-    pub trailing_record_indices: Vec<u32>,
-    /// Byte offsets parallel to `trailing_record_indices`.
-    pub trailing_record_offsets: Vec<u64>,
+    pub trailing_records: Vec<Located<u32>>,
     /// Exact affine-transform records selected from the trailing-reference
     /// run. Other trailing records remain represented by their indices and
     /// offsets and can select another typed grammar.
@@ -8652,12 +8650,14 @@ impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOper
         if wire.auxiliary_record_indices.len() != wire.auxiliary_record_offsets.len() {
             return Err("auxiliary_record_offsets must match auxiliary_record_indices".into());
         }
+        if wire.trailing_record_indices.len() != wire.trailing_record_offsets.len() {
+            return Err("trailing_record_offsets must match trailing_record_indices".into());
+        }
         Ok(Self {
             member_count_offset: wire.member_count_offset,
             auxiliary_records: wire.auxiliary_record_indices.into_iter().zip(wire.auxiliary_record_offsets).map(|(value, offset)| Located { value, offset }).collect(),
             auxiliary_paths: wire.auxiliary_paths,
-            trailing_record_indices: wire.trailing_record_indices,
-            trailing_record_offsets: wire.trailing_record_offsets,
+            trailing_records: wire.trailing_record_indices.into_iter().zip(wire.trailing_record_offsets).map(|(value, offset)| Located { value, offset }).collect(),
             trailing_transforms: wire.trailing_transforms,
             trailing_dual_transforms: wire.trailing_dual_transforms,
             trailing_flags: wire.trailing_flags,
@@ -8677,8 +8677,8 @@ impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGrou
             auxiliary_record_indices: frame.auxiliary_records.iter().map(|record| record.value).collect(),
             auxiliary_record_offsets: frame.auxiliary_records.iter().map(|record| record.offset).collect(),
             auxiliary_paths: frame.auxiliary_paths,
-            trailing_record_indices: frame.trailing_record_indices,
-            trailing_record_offsets: frame.trailing_record_offsets,
+            trailing_record_indices: frame.trailing_records.iter().map(|record| record.value).collect(),
+            trailing_record_offsets: frame.trailing_records.iter().map(|record| record.offset).collect(),
             trailing_transforms: frame.trailing_transforms,
             trailing_dual_transforms: frame.trailing_dual_transforms,
             trailing_flags: frame.trailing_flags,
