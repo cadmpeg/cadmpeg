@@ -8328,7 +8328,7 @@ fn project_coil(
     let placement = scope
         .coil_placement()
         .as_ref()
-        .map(|placement| &placement.transform)
+        .map(|placement| placement.transform())
         .or_else(|| {
             scope
                 .coil_transform()

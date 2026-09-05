@@ -2075,6 +2075,7 @@ pub enum DesignCoilSelection {
 /// Exact placement construction carried by a compact Coil scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignCoilPlacementWire", into = "DesignCoilPlacementWire")]
 pub struct DesignCoilPlacement {
     /// First ordered placement-construction reference.
     pub selection_record_index: u32,
@@ -2090,12 +2091,92 @@ pub struct DesignCoilPlacement {
     pub transform_record_byte_offset: u64,
     /// Dynamic class tag of the frame carrier.
     pub transform_class_tag: String,
+    /// Explicit matrix and its byte offset; absent for the encoded identity form.
+    pub explicit_transform: Option<Located<[[f64; 4]; 4]>>,
+}
+
+impl DesignCoilPlacement {
+    const IDENTITY: [[f64; 4]; 4] = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+
+    /// Row-major local-to-model matrix with translation in source centimetres.
+    #[must_use]
+    pub fn transform(&self) -> &[[f64; 4]; 4] {
+        self.explicit_transform.as_ref().map_or(&Self::IDENTITY, |matrix| &matrix.value)
+    }
+}
+
+/// Exact placement construction carried by a compact Coil scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignCoilPlacementWire {
+    /// First ordered placement-construction reference.
+    selection_record_index: u32,
+    /// Byte offset of the support selection frame header.
+    selection_record_byte_offset: u64,
+    /// Dynamic class tag of the support selection frame.
+    selection_class_tag: String,
+    /// Exact selection semantics carried by the first placement reference.
+    selection: DesignCoilSelection,
+    /// Second ordered placement-construction reference: the frame carrier.
+    transform_record_index: u32,
+    /// Byte offset of the frame carrier header.
+    transform_record_byte_offset: u64,
+    /// Dynamic class tag of the frame carrier.
+    transform_class_tag: String,
     /// Row-major local-to-model rigid transform. Matrix values are in source
     /// centimetres for the translation column.
-    pub transform: [[f64; 4]; 4],
+    transform: [[f64; 4]; 4],
     /// Byte offset of the matrix, or absent for the encoded identity form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform_offset: Option<u64>,
+    transform_offset: Option<u64>,
+}
+
+impl TryFrom<DesignCoilPlacementWire> for DesignCoilPlacement {
+    type Error = String;
+    fn try_from(wire: DesignCoilPlacementWire) -> Result<Self, Self::Error> {
+        let explicit_transform = match wire.transform_offset {
+            Some(offset) => Some(Located { value: wire.transform, offset }),
+            None => {
+                if wire.transform.iter().flatten().zip(Self::IDENTITY.iter().flatten())
+                    .any(|(value, identity)| value.to_bits() != identity.to_bits()) {
+                    return Err("transform must be identity when transform_offset is absent".into());
+                }
+                None
+            }
+        };
+        Ok(Self {
+            selection_record_index: wire.selection_record_index,
+            selection_record_byte_offset: wire.selection_record_byte_offset,
+            selection_class_tag: wire.selection_class_tag,
+            selection: wire.selection,
+            transform_record_index: wire.transform_record_index,
+            transform_record_byte_offset: wire.transform_record_byte_offset,
+            transform_class_tag: wire.transform_class_tag,
+            explicit_transform,
+        })
+    }
+}
+
+impl From<DesignCoilPlacement> for DesignCoilPlacementWire {
+    fn from(record: DesignCoilPlacement) -> Self {
+        let transform = *record.transform();
+        Self {
+            selection_record_index: record.selection_record_index,
+            selection_record_byte_offset: record.selection_record_byte_offset,
+            selection_class_tag: record.selection_class_tag,
+            selection: record.selection,
+            transform_record_index: record.transform_record_index,
+            transform_record_byte_offset: record.transform_record_byte_offset,
+            transform_class_tag: record.transform_class_tag,
+            transform,
+            transform_offset: record.explicit_transform.map(|matrix| matrix.offset),
+        }
+    }
 }
 
 /// Direct rigid placement carried by the long ten-reference Coil form.

@@ -9204,7 +9204,7 @@ fn exact_coil_placement(
     let transform_paired_class_tag =
         exact_indexed_header_at(bytes, transform_paired, transform_record_index)?;
     let frame_length = transform_paired.checked_sub(transform_start)?;
-    let (transform, transform_offset) = match frame_length {
+    let explicit_transform = match frame_length {
         coil_legacy_identity::LEN
             if scope.class_tag == "393"
                 && scope.paired_class_tag == "258"
@@ -9219,7 +9219,7 @@ fn exact_coil_placement(
                     scope.record_index,
                 ) =>
         {
-            (identity_matrix(), None)
+            None
         }
         coil_modern_matrix::LEN
             if transform_class_tag == "450"
@@ -9242,10 +9242,10 @@ fn exact_coil_placement(
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
             }
-            (
-                transform,
-                Some(u64::try_from(transform_start.checked_add(coil_modern_matrix::MATRIX)?).ok()?),
-            )
+            Some(crate::records::Located {
+                value: transform,
+                offset: u64::try_from(transform_start.checked_add(coil_modern_matrix::MATRIX)?).ok()?,
+            })
         }
         coil_identity::LEN
             if bytes.get(transform_start + coil_identity::PLACEMENT_MARKER) == Some(&1)
@@ -9255,7 +9255,7 @@ fn exact_coil_placement(
                 ) == Some(&[0; 9][..])
                 && bytes.get(transform_start + coil_identity::IDENTITY_MARKER) == Some(&1) =>
         {
-            (identity_matrix(), None)
+            None
         }
         coil_owner_identity::LEN
             if bytes.get(transform_start + coil_identity::PLACEMENT_MARKER) == Some(&1)
@@ -9279,7 +9279,7 @@ fn exact_coil_placement(
                         ..transform_start + coil_owner_identity::LEN,
                 ) == Some(&[0; 6][..]) =>
         {
-            (identity_matrix(), None)
+            None
         }
         coil_matrix::LEN
             if bytes.get(transform_start + coil_matrix::PLACEMENT_MARKER) == Some(&1)
@@ -9294,14 +9294,14 @@ fn exact_coil_placement(
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
             }
-            (
-                transform,
-                Some(u64::try_from(transform_start.checked_add(coil_matrix::MATRIX)?).ok()?),
-            )
+            Some(crate::records::Located {
+                value: transform,
+                offset: u64::try_from(transform_start.checked_add(coil_matrix::MATRIX)?).ok()?,
+            })
         }
         _ => return None,
     };
-    if !valid_right_handed_coil_transform(&transform) {
+    if explicit_transform.as_ref().is_some_and(|matrix| !valid_right_handed_coil_transform(&matrix.value)) {
         return None;
     }
     let selection = parse_entity_selection_frame(
@@ -9339,8 +9339,7 @@ fn exact_coil_placement(
         transform_record_index,
         transform_record_byte_offset: u64::try_from(transform_start).ok()?,
         transform_class_tag,
-        transform,
-        transform_offset,
+        explicit_transform,
     })
 }
 

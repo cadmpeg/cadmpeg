@@ -508,11 +508,11 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
             }
         );
         assert_eq!(
-            placement.transform_offset,
+            placement.explicit_transform.map(|matrix| matrix.offset),
             expected_offset.map(|offset| (transform_start + offset) as u64)
         );
         assert_eq!(
-            placement.transform,
+            *placement.transform(),
             matrix.unwrap_or([
                 [1.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
@@ -533,7 +533,7 @@ fn modern_coil_placement_accepts_class_450_matrix_frame() {
     assert_eq!(placement.transform_record_index, 200);
     assert_eq!(placement.transform_class_tag, "450");
     assert_eq!(
-        placement.transform,
+        *placement.transform(),
         [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, -1.0, 0.0, 0.0],
@@ -542,7 +542,7 @@ fn modern_coil_placement_accepts_class_450_matrix_frame() {
         ]
     );
     assert_eq!(
-        placement.transform_offset,
+        placement.explicit_transform.map(|matrix| matrix.offset),
         Some((transform_start + coil_modern_matrix::MATRIX) as u64)
     );
 }
@@ -577,7 +577,7 @@ fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
     let placement = exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
         .expect("owner-referenced compact Coil placement");
     assert_eq!(
-        placement.transform,
+        *placement.transform(),
         [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -585,7 +585,7 @@ fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
             [0.0, 0.0, 0.0, 1.0],
         ]
     );
-    assert_eq!(placement.transform_offset, None);
+    assert_eq!(placement.explicit_transform.map(|matrix| matrix.offset), None);
     assert_eq!(
         placement.transform_record_byte_offset,
         transform_start as u64
@@ -599,13 +599,13 @@ fn legacy_coil_placement_accepts_identity_frame() {
         .expect("legacy Coil placement");
     assert_eq!(placement.selection_record_index, 100);
     assert_eq!(placement.transform_record_index, 200);
-    assert_eq!(placement.transform_offset, None);
+    assert_eq!(placement.explicit_transform.map(|matrix| matrix.offset), None);
     assert_eq!(
         placement.transform_record_byte_offset,
         transform_start as u64
     );
     assert_eq!(
-        placement.transform,
+        *placement.transform(),
         [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],

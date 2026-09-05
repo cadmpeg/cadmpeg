@@ -1833,3 +1833,20 @@ fn legacy_extrude_constants_and_geometry_preserve_wire() {
         }
     }
 }
+
+#[test]
+fn coil_placement_derives_only_the_encoded_identity_matrix() {
+    let prefix = r#"{"selection_record_index":1,"selection_record_byte_offset":0,"selection_class_tag":"353","selection":{"kind":"persistent","asset_id":"a","context_id":"c","identity_record_index":2,"primary_identity":3},"transform_record_index":4,"transform_record_byte_offset":5,"transform_class_tag":"450","transform":"#;
+    let identity = "[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]";
+    let translated = "[[1.0,0.0,0.0,2.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]";
+    for (matrix, offset) in [(identity, ""), (identity, ",\"transform_offset\":55"), (translated, ",\"transform_offset\":55")] {
+        let wire = format!("{prefix}{matrix}{offset}}}");
+        let placement: super::DesignCoilPlacement = serde_json::from_str(&wire).expect("coil placement");
+        assert_eq!(serde_json::to_string(&placement).expect("coil placement wire"), wire);
+        assert_eq!(placement.explicit_transform.is_some(), !offset.is_empty());
+    }
+    let error = serde_json::from_str::<super::DesignCoilPlacement>(&format!("{prefix}{translated}}}"))
+        .expect_err("matrix requires its location");
+    assert!(error.to_string().contains("transform"));
+    assert!(error.to_string().contains("transform_offset"));
+}
