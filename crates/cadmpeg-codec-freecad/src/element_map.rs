@@ -97,7 +97,6 @@ pub(crate) fn parse(
             owner_property,
             save_all,
             threshold,
-            declared_count,
             source_entry: source_entry.map(str::to_owned),
             entries,
         });

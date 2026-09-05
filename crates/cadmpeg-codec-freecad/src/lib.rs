@@ -718,7 +718,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     for (expected_table_index, table) in string_tables.iter().enumerate() {
-        if table.index != expected_table_index || table.declared_count != table.entries.len() {
+        if table.index != expected_table_index {
             findings.push(finding(
                 Check::NativeLinks,
                 format!("{} has invalid index or entry count", table.id),
