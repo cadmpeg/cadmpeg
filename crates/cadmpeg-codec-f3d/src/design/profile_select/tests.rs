@@ -56,7 +56,6 @@ fn group() -> DesignConstructionOperandGroup {
         },
         role: 0x5_0000_0000,
         extrude_role: None,
-        extrude_face_role: None,
         role_offset: 0,
         paired_class_tag: "277".into(),
         paired_byte_offset: 0,

@@ -49,7 +49,6 @@ fn move_body_selection_uses_unique_owning_history() {
         },
         role: 0x0000_0004_0000_0000,
         extrude_role: None,
-        extrude_face_role: None,
         role_offset: 0,
         paired_class_tag: "259".into(),
         paired_byte_offset: 0,

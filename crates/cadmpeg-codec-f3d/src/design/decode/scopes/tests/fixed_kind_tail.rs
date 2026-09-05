@@ -1143,7 +1143,6 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         },
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
-        extrude_face_role: None,
         role_offset: 0,
 
         paired_class_tag: "264".into(),

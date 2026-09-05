@@ -172,7 +172,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(start_face.role, 0x0000_0005_0000_0000);
     assert_eq!(
         start_face.extrude_role,
-        Some(DesignExtrudeOperandRole::Faces)
+        Some(DesignExtrudeOperandRole::Faces(None))
     );
 
     let mut to_face_scope = from_face_scope.clone();
@@ -203,7 +203,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(legacy_to_face.role, 0x0000_0012_0000_0000);
     assert_eq!(
         legacy_to_face.extrude_role,
-        Some(DesignExtrudeOperandRole::Faces)
+        Some(DesignExtrudeOperandRole::Faces(None))
     );
 
     let tail_at = 11 + 10 + 4 + 2 * 11;
@@ -289,7 +289,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(auxiliary.role, 0x0000_0011_0000_0000);
     assert_eq!(
         auxiliary.extrude_role,
-        Some(DesignExtrudeOperandRole::Faces)
+        Some(DesignExtrudeOperandRole::Faces(None))
     );
     assert_eq!(auxiliary.paired_byte_offset, auxiliary_paired_at as u64);
 
@@ -1113,7 +1113,10 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     let group = parse_construction_operand_group(&bytes, &scope, 0, &header)
         .complete()
         .expect("class-296 two-sided-to-faces construction group");
-    assert_eq!(group.extrude_role, Some(DesignExtrudeOperandRole::Faces));
+    assert_eq!(
+        group.extrude_role,
+        Some(DesignExtrudeOperandRole::Faces(None))
+    );
 
     let mut wrong_length = scope.clone();
     wrong_length.frame_length = 537;

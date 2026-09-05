@@ -45,7 +45,6 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         },
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
-        extrude_face_role: None,
         role_offset: 953,
 
         paired_class_tag: "265".into(),
@@ -304,7 +303,6 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         },
         role: 0x0000_0004_0000_0000,
         extrude_role: None,
-        extrude_face_role: None,
         role_offset: 0,
         paired_class_tag: "264".into(),
         paired_byte_offset: 0,
@@ -713,7 +711,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         },
         role: 0x0000_0008_0000_0000,
         extrude_role: None,
-        extrude_face_role: None,
         role_offset: 960,
 
         paired_class_tag: "259".into(),
@@ -1566,8 +1563,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             variant: false,
         },
         role: 0x0000_0011_0000_0000,
-        extrude_role: Some(DesignExtrudeOperandRole::Faces),
-        extrude_face_role: Some(DesignExtrudeFaceRole::Termination),
+        extrude_role: Some(DesignExtrudeOperandRole::Faces(Some(
+            DesignExtrudeFaceRole::Termination,
+        ))),
         role_offset: 946,
 
         paired_class_tag: "259".into(),

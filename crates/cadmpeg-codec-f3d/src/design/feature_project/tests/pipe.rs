@@ -97,7 +97,6 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         },
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
-        extrude_face_role: None,
         role_offset: 0,
         paired_class_tag: "258".into(),
         paired_byte_offset: 0,
