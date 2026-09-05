@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse dimension recipe, locus, and annotation frames.
 
+use cadmpeg_core::container::ContainerRole;
+
 use crate::bytes::lp_ascii_filtered;
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
 use crate::design::decode::meta::{decode_types, stream_types_by_entity};
 use crate::design::decode::sketch::{
@@ -18,8 +20,8 @@ use crate::records::{
     DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
     DesignSketchPlacement, PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
 };
-use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use std::collections::{HashMap, HashSet};
 
 /// Record slices every dimension-record decode pass reads: the container scan
@@ -78,7 +80,8 @@ pub fn decode_dimension_recipe_records(
         let Some(stream) = native_stream(&companion.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -636,7 +639,7 @@ pub fn decode_dimension_locus_pairs(
         })
     }) {
         let entry = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
+            scan.is_design_stream(entry, ContainerRole::Bulkstream)
                 && companion
                     .id
                     .starts_with(&ids::native_scope_prefix(&entry.name))
@@ -879,7 +882,7 @@ pub fn decode_dimension_null_locus_pairs(
         })
     }) {
         let entry = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
+            scan.is_design_stream(entry, ContainerRole::Bulkstream)
                 && companion
                     .id
                     .starts_with(&ids::native_scope_prefix(&entry.name))
@@ -1074,7 +1077,8 @@ pub fn decode_dimension_annotation_frames(
         .collect::<HashSet<_>>();
     let mut decoded_offsets = HashSet::new();
     for stream in streams {
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let geometry_indices = points
@@ -1311,13 +1315,15 @@ pub(crate) fn parse_dimension_annotation_frame(
             return_member_offsets,
         ));
     }
-    let [(
-        tail,
-        governing_owner_record_index,
-        governing_companion_record_index,
-        return_members,
-        return_member_offsets,
-    )] = tails.as_slice()
+    let [
+        (
+            tail,
+            governing_owner_record_index,
+            governing_companion_record_index,
+            return_members,
+            return_member_offsets,
+        ),
+    ] = tails.as_slice()
     else {
         return None;
     };
@@ -1417,7 +1423,7 @@ pub fn decode_dimension_presentation_frames(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let stream = ids::native_scope(&entry.name);
         let stream_types = stream_types_by_entity(&types, &entry.name);
@@ -1644,7 +1650,7 @@ pub fn decode_dimension_locus_groups(
         })
     }) {
         let entry = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
+            scan.is_design_stream(entry, ContainerRole::Bulkstream)
                 && companion
                     .id
                     .starts_with(&ids::native_scope_prefix(&entry.name))

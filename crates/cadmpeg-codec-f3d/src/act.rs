@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fusion ACT entity table and change-version channel groups.
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 
 use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded};
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::metastream::MetaStream;
 use crate::records::{
     ActChannelGroup, ActEntity, ActEntityMembership, ActGuid, ActRegistryChannel, ActRootComponent,
@@ -158,7 +160,9 @@ pub fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
         let meta_entry = scan
             .entries
             .iter()
-            .find(|candidate| candidate.role == role::METASTREAM && candidate.name == meta_name)
+            .find(|candidate| {
+                candidate.role == ContainerRole::Metastream && candidate.name == meta_name
+            })
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "F3D ACT BulkStream has no sibling MetaStream: {}",
@@ -752,9 +756,11 @@ mod tests {
             vec![channel_group("0_985"), channel_group("0_985")],
         )
         .expect_err("one record index cannot own two change groups");
-        assert!(duplicate
-            .to_string()
-            .contains("duplicate F3D ACT change group"));
+        assert!(
+            duplicate
+                .to_string()
+                .contains("duplicate F3D ACT change group")
+        );
 
         let table_only = merge_entities(stream, vec![table_entry("0_985")], Vec::new())
             .expect_err("every table reference must resolve to a change group");

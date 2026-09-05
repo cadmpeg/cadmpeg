@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design parameter, owner, and companion frames.
 
+use cadmpeg_core::container::ContainerRole;
+
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::design::decode::body::decode_stream;
 use crate::design::decode::dimension_frames::companion_owned_interval;
-use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
+use crate::design::decode::sketch::{IndexedRecordOffsets, next_indexed_record_offset};
 use crate::ids::{self, native_stream};
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
 use crate::layout::design_parameter_legacy_287_tail as legacy_287_tail;
@@ -18,8 +20,8 @@ use crate::records::{
     ConstructionRecipe, DesignEntityHeader, DesignParameter, DesignParameterCompanion,
     DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
 };
-use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use std::collections::{HashMap, HashSet};
 
 /// Decode every parametric construction-recipe record (`body_recipe_data`,
@@ -31,7 +33,7 @@ pub fn decode_recipes(scan: &ContainerScan) -> Result<Vec<ConstructionRecipe>, C
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         decode_stream(bytes, &entry.name, &mut out);
@@ -45,7 +47,7 @@ pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, C
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
@@ -443,7 +445,7 @@ pub fn decode_parameter_owners(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = ids::native_scope(&entry.name);
@@ -780,7 +782,7 @@ pub fn decode_parameter_companions(
             continue;
         };
         let entry = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
+            scan.is_design_stream(entry, ContainerRole::Bulkstream)
                 && owner.id.starts_with(&ids::native_scope_prefix(&entry.name))
         });
         let Some(entry) = entry else {

@@ -1,25 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded Rhino 3DM container scanning and summary construction.
 
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
+
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry};
+use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::report::LossNote;
-use cadmpeg_ir::ContainerSummary;
 
 use crate::chunks::{
-    checked_count_bytes, checksum_children_through_class_end, chunk_at, direct_checksum_ranges,
-    parse_eof, parse_header, verify_checksum, verify_checksum_ranges, ArchiveVersion,
-    BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
+    ArchiveVersion, BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE,
+    TCODE_ENDOFTABLE, checked_count_bytes, checksum_children_through_class_end, chunk_at,
+    direct_checksum_ranges, parse_eof, parse_header, verify_checksum, verify_checksum_ranges,
 };
-use crate::instances::{parse_definitions, DefinitionScan};
+use crate::instances::{DefinitionScan, parse_definitions};
 use crate::layout::file_header;
 use crate::objects::{
-    degraded_object_record, parse_object_record, resolve_identities, ObjectRecord,
+    ObjectRecord, degraded_object_record, parse_object_record, resolve_identities,
 };
 use crate::wire::Uuid;
 /// Maximum direct table records retained or described in one document.
@@ -1094,8 +1096,8 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         }
         entries.push(ContainerEntry {
             name: format!("table-{:#x}", table.typecode),
-            role: "table".to_string(),
-            compression: "none".to_string(),
+            role: ContainerRole::Table,
+            compression: EntryCompression::None,
             compressed_size: table.range.len() as u64,
             uncompressed_size: table.body.len() as u64,
             attributes,
@@ -1115,8 +1117,8 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         attributes.insert("total_record_bytes".to_string(), bytes.to_string());
         entries.push(ContainerEntry {
             name: format!("class-{class_uuid}"),
-            role: "object-class".to_string(),
-            compression: "none".to_string(),
+            role: ContainerRole::ObjectClass,
+            compression: EntryCompression::None,
             compressed_size: bytes as u64,
             uncompressed_size: bytes as u64,
             attributes,

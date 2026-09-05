@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer uniquely named Design image resources into neutral assets.
 
-use crate::container::{role, ContainerScan};
+use cadmpeg_core::container::ContainerRole;
+
+use crate::container::ContainerScan;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
 
@@ -10,7 +12,7 @@ pub(crate) fn embedded_image_asset(
     asset_name: &str,
 ) -> Result<Option<Asset>, CodecError> {
     let mut entries = scan.entries.iter().filter(|entry| {
-        scan.is_design_asset_entry(entry, role::IMAGE)
+        scan.is_design_asset_entry(entry, ContainerRole::Image)
             && entry.name.rsplit('/').next() == Some(asset_name)
     });
     let (Some(entry), None) = (entries.next(), entries.next()) else {

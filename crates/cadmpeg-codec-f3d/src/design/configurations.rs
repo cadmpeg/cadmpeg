@@ -2,7 +2,9 @@
 #![cfg_attr(test, allow(clippy::cloned_ref_to_slice_refs))]
 //! Decode and project Design configuration records.
 
-use crate::container::{role, ContainerScan};
+use cadmpeg_core::container::ContainerRole;
+
+use crate::container::ContainerScan;
 use crate::design::dimensions::json_scalar_text;
 use crate::ids::{self, neutral_configuration_id};
 use crate::records::{DesignConfiguration, DesignConfigurationKind};
@@ -77,7 +79,7 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
     let configurations = scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_asset_entry(entry, role::DESIGN_CONFIG))
+        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::DesignConfig))
         .map(|entry| {
             let bytes = scan.entry_bytes(&entry.name)?;
             let payload: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
@@ -671,11 +673,13 @@ mod tests {
         let mut incomplete = table;
         incomplete.variant_order.pop();
         assert!(validate_configuration_variant_order(&incomplete).is_err());
-        assert!(parse_configuration_variant_order(
-            "table.dsgcfg",
-            br#"{"configurations":{"Small":{},"Small":{}}}"#,
-        )
-        .is_err());
+        assert!(
+            parse_configuration_variant_order(
+                "table.dsgcfg",
+                br#"{"configurations":{"Small":{},"Small":{}}}"#,
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -699,12 +703,14 @@ mod tests {
                 }
             }
         });
-        assert!(validate_configuration_payload(
-            "table.dsgcfg",
-            DesignConfigurationKind::Table,
-            &scalar_parameters,
-        )
-        .is_ok());
+        assert!(
+            validate_configuration_payload(
+                "table.dsgcfg",
+                DesignConfigurationKind::Table,
+                &scalar_parameters,
+            )
+            .is_ok()
+        );
 
         for value in [
             serde_json::json!(["25 mm"]),
@@ -713,12 +719,14 @@ mod tests {
             let payload = serde_json::json!({
                 "configurations": {"variant": {"parameters": {"width": value}}}
             });
-            assert!(validate_configuration_payload(
-                "table.dsgcfg",
-                DesignConfigurationKind::Table,
-                &payload,
-            )
-            .is_err());
+            assert!(
+                validate_configuration_payload(
+                    "table.dsgcfg",
+                    DesignConfigurationKind::Table,
+                    &payload,
+                )
+                .is_err()
+            );
         }
     }
 
@@ -767,12 +775,14 @@ mod tests {
             variant_order: Vec::new(),
             payload: serde_json::json!({"when": "width > 20 mm", "vendorExtension": 7}),
         }];
-        assert!(validate_configuration_payload(
-            "partial.dsgcfgrule",
-            DesignConfigurationKind::Rule,
-            &native[0].payload,
-        )
-        .is_ok());
+        assert!(
+            validate_configuration_payload(
+                "partial.dsgcfgrule",
+                DesignConfigurationKind::Rule,
+                &native[0].payload,
+            )
+            .is_ok()
+        );
         let projected = project_configurations(&native).expect("empty rule projection");
         assert!(projected.is_empty());
         assert_eq!(unresolved_configuration_rule_count(&native, &projected), 1);
@@ -809,9 +819,11 @@ mod tests {
         ];
         let error = project_configurations(&ambiguous)
             .expect_err("independent nonempty tables have no shared order");
-        assert!(error
-            .to_string()
-            .contains("configuration tables have no shared authored order"));
+        assert!(
+            error
+                .to_string()
+                .contains("configuration tables have no shared authored order")
+        );
     }
 
     #[test]

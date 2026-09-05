@@ -15,10 +15,12 @@
 //! metadata-only document. The report marks geometry and topology as blocking,
 //! and retained source data remains available for native replay.
 
-use crate::native::{F3dNative, F3D_NATIVE_VERSION};
-use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::container::ContainerRole;
+
+use crate::native::{F3D_NATIVE_VERSION, F3dNative};
+use cadmpeg_asm::brep::transfer::{AsmTransferRemainder, transfer_into_ir};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
@@ -2031,12 +2033,12 @@ fn model_brep_candidates(
             [] => {
                 return Err(CodecError::malformed(format_args!(
                     "Design body map references missing BREP entry {blob_name}"
-                )))
+                )));
             }
             _ => {
                 return Err(CodecError::malformed(format_args!(
                     "Design body map BREP basename is ambiguous: {blob_name}"
-                )))
+                )));
             }
         }
     }
@@ -3183,7 +3185,7 @@ fn extend_unique_assets(
                 return Err(CodecError::malformed(format_args!(
                     "F3D embedded asset {} has conflicting projections",
                     asset.id.as_str()
-                )))
+                )));
             }
             Some(_) => {}
             None => assets.push(asset),
@@ -4048,7 +4050,7 @@ fn populate_annotations(
     let appearance_stream = scan
         .entries
         .iter()
-        .find(|entry| scan.is_design_asset_entry(entry, container::role::PROTEIN))
+        .find(|entry| scan.is_design_asset_entry(entry, ContainerRole::ProteinAssets))
         .map(|entry| annotations.stream(crate::ids::native_scope(&entry.name)));
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
@@ -4695,7 +4697,7 @@ fn extend_related_design_records(
     let stream_lengths: std::collections::HashMap<String, usize> = scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, container::role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
         .map(|entry| {
             scan.entry_bytes(&entry.name)
                 .map(|bytes| (crate::ids::native_scope(&entry.name), bytes.len()))

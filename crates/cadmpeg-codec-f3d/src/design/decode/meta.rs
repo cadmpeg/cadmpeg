@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design segment metadata and the ordered feature timeline.
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 
 use crate::bytes::{
-    is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference,
+    Reference, is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference,
 };
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::ids::{self, native_stream};
 use crate::records::{
-    DesignComponentNamingSpace, DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION,
+    DESIGN_MODULE_FUSION, DesignComponentNamingSpace, DesignFeatureTimeline, SegmentType,
 };
 
 const COMPONENT_MODULE: &str = "Component";
@@ -42,7 +44,7 @@ pub fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Metastream))
     {
         let meta = scan.parsed_metastream(&entry.name)?;
         out.extend(meta.types.iter().cloned().map(|mut design_type| {
@@ -87,7 +89,7 @@ pub fn decode_component_naming_spaces(
     for meta_entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Metastream))
     {
         let meta = scan.parsed_metastream(&meta_entry.name)?;
         let component_entities = meta
@@ -516,7 +518,7 @@ pub fn decode_feature_timelines(
     for meta_entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Metastream))
     {
         let meta = crate::metastream::parse(scan.entry_bytes(&meta_entry.name)?, &meta_entry.name)?;
         let timeline_types = meta

@@ -10,7 +10,7 @@ use zip::{CompressionMethod, HasZipMetadata};
 
 /// Compression methods supported by [`ArchiveSnapshot::open`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EntryCompression {
+pub enum ZipCompression {
     /// The entry payload is stored directly in the archive.
     Stored,
     /// The entry payload is a raw-DEFLATE member.
@@ -19,7 +19,7 @@ pub enum EntryCompression {
     Zstd,
 }
 
-impl EntryCompression {
+impl ZipCompression {
     fn from_zip(method: CompressionMethod, name: &str) -> Result<Self, CodecError> {
         match method {
             CompressionMethod::Stored => Ok(Self::Stored),
@@ -31,13 +31,24 @@ impl EntryCompression {
         }
     }
 
+    const fn summary(self) -> cadmpeg_core::container::EntryCompression {
+        use cadmpeg_core::container::EntryCompression;
+        match self {
+            Self::Stored => EntryCompression::Stored,
+            Self::Deflate => EntryCompression::Deflate,
+            Self::Zstd => EntryCompression::Zstd,
+        }
+    }
+
     /// Returns the stable container-summary label.
     pub const fn label(self) -> &'static str {
-        match self {
-            Self::Stored => "stored",
-            Self::Deflate => "deflate",
-            Self::Zstd => "zstd",
-        }
+        self.summary().as_str()
+    }
+}
+
+impl From<ZipCompression> for cadmpeg_core::container::EntryCompression {
+    fn from(value: ZipCompression) -> Self {
+        value.summary()
     }
 }
 
@@ -47,7 +58,7 @@ pub struct EntryRecord {
     /// Entry name as stored in the central directory.
     pub name: String,
     /// Compression method admitted by the snapshot.
-    pub compression: EntryCompression,
+    pub compression: ZipCompression,
     /// CRC-32 of the uncompressed payload.
     pub crc32: u32,
     /// Compressed payload size.
@@ -116,7 +127,7 @@ impl<'a> ArchiveSnapshot<'a> {
                     "encrypted ZIP entry {name}"
                 )));
             }
-            let compression = EntryCompression::from_zip(file.compression(), &name)?;
+            let compression = ZipCompression::from_zip(file.compression(), &name)?;
             let data_start = file.data_start().ok_or_else(|| {
                 CodecError::malformed(format_args!("missing data offset for {name}"))
             })?;
@@ -184,7 +195,7 @@ impl<'a> ArchiveSnapshot<'a> {
             CodecError::malformed(format_args!("ZIP data range overflows for {}", entry.name))
         })?;
         match entry.compression {
-            EntryCompression::Stored => {
+            ZipCompression::Stored => {
                 let view = ctx.register_slice_as(
                     self.root,
                     ByteRange {
@@ -207,7 +218,7 @@ impl<'a> ArchiveSnapshot<'a> {
                 }
                 Ok(view)
             }
-            EntryCompression::Deflate | EntryCompression::Zstd => {
+            ZipCompression::Deflate | ZipCompression::Zstd => {
                 let start = usize::try_from(absolute_start).map_err(|_| {
                     CodecError::Malformed("ZIP data offset does not fit memory".into())
                 })?;
@@ -221,10 +232,10 @@ impl<'a> ArchiveSnapshot<'a> {
                     ))
                 })?;
                 let mut decoder: Box<dyn Read> = match entry.compression {
-                    EntryCompression::Deflate => {
+                    ZipCompression::Deflate => {
                         Box::new(flate2::read::DeflateDecoder::new(source.window()))
                     }
-                    EntryCompression::Zstd => Box::new(
+                    ZipCompression::Zstd => Box::new(
                         zstd::stream::read::Decoder::with_buffer(source.window()).map_err(
                             |error| {
                                 CodecError::malformed(format_args!(
@@ -234,7 +245,7 @@ impl<'a> ArchiveSnapshot<'a> {
                             },
                         )?,
                     ),
-                    EntryCompression::Stored => unreachable!("stored entries use borrowed views"),
+                    ZipCompression::Stored => unreachable!("stored entries use borrowed views"),
                 };
                 let mut writer = ctx.begin_expand_as(
                     source,
@@ -269,7 +280,7 @@ impl<'a> ArchiveSnapshot<'a> {
     /// Builds generic entry summaries using a codec-owned role classifier.
     pub fn container_entries(
         &self,
-        classify: impl Fn(&str) -> &'static str,
+        classify: impl Fn(&str) -> cadmpeg_core::container::ContainerRole,
     ) -> Vec<ContainerEntry> {
         self.entries
             .iter()
@@ -284,8 +295,8 @@ impl<'a> ArchiveSnapshot<'a> {
                 );
                 ContainerEntry {
                     name: entry.name.clone(),
-                    role: classify(&entry.name).into(),
-                    compression: entry.compression.label().into(),
+                    role: classify(&entry.name),
+                    compression: entry.compression.into(),
                     compressed_size: entry.compressed_size,
                     uncompressed_size: entry.uncompressed_size,
                     attributes,

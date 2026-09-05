@@ -4,8 +4,8 @@
 use cadmpeg_ir::codec::{Codec, Confidence};
 use std::io::Cursor;
 
-use crate::test_support::text_sphere_stream;
 use crate::SatCodec;
+use crate::test_support::text_sphere_stream;
 
 #[test]
 fn detection_is_content_based() {
@@ -35,7 +35,7 @@ fn inspect_reports_the_stream_kind_and_header_facts() {
         .unwrap();
     assert_eq!(summary.format(), "sat");
     assert_eq!(summary.entries.len(), 1);
-    assert_eq!(summary.entries[0].role, "brep-text");
+    assert_eq!(summary.entries[0].role.as_str(), "brep-text");
     assert_eq!(
         summary.entries[0]
             .attributes

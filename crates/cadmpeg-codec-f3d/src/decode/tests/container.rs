@@ -10,15 +10,17 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::LossKind;
 use zip::CompressionMethod;
 
+use crate::F3dCodec;
 use crate::loss::F3dLossCode;
 use crate::test_support::*;
-use crate::F3dCodec;
 
 /// A document with no ASM BREP stream has no selected stream, so the geometry
 /// and topology losses must not name a decode failure of one. Stating a cause
@@ -301,16 +303,16 @@ fn text_encoded_asm_members_classify_as_geometry_carriers() {
     ] {
         assert_eq!(
             crate::container::classify(name),
-            crate::container::role::BREP_TEXT,
+            ContainerRole::BrepText,
             "{name} must classify as a text-encoded BREP carrier"
         );
     }
     assert_eq!(
         crate::container::classify("a/b.smb"),
-        crate::container::role::BREP_SMB
+        ContainerRole::BrepSmb
     );
     assert_eq!(
         crate::container::classify("a/b.smbh"),
-        crate::container::role::BREP_SMBH
+        ContainerRole::BrepSmbh
     );
 }

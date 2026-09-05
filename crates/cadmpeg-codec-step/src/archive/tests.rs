@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-use super::{has_root_marker, resolve_uri, ReferenceTarget, ROOT_NAME};
+use super::{ROOT_NAME, ReferenceTarget, has_root_marker, resolve_uri};
 
 #[test]
 fn resolves_archive_relative_uris_and_fragments() {
@@ -172,10 +172,12 @@ pub(crate) fn codec_detects_and_inspects_ap242_exchange_structure() {
         summary.entries[1].attributes["unknown_entities"],
         "EXAMPLE_RECORD:1,OPAQUE_TARGET:1"
     );
-    assert!(summary
-        .notes
-        .iter()
-        .any(|note| note.contains("AP242") && note.contains("dialect step:ap242-e2")));
+    assert!(
+        summary
+            .notes
+            .iter()
+            .any(|note| note.contains("AP242") && note.contains("dialect step:ap242-e2"))
+    );
 }
 
 #[test]
@@ -245,9 +247,9 @@ fn codec_decodes_step_zip_root_and_reports_archive_members() {
             .collect::<Vec<_>>(),
         ["ISO-10303.p21", "parts/child.p21", "preview.bin"]
     );
-    assert_eq!(summary.entries[0].role, "root-exchange");
-    assert_eq!(summary.entries[0].compression, "deflate");
-    assert_eq!(summary.entries[1].role, "subsidiary-exchange");
+    assert_eq!(summary.entries[0].role.as_str(), "root-exchange");
+    assert_eq!(summary.entries[0].compression.as_str(), "deflate");
+    assert_eq!(summary.entries[1].role.as_str(), "subsidiary-exchange");
     assert!(summary.entries[0].attributes["logical_sections"].contains("HEADER"));
 
     let result = codec
@@ -258,11 +260,13 @@ fn codec_decodes_step_zip_root_and_reports_archive_members() {
     assert_eq!(source.attributes["container_kind"], "iso-10303-21-zip");
     assert_eq!(source.attributes["archive_root"], "ISO-10303.p21");
     assert_eq!(source.attributes["archive_entries"], "3");
-    assert!(result
-        .report()
-        .notes
-        .iter()
-        .any(|note| note == "container root ISO-10303.p21; archive entries=3"));
+    assert!(
+        result
+            .report()
+            .notes
+            .iter()
+            .any(|note| note == "container root ISO-10303.p21; archive entries=3")
+    );
 }
 
 #[test]
@@ -276,10 +280,12 @@ fn codec_resolves_root_references_relative_to_the_archive_directory() {
     let summary = codec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("inspect relative ZIP reference");
-    assert!(summary
-        .notes
-        .iter()
-        .any(|note| note == "internal resource #10 -> parts/child.p21?query=../outside#target"));
+    assert!(
+        summary
+            .notes
+            .iter()
+            .any(|note| note == "internal resource #10 -> parts/child.p21?query=../outside#target")
+    );
 
     let missing = step_zip(&[("ISO-10303.p21", root, CompressionMethod::Stored)]);
     assert!(matches!(
@@ -311,10 +317,12 @@ fn codec_checks_forwarded_root_references_without_decoding_the_subsidiary() {
     let summary = codec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("inspect forwarded ZIP reference");
-    assert!(summary
-        .notes
-        .iter()
-        .any(|note| note == "internal resource #10 -> parts/child.p21#target"));
+    assert!(
+        summary
+            .notes
+            .iter()
+            .any(|note| note == "internal resource #10 -> parts/child.p21#target")
+    );
 
     let missing = step_zip(&[("ISO-10303.p21", root, CompressionMethod::Stored)]);
     assert!(matches!(
@@ -325,11 +333,13 @@ fn codec_checks_forwarded_root_references_without_decoding_the_subsidiary() {
     let result = codec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode root without parsing subsidiary");
-    assert!(result
-        .report()
-        .notes
-        .iter()
-        .any(|note| note == "internal resource #10 -> parts/child.p21#target"));
+    assert!(
+        result
+            .report()
+            .notes
+            .iter()
+            .any(|note| note == "internal resource #10 -> parts/child.p21#target")
+    );
 }
 
 #[test]
@@ -387,10 +397,12 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         .records
         .get(&target_id)
         .expect("subsidiary target entity");
-    assert!(target
-        .partials
-        .iter()
-        .any(|partial| partial.name == "CARTESIAN_POINT"));
+    assert!(
+        target
+            .partials
+            .iter()
+            .any(|partial| partial.name == "CARTESIAN_POINT")
+    );
     assert_eq!(target_id, 12);
 
     let mut archive = ZipArchive::new(Cursor::new(&bytes)).expect("open composition ZIP");
@@ -409,30 +421,36 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         result.ir().source.as_ref().unwrap().attributes["entity_instances"],
         "6"
     );
-    assert!(result
-        .ir()
-        .model
-        .points
-        .iter()
-        .any(|point| point.id.as_str() == "step:data:point#4"));
-    assert!(!result
-        .ir()
-        .model
-        .points
-        .iter()
-        .any(|point| point.id.as_str() == "step:data:point#12"));
+    assert!(
+        result
+            .ir()
+            .model
+            .points
+            .iter()
+            .any(|point| point.id.as_str() == "step:data:point#4")
+    );
+    assert!(
+        !result
+            .ir()
+            .model
+            .points
+            .iter()
+            .any(|point| point.id.as_str() == "step:data:point#12")
+    );
     assert!(result.report().notes.iter().any(|note| note
         == "internal resource #10 -> parts/ce02_composition_subsidiary.p21#remote_point"));
 
     let target_result = StepCodec::default()
         .decode(&mut Cursor::new(extracted), &DecodeOptions::default())
         .expect("decode subsidiary independently");
-    assert!(target_result
-        .ir()
-        .model
-        .points
-        .iter()
-        .any(|point| point.id.as_str() == "step:data:point#12"));
+    assert!(
+        target_result
+            .ir()
+            .model
+            .points
+            .iter()
+            .any(|point| point.id.as_str() == "step:data:point#12")
+    );
 }
 
 #[test]
@@ -460,11 +478,10 @@ fn forwarded_reference_retains_unparsed_subsidiary_as_a_resource() {
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("inspect root without parsing subsidiary");
     assert_eq!(summary.entries.len(), 2);
-    assert!(summary
-        .notes
-        .iter()
-        .any(|note| note
-            == "internal resource #10 -> parts/ce02_subsidiary_unparsed.p21#remote_item"));
+    assert!(
+        summary.notes.iter().any(|note| note
+            == "internal resource #10 -> parts/ce02_subsidiary_unparsed.p21#remote_item")
+    );
 
     let result = codec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
@@ -480,17 +497,17 @@ fn forwarded_reference_retains_unparsed_subsidiary_as_a_resource() {
             .len(),
         1
     );
-    assert!(result
-        .report()
-        .notes
-        .iter()
-        .any(|note| note == "external reference #10 -> #target"));
-    assert!(result
-        .report()
-        .notes
-        .iter()
-        .any(|note| note
-            == "internal resource #10 -> parts/ce02_subsidiary_unparsed.p21#remote_item"));
+    assert!(
+        result
+            .report()
+            .notes
+            .iter()
+            .any(|note| note == "external reference #10 -> #target")
+    );
+    assert!(
+        result.report().notes.iter().any(|note| note
+            == "internal resource #10 -> parts/ce02_subsidiary_unparsed.p21#remote_item")
+    );
 }
 
 #[test]
@@ -512,13 +529,17 @@ fn codec_keeps_external_reference_graph_resource_local() {
         .expect("inspect resource-composition witness");
     assert_eq!(summary.entries.len(), 2);
     assert_eq!(summary.entries[0].name, ROOT_NAME);
-    assert!(!summary.entries[1]
-        .attributes
-        .contains_key("logical_sections"));
-    assert!(summary
-        .notes
-        .iter()
-        .any(|note| note == "internal resource #10 -> parts/er03_subsidiary.p21#remote_item"));
+    assert!(
+        !summary.entries[1]
+            .attributes
+            .contains_key("logical_sections")
+    );
+    assert!(
+        summary
+            .notes
+            .iter()
+            .any(|note| note == "internal resource #10 -> parts/er03_subsidiary.p21#remote_item")
+    );
 
     let result = codec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
@@ -533,14 +554,18 @@ fn codec_keeps_external_reference_graph_resource_local() {
             .len(),
         1
     );
-    assert!(result
-        .report()
-        .notes
-        .contains(&"external reference #10 -> parts/er03_subsidiary.p21#remote_item".into()));
-    assert!(result
-        .report()
-        .notes
-        .contains(&"internal resource #10 -> parts/er03_subsidiary.p21#remote_item".into()));
+    assert!(
+        result
+            .report()
+            .notes
+            .contains(&"external reference #10 -> parts/er03_subsidiary.p21#remote_item".into())
+    );
+    assert!(
+        result
+            .report()
+            .notes
+            .contains(&"internal resource #10 -> parts/er03_subsidiary.p21#remote_item".into())
+    );
 }
 
 #[test]
@@ -591,14 +616,16 @@ fn valid_resource_pair_keeps_target_anchor_and_root_graph_separate() {
             .len(),
         1
     );
-    assert!(result
-        .report()
-        .notes
-        .contains(&"internal resource #10 -> parts/er03_subsidiary_valid.p21#remote_item".into()));
-    assert!(result
-        .report()
-        .notes
-        .contains(&"external reference #10 -> parts/er03_subsidiary_valid.p21#remote_item".into()));
+    assert!(
+        result.report().notes.contains(
+            &"internal resource #10 -> parts/er03_subsidiary_valid.p21#remote_item".into()
+        )
+    );
+    assert!(
+        result.report().notes.contains(
+            &"external reference #10 -> parts/er03_subsidiary_valid.p21#remote_item".into()
+        )
+    );
 }
 
 #[test]
@@ -689,11 +716,13 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
         "internal resource #10 -> parts/er03_subsidiary_alpha.p21#remote_item",
         "internal resource #11 -> parts/er03_subsidiary_beta.p21#remote_item",
     ] {
-        assert!(result
-            .report()
-            .notes
-            .iter()
-            .any(|candidate| candidate == note));
+        assert!(
+            result
+                .report()
+                .notes
+                .iter()
+                .any(|candidate| candidate == note)
+        );
     }
 }
 
@@ -734,9 +763,11 @@ fn valid_forwarded_root_anchor_keeps_archive_target_resource_qualified() {
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("inspect valid forwarded archive");
     assert_eq!(summary.entries.len(), 2);
-    assert!(!summary.entries[1]
-        .attributes
-        .contains_key("logical_sections"));
+    assert!(
+        !summary.entries[1]
+            .attributes
+            .contains_key("logical_sections")
+    );
     assert!(
         summary
             .notes
@@ -758,14 +789,17 @@ fn valid_forwarded_root_anchor_keeps_archive_target_resource_qualified() {
             .len(),
         1
     );
-    assert!(result
-        .report()
-        .notes
-        .contains(&"internal resource #10 -> parts/ce02_subsidiary_valid.p21#remote_item".into()));
-    assert!(result
-        .report()
-        .notes
-        .contains(&"external reference #10 -> #target".into()));
+    assert!(
+        result.report().notes.contains(
+            &"internal resource #10 -> parts/ce02_subsidiary_valid.p21#remote_item".into()
+        )
+    );
+    assert!(
+        result
+            .report()
+            .notes
+            .contains(&"external reference #10 -> #target".into())
+    );
 
     let missing = step_zip(&[(ROOT_NAME, root, CompressionMethod::Stored)]);
     assert!(matches!(

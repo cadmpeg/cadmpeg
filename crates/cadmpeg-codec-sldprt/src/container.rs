@@ -7,6 +7,8 @@
 //! invariants, validates block CRC-32 values, inflates payloads, decodes stored
 //! section names, and extracts embedded Parasolid streams.
 
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
@@ -15,8 +17,8 @@ use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ContainerSummary;
+use cadmpeg_ir::hash::sha256_hex;
 
 use crate::layout::block_frame_header as block_hdr;
 use crate::layout::cache_cell_header as cache_hdr;
@@ -30,18 +32,6 @@ pub const MARKER: [u8; 6] = block_hdr::MARKER_VALUE;
 /// Upper bound on a single decompressed block, guarding a corrupt `uncomp_sz`
 /// from driving an unbounded allocation. Real part streams sit far below this.
 const MAX_UNCOMP: usize = 512 * 1024 * 1024;
-
-/// Codec-defined role labels for [`ContainerEntry::role`].
-pub mod role {
-    /// A CRC-validated compressed block (payload family in `attributes`).
-    pub const BLOCK: &str = "block";
-    /// A tail section-directory entry naming one OPC part.
-    pub const DIRECTORY_ENTRY: &str = "directory-entry";
-    /// A cache-cell section-index grid entry (not a compressed payload).
-    pub const CACHE_CELL: &str = "cache-cell";
-    /// A named stream in a Compound File Binary container.
-    pub const COMPOUND_STREAM: &str = "compound-stream";
-}
 
 /// Classify a decompressed block payload by signature.
 ///
@@ -742,8 +732,8 @@ pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSumm
                 .section
                 .clone()
                 .unwrap_or_else(|| format!("block@{}", b.offset)),
-            role: role::BLOCK.to_string(),
-            compression: "deflate".to_string(),
+            role: ContainerRole::Block,
+            compression: EntryCompression::Deflate,
             compressed_size: b.comp_sz as u64,
             uncompressed_size: b.uncomp_sz as u64,
             attributes,
@@ -756,8 +746,8 @@ pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSumm
         attributes.insert("type_id".to_string(), format!("0x{:08x}", d.type_id));
         entries.push(ContainerEntry {
             name: d.name.clone(),
-            role: role::DIRECTORY_ENTRY.to_string(),
-            compression: "none".to_string(),
+            role: ContainerRole::DirectoryEntry,
+            compression: EntryCompression::None,
             compressed_size: 0,
             uncompressed_size: d.size as u64,
             attributes,
@@ -770,8 +760,8 @@ pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSumm
         attributes.insert("logical_len".to_string(), c.logical_len.to_string());
         entries.push(ContainerEntry {
             name: c.name.clone(),
-            role: role::CACHE_CELL.to_string(),
-            compression: "none".to_string(),
+            role: ContainerRole::CacheCell,
+            compression: EntryCompression::None,
             compressed_size: 0,
             uncompressed_size: 0,
             attributes,
@@ -788,8 +778,8 @@ pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSumm
         );
         entries.push(ContainerEntry {
             name: stream.path.clone(),
-            role: role::COMPOUND_STREAM.to_string(),
-            compression: "compound-file".to_string(),
+            role: ContainerRole::CompoundStream,
+            compression: EntryCompression::CompoundFile,
             compressed_size: stream.payload.len() as u64,
             uncompressed_size: stream.payload.len() as u64,
             attributes,

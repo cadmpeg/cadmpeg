@@ -14,11 +14,13 @@
 //! native loops, units, feature identifiers, and datum planes. [`summarize`]
 //! converts that scan into the codec-neutral container summary.
 
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
+
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::bytes::find_from as find;
 use cadmpeg_core::ContainerEntry;
+use cadmpeg_core::bytes::find_from as find;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::curve::{
@@ -82,18 +84,6 @@ const FRAMING_NAMES: &[&str] = &[
 
 /// Codec-defined role labels for [`ContainerEntry::role`], grouping sections by
 /// what they carry ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#12-section-map)).
-pub mod role {
-    /// Primary/invisible PSB geometry (`VisibGeom`, `NovisGeom`).
-    pub const GEOMETRY: &str = "psb-geometry";
-    /// Feature rows, definitions, history, datums, body counts.
-    pub const MODEL_DATA: &str = "model-data";
-    /// Materials, display, persistence, and other auxiliary metadata.
-    pub const METADATA: &str = "metadata";
-    /// The JPEG thumbnail preview (`THMB_IMG_MAIN`), excluded from geometry.
-    pub const THUMBNAIL: &str = "thumbnail";
-    /// A section name this codec does not classify.
-    pub const OPAQUE: &str = "opaque";
-}
 
 /// The visible-geometry section name whose `srf_array`/`crv_array` counts drive
 /// the inspect census.
@@ -166,7 +156,7 @@ pub struct Section {
     /// Expanded payload length from the TOC, excluding the section header.
     pub expanded_length: Option<usize>,
     /// Role classification.
-    pub role: &'static str,
+    pub role: ContainerRole,
 }
 
 /// A section payload decoded from Unix `compress` framing.
@@ -510,19 +500,19 @@ fn normalize_name(raw: &str) -> String {
 }
 
 /// Classify a normalized section name by what it carries ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#12-section-map)).
-fn classify(name: &str) -> &'static str {
+fn classify(name: &str) -> ContainerRole {
     match name {
-        "VisibGeom" | "NovisGeom" | "ActDatums" => role::GEOMETRY,
+        "VisibGeom" | "NovisGeom" | "ActDatums" => ContainerRole::PsbGeometry,
         "AllFeatur" | "FeatDefs" | "FeatDefsIndex" | "FeatDefsDtm" | "Geomlists" | "GeomDepen"
         | "Model_L05_PX" | "Model_L05P" | "BasicData" | "BasBasData" | "BasFullData"
-        | "FullMData" => role::MODEL_DATA,
-        "THMB_IMG_MAIN" => role::THUMBNAIL,
+        | "FullMData" => ContainerRole::ModelData,
+        "THMB_IMG_MAIN" => ContainerRole::Thumbnail,
         "NeuPrtSld" | "NeuAsmSld" | "SolidPersistTable" | "SolidPrimdata" | "DEPDB_DATA"
         | "UnitSystemDef_L03" | "PDMTrail_L03" | "ActEntity" | "MdlStatus" | "MdlRefInfo"
         | "DispCntrl" | "ColorSchemeInfo" | "LargeText" | "BasicText" | "IdsGenInfoDb" => {
-            role::METADATA
+            ContainerRole::Metadata
         }
-        _ => role::OPAQUE,
+        _ => ContainerRole::Opaque,
     }
 }
 
@@ -547,8 +537,8 @@ fn scan_sections(data: &[u8], body_start: usize) -> Vec<Section> {
         };
         let name_bytes = &data[name_start..nl];
         i = nl; // continue scanning after this line regardless of acceptance
-                // A real section name is a printable run with at least one alphanumeric
-                // character; this rejects TOC/EOF padding lines made only of `#`.
+        // A real section name is a printable run with at least one alphanumeric
+        // character; this rejects TOC/EOF padding lines made only of `#`.
         if !name_bytes.iter().all(|&b| is_name_byte(b))
             || name_bytes.len() < 2
             || !name_bytes.iter().any(u8::is_ascii_alphanumeric)
@@ -1043,7 +1033,7 @@ fn native_model_name(data: &[u8], sections: &[Section]) -> Option<(String, usize
     const FIELD: &[u8] = b"model_name\0";
 
     for section in sections {
-        if section.role == role::THUMBNAIL {
+        if section.role == ContainerRole::Thumbnail {
             continue;
         }
         let end = section
@@ -1700,7 +1690,7 @@ fn structural_feature_ids(
     );
     for section in sections
         .iter()
-        .filter(|section| section.role == role::GEOMETRY)
+        .filter(|section| section.role == ContainerRole::PsbGeometry)
     {
         let end = (section.offset + section.length).min(data.len());
         let payload = &data[section.offset..end];
@@ -2758,7 +2748,7 @@ pub fn has_thumbnail(scan: &ContainerScan) -> bool {
     scan.framing
         .sections
         .iter()
-        .filter(|s| s.role == role::THUMBNAIL)
+        .filter(|s| s.role == ContainerRole::Thumbnail)
         .any(|section| {
             let end = section
                 .offset
@@ -2806,8 +2796,9 @@ pub fn summarize(
             }
             ContainerEntry {
                 name: s.name.clone(),
-                role: s.role.to_string(),
-                compression: expanded.map_or("none", |_| "unix-compress").to_string(),
+                role: s.role,
+                compression: expanded
+                    .map_or(EntryCompression::None, |_| EntryCompression::UnixCompress),
                 compressed_size: s.length as u64,
                 uncompressed_size: expanded.map_or(s.length as u64, |expanded| {
                     (expanded.data.len() + s.raw_name.len() + 2) as u64

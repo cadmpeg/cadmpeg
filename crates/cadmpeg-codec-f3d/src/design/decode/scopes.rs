@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse parameter scopes and exact feature-construction frames.
 
+use cadmpeg_core::container::ContainerRole;
+
 use crate::bytes::{f64s_at, is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::design::decode::assembly::{
     exact_legacy_as_built_421_alignment, exact_legacy_as_built_421_operands,
     exact_legacy_as_built_421_solved_frame,
 };
 use crate::design::decode::operands::{
-    parse_construction_operand_group, parse_entity_selection_frame, parse_entity_selection_prefix,
-    parse_face_operand, ConstructionOperandGroupParse,
+    ConstructionOperandGroupParse, parse_construction_operand_group, parse_entity_selection_frame,
+    parse_entity_selection_prefix, parse_face_operand,
 };
 use crate::design::decode::sketch::{
-    identity_matrix, next_indexed_record_offset, valid_sketch_transform, IndexedRecordOffsets,
+    IndexedRecordOffsets, identity_matrix, next_indexed_record_offset, valid_sketch_transform,
 };
-use crate::design::{design_feature_family, DesignFeatureFamily};
+use crate::design::{DesignFeatureFamily, design_feature_family};
 use crate::ids::{self, native_stream};
 use crate::layout::assembly_axial_construction_carrier as axial_carrier;
 use crate::layout::assembly_axial_role_prefix as axial_role;
@@ -171,8 +173,8 @@ use crate::records::{
     DesignThreadForm, DesignWorkAxisConstruction, DesignWorkAxisSource,
     DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointRule,
 };
-use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use std::collections::{HashMap, HashSet};
 
 const EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8: f64 = 1.0e-8;
@@ -205,7 +207,7 @@ pub fn decode_parameter_scopes(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = ids::native_scope(&entry.name);
@@ -1476,8 +1478,11 @@ fn exact_surface_boundary_operation(
     if design_feature_family(&scope.kind) != Some(family) {
         return None;
     }
-    let [distance_record_index, boundary_record_index, edge_record_indices @ ..] =
-        scope.reference_members.as_slice()
+    let [
+        distance_record_index,
+        boundary_record_index,
+        edge_record_indices @ ..,
+    ] = scope.reference_members.as_slice()
     else {
         return None;
     };
@@ -4899,7 +4904,8 @@ pub fn bind_mirror_constructions(
         let Some(stream) = native_stream(&scopes[index].id).map(str::to_owned) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, &stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -6892,8 +6898,13 @@ pub(crate) fn exact_scale_operation(
     let (body_group_record_index, center_record_index, uniform_factor_offset, center) =
         if parameter_scope_payload_length(scope) == Some(303) && scope.reference_members.len() == 5
         {
-            let [factor_record_index, body_group_record_index, _, _, center_record_index] =
-                scope.reference_members.as_slice()
+            let [
+                factor_record_index,
+                body_group_record_index,
+                _,
+                _,
+                center_record_index,
+            ] = scope.reference_members.as_slice()
             else {
                 return None;
             };
@@ -6927,8 +6938,12 @@ pub(crate) fn exact_scale_operation(
             && scope.frame_length
                 == 307 + u64::try_from(scope.reference_members.len().saturating_sub(5)).ok()? * 11
         {
-            let [factor_record_index, body_group_record_index, .., center_record_index] =
-                scope.reference_members.as_slice()
+            let [
+                factor_record_index,
+                body_group_record_index,
+                ..,
+                center_record_index,
+            ] = scope.reference_members.as_slice()
             else {
                 return None;
             };
@@ -7339,8 +7354,10 @@ pub(crate) fn exact_path_feature_construction(
                         .then_some((*record_index, scalar))
                 })
                 .collect::<Vec<_>>();
-            let [(angle_record_index, angle), (opposite_angle_record_index, opposite)] =
-                lanes.as_slice()
+            let [
+                (angle_record_index, angle),
+                (opposite_angle_record_index, opposite),
+            ] = lanes.as_slice()
             else {
                 return None;
             };
@@ -7743,8 +7760,13 @@ fn exact_two_point_work_axis_construction(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignWorkAxisConstruction> {
-    let [axis_record_index, _, first_point_record_index, _, second_point_record_index] =
-        scope.reference_members.as_slice()
+    let [
+        axis_record_index,
+        _,
+        first_point_record_index,
+        _,
+        second_point_record_index,
+    ] = scope.reference_members.as_slice()
     else {
         return None;
     };
@@ -8859,8 +8881,10 @@ pub(crate) fn exact_draft_operation_with_owners(
         })
         .collect::<Vec<_>>();
     lanes.sort_by_key(|(_, ordinal, _, _)| *ordinal);
-    let [(angle_record_index, angle_ordinal, angle, angle_offset), (opposite_angle_record_index, opposite_ordinal, opposite, opposite_offset)] =
-        lanes.as_slice()
+    let [
+        (angle_record_index, angle_ordinal, angle, angle_offset),
+        (opposite_angle_record_index, opposite_ordinal, opposite, opposite_offset),
+    ] = lanes.as_slice()
     else {
         return None;
     };
@@ -9927,14 +9951,34 @@ fn bind_coil_extent_from_parameters(
         .map(|(_, source_kind)| source_kind)
         .collect::<Vec<_>>();
     let extent = match owned_kinds.as_slice() {
-        ["Diameter", "SectionSize", "TaperAngle", "Revolutions", "Height"]
-        | ["Diameter", "SectionSize", "TaperAngle", "Height", "Revolutions"] => {
-            Some(DesignCoilExtent::RevolutionsHeight)
-        }
-        ["Diameter", "SectionSize", "TaperAngle", "Revolutions", "Pitch"]
-        | ["Diameter", "SectionSize", "TaperAngle", "Pitch", "Revolutions"] => {
-            Some(DesignCoilExtent::RevolutionsPitch)
-        }
+        [
+            "Diameter",
+            "SectionSize",
+            "TaperAngle",
+            "Revolutions",
+            "Height",
+        ]
+        | [
+            "Diameter",
+            "SectionSize",
+            "TaperAngle",
+            "Height",
+            "Revolutions",
+        ] => Some(DesignCoilExtent::RevolutionsHeight),
+        [
+            "Diameter",
+            "SectionSize",
+            "TaperAngle",
+            "Revolutions",
+            "Pitch",
+        ]
+        | [
+            "Diameter",
+            "SectionSize",
+            "TaperAngle",
+            "Pitch",
+            "Revolutions",
+        ] => Some(DesignCoilExtent::RevolutionsPitch),
         ["Diameter", "SectionSize", "TaperAngle", "Height", "Pitch"]
         | ["Diameter", "SectionSize", "TaperAngle", "Pitch", "Height"] => {
             Some(DesignCoilExtent::HeightPitch)
