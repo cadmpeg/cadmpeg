@@ -2306,7 +2306,7 @@ fn project_thread_face_selection(
             state: group_state,
             faces: group_faces,
             ..
-        }) = resolved_historical_face_group(scope, group, face_operands)
+        }) = resolved_historical_face_group(scope, scope.previous_history_state_id, group, face_operands)
         else {
             return FaceSelection::Native(native);
         };
@@ -2994,10 +2994,6 @@ fn project_face_selection(
 ) -> cadmpeg_ir::features::FaceSelection {
     let historical = crate::history::effective_scope_previous_history_state_id(scope, histories)
         .and_then(|previous_state_id| {
-            let mut effective_scope = scope.clone();
-            if scope.previous_history_state_id != Some(previous_state_id) {
-                effective_scope.previous_history_state_id = Some(previous_state_id);
-            }
             let updated_face_slots = scope
                 .history_state_id
                 .and_then(|state_id| {
@@ -3011,9 +3007,10 @@ fn project_face_selection(
                 .map_or(&[][..], |transition| {
                     transition.topology.faces.updated.as_slice()
                 });
-            resolved_historical_face_group(&effective_scope, group, face_operands).or_else(|| {
+            resolved_historical_face_group(scope, Some(previous_state_id), group, face_operands).or_else(|| {
                 resolved_historical_split_face_target_group_with_updated_faces(
-                    &effective_scope,
+                    scope,
+                    Some(previous_state_id),
                     group,
                     face_operands,
                     updated_face_slots,
@@ -6242,7 +6239,7 @@ pub(crate) fn project_circular_pattern(
     };
     let seed = if group.role == 0x0000_0004_0000_0000 {
         PatternSeed::Faces(
-            resolved_historical_face_group(scope, group, face_operands)
+            resolved_historical_face_group(scope, scope.previous_history_state_id, group, face_operands)
                 .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())),
         )
     } else {
@@ -6348,7 +6345,7 @@ fn project_rectangular_pattern_scalars(
         };
         Some(if group.role == 0x0000_0004_0000_0000 {
             PatternSeed::Faces(
-                resolved_historical_face_group(scope, group, face_operands).unwrap_or_else(|| {
+                resolved_historical_face_group(scope, scope.previous_history_state_id, group, face_operands).unwrap_or_else(|| {
                     cadmpeg_ir::features::FaceSelection::Native(group.id.clone())
                 }),
             )
@@ -6426,7 +6423,7 @@ pub(crate) fn project_mirror(
         ))
     } else {
         PatternSeed::Faces(
-            resolved_historical_face_group(scope, seed_group, face_operands).unwrap_or_else(|| {
+            resolved_historical_face_group(scope, scope.previous_history_state_id, seed_group, face_operands).unwrap_or_else(|| {
                 cadmpeg_ir::features::FaceSelection::Native(seed_group.id.clone())
             }),
         )
@@ -6588,7 +6585,7 @@ pub(crate) fn project_fixed_sweep(
     let orientation = guide_surfaces
         .first()
         .map(|group| SweepOrientation::GuideSurface {
-            faces: resolved_historical_face_group(scope, group, face_operands)
+            faces: resolved_historical_face_group(scope, scope.previous_history_state_id, group, face_operands)
                 .unwrap_or_else(|| FaceSelection::Native(group.id.clone())),
         });
     Some(FeatureDefinition::Sweep {
@@ -7138,7 +7135,7 @@ fn project_replace_face(
     }
     let replacements =
         resolved_body_recipe_selection(scope, replacement_group, body_recipe_operands)?;
-    let targets = resolved_historical_face_group(scope, target_group, face_operands)?;
+    let targets = resolved_historical_face_group(scope, scope.previous_history_state_id, target_group, face_operands)?;
     Some(FeatureDefinition::ReplaceFace {
         targets,
         replacements,
@@ -7477,7 +7474,7 @@ fn project_delete_face(
     {
         return None;
     }
-    let faces = resolved_historical_face_group(scope, group, face_operands)
+    let faces = resolved_historical_face_group(scope, scope.previous_history_state_id, group, face_operands)
         .or_else(|| resolved_face_group(group, face_operands))
         .unwrap_or_else(|| FaceSelection::Native(group.id.clone()));
     Some(FeatureDefinition::DeleteFace { faces, heal })
@@ -7752,7 +7749,7 @@ pub(crate) fn project_extrude(
             };
             let offset = profile_offset?;
             ExtrudeStart::FromFace {
-                face: resolved_historical_face_group(scope, start, face_operands)
+                face: resolved_historical_face_group(scope, scope.previous_history_state_id, start, face_operands)
                     .or_else(|| resolved_face_group(start, face_operands))
                     .unwrap_or_else(|| FaceSelection::Native(start.id.clone())),
                 offset: (offset.0 != 0.0).then_some(offset),
@@ -7820,7 +7817,7 @@ pub(crate) fn project_extrude(
                         length: Length(along.0.abs()),
                     },
                     second: LinearTermination::ToFace {
-                        face: resolved_historical_face_group(scope, termination, face_operands)
+                        face: resolved_historical_face_group(scope, scope.previous_history_state_id, termination, face_operands)
                             .or_else(|| resolved_face_group(termination, face_operands))
                             .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
                         offset: side_two_offset.filter(|offset| offset.0 != 0.0),
@@ -7841,13 +7838,13 @@ pub(crate) fn project_extrude(
             (
                 ExtentShape::TwoSided {
                     first: LinearTermination::ToFace {
-                        face: resolved_historical_face_group(scope, first, face_operands)
+                        face: resolved_historical_face_group(scope, scope.previous_history_state_id, first, face_operands)
                             .or_else(|| resolved_face_group(first, face_operands))
                             .unwrap_or_else(|| FaceSelection::Native(first.id.clone())),
                         offset: side_one_offset.filter(|offset| offset.0 != 0.0),
                     },
                     second: LinearTermination::ToFace {
-                        face: resolved_historical_face_group(scope, second, face_operands)
+                        face: resolved_historical_face_group(scope, scope.previous_history_state_id, second, face_operands)
                             .or_else(|| resolved_face_group(second, face_operands))
                             .unwrap_or_else(|| FaceSelection::Native(second.id.clone())),
                         offset: side_two_offset.filter(|offset| offset.0 != 0.0),
@@ -7888,7 +7885,7 @@ pub(crate) fn project_extrude(
                     let offset = face_side_one_offset?;
                     (
                         ExtentShape::OneSided(LinearTermination::ToFace {
-                            face: resolved_historical_face_group(scope, termination, face_operands)
+                            face: resolved_historical_face_group(scope, scope.previous_history_state_id, termination, face_operands)
                                 .or_else(|| resolved_face_group(termination, face_operands))
                                 .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
                             offset: (offset.0 != 0.0).then_some(offset),

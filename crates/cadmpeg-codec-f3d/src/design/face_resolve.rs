@@ -264,7 +264,7 @@ pub(crate) fn resolved_profile_face_group(
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
     use cadmpeg_ir::features::ProfileRef;
 
-    let selection = resolved_historical_face_group(scope, group, operands)?;
+    let selection = resolved_historical_face_group(scope, scope.previous_history_state_id, group, operands)?;
     let cadmpeg_ir::features::FaceSelection::Historical {
         state,
         faces,
@@ -802,11 +802,12 @@ fn loft_edge_profile_face_slot(
 
 pub(crate) fn resolved_historical_face_group(
     scope: &DesignParameterScope,
+    previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     let faces = historical_face_group_slots(group, operands, false)?;
-    historical_face_selection(scope, group, faces)
+    historical_face_selection_in_state(scope, group, previous_state_id?, faces)
 }
 
 fn historical_face_selection(
@@ -866,6 +867,7 @@ fn historical_face_selection_with_native(
 /// must contribute a face.
 pub(crate) fn resolved_historical_split_face_target_group(
     scope: &DesignParameterScope,
+    previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
@@ -875,7 +877,7 @@ pub(crate) fn resolved_historical_split_face_target_group(
         return None;
     }
     let faces = historical_face_group_slots(group, operands, true)?;
-    historical_face_selection(scope, group, faces)
+    historical_face_selection_in_state(scope, group, previous_state_id?, faces)
 }
 
 /// Resolve a `SplitFace` target from the operation transition when the member
@@ -889,6 +891,7 @@ pub(crate) fn resolved_historical_split_face_target_group(
 /// are context records and do not add a target face.
 pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
     scope: &DesignParameterScope,
+    previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
     updated_face_slots: &[i64],
@@ -898,9 +901,9 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
     {
         return None;
     }
-    resolved_historical_split_face_target_group(scope, group, operands).or_else(|| {
+    resolved_historical_split_face_target_group(scope, previous_state_id, group, operands).or_else(|| {
         let faces = split_face_updated_target_slots(scope, group, operands, updated_face_slots)?;
-        historical_face_selection(scope, group, faces)
+        historical_face_selection_in_state(scope, group, previous_state_id?, faces)
     })
 }
 
@@ -2412,6 +2415,7 @@ mod tests {
 
         let selection = resolved_historical_split_face_target_group_with_updated_faces(
             &scope,
+            scope.previous_history_state_id,
             &group,
             &operands,
             &[10, 20, 30],
@@ -2440,6 +2444,7 @@ mod tests {
         assert!(
             resolved_historical_split_face_target_group_with_updated_faces(
                 &scope,
+                scope.previous_history_state_id,
                 &group,
                 &operands,
                 &[10, 20]
@@ -2449,6 +2454,7 @@ mod tests {
         assert!(
             resolved_historical_split_face_target_group_with_updated_faces(
                 &scope,
+                scope.previous_history_state_id,
                 &group,
                 &operands,
                 &[10, 20, 40]
