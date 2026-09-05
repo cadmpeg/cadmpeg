@@ -1983,7 +1983,7 @@ fn spatial_profile_member_entity<'a>(
     let mut curves = curve_identities.iter().filter(|curve| {
         native_stream(&curve.id) == Some(stream)
             && curve.owner_reference == Some(owner_reference)
-            && curve.primary_id == member.curve_primary_id
+            && curve.primary_id == u64::from(member.curve_primary_id.get())
     });
     let curve = curves.next()?;
     if curves.next().is_some() {
@@ -2009,7 +2009,7 @@ fn sketch_profile_member_entity(
     let mut curves = curve_identities.iter().filter(|curve| {
         native_stream(&curve.id) == Some(stream)
             && curve.owner_reference == Some(owner_reference)
-            && curve.primary_id == member.curve_primary_id
+            && curve.primary_id == u64::from(member.curve_primary_id.get())
     });
     let curve = curves.next()?;
     if curves.next().is_some() {
