@@ -49,7 +49,7 @@ pub fn project_sketch_constraints(
             Some((
                 (
                     native_stream(&placement.id)?,
-                    u32::try_from(placement.entity_suffix).ok()?,
+                    u32::try_from(placement.entity_id.suffix()).ok()?,
                 ),
                 id,
             ))

@@ -191,7 +191,7 @@ pub(crate) fn bind_sweep_sketch_selections(
             if group_matches {
                 let mut candidates = placements.iter().filter(|placement| {
                     native_stream(&placement.id) == Some(stream)
-                        && placement.entity_suffix == profile_operand.entity_id.suffix()
+                        && placement.entity_id.suffix() == profile_operand.entity_id.suffix()
                 });
                 if let (Some(placement), None) = (candidates.next(), candidates.next()) {
                     let sketch = neutral_sketch_id(placement);
@@ -229,7 +229,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                 }
                 let mut matching_placements = placements.iter().filter(|placement| {
                     native_stream(&placement.id) == Some(stream)
-                        && placement.entity_suffix == operand.primary_identity
+                        && placement.entity_id.suffix() == operand.primary_identity
                 });
                 let placement = matching_placements.next()?;
                 if matching_placements.next().is_some() {
@@ -1874,7 +1874,7 @@ fn resolve_entity_selection_path(
     }
     let primary_identity = primary_identity?;
     let mut matching_placements = resolution.placements.iter().filter(|placement| {
-        native_stream(&placement.id) == Some(stream) && placement.entity_suffix == primary_identity
+        native_stream(&placement.id) == Some(stream) && placement.entity_id.suffix() == primary_identity
     });
     let placement = matching_placements.next()?;
     if matching_placements.next().is_some() {
@@ -2269,7 +2269,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             .iter()
             .filter(|placement| {
                 native_stream(&placement.id) == Some(stream)
-                    && placement.entity_id == profile.entity_id.as_str()
+                    && placement.entity_id == profile.entity_id
             })
             .collect::<Vec<_>>();
         let [placement] = matches.as_slice() else {
@@ -2338,7 +2338,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         }
         let mut matching_placements = resolution.placements.iter().filter(|placement| {
             native_stream(&placement.id) == Some(stream)
-                && placement.entity_suffix == operand.primary_identity
+                && placement.entity_id.suffix() == operand.primary_identity
         });
         let Some(placement) = matching_placements.next() else {
             continue;

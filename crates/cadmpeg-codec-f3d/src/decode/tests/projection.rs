@@ -1250,8 +1250,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         member_run_head: false,
         id: "native:sketch-placement".into(),
         scope_record_index: Some(10),
-        entity_id: "Sketch_1".into(),
-        entity_suffix: 1,
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_1".to_owned()).expect("valid entity ID"),
+
         visibility: None,
         byte_offset: 0,
         class_tag: "000".into(),

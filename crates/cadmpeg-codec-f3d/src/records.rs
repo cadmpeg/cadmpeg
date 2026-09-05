@@ -12527,6 +12527,8 @@ pub struct DesignSketchVisibility {
 /// Local-to-model placement frame referenced by a Design sketch scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignSketchPlacementWire", into = "DesignSketchPlacementWire")]
+#[cfg_attr(feature = "schema", schemars(with = "DesignSketchPlacementWire"))]
 pub struct DesignSketchPlacement {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -12536,9 +12538,7 @@ pub struct DesignSketchPlacement {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope_record_index: Option<u32>,
     /// Full Design entity id of the placed sketch.
-    pub entity_id: String,
-    /// Numeric suffix of `entity_id`.
-    pub entity_suffix: u64,
+    pub entity_id: DesignEntityId,
     /// Typed sketch-container visibility for the placed sketch entity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<DesignSketchVisibility>,
@@ -12565,6 +12565,95 @@ pub struct DesignSketchPlacement {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub member_run_head: bool,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignSketchPlacementWire {
+    /// Globally unique deterministic identifier for this native record.
+    id: String,
+    /// Owning parameter-scope record; absent when the sketch has no parameter
+    /// scope. A localized Sketch scope can own a member-run head placement
+    /// through record interval order without directly referencing it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scope_record_index: Option<u32>,
+    /// Full Design entity id of the placed sketch.
+    entity_id: String,
+    /// Numeric suffix of `entity_id`.
+    entity_suffix: u64,
+    /// Typed sketch-container visibility for the placed sketch entity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    visibility: Option<DesignSketchVisibility>,
+    /// Byte offset of the primary indexed record header.
+    byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    class_tag: String,
+    /// Shared logical record identity.
+    record_index: u32,
+    /// Byte length from the primary header to the paired header.
+    frame_length: u64,
+    /// Row-major local-to-model affine transform.
+    transform: [[f64; 4]; 4],
+    /// Byte offset of the explicit 16-f64 matrix; absent for the compact identity form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    transform_offset: Option<u64>,
+    /// Per-file dynamic class tag of the paired header.
+    paired_class_tag: String,
+    /// Byte offset of the paired indexed record header.
+    paired_byte_offset: u64,
+    /// Whether this placement is the transform-carrying member-run head
+    /// record named by the sketch entity's paired record rather than a
+    /// parameter-scope placement frame.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    member_run_head: bool,
+}
+
+impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
+    type Error = String;
+    fn try_from(wire: DesignSketchPlacementWire) -> Result<Self, Self::Error> {
+        let entity_id = DesignEntityId::try_from(wire.entity_id)?;
+        if entity_id.suffix() != wire.entity_suffix {
+            return Err("entity_suffix disagrees with entity_id".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            scope_record_index: wire.scope_record_index,
+            entity_id,
+            visibility: wire.visibility,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            record_index: wire.record_index,
+            frame_length: wire.frame_length,
+            transform: wire.transform,
+            transform_offset: wire.transform_offset,
+            paired_class_tag: wire.paired_class_tag,
+            paired_byte_offset: wire.paired_byte_offset,
+            member_run_head: wire.member_run_head,
+        })
+    }
+}
+
+impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
+    fn from(value: DesignSketchPlacement) -> Self {
+        let entity_suffix = value.entity_id.suffix();
+        Self {
+            id: value.id,
+            scope_record_index: value.scope_record_index,
+            entity_id: value.entity_id.0,
+            entity_suffix,
+            visibility: value.visibility,
+            byte_offset: value.byte_offset,
+            class_tag: value.class_tag,
+            record_index: value.record_index,
+            frame_length: value.frame_length,
+            transform: value.transform,
+            transform_offset: value.transform_offset,
+            paired_class_tag: value.paired_class_tag,
+            paired_byte_offset: value.paired_byte_offset,
+            member_run_head: value.member_run_head,
+        }
+    }
+}
+
 
 /// Persistent-reference channel in the Design construction stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

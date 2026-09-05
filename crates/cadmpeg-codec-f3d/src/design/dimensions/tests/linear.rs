@@ -701,8 +701,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         member_run_head: false,
         id: format!("{stream}:design-sketch-placement#0"),
         scope_record_index: Some(10),
-        entity_id: "0_100".into(),
-        entity_suffix: 100,
+        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned()).expect("valid entity ID"),
+
         visibility: None,
         byte_offset: 0,
         class_tag: "356".into(),

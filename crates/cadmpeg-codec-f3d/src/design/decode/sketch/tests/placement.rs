@@ -15,15 +15,13 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         bytes: &[u8],
         scope_record_index: u32,
         entity_id: &str,
-        entity_suffix: u64,
         record_index: u32,
     ) -> Vec<DesignSketchPlacement> {
         let records = IndexedRecordOffsets::build(bytes);
         parse_sketch_placement_candidates(
             bytes,
             scope_record_index,
-            entity_id,
-            entity_suffix,
+            &crate::records::DesignEntityId::try_from(entity_id.to_owned()).expect("valid entity ID"),
             record_index,
             &records,
         )
@@ -51,7 +49,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         bytes
     }
 
-    let compact = candidates(&placement_frame(185, 201, 55, None), 177, "0_172", 172, 185);
+    let compact = candidates(&placement_frame(185, 201, 55, None), 177, "0_172", 185);
     assert_eq!(compact.len(), 1);
     assert_eq!(compact[0].frame_length, 201);
     assert_eq!(compact[0].transform, identity_matrix());
@@ -67,7 +65,6 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         &placement_frame(1773, 329, 55, Some(transform)),
         1765,
         "0_1761",
-        1761,
         1773,
     );
     assert_eq!(explicit.len(), 1);
@@ -80,7 +77,6 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
             &placement_frame(1773, length, 48, Some(transform)),
             1765,
             "0_1761",
-            1761,
             1773,
         );
         assert_eq!(legacy.len(), 1);
@@ -96,15 +92,13 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
         bytes: &[u8],
         scope_record_index: u32,
         entity_id: &str,
-        entity_suffix: u64,
         record_index: u32,
     ) -> Vec<DesignSketchPlacement> {
         let records = IndexedRecordOffsets::build(bytes);
         parse_sketch_placement_candidates(
             bytes,
             scope_record_index,
-            entity_id,
-            entity_suffix,
+            &crate::records::DesignEntityId::try_from(entity_id.to_owned()).expect("valid entity ID"),
             record_index,
             &records,
         )
@@ -134,7 +128,7 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
         bytes
     }
 
-    let compact = candidates(&genesis_frame(214, 213, 1, None), 206, "0_201", 201, 214);
+    let compact = candidates(&genesis_frame(214, 213, 1, None), 206, "0_201", 214);
     assert_eq!(compact.len(), 1);
     assert_eq!(compact[0].frame_length, 213);
     assert_eq!(compact[0].transform, identity_matrix());
@@ -150,7 +144,6 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
         &genesis_frame(3060, 341, 0, Some(transform)),
         3052,
         "0_3048",
-        3048,
         3060,
     );
     assert_eq!(explicit.len(), 1);
@@ -159,12 +152,11 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
     assert_eq!(explicit[0].transform_offset, Some(66));
 
     // A mismatched form byte fails both lengths.
-    assert!(candidates(&genesis_frame(214, 213, 0, None), 206, "0_201", 201, 214).is_empty());
+    assert!(candidates(&genesis_frame(214, 213, 0, None), 206, "0_201", 214).is_empty());
     assert!(candidates(
         &genesis_frame(3060, 341, 1, Some(transform)),
         3052,
         "0_3048",
-        3048,
         3060,
     )
     .is_empty());
@@ -174,7 +166,7 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
     let mut workplane_like = genesis_frame(214, 213, 1, None);
     workplane_like[57] = 1;
     workplane_like[58..62].copy_from_slice(&788u32.to_le_bytes());
-    assert!(candidates(&workplane_like, 206, "0_201", 201, 214).is_empty());
+    assert!(candidates(&workplane_like, 206, "0_201", 214).is_empty());
 }
 
 #[test]
@@ -183,8 +175,8 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         member_run_head: false,
         id: "f3d:native:design-sketch-placement#0".into(),
         scope_record_index: Some(10),
-        entity_id: "0_100".into(),
-        entity_suffix: 100,
+        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned()).expect("valid entity ID"),
+
         visibility: None,
         byte_offset: 0,
         class_tag: "293".into(),

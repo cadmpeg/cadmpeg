@@ -200,8 +200,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         member_run_head: false,
         id: "f3d:Design/BulkStream.dat:placement#200".into(),
         scope_record_index: Some(11),
-        entity_id: "0_172".into(),
-        entity_suffix: 172,
+        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned()).expect("valid entity ID"),
+
         visibility: None,
         byte_offset: 600,
         class_tag: "300".into(),

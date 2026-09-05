@@ -242,7 +242,7 @@ fn project_all_dimension_constraints(
         .iter()
         .filter_map(|placement| {
             let scope = native_stream(&placement.id)?;
-            u32::try_from(placement.entity_suffix)
+            u32::try_from(placement.entity_id.suffix())
                 .ok()
                 .map(|suffix| ((scope, suffix), neutral_sketch_id(placement)))
         })
@@ -3772,7 +3772,7 @@ pub fn bind_dimension_loci(
         .filter_map(|placement| {
             Some((
                 (native_stream(&placement.id)?, placement.scope_record_index?),
-                u32::try_from(placement.entity_suffix).ok()?,
+                u32::try_from(placement.entity_id.suffix()).ok()?,
             ))
         })
         .collect::<HashMap<_, _>>();

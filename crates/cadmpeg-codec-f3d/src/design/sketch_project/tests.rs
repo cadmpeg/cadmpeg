@@ -61,8 +61,8 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
     let placement = DesignSketchPlacement {
         id: "f3d:design:design-sketch-placement#1".into(),
         scope_record_index: None,
-        entity_id: "Sketch_201".into(),
-        entity_suffix: 201,
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_201".to_owned()).expect("valid entity ID"),
+
         visibility: Some(DesignSketchVisibility {
             stream_ordinal: 1,
             stream_ordinal_offset: 30,
@@ -96,8 +96,8 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
     let placement = DesignSketchPlacement {
         id: "f3d:BulkStream.dat:placement#0".into(),
         scope_record_index: None,
-        entity_id: "Sketch_42".into(),
-        entity_suffix: 42,
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned()).expect("valid entity ID"),
+
         visibility: None,
         byte_offset: 0,
         class_tag: "256".into(),
@@ -249,8 +249,8 @@ fn point_closure_does_not_mark_construction_geometry() {
     let placement = DesignSketchPlacement {
         id: "f3d:BulkStream.dat:placement#0".into(),
         scope_record_index: None,
-        entity_id: "Sketch_42".into(),
-        entity_suffix: 42,
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned()).expect("valid entity ID"),
+
         visibility: None,
         byte_offset: 0,
         class_tag: "256".into(),
@@ -339,8 +339,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         member_run_head: false,
         id: "f3d:native:placement#0".into(),
         scope_record_index: Some(177),
-        entity_id: "0_172".into(),
-        entity_suffix: 172,
+        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned()).expect("valid entity ID"),
+
         visibility: None,
         byte_offset: 100,
         class_tag: "356".into(),
@@ -717,8 +717,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         member_run_head: false,
         id: "f3d:Design/BulkStream.dat:placement#100".into(),
         scope_record_index: None,
-        entity_id: "Sketch_42".into(),
-        entity_suffix: 42,
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned()).expect("valid entity ID"),
+
         visibility: None,
         byte_offset: 100,
         class_tag: "300".into(),
