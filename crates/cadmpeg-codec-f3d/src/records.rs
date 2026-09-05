@@ -17415,8 +17415,18 @@ pub struct BodyVisibility {
 /// Inline `ACTTable` row attached to one change group.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActTableRow {
-    pub record_index_offset: u64,
-    pub entity_id_offset: u64,
+    record_index_offset: u64,
+}
+
+impl ActTableRow {
+    pub(crate) fn new(record_index_offset: u64) -> Result<Self, String> {
+        if record_index_offset.checked_add(14).is_none() {
+            return Err("table_record_index_offset overflows table_entity_id_offset".into());
+        }
+        Ok(Self { record_index_offset })
+    }
+
+    fn entity_id_offset(&self) -> u64 { self.record_index_offset + 14 }
 }
 
 /// Non-padding bytes following an ACT channel group.
@@ -17483,15 +17493,8 @@ impl ActEntity {
         !matches!(self.membership, ActEntityMembership::GroupOnly(_))
     }
 
-    pub(crate) fn table_row(&self) -> Option<&ActTableRow> {
+    fn table_row(&self) -> Option<&ActTableRow> {
         match &self.membership {
-            ActEntityMembership::TableOnly(row) | ActEntityMembership::Both(row, _) => Some(row),
-            ActEntityMembership::GroupOnly(_) => None,
-        }
-    }
-
-    pub(crate) fn table_row_mut(&mut self) -> Option<&mut ActTableRow> {
-        match &mut self.membership {
             ActEntityMembership::TableOnly(row) | ActEntityMembership::Both(row, _) => Some(row),
             ActEntityMembership::GroupOnly(_) => None,
         }
@@ -17520,7 +17523,7 @@ impl ActEntity {
     }
 
     pub(crate) fn table_entity_id_offset(&self) -> Option<u64> {
-        self.table_row().map(|row| row.entity_id_offset)
+        self.table_row().map(ActTableRow::entity_id_offset)
     }
 
     pub(crate) fn channel_record_index_offset(&self) -> Option<u64> {
@@ -17592,10 +17595,13 @@ impl TryFrom<ActEntitySerde> for ActEntity {
             wire.table_record_index_offset,
             wire.table_entity_id_offset,
         ) {
-            (true, Some(record_index_offset), Some(entity_id_offset)) => Some(ActTableRow {
-                record_index_offset,
-                entity_id_offset,
-            }),
+            (true, Some(record_index_offset), Some(entity_id_offset)) => {
+                let row = ActTableRow::new(record_index_offset)?;
+                if row.entity_id_offset() != entity_id_offset {
+                    return Err("table_entity_id_offset must follow table_record_index_offset by 14 bytes".into());
+                }
+                Some(row)
+            },
             (false, None, None) => None,
             _ => {
                 return Err(

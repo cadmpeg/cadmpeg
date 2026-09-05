@@ -31,10 +31,7 @@ fn generated_source_less_rejects_act_without_segment_metadata() {
         id: "generated:act-entity#0".into(),
         record_index: 7,
         entity_id: "0_985".into(),
-        membership: crate::records::ActEntityMembership::TableOnly(crate::records::ActTableRow {
-            record_index_offset: 0,
-            entity_id_offset: 14,
-        }),
+        membership: crate::records::ActEntityMembership::TableOnly(crate::records::ActTableRow::new(0).unwrap()),
     }];
     drop(native);
     let error = F3dCodec

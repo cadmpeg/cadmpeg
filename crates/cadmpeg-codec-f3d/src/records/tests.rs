@@ -3479,3 +3479,23 @@ fn act_class_tail_requires_nonpadding_bytes_and_a_bounded_offset() {
         assert!(error.to_string().contains("channel_class_tail"));
     }
 }
+
+#[test]
+fn act_table_row_derives_the_entity_offset_and_rejects_wire_drift() {
+    let wire = serde_json::json!({
+        "id": "stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
+        "in_table": true, "table_record_index_offset": 20, "table_entity_id_offset": 34,
+        "channels": {}, "channel_guid_offsets": {}
+    });
+    let entity: super::ActEntity = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(entity.table_entity_id_offset(), Some(34));
+    assert_eq!(serde_json::to_value(entity).unwrap(), wire);
+    for offset in [20, 33, 35, u64::MAX] {
+        let mut invalid = wire.clone();
+        invalid["table_entity_id_offset"] = serde_json::json!(offset);
+        let error = serde_json::from_value::<super::ActEntity>(invalid).unwrap_err();
+        assert!(error.to_string().contains("table_entity_id_offset"));
+    }
+    assert!(super::ActTableRow::new(u64::MAX - 13).is_err());
+    assert!(super::ActTableRow::new(u64::MAX - 14).is_ok());
+}

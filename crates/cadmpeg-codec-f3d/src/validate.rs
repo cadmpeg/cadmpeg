@@ -914,9 +914,6 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
         }
         let unique_index =
             stream.is_some_and(|stream| record_indices.insert((stream, entity.record_index)));
-        let valid_table = entity.table_row().is_none_or(|row| {
-            row.record_index_offset.checked_add(14) == Some(row.entity_id_offset)
-        });
         let valid_class_tail = entity.channel_group().is_none_or(|group| {
             group.class_tail.as_ref().is_none_or(|tail| {
                 group.record_index_offset < tail.offset()
@@ -955,7 +952,6 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let valid = stream.is_some()
             && unique_index
             && crate::act::is_entity_key(&entity.entity_id)
-            && valid_table
             && valid_group;
         if !valid {
             findings.push(Finding {

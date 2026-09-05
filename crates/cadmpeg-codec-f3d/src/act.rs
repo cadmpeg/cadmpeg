@@ -258,9 +258,8 @@ fn table_payload_offset(bytes: &[u8], frame: &RecordFrame) -> Option<usize> {
 
 struct TableEntry {
     record_index: u32,
-    record_index_offset: usize,
+    row: ActTableRow,
     entity_id: String,
-    entity_id_offset: usize,
 }
 
 struct DecodedTable {
@@ -306,18 +305,14 @@ fn decode_table(
         }
         let record_index =
             View::u32_le_at(bytes, index_offset).ok_or_else(|| malformed("entry index"))?;
-        let entity_id_offset = entity_length_offset
-            .checked_add(4)
-            .ok_or_else(|| malformed("entity key"))?;
         let (entity_id, end) = lp_utf16_bounded(bytes, entity_length_offset, 1..=1024)
             .filter(|(_, end)| *end <= frame.end)
             .filter(|(entity_id, _)| is_entity_key(entity_id))
             .ok_or_else(|| malformed("entity key"))?;
         entries.push(TableEntry {
             record_index,
-            record_index_offset: index_offset,
+            row: ActTableRow::new(index_offset as u64).map_err(CodecError::malformed)?,
             entity_id,
-            entity_id_offset,
         });
         cursor = end;
     }
@@ -440,10 +435,7 @@ fn merge_entities(
             id: crate::ids::native_scoped_id(stream, "act-entity", record_index),
             record_index,
             entity_id: item.entity_id,
-            membership: ActEntityMembership::TableOnly(ActTableRow {
-                record_index_offset: item.record_index_offset as u64,
-                entity_id_offset: item.entity_id_offset as u64,
-            }),
+            membership: ActEntityMembership::TableOnly(item.row),
         };
         if by_index.insert(record_index, entity).is_some() {
             return Err(CodecError::malformed(format_args!(
@@ -694,9 +686,8 @@ mod tests {
     fn table_entry(entity_id: &str) -> TableEntry {
         TableEntry {
             record_index: 7,
-            record_index_offset: 20,
+            row: ActTableRow::new(20).unwrap(),
             entity_id: entity_id.into(),
-            entity_id_offset: 40,
         }
     }
 

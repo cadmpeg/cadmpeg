@@ -1200,16 +1200,6 @@ fn generated_act_native_validation_rejects_structural_drift() {
         .iter()
         .any(|finding| finding.message.contains("ACT entity")));
 
-    let mut shifted_table_row = decoded.ir().clone();
-    update_f3d_native(&mut shifted_table_row, |native| {
-        if let Some(row) = native.act_entities[0].table_row_mut() {
-            row.entity_id_offset = row.entity_id_offset.checked_add(1).unwrap();
-        }
-    });
-    assert!(crate::validate::validate_native(&shifted_table_row)
-        .iter()
-        .any(|finding| finding.message.contains("ACT entity")));
-
     let mut colliding_root = decoded.ir().clone();
     update_f3d_native(&mut colliding_root, |native| {
         native.act_root_components[0].record_index = native.act_entities[0].record_index;
