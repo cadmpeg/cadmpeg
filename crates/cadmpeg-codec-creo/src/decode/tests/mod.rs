@@ -89,6 +89,7 @@ pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::Fe
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let entries = vec![
         entry(21, 204, None),
@@ -112,14 +113,12 @@ pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::Fe
         entry(36, 200, Some(4)),
     ];
     crate::feature::FeatureEntityTable {
-        feature_id: Some(feature_id),
+        feature_id: feature_id,
         table_class_id: 29,
-        entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
         entries,
-        surface_ids: vec![11, 12, 13, 14],
-        non_surface_entity_ids: vec![21, 22, 19, 15, 17, 23, 24, 16, 18, 31, 32, 33, 34, 35, 36],
         offset: 0,
     }
+    .with_surface_ids([11, 12, 13, 14])
 }
 
 pub(super) fn simple_drilled_recipe_surface_rows(

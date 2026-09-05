@@ -81,23 +81,22 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features
-        .entity_tables
-        .push(crate::feature::FeatureEntityTable {
-            feature_id: Some(7),
+    scan.features.entity_tables.push(
+        crate::feature::FeatureEntityTable {
+            feature_id: 7,
             table_class_id: 29,
-            entry_ids: vec![31, 32, 33],
             entries: vec![
                 entry(31, 204, None),
                 entry(32, 203, None),
                 entry(33, 200, Some(11)),
             ],
-            surface_ids: vec![31, 32, 33],
-            non_surface_entity_ids: Vec::new(),
             offset: 0,
-        });
+        }
+        .with_surface_ids([31, 32, 33]),
+    );
     for id in [31, 32, 33] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
@@ -231,6 +230,7 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let frame = crate::surface::PositionalCylinderFrame {
         origin: [0.0, 4.0, 0.0],
@@ -240,17 +240,15 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         length: Some(34.0),
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features
-        .entity_tables
-        .push(crate::feature::FeatureEntityTable {
-            feature_id: Some(7),
+    scan.features.entity_tables.push(
+        crate::feature::FeatureEntityTable {
+            feature_id: 7,
             table_class_id: 29,
-            entry_ids: vec![33],
             entries: vec![entry],
-            surface_ids: vec![33],
-            non_surface_entity_ids: Vec::new(),
             offset: 0,
-        });
+        }
+        .with_surface_ids([33]),
+    );
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 33,
         type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),

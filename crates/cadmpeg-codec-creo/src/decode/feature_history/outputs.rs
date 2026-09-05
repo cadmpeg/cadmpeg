@@ -50,8 +50,8 @@ fn feature_output_bodies_with_history(
             scan.features
                 .entity_tables
                 .iter()
-                .filter(|table| table.feature_id == Some(feature_id))
-                .flat_map(|table| &table.surface_ids)
+                .filter(|table| table.feature_id == feature_id)
+                .flat_map(|table| table.surface_ids())
                 .map(|surface_id| {
                     SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
                         .expect("identity grammar")
@@ -234,7 +234,7 @@ pub(in super::super) fn new_sheet_output_surface_id(
 ) -> Option<u32> {
     let owned = tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
         .collect::<Vec<_>>();
     let unique_table = |class_id| {
         let mut matches = owned
@@ -254,7 +254,7 @@ pub(in super::super) fn new_sheet_output_surface_id(
     (owner.class_id == 200
         && owner.source_entity_id == Some(feature_id)
         && output.entity_id == owner.entity_id
-        && generated.surface_ids.contains(&output.class_id)
+        && generated.surface_ids().contains(&output.class_id)
         && generated
             .entries
             .iter()
@@ -514,7 +514,7 @@ pub(in super::super) fn feature_parameters(
         .features
         .entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
     {
         for entry in &table.entries {
             let Some(source_entity_id) = entry.source_entity_id else {

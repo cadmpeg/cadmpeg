@@ -879,7 +879,7 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
     }
     let owned = tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
         .collect::<Vec<_>>();
     let unique_table = |class_id| {
         let mut matches = owned
@@ -910,7 +910,7 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
             if entry.class_id == 200
                 && entry.entity_id == surface.id
                 && entry.source_entity_id == Some(0)
-                && generated.surface_ids.as_slice() == [surface.id]
+                && generated.surface_ids().as_slice() == [surface.id]
     ) && topology
         .entries
         .iter()

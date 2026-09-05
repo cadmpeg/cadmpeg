@@ -86,14 +86,14 @@ pub(in super::super) fn feature_output_surface_dependencies(
 ) -> Vec<u32> {
     let owned_entities = tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 67)
+        .filter(|table| table.feature_id == feature_id && table.table_class_id == 67)
         .flat_map(|table| &table.entries)
         .filter(|entry| entry.class_id == 200 && entry.source_entity_id == Some(feature_id))
         .map(|entry| entry.entity_id)
         .collect::<BTreeSet<_>>();
     tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 100)
+        .filter(|table| table.feature_id == feature_id && table.table_class_id == 100)
         .flat_map(|table| &table.entries)
         .filter(|entry| owned_entities.contains(&entry.entity_id))
         .filter_map(|entry| {
@@ -114,7 +114,7 @@ pub(in super::super) fn feature_entity_dependencies(
 ) -> Vec<u32> {
     let mut dependencies = Vec::new();
     for table in tables {
-        if table.feature_id != Some(feature_id) || table.table_class_id != 100 {
+        if table.feature_id != feature_id || table.table_class_id != 100 {
             continue;
         }
         for entry in &table.entries {
@@ -140,7 +140,7 @@ fn feature_entity_producers(
     tables
         .iter()
         .filter_map(|table| {
-            let owner = table.feature_id?;
+            let owner = table.feature_id;
             table
                 .entries
                 .iter()
@@ -162,7 +162,7 @@ pub(in super::super) fn preceding_feature_entity_producers(
 ) -> Vec<u32> {
     tables
         .iter()
-        .filter_map(|table| table.feature_id.map(|owner| (owner, table)))
+        .map(|table| (table.feature_id, table))
         .flat_map(|(owner, table)| {
             table.entries.iter().filter_map(move |entry| {
                 (entry.class_id == 200

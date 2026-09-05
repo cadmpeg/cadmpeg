@@ -6640,7 +6640,7 @@ pub fn bind_trimmed_definition_owners(
             entity_tables
                 .iter()
                 .filter_map(|table| {
-                    let owner = table.feature_id?;
+                    let owner = table.feature_id;
                     if claimed_owner_ids.contains(&owner) {
                         return None;
                     }
@@ -6700,7 +6700,7 @@ pub fn bind_replay_definition_owners(
             let exact_candidates = entity_tables
                 .iter()
                 .filter_map(|table| {
-                    let owner = table.feature_id?;
+                    let owner = table.feature_id;
                     if claimed_owner_ids.contains(&owner) {
                         return None;
                     }
@@ -6715,7 +6715,7 @@ pub fn bind_replay_definition_owners(
             entity_tables
                 .iter()
                 .filter_map(|table| {
-                    let owner = table.feature_id?;
+                    let owner = table.feature_id;
                     if claimed_owner_ids.contains(&owner) {
                         return None;
                     }

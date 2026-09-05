@@ -105,21 +105,20 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(7),
+        feature_id: 7,
         table_class_id: 29,
-        entry_ids: vec![29, 30, 31, 32],
         entries: vec![
             entry(29, 204, None),
             entry(30, 203, None),
             entry(31, 200, Some(11)),
             entry(32, 200, Some(13)),
         ],
-        surface_ids: vec![29, 30, 32],
-        non_surface_entity_ids: vec![31],
         offset: 0,
-    };
+    }
+    .with_surface_ids([29, 30, 32]);
     let row = |id| crate::surface::SurfaceRow {
         id,
         type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
@@ -141,7 +140,7 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
     ));
 
     let mut malformed = table;
-    malformed.entry_ids.pop();
+    malformed.entries.pop();
     assert!(!section_entity_is_generated_profile(
         true,
         Some(7),

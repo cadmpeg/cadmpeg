@@ -528,22 +528,21 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
-    scan.features
-        .entity_tables
-        .push(crate::feature::FeatureEntityTable {
-            feature_id: Some(942),
+    scan.features.entity_tables.push(
+        crate::feature::FeatureEntityTable {
+            feature_id: 942,
             table_class_id: 29,
-            entry_ids: vec![31, 32, 33],
-            surface_ids: vec![31, 32, 33],
-            non_surface_entity_ids: Vec::new(),
             entries: vec![
                 entry(31, 204, None),
                 entry(32, 203, None),
                 entry(33, 200, Some(11)),
             ],
             offset: 0,
-        });
+        }
+        .with_surface_ids([31, 32, 33]),
+    );
     let row = |id| crate::surface::SurfaceRow {
         id,
         type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
@@ -632,21 +631,20 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
         prefixed: true,
         offset: entity_id as usize,
         end_offset: entity_id as usize,
+        is_surface: false,
     };
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(17),
+        feature_id: 17,
         table_class_id: 80,
-        entry_ids: vec![101, 201, 102, 202],
         entries: vec![
             entry(101, 214, Some(11)),
             entry(201, 210, Some(101)),
             entry(102, 214, Some(12)),
             entry(202, 210, Some(102)),
         ],
-        surface_ids: vec![201, 202],
-        non_surface_entity_ids: vec![101, 102],
         offset: 0,
-    };
+    }
+    .with_surface_ids([201, 202]);
     let row = |id, feature_id| crate::surface::SurfaceRow {
         id,
         type_byte: 0x1c,
@@ -676,8 +674,6 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
     wrong_predecessor_class
         .entries
         .push(entry(999, 214, Some(888)));
-    wrong_predecessor_class.entry_ids.push(999);
-    wrong_predecessor_class.non_surface_entity_ids.push(999);
     assert_eq!(
         feature_surface_transitions(17, &[wrong_predecessor_class], &rows),
         None
@@ -699,17 +695,16 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         prefixed: true,
         offset: entity_id as usize,
         end_offset: entity_id as usize,
+        is_surface: false,
     };
     let table = |entries: Vec<crate::feature::FeatureEntityTableEntry>, surface_ids| {
         crate::feature::FeatureEntityTable {
-            feature_id: Some(225),
+            feature_id: 225,
             table_class_id: 29,
-            entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
             entries,
-            surface_ids,
-            non_surface_entity_ids: Vec::new(),
             offset: 0,
         }
+        .with_surface_ids(surface_ids)
     };
     let row = |id, kind: crate::surface::SurfaceKind, feature_id| crate::surface::SurfaceRow {
         id,
@@ -733,12 +728,12 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         FaceSelection::Native("creo:visibgeom:surface#226".to_string())
     );
 
-    scan.features.entity_tables[0].surface_ids.clear();
+    scan.features.entity_tables[0].mark_surface_ids([]);
     assert_eq!(
         draft_neutral_plane_selection(&scan, 225),
         FaceSelection::Unresolved
     );
-    scan.features.entity_tables[0].surface_ids.push(226);
+    scan.features.entity_tables[0].mark_surface_ids([226]);
     scan.features
         .entity_tables
         .push(table(vec![entry(227, 209)], vec![227]));
@@ -754,9 +749,8 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
 #[test]
 fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(225),
+        feature_id: 225,
         table_class_id: 64,
-        entry_ids: vec![226],
         entries: vec![crate::feature::FeatureEntityTableEntry {
             entity_id: 226,
             class_id: 209,
@@ -766,11 +760,11 @@ fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
             prefixed: true,
             offset: 0,
             end_offset: 0,
+            is_surface: false,
         }],
-        surface_ids: vec![226],
-        non_surface_entity_ids: Vec::new(),
         offset: 0,
-    };
+    }
+    .with_surface_ids([226]);
     for (kind, owner) in [
         (crate::surface::SurfaceKind::Cylinder, 225),
         (crate::surface::SurfaceKind::Plane, 224),
@@ -1007,6 +1001,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let entries = vec![
         entry(31, 204, None),
@@ -1014,17 +1009,15 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
         entry(33, 200, Some(11)),
     ];
     let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features
-        .entity_tables
-        .push(crate::feature::FeatureEntityTable {
-            feature_id: Some(7),
+    scan.features.entity_tables.push(
+        crate::feature::FeatureEntityTable {
+            feature_id: 7,
             table_class_id: 29,
-            entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
-            surface_ids: vec![31, 32],
-            non_surface_entity_ids: vec![33],
             entries,
             offset: 0,
-        });
+        }
+        .with_surface_ids([31, 32]),
+    );
     let row = |id| crate::surface::SurfaceRow {
         id,
         type_byte: 0x22,
@@ -1080,19 +1073,16 @@ fn boundary_surface_entity_graph_requires_the_complete_generated_chain() {
         prefixed: true,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
         crate::feature::FeatureEntityTable {
-            feature_id: Some(144),
+            feature_id: 144,
             table_class_id,
-            entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
-            surface_ids: (table_class_id == 29)
-                .then_some(vec![145])
-                .unwrap_or_default(),
-            non_surface_entity_ids: Vec::new(),
             entries,
             offset: 0,
         }
+        .with_surface_ids((table_class_id == 29).then_some(145))
     };
     let tables = vec![
         table(29, vec![entry(145, 200, Some(0))]),
@@ -1145,19 +1135,16 @@ fn new_sheet_output_requires_an_owned_output_surface() {
         prefixed: true,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
         crate::feature::FeatureEntityTable {
-            feature_id: Some(144),
+            feature_id: 144,
             table_class_id,
-            entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
-            surface_ids: (table_class_id == 29)
-                .then_some(vec![145])
-                .unwrap_or_default(),
-            non_surface_entity_ids: Vec::new(),
             entries,
             offset: 0,
         }
+        .with_surface_ids((table_class_id == 29).then_some(145))
     };
     let tables = vec![
         table(29, vec![entry(145, 200, Some(12))]),

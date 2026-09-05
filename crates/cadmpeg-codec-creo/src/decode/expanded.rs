@@ -101,9 +101,7 @@ pub(crate) fn feature_surface_replay_associations(
 ) -> Vec<CreoFeatureSurfaceReplayAssociation> {
     let mut associations = Vec::new();
     for table in &scan.features.entity_tables {
-        let Some(owner_feature_id) = table.feature_id else {
-            continue;
-        };
+        let owner_feature_id = table.feature_id;
         let visible_ids = table
             .entries
             .iter()

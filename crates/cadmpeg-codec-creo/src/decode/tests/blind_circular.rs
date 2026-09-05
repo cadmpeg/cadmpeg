@@ -46,6 +46,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let entries = vec![
         entry(43, 204, None),
@@ -54,14 +55,12 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         entry(51, 200, None),
     ];
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(40),
+        feature_id: 40,
         table_class_id: 29,
-        entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
         entries,
-        surface_ids: vec![46, 51],
-        non_surface_entity_ids: vec![43, 49],
         offset: 0,
-    };
+    }
+    .with_surface_ids([46, 51]);
     let row = |feature_id, id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
         type_byte: kind.canonical_type_byte(),
@@ -122,20 +121,15 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         entry(149, 200, Some(4)),
         entry(151, 200, None),
     ];
-    scan.features
-        .entity_tables
-        .push(crate::feature::FeatureEntityTable {
-            feature_id: Some(41),
+    scan.features.entity_tables.push(
+        crate::feature::FeatureEntityTable {
+            feature_id: 41,
             table_class_id: 29,
-            entry_ids: reversed_entries
-                .iter()
-                .map(|entry| entry.entity_id)
-                .collect(),
             entries: reversed_entries,
-            surface_ids: vec![143, 151],
-            non_surface_entity_ids: vec![146, 149],
             offset: 0,
-        });
+        }
+        .with_surface_ids([143, 151]),
+    );
     scan.surfaces.rows.extend([
         row(41, 143, crate::surface::SurfaceKind::Plane),
         row(41, 151, crate::surface::SurfaceKind::Cylinder),
@@ -186,9 +180,11 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         &scan.surfaces.rows,
     ));
 
-    scan.features.entity_tables[0]
-        .surface_ids
-        .retain(|id| *id != 51);
+    for entry in &mut scan.features.entity_tables[0].entries {
+        if entry.entity_id == 51 {
+            entry.is_surface = false;
+        }
+    }
     assert!(single_cap_circular_sweep_geometry(&scan, 40).is_none());
     assert!(!section_entity_is_generated_profile(
         true,
@@ -260,6 +256,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let entries = vec![
         entry(828, 204, None),
@@ -267,17 +264,15 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         entry(834, 200, Some(22)),
         entry(836, 200, None),
     ];
-    scan.features
-        .entity_tables
-        .push(crate::feature::FeatureEntityTable {
-            feature_id: Some(825),
+    scan.features.entity_tables.push(
+        crate::feature::FeatureEntityTable {
+            feature_id: 825,
             table_class_id: 29,
-            entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
             entries,
-            surface_ids: vec![828, 831, 836],
-            non_surface_entity_ids: vec![834],
             offset: 0,
-        });
+        }
+        .with_surface_ids([828, 831, 836]),
+    );
 
     let sweep = two_cap_circular_sweep_geometry(&scan, 825).expect("two-cap sweep");
     assert_eq!(sweep.cylinder_ids, vec![836]);
@@ -301,9 +296,11 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
                 && radius == 0.75
     ));
 
-    scan.features.entity_tables[0]
-        .surface_ids
-        .retain(|id| *id != 831);
+    for entry in &mut scan.features.entity_tables[0].entries {
+        if entry.entity_id == 831 {
+            entry.is_surface = false;
+        }
+    }
     assert!(two_cap_circular_sweep_geometry(&scan, 825).is_none());
 }
 
@@ -318,21 +315,20 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let mut table = crate::feature::FeatureEntityTable {
-        feature_id: Some(107),
+        feature_id: 107,
         table_class_id: 29,
-        entry_ids: vec![109, 112, 115, 117],
         entries: vec![
             entry(109, 204, None),
             entry(112, 203, None),
             entry(115, 200, Some(0)),
             entry(117, 200, None),
         ],
-        surface_ids: vec![117],
-        non_surface_entity_ids: Vec::new(),
         offset: 0,
-    };
+    }
+    .with_surface_ids([117]);
     let row = crate::surface::SurfaceRow {
         id: 117,
         type_byte: 0x24,
@@ -353,7 +349,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         Some(117)
     );
     let mut exact_class_203_plane = table.clone();
-    exact_class_203_plane.surface_ids.push(112);
+    exact_class_203_plane.mark_surface_ids([112, 117]);
     let topology_plane = crate::surface::SurfaceRow {
         id: 112,
         type_byte: 0x22,
@@ -396,7 +392,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     )
     .is_none());
     table.entries[3].class_id = 200;
-    table.surface_ids.push(109);
+    table.mark_surface_ids([109, 117]);
     assert!(compact_simple_hole_cylinder_id(
         107,
         std::slice::from_ref(&table),
@@ -405,9 +401,8 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     .is_none());
 
     let mut extended = crate::feature::FeatureEntityTable {
-        feature_id: Some(107),
+        feature_id: 107,
         table_class_id: 29,
-        entry_ids: vec![109, 112, 120, 121, 115, 117],
         entries: vec![
             entry(109, 204, None),
             entry(112, 203, None),
@@ -416,10 +411,9 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
             entry(115, 200, Some(0)),
             entry(117, 200, None),
         ],
-        surface_ids: vec![109, 117],
-        non_surface_entity_ids: vec![112, 120, 121, 115],
         offset: 0,
-    };
+    }
+    .with_surface_ids([109, 117]);
     for (index, entry) in extended.entries.iter_mut().enumerate() {
         entry.offset = index;
         entry.end_offset = index + 1;
@@ -440,11 +434,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         Some(117)
     );
     let mut class_203_plane = extended.clone();
-    class_203_plane.surface_ids[0] = 112;
-    class_203_plane
-        .non_surface_entity_ids
-        .retain(|id| *id != 112);
-    class_203_plane.non_surface_entity_ids.push(109);
+    class_203_plane.mark_surface_ids([112, 117]);
     let mut second_topology_plane = plane;
     second_topology_plane.id = 112;
     let second_topology_rows = [second_topology_plane, row];
@@ -456,7 +446,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         ),
         Some(117)
     );
-    extended.surface_ids.push(120);
+    extended.mark_surface_ids([109, 117, 120]);
     assert!(compact_simple_hole_cylinder_id(107, std::slice::from_ref(&extended), &rows).is_none());
 }
 
@@ -1780,20 +1770,19 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(7),
+        feature_id: 7,
         table_class_id: 29,
-        entry_ids: vec![31, 32, 33],
         entries: vec![
             entry(31, 204, None),
             entry(32, 203, None),
             entry(33, 200, Some(11)),
         ],
-        surface_ids: vec![31, 32, 33],
-        non_surface_entity_ids: Vec::new(),
         offset: 0,
-    };
+    }
+    .with_surface_ids([31, 32, 33]);
     let row = |id| crate::surface::SurfaceRow {
         id,
         type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),

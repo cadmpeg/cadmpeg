@@ -235,17 +235,17 @@ pub(in super::super) fn surface_intersect_feature_definition(
 ) -> Option<IrFeatureDefinition> {
     numbered_feature_name_has_family(kind, "Intersect").then_some(())?;
     let mut surface_tables = scan.features.entity_tables.iter().filter(|table| {
-        table.feature_id == Some(feature_id)
+        table.feature_id == feature_id
             && table.table_class_id == 29
-            && !table.surface_ids.is_empty()
+            && !table.surface_ids().is_empty()
             && table
-                .surface_ids
+                .surface_ids()
                 .iter()
                 .copied()
                 .collect::<BTreeSet<_>>()
                 .len()
-                == table.surface_ids.len()
-            && table.surface_ids.iter().all(|surface_id| {
+                == table.surface_ids().len()
+            && table.surface_ids().iter().all(|surface_id| {
                 crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id)
                     .is_some_and(|surface| surface.feature_id == feature_id)
             })

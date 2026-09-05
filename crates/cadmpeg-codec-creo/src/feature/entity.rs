@@ -10,20 +10,66 @@ use super::rows::row_spans;
 /// One `AllFeatur` mixed generated-entity table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureEntityTable {
-    /// Owning feature when the table lies in a bounded `AllFeatur` feature row.
-    pub feature_id: Option<u32>,
+    /// Owning feature of a bounded `AllFeatur` feature row.
+    pub feature_id: u32,
     /// Entity-class identifier following the table's `f7` marker.
     pub table_class_id: u32,
-    /// Entity identifiers in their declared generated-entity order.
-    pub entry_ids: Vec<u32>,
     /// Structurally bounded records in their declared generated-entity order.
     pub entries: Vec<FeatureEntityTableEntry>,
-    /// Entries that are materialized `srf_array` identifiers.
-    pub surface_ids: Vec<u32>,
-    /// Entries outside the materialized surface namespace.
-    pub non_surface_entity_ids: Vec<u32>,
     /// Byte offset of the `f8` table opener in the original stream.
     pub offset: usize,
+}
+
+impl FeatureEntityTable {
+    pub fn entry_ids(&self) -> Vec<u32> {
+        self.entries.iter().map(|entry| entry.entity_id).collect()
+    }
+
+    pub fn surface_ids(&self) -> Vec<u32> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.is_surface)
+            .map(|entry| entry.entity_id)
+            .collect()
+    }
+
+    pub fn non_surface_entity_ids(&self) -> Vec<u32> {
+        self.entries
+            .iter()
+            .filter(|entry| !entry.is_surface)
+            .map(|entry| entry.entity_id)
+            .collect()
+    }
+}
+
+#[cfg(test)]
+impl FeatureEntityTable {
+    pub(crate) fn mark_surface_ids(&mut self, surface_ids: impl IntoIterator<Item = u32>) {
+        let set: BTreeSet<u32> = surface_ids.into_iter().collect();
+        for entry in &mut self.entries {
+            entry.is_surface = set.contains(&entry.entity_id);
+        }
+    }
+
+    pub(crate) fn with_surface_ids(mut self, surface_ids: impl IntoIterator<Item = u32>) -> Self {
+        self.mark_surface_ids(surface_ids);
+        self
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn dummy_table_entry(entity_id: u32, is_surface: bool) -> FeatureEntityTableEntry {
+    FeatureEntityTableEntry {
+        entity_id,
+        class_id: 0,
+        source_entity_id: None,
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: false,
+        offset: 0,
+        end_offset: 0,
+        is_surface,
+    }
 }
 
 /// One record in an `AllFeatur` mixed generated-entity table.
@@ -42,6 +88,8 @@ pub struct FeatureEntityTableEntry {
     pub related_entity_state: Option<u8>,
     /// Whether the record starts with the `f7 1e` entry prefix.
     pub prefixed: bool,
+    /// Whether this entity identifier is a materialized `srf_array` identifier.
+    pub is_surface: bool,
     /// Byte offset of the entity identifier in the original stream.
     pub offset: usize,
     /// Byte offset immediately after the entry body. This follows the
@@ -223,6 +271,7 @@ pub(crate) fn read_entries(
             related_entity_id,
             related_entity_state,
             prefixed,
+            is_surface: false,
             offset,
             end_offset,
         });
@@ -263,30 +312,17 @@ pub fn entity_tables(
         else {
             continue;
         };
-        let Some(entries) = read_entries(&payload[..row_end], after_table_class + 2, count) else {
+        let Some(mut entries) = read_entries(&payload[..row_end], after_table_class + 2, count)
+        else {
             continue;
         };
-        let entry_ids = entries
-            .iter()
-            .map(|entry| entry.entity_id)
-            .collect::<Vec<_>>();
-        let surface_ids = entry_ids
-            .iter()
-            .copied()
-            .filter(|id| surface_ids.contains(id))
-            .collect::<Vec<_>>();
-        let non_surface_entity_ids = entry_ids
-            .iter()
-            .copied()
-            .filter(|id| !surface_ids.contains(id))
-            .collect();
+        for entry in &mut entries {
+            entry.is_surface = surface_ids.contains(&entry.entity_id);
+        }
         tables.push(FeatureEntityTable {
-            feature_id: Some(feature_id),
+            feature_id,
             table_class_id,
-            entry_ids,
             entries,
-            surface_ids,
-            non_surface_entity_ids,
             offset,
         });
     }

@@ -61,7 +61,7 @@ pub(in super::super) fn sketch_profiles_cover_generated_extrusion_sides(
         .features
         .entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
         .flat_map(|table| {
             table.entries.iter().filter_map(|entry| {
                 let external_id = entry.source_entity_id?;

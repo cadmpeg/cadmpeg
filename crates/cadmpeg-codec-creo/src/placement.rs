@@ -79,10 +79,10 @@ fn generated_cylinder_section_transform(
     let mut correspondences = Vec::<([f64; 2], [f64; 3], [f64; 3], usize)>::new();
     for (_, entry) in entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
         .flat_map(|table| table.entries.iter().map(move |entry| (table, entry)))
         .filter(|(table, entry)| {
-            entry.class_id == 200 && table.surface_ids.contains(&entry.entity_id)
+            entry.class_id == 200 && table.surface_ids().contains(&entry.entity_id)
         })
     {
         let Some(external_id) = entry.source_entity_id else {
@@ -218,7 +218,7 @@ fn generated_planar_section_transform(
     conflicting_points.is_empty().then_some(())?;
     let tables = entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
         .filter(|table| generated_planar_table_shape(table))
         .collect::<Vec<_>>();
     let [table] = tables.as_slice() else {
@@ -258,7 +258,7 @@ fn generated_planar_section_transform(
     let mut sides = Vec::new();
     for entry in table.entries[2..]
         .iter()
-        .filter(|entry| table.surface_ids.contains(&entry.entity_id))
+        .filter(|entry| table.surface_ids().contains(&entry.entity_id))
     {
         let Some(model_plane) = generated_plane_equation(entry) else {
             continue;
@@ -433,27 +433,27 @@ fn generated_planar_table_shape(table: &FeatureEntityTable) -> bool {
         .map(|entry| entry.entity_id)
         .collect::<BTreeSet<_>>();
     let roster = table
-        .surface_ids
+        .surface_ids()
         .iter()
-        .chain(&table.non_surface_entity_ids)
+        .chain(&table.non_surface_entity_ids())
         .copied()
         .collect::<BTreeSet<_>>();
-    table.entry_ids.len() == entry_ids.len()
-        && table.entry_ids.iter().copied().collect::<BTreeSet<_>>() == entry_ids
+    table.entry_ids().len() == entry_ids.len()
+        && table.entry_ids().iter().copied().collect::<BTreeSet<_>>() == entry_ids
         && roster == entry_ids
-        && table.surface_ids.iter().all(|id| {
-            !table.non_surface_entity_ids.contains(id)
+        && table.surface_ids().iter().all(|id| {
+            !table.non_surface_entity_ids().contains(id)
                 && table
-                    .surface_ids
+                    .surface_ids()
                     .iter()
                     .filter(|candidate| *candidate == id)
                     .count()
                     == 1
         })
-        && table.non_surface_entity_ids.iter().all(|id| {
-            !table.surface_ids.contains(id)
+        && table.non_surface_entity_ids().iter().all(|id| {
+            !table.surface_ids().contains(id)
                 && table
-                    .non_surface_entity_ids
+                    .non_surface_entity_ids()
                     .iter()
                     .filter(|candidate| *candidate == id)
                     .count()
@@ -830,7 +830,7 @@ fn generated_section_cap_plane_equation(
     };
     let equations = entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
         .filter_map(|table| generated_cap_pair_plane_equation(table, sources))
         .collect::<Vec<_>>();
     let [equation] = equations.as_slice() else {
@@ -885,7 +885,7 @@ fn zero_offset_standard_section_plane_equation(
     (datum_tables == 1).then_some(())?;
     let tables = entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
         .filter(|table| {
             table
                 .entries
@@ -940,7 +940,7 @@ fn circular_profile_aligned_origin(
 ) -> Option<[f64; 3]> {
     let tables = entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
         .filter(|table| {
             table
                 .entries
