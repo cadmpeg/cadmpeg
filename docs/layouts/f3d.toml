@@ -2747,6 +2747,64 @@ source = "spec"
 anchor = "a u32 flags-map count at offset 21"
 
 [[record]]
+name = "paramesh_texture_flags_entry"
+kind = "byte"
+section = "3.1"
+anchor = "Each flags-map entry is a 36-byte LP-ASCII resource GUID followed by an opaque u32 flags value."
+size = 44
+note = "Offsets are relative to one flags-map entry. The GUID count is 36."
+
+[[record.field]]
+name = "guid_count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "a 36-byte LP-ASCII resource GUID"
+
+[[record.field]]
+name = "resource_guid"
+offset = 4
+type = "bytes[36]"
+source = "spec"
+anchor = "a 36-byte LP-ASCII resource GUID"
+
+[[record.field]]
+name = "flags"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "followed by an opaque u32 flags value"
+
+[[record]]
+name = "paramesh_texture_filename_entry"
+kind = "byte"
+section = "3.1"
+anchor = "Each filename-map entry is a 36-byte LP-ASCII resource GUID followed by a marked same-segment filename-record reference."
+size = 51
+note = "Offsets are relative to one filename-map entry. The GUID count is 36."
+
+[[record.field]]
+name = "guid_count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "a 36-byte LP-ASCII resource GUID"
+
+[[record.field]]
+name = "resource_guid"
+offset = 4
+type = "bytes[36]"
+source = "spec"
+anchor = "a 36-byte LP-ASCII resource GUID"
+
+[[record.field]]
+name = "filename_record_reference"
+offset = 40
+type = "bytes[11]"
+source = "spec"
+anchor = "followed by a marked same-segment filename-record reference"
+
+[[record]]
 name = "paramesh_texture_filename_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
 kind = "byte"

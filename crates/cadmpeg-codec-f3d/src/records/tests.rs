@@ -882,12 +882,12 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
     let base = serde_json::json!({
         "id": "mesh-feature", "scope_record": identity, "scope_base_record": identity,
         "collection_record": identity, "collection_base_record": identity,
-        "texture_table_record": identity, "body_count_offsets": [21, 31, 41],
+        "texture_table_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 29}, "body_count_offsets": [21, 31, 41],
         "body_record_indices": [104, 104], "scope_body_reference_offsets": [25, 36],
         "collection_body_reference_offsets": [62, 73], "texture_table_reference_offset": 52,
         "collection_owner_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 273}, "collection_owner_reference_offset": 84,
         "collection_owner_backlink_offset": 362, "scope_owner_record_index": 109,
-        "scope_owner_reference_offset": 105, "texture_flags_count_offset": 115,
+        "scope_owner_reference_offset": 105, "texture_flags_count_offset": 121,
         "texture_filename_count_offset": 125, "bodies": [body, body], "textures": []
     });
     for count in 0..=2 {
@@ -2598,6 +2598,11 @@ fn mesh_affine_transform_preserves_rows_and_rejects_invalid_maps() {
 
 #[test]
 fn mesh_texture_file_derives_basename_and_offset_without_wire_changes() {
+    fn parse(wire: serde_json::Value) -> Result<super::DesignMeshTextureTable, String> {
+        let record = super::DesignMeshRecordIdentity::new(super::DesignClassTag::try_from("256".to_owned())?, 4, 0, 124)?;
+        super::DesignMeshTextureTable::from_wire(record, 21, 69,
+            vec![serde_json::from_value(wire).map_err(|error| error.to_string())?])
+    }
     let wire = serde_json::json!({
         "ordinal": 0, "resource_guid": "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
         "flags_guid_offset": 29, "flags": 7, "flags_offset": 65,
@@ -2608,33 +2613,24 @@ fn mesh_texture_file_derives_basename_and_offset_without_wire_changes() {
         "archive_entry_name": "Textures/é😀.png", "asset": "asset:texture"
     });
     // The basename has seven UTF-16 code units, including the surrogate pair.
-    let resource: super::DesignMeshTextureResource = serde_json::from_value(wire.clone()).unwrap();
+    let table = parse(wire.clone()).unwrap();
+    let resource = &table.resources()[0];
     assert_eq!(resource.file.filename(), "é😀.png");
     assert_eq!(resource.file.filename_offset(), 225);
-    assert_eq!(serde_json::to_value(resource).unwrap(), wire);
+    assert_eq!(serde_json::to_value(&table.into_wire().3[0]).unwrap(), wire);
     for field in ["filename", "archive_entry_name", "filename_offset"] {
         let mut bad = wire.clone();
         bad[field] = if field == "filename_offset" { 226.into() } else { "other.png".into() };
-        assert!(serde_json::from_value::<super::DesignMeshTextureResource>(bad).is_err());
+        assert!(parse(bad).is_err());
     }
     let mut bad = wire.clone();
     bad["filename_record"]["frame_length"] = 38.into();
-    assert!(serde_json::from_value::<super::DesignMeshTextureResource>(bad).is_err());
+    assert!(parse(bad).is_err());
     let mut bad = wire;
     bad["filename_record"]["byte_offset"] = (u64::MAX - 20).into();
-    assert!(serde_json::from_value::<super::DesignMeshTextureResource>(bad).is_err());
+    assert!(parse(bad).is_err());
 }
 
-#[test]
-fn mesh_texture_map_location_checks_span_and_redundant_wire_offsets() {
-    let location = super::DesignMeshTextureMapLocation::new(200).unwrap();
-    assert_eq!(location.guid_offset(), 200);
-    assert_eq!(location.payload_offset(), 236);
-    assert!(super::DesignMeshTextureMapLocation::new(u64::MAX - 35).is_err());
-    assert!(super::DesignMeshTextureMapLocation::from_wire(200, 235, "flags_offset").is_err());
-    assert!(super::DesignMeshTextureMapLocation::from_wire(200, 237, "filename_record_reference_offset").is_err());
-    assert_eq!(super::DesignMeshTextureMapLocation::from_wire(200, 236, "flags_offset").unwrap(), location);
-}
 
 #[test]
 fn design_guid_text_preserves_case_and_rejects_non_guids() {
@@ -2766,4 +2762,56 @@ fn mesh_collection_owner_derives_fixed_and_terminal_backlinks() {
     for (length, offset) in [(250, 341), (272, 362), (400, 99), (400, 488)] {
         assert!(super::DesignMeshCollectionOwner::new(identity(length), offset).is_err());
     }
+}
+
+#[test]
+fn mesh_texture_table_checks_permutations_and_preserves_wire_row_order() {
+    const GUID_A: &str = "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE";
+    const GUID_B: &str = "BBBBBBBB-BBBB-4CCC-8DDD-EEEEEEEEEEEE";
+    let record = |length| super::DesignMeshRecordIdentity::new(
+        super::DesignClassTag::try_from("256".to_owned()).unwrap(), 4, 0, length).unwrap();
+    let row = |ordinal, filename_ordinal, guid, flags_guid, filename_guid| serde_json::json!({
+        "ordinal": ordinal, "resource_guid": guid, "flags_guid_offset": flags_guid,
+        "flags": 7, "flags_offset": flags_guid + 36,
+        "filename_ordinal": filename_ordinal, "filename_guid_offset": filename_guid,
+        "filename_record": {"class_tag": "256", "record_index": 8, "byte_offset": 300, "frame_length": 35},
+        "filename_record_reference_offset": filename_guid + 36,
+        "filename": "a.png", "filename_offset": 325,
+        "archive_entry_name": "Textures/a.png", "asset": "asset:texture"
+    });
+    let rows = serde_json::json!([row(1, 0, GUID_B, 73, 121), row(0, 1, GUID_A, 29, 172)]);
+    let parse = |rows: serde_json::Value| super::DesignMeshTextureTable::from_wire(
+        record(219), 21, 113, serde_json::from_value(rows).unwrap());
+    let table = parse(rows.clone()).unwrap();
+    assert_eq!(table.resources_in_flags_order().iter().map(|resource| resource.resource_guid.as_str()).collect::<Vec<_>>(), [GUID_A, GUID_B]);
+    let (identity, flags_count, filename_count, encoded) = table.into_wire();
+    assert_eq!(identity, record(219));
+    assert_eq!((flags_count, filename_count), (21, 113));
+    assert_eq!(serde_json::to_value(encoded).unwrap(), rows);
+    let mut duplicate = rows.clone();
+    duplicate[0]["ordinal"] = 0.into();
+    duplicate[0]["flags_guid_offset"] = 29.into();
+    duplicate[0]["flags_offset"] = 65.into();
+    assert!(parse(duplicate).unwrap_err().contains("ordinal"));
+    let mut duplicate = rows.clone();
+    duplicate[0]["filename_ordinal"] = 1.into();
+    duplicate[0]["filename_guid_offset"] = 172.into();
+    duplicate[0]["filename_record_reference_offset"] = 208.into();
+    assert!(parse(duplicate).unwrap_err().contains("filename_ordinal"));
+    let mut duplicate = rows.clone();
+    duplicate[0]["resource_guid"] = GUID_A.to_ascii_lowercase().into();
+    assert!(parse(duplicate).unwrap_err().contains("resource_guid"));
+    let mut out_of_range = rows.clone();
+    out_of_range[0]["ordinal"] = 2.into();
+    out_of_range[0]["flags_guid_offset"] = 117.into();
+    out_of_range[0]["flags_offset"] = 153.into();
+    assert!(parse(out_of_range).unwrap_err().contains("ordinal"));
+    for field in ["flags_guid_offset", "flags_offset", "filename_guid_offset", "filename_record_reference_offset"] {
+        let mut bad = rows.clone();
+        bad[0][field] = (u64::MAX - 35).into();
+        assert!(parse(bad).is_err());
+    }
+    assert!(super::DesignMeshTextureTable::from_wire(record(218), 21, 113, serde_json::from_value(rows.clone()).unwrap()).is_err());
+    assert!(super::DesignMeshTextureTable::from_wire(record(219), 21, 112, serde_json::from_value(rows).unwrap()).is_err());
+    assert!(super::DesignMeshTextureTable::new(record(29), Vec::new()).is_ok());
 }

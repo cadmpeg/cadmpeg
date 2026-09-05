@@ -3212,7 +3212,7 @@ fn project_mesh_bodies(
     for texture in native
         .design_mesh_features
         .iter()
-        .flat_map(|feature| &feature.textures)
+        .flat_map(|feature| feature.texture_table.resources())
     {
         if ir
             .model
@@ -3245,19 +3245,10 @@ fn project_mesh_bodies(
     extend_unique_assets(&mut ir.model.assets, texture_assets)?;
     let mut texture_tables = std::collections::HashMap::new();
     for feature in &native.design_mesh_features {
-        let texture_table = feature
-            .textures
-            .iter()
-            .enumerate()
-            .map(|(ordinal, texture)| {
-                if usize::try_from(texture.ordinal) != Ok(ordinal) {
-                    return Err(CodecError::Malformed(
-                        "F3D mesh texture ordinals do not match flags-map order".into(),
-                    ));
-                }
-                Ok((texture.resource_guid.as_str().to_owned(), texture.asset.clone()))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let texture_table = feature.texture_table.resources_in_flags_order()
+            .into_iter()
+            .map(|texture| (texture.resource_guid.as_str().to_owned(), texture.asset.clone()))
+            .collect::<Vec<_>>();
         for body in &feature.bodies {
             if let Some(tessellation_id) = &body.tessellation_id {
                 if texture_tables

@@ -32,7 +32,7 @@ use crate::layout::paramesh_scene_state as scene_state;
 use crate::layout::paramesh_texture_filename_prefix as texture_filename;
 use crate::layout::paramesh_texture_table_prefix as texture_table;
 use crate::paramesh::{decode_mesh_container, MeshContainer};
-use crate::records::{DesignMeshCollectionOwner, DesignMeshSceneNode, DesignMeshSceneState, DesignMeshFixedRecord, DesignMeshEntryName, DesignMeshPlacement, DesignMeshGuid, DesignGuidText, DesignMeshTextureMapLocation, MeshAffineTransform};
+use crate::records::{DesignMeshCollectionOwner, DesignMeshSceneNode, DesignMeshSceneState, DesignMeshFixedRecord, DesignMeshEntryName, DesignMeshPlacement, DesignMeshGuid, DesignGuidText, DesignMeshTextureTable, MeshAffineTransform};
 use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshSceneBounds,
     DesignMeshTextureResource, DesignRecordHeader,
@@ -262,7 +262,6 @@ struct MeshCollectionRecord {
 struct MeshTextureMapEntry {
     ordinal: u32,
     resource_guid: DesignGuidText,
-    location: DesignMeshTextureMapLocation,
     value: u32,
 }
 
@@ -270,15 +269,12 @@ struct MeshTextureMapEntry {
 struct MeshTextureFilenameEntry {
     ordinal: u32,
     resource_guid: DesignGuidText,
-    location: DesignMeshTextureMapLocation,
     filename_record_index: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshTextureTableRecord {
     identity: DesignMeshRecordIdentity,
-    flags_count_offset: u64,
-    filename_count_offset: u64,
     flags: Vec<MeshTextureMapEntry>,
     filenames: Vec<MeshTextureFilenameEntry>,
 }
@@ -704,7 +700,6 @@ fn parse_mesh_texture_table_record(
         let mut flags = Vec::with_capacity(flags_count);
         let mut flag_keys = HashSet::with_capacity(flags_count);
         for ordinal in 0..flags_count {
-            let guid_at = at;
             let (resource_guid, end) = lp_ascii_strict(record, at, 36..=36)?;
             let resource_guid = DesignGuidText::try_from(resource_guid).ok()?;
             flag_keys.insert(resource_guid.as_str().to_ascii_uppercase()).then_some(())?;
@@ -714,17 +709,14 @@ fn parse_mesh_texture_table_record(
             flags.push(MeshTextureMapEntry {
                 ordinal: u32::try_from(ordinal).ok()?,
                 resource_guid,
-                location: DesignMeshTextureMapLocation::new(source_offset(frame.start, guid_at.checked_add(4)?)?).ok()?,
                 value,
             });
         }
-        let filename_count_at = at;
         let filename_count = usize::try_from(View::u32_le_at(record, at)?).ok()?;
         at = at.checked_add(4)?;
         let mut filenames = Vec::with_capacity(filename_count);
         let mut filename_keys = HashSet::with_capacity(filename_count);
         for ordinal in 0..filename_count {
-            let guid_at = at;
             let (resource_guid, end) = lp_ascii_strict(record, at, 36..=36)?;
             let resource_guid = DesignGuidText::try_from(resource_guid).ok()?;
             filename_keys.insert(resource_guid.as_str().to_ascii_uppercase()).then_some(())?;
@@ -734,15 +726,12 @@ fn parse_mesh_texture_table_record(
             filenames.push(MeshTextureFilenameEntry {
                 ordinal: u32::try_from(ordinal).ok()?,
                 resource_guid,
-                location: DesignMeshTextureMapLocation::new(source_offset(frame.start, guid_at.checked_add(4)?)?).ok()?,
                 filename_record_index,
             });
         }
         (at == record.len() && flag_keys == filename_keys).then_some(())?;
         Some(MeshTextureTableRecord {
             identity,
-            flags_count_offset: source_offset(frame.start, texture_table::FLAGS_MAP_COUNT)?,
-            filename_count_offset: source_offset(frame.start, filename_count_at)?,
             flags,
             filenames,
         })
@@ -1321,10 +1310,8 @@ where
             textures.push(DesignMeshTextureResource {
                 ordinal: flag.ordinal,
                 resource_guid: flag.resource_guid.clone(),
-                flags_location: flag.location,
                 flags: flag.value,
                 filename_ordinal: filename_entry.ordinal,
-                filename_location: filename_entry.location,
                 file: crate::records::DesignMeshTextureFile::new(filename_record, &filename, archive_entry_name)
                     .map_err(|message| malformed_mesh_graph(&stream, &message))?,
                 asset,
@@ -1412,7 +1399,8 @@ where
             scope_base_record: scope.base_record,
             collection_record: collection.identity,
             collection_base_record: collection.base_record,
-            texture_table_record: texture_table.identity,
+            texture_table: DesignMeshTextureTable::new(texture_table.identity, textures)
+                .map_err(|message| malformed_mesh_graph(&stream, &message))?,
             body_count_offsets: [
                 scope.body_count_offset,
                 collection.count_offsets[0],
@@ -1423,10 +1411,7 @@ where
             collection_owner_reference_offset: collection.owner_reference_offset,
             scope_owner_record_index: scope.owner_record_index,
             scope_owner_reference_offset: scope.owner_reference_offset,
-            texture_flags_count_offset: texture_table.flags_count_offset,
-            texture_filename_count_offset: texture_table.filename_count_offset,
             bodies: feature_bodies,
-            textures,
         });
     }
     if !entry_names.is_empty()
@@ -2308,9 +2293,9 @@ mod tests {
         };
         assert_eq!(feature.scope_record.record_index(), 109);
         assert_eq!(feature.collection_record.record_index(), 100);
-        assert_eq!(feature.texture_table_record.record_index(), 101);
+        assert_eq!(feature.texture_table.record().record_index(), 101);
         assert_eq!(feature.bodies.iter().map(|body| body.placement.record().record_index()).collect::<Vec<_>>(), [104]);
-        assert!(feature.textures.is_empty());
+        assert!(feature.texture_table.resources().is_empty());
         let [body] = feature.bodies.as_slice() else {
             panic!("one mesh body");
         };
@@ -2414,7 +2399,7 @@ mod tests {
             &mut asset,
         )
         .expect("textured mesh graph");
-        let textures = &design.features[0].textures;
+        let textures = design.features[0].texture_table.resources();
         assert_eq!(textures.len(), 2);
         assert_eq!(textures[0].flags, 2);
         assert_eq!(textures[0].file.filename(), "mesh-a.png");
@@ -2443,7 +2428,8 @@ mod tests {
             panic!("two texture resources");
         };
         let second_reference =
-            usize::try_from(second.location.payload_offset()).expect("test reference offset");
+            usize::try_from(table.identity.byte_offset() + texture_table::LEN as u64
+                + table.flags.len() as u64 * 44 + 4 + u64::from(second.ordinal) * 51 + 40).expect("test reference offset");
         put_reference(
             &mut graph.bytes,
             second_reference,
@@ -2461,7 +2447,7 @@ mod tests {
             &mut asset,
         )
         .expect("shared texture filename record");
-        let textures = &design.features[0].textures;
+        let textures = design.features[0].texture_table.resources();
         assert_eq!(textures.len(), 2);
         assert_eq!(textures[0].file.record(), textures[1].file.record());
         assert_eq!(textures[0].asset, textures[1].asset);

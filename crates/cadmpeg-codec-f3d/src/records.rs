@@ -13747,47 +13747,20 @@ impl From<DesignGuidText> for String {
 }
 
 /// One texture resource owned by a Design mesh feature.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignMeshTextureResourceWire"))]
-#[serde(try_from = "DesignMeshTextureResourceWire", into = "DesignMeshTextureResourceWire")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesignMeshTextureResource {
     /// Zero-based position in the serialized flags map.
     pub ordinal: u32,
     /// Stable resource GUID used as the key in both texture maps.
     pub resource_guid: DesignGuidText,
-    /// Byte offset of the flags-map GUID payload.
-    pub flags_location: DesignMeshTextureMapLocation,
     /// Opaque resource flags retained without reinterpretation.
     pub flags: u32,
     /// Zero-based position of the same GUID in the serialized filename map.
     pub filename_ordinal: u32,
-    /// Byte offset of the filename-map GUID payload.
-    pub filename_location: DesignMeshTextureMapLocation,
     /// Filename record joined to its archive entry.
     pub file: DesignMeshTextureFile,
     /// Neutral embedded asset projected from the matching archive entry.
     pub asset: AssetId,
-}
-
-/// Location of a 36-byte resource GUID immediately followed by its map payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DesignMeshTextureMapLocation(u64);
-
-impl DesignMeshTextureMapLocation {
-    pub fn new(guid_offset: u64) -> Result<Self, String> {
-        guid_offset.checked_add(36).ok_or("texture map GUID offset overflows")?;
-        Ok(Self(guid_offset))
-    }
-    pub fn guid_offset(self) -> u64 { self.0 }
-    pub fn payload_offset(self) -> u64 { self.0 + 36 }
-    fn from_wire(guid_offset: u64, payload_offset: u64, field: &str) -> Result<Self, String> {
-        let location = Self::new(guid_offset)?;
-        if location.payload_offset() != payload_offset {
-            return Err(format!("{field} must immediately follow its 36-byte GUID"));
-        }
-        Ok(location)
-    }
 }
 
 /// A filename record and the archive entry with its exact basename.
@@ -13854,36 +13827,102 @@ struct DesignMeshTextureResourceWire {
 }
 
 
-impl TryFrom<DesignMeshTextureResourceWire> for DesignMeshTextureResource {
-    type Error = String;
-    fn try_from(wire: DesignMeshTextureResourceWire) -> Result<Self, Self::Error> {
-        let file = DesignMeshTextureFile::new(wire.filename_record, &wire.filename, wire.archive_entry_name)?;
-        if file.filename_offset() != wire.filename_offset {
-            return Err("filename_offset must follow filename_record header".into());
-        }
-        Ok(Self {
-            ordinal: wire.ordinal, resource_guid: wire.resource_guid,
-            flags_location: DesignMeshTextureMapLocation::from_wire(wire.flags_guid_offset, wire.flags_offset, "flags_offset")?, flags: wire.flags,
-            filename_ordinal: wire.filename_ordinal,
-            filename_location: DesignMeshTextureMapLocation::from_wire(wire.filename_guid_offset, wire.filename_record_reference_offset, "filename_record_reference_offset")?,
-            file, asset: wire.asset,
-        })
-    }
+const MESH_TEXTURE_FLAGS_ENTRY_BYTES: u64 = 4 + 36 + 4;
+const MESH_TEXTURE_FILENAME_ENTRY_BYTES: u64 = 4 + 36 + 11;
+
+/// Texture resources with complete flags and filename ordinal permutations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignMeshTextureTable {
+    record: DesignMeshRecordIdentity,
+    resources: Vec<DesignMeshTextureResource>,
 }
-impl From<DesignMeshTextureResource> for DesignMeshTextureResourceWire {
-    fn from(value: DesignMeshTextureResource) -> Self {
-        Self {
-            ordinal: value.ordinal, resource_guid: value.resource_guid,
-            flags_guid_offset: value.flags_location.guid_offset(), flags: value.flags,
-            flags_offset: value.flags_location.payload_offset(), filename_ordinal: value.filename_ordinal,
-            filename_guid_offset: value.filename_location.guid_offset(),
-            filename_record_reference_offset: value.filename_location.payload_offset(),
-            filename: value.file.filename().to_owned(),
-            filename_offset: value.file.filename_offset(),
-            filename_record: value.file.record,
-            archive_entry_name: value.file.archive_entry_name,
-            asset: value.asset,
+impl DesignMeshTextureTable {
+    pub fn new(record: DesignMeshRecordIdentity, resources: Vec<DesignMeshTextureResource>) -> Result<Self, String> {
+        let count = u32::try_from(resources.len()).map_err(|_| "textures exceeds the u32 map count")?;
+        let expected = crate::layout::paramesh_texture_table_prefix::LEN as u64 + 4
+            + u64::from(count) * (MESH_TEXTURE_FLAGS_ENTRY_BYTES + MESH_TEXTURE_FILENAME_ENTRY_BYTES);
+        if record.frame_length() != expected {
+            return Err("texture_table_record.frame_length must contain exactly both texture maps".into());
         }
+        let mut flags = std::collections::HashSet::new();
+        let mut filenames = std::collections::HashSet::new();
+        let mut guids = std::collections::HashSet::new();
+        for resource in &resources {
+            if resource.ordinal >= count || !flags.insert(resource.ordinal) {
+                return Err("textures.ordinal must be a complete map permutation".into());
+            }
+            if resource.filename_ordinal >= count || !filenames.insert(resource.filename_ordinal) {
+                return Err("textures.filename_ordinal must be a complete map permutation".into());
+            }
+            if !guids.insert(resource.resource_guid.as_str().to_ascii_uppercase()) {
+                return Err("textures.resource_guid must be unique ignoring letter case".into());
+            }
+        }
+        Ok(Self { record, resources })
+    }
+    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
+    pub fn resources(&self) -> &[DesignMeshTextureResource] { &self.resources }
+    /// Borrow resources in the serialized flags-map order.
+    pub fn resources_in_flags_order(&self) -> Vec<&DesignMeshTextureResource> {
+        let mut resources = self.resources.iter().collect::<Vec<_>>();
+        resources.sort_by_key(|resource| resource.ordinal);
+        resources
+    }
+    fn flags_count_offset(&self) -> u64 {
+        self.record.byte_offset() + crate::layout::paramesh_texture_table_prefix::FLAGS_MAP_COUNT as u64
+    }
+    fn filename_count_offset(&self) -> u64 {
+        self.record.byte_offset() + crate::layout::paramesh_texture_table_prefix::LEN as u64
+            + MESH_TEXTURE_FLAGS_ENTRY_BYTES * self.resources.len() as u64
+    }
+    fn from_wire(record: DesignMeshRecordIdentity, flags_count_offset: u64, filename_count_offset: u64, rows: Vec<DesignMeshTextureResourceWire>) -> Result<Self, String> {
+        let count = u32::try_from(rows.len()).map_err(|_| "textures exceeds the u32 map count")?;
+        let flags_start = record.byte_offset().checked_add(crate::layout::paramesh_texture_table_prefix::LEN as u64);
+        let filenames_start = flags_start.and_then(|start| start.checked_add(MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(count) + 4));
+        let mut resources = Vec::with_capacity(rows.len());
+        for row in rows {
+            let flags_guid = flags_start.and_then(|start| start.checked_add(MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(row.ordinal) + 4));
+            let filename_guid = filenames_start.and_then(|start| start.checked_add(MESH_TEXTURE_FILENAME_ENTRY_BYTES * u64::from(row.filename_ordinal) + 4));
+            if flags_guid != Some(row.flags_guid_offset) || flags_guid.and_then(|offset| offset.checked_add(36)) != Some(row.flags_offset) {
+                return Err("flags_guid_offset/flags_offset must match the texture map ordinal".into());
+            }
+            if filename_guid != Some(row.filename_guid_offset) || filename_guid.and_then(|offset| offset.checked_add(36)) != Some(row.filename_record_reference_offset) {
+                return Err("filename_guid_offset/filename_record_reference_offset must match the texture map ordinal".into());
+            }
+            let file = DesignMeshTextureFile::new(row.filename_record, &row.filename, row.archive_entry_name)?;
+            if file.filename_offset() != row.filename_offset {
+                return Err("filename_offset must follow filename_record header".into());
+            }
+            resources.push(DesignMeshTextureResource {
+                ordinal: row.ordinal, resource_guid: row.resource_guid, flags: row.flags,
+                filename_ordinal: row.filename_ordinal, file, asset: row.asset,
+            });
+        }
+        let table = Self::new(record, resources)?;
+        if table.flags_count_offset() != flags_count_offset || table.filename_count_offset() != filename_count_offset {
+            return Err("texture_flags_count_offset/texture_filename_count_offset must match the texture maps".into());
+        }
+        Ok(table)
+    }
+    fn into_wire(self) -> (DesignMeshRecordIdentity, u64, u64, Vec<DesignMeshTextureResourceWire>) {
+        let flags_count_offset = self.flags_count_offset();
+        let filename_count_offset = self.filename_count_offset();
+        let flags_start = self.record.byte_offset() + crate::layout::paramesh_texture_table_prefix::LEN as u64;
+        let filenames_start = filename_count_offset + 4;
+        let rows = self.resources.into_iter().map(|value| {
+            let flags_guid_offset = flags_start + MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(value.ordinal) + 4;
+            let filename_guid_offset = filenames_start + MESH_TEXTURE_FILENAME_ENTRY_BYTES * u64::from(value.filename_ordinal) + 4;
+            DesignMeshTextureResourceWire {
+                ordinal: value.ordinal, resource_guid: value.resource_guid,
+                flags_guid_offset, flags: value.flags, flags_offset: flags_guid_offset + 36,
+                filename_ordinal: value.filename_ordinal, filename_guid_offset,
+                filename_record_reference_offset: filename_guid_offset + 36,
+                filename: value.file.filename().to_owned(), filename_offset: value.file.filename_offset(),
+                filename_record: value.file.record, archive_entry_name: value.file.archive_entry_name,
+                asset: value.asset,
+            }
+        }).collect();
+        (self.record, flags_count_offset, filename_count_offset, rows)
     }
 }
 
@@ -14485,7 +14524,7 @@ pub struct DesignMeshFeature {
     /// Paired same-index base record inside the collection.
     pub collection_base_record: DesignMeshRecordIdentity,
     /// Typed `ParaMesh` texture-table record owned by the collection.
-    pub texture_table_record: DesignMeshRecordIdentity,
+    pub texture_table: DesignMeshTextureTable,
     /// Three equal body counts: scope, collection prefix, collection base.
     pub body_count_offsets: [u64; 3],
     /// Byte offset of the collection's texture-table reference.
@@ -14498,14 +14537,8 @@ pub struct DesignMeshFeature {
     pub scope_owner_record_index: u32,
     /// Byte offset of the paired scope record's owner reference.
     pub scope_owner_reference_offset: u64,
-    /// Byte offset of the texture flags-map count.
-    pub texture_flags_count_offset: u64,
-    /// Byte offset of the texture filename-map count.
-    pub texture_filename_count_offset: u64,
     /// Mesh bodies in the source collection order.
     pub bodies: Vec<DesignMeshBody>,
-    /// Texture resources in flags-map order.
-    pub textures: Vec<DesignMeshTextureResource>,
 }
 
 /// One complete `Base Mesh Feature` Design graph.
@@ -14551,7 +14584,7 @@ struct DesignMeshFeatureWire {
     /// Mesh bodies in the source collection order.
     bodies: Vec<DesignMeshBodyWire>,
     /// Texture resources in flags-map order.
-    textures: Vec<DesignMeshTextureResource>,
+    textures: Vec<DesignMeshTextureResourceWire>,
 }
 
 impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
@@ -14576,16 +14609,13 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
             scope_base_record: wire.scope_base_record,
             collection_record: wire.collection_record,
             collection_base_record: wire.collection_base_record,
-            texture_table_record: wire.texture_table_record,
+            texture_table: DesignMeshTextureTable::from_wire(wire.texture_table_record, wire.texture_flags_count_offset, wire.texture_filename_count_offset, wire.textures)?,
             body_count_offsets: wire.body_count_offsets,
             texture_table_reference_offset: wire.texture_table_reference_offset,
             collection_owner: DesignMeshCollectionOwner::new(wire.collection_owner_record, wire.collection_owner_backlink_offset)?,
             collection_owner_reference_offset: wire.collection_owner_reference_offset,
             scope_owner_record_index: wire.scope_owner_record_index,
             scope_owner_reference_offset: wire.scope_owner_reference_offset,
-            texture_flags_count_offset: wire.texture_flags_count_offset,
-            texture_filename_count_offset: wire.texture_filename_count_offset,
-            textures: wire.textures,
         })
     }
 }
@@ -14603,6 +14633,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             bodies.push(body.into());
         }
         let collection_owner_backlink_offset = value.collection_owner.backlink_offset();
+        let (texture_table_record, texture_flags_count_offset, texture_filename_count_offset, textures) = value.texture_table.into_wire();
         Self {
             body_record_indices,
             scope_body_reference_offsets,
@@ -14613,7 +14644,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             scope_base_record: value.scope_base_record,
             collection_record: value.collection_record,
             collection_base_record: value.collection_base_record,
-            texture_table_record: value.texture_table_record,
+            texture_table_record,
             body_count_offsets: value.body_count_offsets,
             texture_table_reference_offset: value.texture_table_reference_offset,
             collection_owner_record: value.collection_owner.record,
@@ -14621,9 +14652,9 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             collection_owner_backlink_offset,
             scope_owner_record_index: value.scope_owner_record_index,
             scope_owner_reference_offset: value.scope_owner_reference_offset,
-            texture_flags_count_offset: value.texture_flags_count_offset,
-            texture_filename_count_offset: value.texture_filename_count_offset,
-            textures: value.textures,
+            texture_flags_count_offset,
+            texture_filename_count_offset,
+            textures,
         }
     }
 }

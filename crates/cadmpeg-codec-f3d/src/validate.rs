@@ -1499,7 +1499,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let mut valid = feature_ids.insert(feature.id.as_str())
             && scope_records.insert((stream, feature.scope_record.record_index()))
             && collection_records.insert((stream, feature.collection_record.record_index()))
-            && texture_table_records.insert((stream, feature.texture_table_record.record_index()))
+            && texture_table_records.insert((stream, feature.texture_table.record().record_index()))
             && collection_owner_records
                 .insert((stream, feature.collection_owner.record().record_index()))
             && feature.scope_base_record.record_index() == feature.scope_record.record_index()
@@ -1556,59 +1556,22 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 feature.scope_owner_reference_offset,
             )
             && feature.scope_owner_record_index != 0
-            && mesh_record_offset_is(
-                &feature.texture_table_record,
-                21,
-                feature.texture_flags_count_offset,
-            )
             && scope.is_some_and(|scope| {
                 scope.kind() == crate::records::DesignFeatureKind::BaseMeshFeature
                     && scope.byte_offset == feature.scope_record.byte_offset()
                     && scope.paired_byte_offset == feature.scope_base_record.byte_offset()
             });
 
-        let mut texture_cursor = feature.texture_table_record.byte_offset().checked_add(25);
-        let mut resources = feature.textures.iter().collect::<Vec<_>>();
-        let mut resource_guids = HashSet::new();
-        resources.sort_by_key(|resource| resource.ordinal);
-        let flag_order_valid = resources.iter().enumerate().all(|(ordinal, resource)| {
-            let offsets_valid = texture_cursor.is_some_and(|cursor| {
-                cursor.checked_add(4) == Some(resource.flags_location.guid_offset())
-            });
-            let valid = resource.ordinal == u32::try_from(ordinal).unwrap_or(u32::MAX)
-                && resource_guids.insert(resource.resource_guid.as_str().to_ascii_uppercase())
-                && offsets_valid;
-            texture_cursor = texture_cursor.and_then(|cursor| cursor.checked_add(44));
-            valid
-        });
-        valid &= flag_order_valid
-            && texture_cursor == Some(feature.texture_filename_count_offset)
-            && u32::try_from(feature.textures.len()).is_ok();
-        texture_cursor = texture_cursor.and_then(|cursor| cursor.checked_add(4));
+        let mut resources = feature.texture_table.resources().iter().collect::<Vec<_>>();
         resources.sort_by_key(|resource| resource.filename_ordinal);
-        let filename_order_valid = resources.iter().enumerate().all(|(ordinal, resource)| {
+        valid &= resources.iter().all(|resource| {
             let filename_key = (stream, resource.file.record().record_index());
             let filename_record_consistent = filename_records
                 .get(&filename_key)
                 .is_none_or(|record| *record == resource.file.record());
-            filename_records
-                .entry(filename_key)
-                .or_insert(resource.file.record());
-            let offsets_valid = texture_cursor.is_some_and(|cursor| {
-                cursor.checked_add(4) == Some(resource.filename_location.guid_offset())
-            });
-            let valid = resource.filename_ordinal == u32::try_from(ordinal).unwrap_or(u32::MAX)
-                && offsets_valid
-                && filename_record_consistent
-                && asset_ids.contains(&resource.asset);
-            texture_cursor = texture_cursor.and_then(|cursor| cursor.checked_add(51));
-            valid
+            filename_records.entry(filename_key).or_insert(resource.file.record());
+            filename_record_consistent && asset_ids.contains(&resource.asset)
         });
-        valid &= filename_order_valid
-            && feature
-                .texture_table_record.byte_offset()
-                .checked_add(feature.texture_table_record.frame_length())
-                == texture_cursor;
 
         for body in &feature.bodies {
             let owner_key = (stream, body.owner_record.record_index());
