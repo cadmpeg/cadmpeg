@@ -264,18 +264,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     bind_lost_edge_groups(
         std::slice::from_mut(&mut bound_group),
         std::slice::from_ref(&terminating_identity),
-        &[LostEdgeReference {
-            id: "f3d:Design/BulkStream.dat:lost-edge-reference#152".into(),
-            record_byte_offset: 152,
-            class_tag_offset: 156,
-            class_tag: "419".into(),
-            record_index: 299,
-            record_index_offset: 159,
-            byte_offset: 181,
-            next_byte_offset: 200,
-            next_class_tag: "326".into(),
-            next_record_index: 300,
-        }],
+        &[LostEdgeReference::new("f3d:Design/BulkStream.dat:lost-edge-reference#152".into(), 152, "419".into(), 299, "326".into(), 300).expect("valid lost-edge record layout")],
     )
     .expect("lost-edge run terminates at the group identity");
     assert_eq!(

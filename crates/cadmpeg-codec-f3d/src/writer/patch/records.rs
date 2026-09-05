@@ -63,13 +63,13 @@ pub(crate) fn patch_lost_edge_references(
     for reference in edits {
         patch_bytes_at(
             bytes,
-            reference.class_tag_offset,
+            reference.class_tag_offset(),
             reference.class_tag.as_bytes(),
             "lost-edge class tag",
         )?;
         patch_u32_at(
             bytes,
-            reference.record_index_offset,
+            reference.record_index_offset(),
             reference.record_index,
             "lost-edge record index",
         )?;

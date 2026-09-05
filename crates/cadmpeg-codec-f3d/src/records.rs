@@ -12894,10 +12894,67 @@ pub struct PersistentReference {
     pub value: u64,
 }
 
+/// A per-file dynamic class tag encoded as three ASCII digits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "String", into = "String")]
+#[cfg_attr(feature = "schema", schemars(with = "String"))]
+pub struct DesignClassTag(String);
+
+impl TryFrom<String> for DesignClassTag {
+type Error = String;
+fn try_from(value: String) -> Result<Self, Self::Error> {
+if value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_digit()) {
+Ok(Self(value))
+} else {
+Err("class_tag must contain three ASCII digits".into())
+}
+}
+}
+impl From<DesignClassTag> for String {
+fn from(tag: DesignClassTag) -> Self { tag.0 }
+}
+impl DesignClassTag {
+pub(crate) fn as_str(&self) -> &str { &self.0 }
+pub(crate) fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }
+}
+
 /// A construction-history edge selection that Fusion could not re-resolve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "LostEdgeReferenceWire", into = "LostEdgeReferenceWire")]
+#[cfg_attr(feature = "schema", schemars(with = "LostEdgeReferenceWire"))]
 pub struct LostEdgeReference {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Byte offset of the unresolved record's indexed header.
+    record_byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag of the unresolved record.
+    pub class_tag: DesignClassTag,
+    /// Source `BulkStream` record index of the unresolved edge selection.
+    pub record_index: u32,
+    /// Per-file dynamic class tag of the following indexed record.
+    pub next_class_tag: DesignClassTag,
+    /// Record index of the following indexed record.
+    pub next_record_index: u32,
+}
+
+impl LostEdgeReference {
+pub(crate) fn new(id: String, record_byte_offset: u64, class_tag: String, record_index: u32, next_class_tag: String, next_record_index: u32) -> Result<Self, String> {
+record_byte_offset.checked_add(48).ok_or("lost_edge_reference.record_byte_offset overflows the record extent")?;
+Ok(Self { id, record_byte_offset, class_tag: DesignClassTag::try_from(class_tag)?, record_index, next_class_tag: DesignClassTag::try_from(next_class_tag).map_err(|error| format!("lost_edge_reference.next_class_tag: {error}"))?, next_record_index })
+}
+pub(crate) fn record_byte_offset(&self) -> u64 { self.record_byte_offset }
+pub(crate) fn class_tag_offset(&self) -> u64 { self.record_byte_offset + 4 }
+pub(crate) fn record_index_offset(&self) -> u64 { self.record_byte_offset + 7 }
+pub(crate) fn byte_offset(&self) -> u64 { self.record_byte_offset + 29 }
+pub(crate) fn next_byte_offset(&self) -> u64 { self.record_byte_offset + 48 }
+}
+
+/// A construction-history edge selection that Fusion could not re-resolve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct LostEdgeReferenceWire {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// Byte offset of the unresolved record's indexed header.
@@ -12918,6 +12975,34 @@ pub struct LostEdgeReference {
     pub next_class_tag: String,
     /// Record index of the following indexed record.
     pub next_record_index: u32,
+}
+
+impl TryFrom<LostEdgeReferenceWire> for LostEdgeReference {
+type Error = String;
+fn try_from(wire: LostEdgeReferenceWire) -> Result<Self, Self::Error> {
+let record = Self::new(wire.id, wire.record_byte_offset, wire.class_tag, wire.record_index, wire.next_class_tag, wire.next_record_index)?;
+if wire.class_tag_offset != record.class_tag_offset() { return Err("lost_edge_reference.class_tag_offset disagrees with record_byte_offset".into()); }
+if wire.record_index_offset != record.record_index_offset() { return Err("lost_edge_reference.record_index_offset disagrees with record_byte_offset".into()); }
+if wire.byte_offset != record.byte_offset() { return Err("lost_edge_reference.byte_offset disagrees with record_byte_offset".into()); }
+if wire.next_byte_offset != record.next_byte_offset() { return Err("lost_edge_reference.next_byte_offset disagrees with record_byte_offset".into()); }
+Ok(record)
+}
+}
+impl From<LostEdgeReference> for LostEdgeReferenceWire {
+fn from(record: LostEdgeReference) -> Self {
+Self {
+record_byte_offset: record.record_byte_offset(),
+class_tag_offset: record.class_tag_offset(),
+record_index_offset: record.record_index_offset(),
+byte_offset: record.byte_offset(),
+next_byte_offset: record.next_byte_offset(),
+id: record.id,
+class_tag: record.class_tag.into(),
+record_index: record.record_index,
+next_class_tag: record.next_class_tag.into(),
+next_record_index: record.next_record_index,
+}
+}
 }
 
 /// One Design `BulkStream` material assignment joining a design entity to visual assets.

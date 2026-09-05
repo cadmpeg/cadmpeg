@@ -170,18 +170,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
             value: 500,
         },
     ];
-    native.lost_edge_references = vec![LostEdgeReference {
-        id: "generated:lost-edge-reference#0".into(),
-        record_byte_offset: 0,
-        class_tag_offset: 0,
-        class_tag: "419".into(),
-        record_index: 4645,
-        record_index_offset: 0,
-        byte_offset: 0,
-        next_byte_offset: 0,
-        next_class_tag: "419".into(),
-        next_record_index: 4646,
-    }];
+    native.lost_edge_references = vec![LostEdgeReference::new("generated:lost-edge-reference#0".into(), 0, "419".into(), 4645, "419".into(), 4646).expect("valid lost-edge record layout")];
 
     drop(native);
     let mut encoded = Vec::new();
@@ -295,9 +284,9 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         PersistentReferenceKind::CurvePrimary
     );
     assert_eq!(native.lost_edge_references.len(), 1);
-    assert_eq!(native.lost_edge_references[0].class_tag, "419");
+    assert_eq!(native.lost_edge_references[0].class_tag.as_str(), "419");
     assert_eq!(native.lost_edge_references[0].record_index, 4645);
-    assert_eq!(native.lost_edge_references[0].next_class_tag, "419");
+    assert_eq!(native.lost_edge_references[0].next_class_tag.as_str(), "419");
     assert_eq!(native.lost_edge_references[0].next_record_index, 4646);
 }
 

@@ -2539,14 +2539,14 @@ pub fn bind_lost_edge_groups(
             .iter()
             .filter(|edge| native_stream(&edge.id) == Some(stream))
             .collect::<Vec<_>>();
-        stream_edges.sort_by_key(|edge| edge.record_byte_offset);
+        stream_edges.sort_by_key(|edge| edge.record_byte_offset());
         let terminals = stream_edges
             .iter()
             .enumerate()
             .filter(|(_, edge)| {
                 edge.next_record_index == wrapper_record_index
-                    && edge.next_byte_offset == wrapper_byte_offset
-                    && edge.next_class_tag == wrapper_class_tag
+                    && edge.next_byte_offset() == wrapper_byte_offset
+                    && edge.next_class_tag.as_str() == wrapper_class_tag
             })
             .map(|(ordinal, _)| ordinal)
             .collect::<Vec<_>>();
@@ -2563,7 +2563,7 @@ pub fn bind_lost_edge_groups(
         while start > 0 {
             let previous = stream_edges[start - 1];
             let current = stream_edges[start];
-            if previous.next_byte_offset != current.record_byte_offset
+            if previous.next_byte_offset() != current.record_byte_offset()
                 || previous.next_record_index != current.record_index
                 || previous.next_class_tag != current.class_tag
             {

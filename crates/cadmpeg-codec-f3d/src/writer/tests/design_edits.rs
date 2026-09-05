@@ -104,9 +104,9 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
     );
     let lost_edge = &mut native.lost_edge_references[0];
-    assert!(lost_edge.class_tag_offset > lost_edge.record_byte_offset);
-    assert!(lost_edge.class_tag_offset < lost_edge.byte_offset);
-    lost_edge.class_tag = "420".into();
+    assert!(lost_edge.class_tag_offset() > lost_edge.record_byte_offset());
+    assert!(lost_edge.class_tag_offset() < lost_edge.byte_offset());
+    lost_edge.class_tag = "420".to_owned().try_into().unwrap();
     lost_edge.record_index = 4_700;
     let assignment = &mut native.design_material_assignments[0];
     assert!(assignment.entity_id_offset > 0);
@@ -217,7 +217,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         Some("dddddddd-1111-2222-3333-eeeeeeeeeeee")
     );
     let lost_edge = &f3d_native(round_trip.ir()).lost_edge_references[0];
-    assert_eq!(lost_edge.class_tag, "420");
+    assert_eq!(lost_edge.class_tag.as_str(), "420");
     assert_eq!(lost_edge.record_index, 4_700);
     assert_eq!(
         f3d_native(round_trip.ir()).design_material_assignments[0].entity_id.as_str(),

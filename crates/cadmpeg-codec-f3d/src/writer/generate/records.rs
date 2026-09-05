@@ -354,8 +354,6 @@ pub(crate) fn encode_design_bulkstream(
         out.extend_from_slice(&reference.value.to_le_bytes());
     }
     for (ordinal, reference) in native.lost_edge_references.iter().enumerate() {
-        validate_dynamic_class_tag(&reference.class_tag, "lost-edge reference")?;
-        validate_dynamic_class_tag(&reference.next_class_tag, "lost-edge next record")?;
         if let Some(previous) = ordinal
             .checked_sub(1)
             .and_then(|ordinal| native.lost_edge_references.get(ordinal))
@@ -369,13 +367,13 @@ pub(crate) fn encode_design_bulkstream(
                 )));
             }
         } else {
-            native_lp_ascii(&mut out, &reference.class_tag)?;
+            native_lp_ascii(&mut out, reference.class_tag.as_str())?;
             out.extend_from_slice(&reference.record_index.to_le_bytes());
         }
         out.extend_from_slice(&[0; 14]);
         out.extend_from_slice(&19u32.to_le_bytes());
         out.extend_from_slice(b"EDGE_REFERENCE_LOST");
-        native_lp_ascii(&mut out, &reference.next_class_tag)?;
+        native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
         out.extend_from_slice(&reference.next_record_index.to_le_bytes());
     }
     Ok(Some(EncodedDesignBulkStream {
