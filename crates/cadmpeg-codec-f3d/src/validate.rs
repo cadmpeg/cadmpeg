@@ -3624,24 +3624,20 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         })
             }
         };
-        let joint_origin_link = match (
-            scope.joint_origin_transform(),
-            scope.joint_origin_transform_offset(),
-            scope.joint_origin_reference(),
-            scope.joint_origin_reference_offset(),
-        ) {
-            (None, None, None, None) => true,
-            (Some(transform), Some(transform_offset), reference, reference_offset) => {
-                let inline = match (scope.frame_length, reference, reference_offset) {
-                    (385, None, None) => transform_offset == scope.byte_offset + 49,
-                    (336 | 347, Some(reference), Some(reference_offset)) => {
-                        transform_offset == scope.byte_offset + 60
-                            && reference_offset == scope.byte_offset + 46
-                            && scope.reference_members.contains(&reference)
-                    }
-                    _ => false,
-                };
-                let assembly_operand = native.design_parameter_scopes.iter().any(|assembly| {
+        let joint_origin_link = scope.joint_origin_frame().is_none_or(|origin| {
+            let transform = origin.joint_origin_transform;
+            let transform_offset = origin.joint_origin_transform_offset;
+            let inline = match (scope.frame_length, &origin.reference) {
+                (385, None) => transform_offset == scope.byte_offset + 49,
+                (336 | 347, Some(reference)) => {
+                    transform_offset == scope.byte_offset + 60
+                        && reference.joint_origin_reference_offset == scope.byte_offset + 46
+                        && scope.reference_members.contains(&reference.joint_origin_reference)
+                }
+                _ => false,
+            };
+            let assembly_operand = origin.reference.is_none()
+                && native.design_parameter_scopes.iter().any(|assembly| {
                     design_stream(&assembly.id) == native_stream
                         && assembly.kind() == crate::records::DesignFeatureKind::Assemble
                         && assembly.assembly_alignment().is_some_and(|alignment| {
@@ -3653,27 +3649,22 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 })
                             })
                         })
-                        && reference.is_none()
-                        && reference_offset.is_none()
                 });
-                let single_operand_assembly =
-                    native.design_parameter_scopes.iter().any(|assembly| {
-                        design_stream(&assembly.id) == native_stream
-                            && assembly.kind() == crate::records::DesignFeatureKind::Assemble
-                            && assembly.class_tag == "276"
-                            && assembly.paired_class_tag == "258"
-                            && assembly.frame_length == 604
-                            && transform_offset == assembly.byte_offset + 36
-                            && reference.is_some_and(|reference| {
-                                assembly.reference_members.contains(&reference)
-                            })
-                            && reference_offset == Some(assembly.byte_offset + 25)
-                    });
-                design::decode::sketch::valid_sketch_transform(&transform)
-                    && (inline || assembly_operand || single_operand_assembly)
-            }
-            _ => false,
-        };
+            let single_operand_assembly = origin.reference.as_ref().is_some_and(|reference| {
+                native.design_parameter_scopes.iter().any(|assembly| {
+                    design_stream(&assembly.id) == native_stream
+                        && assembly.kind() == crate::records::DesignFeatureKind::Assemble
+                        && assembly.class_tag == "276"
+                        && assembly.paired_class_tag == "258"
+                        && assembly.frame_length == 604
+                        && transform_offset == assembly.byte_offset + 36
+                        && assembly.reference_members.contains(&reference.joint_origin_reference)
+                        && reference.joint_origin_reference_offset == assembly.byte_offset + 25
+                })
+            });
+            design::decode::sketch::valid_sketch_transform(&transform)
+                && (inline || assembly_operand || single_operand_assembly)
+        });
         let work_point_link = valid_work_point_construction(ctx, scope, native_stream);
         let work_plane_link = valid_work_plane_construction(ctx, scope, native_stream);
         let valid = scope.class_tag.len() == 3

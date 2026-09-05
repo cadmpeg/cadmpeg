@@ -1011,11 +1011,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     offset_scope.reference_members = vec![1, 2, 3, 73];
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
-        Some(DesignDirectFaceOperation::OffsetFaces {
+        Some(DesignDirectFaceOperation::OffsetFaces(crate::records::DesignOffsetFacesOperation {
             distance: -0.5,
             distance_record_index: 73,
             ..
-        })
+        }))
     ));
 
     let compact_offset_at = bytes.len();
@@ -1039,11 +1039,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     offset_scope.reference_members = vec![1, 2, 1_777];
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
-        Some(DesignDirectFaceOperation::OffsetFaces {
+        Some(DesignDirectFaceOperation::OffsetFaces(crate::records::DesignOffsetFacesOperation {
             distance: 0.254,
             distance_record_index: 1_777,
             ..
-        })
+        }))
     ));
 
     let thicken_at = bytes.len();
@@ -1067,11 +1067,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     thicken_scope.reference_members = vec![1, 2, 74];
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
-        Some(DesignDirectFaceOperation::Thicken {
+        Some(DesignDirectFaceOperation::Thicken(crate::records::DesignThickenOperation {
             signed_thickness: -1.0,
             thickness_record_index: 74,
             ..
-        })
+        }))
     ));
     thicken_scope.frame_length = 295;
     assert_eq!(
@@ -1087,11 +1087,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     thicken_scope.byte_offset = compact_thicken_at as u64;
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
-        Some(DesignDirectFaceOperation::Thicken {
+        Some(DesignDirectFaceOperation::Thicken(crate::records::DesignThickenOperation {
             signed_thickness: -1.0,
             thickness_record_index: 74,
             ..
-        })
+        }))
     ));
     let shifted_thicken_at = bytes.len();
     let mut shifted_thicken = vec![0; 312];
@@ -1112,11 +1112,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &IndexedRecordOffsets::build(&bytes),
             &shifted_thicken_scope,
         ),
-        Some(DesignDirectFaceOperation::Thicken {
+        Some(DesignDirectFaceOperation::Thicken(crate::records::DesignThickenOperation {
             signed_thickness: -1.0,
             thickness_record_index: 74,
             ..
-        })
+        }))
     ));
     {
         let construction = exact_direct_face_operation(
@@ -1124,15 +1124,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &IndexedRecordOffsets::build(&bytes),
             &thicken_scope,
         );
-        if let crate::records::DesignScopePayload::ReplaceFace(slot)
-        | crate::records::DesignScopePayload::OffsetFaces(slot)
-        | crate::records::DesignScopePayload::DecalerLesFaces(slot)
-        | crate::records::DesignScopePayload::Shell(slot)
-        | crate::records::DesignScopePayload::Schale(slot)
-        | crate::records::DesignScopePayload::Thicken(slot) = &mut thicken_scope.payload
-        {
-            *slot = construction;
-        }
+        match (&mut thicken_scope.payload, construction) {
+(crate::records::DesignScopePayload::OffsetFaces(slot) | crate::records::DesignScopePayload::DecalerLesFaces(slot), Some(crate::records::DesignDirectFaceOperation::OffsetFaces(value))) => *slot = Some(value),
+(crate::records::DesignScopePayload::Shell(slot) | crate::records::DesignScopePayload::Schale(slot), Some(crate::records::DesignDirectFaceOperation::Shell(value))) => *slot = Some(value),
+(crate::records::DesignScopePayload::Thicken(slot), Some(crate::records::DesignDirectFaceOperation::Thicken(value))) => *slot = Some(value),
+_ => {},
+}
     }
     let thicken_group = DesignConstructionOperandGroup {
         id: "thicken-group".into(),
@@ -1216,24 +1213,21 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     {
         let construction =
             exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &shell_scope);
-        if let crate::records::DesignScopePayload::ReplaceFace(slot)
-        | crate::records::DesignScopePayload::OffsetFaces(slot)
-        | crate::records::DesignScopePayload::DecalerLesFaces(slot)
-        | crate::records::DesignScopePayload::Shell(slot)
-        | crate::records::DesignScopePayload::Schale(slot)
-        | crate::records::DesignScopePayload::Thicken(slot) = &mut shell_scope.payload
-        {
-            *slot = construction;
-        }
+        match (&mut shell_scope.payload, construction) {
+(crate::records::DesignScopePayload::OffsetFaces(slot) | crate::records::DesignScopePayload::DecalerLesFaces(slot), Some(crate::records::DesignDirectFaceOperation::OffsetFaces(value))) => *slot = Some(value),
+(crate::records::DesignScopePayload::Shell(slot) | crate::records::DesignScopePayload::Schale(slot), Some(crate::records::DesignDirectFaceOperation::Shell(value))) => *slot = Some(value),
+(crate::records::DesignScopePayload::Thicken(slot), Some(crate::records::DesignDirectFaceOperation::Thicken(value))) => *slot = Some(value),
+_ => {},
+}
     }
     assert!(matches!(
-        shell_scope.direct_face_operation(),
-        Some(DesignDirectFaceOperation::Shell {
+        &shell_scope.payload,
+        crate::records::DesignScopePayload::Shell(Some(crate::records::DesignShellOperation {
             thickness: 0.5,
             thickness_record_index: 1_778,
             outward: true,
             ..
-        })
+        }))
     ));
     let mut shell_group = thicken_group.clone();
     shell_group.id = "shell-group".into();
@@ -1286,13 +1280,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     };
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &compact_shell_scope),
-        Some(DesignDirectFaceOperation::Shell {
+        Some(DesignDirectFaceOperation::Shell(crate::records::DesignShellOperation {
             thickness: 0.25,
             thickness_record_index: 9_000,
             outward: true,
             outward_offset,
             ..
-        }) if outward_offset == (compact_shell_at + 21) as u64
+        })) if outward_offset == (compact_shell_at + 21) as u64
     ));
     let shifted_shell_at = bytes.len();
     let mut shifted_shell = vec![0; 278];
@@ -1316,13 +1310,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &IndexedRecordOffsets::build(&bytes),
             &shifted_shell_scope,
         ),
-        Some(DesignDirectFaceOperation::Shell {
+        Some(DesignDirectFaceOperation::Shell(crate::records::DesignShellOperation {
             thickness: 0.25,
             thickness_record_index: 9_000,
             outward: false,
             outward_offset,
             ..
-        }) if outward_offset == (shifted_shell_at + 21) as u64
+        })) if outward_offset == (shifted_shell_at + 21) as u64
     ));
     {
         let construction = exact_direct_face_operation(
@@ -1330,15 +1324,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &IndexedRecordOffsets::build(&bytes),
             &compact_shell_scope,
         );
-        if let crate::records::DesignScopePayload::ReplaceFace(slot)
-        | crate::records::DesignScopePayload::OffsetFaces(slot)
-        | crate::records::DesignScopePayload::DecalerLesFaces(slot)
-        | crate::records::DesignScopePayload::Shell(slot)
-        | crate::records::DesignScopePayload::Schale(slot)
-        | crate::records::DesignScopePayload::Thicken(slot) = &mut compact_shell_scope.payload
-        {
-            *slot = construction;
-        }
+        match (&mut compact_shell_scope.payload, construction) {
+(crate::records::DesignScopePayload::OffsetFaces(slot) | crate::records::DesignScopePayload::DecalerLesFaces(slot), Some(crate::records::DesignDirectFaceOperation::OffsetFaces(value))) => *slot = Some(value),
+(crate::records::DesignScopePayload::Shell(slot) | crate::records::DesignScopePayload::Schale(slot), Some(crate::records::DesignDirectFaceOperation::Shell(value))) => *slot = Some(value),
+(crate::records::DesignScopePayload::Thicken(slot), Some(crate::records::DesignDirectFaceOperation::Thicken(value))) => *slot = Some(value),
+_ => {},
+}
     }
     shell_group.role = 0x0000_0004_0000_0000;
     assert!(matches!(
@@ -1361,15 +1352,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &IndexedRecordOffsets::build(&bytes),
             &offset_scope,
         );
-        if let crate::records::DesignScopePayload::ReplaceFace(slot)
-        | crate::records::DesignScopePayload::OffsetFaces(slot)
-        | crate::records::DesignScopePayload::DecalerLesFaces(slot)
-        | crate::records::DesignScopePayload::Shell(slot)
-        | crate::records::DesignScopePayload::Schale(slot)
-        | crate::records::DesignScopePayload::Thicken(slot) = &mut offset_scope.payload
-        {
-            *slot = construction;
-        }
+        match (&mut offset_scope.payload, construction) {
+(crate::records::DesignScopePayload::OffsetFaces(slot) | crate::records::DesignScopePayload::DecalerLesFaces(slot), Some(crate::records::DesignDirectFaceOperation::OffsetFaces(value))) => *slot = Some(value),
+(crate::records::DesignScopePayload::Shell(slot) | crate::records::DesignScopePayload::Schale(slot), Some(crate::records::DesignDirectFaceOperation::Shell(value))) => *slot = Some(value),
+(crate::records::DesignScopePayload::Thicken(slot), Some(crate::records::DesignDirectFaceOperation::Thicken(value))) => *slot = Some(value),
+_ => {},
+}
     }
     let mut offset_group = thicken_group.clone();
     offset_group.id = "offset-group".into();

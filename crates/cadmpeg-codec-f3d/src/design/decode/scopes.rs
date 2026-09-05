@@ -334,15 +334,12 @@ pub fn decode_parameter_scopes(
             }
             {
                 let construction = exact_direct_face_operation(bytes, &records, &scope);
-                if let crate::records::DesignScopePayload::ReplaceFace(slot)
-                | crate::records::DesignScopePayload::OffsetFaces(slot)
-                | crate::records::DesignScopePayload::DecalerLesFaces(slot)
-                | crate::records::DesignScopePayload::Shell(slot)
-                | crate::records::DesignScopePayload::Schale(slot)
-                | crate::records::DesignScopePayload::Thicken(slot) = &mut scope.payload
-                {
-                    *slot = construction;
-                }
+                match (&mut scope.payload, construction) {
+(crate::records::DesignScopePayload::OffsetFaces(slot) | crate::records::DesignScopePayload::DecalerLesFaces(slot), Some(crate::records::DesignDirectFaceOperation::OffsetFaces(value))) => *slot = Some(value),
+(crate::records::DesignScopePayload::Shell(slot) | crate::records::DesignScopePayload::Schale(slot), Some(crate::records::DesignDirectFaceOperation::Shell(value))) => *slot = Some(value),
+(crate::records::DesignScopePayload::Thicken(slot), Some(crate::records::DesignDirectFaceOperation::Thicken(value))) => *slot = Some(value),
+_ => {},
+}
             }
             {
                 let construction = exact_move_operation(bytes, &records, &scope);
@@ -6658,11 +6655,11 @@ fn exact_legacy_thicken_class_347(
         return None;
     }
     let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
-    (scalar.value != 0.0).then_some(DesignDirectFaceOperation::Thicken {
+    (scalar.value != 0.0).then_some(DesignDirectFaceOperation::Thicken(crate::records::DesignThickenOperation {
         signed_thickness: scalar.value,
         thickness_record_index,
         thickness_offset: scalar.value_offset,
-    })
+    }))
 }
 
 fn exact_shell_class_369_261(
@@ -6752,13 +6749,13 @@ fn exact_shell_class_369_261(
     if scalar.value <= 0.0 {
         return None;
     }
-    Some(DesignDirectFaceOperation::Shell {
+    Some(DesignDirectFaceOperation::Shell(crate::records::DesignShellOperation {
         thickness: scalar.value,
         thickness_record_index,
         thickness_offset: scalar.value_offset,
         outward,
         outward_offset: u64::try_from(start + shell_369_261::OUTWARD).ok()?,
-    })
+    }))
 }
 
 pub(crate) fn exact_direct_face_operation(
@@ -6788,11 +6785,11 @@ pub(crate) fn exact_direct_face_operation(
                 return None;
             }
             let scalar = exact_fixed_scalar(bytes, records, distance_record_index)?;
-            Some(DesignDirectFaceOperation::OffsetFaces {
+            Some(DesignDirectFaceOperation::OffsetFaces(crate::records::DesignOffsetFacesOperation {
                 distance: scalar.value,
                 distance_record_index,
                 distance_offset: scalar.value_offset,
-            })
+            }))
         }
         DesignFeatureFamily::Thicken if scope.reference_members.len() >= 3 => {
             if let Some(operation) = exact_legacy_thicken_class_347(bytes, records, scope) {
@@ -6838,11 +6835,11 @@ pub(crate) fn exact_direct_face_operation(
             if scalar.value == 0.0 {
                 return None;
             }
-            Some(DesignDirectFaceOperation::Thicken {
+            Some(DesignDirectFaceOperation::Thicken(crate::records::DesignThickenOperation {
                 signed_thickness: scalar.value,
                 thickness_record_index,
                 thickness_offset: scalar.value_offset,
-            })
+            }))
         }
         DesignFeatureFamily::Shell if scope.reference_members.len() == 3 => {
             let (thickness_record_index, thickness_is_first, outward, outward_offset) =
@@ -6916,13 +6913,13 @@ pub(crate) fn exact_direct_face_operation(
             if scalar.value <= 0.0 {
                 return None;
             }
-            Some(DesignDirectFaceOperation::Shell {
+            Some(DesignDirectFaceOperation::Shell(crate::records::DesignShellOperation {
                 thickness: scalar.value,
                 thickness_record_index,
                 thickness_offset: scalar.value_offset,
                 outward,
                 outward_offset: u64::try_from(outward_offset).ok()?,
-            })
+            }))
         }
         _ => None,
     }
