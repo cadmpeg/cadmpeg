@@ -283,14 +283,14 @@ pub(crate) fn project_assembly_joints(
         let Some(alignment) = scope.assembly_alignment() else {
             continue;
         };
-        let Some(frames) = &alignment.operand_frames else {
+        let Some(frames) = alignment.operand_frames() else {
             continue;
         };
-        let operands = if let Some(carriers) = alignment.legacy_operand_carriers.as_ref() {
-            project_legacy_operands(carriers)
+        let operands = if let Some(carriers) = alignment.legacy_operand_carriers() {
+            project_legacy_operands(&carriers)
         } else {
             alignment
-                .operand_qualifiers
+                .operand_qualifiers()
                 .as_ref()
                 .and_then(|qualifiers| {
                     project_qualified_operands(qualifiers, stream, &occurrences, scopes, features)

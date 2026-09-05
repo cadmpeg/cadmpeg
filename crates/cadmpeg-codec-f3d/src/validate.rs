@@ -2701,36 +2701,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     &scope.paired_class_tag,
                 );
                 let as_built_421 = as_built_421_generation.is_some();
-                let operand_paths = alignment
-                    .operand_qualifiers
-                    .as_ref()
-                    .and_then(|qualifiers| {
-                        let [Some(first), Some(second)] = qualifiers
-                            .each_ref()
-                            .map(|qualifier| qualifier.occurrence_path())
-                        else {
-                            return None;
-                        };
-                        Some([first, second])
-                    });
-                let axial_operand_targets =
-                    alignment
-                        .operand_qualifiers
-                        .as_ref()
-                        .and_then(|qualifiers| {
-                            let [Some(first), Some(second)] = qualifiers
-                                .each_ref()
-                                .map(|qualifier| qualifier.axial_target())
-                            else {
-                                return None;
-                            };
-                            Some([first, second])
-                        });
-                let legacy_operand_frames_link = alignment
-                    .legacy_operand_carriers
-                    .as_ref()
-                    .is_none_or(|carriers| {
-                        alignment.operand_frames.as_ref().is_some_and(|frames| {
+                let operand_paths = alignment.operand_paths();
+                let axial_operand_targets = alignment.axial_operand_targets();
+                let legacy_operand_frames_link =
+                    alignment.legacy_operand_carriers().is_none_or(|carriers| {
+                        alignment.operand_frames().is_some_and(|frames| {
                             frames.iter().zip(carriers).enumerate().all(
                                 |(ordinal, (frame, carrier))| {
                                     let reference_ordinal = ordinal.saturating_mul(2);
@@ -2744,7 +2719,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                             .get(reference_ordinal)
                                             .copied()
                                             == Some(frame.reference_offset)
-                                        && alignment.solved_frame.as_ref().is_some_and(|solved| {
+                                        && alignment.solved_frame().is_some_and(|solved| {
                                             frame.transform_offset == solved.transform_offset
                                         })
                                         && records_by_index.contains_key(&(
@@ -2783,10 +2758,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     &scope.paired_class_tag,
                     assembly_owner_count,
                 );
-                let operand_frames_link = if alignment.legacy_operand_carriers.is_some() {
+                let operand_frames_link = if alignment.legacy_operand_carriers().is_some() {
                     legacy_operand_frames_link
                 } else {
-                    alignment.operand_frames.as_ref().is_none_or(|frames| {
+                    alignment.operand_frames().is_none_or(|frames| {
                         frames[0].reference_record_index != frames[1].reference_record_index
                             && frames.iter().enumerate().all(|(ordinal, frame)| {
                                 let offsets_match = if as_built_frames {
@@ -2819,7 +2794,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             })
                     })
                 };
-                let solved_frame_link = alignment.solved_frame.as_ref().is_none_or(|frame| {
+                let solved_frame_link = alignment.solved_frame().is_none_or(|frame| {
                     let Some(generation) = as_built_421_generation else {
                         return false;
                     };
@@ -2842,9 +2817,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && design::decode::sketch::valid_sketch_transform(&frame.transform)
                 });
                 let mixed_variable_qualifiers_link = alignment
-                    .operand_frames
-                    .as_ref()
-                    .zip(alignment.operand_qualifiers.as_ref())
+                    .operand_frames()
+                    .zip(alignment.operand_qualifiers().as_ref())
                     .filter(|(_, qualifiers)| {
                         variable_reference
                             && qualifiers.iter().any(|qualifier| {
@@ -2856,7 +2830,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     })
                     .map(|(frames, qualifiers)| {
                         frames[0].reference_record_index != frames[1].reference_record_index
-                            && qualifiers.iter().zip(frames).all(|(qualifier, frame)| {
+                            && qualifiers.iter().zip(&frames).all(|(qualifier, frame)| {
                                 match qualifier {
                                     records::DesignAssemblyOperandQualifier::OccurrencePath {
                                         path,
@@ -2880,7 +2854,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     link
                 } else {
                     match (
-                        alignment.operand_frames.as_ref(),
+                        alignment.operand_frames(),
                         operand_paths.as_ref(),
                         axial_operand_targets.as_ref(),
                     ) {
@@ -2888,7 +2862,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         // An axial form can retain its frames before both exact
                         // pathless target joins resolve.
                         (Some(_), None, None) if as_built_421 => {
-                            alignment.legacy_operand_carriers.is_some()
+                            alignment.legacy_operand_carriers().is_some()
                         }
                         (Some(_), None, None) => axial_frames,
                         (Some(frames), Some(paths), None) => {
@@ -2899,7 +2873,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 !axial_frames
                                     && paths[0].link.locator_record_index
                                         != paths[1].link.locator_record_index
-                                    && paths.iter().zip(frames).all(|(path, frame)| {
+                                    && paths.iter().zip(&frames).all(|(path, frame)| {
                                         valid_class_363_operand_path_link(scope, frame, path)
                                     })
                             } else {
@@ -3013,14 +2987,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             }
                         }
                         (Some(frames), None, Some(targets)) => {
+                            let target_refs = [&targets[0], &targets[1]];
                             axial_frames
                                 && valid_axial_assembly_targets(
                                     native,
                                     records_by_index,
                                     native_stream,
                                     scope,
-                                    frames,
-                                    targets,
+                                    &frames,
+                                    &target_refs,
                                 )
                         }
                         _ => false,
@@ -3029,8 +3004,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let joint_origin_envelope_link = alignment
                     .joint_origin_scope_record_index
                     .is_none_or(|record_index| {
-                        alignment.operand_frames.is_none()
-                            && alignment.operand_qualifiers.is_none()
+                        alignment.operand_frames().is_none()
+                            && alignment.operand_qualifiers().is_none()
                             && scope.class_tag == "276"
                             && scope.paired_class_tag == "258"
                             && scope.frame_length == 604
@@ -3688,7 +3663,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     design_stream(&assembly.id) == native_stream
                         && assembly.kind == "Assemble"
                         && assembly.assembly_alignment().is_some_and(|alignment| {
-                            alignment.operand_frames.as_ref().is_some_and(|frames| {
+                            alignment.operand_frames().is_some_and(|frames| {
                                 frames.iter().any(|frame| {
                                     frame.reference_record_index == scope.record_index
                                         && frame.transform == transform

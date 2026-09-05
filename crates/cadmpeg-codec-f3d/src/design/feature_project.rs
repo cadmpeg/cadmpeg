@@ -657,11 +657,11 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::Assemble) => scope
                     .assembly_alignment()
                     .filter(|alignment| {
-                        alignment.operand_frames.is_some()
-                            && ((alignment.legacy_operand_carriers.is_some()
-                                && alignment.operand_qualifiers.is_none())
-                                || (alignment.legacy_operand_carriers.is_none()
-                                    && alignment.operand_qualifiers.is_some()))
+                        alignment.operand_frames().is_some()
+                            && ((alignment.legacy_operand_carriers().is_some()
+                                && alignment.operand_qualifiers().is_none())
+                                || (alignment.legacy_operand_carriers().is_none()
+                                    && alignment.operand_qualifiers().is_some()))
                     })
                     .map_or_else(
                         || FeatureDefinition::Native {

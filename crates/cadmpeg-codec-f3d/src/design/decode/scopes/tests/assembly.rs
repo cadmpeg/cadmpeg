@@ -407,7 +407,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners
     )
-    .and_then(|alignment| alignment.operand_frames)
+    .and_then(|alignment| alignment.operand_frames())
     .is_some());
     assembly_bytes[25] = 2;
     assert!(exact_assembly_alignment(
@@ -416,7 +416,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners
     )
-    .is_some_and(|alignment| alignment.operand_frames.is_none()));
+    .is_some_and(|alignment| alignment.operand_frames().is_none()));
 
     scope.reference_members.push(99);
     assert_eq!(
@@ -486,10 +486,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
     assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
     assert_eq!(alignment.owner_record_indices, vec![108, 109, 110, 111]);
     assert_eq!(alignment.value_offsets, vec![2_008, 2_009, 2_010, 2_011]);
-    let frames = alignment
-        .operand_frames
-        .as_ref()
-        .expect("legacy operand frames");
+    let frames = alignment.operand_frames().expect("legacy operand frames");
     assert_eq!(
         frames.each_ref().map(|frame| frame.reference_record_index),
         [300, 400]
@@ -641,8 +638,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     assert_eq!(alignment.owner_record_indices, [1_004, 1_005, 1_006, 1_007]);
     assert_eq!(alignment.value_offsets, [2_004, 2_005, 2_006, 2_007]);
     let frames = alignment
-        .operand_frames
-        .as_ref()
+        .operand_frames()
         .expect("legacy class-388 operand frames");
     assert_eq!(
         frames
@@ -888,10 +884,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
     assert_eq!(alignment.owner_record_indices, [50, 51, 52, 53]);
     assert_eq!(alignment.value_offsets, [501, 502, 503, 504]);
-    let frames = alignment
-        .operand_frames
-        .as_ref()
-        .expect("locator transforms");
+    let frames = alignment.operand_frames().expect("locator transforms");
     assert_eq!(
         frames
             .each_ref()
@@ -927,7 +920,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
         &owners,
     )
     .expect("alignment scalars remain exact");
-    assert_eq!(incomplete.operand_frames, None);
+    assert_eq!(incomplete.operand_frames(), None);
     assert_eq!(incomplete.operand_paths(), None);
 
     let mut duplicate_reference = bytes;
@@ -939,7 +932,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
         &owners,
     )
     .expect("alignment scalars remain exact");
-    assert_eq!(incomplete.operand_frames, None);
+    assert_eq!(incomplete.operand_frames(), None);
     assert_eq!(incomplete.operand_paths(), None);
 }
 
@@ -1118,9 +1111,9 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
                 [1_005, 1_006]
             }
         );
-        assert!(alignment.operand_frames.is_none());
+        assert!(alignment.operand_frames().is_none());
         assert!(alignment.operand_paths().is_none());
-        let solved_frame = alignment.solved_frame.expect("solved frame carrier");
+        let solved_frame = alignment.solved_frame().expect("solved frame carrier");
         assert_eq!(solved_frame.reference_record_index, 200);
         assert_eq!(solved_frame.reference_offset, 190 + 8 * 11);
         assert_eq!(solved_frame.record_byte_offset, frame_start as u64);
@@ -1191,19 +1184,16 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         construction_paired_byte_offset,
         selectors,
         ..
-    } = targets[0]
+    } = targets[0].clone()
     else {
         panic!("first operand must select a component insertion");
     };
-    assert_eq!(*component_insert_scope_record_index, 200);
-    assert_eq!(
-        *construction_transform_offset,
-        construction_byte_offset + 48
-    );
+    assert_eq!(component_insert_scope_record_index, 200);
+    assert_eq!(construction_transform_offset, construction_byte_offset + 48);
     assert_eq!(axis_record_index_offsets[0], construction_byte_offset + 193);
     assert_eq!(axis_record_index_offsets[1], construction_byte_offset + 209);
     assert_eq!(
-        *construction_paired_byte_offset,
+        construction_paired_byte_offset,
         construction_byte_offset + 380
     );
     assert_eq!(selectors[0].axis_paired_class_tag, "261");
@@ -1216,11 +1206,11 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         component_insert_scope_record_index,
         selectors: versioned_selectors,
         ..
-    } = targets[1]
+    } = targets[1].clone()
     else {
         panic!("second operand must select a component insertion");
     };
-    assert_eq!(*component_insert_scope_record_index, 300);
+    assert_eq!(component_insert_scope_record_index, 300);
     assert!(versioned_selectors[0].external_property_key.is_some());
     assert_eq!(
         versioned_selectors[0].external_version_urn.as_deref(),
@@ -1288,7 +1278,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     ));
     assert_eq!(
         targets[1],
-        &DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+        DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
             scope_record_index: 80
         }
     );
@@ -1916,23 +1906,22 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
         offset: [0.0; 3],
         owner_record_indices: vec![90, 91],
         value_offsets: vec![1, 2],
-        operand_frames: Some([
-            DesignAssemblyOperandFrame {
-                reference_record_index: 70,
-                reference_offset: 1,
-                transform: transforms[0],
-                transform_offset: 2,
-            },
-            DesignAssemblyOperandFrame {
-                reference_record_index: 80,
-                reference_offset: 3,
-                transform: transforms[1],
-                transform_offset: 4,
-            },
-        ]),
-        legacy_operand_carriers: None,
-        solved_frame: None,
-        operand_qualifiers: None,
+        operands: Some(crate::records::DesignAssemblyOperandForm::Frames {
+            frames: [
+                DesignAssemblyOperandFrame {
+                    reference_record_index: 70,
+                    reference_offset: 1,
+                    transform: transforms[0],
+                    transform_offset: 2,
+                },
+                DesignAssemblyOperandFrame {
+                    reference_record_index: 80,
+                    reference_offset: 3,
+                    transform: transforms[1],
+                    transform_offset: 4,
+                },
+            ],
+        }),
         limits: None,
         joint_origin_scope_record_index: None,
     }

@@ -382,8 +382,8 @@ pub fn decode_parameter_scopes(
             ));
             let solved_frame = scope
                 .assembly_alignment()
-                .and_then(|alignment| alignment.solved_frame.as_ref());
-            let legacy_operand_carriers = solved_frame.and_then(|solved_frame| {
+                .and_then(|alignment| alignment.solved_frame());
+            let legacy_operand_carriers = solved_frame.as_ref().and_then(|solved_frame| {
                 exact_legacy_as_built_421_operands(
                     bytes,
                     &records,
@@ -396,9 +396,7 @@ pub fn decode_parameter_scopes(
             if let (Some(alignment), Some(carriers)) =
                 (scope.assembly_alignment_mut(), legacy_operand_carriers)
             {
-                alignment.operand_frames =
-                    Some([carriers[0].frame.clone(), carriers[1].frame.clone()]);
-                alignment.legacy_operand_carriers = Some(carriers);
+                alignment.set_legacy_operand_carriers(carriers);
             }
             scope.set_component_insert_construction(exact_component_insert_construction(
                 bytes, &records, &scope,
@@ -760,7 +758,7 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
         }
         if let Some(frames) = scope
             .assembly_alignment()
-            .and_then(|alignment| alignment.operand_frames.as_ref())
+            .and_then(|alignment| alignment.operand_frames())
         {
             for frame in frames {
                 candidates.push((
@@ -848,10 +846,10 @@ pub(crate) fn bind_axial_assembly_operand_targets(
                 return None;
             }
             let alignment = scope.assembly_alignment()?;
-            if alignment.operand_qualifiers.is_some() {
+            if alignment.operand_qualifiers().is_some() {
                 return None;
             }
-            let frames = alignment.operand_frames.as_ref()?;
+            let frames = alignment.operand_frames()?;
             let first =
                 exact_assembly_axial_operand_target(bytes, records, scope, &frames[0], scopes)?;
             let second =
@@ -866,7 +864,7 @@ pub(crate) fn bind_axial_assembly_operand_targets(
 
     for (ordinal, targets) in bindings {
         if let Some(alignment) = scopes[ordinal].assembly_alignment_mut() {
-            alignment.operand_qualifiers = Some(targets);
+            alignment.set_operand_qualifiers(targets);
         }
     }
 }
@@ -1742,58 +1740,77 @@ pub(crate) fn exact_assembly_alignment(
         }
         (angle, offset, owner_record_indices, value_offsets, None)
     };
-    let mut alignment = DesignAssemblyAlignment {
-        angle,
-        offset,
-        owner_record_indices,
-        value_offsets,
-        operand_frames: None,
-        legacy_operand_carriers: None,
-        solved_frame: as_built_421
-            .then(|| exact_legacy_as_built_421_solved_frame(bytes, records, scope))
-            .flatten(),
-        operand_qualifiers: None,
-        limits,
-        joint_origin_scope_record_index: None,
-    };
+    let solved_frame = as_built_421
+        .then(|| exact_legacy_as_built_421_solved_frame(bytes, records, scope))
+        .flatten();
+    let frames;
+    let mut qualifiers = None;
     if scope.kind == "As-built" {
         let paths = exact_assembly_operand_paths(bytes, records, scope);
-        alignment.operand_frames = paths
+        frames = paths
             .as_ref()
             .and_then(|paths| exact_as_built_operand_frames(bytes, paths));
-        alignment.operand_qualifiers = paths
+        qualifiers = paths
             .map(|paths| paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }));
     } else {
-        alignment.operand_frames = exact_assembly_operand_frames(bytes, scope);
-        if alignment.operand_frames.is_some() {
+        frames = exact_assembly_operand_frames(bytes, scope);
+        if let Some(operand_frames) = frames.as_ref() {
             let paths = if legacy_class_383 {
-                alignment.operand_frames.as_ref().and_then(|frames| {
-                    exact_legacy_class_383_operand_paths(bytes, records, scope, frames)
-                })
+                exact_legacy_class_383_operand_paths(bytes, records, scope, operand_frames)
             } else if legacy_class_388 {
                 exact_legacy_class_388_operand_paths(bytes, records, scope)
             } else if crate::design::assembly::variable_reference_assembly_generation(
                 &scope.class_tag,
                 &scope.paired_class_tag,
             ) {
-                if let Some(qualifiers) = alignment.operand_frames.as_ref().and_then(|frames| {
+                if let Some(variable_qualifiers) =
                     assembly_carrier_paths::exact_variable_reference_operand_qualifiers(
-                        bytes, records, scope, frames,
+                        bytes,
+                        records,
+                        scope,
+                        operand_frames,
                     )
-                }) {
-                    alignment.operand_qualifiers = Some(qualifiers);
-                    return Some(alignment);
+                {
+                    qualifiers = Some(variable_qualifiers);
+                    let operands = crate::records::DesignAssemblyOperandForm::from_decoded(
+                        None,
+                        solved_frame,
+                        frames,
+                        qualifiers,
+                    );
+                    return Some(DesignAssemblyAlignment {
+                        angle,
+                        offset,
+                        owner_record_indices,
+                        value_offsets,
+                        operands,
+                        limits,
+                        joint_origin_scope_record_index: None,
+                    });
                 }
                 exact_assembly_operand_paths(bytes, records, scope)
             } else {
                 exact_assembly_operand_paths(bytes, records, scope)
             };
-            alignment.operand_qualifiers = paths.map(|paths| {
+            qualifiers = paths.map(|paths| {
                 paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
             });
         }
     }
-    Some(alignment)
+    Some(DesignAssemblyAlignment {
+        angle,
+        offset,
+        owner_record_indices,
+        value_offsets,
+        operands: crate::records::DesignAssemblyOperandForm::from_decoded(
+            None,
+            solved_frame,
+            frames,
+            qualifiers,
+        ),
+        limits,
+        joint_origin_scope_record_index: None,
+    })
 }
 
 pub(crate) fn exact_derived_instance_construction(
