@@ -76,8 +76,8 @@ use super::topology::{
     loop_chain, region_chain, ring_coedges, shell_chain, shell_faces, subshell_ancestor_shells,
 };
 use super::{
-    AsmBrep, Carriers, Reachable, WireShellTopology, embedded_pcurve_geometry, id,
-    inherited_attribute_target,
+    embedded_pcurve_geometry, id, inherited_attribute_target, AsmBrep, Carriers, Reachable,
+    WireShellTopology,
 };
 const EPS_EMIT_EMIT_EDGES_E9: f64 = 1.0e-9;
 
@@ -2722,7 +2722,7 @@ fn emit_carrier_curve(
                 .into_iter()
                 .enumerate()
                 .map(|(side, geometry)| {
-                    let geometry = geometry?;
+                    let geometry = geometry.into_surface()?;
                     let id = SurfaceId::mint(format!(
                         "{format}:brep:procedural_curve#{i}:support{side}"
                     ))
@@ -2959,7 +2959,7 @@ fn emit_surface_curve_family(
             .into_iter()
             .enumerate()
             .map(|(side, geometry)| {
-                let geometry = geometry?;
+                let geometry = geometry.into_surface()?;
                 let id =
                     SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
                         .expect("identity grammar");
@@ -3026,7 +3026,7 @@ fn emit_silhouette_curve(
         .into_iter()
         .enumerate()
         .map(|(side, geometry)| {
-            let geometry = geometry?;
+            let geometry = geometry.into_surface()?;
             let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
                 .expect("identity grammar");
             out.surfaces.push(Surface {
@@ -3078,7 +3078,7 @@ fn emit_surface_offset_curve(
         .into_iter()
         .enumerate()
         .map(|(side, geometry)| {
-            let geometry = geometry?;
+            let geometry = geometry.into_surface()?;
             let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
                 .expect("identity grammar");
             out.surfaces.push(Surface {
@@ -3193,7 +3193,9 @@ fn emit_spring_curve(
             discontinuity_flag,
         },
         EmbeddedSpringLayout::CacheFirst { context, form } => {
-            let [first_surface, second_surface] = context.surfaces;
+            let [first_surface, second_surface] = context
+                .surfaces
+                .map(crate::nurbs::proc_curve::SupportSlot::into_surface);
             let [first_pcurve, second_pcurve] = context.pcurves;
             cadmpeg_ir::geometry::SpringLayout::CacheFirst {
                 context: cadmpeg_ir::geometry::IntcurveSupportContext {
@@ -3362,7 +3364,7 @@ fn emit_law_curve(
         .into_iter()
         .enumerate()
         .map(|(side, geometry)| {
-            let geometry = geometry?;
+            let geometry = geometry.into_surface()?;
             let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
                 .expect("identity grammar");
             out.surfaces.push(Surface {

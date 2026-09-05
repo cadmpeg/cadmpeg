@@ -1060,11 +1060,11 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert!(matches!(
             context.surfaces[0],
-            Some(SurfaceGeometry::Plane { .. })
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Plane { .. })
         ));
         assert!(matches!(
             context.surfaces[1],
-            Some(SurfaceGeometry::Nurbs(_))
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Nurbs(_))
         ));
         assert!(context.pcurves[0].is_none());
         assert!(context.pcurves[1].is_some());
@@ -1132,8 +1132,13 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
                 .as_ref()
                 .map(|(context, _)| context)
                 .expect("typed intersection context");
-            assert_eq!(context.support_present, [true, false]);
-            assert!(context.surfaces[0].is_none());
+            assert!(matches!(
+                context.surfaces,
+                [
+                    crate::nurbs::proc_curve::SupportSlot::DeclaredOnly,
+                    crate::nurbs::proc_curve::SupportSlot::Absent
+                ]
+            ));
             assert!(context.pcurves[0].is_some());
             assert!(
                 crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 1, &table)
@@ -1196,9 +1201,13 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert!(matches!(
             context.surfaces[0],
-            Some(SurfaceGeometry::Nurbs(_))
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Nurbs(_))
         ));
-        assert!(context.surfaces[1].is_none());
+        assert!(matches!(
+            context.surfaces[1],
+            crate::nurbs::proc_curve::SupportSlot::Absent
+                | crate::nurbs::proc_curve::SupportSlot::DeclaredOnly
+        ));
         assert!(context.pcurves[0].is_some());
         assert!(context.pcurves[1].is_none());
         assert_eq!(tail.tail.extension, 7);
@@ -1259,10 +1268,14 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
         else {
             panic!("parametric surface-curve family")
         };
-        assert!(context.surfaces[0].is_none());
+        assert!(matches!(
+            context.surfaces[0],
+            crate::nurbs::proc_curve::SupportSlot::Absent
+                | crate::nurbs::proc_curve::SupportSlot::DeclaredOnly
+        ));
         assert!(matches!(
             context.surfaces[1],
-            Some(SurfaceGeometry::Nurbs(_))
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Nurbs(_))
         ));
         assert!(context.pcurves[0].is_none());
         assert!(context.pcurves[1].is_some());

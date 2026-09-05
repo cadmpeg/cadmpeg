@@ -60,15 +60,37 @@ pub struct EmbeddedTwoSidedOffset {
     pub offsets: [f64; 2],
 }
 
+/// Native support presence and its optional standalone geometry cache.
+pub enum SupportSlot {
+    /// The native slot has no support.
+    Absent,
+    /// A valid native support has no standalone geometry cache.
+    DeclaredOnly,
+    /// The support has a standalone geometry cache.
+    Surface(SurfaceGeometry),
+}
+
+impl SupportSlot {
+    fn from_parsed(surface: Option<SurfaceGeometry>, declared: bool) -> Self {
+        match surface {
+            Some(surface) => Self::Surface(surface),
+            None if declared => Self::DeclaredOnly,
+            None => Self::Absent,
+        }
+    }
+
+    pub(crate) fn into_surface(self) -> Option<SurfaceGeometry> {
+        match self {
+            Self::Surface(surface) => Some(surface),
+            Self::Absent | Self::DeclaredOnly => None,
+        }
+    }
+}
+
 /// Embedded support carriers and shared fields of an `int_int_cur`.
 pub struct EmbeddedIntersection {
-    /// Two ordered embedded support surfaces.
-    pub surfaces: [Option<SurfaceGeometry>; 2],
-    /// Whether each native support slot contains a valid non-null support.
-    ///
-    /// A procedural support can be valid without a standalone
-    /// `SurfaceGeometry` cache, so this is distinct from `surfaces`.
-    pub support_present: [bool; 2],
+    /// Two ordered native support slots.
+    pub surfaces: [SupportSlot; 2],
     /// Two ordered embedded NURBS parameter curves.
     pub pcurves: [Option<NurbsPcurve>; 2],
     /// Shared native parameter interval.
@@ -572,7 +594,7 @@ fn pcurve_for_selector_recursive(
                 let mut cur = Cur::at(toks, marker + 2);
                 if let Some(context) = cache_first_curve_context(&mut cur, &decoded.curve, table) {
                     if let Some(pcurve) =
-                        selected_optional_pcurve(&context.surfaces, &context.pcurves, slot)
+                        selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
                     {
                         return Some((pcurve, false));
                     }
@@ -631,6 +653,17 @@ fn direct_subtype_reference(toks: &[Token]) -> Option<usize> {
     candidate
 }
 
+fn selected_support_pcurve(
+    surfaces: &[SupportSlot; 2],
+    pcurves: &[Option<NurbsPcurve>; 2],
+    slot: usize,
+) -> Option<NurbsPcurve> {
+    match surfaces.get(slot)? {
+        SupportSlot::Surface(_) => pcurves.get(slot)?.clone(),
+        SupportSlot::Absent | SupportSlot::DeclaredOnly => None,
+    }
+}
+
 fn selected_optional_pcurve(
     surfaces: &[Option<SurfaceGeometry>; 2],
     pcurves: &[Option<NurbsPcurve>; 2],
@@ -649,11 +682,10 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<Nurb
         // standalone SurfaceGeometry carrier. The native pcurve slot remains
         // a complete parameter-space carrier when its paired native support
         // slot is present. Edge-domain validation runs after this function.
-        context
-            .support_present
-            .get(slot)
-            .copied()
-            .filter(|present| *present)?;
+        match context.surfaces.get(slot)? {
+            SupportSlot::Absent => return None,
+            SupportSlot::DeclaredOnly | SupportSlot::Surface(_) => {}
+        }
         return context.pcurves.get(slot)?.clone();
     }
     if let Some(context) = decoded.embedded_three_surface_intersection.as_ref() {
@@ -661,18 +693,18 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<Nurb
     }
     if let Some(surface_curve) = decoded.embedded_surface_curve.as_ref() {
         let context = surface_curve.context();
-        return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
+        return selected_support_pcurve(&context.surfaces, &context.pcurves, slot);
     }
     if let Some(context) = decoded.embedded_silhouette.as_ref() {
-        return selected_optional_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
+        return selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
     }
     if let Some(context) = decoded.embedded_surface_offset.as_ref() {
-        return selected_optional_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
+        return selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
     }
     if let Some(context) = decoded.embedded_spring.as_ref() {
         return match &context.layout {
             EmbeddedSpringLayout::CacheFirst { context, .. } => {
-                selected_optional_pcurve(&context.surfaces, &context.pcurves, slot)
+                selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
             }
             EmbeddedSpringLayout::ContextFirst {
                 supports,
@@ -698,7 +730,7 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<Nurb
         return context.pcurves.get(slot).cloned();
     }
     if let Some(context) = decoded.embedded_law.as_ref() {
-        return selected_optional_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
+        return selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
     }
     None
 }
@@ -917,7 +949,7 @@ fn embedded_deformable(
     };
     matches!(toks.get(cur.pos()), Some(Token::SubtypeClose)).then_some(EmbeddedDeformable {
         form: context.form,
-        surfaces: context.surfaces,
+        surfaces: context.surfaces.map(SupportSlot::into_surface),
         pcurves: context.pcurves,
         parameter_range: context.parameter_range,
         discontinuities: context.discontinuities,
@@ -1031,11 +1063,10 @@ fn embedded_law_curve(toks: &[Token]) -> Option<EmbeddedLawCurve> {
     let additional = (0..count)
         .map(|_| law_formula(&mut cur))
         .collect::<Option<Vec<_>>>()?;
-    let support_present = [surfaces[0].is_some(), surfaces[1].is_some()];
     Some(EmbeddedLawCurve {
         context: EmbeddedIntersection {
-            surfaces,
-            support_present,
+            surfaces: surfaces
+                .map(|surface| surface.map_or(SupportSlot::Absent, SupportSlot::Surface)),
             pcurves,
             parameter_range,
             discontinuities,
@@ -1060,7 +1091,6 @@ fn embedded_spring(
         return Some(EmbeddedSpring {
             layout: EmbeddedSpringLayout::CacheFirst {
                 context: EmbeddedIntersection {
-                    support_present: [context.surfaces[0].is_some(), context.surfaces[1].is_some()],
                     surfaces: context.surfaces,
                     pcurves: context.pcurves,
                     parameter_range: context.parameter_range,
@@ -1528,7 +1558,6 @@ fn embedded_surface_offset(
         return Some(EmbeddedSurfaceOffset {
             context: EmbeddedIntersection {
                 surfaces: context.surfaces,
-                support_present: context.support_present,
                 pcurves: context.pcurves,
                 parameter_range: context.parameter_range,
                 discontinuities: context.discontinuities,
@@ -1560,8 +1589,7 @@ fn embedded_surface_offset(
     let base_range = [cur.take_range_value()?, cur.take_range_value()?];
     Some(EmbeddedSurfaceOffset {
         context: EmbeddedIntersection {
-            surfaces: surfaces.map(Some),
-            support_present: [true, true],
+            surfaces: surfaces.map(SupportSlot::Surface),
             pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
@@ -1686,8 +1714,7 @@ fn embedded_silhouette(toks: &[Token]) -> Option<EmbeddedSilhouette> {
     }
     Some(EmbeddedSilhouette {
         context: EmbeddedIntersection {
-            surfaces: surfaces.map(Some),
-            support_present: [true, true],
+            surfaces: surfaces.map(SupportSlot::Surface),
             pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
@@ -1916,8 +1943,7 @@ fn agree(left: f64, right: f64, scale: f64) -> bool {
 /// solved-interval endpoints, three discontinuity arrays, and one extension.
 struct CacheFirstCurveContext {
     form: cadmpeg_ir::geometry::CacheFirstCurveForm,
-    surfaces: [Option<SurfaceGeometry>; 2],
-    support_present: [bool; 2],
+    surfaces: [SupportSlot; 2],
     pcurves: [Option<NurbsPcurve>; 2],
     parameter_range: [f64; 2],
     discontinuities: [Vec<f64>; 3],
@@ -2000,8 +2026,10 @@ fn cache_first_curve_context(
             solved_range,
             extension,
         },
-        surfaces: [first_surface, second_surface],
-        support_present: [first_support_present, second_support_present],
+        surfaces: [
+            SupportSlot::from_parsed(first_surface, first_support_present),
+            SupportSlot::from_parsed(second_surface, second_support_present),
+        ],
         pcurves,
         parameter_range,
         discontinuities,
@@ -2024,8 +2052,7 @@ fn context_first_surface_curve(
     embedded_surface_curve_from_parts(
         family,
         EmbeddedIntersection {
-            surfaces: surfaces.map(Some),
-            support_present: [true, true],
+            surfaces: surfaces.map(SupportSlot::Surface),
             pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
@@ -2058,7 +2085,6 @@ fn cache_first_surface_curve(
         family,
         EmbeddedIntersection {
             surfaces: context.surfaces,
-            support_present: context.support_present,
             pcurves: context.pcurves,
             parameter_range: context.parameter_range,
             discontinuities: context.discontinuities,
@@ -2354,8 +2380,7 @@ fn context_first_intersection(
     let discontinuity_flag = cur.take_bool()?;
     Some((
         EmbeddedIntersection {
-            surfaces: surfaces.map(Some),
-            support_present: [true, true],
+            surfaces: surfaces.map(SupportSlot::Surface),
             pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
@@ -2382,8 +2407,10 @@ fn cache_first_intersection(
     let second_surface_start = cur.pos();
     let second_support_present = support_slot_present(&cur, table);
     let second_surface = optional_embedded_surface_with_bounds(&mut cur, table)?.0;
-    let surfaces = [first_surface, second_surface];
-    let support_present = [first_support_present, second_support_present];
+    let surfaces = [
+        SupportSlot::from_parsed(first_surface, first_support_present),
+        SupportSlot::from_parsed(second_surface, second_support_present),
+    ];
     let mut pcurves = [
         nullable_embedded_pcurve(&mut cur)?.value(),
         nullable_embedded_pcurve(&mut cur)?.value(),
@@ -2412,7 +2439,6 @@ fn cache_first_intersection(
     Some((
         EmbeddedIntersection {
             surfaces,
-            support_present,
             pcurves,
             parameter_range,
             discontinuities,
