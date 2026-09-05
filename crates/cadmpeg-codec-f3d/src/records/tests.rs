@@ -492,3 +492,26 @@ fn parameter_unit_preserves_source_and_authored_wire() {
     let error = serde_json::from_str::<super::DesignParameter>(&wire).expect_err("orphan unit offset").to_string();
     assert!(error.contains("unit_offset"));
 }
+
+#[test]
+fn identity_wrapper_rows_preserve_wire_and_reject_unequal_arrays() {
+    for count in 0..=2 {
+        for offsets in 0..=2 {
+            for tags in 0..=2 {
+                let indices = ["[]", "[300]", "[300,305]"][count];
+                let offsets_wire = ["[]", "[0]", "[0,24]"][offsets];
+                let tags_wire = ["[]", "[\"384\"]", "[\"384\",\"289\"]"][tags];
+                let wire = format!(r#"{{"id":"identity#0","group_record_index":200,"wrapper_record_indices":{indices},"wrapper_byte_offsets":{offsets_wire},"wrapper_class_tags":{tags_wire},"following_record_index":310,"following_byte_offset":48,"following_class_tag":"304"}}"#);
+                let parsed = serde_json::from_str::<super::DesignConstructionOperandIdentity>(&wire);
+                if count == offsets && count == tags {
+                    assert_eq!(serde_json::to_string(&parsed.expect("complete rows")).expect("identity wire"), wire);
+                } else {
+                    let error = parsed.expect_err("unequal wrapper arrays").to_string();
+                    assert!(error.contains("wrapper_record_indices"));
+                    assert!(error.contains("wrapper_byte_offsets"));
+                    assert!(error.contains("wrapper_class_tags"));
+                }
+            }
+        }
+    }
+}

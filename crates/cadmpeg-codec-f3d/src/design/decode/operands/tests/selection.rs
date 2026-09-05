@@ -236,8 +236,8 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
 
     let identity = parse_construction_operand_identity(&bytes, &group, &wrapper_header)
         .expect("identity chain");
-    assert_eq!(identity.wrapper_record_indices, [300, 305]);
-    assert_eq!(identity.wrapper_byte_offsets, [0, 24]);
+    assert_eq!(identity.wrappers.iter().map(|wrapper| wrapper.record_index).collect::<Vec<_>>(), [300, 305]);
+    assert_eq!(identity.wrappers.iter().map(|wrapper| wrapper.byte_offset).collect::<Vec<_>>(), [0, 24]);
     assert_eq!(identity.following_record_index, 400);
     assert_eq!(identity.following_byte_offset, 48);
     let persistent = identity
@@ -267,7 +267,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     let mut terminating_identity = identity;
     terminating_identity.id =
         "f3d:Design/BulkStream.dat:design-construction-operand-identity#200".into();
-    terminating_identity.wrapper_byte_offsets[0] = 200;
+    terminating_identity.wrappers[0].byte_offset = 200;
     bind_lost_edge_groups(
         std::slice::from_mut(&mut bound_group),
         std::slice::from_ref(&terminating_identity),
@@ -595,9 +595,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let identity = DesignConstructionOperandIdentity {
         id: "f3d:Design/BulkStream.dat:operand-identity#50".into(),
         group_record_index: 50,
-        wrapper_record_indices: vec![150],
-        wrapper_byte_offsets: vec![50],
-        wrapper_class_tags: vec!["289".into()],
+        wrappers: vec![crate::records::DesignIdentityWrapper { record_index: 150, byte_offset: 50, class_tag: "289".into() }],
         following_record_index: 200,
         following_byte_offset: 0,
         following_class_tag: "290".into(),
