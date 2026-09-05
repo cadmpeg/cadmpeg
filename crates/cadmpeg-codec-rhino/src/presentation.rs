@@ -12,7 +12,7 @@ use crate::chunks::{
     checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion,
     BoundedReader, ChecksumStatus, FramingError,
 };
-use crate::container::{OpaqueRecord, Record, Scan};
+use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
 use crate::loss::RhinoLossCode;
 use crate::objects::{
     apply_attribute_userdata, parse_attribute_userdata, parse_attributes, parse_class_wrapper,
@@ -3805,14 +3805,7 @@ fn parse_text_style(
 }
 
 /// Results of transferring table-owned presentation records.
-pub(crate) struct PresentationInstall {
-    /// Losses from records that could not be transferred.
-    pub(crate) losses: Vec<LossNote>,
-    /// Complete records whose registered class payload was not admitted.
-    pub(crate) opaque_records: Vec<OpaqueRecord>,
-}
-
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
     let scale = scan
         .metadata
         .settings
@@ -4313,7 +4306,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
     namespace
         .set_arena("object_presentation", &object_presentation)
         .expect("Rhino object presentation serializes");
-    PresentationInstall {
+    NativeInstall {
         losses,
         opaque_records,
     }

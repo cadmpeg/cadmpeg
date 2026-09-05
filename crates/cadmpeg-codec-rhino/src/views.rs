@@ -9,7 +9,7 @@ use crate::chunks::{
     chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion, BoundedReader,
     ChecksumStatus, FramingError, TCODE_CLASS_END, TCODE_ENDOFTABLE,
 };
-use crate::container::{OpaqueRecord, Record, Scan};
+use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
 use crate::objects::parse_userdata;
 use crate::settings::{plane, utf16, Plane};
 use crate::wire::{scaled_coordinate, Uuid};
@@ -1252,15 +1252,8 @@ fn parse_named_cplanes(
 }
 
 /// Result of installing saved and active view records.
-pub(crate) struct ViewInstall {
-    /// Losses from view records that could not be transferred.
-    pub(crate) losses: Vec<LossNote>,
-    /// Complete settings records whose view payload was not admitted.
-    pub(crate) opaque_records: Vec<OpaqueRecord>,
-}
-
 /// Installs saved and active view records with complete child accounting.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> ViewInstall {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
     let scale = scan
         .metadata
         .settings
@@ -1330,7 +1323,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> ViewInstall {
     namespace
         .set_arena("construction_planes", &cplanes)
         .expect("Rhino construction planes serialize");
-    ViewInstall {
+    NativeInstall {
         losses,
         opaque_records,
     }

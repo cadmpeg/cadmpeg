@@ -8,6 +8,7 @@ use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::chunks::{
@@ -111,6 +112,15 @@ pub(crate) struct OpaqueRecord {
     pub(crate) table_typecode: u32,
     /// Complete record descriptor.
     pub(crate) record: Record,
+}
+
+/// Losses and opaque records from one native-arena install pass.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct NativeInstall {
+    /// Losses from records that could not be transferred.
+    pub(crate) losses: Vec<LossNote>,
+    /// Complete records whose registered class payload was not admitted.
+    pub(crate) opaque_records: Vec<OpaqueRecord>,
 }
 
 /// A table descriptor with explicit source ranges.
