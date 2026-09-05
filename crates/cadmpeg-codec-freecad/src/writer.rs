@@ -12,7 +12,6 @@ use std::collections::HashSet;
 use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::hash::sha256_hex;
 use zip::write::SimpleFileOptions;
 
 use crate::native::{EntryRecord, ExtensionRecord, ObjectRecord, PropertyRecord, ValueRecord};
@@ -74,7 +73,6 @@ pub(crate) fn write_seekable(
             CodecError::Malformed("FCStd native graph has no Document.xml entry".into())
         })?;
     let source_document = entry_at(namespace, source_document_slot.record_index)?;
-    validate_entry(&source_document)?;
     let document_xml = patch_document(&source_document.data, &properties)?;
     drop(source_document);
     let written_graph = crate::persistence::parse_with_context(&document_xml, document, None)?;
@@ -106,7 +104,6 @@ pub(crate) fn write_seekable(
         });
         for slot in &entries {
             let entry = entry_at(namespace, slot.record_index)?;
-            validate_entry(&entry)?;
             archive
                 .start_file(&entry.name, file_options)
                 .map_err(|error| {
@@ -180,16 +177,6 @@ fn validate_entry_names(entries: &[EntrySlot]) -> Result<(), CodecError> {
                 entry.name
             )));
         }
-    }
-    Ok(())
-}
-
-fn validate_entry(entry: &EntryRecord) -> Result<(), CodecError> {
-    if entry.byte_len != entry.data.len() as u64 || entry.sha256 != sha256_hex(&entry.data) {
-        return Err(CodecError::malformed(format_args!(
-            "FCStd output entry {} has stale length or digest metadata",
-            entry.name
-        )));
     }
     Ok(())
 }

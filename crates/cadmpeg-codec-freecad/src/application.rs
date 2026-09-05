@@ -3,8 +3,6 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_ir::hash::sha256_hex;
-
 use crate::native::{
     ApplicationPayloadRecord, ApplicationPropertyRecord, ApplicationRecord, EntryRecord,
     ObjectRecord, PropertyFamily, PropertyRecord,
@@ -65,8 +63,6 @@ pub(crate) fn transfer(
                 order: object.order,
                 byte_start,
                 byte_end,
-                byte_len: data.len() as u64,
-                sha256: sha256_hex(&data),
                 data,
                 property_records: owned
                     .iter()
@@ -86,8 +82,6 @@ pub(crate) fn transfer(
                             links: property.links.clone(),
                             byte_start: property.byte_start,
                             byte_end: property.byte_end,
-                            byte_len: data.len() as u64,
-                            sha256: sha256_hex(&data),
                             data,
                             payloads: property
                                 .side_entries
@@ -96,8 +90,6 @@ pub(crate) fn transfer(
                                 .map(|entry| ApplicationPayloadRecord {
                                     entry: entry.id.clone(),
                                     name: entry.name.clone(),
-                                    byte_len: entry.byte_len,
-                                    sha256: entry.sha256.clone(),
                                     data: entry.data.clone(),
                                 })
                                 .collect(),

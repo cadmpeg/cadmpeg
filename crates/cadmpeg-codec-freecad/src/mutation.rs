@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked semantic mutations of retained persistence records.
 
+use crate::native::{native_id, EntryRecord, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::sha256_hex;
-
-use crate::native::{native_id, EntryRecord, PropertyRecord};
 
 /// Selects the owner of a persisted property.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,8 +78,6 @@ pub(crate) fn replace_entry(
         .iter_mut()
         .find(|candidate| candidate.name == entry_name)
         .ok_or_else(|| CodecError::malformed(format_args!("missing FCStd entry {entry_name}")))?;
-    entry.byte_len = bytes.len() as u64;
-    entry.sha256 = sha256_hex(&bytes);
     entry.data = bytes;
     namespace.set_arena("entries", &entries)?;
     Ok(())

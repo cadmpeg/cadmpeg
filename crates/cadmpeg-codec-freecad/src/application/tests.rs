@@ -56,13 +56,13 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     let report = &by_domain["Fem"].property_records[0];
     assert_eq!(report.object, by_domain["Fem"].object);
     assert!(report.byte_start < report.byte_end);
-    assert_eq!(report.byte_len, report.data.len() as u64);
-    assert_eq!(report.sha256, cadmpeg_ir::hash::sha256_hex(&report.data));
+    assert_eq!(report.byte_len(), report.data.len() as u64);
+    assert_eq!(report.sha256(), cadmpeg_ir::hash::sha256_hex(&report.data));
     assert_eq!(report.payloads.len(), 1);
     assert_eq!(report.payloads[0].name, "analysis.dat");
     assert_eq!(report.payloads[0].data, b"finite-element-results");
     assert_eq!(
-        report.payloads[0].sha256,
+        report.payloads[0].sha256(),
         cadmpeg_ir::hash::sha256_hex(&report.payloads[0].data)
     );
     let python = &by_domain["Path"].property_records[0];
@@ -70,25 +70,11 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     assert!(String::from_utf8_lossy(&python.data).contains("serialized-but-inert"));
     assert!(records.iter().all(|record| {
         record.byte_start < record.byte_end
-            && record.byte_len == record.data.len() as u64
-            && record.sha256 == cadmpeg_ir::hash::sha256_hex(&record.data)
+            && record.byte_len() == record.data.len() as u64
+            && record.sha256() == cadmpeg_ir::hash::sha256_hex(&record.data)
     }));
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
-
-    let mut corrupted = result.ir().clone();
-    let mut stale_records = records.clone();
-    stale_records[0].property_records[0].sha256 = "0".repeat(64);
-    corrupted
-        .native
-        .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
-        .set_arena("applications", &stale_records)
-        .expect("replace application records");
-    assert!(crate::validate_native(&corrupted)
-        .iter()
-        .any(|finding| finding
-            .message
-            .contains("application preservation records do not match authoritative bytes")));
 }
 
 #[test]
@@ -254,7 +240,7 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
             .find(|entry| entry.name == name)
             .expect("side entry");
         assert_eq!(entry.data, payload);
-        assert_eq!(entry.byte_len, payload.len() as u64);
+        assert_eq!(entry.byte_len(), payload.len() as u64);
         let span = spans
             .iter()
             .find(|span| span.entry == name)

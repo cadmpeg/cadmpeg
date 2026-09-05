@@ -5214,8 +5214,6 @@ pub(crate) mod tests {
             id: crate::native::native_id("entry", "empty.brp"),
             name: "empty.brp".into(),
             role: "brep".into(),
-            byte_len: 0,
-            sha256: cadmpeg_ir::hash::sha256_hex(b""),
             referenced_by: vec![property.id.clone()],
             data: Vec::new(),
         };
@@ -5223,8 +5221,6 @@ pub(crate) mod tests {
             id: crate::native::native_id("entry", "empty-2.brp"),
             name: "empty-2.brp".into(),
             role: "brep".into(),
-            byte_len: 0,
-            sha256: cadmpeg_ir::hash::sha256_hex(b""),
             referenced_by: vec![property.id.clone()],
             data: Vec::new(),
         };

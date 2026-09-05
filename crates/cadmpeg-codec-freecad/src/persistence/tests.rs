@@ -407,7 +407,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             .collect::<Vec<_>>();
         spans.sort_by_key(|span| span.start);
         assert_eq!(spans.first().map(|span| span.start), Some(0));
-        assert_eq!(spans.last().map(|span| span.end), Some(entry.byte_len));
+        assert_eq!(spans.last().map(|span| span.end), Some(entry.byte_len()));
         assert!(spans.windows(2).all(|pair| pair[0].end == pair[1].start));
     }
     assert!(ledger
@@ -432,7 +432,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert_eq!(coverage[0].logical_entry_count, entries.len());
     assert_eq!(
         coverage[0].logical_byte_len,
-        entries.iter().map(|entry| entry.byte_len).sum::<u64>()
+        entries.iter().map(|entry| entry.byte_len()).sum::<u64>()
     );
     assert_eq!(
         coverage[0].classification_bytes.values().sum::<u64>(),

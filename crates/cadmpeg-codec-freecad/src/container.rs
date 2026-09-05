@@ -304,7 +304,7 @@ pub(crate) fn logical_ledger(
                 &mut output,
                 entry,
                 0,
-                entry.byte_len,
+                entry.byte_len(),
                 LogicalClassification::Typed {
                     owner: entry.id.clone(),
                 },
@@ -354,7 +354,7 @@ pub(crate) fn logical_ledger(
             ranges.sort_by_key(|range| range.0);
             let mut cursor = 0_u64;
             for (start, end, classification, owner) in ranges {
-                if start < cursor || end < start || end > entry.byte_len {
+                if start < cursor || end < start || end > entry.byte_len() {
                     return Err(CodecError::malformed(format_args!(
                         "overlapping or invalid {} record spans",
                         entry.name
@@ -378,7 +378,7 @@ pub(crate) fn logical_ledger(
                 &mut output,
                 entry,
                 cursor,
-                entry.byte_len,
+                entry.byte_len(),
                 LogicalClassification::Structural,
             );
         } else {
@@ -386,7 +386,7 @@ pub(crate) fn logical_ledger(
                 &mut output,
                 entry,
                 0,
-                entry.byte_len,
+                entry.byte_len(),
                 LogicalClassification::NamedOpaque {
                     owner: entry.id.clone(),
                 },
@@ -434,12 +434,14 @@ pub(crate) fn byte_coverage(
                 .filter(|span| span.entry == entry.name)
                 .collect::<Vec<_>>();
             spans.sort_by_key(|span| span.start);
-            if entry.byte_len == 0 {
+            if entry.byte_len() == 0 {
                 spans.is_empty()
             } else {
                 spans.first().is_some_and(|span| span.start == 0)
                     && spans.windows(2).all(|pair| pair[0].end == pair[1].start)
-                    && spans.last().is_some_and(|span| span.end == entry.byte_len)
+                    && spans
+                        .last()
+                        .is_some_and(|span| span.end == entry.byte_len())
             }
         });
     ByteCoverageRecord {
@@ -447,7 +449,7 @@ pub(crate) fn byte_coverage(
         physical_byte_len,
         physical_span_count: physical.len(),
         logical_entry_count: entries.len(),
-        logical_byte_len: entries.iter().map(|entry| entry.byte_len).sum(),
+        logical_byte_len: entries.iter().map(|entry| entry.byte_len()).sum(),
         logical_span_count: logical.len(),
         classification_bytes,
         named_opaque_entries: named_opaque_entries.into_iter().collect(),
