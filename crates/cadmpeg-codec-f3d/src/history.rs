@@ -3850,8 +3850,8 @@ pub(crate) fn bind_face_operand_history_candidates(
                         && group.extrude_face_role()
                             == Some(crate::records::DesignExtrudeFaceRole::Termination)
                 });
-        operand.resolved_face_slots = match scope.direct_face_operation() {
-            Some(crate::records::DesignDirectFaceOperation::OffsetFaces { .. }) => {
+        operand.resolved_face_slots = match &scope.payload {
+            crate::records::DesignScopePayload::OffsetFaces(Some(_)) | crate::records::DesignScopePayload::DecalerLesFaces(Some(_)) => {
                 let direct = resolve_direct_face_recipe_clauses(
                     &operand.recipe_references,
                     topology,

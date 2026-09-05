@@ -1418,37 +1418,53 @@ impl From<DesignSolidPrimitive> for DesignScopePayload {
 #[serde(rename_all = "snake_case", tag = "operation")]
 pub enum DesignDirectFaceOperation {
     /// Signed normal offset applied to selected faces.
-    OffsetFaces {
-        /// Signed distance in source centimetres.
-        distance: f64,
-        /// Referenced scalar record.
-        distance_record_index: u32,
-        /// Byte offset of the scalar.
-        distance_offset: u64,
-    },
+    OffsetFaces(DesignOffsetFacesOperation),
     /// Thin-wall shell applied after removing selected faces.
-    Shell {
-        /// Positive wall thickness in source centimetres.
-        thickness: f64,
-        /// Referenced scalar record.
-        thickness_record_index: u32,
-        /// Byte offset of the scalar.
-        thickness_offset: u64,
-        /// Whether the wall grows outward from the original boundary.
-        outward: bool,
-        /// Byte offset of the outward Boolean.
-        outward_offset: u64,
-    },
+    Shell(DesignShellOperation),
     /// Signed normal thickness added from selected faces.
-    Thicken {
-        /// Signed thickness in source centimetres.
-        signed_thickness: f64,
-        /// Referenced scalar record.
-        thickness_record_index: u32,
-        /// Byte offset of the scalar.
-        thickness_offset: u64,
-    },
+    Thicken(DesignThickenOperation),
 }
+
+/// Exact `OffsetFaces` construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignOffsetFacesOperation {
+    /// Signed distance in source centimetres.
+    pub distance: f64,
+    /// Referenced scalar record.
+    pub distance_record_index: u32,
+    /// Byte offset of the scalar.
+    pub distance_offset: u64,
+}
+
+/// Exact `Shell` construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignShellOperation {
+    /// Positive wall thickness in source centimetres.
+    pub thickness: f64,
+    /// Referenced scalar record.
+    pub thickness_record_index: u32,
+    /// Byte offset of the scalar.
+    pub thickness_offset: u64,
+    /// Whether the wall grows outward from the original boundary.
+    pub outward: bool,
+    /// Byte offset of the outward Boolean.
+    pub outward_offset: u64,
+}
+
+/// Exact `Thicken` construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignThickenOperation {
+    /// Signed thickness in source centimetres.
+    pub signed_thickness: f64,
+    /// Referenced scalar record.
+    pub thickness_record_index: u32,
+    /// Byte offset of the scalar.
+    pub thickness_offset: u64,
+}
+
 
 /// Exact rigid transform carried by a Move feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -3392,7 +3408,6 @@ design_feature_kinds! {
         Chanfrein => "Chanfrein": Option<DesignFixedChamferParameters>,
         Combine => "Combine": Option<DesignCombineOperation>,
         Draft => "Draft": Option<DesignDraftOperation>,
-        ReplaceFace => "ReplaceFace": Option<DesignDirectFaceOperation>,
         CPattern => "C-Pattern": Option<DesignCircularPatternConstruction>,
         CircularPattern => "Circular Pattern": Option<DesignCircularPatternConstruction>,
         ReseauC => "Réseau C": Option<DesignCircularPatternConstruction>,
@@ -3401,12 +3416,12 @@ design_feature_kinds! {
         Mirror => "Mirror": Option<DesignMirrorConstruction>,
         SymetrieMiroir => "Symétrie miroir": Option<DesignMirrorConstruction>,
         Move => "Move": Option<DesignMoveOperation>,
-        OffsetFaces => "OffsetFaces": Option<DesignDirectFaceOperation>,
-        DecalerLesFaces => "DécalerLesFaces": Option<DesignDirectFaceOperation>,
+        OffsetFaces => "OffsetFaces": Option<DesignOffsetFacesOperation>,
+        DecalerLesFaces => "DécalerLesFaces": Option<DesignOffsetFacesOperation>,
         Revolve => "Revolve": Option<DesignRevolveConstruction>,
-        Shell => "Shell": Option<DesignDirectFaceOperation>,
-        Schale => "Schale": Option<DesignDirectFaceOperation>,
-        Thicken => "Thicken": Option<DesignDirectFaceOperation>,
+        Shell => "Shell": Option<DesignShellOperation>,
+        Schale => "Schale": Option<DesignShellOperation>,
+        Thicken => "Thicken": Option<DesignThickenOperation>,
         SpirePrimitive => "SpirePrimitive": Option<DesignCoilScope>,
         CoilPrimitive => "CoilPrimitive": Option<DesignCoilScope>,
         Loft => "Loft": Option<DesignLoftConstruction>,
@@ -3439,6 +3454,7 @@ design_feature_kinds! {
         CylinderPrimitive => "CylinderPrimitive": Option<DesignCylinderPrimitive>,
     }
     names {
+        ReplaceFace => "ReplaceFace",
         SurfaceTrim => "SurfaceTrim",
         BoundaryFill => "BoundaryFill",
         Split => "Split",
@@ -4723,7 +4739,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
             DesignFeatureKind::Draft => DesignScopePayload::Draft(wire.draft_operation.take()),
             DesignFeatureKind::ReplaceFace => {
-                DesignScopePayload::ReplaceFace(wire.direct_face_operation.take())
+                DesignScopePayload::ReplaceFace
             }
             DesignFeatureKind::CPattern => {
                 DesignScopePayload::CPattern(wire.circular_pattern_construction.take())
@@ -4748,10 +4764,18 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
             DesignFeatureKind::Move => DesignScopePayload::Move(wire.move_operation.take()),
             DesignFeatureKind::OffsetFaces => {
-                DesignScopePayload::OffsetFaces(wire.direct_face_operation.take())
+                DesignScopePayload::OffsetFaces(match wire.direct_face_operation.take() {
+                    None => None,
+                    Some(DesignDirectFaceOperation::OffsetFaces(value)) => Some(value),
+                    Some(_) => return Err(DesignParameterScopePayloadError("direct_face_operation.operation does not match OffsetFaces".into())),
+                })
             }
             DesignFeatureKind::DecalerLesFaces => {
-                DesignScopePayload::DecalerLesFaces(wire.direct_face_operation.take())
+                DesignScopePayload::DecalerLesFaces(match wire.direct_face_operation.take() {
+                    None => None,
+                    Some(DesignDirectFaceOperation::OffsetFaces(value)) => Some(value),
+                    Some(_) => return Err(DesignParameterScopePayloadError("direct_face_operation.operation does not match DecalerLesFaces".into())),
+                })
             }
             DesignFeatureKind::Revolve => DesignScopePayload::Revolve(match wire.path_feature.take() {
                 None => None,
@@ -4759,13 +4783,25 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 Some(_) => return Err(DesignParameterScopePayloadError("path_feature_construction or sweep_profile does not match Revolve".into())),
             }),
             DesignFeatureKind::Shell => {
-                DesignScopePayload::Shell(wire.direct_face_operation.take())
+                DesignScopePayload::Shell(match wire.direct_face_operation.take() {
+                    None => None,
+                    Some(DesignDirectFaceOperation::Shell(value)) => Some(value),
+                    Some(_) => return Err(DesignParameterScopePayloadError("direct_face_operation.operation does not match Shell".into())),
+                })
             }
             DesignFeatureKind::Schale => {
-                DesignScopePayload::Schale(wire.direct_face_operation.take())
+                DesignScopePayload::Schale(match wire.direct_face_operation.take() {
+                    None => None,
+                    Some(DesignDirectFaceOperation::Shell(value)) => Some(value),
+                    Some(_) => return Err(DesignParameterScopePayloadError("direct_face_operation.operation does not match Schale".into())),
+                })
             }
             DesignFeatureKind::Thicken => {
-                DesignScopePayload::Thicken(wire.direct_face_operation.take())
+                DesignScopePayload::Thicken(match wire.direct_face_operation.take() {
+                    None => None,
+                    Some(DesignDirectFaceOperation::Thicken(value)) => Some(value),
+                    Some(_) => return Err(DesignParameterScopePayloadError("direct_face_operation.operation does not match Thicken".into())),
+                })
             }
             DesignFeatureKind::SpirePrimitive => {
                 DesignScopePayload::SpirePrimitive(wire.coil.take())
@@ -5037,12 +5073,10 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::TorusPrimitive(value) => wire.solid_primitive = value.map(DesignSolidPrimitive::Torus),
             DesignScopePayload::BoxPrimitive(value) => wire.solid_primitive = value.map(DesignSolidPrimitive::Box),
             DesignScopePayload::CylinderPrimitive(value) => wire.solid_primitive = value.map(DesignSolidPrimitive::Cylinder),
-            DesignScopePayload::ReplaceFace(value)
-            | DesignScopePayload::OffsetFaces(value)
-            | DesignScopePayload::DecalerLesFaces(value)
-            | DesignScopePayload::Shell(value)
-            | DesignScopePayload::Schale(value)
-            | DesignScopePayload::Thicken(value) => wire.direct_face_operation = value,
+            DesignScopePayload::ReplaceFace => {},
+            DesignScopePayload::OffsetFaces(value) | DesignScopePayload::DecalerLesFaces(value) => wire.direct_face_operation = value.map(DesignDirectFaceOperation::OffsetFaces),
+            DesignScopePayload::Shell(value) | DesignScopePayload::Schale(value) => wire.direct_face_operation = value.map(DesignDirectFaceOperation::Shell),
+            DesignScopePayload::Thicken(value) => wire.direct_face_operation = value.map(DesignDirectFaceOperation::Thicken),
             DesignScopePayload::Move(value) => wire.move_operation = value,
             DesignScopePayload::Scale(value) | DesignScopePayload::Massstab(value) => {
                 wire.scale_operation = value
@@ -5210,30 +5244,6 @@ impl DesignParameterScope {
             | DesignScopePayload::Esquisse(value)
             | DesignScopePayload::Skizze(value)
             | DesignScopePayload::Esboco(value) => value.as_mut(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn direct_face_operation(&self) -> Option<&DesignDirectFaceOperation> {
-        match &self.payload {
-            DesignScopePayload::ReplaceFace(value)
-            | DesignScopePayload::OffsetFaces(value)
-            | DesignScopePayload::DecalerLesFaces(value)
-            | DesignScopePayload::Shell(value)
-            | DesignScopePayload::Schale(value)
-            | DesignScopePayload::Thicken(value) => value.as_ref(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn direct_face_operation_mut(&mut self) -> Option<&mut DesignDirectFaceOperation> {
-        match &mut self.payload {
-            DesignScopePayload::ReplaceFace(value)
-            | DesignScopePayload::OffsetFaces(value)
-            | DesignScopePayload::DecalerLesFaces(value)
-            | DesignScopePayload::Shell(value)
-            | DesignScopePayload::Schale(value)
-            | DesignScopePayload::Thicken(value) => value.as_mut(),
             _ => None,
         }
     }

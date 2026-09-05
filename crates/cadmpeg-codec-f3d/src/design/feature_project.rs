@@ -37,7 +37,7 @@ use crate::layout::{
 use crate::records::{
     ConstructionRecipeKind, DesignBodyBinding, DesignBodyRecipeOperand, DesignCoilExtent,
     DesignCoilSection, DesignCoilSectionPlacement, DesignConstructionOperandGroup,
-    DesignDirectFaceOperation, DesignEdgeIdentityOperand, DesignEdgeOperand,
+    DesignEdgeIdentityOperand, DesignEdgeOperand,
     DesignEdgeTreatmentVertexOperand, DesignExtrudeExtent, DesignExtrudeFaceRole,
     DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
     DesignFaceOperand, DesignFeatureTimeline, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
@@ -3236,12 +3236,10 @@ pub(crate) fn project_offset_faces(
         [(_, distance)] if distance.source_kind == "distance" => Some(design_length(distance)?),
         _ => return None,
     };
-    let fixed_distance = match scope.direct_face_operation() {
-        Some(DesignDirectFaceOperation::OffsetFaces { distance, .. }) => {
-            Some(Length(*distance * 10.0))
-        }
-        None => None,
-        Some(_) => return None,
+    let fixed_distance = match &scope.payload {
+        crate::records::DesignScopePayload::OffsetFaces(value)
+        | crate::records::DesignScopePayload::DecalerLesFaces(value) => value.as_ref().map(|value| Length(value.distance * 10.0)),
+        _ => return None,
     };
     let distance = match (parameter_distance, fixed_distance) {
         (Some(parameter), Some(fixed))
@@ -3271,9 +3269,9 @@ pub(crate) fn project_thicken(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ThickenSide};
 
-    let DesignDirectFaceOperation::Thicken {
+    let crate::records::DesignScopePayload::Thicken(Some(crate::records::DesignThickenOperation {
         signed_thickness, ..
-    } = scope.direct_face_operation()?
+    })) = &scope.payload
     else {
         return None;
     };
@@ -3308,9 +3306,11 @@ pub(crate) fn project_shell(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, Length};
 
-    let DesignDirectFaceOperation::Shell {
+    let (crate::records::DesignScopePayload::Shell(Some(crate::records::DesignShellOperation {
         thickness, outward, ..
-    } = scope.direct_face_operation()?
+    })) | crate::records::DesignScopePayload::Schale(Some(crate::records::DesignShellOperation {
+        thickness, outward, ..
+    }))) = &scope.payload
     else {
         return None;
     };

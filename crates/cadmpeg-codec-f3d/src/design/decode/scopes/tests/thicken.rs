@@ -61,11 +61,11 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
     scope.reference_members = vec![200, 201, 74];
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
-        Some(DesignDirectFaceOperation::Thicken {
+        Some(DesignDirectFaceOperation::Thicken(crate::records::DesignThickenOperation {
             signed_thickness: -1.0,
             thickness_record_index: 74,
             ..
-        })
+        }))
     ));
 
     scope.paired_class_tag = "259".into();
