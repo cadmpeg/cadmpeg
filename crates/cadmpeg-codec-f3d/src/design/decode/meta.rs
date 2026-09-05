@@ -100,7 +100,7 @@ pub fn decode_component_naming_spaces(
                         base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                     })
             })
-            .flat_map(|design_type| design_type.entity_ids.iter().copied())
+            .flat_map(|design_type| design_type.entities.values().copied())
             .collect::<HashSet<_>>();
         if component_entities.is_empty() {
             continue;
@@ -162,7 +162,7 @@ pub fn decode_component_naming_spaces(
                             base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                         })
                         && design_type.type_guid.eq_ignore_ascii_case(inline_type_guid)
-                        && design_type.entity_ids.contains(&component_record_index)
+                        && design_type.entities.values().any(|registered| *registered == component_record_index)
                 })
             {
                 continue;
@@ -271,8 +271,7 @@ pub(crate) fn design_primary_frames<'a>(
         .enumerate()
         .flat_map(|(ordinal, design_type)| {
             design_type
-                .entity_ids
-                .iter()
+                .entities.values()
                 .copied()
                 .map(move |entity_id| (ordinal, entity_id))
         })
@@ -343,7 +342,7 @@ pub(crate) fn typed_primary_frames<'a>(
         if !design_type.type_guid.eq_ignore_ascii_case(type_guid) {
             continue;
         }
-        for &entity_id in &design_type.entity_ids {
+        for &entity_id in design_type.entities.values() {
             if !typed_entities.insert(entity_id) {
                 return Err(CodecError::malformed(format_args!(
                     "F3D Design {record_kind} entity {entity_id} is registered more than once"
@@ -392,7 +391,7 @@ pub(crate) fn stream_types_by_entity<'a>(
         .iter()
         .filter(|design_type| native_stream(&design_type.id) == Some(meta_scope.as_str()))
         .flat_map(|design_type| {
-            design_type.entity_ids.iter().map(|entity_id| {
+            design_type.entities.values().map(|entity_id| {
                 (
                     *entity_id,
                     (design_type.type_guid.as_str(), design_type.version),
@@ -563,7 +562,7 @@ pub fn decode_feature_timelines(
         let bytes = scan.entry_bytes(&bulk_name)?;
         let mut type_guids_by_entity = HashMap::<u64, Vec<&str>>::new();
         for design_type in &meta.types {
-            for entity_id in &design_type.entity_ids {
+            for entity_id in design_type.entities.values() {
                 type_guids_by_entity
                     .entry(*entity_id)
                     .or_default()
@@ -582,7 +581,7 @@ pub fn decode_feature_timelines(
                     )
                 })?
                 .to_string();
-            for entity_id in &design_type.entity_ids {
+            for entity_id in design_type.entities.values() {
                 let entity_source_ordinal = source_ordinal;
                 source_ordinal = source_ordinal.checked_add(1).ok_or_else(|| {
                     CodecError::Malformed("Design feature-timeline ordinal exceeds u32".into())

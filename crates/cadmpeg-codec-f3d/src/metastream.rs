@@ -372,10 +372,11 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             version,
             version_offset: version_offset as u64,
             module,
-            entity_ids,
-            entity_id_offsets: (0..id_count)
-                .map(|index| (ids_at + index * 8) as u64)
-                .collect(),
+            entities: if entity_ids.is_empty() {
+                crate::records::ReferenceRun::Unlocated(entity_ids)
+            } else {
+                crate::records::ReferenceRun::Located(entity_ids.into_iter().enumerate().map(|(index, value)| crate::records::Located { value, offset: (ids_at + index * 8) as u64 }).collect())
+            },
         });
     }
 
@@ -693,20 +694,20 @@ mod tests {
         assert_eq!(types[0].base_type_guid.as_ref().map(|field| field.value.as_str()), Some(base));
         assert_eq!(types[0].version, 3);
         assert_eq!(types[0].module, "Fusion");
-        assert_eq!(types[0].entity_ids, [10, 11]);
+        assert_eq!(types[0].entities.values().copied().collect::<Vec<_>>(), [10, 11]);
 
         assert_eq!(types[1].type_guid, second);
         assert_eq!(types[1].base_type_guid, None);
 
         assert_eq!(types[1].version, 7);
         assert_eq!(types[1].module, crate::records::DESIGN_MODULE_SKETCH);
-        assert_eq!(types[1].entity_ids, [20]);
+        assert_eq!(types[1].entities.values().copied().collect::<Vec<_>>(), [20]);
 
         assert_eq!(types[2].type_guid, third);
         assert_eq!(types[2].base_type_guid.as_ref().map(|field| field.value.as_str()), Some(second));
         assert_eq!(types[2].version, 11);
         assert_eq!(types[2].module, crate::records::DESIGN_MODULE_BODY);
-        assert_eq!(types[2].entity_ids, [30, 31, 32]);
+        assert_eq!(types[2].entities.values().copied().collect::<Vec<_>>(), [30, 31, 32]);
 
         // Every reported offset addresses the field it names.
         let string_at = |offset: u64, length: usize| {
@@ -731,11 +732,10 @@ mod tests {
             if let Some(base) = &design_type.base_type_guid {
                 assert_eq!(string_at(base.offset.expect("parsed base location"), 36), base.value);
             }
-            for (entity_id, offset) in design_type
-                .entity_ids
-                .iter()
-                .zip(&design_type.entity_id_offsets)
-            {
+            let crate::records::ReferenceRun::Located(entities) = &design_type.entities else {
+                panic!("parsed entity locations");
+            };
+            for crate::records::Located { value: entity_id, offset } in entities {
                 assert_eq!(
                     u64::from_le_bytes(
                         bytes[*offset as usize..*offset as usize + 8]

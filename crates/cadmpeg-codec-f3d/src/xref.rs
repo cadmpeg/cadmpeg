@@ -527,7 +527,7 @@ fn typed_occurrence_placement_offsets(
                 .type_guid
                 .eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)
         })
-        .flat_map(|design_type| design_type.entity_ids.iter().copied())
+        .flat_map(|design_type| design_type.entities.values().copied())
         .collect::<HashSet<_>>();
     meta.records
         .iter()

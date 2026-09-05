@@ -256,7 +256,7 @@ fn source_less_design_record_type<'a>(
             "F3D {record_kind} class tag {class_tag} is outside the Design type table"
         ))
     })?;
-    if !design_type.entity_ids.contains(&u64::from(record_index)) {
+    if !design_type.entities.values().any(|registered| *registered == u64::from(record_index)) {
         return Err(CodecError::InvalidInput(format!(
             "F3D {record_kind} {record_index} is not registered by class tag {class_tag}"
         )));
@@ -386,7 +386,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             .design_types
             .iter()
             .filter(|design_type| {
-                design_type.entity_ids.contains(&u64::from(owner_reference))
+                design_type.entities.values().any(|registered| *registered == u64::from(owner_reference))
                     && design_type.type_guid.eq_ignore_ascii_case(
                         crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
                     )
@@ -412,8 +412,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             .iter()
             .filter(|design_type| {
                 design_type
-                    .entity_ids
-                    .contains(&u64::from(point.paired_reference))
+                    .entities.values().any(|registered| *registered == u64::from(point.paired_reference))
                     && design_type_matches(
                         design_type,
                         crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE,
@@ -623,7 +622,7 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
                 design_type.type_guid
             )));
         }
-        for entity_id in &design_type.entity_ids {
+        for entity_id in design_type.entities.values() {
             if let Some(before) = entity_types.insert(*entity_id, design_type.type_guid.as_str()) {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D Design entity {entity_id} is registered by both type {before} and type {}",

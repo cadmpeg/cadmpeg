@@ -253,7 +253,7 @@ fn entity_types(
 ) -> Result<HashMap<u64, (&str, u32)>, CodecError> {
     let mut out = HashMap::new();
     for design_type in &meta.types {
-        for &entity_id in &design_type.entity_ids {
+        for &entity_id in design_type.entities.values() {
             if out
                 .insert(
                     entity_id,
@@ -629,8 +629,7 @@ mod tests {
             version,
             version_offset: 0,
             module: module.into(),
-            entity_ids,
-            entity_id_offsets: Vec::new(),
+            entities: crate::records::ReferenceRun::Unlocated(entity_ids),
         }
     }
 

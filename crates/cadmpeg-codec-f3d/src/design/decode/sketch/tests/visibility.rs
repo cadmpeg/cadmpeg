@@ -89,8 +89,7 @@ fn sketch_visibility_accepts_settled_container_header() {
             version,
             version_offset: 0,
             module: module.into(),
-            entity_id_offsets: vec![0; entity_ids.len()],
-            entity_ids,
+            entities: crate::records::ReferenceRun::Located(entity_ids.into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect()),
         }
     };
     let metadata = crate::metastream::MetaStream {

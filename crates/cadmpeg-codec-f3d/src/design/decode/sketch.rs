@@ -985,7 +985,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
     for design_type in types {
         if let Some(stream) = native_stream(&design_type.id) {
             let stream_modules = entity_modules.entry(stream.to_owned()).or_default();
-            for &entity_id in &design_type.entity_ids {
+            for &entity_id in design_type.entities.values() {
                 stream_modules
                     .entry(entity_id)
                     .or_insert_with(|| design_type.module.clone());
@@ -1007,8 +1007,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 .or_default()
                 .extend(
                     design_type
-                        .entity_ids
-                        .into_iter()
+                        .entities.values().copied()
                         .filter_map(|identity| u32::try_from(identity).ok()),
                 );
         }

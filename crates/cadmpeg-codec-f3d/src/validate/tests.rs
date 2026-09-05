@@ -157,8 +157,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         },
         version_offset: 44,
         module: crate::records::DESIGN_MODULE_FUSION.into(),
-        entity_id_offsets: vec![100; entities.len()],
-        entity_ids: entities,
+        entities: crate::records::ReferenceRun::Located(entities.into_iter().map(|value| crate::records::Located { value, offset: 100 }).collect()),
     };
     let mut native = crate::native::F3dNative {
         design_types: vec![
@@ -201,10 +200,10 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     );
 
     let mut duplicate_type_owner = native.clone();
-    duplicate_type_owner.design_types[1].entity_ids.push(35);
-    duplicate_type_owner.design_types[1]
-        .entity_id_offsets
-        .push(108);
+    let crate::records::ReferenceRun::Located(entities) = &mut duplicate_type_owner.design_types[1].entities else {
+        panic!("located fixture entities");
+    };
+    entities.push(crate::records::Located { value: 35, offset: 108 });
     duplicate_type_owner
         .store(ir.native.namespace_mut("f3d", std::num::NonZeroU32::MIN))
         .unwrap();
