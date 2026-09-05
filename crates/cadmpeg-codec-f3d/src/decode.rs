@@ -4371,8 +4371,8 @@ fn extend_related_design_records(
                     .chain(
                         group
                             .frame
-                            .auxiliary_record_indices
-                            .iter()
+                            .auxiliary_records
+                            .iter().map(|record| &record.value)
                             .flat_map(|record_index| {
                                 std::iter::once(*record_index)
                                     .chain(record_index.checked_add(1))

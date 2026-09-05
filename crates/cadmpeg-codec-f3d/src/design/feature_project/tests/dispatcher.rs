@@ -440,8 +440,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             member_offsets: vec![0; members.len()],
             frame: DesignConstructionOperandGroupFrame {
                 member_count_offset: 0,
-                auxiliary_record_indices: Vec::new(),
-                auxiliary_record_offsets: Vec::new(),
+                auxiliary_records: Vec::new(),
                 auxiliary_paths: Vec::new(),
                 trailing_record_indices: Vec::new(),
                 trailing_record_offsets: Vec::new(),

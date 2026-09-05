@@ -442,8 +442,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
             member_offsets: vec![byte_offset + 26],
             frame: DesignConstructionOperandGroupFrame {
                 member_count_offset: byte_offset + 21,
-                auxiliary_record_indices: Vec::new(),
-                auxiliary_record_offsets: Vec::new(),
+                auxiliary_records: Vec::new(),
                 auxiliary_paths: Vec::new(),
                 trailing_record_indices: Vec::new(),
                 trailing_record_offsets: Vec::new(),
@@ -566,8 +565,7 @@ fn validation_checks_pipe_path_group_roles() {
         member_offsets: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 1_021,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: Vec::new(),
             trailing_record_offsets: Vec::new(),
@@ -1065,8 +1063,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         member_offsets: vec![424],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 420,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: vec![31],
             trailing_record_offsets: vec![440],
@@ -1160,8 +1157,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         member_offsets: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 1_021,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: vec![101],
             trailing_record_offsets: vec![1_025],
@@ -1267,8 +1263,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
         member_offsets: vec![926],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: Vec::new(),
             trailing_record_offsets: Vec::new(),

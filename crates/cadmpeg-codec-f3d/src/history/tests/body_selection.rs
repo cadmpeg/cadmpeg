@@ -33,8 +33,7 @@ fn move_body_selection_uses_unique_owning_history() {
         member_offsets: vec![0],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: Vec::new(),
             trailing_record_offsets: Vec::new(),

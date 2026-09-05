@@ -641,8 +641,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         member_offsets: vec![1026],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 1021,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: vec![300],
             trailing_record_offsets: vec![1044],

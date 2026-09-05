@@ -191,8 +191,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         member_offsets: vec![1026],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 1021,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: vec![300],
             trailing_record_offsets: vec![1043],
@@ -311,8 +310,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         member_offsets: vec![926],
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
             trailing_record_indices: vec![200],
             trailing_record_offsets: vec![943],

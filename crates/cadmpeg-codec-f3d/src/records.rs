@@ -8581,38 +8581,29 @@ impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerd
 /// Serialized framing of a construction-operand group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignConstructionOperandGroupFrameWire", into = "DesignConstructionOperandGroupFrameWire")]
 pub struct DesignConstructionOperandGroupFrame {
     /// Byte offset of the member count.
     pub member_count_offset: u64,
     /// Auxiliary records named by the two optional references that follow the
     /// member run; an absent reference contributes no entry.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub auxiliary_record_indices: Vec<u32>,
-    /// Byte offsets parallel to `auxiliary_record_indices`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub auxiliary_record_offsets: Vec<u64>,
+    pub auxiliary_records: Vec<Located<u32>>,
     /// Exact selection-path records selected by the optional references.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub auxiliary_paths: Vec<DesignConstructionOperandPath>,
     /// Indexed records named by the counted trailing-reference run. The target
     /// grammar is selected by the owning operand family: persistent-selection
     /// groups name identity wrappers and placed-selection groups name affine
     /// transforms.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trailing_record_indices: Vec<u32>,
     /// Byte offsets parallel to `trailing_record_indices`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trailing_record_offsets: Vec<u64>,
     /// Exact affine-transform records selected from the trailing-reference
     /// run. Other trailing records remain represented by their indices and
     /// offsets and can select another typed grammar.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trailing_transforms: Vec<DesignConstructionOperandTransform>,
     /// Exact dual-transform records selected from the trailing-reference run.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trailing_dual_transforms: Vec<DesignConstructionOperandDualTransform>,
     /// Exact compact flag records selected from the trailing-reference run.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trailing_flags: Vec<DesignConstructionOperandFlag>,
     /// Opaque ordinal: nonzero and below 256, repeated after `opaque_scalar` in
     /// every container generation but one.
@@ -8625,6 +8616,79 @@ pub struct DesignConstructionOperandGroupFrame {
     pub opaque_scalar_offset: u64,
     /// Boolean tail variant.
     pub variant: bool,
+}
+
+/// Serialized framing of a construction-operand group.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignConstructionOperandGroupFrameWire {
+    member_count_offset: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    auxiliary_record_indices: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    auxiliary_record_offsets: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    auxiliary_paths: Vec<DesignConstructionOperandPath>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    trailing_record_indices: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    trailing_record_offsets: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    trailing_transforms: Vec<DesignConstructionOperandTransform>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    trailing_dual_transforms: Vec<DesignConstructionOperandDualTransform>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    trailing_flags: Vec<DesignConstructionOperandFlag>,
+    opaque_index: u32,
+    opaque_index_offset: u64,
+    opaque_scalar: f64,
+    opaque_scalar_offset: u64,
+    variant: bool,
+}
+
+impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOperandGroupFrame {
+    type Error = String;
+    fn try_from(wire: DesignConstructionOperandGroupFrameWire) -> Result<Self, Self::Error> {
+        if wire.auxiliary_record_indices.len() != wire.auxiliary_record_offsets.len() {
+            return Err("auxiliary_record_offsets must match auxiliary_record_indices".into());
+        }
+        Ok(Self {
+            member_count_offset: wire.member_count_offset,
+            auxiliary_records: wire.auxiliary_record_indices.into_iter().zip(wire.auxiliary_record_offsets).map(|(value, offset)| Located { value, offset }).collect(),
+            auxiliary_paths: wire.auxiliary_paths,
+            trailing_record_indices: wire.trailing_record_indices,
+            trailing_record_offsets: wire.trailing_record_offsets,
+            trailing_transforms: wire.trailing_transforms,
+            trailing_dual_transforms: wire.trailing_dual_transforms,
+            trailing_flags: wire.trailing_flags,
+            opaque_index: wire.opaque_index,
+            opaque_index_offset: wire.opaque_index_offset,
+            opaque_scalar: wire.opaque_scalar,
+            opaque_scalar_offset: wire.opaque_scalar_offset,
+            variant: wire.variant,
+        })
+    }
+}
+
+impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGroupFrameWire {
+    fn from(frame: DesignConstructionOperandGroupFrame) -> Self {
+        Self {
+            member_count_offset: frame.member_count_offset,
+            auxiliary_record_indices: frame.auxiliary_records.iter().map(|record| record.value).collect(),
+            auxiliary_record_offsets: frame.auxiliary_records.iter().map(|record| record.offset).collect(),
+            auxiliary_paths: frame.auxiliary_paths,
+            trailing_record_indices: frame.trailing_record_indices,
+            trailing_record_offsets: frame.trailing_record_offsets,
+            trailing_transforms: frame.trailing_transforms,
+            trailing_dual_transforms: frame.trailing_dual_transforms,
+            trailing_flags: frame.trailing_flags,
+            opaque_index: frame.opaque_index,
+            opaque_index_offset: frame.opaque_index_offset,
+            opaque_scalar: frame.opaque_scalar,
+            opaque_scalar_offset: frame.opaque_scalar_offset,
+            variant: frame.variant,
+        }
+    }
 }
 
 /// Compact boolean record named by a construction-operand group's trailing run.

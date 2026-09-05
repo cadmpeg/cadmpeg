@@ -2019,8 +2019,7 @@ pub(crate) fn parse_construction_operand_group(
         members.push(record_index);
         member_offsets.push(offset);
     }
-    let mut auxiliary_record_indices = Vec::new();
-    let mut auxiliary_record_offsets = Vec::new();
+    let mut auxiliary_records = Vec::new();
     let mut auxiliary_reference_slots = [false; 2];
     for present in &mut auxiliary_reference_slots {
         if bytes.get(cursor) == Some(&0) {
@@ -2031,8 +2030,7 @@ pub(crate) fn parse_construction_operand_group(
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        auxiliary_record_indices.push(record_index);
-        auxiliary_record_offsets.push(offset);
+        auxiliary_records.push(crate::records::Located { value: record_index, offset });
     }
     let Some(trailing_count) = View::u32_le_at(bytes, cursor) else {
         return NotAGroup;
@@ -2056,7 +2054,7 @@ pub(crate) fn parse_construction_operand_group(
         && header
             .record_index
             .checked_add(13)
-            .is_some_and(|expected| auxiliary_record_indices.as_slice() == [expected])
+            .is_some_and(|expected| auxiliary_records.len() == 1 && auxiliary_records[0].value == expected)
         && trailing_count == 0;
     if legacy_move_class_328 {
         if bytes.get(cursor) != Some(&0) {
@@ -2173,8 +2171,7 @@ pub(crate) fn parse_construction_operand_group(
         member_offsets,
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset,
-            auxiliary_record_indices,
-            auxiliary_record_offsets,
+            auxiliary_records,
             auxiliary_paths: Vec::new(),
             trailing_record_indices,
             trailing_record_offsets,
@@ -2353,8 +2350,8 @@ pub fn bind_construction_operand_paths(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        for record_index in &group.frame.auxiliary_record_indices {
-            let Some(header) = headers.get(&(stream, *record_index)) else {
+        for record in &group.frame.auxiliary_records {
+            let Some(header) = headers.get(&(stream, record.value)) else {
                 continue;
             };
             if let Some(path) =
