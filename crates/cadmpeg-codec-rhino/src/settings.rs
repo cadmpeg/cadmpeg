@@ -533,8 +533,6 @@ pub(crate) struct LayerRecord {
 pub(crate) struct LayerPerViewportSettings {
     /// Viewport identity selected by the source entry.
     pub(crate) viewport_id: Uuid,
-    /// Effective source settings mask after source defaults and validation.
-    pub(crate) settings_mask: u32,
     /// Per-viewport layer color, if effective.
     pub(crate) color: Option<[u8; 4]>,
     /// Per-viewport plot color, if effective.
@@ -545,6 +543,29 @@ pub(crate) struct LayerPerViewportSettings {
     pub(crate) visible: Option<u8>,
     /// Raw source persistent-visibility value, 1 or 2, for child layers.
     pub(crate) persistent_visibility: Option<u8>,
+}
+
+impl LayerPerViewportSettings {
+    /// Effective source settings mask after source defaults and validation.
+    pub(crate) fn settings_mask(&self) -> u32 {
+        let mut mask = LAYER_PER_VIEWPORT_ID;
+        if self.color.is_some() {
+            mask |= LAYER_PER_VIEWPORT_COLOR;
+        }
+        if self.plot_color.is_some() {
+            mask |= LAYER_PER_VIEWPORT_PLOT_COLOR;
+        }
+        if self.plot_weight_mm.is_some() {
+            mask |= LAYER_PER_VIEWPORT_PLOT_WEIGHT;
+        }
+        if self.visible.is_some() {
+            mask |= LAYER_PER_VIEWPORT_VISIBLE;
+        }
+        if self.persistent_visibility.is_some() {
+            mask |= LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY;
+        }
+        mask
+    }
 }
 
 /// A bounded direct object payload embedded in a layer extension.
@@ -821,28 +842,15 @@ fn parse_layer_extensions(
         } else {
             persistent_value.filter(|value| matches!(value, 1 | 2))
         };
-        let mut settings_mask = 0;
-        if !viewport_id.is_nil() {
-            if color.is_some() {
-                settings_mask |= LAYER_PER_VIEWPORT_COLOR;
-            }
-            if plot_color.is_some() {
-                settings_mask |= LAYER_PER_VIEWPORT_PLOT_COLOR;
-            }
-            if plot_weight_mm.is_some() {
-                settings_mask |= LAYER_PER_VIEWPORT_PLOT_WEIGHT;
-            }
-            if visible.is_some() {
-                settings_mask |= LAYER_PER_VIEWPORT_VISIBLE;
-            }
-            if persistent_visibility.is_some() {
-                settings_mask |= LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY;
-            }
-        }
-        if settings_mask != 0 {
+        if !viewport_id.is_nil()
+            && (color.is_some()
+                || plot_color.is_some()
+                || plot_weight_mm.is_some()
+                || visible.is_some()
+                || persistent_visibility.is_some())
+        {
             values.push(LayerPerViewportSettings {
                 viewport_id,
-                settings_mask: settings_mask | LAYER_PER_VIEWPORT_ID,
                 color,
                 plot_color,
                 plot_weight_mm,
@@ -856,19 +864,20 @@ fn parse_layer_extensions(
     values.sort_by(|a, b| {
         let mut ordering = a.viewport_id.cmp(&b.viewport_id);
         if ordering == std::cmp::Ordering::Equal {
-            ordering = a.settings_mask.cmp(&b.settings_mask);
+            ordering = a.settings_mask().cmp(&b.settings_mask());
         }
         if ordering == std::cmp::Ordering::Equal
-            && a.settings_mask & LAYER_PER_VIEWPORT_VISIBLE != 0
+            && a.settings_mask() & LAYER_PER_VIEWPORT_VISIBLE != 0
         {
             ordering = a.visible.cmp(&b.visible);
         }
         if ordering == std::cmp::Ordering::Equal
-            && a.settings_mask & LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY != 0
+            && a.settings_mask() & LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY != 0
         {
             ordering = a.persistent_visibility.cmp(&b.persistent_visibility);
         }
-        if ordering == std::cmp::Ordering::Equal && a.settings_mask & LAYER_PER_VIEWPORT_COLOR != 0
+        if ordering == std::cmp::Ordering::Equal
+            && a.settings_mask() & LAYER_PER_VIEWPORT_COLOR != 0
         {
             ordering = a
                 .color
@@ -876,7 +885,7 @@ fn parse_layer_extensions(
                 .cmp(&b.color.map(u32::from_le_bytes));
         }
         if ordering == std::cmp::Ordering::Equal
-            && a.settings_mask & LAYER_PER_VIEWPORT_PLOT_COLOR != 0
+            && a.settings_mask() & LAYER_PER_VIEWPORT_PLOT_COLOR != 0
         {
             ordering = a
                 .plot_color
@@ -884,7 +893,7 @@ fn parse_layer_extensions(
                 .cmp(&b.plot_color.map(u32::from_le_bytes));
         }
         if ordering == std::cmp::Ordering::Equal
-            && a.settings_mask & LAYER_PER_VIEWPORT_PLOT_WEIGHT != 0
+            && a.settings_mask() & LAYER_PER_VIEWPORT_PLOT_WEIGHT != 0
         {
             ordering = a
                 .plot_weight_mm
