@@ -32,6 +32,20 @@ fn serialize_u8_0<S: Serializer>(_: &(), serializer: S) -> Result<S::Ok, S::Erro
     serializer.serialize_u8(0)
 }
 
+fn serialize_absent_u64_offset<S: Serializer>(
+    value: &Option<u64>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_u64(value.unwrap_or(0))
+}
+
+fn deserialize_absent_u64_offset<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u64>, D::Error> {
+    let offset = u64::deserialize(deserializer)?;
+    Ok((offset != 0).then_some(offset))
+}
+
 use cadmpeg_ir::assets::AssetId;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId};
@@ -3123,8 +3137,8 @@ pub struct DesignParameterScope {
     /// ASM delta-state identity immediately preceding this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_history_state_id: Option<i64>,
-    /// Byte offset of the encoded preceding-state identity or null sentinel.
-    pub previous_history_state_id_offset: u64,
+    /// Byte offset of the encoded preceding-state identity, when present.
+    pub previous_history_state_id_offset: Option<u64>,
     /// Byte offset of the ordered reference-table count.
     pub reference_count_offset: u64,
     /// Ordered indexed-record references carried by the scope.
@@ -3181,8 +3195,13 @@ pub(crate) struct DesignParameterScopeSerde {
     /// ASM delta-state identity immediately preceding this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_history_state_id: Option<i64>,
-    /// Byte offset of the encoded preceding-state identity or null sentinel.
-    pub previous_history_state_id_offset: u64,
+    /// Byte offset of the encoded preceding-state identity, when present.
+    #[serde(
+        default,
+        serialize_with = "serialize_absent_u64_offset",
+        deserialize_with = "deserialize_absent_u64_offset"
+    )]
+    pub previous_history_state_id_offset: Option<u64>,
     /// Byte offset of the ordered reference-table count.
     pub reference_count_offset: u64,
     /// Ordered indexed-record references carried by the scope.
@@ -5447,7 +5466,7 @@ impl DesignParameterScope {
             history_state_id: None,
             history_state_id_offset: 0,
             previous_history_state_id: None,
-            previous_history_state_id_offset: 0,
+            previous_history_state_id_offset: None,
             reference_count_offset: 0,
             reference_members: Vec::new(),
             reference_member_offsets: Vec::new(),

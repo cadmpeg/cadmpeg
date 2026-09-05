@@ -105,7 +105,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         assert_eq!(decoded.previous_history_state_id, Some(2));
         assert_eq!(
             decoded.previous_history_state_id_offset,
-            (feature_ordinal_at + 30) as u64
+            Some((feature_ordinal_at + 30) as u64)
         );
     }
 
@@ -126,7 +126,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(extended.previous_history_state_id, Some(3));
     assert_eq!(
         extended.previous_history_state_id_offset,
-        (feature_ordinal_at + 41) as u64
+        Some((feature_ordinal_at + 41) as u64)
     );
 
     for tail_length in [82, 104] {
@@ -142,7 +142,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
                 .expect("scope with extended no-history fixed tail");
         assert_eq!(decoded.kind, "Sketch");
         assert_eq!(decoded.previous_history_state_id, None);
-        assert_eq!(decoded.previous_history_state_id_offset, 0);
+        assert_eq!(decoded.previous_history_state_id_offset, None);
     }
 
     let mut copy_scope = Vec::new();
@@ -178,7 +178,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(copy.previous_history_state_id, None);
     assert_eq!(
         copy.previous_history_state_id_offset,
-        (copy_feature_ordinal_at + 53) as u64
+        Some((copy_feature_ordinal_at + 53) as u64)
     );
     assert_eq!(copy.frame_length, copy_paired_at as u64);
 

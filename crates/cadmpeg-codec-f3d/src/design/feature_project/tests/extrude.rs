@@ -191,7 +191,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         history_state_id: None,
         history_state_id_offset: 0,
         previous_history_state_id: None,
-        previous_history_state_id_offset: 0,
+        previous_history_state_id_offset: None,
         reference_count_offset: 180,
         reference_members: vec![100],
         reference_member_offsets: vec![185],

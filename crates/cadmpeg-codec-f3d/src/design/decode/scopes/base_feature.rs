@@ -81,7 +81,7 @@ fn exact_base_feature_scope_tail(
         || scope.feature_ordinal_offset
             != scope.byte_offset + u64::try_from(layout.feature_ordinal).ok()?
         || scope.previous_history_state_id_offset
-            != scope.byte_offset + u64::try_from(layout.previous_history_state_id).ok()?
+            != Some(scope.byte_offset + u64::try_from(layout.previous_history_state_id).ok()?)
         || View::u32_le_at(bytes, start + layout.reference_count)?
             != class_377::REFERENCE_COUNT_VALUE
         || bytes.get(start + layout.generic_scope_reference_marker)
@@ -492,7 +492,7 @@ fn exact_base_feature_direct_body_based_on_faces(
         || scope.feature_ordinal_offset
             != scope.byte_offset + u64::try_from(class_377::FEATURE_ORDINAL).ok()?
         || scope.previous_history_state_id_offset
-            != scope.byte_offset + u64::try_from(class_377::PREVIOUS_HISTORY_STATE_ID).ok()?
+            != Some(scope.byte_offset + u64::try_from(class_377::PREVIOUS_HISTORY_STATE_ID).ok()?)
     {
         return None;
     }

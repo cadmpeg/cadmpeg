@@ -4476,7 +4476,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     )
                 })
             && scope.history_state_id_offset == scope.kind_offset.saturating_sub(8)
-            && if scope.previous_history_state_id_offset == 0 {
+            && if scope.previous_history_state_id_offset.is_none() {
                 scope.previous_history_state_id.is_none()
             } else {
                 match scope
@@ -4491,7 +4491,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     }) {
                     Some(offset) => {
                         scope.previous_history_state_id_offset
-                            == scope.feature_ordinal_offset.saturating_add(offset as u64)
+                            == Some(scope.feature_ordinal_offset.saturating_add(offset as u64))
                             && scope.history_state_id.is_some()
                                 == scope.previous_history_state_id.is_some()
                     }

@@ -463,7 +463,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         history_state_id: None,
         history_state_id_offset: 0,
         previous_history_state_id: None,
-        previous_history_state_id_offset: 0,
+        previous_history_state_id_offset: None,
         reference_count_offset: 1080,
         reference_members: vec![100],
         reference_member_offsets: vec![1085],

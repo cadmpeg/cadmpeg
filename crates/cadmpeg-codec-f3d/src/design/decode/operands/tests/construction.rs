@@ -43,7 +43,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         history_state_id: None,
         history_state_id_offset: 0,
         previous_history_state_id: None,
-        previous_history_state_id_offset: 0,
+        previous_history_state_id_offset: None,
         reference_count_offset: 1080,
         reference_members: vec![100, 200, 201],
         reference_member_offsets: vec![1085, 1096, 1107],

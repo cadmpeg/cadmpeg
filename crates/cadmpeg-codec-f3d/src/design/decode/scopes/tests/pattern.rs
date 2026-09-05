@@ -182,7 +182,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         history_state_id: Some(2),
         history_state_id_offset: 0,
         previous_history_state_id: Some(1),
-        previous_history_state_id_offset: 0,
+        previous_history_state_id_offset: None,
         reference_count_offset: 0,
         reference_members: vec![
             count_record_index,

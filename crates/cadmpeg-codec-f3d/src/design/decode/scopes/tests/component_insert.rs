@@ -70,7 +70,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         history_state_id: None,
         history_state_id_offset: 0,
         previous_history_state_id: None,
-        previous_history_state_id_offset: 0,
+        previous_history_state_id_offset: None,
         reference_count_offset: 0,
         reference_members: vec![20],
         reference_member_offsets: vec![scope_at as u64 + 38],

@@ -1417,7 +1417,7 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
     );
     assert_eq!(scope.history_state_id, Some(3));
     assert_eq!(scope.previous_history_state_id, None);
-    assert_eq!(scope.previous_history_state_id_offset, 0);
+    assert_eq!(scope.previous_history_state_id_offset, None);
 }
 
 #[test]
