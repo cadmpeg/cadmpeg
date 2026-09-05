@@ -494,29 +494,96 @@ pub(crate) struct AsmHistoricalTopologyDelta {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "AsmHistoryRecordWire"))]
+#[serde(try_from = "AsmHistoryRecordWire", into = "AsmHistoryRecordWire")]
 pub(crate) struct AsmHistoryRecord {
     pub id: String,
     pub parent: String,
+    pub revision_id: Option<i64>,
+    pub byte_offset: u64,
+    pub framing: AsmHistoryRecordFraming,
+    pub raw_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum AsmHistoryRecordFraming {
+    Framed { index: u64, name: String, entity_references: Vec<i64> },
+    Opaque { error: String },
+}
+
+impl AsmHistoryRecord {
+    pub fn name(&self) -> &str {
+        match &self.framing {
+            AsmHistoryRecordFraming::Framed { name, .. } => name,
+            AsmHistoryRecordFraming::Opaque { .. } => "opaque_history_payload",
+        }
+    }
+
+    pub fn framing_error(&self) -> Option<&str> {
+        match &self.framing {
+            AsmHistoryRecordFraming::Framed { .. } => None,
+            AsmHistoryRecordFraming::Opaque { error } => Some(error),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct AsmHistoryRecordWire {
+    id: String,
+    parent: String,
     /// Construction-history revision identity paired from the ordered
     /// old-reference run; absent only for the stream terminator or an opaque
     /// snapshot whose pairing cannot be established.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub revision_id: Option<i64>,
+    revision_id: Option<i64>,
     /// Snapshot-local record ordinal. This is not the revision identity.
-    pub index: u64,
+    index: u64,
     /// Byte offset of the record in the decompressed ASM stream.
     #[serde(default)]
-    pub byte_offset: u64,
-    pub name: String,
+    byte_offset: u64,
+    name: String,
     /// Framing failure that forced this span to remain opaque.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub framing_error: Option<String>,
+    framing_error: Option<String>,
     /// Ordered `0x0c` entity-reference tokens in the history revision namespace.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub entity_references: Vec<i64>,
+    entity_references: Vec<i64>,
     #[serde(with = "cadmpeg_ir::bytes")]
     #[cfg_attr(feature = "schema", schemars(with = "String"))]
-    pub raw_bytes: Vec<u8>,
+    raw_bytes: Vec<u8>,
+}
+
+impl TryFrom<AsmHistoryRecordWire> for AsmHistoryRecord {
+    type Error = String;
+
+    fn try_from(wire: AsmHistoryRecordWire) -> Result<Self, Self::Error> {
+        let framing = match wire.framing_error {
+            None => AsmHistoryRecordFraming::Framed {
+                index: wire.index, name: wire.name, entity_references: wire.entity_references,
+            },
+            Some(error) => {
+                if wire.index != 0 || wire.name != "opaque_history_payload" || !wire.entity_references.is_empty() {
+                    return Err("framing_error requires index 0, name opaque_history_payload, and empty entity_references".into());
+                }
+                AsmHistoryRecordFraming::Opaque { error }
+            }
+        };
+        Ok(Self { id: wire.id, parent: wire.parent, revision_id: wire.revision_id,
+            byte_offset: wire.byte_offset, framing, raw_bytes: wire.raw_bytes })
+    }
+}
+
+impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
+    fn from(record: AsmHistoryRecord) -> Self {
+        let (index, name, framing_error, entity_references) = match record.framing {
+            AsmHistoryRecordFraming::Framed { index, name, entity_references } => (index, name, None, entity_references),
+            AsmHistoryRecordFraming::Opaque { error } => (0, "opaque_history_payload".into(), Some(error), Vec::new()),
+        };
+        Self { id: record.id, parent: record.parent, revision_id: record.revision_id,
+            index, byte_offset: record.byte_offset, name, framing_error, entity_references,
+            raw_bytes: record.raw_bytes }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -671,4 +738,25 @@ mod tests {
         assert!(error.contains("record_table_complete"));
         assert!(error.contains("topology"));
     }
+    #[test]
+    fn history_record_framing_preserves_wire_and_rejects_opaque_metadata() {
+        let prefix = r#"{"id":"record","parent":"state","revision_id":7,"index":0,"byte_offset":12,"name":"#;
+        for fields in [
+            r#""edge","entity_references":[7,-1]"#,
+            r#""opaque_history_payload","framing_error":"invalid frame""#,
+        ] {
+            let wire = format!("{prefix}{fields},\"raw_bytes\":\"\"}}");
+            let record: super::AsmHistoryRecord = serde_json::from_str(&wire).unwrap();
+            assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        }
+        for fields in [
+            r#""edge","framing_error":"invalid frame""#,
+            r#""opaque_history_payload","framing_error":"invalid frame","entity_references":[7]"#,
+        ] {
+            let wire = format!("{prefix}{fields},\"raw_bytes\":\"\"}}");
+            let error = serde_json::from_str::<super::AsmHistoryRecord>(&wire).unwrap_err().to_string();
+            assert!(error.contains("framing_error"));
+        }
+    }
+
 }

@@ -232,7 +232,7 @@ fn bind_snapshot_revision_ids(states: &mut [AsmDeltaState]) {
     let snapshot_records = states
         .iter_mut()
         .flat_map(|state| &mut state.records)
-        .filter(|record| record.name != "End-of-ASM-data")
+        .filter(|record| record.name() != "End-of-ASM-data")
         .collect::<Vec<_>>();
     if snapshot_records.len() != old_references.len() {
         return;
@@ -244,7 +244,7 @@ fn bind_snapshot_revision_ids(states: &mut [AsmDeltaState]) {
 
 fn is_history_boundary_record(record: &AsmHistoryRecord) -> bool {
     matches!(
-        record.name.as_str(),
+        record.name(),
         "End-of-ASM-History-Section" | "End-of-ASM-data"
     )
 }
@@ -591,7 +591,7 @@ fn historical_record_archive(
             return None;
         }
         let framed = framed.pop()?;
-        if framed.name != record.name || records.insert(revision_id, framed).is_some() {
+        if framed.name != record.name() || records.insert(revision_id, framed).is_some() {
             return None;
         }
     }
@@ -7135,12 +7135,15 @@ fn snapshot_edge_identity_revision(identity: u64, history: &AsmHistory) -> Optio
         .states
         .iter()
         .flat_map(|state| &state.records)
-        .filter(|record| record.index == identity)
+        .filter(|record| match &record.framing {
+            crate::history_records::AsmHistoryRecordFraming::Framed { index, .. } => *index == identity,
+            crate::history_records::AsmHistoryRecordFraming::Opaque { .. } => identity == 0,
+        })
         .collect::<Vec<_>>();
     let [record] = matches.as_slice() else {
         return None;
     };
-    (record.name == "edge")
+    (record.name() == "edge")
         .then_some(record.revision_id?)
         .filter(|revision| *revision > 0)
         .and_then(|revision| u64::try_from(revision).ok())
@@ -8905,11 +8908,8 @@ fn decode_history_records(
                     ),
                     parent: state_id.to_string(),
                     revision_id: None,
-                    index: record.index as u64,
                     byte_offset: record.offset as u64,
-                    name: record.name,
-                    framing_error: None,
-                    entity_references,
+                    framing: crate::history_records::AsmHistoryRecordFraming::Framed { index: record.index as u64, name: record.name, entity_references },
                     raw_bytes: bytes[record.offset..record.offset + record.len].to_vec(),
                 }
             })
@@ -8923,11 +8923,8 @@ fn decode_history_records(
                 ),
                 parent: state_id.to_string(),
                 revision_id: None,
-                index: 0,
                 byte_offset: start as u64,
-                name: "opaque_history_payload".into(),
-                framing_error: Some(error.to_string()),
-                entity_references: Vec::new(),
+                framing: crate::history_records::AsmHistoryRecordFraming::Opaque { error: error.to_string() },
                 raw_bytes: bytes[start..limit].to_vec(),
             }]
         }
