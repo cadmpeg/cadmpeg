@@ -894,10 +894,10 @@ fn parse_framed_section_cache<'bytes>(
             continue;
         };
         for section in crate::om::sections(payload) {
-            if let Some(record_area_offset) = section.record_area_offset {
+            if let Some(record_area) = section.record_area {
                 operation_label_layouts.push((
                     entry_index,
-                    record_area_offset,
+                    record_area.offset,
                     section.operation_label_layouts(),
                 ));
             }
