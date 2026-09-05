@@ -41,10 +41,10 @@ fn dispatcher_projects_datum_feature_scopes() {
             point_record_byte_offset: 0,
             position: [4.0, 5.0, 6.0],
             position_offset: 0,
-            rule: crate::records::DesignWorkPointRule::Native {
+            rule: crate::records::DesignWorkPointRule::try_from(crate::records::DesignWorkPointRuleForm::Native {
                 reference_type: 1,
                 inputs: Vec::new(),
-            },
+            }).expect("compatible WorkPoint rule"),
             reference_type_offset: 0,
         });
     }
@@ -241,9 +241,9 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
             point_record_byte_offset: 0,
             position: [1.0, 2.0, 3.0],
             position_offset: 0,
-            rule: DesignWorkPointRule::ThreePlaneIntersection {
+            rule: crate::records::DesignWorkPointRule::try_from(crate::records::DesignWorkPointRuleForm::ThreePlaneIntersection {
                 inputs: [input(42, 10), input(46, 20), input(50, 30)],
-            },
+            }).expect("compatible WorkPoint rule"),
             reference_type_offset: 0,
         });
     }
@@ -321,7 +321,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
             point_record_byte_offset: 0,
             position: [4.0, 3.0, 0.0],
             position_offset: 0,
-            rule: DesignWorkPointRule::Vertex {
+            rule: crate::records::DesignWorkPointRule::try_from(crate::records::DesignWorkPointRuleForm::Vertex {
                 input: DesignWorkPointInput {
                     record_index: 22,
                     reference_offset: 0,
@@ -329,7 +329,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
                         recipe,
                     })),
                 },
-            },
+            }).expect("compatible WorkPoint rule"),
             reference_type_offset: 0,
         });
     }

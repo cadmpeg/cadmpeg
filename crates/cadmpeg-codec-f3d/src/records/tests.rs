@@ -1258,7 +1258,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
             construction: Box::new(super::DesignWorkPointConstruction {
                 point_record_index: 10, point_record_byte_offset: 100,
                 position: [1.0, 2.0, 3.0], position_offset: 125,
-                rule: super::DesignWorkPointRule::Native { reference_type: 0, inputs: Vec::new() },
+                rule: crate::records::DesignWorkPointRule::try_from(crate::records::DesignWorkPointRuleForm::Native { reference_type: 0, inputs: Vec::new() }).expect("compatible WorkPoint rule"),
                 reference_type_offset: 150,
             }),
             selection: selection(40),
@@ -2083,4 +2083,35 @@ fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
         assert!(error.to_string().contains("resolved_vertex_slot"));
     }
     assert!(DesignVertexResolution::new(4, -1).is_none());
+}
+
+#[test]
+fn work_point_rules_preserve_supported_and_native_forms_without_aliases() {
+    use super::DesignWorkPointRule;
+
+    let input = serde_json::json!({"record_index": 2, "reference_offset": 10});
+    for (kind, code, arity) in [
+        ("circle_center", 5, 1), ("two_edge_intersection", 7, 2),
+        ("three_plane_intersection", 8, 3), ("vertex", 10, 1),
+        ("edge_plane_intersection", 14, 2), ("distance_on_edge", 20, 1),
+    ] {
+        let inputs = (0..arity).map(|_| input.clone()).collect::<Vec<_>>();
+        let mut wire = serde_json::json!({"kind": kind});
+        if arity == 1 {
+            wire["input"] = input.clone();
+        } else {
+            wire["inputs"] = serde_json::json!(inputs);
+        }
+        let rule: DesignWorkPointRule = serde_json::from_value(wire.clone()).expect("supported rule");
+        assert_eq!(rule.reference_type(), code);
+        assert_eq!(serde_json::to_value(rule).expect("serialize rule"), wire);
+        let alias = serde_json::json!({"kind": "native", "reference_type": code, "inputs": inputs});
+        let error = serde_json::from_value::<DesignWorkPointRule>(alias).expect_err("native alias rejected");
+        assert!(error.to_string().contains("reference_type"));
+    }
+    for (code, inputs) in [(0, vec![]), (u32::MAX, vec![input.clone()]), (5, vec![input.clone(), input])] {
+        let wire = serde_json::json!({"kind": "native", "reference_type": code, "inputs": inputs});
+        let rule: DesignWorkPointRule = serde_json::from_value(wire.clone()).expect("unassigned native form");
+        assert_eq!(serde_json::to_value(rule).expect("serialize native form"), wire);
+    }
 }

@@ -4151,8 +4151,7 @@ fn valid_work_point_construction(
         return true;
     };
     let native = ctx.native;
-    if !construction.rule.carriers_are_compatible()
-        || construction.point_record_byte_offset >= construction.position_offset
+    if construction.point_record_byte_offset >= construction.position_offset
         || construction.position_offset >= construction.reference_type_offset
         || !scope
             .reference_members

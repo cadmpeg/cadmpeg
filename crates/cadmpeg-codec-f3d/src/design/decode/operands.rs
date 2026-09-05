@@ -30,6 +30,7 @@ use crate::layout::sketch_profile_region_member as region_member;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
 use crate::records::{
+    DesignWorkPointRule,
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand, DesignBodyRecipeReference,
     DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
@@ -307,7 +308,8 @@ pub fn bind_work_point_input_carriers(
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
         };
-        for input in construction.rule.inputs_mut() {
+        let mut inputs = construction.rule.inputs().to_vec();
+        for input in &mut inputs {
             let edge_matches = edge_operands
                 .iter()
                 .filter(|operand| {
@@ -404,6 +406,9 @@ pub fn bind_work_point_input_carriers(
                 },
             }));
         }
+        construction.rule = DesignWorkPointRule::from_serialized(
+            construction.rule.reference_type(), inputs,
+        ).map_err(crate::error::malformed)?;
     }
     Ok(())
 }
@@ -521,19 +526,7 @@ pub fn bind_vertex_recipe_candidates(
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
         };
-        for recipe in construction
-            .rule
-            .inputs_mut()
-            .iter_mut()
-            .filter_map(|input| {
-                let DesignWorkPointInputCarrier::VertexRecipe { recipe } =
-                    input.carrier.as_deref_mut()?
-                else {
-                    return None;
-                };
-                Some(recipe)
-            })
-        {
+        for recipe in construction.rule.vertex_recipes_mut() {
             for reference in &mut recipe.recipe_references {
                 bind_recipe_reference_candidates(reference, tags, Some(&scope_id));
             }
