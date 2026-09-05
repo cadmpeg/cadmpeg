@@ -46,7 +46,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     .expect("variable-reference assembly alignment");
     assert_eq!(alignment.angle, 8.0);
     assert_eq!(alignment.offset, [9.0, 10.0, 11.0]);
-    assert_eq!(alignment.owner_record_indices, [108, 109, 110, 111]);
+    assert_eq!(alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(), [108, 109, 110, 111]);
     assert!(alignment.operand_frames().is_some());
 
     let write_reference = |bytes: &mut [u8], at: usize, record_index: u32| {

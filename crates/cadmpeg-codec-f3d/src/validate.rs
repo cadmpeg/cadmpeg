@@ -2568,7 +2568,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     != Some(design::DesignFeatureFamily::Assemble)
             }
             Some(alignment) => {
-                let values = if alignment.owner_record_indices.len() == 2 {
+                let values = if alignment.owners.len() == 2 {
                     vec![alignment.angle, alignment.offset[2]]
                 } else {
                     vec![
@@ -2604,33 +2604,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 );
                 let as_built_421 = as_built_421_generation.is_some();
                 let operand_paths = alignment.operand_paths();
-                let axial_operand_targets = alignment.axial_operand_targets();
-                let legacy_operand_frames_link =
-                    alignment.legacy_operand_carriers().is_none_or(|carriers| {
-                        alignment.operand_frames().is_some_and(|frames| {
-                            frames.iter().zip(carriers).enumerate().all(
-                                |(ordinal, (frame, carrier))| {
-                                    let reference_ordinal = ordinal.saturating_mul(2);
-                                    frame == &carrier.frame
-                                        && frame.reference_record_index
-                                            == carrier.construction_record_index
-                                        && scope.reference_members.values().nth(reference_ordinal).copied()
-                                            == Some(frame.reference_record_index)
-                                        && scope
-                                            .reference_members.offsets().nth(reference_ordinal)
-                                            .copied()
-                                            == Some(frame.reference_offset)
-                                        && alignment.solved_frame().is_some_and(|solved| {
-                                            frame.transform_offset == solved.transform_offset
-                                        })
-                                        && records_by_index.contains_key(&(
-                                            native_stream,
-                                            carrier.construction_record_index,
-                                        ))
-                                },
-                            )
-                        })
-                    });
                 let frame_reference_offsets = if axial_frames {
                     [29, 168]
                 } else if compact_frames {
@@ -2659,8 +2632,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     &scope.paired_class_tag,
                     assembly_owner_count,
                 );
-                let operand_frames_link = if alignment.legacy_operand_carriers().is_some() {
-                    legacy_operand_frames_link
+                let operand_frames_link = if let Some(records::DesignAssemblyAlignmentForm::LegacyAsBuilt421 { carriers, .. }) = &alignment.form {
+                    carriers.references().into_iter().enumerate().all(|(ordinal, reference)| {
+                        let reference_ordinal = ordinal * 2;
+                        scope.reference_members.values().nth(reference_ordinal).copied() == Some(reference.value)
+                            && scope.reference_members.offsets().nth(reference_ordinal).copied() == Some(reference.offset)
+                            && records_by_index.contains_key(&(native_stream, reference.value))
+                    })
                 } else {
                     alignment.operand_frames().is_none_or(|frames| {
                         frames[0].reference_record_index != frames[1].reference_record_index
@@ -2717,56 +2695,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 + u64::try_from(generation.matrix_offset()).unwrap_or(u64::MAX)
                         && design::decode::sketch::valid_sketch_transform(&frame.transform)
                 });
-                let mixed_variable_qualifiers_link = alignment
-                    .operand_frames()
-                    .zip(alignment.operand_qualifiers().as_ref())
-                    .filter(|(_, qualifiers)| {
-                        variable_reference
-                            && qualifiers.iter().any(|qualifier| {
-                                matches!(
-                                    qualifier,
-                                    records::DesignAssemblyOperandQualifier::JointOrigin { .. }
-                                )
-                            })
-                    })
-                    .map(|(frames, qualifiers)| {
-                        frames[0].reference_record_index != frames[1].reference_record_index
-                            && qualifiers.iter().zip(&frames).all(|(qualifier, frame)| {
-                                match qualifier {
-                                    records::DesignAssemblyOperandQualifier::OccurrencePath {
-                                        path,
-                                    } => valid_class_363_operand_path_link(scope, frame, path),
-                                    records::DesignAssemblyOperandQualifier::JointOrigin {
-                                        ..
-                                    } => valid_class_307_joint_origin_qualifier(
-                                        native,
-                                        records_by_index,
-                                        native_stream,
-                                        frame,
-                                        qualifier,
-                                    ),
-                                    records::DesignAssemblyOperandQualifier::AxialTarget {
-                                        ..
-                                    } => false,
-                                }
-                            })
-                    });
-                let operand_qualifiers_link = if let Some(link) = mixed_variable_qualifiers_link {
-                    link
-                } else {
-                    match (
-                        alignment.operand_frames(),
-                        operand_paths.as_ref(),
-                        axial_operand_targets.as_ref(),
-                    ) {
-                        (None, None, None) => true,
-                        // An axial form can retain its frames before both exact
-                        // pathless target joins resolve.
-                        (Some(_), None, None) if as_built_421 => {
-                            alignment.legacy_operand_carriers().is_some()
-                        }
-                        (Some(_), None, None) => axial_frames,
-                        (Some(frames), Some(paths), None) => {
+                let operand_qualifiers_link = match alignment.form.as_ref() {
+                    Some(records::DesignAssemblyAlignmentForm::Qualified(operands)) => {
+                        let frames = operands.each_ref().map(|operand| operand.frame.clone());
+                        match (&operands[0].qualifier, &operands[1].qualifier) {
+                            (records::DesignAssemblyOperandQualifier::OccurrencePath { path: first },
+                             records::DesignAssemblyOperandQualifier::OccurrencePath { path: second }) => {
+                                let paths = [first, second];
+
                             let class_363_carriers = paths
                                 .iter()
                                 .all(|path| path.link.locator_class_tag == "363");
@@ -2886,28 +2822,34 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                             ))
                                     })
                             }
+
+                            }
+                            (records::DesignAssemblyOperandQualifier::AxialTarget { target: first },
+                             records::DesignAssemblyOperandQualifier::AxialTarget { target: second }) => {
+                                axial_frames && valid_axial_assembly_targets(native, records_by_index, native_stream, scope, &frames, &[first, second])
+                            }
+                            _ if variable_reference && operands.iter().any(|operand| matches!(operand.qualifier, records::DesignAssemblyOperandQualifier::JointOrigin { .. })) => {
+                                frames[0].reference_record_index != frames[1].reference_record_index
+                                    && operands.iter().all(|operand| match &operand.qualifier {
+                                        records::DesignAssemblyOperandQualifier::OccurrencePath { path } => valid_class_363_operand_path_link(scope, &operand.frame, path),
+                                        qualifier @ records::DesignAssemblyOperandQualifier::JointOrigin { .. } => valid_class_307_joint_origin_qualifier(native, records_by_index, native_stream, &operand.frame, qualifier),
+                                        records::DesignAssemblyOperandQualifier::AxialTarget { .. } => false,
+                                    })
+                            }
+                            _ => false,
                         }
-                        (Some(frames), None, Some(targets)) => {
-                            let target_refs = [&targets[0], &targets[1]];
-                            axial_frames
-                                && valid_axial_assembly_targets(
-                                    native,
-                                    records_by_index,
-                                    native_stream,
-                                    scope,
-                                    &frames,
-                                    &target_refs,
-                                )
-                        }
-                        _ => false,
                     }
+                    Some(records::DesignAssemblyAlignmentForm::Frames { .. }) => axial_frames,
+                    Some(records::DesignAssemblyAlignmentForm::UnframedPaths(_)) => false,
+                    Some(records::DesignAssemblyAlignmentForm::LimitsOnly { .. }) => as_built_421,
+                    None | Some(records::DesignAssemblyAlignmentForm::DatumEnvelope { .. }
+                        | records::DesignAssemblyAlignmentForm::SolvedOnly { .. }
+                        | records::DesignAssemblyAlignmentForm::LegacyAsBuilt421 { .. }) => true,
                 };
                 let joint_origin_envelope_link = alignment
-                    .joint_origin_scope_record_index
+                    .joint_origin_scope_record_index()
                     .is_none_or(|record_index| {
-                        alignment.operand_frames().is_none()
-                            && alignment.operand_qualifiers().is_none()
-                            && scope.class_tag == "276"
+                        scope.class_tag == "276"
                             && scope.paired_class_tag == "258"
                             && scope.frame_length == 604
                             && native.design_parameter_scopes.iter().any(|target| {
@@ -2920,116 +2862,53 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             })
                     });
                 let alignment_scalars_link = if let Some(generation) = as_built_421_generation {
-                    match alignment.limits.as_ref() {
-                        Some(limits) => {
+                    match (alignment.limits(), alignment.owners.as_slice()) {
+                        (Some(limits), [angle, offset_x, offset_y, offset_z]) => {
                             let alignment_lanes = [
-                                (
-                                    alignment.owner_record_indices.get(1).copied(),
-                                    alignment.value_offsets.get(1).copied(),
-                                    alignment.offset[0],
-                                    0_u32,
-                                ),
-                                (
-                                    alignment.owner_record_indices.get(2).copied(),
-                                    alignment.value_offsets.get(2).copied(),
-                                    alignment.offset[1],
-                                    1_u32,
-                                ),
-                                (
-                                    alignment.owner_record_indices.get(3).copied(),
-                                    alignment.value_offsets.get(3).copied(),
-                                    alignment.offset[2],
-                                    2_u32,
-                                ),
-                                (
-                                    alignment.owner_record_indices.first().copied(),
-                                    alignment.value_offsets.first().copied(),
-                                    alignment.angle,
-                                    3_u32,
-                                ),
+                                (offset_x.value, offset_x.offset, alignment.offset[0], 0_u32),
+                                (offset_y.value, offset_y.offset, alignment.offset[1], 1_u32),
+                                (offset_z.value, offset_z.offset, alignment.offset[2], 2_u32),
+                                (angle.value, angle.offset, alignment.angle, 3_u32),
                             ];
-                            let limit_lanes = if generation.reverse_limit_order() {
-                                [
-                                    (
-                                        Some(limits.owner_record_indices[1]),
-                                        Some(limits.value_offsets[1]),
-                                        limits.maximum,
-                                        4_u32,
-                                    ),
-                                    (
-                                        Some(limits.owner_record_indices[0]),
-                                        Some(limits.value_offsets[0]),
-                                        limits.minimum,
-                                        5_u32,
-                                    ),
-                                ]
-                            } else {
-                                [
-                                    (
-                                        Some(limits.owner_record_indices[0]),
-                                        Some(limits.value_offsets[0]),
-                                        limits.minimum,
-                                        4_u32,
-                                    ),
-                                    (
-                                        Some(limits.owner_record_indices[1]),
-                                        Some(limits.value_offsets[1]),
-                                        limits.maximum,
-                                        5_u32,
-                                    ),
-                                ]
-                            };
-                            alignment.owner_record_indices.len() == 4
-                                && alignment.value_offsets.len() == 4
-                                && limits.kind == generation.limit_kind()
+                            let limit_order = if generation.reverse_limit_order() { [1, 0] } else { [0, 1] };
+                            let limit_lanes = limit_order.into_iter().enumerate().map(|(ordinal, index)| (
+                                limits.owner_record_indices[index], limits.value_offsets[index],
+                                [limits.minimum, limits.maximum][index], 4 + ordinal as u32
+                            ));
+                            limits.kind == generation.limit_kind()
                                 && limits.minimum.is_finite()
                                 && limits.maximum.is_finite()
                                 && limits.minimum <= limits.maximum
-                                && alignment_lanes.into_iter().chain(limit_lanes).all(
-                                    |(record_index, value_offset, value, local_ordinal)| {
-                                        let (Some(record_index), Some(value_offset)) =
-                                            (record_index, value_offset)
-                                        else {
-                                            return false;
-                                        };
-                                        native.design_parameter_owners.iter().any(|owner| {
-                                            design_stream(&owner.id) == native_stream
-                                                && owner.record_index == record_index
-                                                && owner.scope_record_index == scope.record_index
-                                                && owner.local_ordinal == local_ordinal
-                                                && owner.evaluated_value == value
-                                                && owner.evaluated_value_offset == value_offset
-                                        })
-                                    },
-                                )
+                                && alignment_lanes.into_iter().chain(limit_lanes).all(|(record_index, value_offset, value, local_ordinal)| {
+                                    native.design_parameter_owners.iter().any(|owner| {
+                                        design_stream(&owner.id) == native_stream
+                                            && owner.record_index == record_index
+                                            && owner.scope_record_index == scope.record_index
+                                            && owner.local_ordinal == local_ordinal
+                                            && owner.evaluated_value == value
+                                            && owner.evaluated_value_offset == value_offset
+                                    })
+                                })
                         }
-                        None => false,
+                        _ => false,
                     }
                 } else {
                     alignment_lane_bounds.is_some_and(|(alignment_start, alignment_end)| {
-                        alignment.owner_record_indices.len()
-                            == alignment_end.saturating_sub(alignment_start)
-                            && alignment
-                                .owner_record_indices
-                                .iter()
-                                .zip(&alignment.value_offsets)
-                                .zip(&values)
-                                .enumerate()
-                                .all(|(ordinal, ((record_index, value_offset), value))| {
-                                    native.design_parameter_owners.iter().any(|owner| {
-                                        design_stream(&owner.id) == native_stream
-                                            && owner.record_index == *record_index
-                                            && owner.scope_record_index == scope.record_index
-                                            && owner.local_ordinal
-                                                == (alignment_start + ordinal) as u32
-                                            && owner.evaluated_value == *value
-                                            && owner.evaluated_value_offset == *value_offset
-                                    })
+                        alignment.owners.len() == alignment_end.saturating_sub(alignment_start)
+                            && alignment.owners.iter().zip(&values).enumerate().all(|(ordinal, (lane, value))| {
+                                native.design_parameter_owners.iter().any(|owner| {
+                                    design_stream(&owner.id) == native_stream
+                                        && owner.record_index == lane.value
+                                        && owner.scope_record_index == scope.record_index
+                                        && owner.local_ordinal == (alignment_start + ordinal) as u32
+                                        && owner.evaluated_value == *value
+                                        && owner.evaluated_value_offset == lane.offset
                                 })
+                            })
                     })
                 };
                 let alignment_reference_link = if let Some(generation) = as_built_421_generation {
-                    alignment.limits.as_ref().is_some_and(|limits| {
+                    alignment.limits().is_some_and(|limits| {
                         let limit_reference_indices = if generation.reverse_limit_order() {
                             [
                                 limits.owner_record_indices[1],
@@ -3038,12 +2917,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         } else {
                             limits.owner_record_indices
                         };
-                        alignment.owner_record_indices.len() == 4
+                        alignment.owners.len() == 4
                             && scope.reference_members.values().skip(4).take(4).copied().eq([
-                                    alignment.owner_record_indices[1],
-                                    alignment.owner_record_indices[2],
-                                    alignment.owner_record_indices[3],
-                                    alignment.owner_record_indices[0],
+                                    alignment.owners[1].value,
+                                    alignment.owners[2].value,
+                                    alignment.owners[3].value,
+                                    alignment.owners[0].value,
                                 ])
                             && scope.reference_members.values().skip(9).take(2).eq(limit_reference_indices.iter())
                     })
@@ -3052,13 +2931,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     &scope.paired_class_tag,
                 ) {
                     (0..scope.reference_members.len())
-                        .filter(|&start| scope.reference_members.values_in(start..start + alignment.owner_record_indices.len())
-                            .is_some_and(|values| values.eq(alignment.owner_record_indices.iter())))
+                        .filter(|&start| scope.reference_members.values_in(start..start + alignment.owners.len())
+                            .is_some_and(|values| values.eq(alignment.owners.iter().map(|owner| &owner.value))))
                         .count()
                         == 1
                 } else {
-                    scope.reference_members.values().rev().take(alignment.owner_record_indices.len())
-                        .eq(alignment.owner_record_indices.iter().rev())
+                    scope.reference_members.values().rev().take(alignment.owners.len())
+                        .eq(alignment.owners.iter().map(|owner| &owner.value).rev())
                 };
                 values.iter().all(|value| value.is_finite())
                     && operand_frames_link

@@ -343,11 +343,8 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
         *slot = Some(DesignAssemblyAlignment {
             angle: 0.0,
             offset: [0.0; 3],
-            owner_record_indices: Vec::new(),
-            value_offsets: Vec::new(),
-            operands: None,
-            limits: None,
-            joint_origin_scope_record_index: Some(20),
+            owners: Vec::new(),
+            form: Some(crate::records::DesignAssemblyAlignmentForm::DatumEnvelope { joint_origin_scope_record_index: 20 }),
         });
     }
     let mut origin = DesignParameterScope::empty(
@@ -459,11 +456,8 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
             *slot = Some(DesignAssemblyAlignment {
                 angle: 0.0,
                 offset: [0.0; 3],
-                owner_record_indices: Vec::new(),
-                value_offsets: Vec::new(),
-                operands: None,
-                limits: None,
-                joint_origin_scope_record_index: Some(20),
+                owners: Vec::new(),
+            form: Some(crate::records::DesignAssemblyAlignmentForm::DatumEnvelope { joint_origin_scope_record_index: 20 }),
             });
         }
         scope

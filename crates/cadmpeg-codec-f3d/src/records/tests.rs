@@ -1156,3 +1156,147 @@ fn scope_reference_runs_preserve_wire_and_reject_partial_locations() {
         assert!(error.contains("reference_member_offsets"));
     }
 }
+
+#[test]
+fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
+    let frame = super::DesignAssemblyOperandFrame {
+        reference_record_index: 10,
+        reference_offset: 11,
+        transform: [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+        transform_offset: 22,
+    };
+    let path = super::DesignAssemblyOperandPath {
+        link: super::DesignAssemblyOperandPathLink {
+            locator_reference_offset: 11, locator_record_index: 10,
+            locator_class_tag: "363".into(), locator_byte_offset: 100,
+            locator_scope_reference_offset: 111, wrapper_record_index: 20,
+            wrapper_reference_offset: 122, wrapper_class_tag: "388".into(),
+            wrapper_byte_offset: 200, path_reference_offset: 211,
+        },
+        record_index: 30, class_tag: "386".into(), byte_offset: 300,
+        occurrence_guids: vec!["11111111-1111-4111-8111-111111111111".into()],
+        occurrence_guid_offsets: vec![311],
+        identity_guids: vec!["22222222-2222-4222-8222-222222222222".into()],
+        identity_guid_offsets: vec![322],
+    };
+    let limits = super::DesignAssemblyLimits {
+        kind: super::DesignAssemblyLimitKind::Angular,
+        minimum: -1.0, maximum: 1.0,
+        owner_record_indices: [40, 50], value_offsets: [411, 511],
+    };
+    let joint_origin = super::DesignAssemblyOperandQualifier::JointOrigin {
+        scope_record_index: 60, class_tag: "307".into(), byte_offset: 600,
+        paired_class_tag: "264".into(), paired_byte_offset: 700,
+    };
+    let axial = super::DesignAssemblyOperandQualifier::AxialTarget {
+        target: super::DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin { scope_record_index: 60 },
+    };
+    let occurrence = super::DesignAssemblyOperandQualifier::OccurrencePath { path: path.clone() };
+    for form in [
+        None,
+        Some(super::DesignAssemblyAlignmentForm::DatumEnvelope { joint_origin_scope_record_index: 60 }),
+        Some(super::DesignAssemblyAlignmentForm::SolvedOnly {
+            solved_frame: super::DesignAssemblySolvedFrame { reference_record_index: 30, reference_offset: 33, record_byte_offset: 300, class_tag: "258".into(), transform: frame.transform, transform_offset: 325 },
+            limits: Some(limits.clone()),
+        }),
+        Some(super::DesignAssemblyAlignmentForm::LimitsOnly { limits }),
+        Some(super::DesignAssemblyAlignmentForm::Frames { frames: [frame.clone(), frame.clone()] }),
+        Some(super::DesignAssemblyAlignmentForm::UnframedPaths([path.clone(), path])),
+        Some(super::DesignAssemblyAlignmentForm::qualified([frame.clone(), frame.clone()], [occurrence.clone(), occurrence.clone()])),
+        Some(super::DesignAssemblyAlignmentForm::qualified([frame.clone(), frame.clone()], [occurrence, joint_origin])),
+        Some(super::DesignAssemblyAlignmentForm::qualified([frame.clone(), frame.clone()], [axial.clone(), axial])),
+    ] {
+        let alignment = super::DesignAssemblyAlignment {
+            angle: 0.0, offset: [0.0; 3],
+            owners: vec![super::Located { value: 10, offset: 11 }, super::Located { value: 20, offset: 22 }],
+            form,
+        };
+        let wire = serde_json::to_string(&alignment).unwrap();
+        let decoded: super::DesignAssemblyAlignment = serde_json::from_str(&wire).unwrap();
+        assert_eq!(decoded, alignment);
+        assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
+        let mut invalid = serde_json::from_str::<serde_json::Value>(&wire).unwrap();
+        invalid["value_offsets"] = serde_json::json!([11]);
+        let error = serde_json::from_value::<super::DesignAssemblyAlignment>(invalid).unwrap_err().to_string();
+        assert!(error.contains("owner_record_indices"));
+        assert!(error.contains("value_offsets"));
+    }
+}
+
+#[test]
+fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
+    let identity = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
+    let selection = |record_index| super::DesignAssemblyLegacySelection {
+        record_index, byte_offset: 400, class_tag: "307".into(),
+        asset_id: "11111111-1111-4111-8111-111111111111".into(), asset_id_offset: 411,
+        context_id: "22222222-2222-4222-8222-222222222222".into(), context_id_offset: 422,
+        recipe_record_index: 50, recipe_record_byte_offset: 500, recipe_id: "recipe".into(),
+        recipe_kind: super::ConstructionRecipeKind::Face, recipe_references: Vec::new(), next_byte_offset: 600,
+    };
+    let carriers = super::DesignAssemblyLegacyOperands {
+        point: super::DesignAssemblyLegacyOperand {
+            construction_class_tag: "256".into(), reference_offset: 11,
+            construction: Box::new(super::DesignWorkPointConstruction {
+                point_record_index: 10, point_record_byte_offset: 100,
+                position: [1.0, 2.0, 3.0], position_offset: 125,
+                rule: super::DesignWorkPointRule::Native { reference_type: 0, inputs: Vec::new() },
+                reference_type_offset: 150,
+            }),
+            selection: selection(40),
+        },
+        hole: super::DesignAssemblyLegacyOperand {
+            construction_class_tag: "257".into(), reference_offset: 22,
+            construction: Box::new(super::DesignHoleConstruction {
+                point_record_index: 20, point_record_byte_offset: 200,
+                position: [4.0, 5.0, 6.0], position_offset: 225,
+                direction: [0.0, 0.0, 1.0], direction_offset: 250,
+                point_parameters: [0.0, 0.0], point_parameter_offsets: [275, 283],
+                reference_type: 0, reference_type_offset: 291, tangent_point_data: None,
+                input_records: Vec::new(), face_selection: None,
+            }),
+            selection: selection(41),
+        },
+    };
+    let solved_frame = super::DesignAssemblySolvedFrame {
+        reference_record_index: 30, reference_offset: 33, record_byte_offset: 300,
+        class_tag: "258".into(), transform: identity, transform_offset: 325,
+    };
+    for frames_field_present in [false, true] {
+        let alignment = super::DesignAssemblyAlignment {
+            angle: 0.0, offset: [0.0; 3], owners: Vec::new(),
+            form: Some(super::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+                carriers: carriers.clone(), solved_frame: solved_frame.clone(), limits: None, frames_field_present,
+            }),
+        };
+        let frames = alignment.operand_frames().unwrap();
+        assert_eq!(frames[0].reference_record_index, 10);
+        assert_eq!(frames[1].reference_record_index, 20);
+        assert_eq!(frames[0].transform_offset, 325);
+        assert_eq!(frames[0].transform, [[1.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 2.0], [0.0, 0.0, 1.0, 3.0], [0.0, 0.0, 0.0, 1.0]]);
+        assert_eq!(frames[1].transform[2][3], 6.0);
+        let wire = serde_json::to_string(&alignment).unwrap();
+        let decoded: super::DesignAssemblyAlignment = serde_json::from_str(&wire).unwrap();
+        assert_eq!(decoded, alignment);
+        assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
+        let value: serde_json::Value = serde_json::from_str(&wire).unwrap();
+        assert_eq!(value.get("operand_frames").is_some(), frames_field_present);
+        for (field, replacement) in [
+            ("construction_record_index", serde_json::json!(99)),
+            ("construction_byte_offset", serde_json::json!(99)),
+            ("frame", serde_json::to_value(&frames[1]).unwrap()),
+        ] {
+            let mut invalid = value.clone();
+            invalid["legacy_operand_carriers"][0][field] = replacement;
+            let error = serde_json::from_value::<super::DesignAssemblyAlignment>(invalid).unwrap_err().to_string();
+            assert!(error.contains(field));
+        }
+        let mut invalid = value.clone();
+        invalid["legacy_operand_carriers"].as_array_mut().unwrap().swap(0, 1);
+        assert!(serde_json::from_value::<super::DesignAssemblyAlignment>(invalid).unwrap_err().to_string().contains("construction"));
+        if frames_field_present {
+            let mut invalid = value;
+            invalid["operand_frames"][0]["transform"][0][3] = serde_json::json!(99.0);
+            assert!(serde_json::from_value::<super::DesignAssemblyAlignment>(invalid).unwrap_err().to_string().contains("operand_frames"));
+        }
+    }
+}

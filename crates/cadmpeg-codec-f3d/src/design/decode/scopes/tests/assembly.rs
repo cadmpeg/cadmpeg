@@ -484,8 +484,8 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
 
     assert_eq!(alignment.angle, 0.25);
     assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
-    assert_eq!(alignment.owner_record_indices, vec![108, 109, 110, 111]);
-    assert_eq!(alignment.value_offsets, vec![2_008, 2_009, 2_010, 2_011]);
+    assert_eq!(alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(), vec![108, 109, 110, 111]);
+    assert_eq!(alignment.owners.iter().map(|owner| owner.offset).collect::<Vec<_>>(), vec![2_008, 2_009, 2_010, 2_011]);
     let frames = alignment.operand_frames().expect("legacy operand frames");
     assert_eq!(
         frames.each_ref().map(|frame| frame.reference_record_index),
@@ -635,8 +635,8 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     .expect("legacy class-388 alignment");
     assert_eq!(alignment.angle, 0.25);
     assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
-    assert_eq!(alignment.owner_record_indices, [1_004, 1_005, 1_006, 1_007]);
-    assert_eq!(alignment.value_offsets, [2_004, 2_005, 2_006, 2_007]);
+    assert_eq!(alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(), [1_004, 1_005, 1_006, 1_007]);
+    assert_eq!(alignment.owners.iter().map(|owner| owner.offset).collect::<Vec<_>>(), [2_004, 2_005, 2_006, 2_007]);
     let frames = alignment
         .operand_frames()
         .expect("legacy class-388 operand frames");
@@ -882,8 +882,8 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     .expect("exact As-built alignment");
     assert_eq!(alignment.angle, 0.25);
     assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
-    assert_eq!(alignment.owner_record_indices, [50, 51, 52, 53]);
-    assert_eq!(alignment.value_offsets, [501, 502, 503, 504]);
+    assert_eq!(alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(), [50, 51, 52, 53]);
+    assert_eq!(alignment.owners.iter().map(|owner| owner.offset).collect::<Vec<_>>(), [501, 502, 503, 504]);
     let frames = alignment.operand_frames().expect("locator transforms");
     assert_eq!(
         frames
@@ -1088,9 +1088,9 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         for (actual, expected) in alignment.offset.into_iter().zip([1.0, 2.0, 3.0]) {
             assert!((actual - expected).abs() <= EPS_EXACT_FIXTURE);
         }
-        assert_eq!(alignment.owner_record_indices, [103, 100, 101, 102]);
-        assert_eq!(alignment.value_offsets, [1_003, 1_000, 1_001, 1_002]);
-        let limits = alignment.limits.as_ref().expect("assembly limits");
+        assert_eq!(alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(), [103, 100, 101, 102]);
+        assert_eq!(alignment.owners.iter().map(|owner| owner.offset).collect::<Vec<_>>(), [1_003, 1_000, 1_001, 1_002]);
+        let limits = alignment.limits().expect("assembly limits");
         assert_eq!(limits.kind, expected_limit_kind);
         assert!((limits.minimum - -1.0).abs() <= EPS_EXACT_FIXTURE);
         assert!((limits.maximum - 1.5).abs() <= EPS_EXACT_FIXTURE);
@@ -1177,7 +1177,14 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     bind_axial_assembly_operand_targets(&bytes, &IndexedRecordOffsets::build(&bytes), &mut scopes);
     let targets = scopes[0]
         .assembly_alignment()
-        .and_then(|alignment| alignment.axial_operand_targets())
+        .and_then(|alignment| {
+            let crate::records::DesignAssemblyAlignmentForm::Qualified(operands) = alignment.form.as_ref()? else { return None; };
+            let [first, second] = operands.each_ref().map(|operand| match &operand.qualifier {
+                crate::records::DesignAssemblyOperandQualifier::AxialTarget { target } => Some(target.clone()),
+                _ => None,
+            });
+            Some([first?, second?])
+        })
         .expect("two exact pathless assembly targets");
     let DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
         component_insert_scope_record_index,
@@ -1232,7 +1239,10 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     );
     assert!(mismatched_scopes[0]
         .assembly_alignment()
-        .is_some_and(|alignment| alignment.axial_operand_targets().is_none()));
+        .is_some_and(|alignment| !matches!(alignment.form.as_ref(), Some(crate::records::DesignAssemblyAlignmentForm::Qualified([
+            crate::records::DesignQualifiedAssemblyOperand { qualifier: crate::records::DesignAssemblyOperandQualifier::AxialTarget { .. }, .. },
+            crate::records::DesignQualifiedAssemblyOperand { qualifier: crate::records::DesignAssemblyOperandQualifier::AxialTarget { .. }, .. },
+        ])))));
 }
 
 #[test]
@@ -1274,7 +1284,14 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     bind_axial_assembly_operand_targets(&bytes, &IndexedRecordOffsets::build(&bytes), &mut scopes);
     let targets = scopes[0]
         .assembly_alignment()
-        .and_then(|alignment| alignment.axial_operand_targets())
+        .and_then(|alignment| {
+            let crate::records::DesignAssemblyAlignmentForm::Qualified(operands) = alignment.form.as_ref()? else { return None; };
+            let [first, second] = operands.each_ref().map(|operand| match &operand.qualifier {
+                crate::records::DesignAssemblyOperandQualifier::AxialTarget { target } => Some(target.clone()),
+                _ => None,
+            });
+            Some([first?, second?])
+        })
         .expect("component and root assembly targets");
     assert!(matches!(
         &targets[0],
@@ -1911,9 +1928,8 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
     DesignAssemblyAlignment {
         angle: 0.0,
         offset: [0.0; 3],
-        owner_record_indices: vec![90, 91],
-        value_offsets: vec![1, 2],
-        operands: Some(crate::records::DesignAssemblyOperandForm::Frames {
+        owners: vec![crate::records::Located { value: 90, offset: 1 }, crate::records::Located { value: 91, offset: 2 }],
+        form: Some(crate::records::DesignAssemblyAlignmentForm::Frames {
             frames: [
                 DesignAssemblyOperandFrame {
                     reference_record_index: 70,
@@ -1929,8 +1945,6 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
                 },
             ],
         }),
-        limits: None,
-        joint_origin_scope_record_index: None,
     }
 }
 

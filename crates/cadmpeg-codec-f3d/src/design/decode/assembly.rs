@@ -9,8 +9,8 @@ use crate::layout::assembly_as_built_421_frame_376 as as_built_421_frame_376;
 use crate::layout::assembly_as_built_421_frame_448 as as_built_421_frame_448;
 use crate::layout::assembly_as_built_421_scope as as_built_421;
 use crate::records::{
-    ConstructionRecipe, DesignAssemblyLegacyConstruction, DesignAssemblyLegacyOperand,
-    DesignAssemblyLegacySelection, DesignAssemblyLimits, DesignAssemblyOperandFrame,
+    ConstructionRecipe, DesignAssemblyLegacyOperand, DesignAssemblyLegacyOperands,
+    DesignAssemblyLegacySelection, DesignAssemblyLimits,
     DesignAssemblySolvedFrame, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
     DesignWorkPointRule,
 };
@@ -26,8 +26,7 @@ use super::sketch::IndexedRecordOffsets;
 pub(crate) struct LegacyAsBuilt421Alignment {
     pub(crate) angle: f64,
     pub(crate) offset: [f64; 3],
-    pub(crate) owner_record_indices: Vec<u32>,
-    pub(crate) value_offsets: Vec<u64>,
+    pub(crate) owners: Vec<crate::records::Located<u32>>,
     pub(crate) limits: DesignAssemblyLimits,
 }
 
@@ -125,18 +124,8 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
             offset_y.evaluated_value,
             offset_z.evaluated_value,
         ],
-        owner_record_indices: vec![
-            angle.record_index,
-            offset_x.record_index,
-            offset_y.record_index,
-            offset_z.record_index,
-        ],
-        value_offsets: vec![
-            angle.evaluated_value_offset,
-            offset_x.evaluated_value_offset,
-            offset_y.evaluated_value_offset,
-            offset_z.evaluated_value_offset,
-        ],
+        owners: [angle, offset_x, offset_y, offset_z].into_iter()
+            .map(|owner| crate::records::Located { value: owner.record_index, offset: owner.evaluated_value_offset }).collect(),
         limits: DesignAssemblyLimits {
             kind,
             minimum,
@@ -178,38 +167,15 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
     if frame_candidates.next().is_some() {
         return None;
     }
-    let (frame_length, matrix_prefix, transform_offset, matrix_prefix_value) = match generation {
-        crate::design::assembly::LegacyAsBuilt421Generation::Class364 => (
-            as_built_421_frame_376::LEN,
-            as_built_421_frame_376::MATRIX_PREFIX,
-            as_built_421_frame_376::MATRIX,
-            as_built_421_frame_376::MATRIX_PREFIX_VALUE,
-        ),
-        crate::design::assembly::LegacyAsBuilt421Generation::Class420 => (
-            as_built_421_frame_327::LEN,
-            as_built_421_frame_327::MATRIX_PREFIX,
-            as_built_421_frame_327::MATRIX,
-            as_built_421_frame_327::MATRIX_PREFIX_VALUE,
-        ),
-        crate::design::assembly::LegacyAsBuilt421Generation::Class417 => (
-            as_built_421_frame_448::LEN,
-            as_built_421_frame_448::MATRIX_PREFIX,
-            as_built_421_frame_448::MATRIX,
-            as_built_421_frame_448::MATRIX_PREFIX_VALUE,
-        ),
-        crate::design::assembly::LegacyAsBuilt421Generation::Class457 => (
-            as_built_421_frame_297::LEN,
-            as_built_421_frame_297::MATRIX_PREFIX,
-            as_built_421_frame_297::MATRIX,
-            as_built_421_frame_297::MATRIX_PREFIX_VALUE,
-        ),
+    let frame_length = generation.frame_length();
+    let matrix_prefix = generation.matrix_prefix();
+    let transform_offset = generation.matrix_offset();
+    let matrix_prefix_value = match generation {
+        crate::design::assembly::LegacyAsBuilt421Generation::Class364 => as_built_421_frame_376::MATRIX_PREFIX_VALUE,
+        crate::design::assembly::LegacyAsBuilt421Generation::Class420 => as_built_421_frame_327::MATRIX_PREFIX_VALUE,
+        crate::design::assembly::LegacyAsBuilt421Generation::Class417 => as_built_421_frame_448::MATRIX_PREFIX_VALUE,
+        crate::design::assembly::LegacyAsBuilt421Generation::Class457 => as_built_421_frame_297::MATRIX_PREFIX_VALUE,
     };
-    if frame_length != generation.frame_length()
-        || matrix_prefix != generation.matrix_prefix()
-        || transform_offset != generation.matrix_offset()
-    {
-        return None;
-    }
     if exact_indexed_header_at(
         bytes,
         frame_start.checked_add(frame_length)?,
@@ -250,7 +216,7 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     stream_types: &HashMap<u64, (&str, u32)>,
     recipes: &[ConstructionRecipe],
     solved_frame: &DesignAssemblySolvedFrame,
-) -> Option<[DesignAssemblyLegacyOperand; 2]> {
+) -> Option<DesignAssemblyLegacyOperands> {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length,
         &scope.class_tag,
@@ -316,36 +282,20 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     )?;
     let point_class_tag = indexed_class_at(bytes, point.point_record_byte_offset)?;
     let hole_class_tag = indexed_class_at(bytes, hole.point_record_byte_offset)?;
-    let first_frame = legacy_as_built_operand_frame(
-        point_record_index,
-        point_reference.offset,
-        point.position,
-        solved_frame,
-    );
-    let second_frame = legacy_as_built_operand_frame(
-        hole_record_index,
-        hole_reference.offset,
-        hole.position,
-        solved_frame,
-    );
-    Some([
-        DesignAssemblyLegacyOperand {
-            construction_record_index: point_record_index,
-            construction_byte_offset: point.point_record_byte_offset,
+    Some(DesignAssemblyLegacyOperands {
+        point: DesignAssemblyLegacyOperand {
             construction_class_tag: point_class_tag,
-            construction: DesignAssemblyLegacyConstruction::Point(Box::new(point)),
+            construction: Box::new(point),
             selection: first_selection,
-            frame: first_frame,
+            reference_offset: point_reference.offset,
         },
-        DesignAssemblyLegacyOperand {
-            construction_record_index: hole_record_index,
-            construction_byte_offset: hole.point_record_byte_offset,
+        hole: DesignAssemblyLegacyOperand {
             construction_class_tag: hole_class_tag,
-            construction: DesignAssemblyLegacyConstruction::Hole(Box::new(hole)),
+            construction: Box::new(hole),
             selection: second_selection,
-            frame: second_frame,
+            reference_offset: hole_reference.offset,
         },
-    ])
+    })
 }
 
 fn point_rule_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {
@@ -375,24 +325,6 @@ fn indexed_class_at(bytes: &[u8], byte_offset: u64) -> Option<String> {
         && class_tag.len() == 3
         && class_tag.bytes().all(|byte| byte.is_ascii_digit()))
     .then_some(class_tag)
-}
-
-fn legacy_as_built_operand_frame(
-    construction_record_index: u32,
-    reference_offset: u64,
-    position: [f64; 3],
-    solved_frame: &DesignAssemblySolvedFrame,
-) -> DesignAssemblyOperandFrame {
-    let mut transform = solved_frame.transform;
-    for (row, value) in position.into_iter().enumerate() {
-        transform[row][3] = value;
-    }
-    DesignAssemblyOperandFrame {
-        reference_record_index: construction_record_index,
-        reference_offset,
-        transform,
-        transform_offset: solved_frame.transform_offset,
-    }
 }
 
 fn exact_legacy_as_built_face_selection(
