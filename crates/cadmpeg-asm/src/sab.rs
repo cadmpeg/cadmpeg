@@ -11,6 +11,7 @@
 //! byte synchronization and record extents without requiring semantic decoding
 //! of each payload.
 
+use crate::stream_error::{StreamError, StreamFormat};
 use cadmpeg_core::decode::View;
 use std::sync::Arc;
 
@@ -249,26 +250,6 @@ pub fn payload_token_offset(
     None
 }
 
-/// A framing error records an unrecognized tag or truncated token payload. The
-/// caller falls back to metadata-only decode.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FrameError {
-    /// Byte offset where framing stopped.
-    pub offset: usize,
-    /// What went wrong.
-    pub reason: String,
-}
-
-impl std::fmt::Display for FrameError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "SAB framing failed at byte {}: {}",
-            self.offset, self.reason
-        )
-    }
-}
-
 /// Read one token starting at `pos`. Returns the token (or a control marker) and
 /// the offset just past it. Control tags (`0x0d`/`0x0e` name tokens, `0x11`
 /// terminator) are returned via [`Lexed`] so the framer can act on them.
@@ -283,14 +264,16 @@ enum Lexed {
     Terminator,
 }
 
-fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), FrameError> {
-    let err = |reason: &str| FrameError {
+fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), StreamError> {
+    let err = |reason: &str| StreamError {
+        format: StreamFormat::Binary,
         offset: pos,
         reason: reason.to_string(),
     };
     let tag = *bytes.get(pos).ok_or_else(|| err("end of stream"))?;
     let p = pos + 1;
-    let truncated = || FrameError {
+    let truncated = || StreamError {
+        format: StreamFormat::Binary,
         offset: pos,
         reason: format!("truncated payload for tag {tag:#04x}"),
     };
@@ -298,7 +281,8 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
         let end = start.checked_add(len).ok_or_else(truncated)?;
         let slice = bytes.get(start..end).ok_or_else(truncated)?;
         std::str::from_utf8(slice)
-            .map_err(|error| FrameError {
+            .map_err(|error| StreamError {
+                format: StreamFormat::Binary,
                 offset: start + error.valid_up_to(),
                 reason: format!("payload for tag {tag:#04x} is not valid UTF-8"),
             })
@@ -386,7 +370,8 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
             (Lexed::Value(Token::Int64(v)), p + 8)
         }
         other => {
-            return Err(FrameError {
+            return Err(StreamError {
+                format: StreamFormat::Binary,
                 offset: pos,
                 reason: format!("unrecognized tag {other:#04x}"),
             })
@@ -401,7 +386,7 @@ pub fn payload_token_offsets(
     record: &Record,
     ref_width: usize,
     tag: u8,
-) -> Result<Vec<usize>, FrameError> {
+) -> Result<Vec<usize>, StreamError> {
     let end = record.offset + record.len;
     let mut position = record.offset;
     let mut offsets = Vec::new();
@@ -429,7 +414,7 @@ pub fn frame(
     start: usize,
     limit: usize,
     ref_width: usize,
-) -> Result<Vec<Record>, FrameError> {
+) -> Result<Vec<Record>, StreamError> {
     frame_impl(bytes, start, limit, ref_width, false)
 }
 
@@ -440,7 +425,7 @@ pub fn frame_history(
     start: usize,
     limit: usize,
     ref_width: usize,
-) -> Result<Vec<Record>, FrameError> {
+) -> Result<Vec<Record>, StreamError> {
     frame_impl(bytes, start, limit, ref_width, true)
 }
 
@@ -450,7 +435,7 @@ fn frame_impl(
     limit: usize,
     ref_width: usize,
     eof_terminates_final_record: bool,
-) -> Result<Vec<Record>, FrameError> {
+) -> Result<Vec<Record>, StreamError> {
     let limit = limit.min(bytes.len());
     let mut records = Vec::new();
     let mut pos = start;
@@ -476,7 +461,8 @@ fn frame_impl(
             match lexed {
                 Lexed::Terminator if depth == 0 => break,
                 Lexed::Terminator => {
-                    return Err(FrameError {
+                    return Err(StreamError {
+                        format: StreamFormat::Binary,
                         offset: token_offset,
                         reason: "record terminates inside a subtype scope".to_string(),
                     });
@@ -521,7 +507,8 @@ fn frame_impl(
                 Lexed::Value(Token::SubtypeClose) => {
                     payload_start = false;
                     if depth == 0 {
-                        return Err(FrameError {
+                        return Err(StreamError {
+                            format: StreamFormat::Binary,
                             offset: token_offset,
                             reason: "record closes an unopened subtype scope".to_string(),
                         });
