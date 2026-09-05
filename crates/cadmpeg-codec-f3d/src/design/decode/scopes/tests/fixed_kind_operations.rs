@@ -770,7 +770,7 @@ pub(super) fn continue_fixed_kind_operations(
         recipe_kind: ConstructionRecipeKind::Face,
         recipe_program_offset: 0,
         recipe_program: vec![0, -1],
-        recipe_node_offsets: Vec::new(),
+
         recipe_nodes: Vec::new(),
         candidate_faces: vec![
             cadmpeg_ir::ids::FaceId::mint("face:axis-a").expect("identity grammar"),

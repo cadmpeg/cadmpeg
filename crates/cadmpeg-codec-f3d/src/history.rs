@@ -4088,7 +4088,6 @@ fn resolve_draft_face_by_surface_transition(
             crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program),
             Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { .. })
         )
-        || operand.recipe_node_offsets.len() != operand.recipe_nodes.len()
         || operand.recipe_nodes.is_empty()
     {
         return None;

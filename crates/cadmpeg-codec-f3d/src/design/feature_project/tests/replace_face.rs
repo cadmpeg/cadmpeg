@@ -124,7 +124,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         recipe_kind: ConstructionRecipeKind::BoundedFace,
         recipe_program_offset: 0,
         recipe_program: Vec::new(),
-        recipe_node_offsets: Vec::new(),
+
         recipe_nodes: Vec::new(),
         candidate_faces: Vec::new(),
         unreferenced_candidate_faces: Vec::new(),

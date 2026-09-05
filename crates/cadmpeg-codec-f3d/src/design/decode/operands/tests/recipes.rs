@@ -1333,7 +1333,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         Some(FaceRecipeProgramKind::Counted { header_value: 4 })
     );
     assert_eq!(
-        operand.recipe_node_offsets,
+        operand.recipe_nodes.iter().map(|node| node.byte_offset).collect::<Vec<_>>(),
         [
             face_recipe_name_at as u64 + 36,
             face_recipe_name_at as u64 + 52,
@@ -1376,7 +1376,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     .expect("face recipe operand with counted prelude");
     assert_eq!(prelude.recipe_program[0..7], [0, 0, 4, 4, 5, 6, 7]);
     assert_eq!(
-        prelude.recipe_node_offsets[0],
+        prelude.recipe_nodes[0].byte_offset,
         prelude.recipe_program_offset + 28
     );
     assert_eq!(prelude.recipe_nodes[0].program, [-1, -1, 2, 7]);
