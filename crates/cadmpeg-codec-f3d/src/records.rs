@@ -87,6 +87,34 @@ impl<T> ReferenceRun<T> {
     }
 }
 
+/// A non-empty half-open interval of source bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NonEmptyByteSpan {
+    start: u64,
+    end: u64,
+}
+
+impl NonEmptyByteSpan {
+    pub fn new(start: u64, end: u64) -> Option<Self> {
+        if start >= end {
+            return None;
+        }
+        Some(Self { start, end })
+    }
+
+    pub fn start(&self) -> u64 {
+        self.start
+    }
+
+    pub fn end(&self) -> u64 {
+        self.end
+    }
+
+    pub fn byte_len(&self) -> u64 {
+        self.end - self.start
+    }
+}
+
 /// A value with an optional source encoding location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -10582,6 +10610,8 @@ impl DesignFaceOperand {
 /// Native source-shape carrier owned by a `Face` parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignFaceSourceGroupWire"))]
+#[serde(try_from = "DesignFaceSourceGroupWire", into = "DesignFaceSourceGroupWire")]
 pub struct DesignFaceSourceGroup {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -10591,22 +10621,91 @@ pub struct DesignFaceSourceGroup {
     pub carrier_reference_ordinal: u32,
     /// Indexed record carrying the ordered source-shape references.
     pub carrier_record_index: u32,
-    /// Byte offset of the source carrier's indexed header.
-    pub carrier_byte_offset: u64,
+    /// Source interval from the carrier header to its paired header.
+    pub carrier_span: NonEmptyByteSpan,
     /// Source per-file dynamic three-digit ASCII primary class tag.
     pub carrier_class_tag: String,
-    /// Bytes from the carrier header to its paired carrier header.
-    pub carrier_frame_length: u64,
     /// Indexed record paired with the source carrier.
     pub paired_record_index: u32,
-    /// Byte offset of the paired carrier's indexed header.
-    pub paired_byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII paired class tag.
     pub paired_class_tag: String,
-    /// Absolute byte offsets of the marked source-reference slots.
-    pub source_reference_offsets: Vec<u64>,
     /// Ordered persistent source-shape identities.
-    pub source_members: Vec<DesignFaceSourceMember>,
+    pub source_members: Vec<Located<DesignFaceSourceMember>>,
+}
+
+/// Native source-shape carrier owned by a `Face` parameter scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignFaceSourceGroupWire {
+    /// Globally unique deterministic identifier for this native record.
+    id: String,
+    /// Owning `Face` parameter-scope record.
+    scope_record_index: u32,
+    /// Zero-based position of the source carrier in the scope reference table.
+    carrier_reference_ordinal: u32,
+    /// Indexed record carrying the ordered source-shape references.
+    carrier_record_index: u32,
+    /// Byte offset of the source carrier's indexed header.
+    carrier_byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    carrier_class_tag: String,
+    /// Bytes from the carrier header to its paired carrier header.
+    carrier_frame_length: u64,
+    /// Indexed record paired with the source carrier.
+    paired_record_index: u32,
+    /// Byte offset of the paired carrier's indexed header.
+    paired_byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII paired class tag.
+    paired_class_tag: String,
+    /// Absolute byte offsets of the marked source-reference slots.
+    source_reference_offsets: Vec<u64>,
+    /// Ordered persistent source-shape identities.
+    source_members: Vec<DesignFaceSourceMember>,
+}
+
+impl TryFrom<DesignFaceSourceGroupWire> for DesignFaceSourceGroup {
+    type Error = String;
+    fn try_from(wire: DesignFaceSourceGroupWire) -> Result<Self, Self::Error> {
+        if wire.source_members.len() != wire.source_reference_offsets.len() {
+            return Err("source_members and source_reference_offsets must have equal lengths".into());
+        }
+        let carrier_span = NonEmptyByteSpan::new(wire.carrier_byte_offset, wire.paired_byte_offset)
+            .ok_or("paired_byte_offset must follow carrier_byte_offset")?;
+        if wire.carrier_frame_length != carrier_span.byte_len() {
+            return Err("carrier_frame_length must match the carrier byte span".into());
+        }
+        Ok(Self {
+            carrier_span,
+            source_members: wire.source_members.into_iter().zip(wire.source_reference_offsets).map(|(value, offset)| Located { value, offset }).collect(),
+            id: wire.id,
+            scope_record_index: wire.scope_record_index,
+            carrier_reference_ordinal: wire.carrier_reference_ordinal,
+            carrier_record_index: wire.carrier_record_index,
+            carrier_class_tag: wire.carrier_class_tag,
+            paired_record_index: wire.paired_record_index,
+            paired_class_tag: wire.paired_class_tag,
+        })
+    }
+}
+
+impl From<DesignFaceSourceGroup> for DesignFaceSourceGroupWire {
+    fn from(group: DesignFaceSourceGroup) -> Self {
+        let (source_members, source_reference_offsets) = group.source_members.into_iter().map(|member| (member.value, member.offset)).unzip();
+        Self {
+            source_members,
+            source_reference_offsets,
+            id: group.id,
+            scope_record_index: group.scope_record_index,
+            carrier_reference_ordinal: group.carrier_reference_ordinal,
+            carrier_record_index: group.carrier_record_index,
+            carrier_byte_offset: group.carrier_span.start(),
+            carrier_class_tag: group.carrier_class_tag,
+            carrier_frame_length: group.carrier_span.byte_len(),
+            paired_record_index: group.paired_record_index,
+            paired_byte_offset: group.carrier_span.end(),
+            paired_class_tag: group.paired_class_tag,
+        }
+    }
 }
 
 /// Persistent source-shape identity named by a `Face` source carrier.

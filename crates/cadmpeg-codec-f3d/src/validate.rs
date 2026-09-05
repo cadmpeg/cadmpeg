@@ -7895,49 +7895,43 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     == Some(&group.paired_record_index)
         });
         let headers_valid = carrier_header.is_some_and(|header| {
-            header.byte_offset == group.carrier_byte_offset
+            header.byte_offset == group.carrier_span.start()
                 && header.class_tag == group.carrier_class_tag
         }) && paired_header.is_some_and(|header| {
-            header.byte_offset == group.paired_byte_offset
+            header.byte_offset == group.carrier_span.end()
                 && header.class_tag == group.paired_class_tag
         });
-        let frame_valid = group.paired_byte_offset > group.carrier_byte_offset
-            && group
-                .paired_byte_offset
-                .checked_sub(group.carrier_byte_offset)
-                == Some(group.carrier_frame_length);
         let source_offsets_valid =
-            source_spec.is_some_and(|(source_count, source_reference_offset, _, _)| {
+            source_spec.is_some_and(|(_, source_reference_offset, _, _)| {
                 let Ok(source_reference_offset) = u64::try_from(source_reference_offset) else {
                     return false;
                 };
-                group.source_reference_offsets.len() == source_count
-                    && group
-                        .source_reference_offsets
+                group
+                        .source_members
                         .iter()
                         .enumerate()
-                        .all(|(ordinal, offset)| {
+                        .all(|(ordinal, member)| {
                             let Ok(ordinal) = u64::try_from(ordinal) else {
                                 return false;
                             };
                             group
-                                .carrier_byte_offset
+                                .carrier_span.start()
                                 .checked_add(source_reference_offset)
                                 .and_then(|offset| offset.checked_add(ordinal.checked_mul(11)?))
-                                == Some(*offset)
+                                == Some(member.offset)
                         })
             });
         let mut source_records = HashSet::new();
         let source_members_valid = source_spec.is_some_and(|(source_count, _, _, _)| {
             group.source_members.len() == source_count
-                && group.source_members.iter().all(|member| {
+                && group.source_members.iter().map(|member| &member.value).all(|member| {
                     let unique_record = source_records.insert(member.record_index);
                     let persistent = &member.persistent_identity;
                     let local_id_offset = member.byte_offset.checked_add(21);
                     let asset_id_offset = member.byte_offset.checked_add(33);
                     unique_record
                         && valid_dynamic_class_tag(&member.class_tag)
-                        && member.byte_offset > group.carrier_byte_offset
+                        && member.byte_offset > group.carrier_span.start()
                         && local_id_offset == Some(persistent.local_id_offset)
                         && asset_id_offset == Some(persistent.asset_id_offset)
                         && persistent.context_id_offset > persistent.asset_id_offset
@@ -7952,7 +7946,6 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && carrier_records.insert((native_stream, group.carrier_record_index))
             && scope_links_valid
             && headers_valid
-            && frame_valid
             && source_offsets_valid
             && source_members_valid;
         if !valid {
