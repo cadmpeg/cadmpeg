@@ -806,8 +806,26 @@ pub struct FeatureInputColumnRowUse {
     pub source_offset: u64,
 }
 
+/// Linked or target-index row whose slot zero is a feature input block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FeatureInputColumnTargetRow {
+    /// Linked-index row grammar.
+    Linked {
+        leading_index: u32,
+        leading_index_source_offset: u64,
+        discriminator: u8,
+        flag: u8,
+    },
+    /// Target-index row grammar.
+    Target,
+}
+
 /// Unique composite-table target row for one feature input block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureInputColumnTargetWire",
+    into = "FeatureInputColumnTargetWire"
+)]
 pub struct FeatureInputColumnTarget {
     /// Globally unique target identity.
     pub id: String,
@@ -819,26 +837,14 @@ pub struct FeatureInputColumnTarget {
     pub input_slot: u8,
     /// Linked or target-index row whose slot zero is the input block.
     pub column_row: String,
-    /// Serialized grammar of `column_row`.
-    pub row_kind: ColumnIndexRowKind,
-    /// Leading compact value present only in the linked-row grammar.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub leading_index: Option<u32>,
-    /// Absolute offset of `leading_index` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub leading_index_source_offset: Option<u64>,
-    /// Linked-row discriminator when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub discriminator: Option<u8>,
+    /// Linked or target-index grammar of `column_row`.
+    pub row: FeatureInputColumnTargetRow,
     /// Three compact values following the fixed row marker.
     pub field_indices: [u32; 3],
     /// Three same-section blocks addressed by `field_indices`.
     pub field_data_blocks: [String; 3],
     /// Absolute offsets of the three compact field values.
     pub field_source_offsets: [u64; 3],
-    /// Linked-row flag when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub flag: Option<u8>,
     /// Serialized row mode.
     pub mode: u8,
     /// Unique complete composite table containing `column_row`.
@@ -847,6 +853,123 @@ pub struct FeatureInputColumnTarget {
     pub data_block: String,
     /// Absolute file offset of the row's target block index.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureInputColumnTargetWire {
+    id: String,
+    input_block: String,
+    operation_label: String,
+    input_slot: u8,
+    column_row: String,
+    row_kind: ColumnIndexRowKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    leading_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    leading_index_source_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    discriminator: Option<u8>,
+    field_indices: [u32; 3],
+    field_data_blocks: [String; 3],
+    field_source_offsets: [u64; 3],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    flag: Option<u8>,
+    mode: u8,
+    column_table: String,
+    data_block: String,
+    source_offset: u64,
+}
+
+impl From<FeatureInputColumnTarget> for FeatureInputColumnTargetWire {
+    fn from(value: FeatureInputColumnTarget) -> Self {
+        let (row_kind, leading_index, leading_index_source_offset, discriminator, flag) =
+            match value.row {
+                FeatureInputColumnTargetRow::Linked {
+                    leading_index,
+                    leading_index_source_offset,
+                    discriminator,
+                    flag,
+                } => (
+                    ColumnIndexRowKind::LinkedIndex,
+                    Some(leading_index),
+                    Some(leading_index_source_offset),
+                    Some(discriminator),
+                    Some(flag),
+                ),
+                FeatureInputColumnTargetRow::Target => {
+                    (ColumnIndexRowKind::TargetIndex, None, None, None, None)
+                }
+            };
+        Self {
+            id: value.id,
+            input_block: value.input_block,
+            operation_label: value.operation_label,
+            input_slot: value.input_slot,
+            column_row: value.column_row,
+            row_kind,
+            leading_index,
+            leading_index_source_offset,
+            discriminator,
+            field_indices: value.field_indices,
+            field_data_blocks: value.field_data_blocks,
+            field_source_offsets: value.field_source_offsets,
+            flag,
+            mode: value.mode,
+            column_table: value.column_table,
+            data_block: value.data_block,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureInputColumnTargetWire> for FeatureInputColumnTarget {
+    type Error = String;
+
+    fn try_from(wire: FeatureInputColumnTargetWire) -> Result<Self, Self::Error> {
+        let row =
+            match (
+                wire.row_kind,
+                wire.leading_index,
+                wire.leading_index_source_offset,
+                wire.discriminator,
+                wire.flag,
+            ) {
+                (
+                    ColumnIndexRowKind::LinkedIndex,
+                    Some(leading_index),
+                    Some(leading_index_source_offset),
+                    Some(discriminator),
+                    Some(flag),
+                ) => FeatureInputColumnTargetRow::Linked {
+                    leading_index,
+                    leading_index_source_offset,
+                    discriminator,
+                    flag,
+                },
+                (ColumnIndexRowKind::TargetIndex, None, None, None, None) => {
+                    FeatureInputColumnTargetRow::Target
+                }
+                _ => return Err(
+                    "feature input column target linked fields are present exactly for LinkedIndex"
+                        .to_owned(),
+                ),
+            };
+        Ok(Self {
+            id: wire.id,
+            input_block: wire.input_block,
+            operation_label: wire.operation_label,
+            input_slot: wire.input_slot,
+            column_row: wire.column_row,
+            row,
+            field_indices: wire.field_indices,
+            field_data_blocks: wire.field_data_blocks,
+            field_source_offsets: wire.field_source_offsets,
+            mode: wire.mode,
+            column_table: wire.column_table,
+            data_block: wire.data_block,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Ordered parameter declaration reached through one feature input block.
@@ -5372,56 +5495,47 @@ pub fn feature_input_column_targets(
             let [target] = targets.as_slice() else {
                 return None;
             };
-            let (
-                leading_index,
-                leading_index_source_offset,
-                discriminator,
-                field_indices,
-                field_data_blocks,
-                field_source_offsets,
-                flag,
-                mode,
-            ) = match target.row_kind {
-                ColumnIndexRowKind::LinkedIndex => {
-                    let rows = linked_rows
-                        .iter()
-                        .filter(|row| row.id == target.column_row)
-                        .collect::<Vec<_>>();
-                    let [row] = rows.as_slice() else {
-                        return None;
-                    };
-                    (
-                        Some(row.first_index),
-                        Some(row.first_index_source_offset),
-                        Some(row.discriminator),
-                        row.indices,
-                        std::array::from_fn(|index| row.data_blocks[index + 1].clone()),
-                        row.index_source_offsets,
-                        Some(row.flag),
-                        row.mode,
-                    )
-                }
-                ColumnIndexRowKind::TargetIndex => {
-                    let rows = target_rows
-                        .iter()
-                        .filter(|row| row.id == target.column_row)
-                        .collect::<Vec<_>>();
-                    let [row] = rows.as_slice() else {
-                        return None;
-                    };
-                    (
-                        None,
-                        None,
-                        None,
-                        row.indices,
-                        std::array::from_fn(|index| row.data_blocks[index + 1].clone()),
-                        row.index_source_offsets,
-                        None,
-                        row.mode,
-                    )
-                }
-                ColumnIndexRowKind::Index => return None,
-            };
+            let (row, field_indices, field_data_blocks, field_source_offsets, mode) =
+                match target.row_kind {
+                    ColumnIndexRowKind::LinkedIndex => {
+                        let rows = linked_rows
+                            .iter()
+                            .filter(|row| row.id == target.column_row)
+                            .collect::<Vec<_>>();
+                        let [row] = rows.as_slice() else {
+                            return None;
+                        };
+                        (
+                            FeatureInputColumnTargetRow::Linked {
+                                leading_index: row.first_index,
+                                leading_index_source_offset: row.first_index_source_offset,
+                                discriminator: row.discriminator,
+                                flag: row.flag,
+                            },
+                            row.indices,
+                            std::array::from_fn(|index| row.data_blocks[index + 1].clone()),
+                            row.index_source_offsets,
+                            row.mode,
+                        )
+                    }
+                    ColumnIndexRowKind::TargetIndex => {
+                        let rows = target_rows
+                            .iter()
+                            .filter(|row| row.id == target.column_row)
+                            .collect::<Vec<_>>();
+                        let [row] = rows.as_slice() else {
+                            return None;
+                        };
+                        (
+                            FeatureInputColumnTargetRow::Target,
+                            row.indices,
+                            std::array::from_fn(|index| row.data_blocks[index + 1].clone()),
+                            row.index_source_offsets,
+                            row.mode,
+                        )
+                    }
+                    ColumnIndexRowKind::Index => return None,
+                };
             Some(FeatureInputColumnTarget {
                 id: format!(
                     "nx:feature-history:input-column-target#{}",
@@ -5431,14 +5545,10 @@ pub fn feature_input_column_targets(
                 operation_label: input.operation_label.clone(),
                 input_slot: input.input_slot,
                 column_row: target.column_row.clone(),
-                row_kind: target.row_kind,
-                leading_index,
-                leading_index_source_offset,
-                discriminator,
+                row,
                 field_indices,
                 field_data_blocks,
                 field_source_offsets,
-                flag,
                 mode,
                 column_table: target
                     .column_table

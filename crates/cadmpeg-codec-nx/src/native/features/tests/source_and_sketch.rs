@@ -1587,7 +1587,7 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
 fn feature_input_column_row_uses_preserve_linked_row_slots() {
     use super::{
         feature_input_column_row_uses, feature_input_column_targets, ColumnIndexRowKind,
-        FeatureInputBlock,
+        FeatureInputBlock, FeatureInputColumnTargetRow,
     };
     use crate::native::om::{DataBlockColumnIndexTable, DataBlockLinkedIndexRow};
 
@@ -1658,11 +1658,16 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
     assert_eq!(uses[1].source_offset, 114);
     let targets = feature_input_column_targets(&[input], &uses, &[row], &[]);
     assert_eq!(targets.len(), 1);
-    assert_eq!(targets[0].leading_index, Some(20));
-    assert_eq!(targets[0].leading_index_source_offset, Some(102));
-    assert_eq!(targets[0].discriminator, Some(0x16));
+    assert_eq!(
+        targets[0].row,
+        FeatureInputColumnTargetRow::Linked {
+            leading_index: 20,
+            leading_index_source_offset: 102,
+            discriminator: 0x16,
+            flag: 3,
+        }
+    );
     assert_eq!(targets[0].field_indices, [5, 6, 4]);
-    assert_eq!(targets[0].flag, Some(3));
     assert_eq!(targets[0].mode, 4);
 }
 
@@ -1670,7 +1675,7 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
 fn feature_input_column_row_uses_preserve_target_row_slots() {
     use super::{
         feature_input_column_row_uses, feature_input_column_targets, ColumnIndexRowKind,
-        FeatureInputBlock,
+        FeatureInputBlock, FeatureInputColumnTargetRow,
     };
     use crate::native::om::{DataBlockColumnIndexTable, DataBlockTargetIndexRow};
 
@@ -1760,7 +1765,7 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
     );
     assert_eq!(targets[0].field_source_offsets, [110, 111, 112]);
     assert_eq!(targets[0].mode, 7);
-    assert_eq!(targets[0].leading_index, None);
+    assert_eq!(targets[0].row, FeatureInputColumnTargetRow::Target);
     let mut duplicate = uses.clone();
     duplicate.push(uses[0].clone());
     assert!(feature_input_column_targets(&[input], &duplicate, &[], &[row]).is_empty());
