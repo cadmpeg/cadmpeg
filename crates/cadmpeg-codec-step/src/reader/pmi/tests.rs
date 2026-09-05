@@ -1174,12 +1174,7 @@ pub(crate) fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     let location = exchange
         .records
         .values()
-        .find(|record| {
-            record
-                .partials
-                .first()
-                .is_some_and(|partial| partial.name == "DIMENSIONAL_LOCATION")
-        })
+        .find(|record| record.partials.first().name == "DIMENSIONAL_LOCATION")
         .expect("dimensional location");
     assert_eq!(location.partials[0].parameters.len(), 4);
     assert!(matches!(

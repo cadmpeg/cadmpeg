@@ -2014,10 +2014,7 @@ impl RecordExt for RawRecord {
             .join("+")
     }
     fn parameters(&self) -> &[Value] {
-        self.partials
-            .first()
-            .map(|partial| partial.parameters.as_slice())
-            .unwrap_or_default()
+        self.partials.first().parameters.as_slice()
     }
     fn parameter(&self, index: usize) -> Option<&Value> {
         self.parameters().get(index)

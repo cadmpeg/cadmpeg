@@ -1158,10 +1158,9 @@ fn product_definition_formation_parameters(record: &RawRecord) -> Option<&[Value
         return Some(partial.parameters.as_slice());
     }
     match record.simple_name() {
-        Some("PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE" | "FINAL_SOLUTION") => record
-            .partials
-            .first()
-            .map(|partial| partial.parameters.as_slice()),
+        Some("PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE" | "FINAL_SOLUTION") => {
+            Some(record.partials.first().parameters.as_slice())
+        }
         _ => None,
     }
 }
@@ -1171,10 +1170,9 @@ fn product_definition_parameters(record: &RawRecord) -> Option<&[Value]> {
         return Some(partial.parameters.as_slice());
     }
     match record.simple_name() {
-        Some("PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS") => record
-            .partials
-            .first()
-            .map(|partial| partial.parameters.as_slice()),
+        Some("PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS") => {
+            Some(record.partials.first().parameters.as_slice())
+        }
         _ => None,
     }
 }

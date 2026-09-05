@@ -200,7 +200,7 @@ fn unit_signatures(exchange: &crate::parse::Exchange) -> Vec<Vec<crate::parse::P
                 .iter()
                 .any(|partial| partial.name == "LENGTH_UNIT" || partial.name == "PLANE_ANGLE_UNIT")
         })
-        .map(|record| record.partials.clone())
+        .map(|record| record.partials.to_vec())
         .collect()
 }
 
@@ -216,7 +216,7 @@ fn context_signature(
                 .iter()
                 .any(|partial| partial.name == "GEOMETRIC_REPRESENTATION_CONTEXT")
         })
-        .map(|record| record.partials.clone())
+        .map(|record| record.partials.to_vec())
 }
 
 #[test]

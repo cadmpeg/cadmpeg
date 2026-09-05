@@ -4361,7 +4361,7 @@ impl RecordExt for RawRecord {
         self.partials.iter().find(|partial| partial.name == name)
     }
     fn parameter(&self, index: usize) -> Option<&Value> {
-        self.partials.first()?.parameters.get(index)
+        self.partials.first().parameters.get(index)
     }
 }
 trait ValueExt {

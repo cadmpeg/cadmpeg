@@ -833,9 +833,7 @@ trait RecordExt {
 }
 impl RecordExt for RawRecord {
     fn parameter(&self, index: usize) -> Option<&Value> {
-        self.partials
-            .first()
-            .and_then(|partial| partial.parameters.get(index))
+        self.partials.first().parameters.get(index)
     }
 }
 trait ValueExt {
