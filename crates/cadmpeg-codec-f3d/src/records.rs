@@ -366,9 +366,17 @@ pub enum ConstructionRecipeKind {
     Vertex,
 }
 
+/// A recipe Design id and its optional following selector.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConstructionRecipeDesign<Id> {
+    pub id: Id,
+    pub selector: Option<ConstructionRecipeSelector>,
+}
+
 /// One source-framed parametric regeneration recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "ConstructionRecipeWire"))]
 #[serde(try_from = "ConstructionRecipeWire", into = "ConstructionRecipeWire")]
 pub struct ConstructionRecipe {
     /// Globally unique deterministic identifier for this native record.
@@ -380,13 +388,8 @@ pub struct ConstructionRecipe {
     pub record_index_offset: Option<u64>,
     /// Topology kind this recipe regenerates on replay.
     pub kind: ConstructionRecipeKind,
-    /// Design entity id of the body this recipe is keyed to, if the source record
-    /// carried a `generic_tag_attrib_def` construction id; `None` for body-less recipes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub design_id: Option<RecordedValue<String>>,
-    /// Selector following the Design entity id, when the recipe carries that id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub design_selector: Option<ConstructionRecipeSelector>,
+    /// Design identity carried by the recipe; absent for recipes without a body key.
+    pub design: Option<ConstructionRecipeDesign<RecordedValue<String>>>,
     /// Position of this recipe in the `BulkStream` recipe sequence, in source order.
     pub recipe_index: u32,
     /// Source `BulkStream` record index this recipe was decoded from.
@@ -425,31 +428,40 @@ struct ConstructionRecipeWire {
 impl TryFrom<ConstructionRecipeWire> for ConstructionRecipe {
     type Error = String;
     fn try_from(wire: ConstructionRecipeWire) -> Result<Self, Self::Error> {
+        let id = RecordedValue::from_wire(wire.design_id, wire.design_id_offset, "design_id")?;
+        let design = match (id, wire.design_selector) {
+            (Some(id), selector) => Some(ConstructionRecipeDesign { id, selector }),
+            (None, None) => None,
+            (None, Some(_)) => return Err("construction recipe design_selector requires design_id".into()),
+        };
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
             record_index_offset: wire.record_index_offset,
             kind: wire.kind,
-            design_selector: wire.design_selector,
+            design,
             recipe_index: wire.recipe_index,
             record_index: wire.record_index,
-            design_id: RecordedValue::from_wire(wire.design_id, wire.design_id_offset, "design_id")?,
         })
     }
 }
 
 impl From<ConstructionRecipe> for ConstructionRecipeWire {
     fn from(value: ConstructionRecipe) -> Self {
+        let (design_id, design_id_offset, design_selector) = match value.design {
+            Some(design) => (Some(design.id.value), design.id.offset, design.selector),
+            None => (None, None, None),
+        };
         Self {
             id: value.id,
             byte_offset: value.byte_offset,
             record_index_offset: value.record_index_offset,
             kind: value.kind,
-            design_selector: value.design_selector,
+            design_id,
+            design_id_offset,
+            design_selector,
             recipe_index: value.recipe_index,
             record_index: value.record_index,
-            design_id_offset: value.design_id.as_ref().and_then(|field| field.offset),
-            design_id: value.design_id.map(|field| field.value),
         }
     }
 }

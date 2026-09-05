@@ -936,8 +936,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
         byte_offset,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Edge,
-        design_id: None,
-        design_selector: None,
+        design: None,
         recipe_index: 0,
         record_index,
     };

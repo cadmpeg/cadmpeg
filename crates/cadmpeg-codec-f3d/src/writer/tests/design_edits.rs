@@ -37,9 +37,9 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let recipe = &mut native.construction_recipes[0];
     assert!(recipe.byte_offset > 0);
     assert!(recipe.record_index_offset.is_some());
-    assert!(recipe.design_id.as_ref().and_then(|field| field.offset).is_some());
+    assert!(recipe.design.as_ref().and_then(|design| design.id.offset).is_some());
     recipe.record_index = 777;
-    recipe.design_id.as_mut().expect("recipe id").value = "333".into();
+    recipe.design.as_mut().expect("recipe id").id.value = "333".into();
     let member = native
         .design_body_members
         .iter_mut()
@@ -159,7 +159,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     );
     assert_eq!(
         f3d_native(round_trip.ir()).construction_recipes[0]
-            .design_id.as_ref().map(|field| field.value.as_str()),
+            .design.as_ref().map(|design| design.id.value.as_str()),
         Some("333")
     );
     assert!(f3d_native(round_trip.ir())

@@ -94,8 +94,7 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
         byte_offset: EARLY_RECIPE_AT as u64,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
-        design_id: None,
-        design_selector: None,
+        design: None,
         recipe_index: 0,
         record_index: 0,
     };

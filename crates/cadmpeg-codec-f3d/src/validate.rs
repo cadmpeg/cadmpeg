@@ -6372,11 +6372,12 @@ fn validate_body_recipe_operands<'a>(
             && valid_design_guid(&operand.asset_id)
             && valid_design_guid(&operand.context_id)
             && recipe.is_some_and(|recipe| {
-                let selector_is_valid = recipe.design_id.as_ref().is_some_and(|design_id| {
+                let selector_is_valid = recipe.design.as_ref().is_some_and(|design| {
+                    let design_id = &design.id;
                     let Some(design_id_offset) = design_id.offset else {
                         return false;
                     };
-                    let Some(selector) = recipe.design_selector else {
+                    let Some(selector) = design.selector else {
                         return false;
                     };
                     u64::try_from(design_id.value.len()).ok().is_some_and(|length| {

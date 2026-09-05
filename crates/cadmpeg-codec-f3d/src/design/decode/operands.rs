@@ -3692,7 +3692,7 @@ pub fn bind_body_recipe_operand_candidates(
         let tag_selector = recipes_by_id
             .get(operand.recipe_id.as_str())
             .and_then(|recipe| *recipe)
-            .and_then(|recipe| recipe.design_selector)
+            .and_then(|recipe| recipe.design.as_ref()?.selector)
             .map(|selector| i64::from(selector.value));
         for reference in &mut operand.references {
             reference.candidate_faces.clear();
