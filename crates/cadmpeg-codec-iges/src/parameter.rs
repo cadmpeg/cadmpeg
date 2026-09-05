@@ -2578,34 +2578,63 @@ impl ParameterDefect {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct QuarantinedParameterRecord {
     pub(crate) sequence: u32,
-    pub(crate) source_offset: u64,
-    pub(crate) cards: usize,
-    pub(crate) bytes: Vec<u8>,
-    line_range: Option<Range<u32>>,
-    provenance_offset: u64,
+    ownership: QuarantinedCards,
+    failing_offset: Option<u64>,
     pub(crate) defect: ParameterDefect,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum QuarantinedCards {
+    Owned {
+        range: Range<u32>,
+        bytes: Vec<u8>,
+        first_offset: u64,
+    },
+    None {
+        directory_offset: u64,
+    },
+}
+
 impl QuarantinedParameterRecord {
+    pub(crate) fn source_offset(&self) -> u64 {
+        match &self.ownership {
+            QuarantinedCards::Owned { first_offset, .. } => *first_offset,
+            QuarantinedCards::None { directory_offset } => *directory_offset,
+        }
+    }
+
+    pub(crate) fn cards(&self) -> usize {
+        self.bytes().len() / crate::card::CARD_WIDTH
+    }
+
+    pub(crate) fn bytes(&self) -> &[u8] {
+        match &self.ownership {
+            QuarantinedCards::Owned { bytes, .. } => bytes,
+            QuarantinedCards::None { .. } => &[],
+        }
+    }
+
     /// The stable native identity of this quarantined record.
     pub(crate) fn identity(&self) -> String {
         format!("iges:quarantine:parameter#{}", self.sequence)
     }
 
     pub(crate) fn loss_note(&self) -> LossNote {
-        let owned = match &self.line_range {
-            Some(range) => format!("P{} through P{}", range.start, range.end.saturating_sub(1)),
-            None => "no owned Parameter Data card".to_owned(),
+        let owned = match &self.ownership {
+            QuarantinedCards::Owned { range, .. } => {
+                format!("P{} through P{}", range.start, range.end.saturating_sub(1))
+            }
+            QuarantinedCards::None { .. } => "no owned Parameter Data card".to_owned(),
         };
         IgesLossCode::ParameterDataQuarantined
             .note(format!(
                 "IGES Parameter Data of D{} ({owned}) is quarantined because {}; its {} raw card(s) are retained and no token was interpreted",
                 self.sequence,
                 self.defect.describe(),
-                self.cards
+                self.cards()
             ))
         .with_provenance(
-            SourceProvenance::in_stream("iges", "iges", self.provenance_offset)
+            SourceProvenance::in_stream("iges", "iges", self.failing_offset.unwrap_or_else(|| self.source_offset()))
                 .with_tag(format!("D{}:parameter", self.sequence)),
         )
     }
@@ -3420,26 +3449,32 @@ fn quarantine(
     defect: ParameterDefect,
     failing_offset: Option<usize>,
 ) -> QuarantinedParameterRecord {
-    let first = cards
-        .first()
-        .and_then(|sequence| lines.get(sequence))
-        .map_or(entry.source_offset, |line| line.offset);
+    let mut retained = cards
+        .iter()
+        .filter_map(|sequence| lines.get(sequence).map(|line| (*sequence, *line)));
+    let ownership = match retained.next() {
+        Some((first, line)) => {
+            let first_offset = line.offset;
+            let mut range = first..first.saturating_add(1);
+            let mut bytes = line.payload.clone();
+            for (sequence, line) in retained {
+                range.end = sequence.saturating_add(1);
+                bytes.extend_from_slice(&line.payload);
+            }
+            QuarantinedCards::Owned {
+                range,
+                bytes,
+                first_offset,
+            }
+        }
+        None => QuarantinedCards::None {
+            directory_offset: entry.source_offset,
+        },
+    };
     QuarantinedParameterRecord {
         sequence: entry.sequence,
-        source_offset: first,
-        cards: cards.len(),
-        bytes: cards
-            .iter()
-            .filter_map(|sequence| lines.get(sequence))
-            .flat_map(|line| line.payload.iter().copied())
-            .collect(),
-        line_range: cards.first().zip(cards.last()).map(|(first, last)| {
-            let end = last.saturating_add(1);
-            *first..end
-        }),
-        provenance_offset: failing_offset
-            .and_then(|offset| stream_offset(offset, cards, lines))
-            .unwrap_or(first),
+        ownership,
+        failing_offset: failing_offset.and_then(|offset| stream_offset(offset, cards, lines)),
         defect,
     }
 }
