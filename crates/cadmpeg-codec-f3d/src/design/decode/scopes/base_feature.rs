@@ -256,9 +256,10 @@ fn exact_base_feature_legacy_compact(
     )?;
     let body_entity_suffixes = vec![body_entity_suffix];
     Some(DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
-        form: DesignBaseFeatureBodyReferenceForm::CompactOneBody,
-        mode: Some(mode),
-        mode_offset: Some(scope.byte_offset + u64::try_from(class_452_compact::MODE).ok()?),
+        form: DesignBaseFeatureBodyReferenceForm::CompactOneBody(crate::records::Located {
+            value: mode,
+            offset: scope.byte_offset + u64::try_from(class_452_compact::MODE).ok()?,
+        }),
         body_entity_suffixes,
         body_entity_suffix_offsets: vec![
             scope.byte_offset + u64::try_from(class_452_compact::BODY_ENTITY_SUFFIX).ok()?,
@@ -426,8 +427,6 @@ fn exact_base_feature_legacy_expanded(
     let body_entity_suffixes = body_entity_suffixes.to_vec();
     Some(DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
         form: DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody,
-        mode: None,
-        mode_offset: None,
         body_reference_records: body_entity_suffixes
             .iter()
             .copied()

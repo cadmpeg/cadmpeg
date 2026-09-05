@@ -1117,7 +1117,6 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         .expect("class-452 compact Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
         form,
-        mode,
         body_entity_suffixes,
         body_entity_suffix_offsets,
         body_entity_fields,
@@ -1137,8 +1136,10 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     else {
         panic!("class-452 compact frame selected the wrong form");
     };
-    assert_eq!(*form, DesignBaseFeatureBodyReferenceForm::CompactOneBody);
-    assert_eq!(*mode, Some(0));
+    assert_eq!(*form, DesignBaseFeatureBodyReferenceForm::CompactOneBody(crate::records::Located {
+        value: 0,
+        offset: compact::MODE as u64,
+    }));
     assert_eq!(body_entity_suffixes, &[201]);
     assert_eq!(
         body_entity_suffix_offsets,
@@ -1175,10 +1176,10 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     compact_bytes[compact::MODE] = 1;
     let mode_one = exact_base_feature_construction(&compact_bytes, &compact_scope)
         .expect("mode-one class-452 compact frame is canonical");
-    let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces { mode, .. } = mode_one else {
+    let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces { form, .. } = mode_one else {
         panic!("class-452 compact mode-one frame selected the wrong form");
     };
-    assert_eq!(mode, Some(1));
+    assert_eq!(form, DesignBaseFeatureBodyReferenceForm::CompactOneBody(crate::records::Located { value: 1, offset: compact::MODE as u64 }));
 
     let mut expanded_bytes = vec![0_u8; expanded::LEN];
     expanded_bytes[expanded::BODY_COUNT_MARKER] = expanded::BODY_COUNT_MARKER_VALUE;
@@ -1261,7 +1262,6 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         .expect("class-452 expanded Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
         form,
-        mode,
         body_entity_suffixes,
         body_entity_fields,
         parameter_body_records,
@@ -1273,7 +1273,6 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         panic!("class-452 expanded frame selected the wrong form");
     };
     assert_eq!(*form, DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody);
-    assert_eq!(*mode, None);
     assert_eq!(body_entity_suffixes, &[401, 402]);
     assert_eq!(body_entity_fields, &[[0; 6], [0; 6]]);
     assert_eq!(parameter_body_records, &[301, 302]);
