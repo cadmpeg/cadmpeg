@@ -515,3 +515,34 @@ fn identity_wrapper_rows_preserve_wire_and_reject_unequal_arrays() {
         }
     }
 }
+
+#[test]
+fn legacy_base_feature_form_owns_its_compact_mode() {
+    for form in ["compact_one_body", "expanded_two_body"] {
+        let (suffixes, suffix_offsets, fields, refs, ref_offsets, parameters, parameter_offsets, auxiliary, auxiliary_offsets) =
+            if form == "compact_one_body" {
+                ("[201]", "[22]", "[[0,0,0,0,0,0]]", "[201]", "[22]", "[301]", "[40]", "[303]", "[50]")
+            } else {
+                ("[401,402]", "[22,36]", "[[0,0,0,0,0,0],[0,0,0,0,0,0]]", "[401,402]", "[22,36]", "[301,302]", "[50,60]", "[303,304]", "[70,80]")
+            };
+        for mask in 0..4 {
+            let mut wire = format!("{{\"form\":\"{form}\"");
+            if mask & 1 != 0 {
+                wire.push_str(",\"mode\":0");
+            }
+            if mask & 2 != 0 {
+                wire.push_str(",\"mode_offset\":17");
+            }
+            wire.push_str(&format!(r#","body_entity_suffixes":{suffixes},"body_entity_suffix_offsets":{suffix_offsets},"body_entity_fields":{fields},"body_reference_records":{refs},"body_reference_record_offsets":{ref_offsets},"parameter_body_records":{parameters},"parameter_body_record_offsets":{parameter_offsets},"auxiliary_records":{auxiliary},"auxiliary_record_offsets":{auxiliary_offsets},"scope_reference":90,"scope_reference_offset":100,"envelope_guid":"11111111-2222-3333-4444-555555555555","envelope_guid_offset":110,"tag_body_based_on_faces":true,"tag_body_based_on_faces_offset":190}}"#));
+            let parsed = serde_json::from_str::<super::DesignBaseFeatureConstruction>(&wire);
+            if (form == "compact_one_body" && mask == 3) || (form == "expanded_two_body" && mask == 0) {
+                assert_eq!(serde_json::to_string(&parsed.expect("complete legacy form")).expect("legacy wire"), wire);
+            } else {
+                let error = parsed.expect_err("mixed legacy mode form").to_string();
+                assert!(error.contains("form"));
+                assert!(error.contains("mode"));
+                assert!(error.contains("mode_offset"));
+            }
+        }
+    }
+}

@@ -7405,23 +7405,20 @@ pub struct DesignCopyPasteBodiesOperation {
     pub copied_body_entity_suffix_offsets: Vec<u64>,
 }
 
-/// Wire form of the legacy class-452/class-262 Base Feature body-reference
-/// envelope.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Layout of the legacy class-452/class-262 Base Feature envelope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
 pub enum DesignBaseFeatureBodyReferenceForm {
-    /// One output body with 64-bit references in the legacy compact lanes.
-    CompactOneBody,
-    /// Two output bodies with counted 32-bit reference runs.
+    /// One output body with an encoded compact mode.
+    CompactOneBody(Located<u8>),
+    /// Two output bodies with no mode slot.
     ExpandedTwoBody,
 }
 
 /// Typed construction data carried by a Fusion direct-modeling Base Feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-// Untagged: required field sets are disjoint across variants.
-#[serde(untagged)]
+#[serde(try_from = "DesignBaseFeatureConstructionWire", into = "DesignBaseFeatureConstructionWire")]
 pub enum DesignBaseFeatureConstruction {
     /// Counted body, passive-reference, metadata, and result runs.
     ResultBodies {
@@ -7484,6 +7481,139 @@ pub enum DesignBaseFeatureConstruction {
     LegacyBodyBasedOnFaces {
         /// Compact one-body or expanded two-body source envelope form.
         form: DesignBaseFeatureBodyReferenceForm,
+        /// Ordered Design body entity suffixes exposed by the envelope.
+        body_entity_suffixes: Vec<u64>,
+        /// Byte offsets parallel to `body_entity_suffixes`.
+        body_entity_suffix_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `body_entity_suffixes`.
+        body_entity_fields: Vec<[u8; 6]>,
+        /// Body suffixes used by history-to-BREP resolution for this form.
+        body_reference_records: Vec<u32>,
+        /// Byte offsets parallel to `body_reference_records`.
+        body_reference_record_offsets: Vec<u64>,
+        /// Ordered PM body-reference records carried by the envelope.
+        parameter_body_records: Vec<u64>,
+        /// Byte offsets parallel to `parameter_body_records`.
+        parameter_body_record_offsets: Vec<u64>,
+        /// Ordered DM body-reference records carried by the envelope.
+        auxiliary_records: Vec<u64>,
+        /// Byte offsets parallel to `auxiliary_records`.
+        auxiliary_record_offsets: Vec<u64>,
+        /// Scope record repeated by the envelope's explicit scope-reference lane.
+        scope_reference: u64,
+        /// Byte offset of `scope_reference`.
+        scope_reference_offset: u64,
+        /// LP-UTF-16 GUID carried by the envelope.
+        envelope_guid: String,
+        /// Byte offset of the first code unit of `envelope_guid`.
+        envelope_guid_offset: u64,
+        /// Stored body-source property value.
+        tag_body_based_on_faces: bool,
+        /// Byte offset of `tag_body_based_on_faces`.
+        tag_body_based_on_faces_offset: u64,
+    },
+    /// Body snapshot form used by the class-314/class-259 scope pair.
+    BodySnapshot {
+        /// Ordered Design body entity suffixes exposed by the snapshot.
+        body_entity_suffixes: Vec<u64>,
+        /// Byte offsets parallel to `body_entity_suffixes`.
+        body_entity_suffix_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `body_entity_suffixes`.
+        body_entity_fields: Vec<[u8; 6]>,
+        /// Three LP-UTF-16 source GUIDs carried by the snapshot envelope.
+        related_guids: [String; 3],
+        /// Byte offsets of the first code unit of each related GUID.
+        related_guid_offsets: [u64; 3],
+        /// Indexed record carried by the snapshot linkage tail.
+        linkage_record: u32,
+        /// Byte offset of `linkage_record`.
+        linkage_record_offset: u64,
+        /// Auxiliary indexed record carried by the snapshot linkage tail.
+        auxiliary_record: u32,
+        /// Byte offset of `auxiliary_record`.
+        auxiliary_record_offset: u64,
+    },
+}
+
+/// Wire form of the legacy class-452/class-262 Base Feature body-reference
+/// envelope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+enum DesignBaseFeatureBodyReferenceFormWire {
+    /// One output body with 64-bit references in the legacy compact lanes.
+    CompactOneBody,
+    /// Two output bodies with counted 32-bit reference runs.
+    ExpandedTwoBody,
+}
+
+/// Typed construction data carried by a Fusion direct-modeling Base Feature.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+// Untagged: required field sets are disjoint across variants.
+#[serde(untagged)]
+enum DesignBaseFeatureConstructionWire {
+    /// Counted body, passive-reference, metadata, and result runs.
+    ResultBodies {
+        /// Ordered Design body entity suffixes exposed by the Base Feature.
+        body_entity_suffixes: Vec<u64>,
+        /// Byte offsets parallel to `body_entity_suffixes`.
+        body_entity_suffix_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `body_entity_suffixes`.
+        body_entity_fields: Vec<[u8; 6]>,
+        /// Ordered passive body-reference records parallel to the body suffixes.
+        body_reference_records: Vec<u32>,
+        /// Byte offsets parallel to `body_reference_records`.
+        body_reference_record_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `body_reference_records`.
+        body_reference_fields: Vec<[u8; 6]>,
+        /// Six-byte source fields in the repeated passive-reference run.
+        repeated_reference_fields: Vec<[u8; 6]>,
+        /// Shared passive-reference metadata record.
+        metadata_record: u32,
+        /// Byte offset of `metadata_record`.
+        metadata_record_offset: u64,
+        /// Variant-width source field following `metadata_record`.
+        metadata_field: Vec<u8>,
+        /// Ordered result-body join records parallel to the body suffixes.
+        result_records: Vec<u32>,
+        /// Byte offsets parallel to `result_records`.
+        result_record_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `result_records`.
+        result_fields: Vec<[u8; 6]>,
+    },
+    /// Direct-modeling body-reference envelope used by the class-365/class-262 and
+    /// class-377/class-259 forms.
+    BodyBasedOnFaces {
+        /// The Design body entity suffix exposed by the envelope.
+        body_entity_suffixes: Vec<u64>,
+        /// Byte offsets parallel to `body_entity_suffixes`.
+        body_entity_suffix_offsets: Vec<u64>,
+        /// Body suffixes used by history-to-BREP resolution for this form.
+        body_reference_records: Vec<u32>,
+        /// Byte offsets parallel to `body_reference_records`.
+        body_reference_record_offsets: Vec<u64>,
+        /// PM body-reference record named by the fixed envelope lane.
+        parameter_body_record: u32,
+        /// Byte offset of `parameter_body_record`.
+        parameter_body_record_offset: u64,
+        /// Auxiliary record named by the fixed envelope lane.
+        auxiliary_record: u32,
+        /// Byte offset of `auxiliary_record`.
+        auxiliary_record_offset: u64,
+        /// LP-UTF-16 GUID carried by the envelope.
+        envelope_guid: String,
+        /// Byte offset of the first code unit of `envelope_guid`.
+        envelope_guid_offset: u64,
+        /// Stored body-source property value.
+        tag_body_based_on_faces: bool,
+        /// Byte offset of `tag_body_based_on_faces`.
+        tag_body_based_on_faces_offset: u64,
+    },
+    /// Legacy body-reference envelope used by the class-452/class-262 forms.
+    LegacyBodyBasedOnFaces {
+        /// Compact one-body or expanded two-body source envelope form.
+        form: DesignBaseFeatureBodyReferenceFormWire,
         /// Compact-form mode byte. The expanded form has no mode byte.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mode: Option<u8>,
@@ -7542,6 +7672,54 @@ pub enum DesignBaseFeatureConstruction {
         /// Byte offset of `auxiliary_record`.
         auxiliary_record_offset: u64,
     },
+}
+
+impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstruction {
+    type Error = String;
+    fn try_from(wire: DesignBaseFeatureConstructionWire) -> Result<Self, Self::Error> {
+        Ok(match wire {
+            DesignBaseFeatureConstructionWire::ResultBodies { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, body_reference_fields, repeated_reference_fields, metadata_record, metadata_record_offset, metadata_field, result_records, result_record_offsets, result_fields } => {
+                Self::ResultBodies { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, body_reference_fields, repeated_reference_fields, metadata_record, metadata_record_offset, metadata_field, result_records, result_record_offsets, result_fields }
+            },
+            DesignBaseFeatureConstructionWire::BodyBasedOnFaces { body_entity_suffixes, body_entity_suffix_offsets, body_reference_records, body_reference_record_offsets, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset } => {
+                Self::BodyBasedOnFaces { body_entity_suffixes, body_entity_suffix_offsets, body_reference_records, body_reference_record_offsets, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset }
+            },
+            DesignBaseFeatureConstructionWire::LegacyBodyBasedOnFaces { form, mode, mode_offset, body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, parameter_body_records, parameter_body_record_offsets, auxiliary_records, auxiliary_record_offsets, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset } => {
+                let form = match (form, mode, mode_offset) {
+                    (DesignBaseFeatureBodyReferenceFormWire::CompactOneBody, Some(value), Some(offset)) => DesignBaseFeatureBodyReferenceForm::CompactOneBody(Located { value, offset }),
+                    (DesignBaseFeatureBodyReferenceFormWire::ExpandedTwoBody, None, None) => DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody,
+                    _ => return Err("form requires mode and mode_offset only for compact_one_body".into()),
+                };
+                Self::LegacyBodyBasedOnFaces { form, body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, parameter_body_records, parameter_body_record_offsets, auxiliary_records, auxiliary_record_offsets, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset }
+            },
+            DesignBaseFeatureConstructionWire::BodySnapshot { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, related_guids, related_guid_offsets, linkage_record, linkage_record_offset, auxiliary_record, auxiliary_record_offset } => {
+                Self::BodySnapshot { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, related_guids, related_guid_offsets, linkage_record, linkage_record_offset, auxiliary_record, auxiliary_record_offset }
+            },
+        })
+    }
+}
+
+impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
+    fn from(value: DesignBaseFeatureConstruction) -> Self {
+        match value {
+            DesignBaseFeatureConstruction::ResultBodies { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, body_reference_fields, repeated_reference_fields, metadata_record, metadata_record_offset, metadata_field, result_records, result_record_offsets, result_fields } => {
+                Self::ResultBodies { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, body_reference_fields, repeated_reference_fields, metadata_record, metadata_record_offset, metadata_field, result_records, result_record_offsets, result_fields }
+            },
+            DesignBaseFeatureConstruction::BodyBasedOnFaces { body_entity_suffixes, body_entity_suffix_offsets, body_reference_records, body_reference_record_offsets, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset } => {
+                Self::BodyBasedOnFaces { body_entity_suffixes, body_entity_suffix_offsets, body_reference_records, body_reference_record_offsets, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset }
+            },
+            DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces { form, body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, parameter_body_records, parameter_body_record_offsets, auxiliary_records, auxiliary_record_offsets, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset } => {
+                let (form, mode, mode_offset) = match form {
+                    DesignBaseFeatureBodyReferenceForm::CompactOneBody(mode) => (DesignBaseFeatureBodyReferenceFormWire::CompactOneBody, Some(mode.value), Some(mode.offset)),
+                    DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody => (DesignBaseFeatureBodyReferenceFormWire::ExpandedTwoBody, None, None),
+                };
+                Self::LegacyBodyBasedOnFaces { form, mode, mode_offset, body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, parameter_body_records, parameter_body_record_offsets, auxiliary_records, auxiliary_record_offsets, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset }
+            },
+            DesignBaseFeatureConstruction::BodySnapshot { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, related_guids, related_guid_offsets, linkage_record, linkage_record_offset, auxiliary_record, auxiliary_record_offset } => {
+                Self::BodySnapshot { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, related_guids, related_guid_offsets, linkage_record, linkage_record_offset, auxiliary_record, auxiliary_record_offset }
+            },
+        }
+    }
 }
 
 impl DesignBaseFeatureConstruction {
