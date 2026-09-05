@@ -152,10 +152,12 @@ fn container_caches_owned_section_layouts() {
     assert_eq!(first.len(), 1);
     assert_eq!(second, first);
     assert_eq!(first[0].1, crate::om::sections(&container.data[17..])[0]);
-    assert!(container
-        .om_section_cache
-        .get()
-        .is_some_and(|cache| cache.sections.is_none() && cache.layouts.len() == 1));
+    assert!(container.om_section_cache.get().is_some_and(|cache| {
+        matches!(
+            cache,
+            container::FramedSectionCache::Owned { layouts } if layouts.len() == 1
+        )
+    }));
 }
 
 #[test]
