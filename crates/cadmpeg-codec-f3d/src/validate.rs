@@ -1590,14 +1590,13 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
         texture_cursor = texture_cursor.and_then(|cursor| cursor.checked_add(4));
         resources.sort_by_key(|resource| resource.filename_ordinal);
         let filename_order_valid = resources.iter().enumerate().all(|(ordinal, resource)| {
-            let filename_units = u64::try_from(resource.filename.encode_utf16().count()).ok();
-            let filename_key = (stream, resource.filename_record.record_index());
+            let filename_key = (stream, resource.file.record().record_index());
             let filename_record_consistent = filename_records
                 .get(&filename_key)
-                .is_none_or(|record| *record == &resource.filename_record);
+                .is_none_or(|record| *record == resource.file.record());
             filename_records
                 .entry(filename_key)
-                .or_insert(&resource.filename_record);
+                .or_insert(resource.file.record());
             let offsets_valid = texture_cursor.is_some_and(|cursor| {
                 cursor.checked_add(4) == Some(resource.filename_guid_offset)
                     && cursor.checked_add(40) == Some(resource.filename_record_reference_offset)
@@ -1605,13 +1604,6 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let valid = resource.filename_ordinal == u32::try_from(ordinal).unwrap_or(u32::MAX)
                 && offsets_valid
                 && filename_record_consistent
-                && mesh_record_offset_is(&resource.filename_record, 25, resource.filename_offset)
-                && filename_units
-                    .and_then(|units| units.checked_mul(2))
-                    .and_then(|bytes| bytes.checked_add(25))
-                    == Some(resource.filename_record.frame_length())
-                && resource.archive_entry_name.rsplit('/').next()
-                    == Some(resource.filename.as_str())
                 && asset_ids.contains(&resource.asset);
             texture_cursor = texture_cursor.and_then(|cursor| cursor.checked_add(51));
             valid

@@ -2593,3 +2593,32 @@ fn mesh_affine_transform_preserves_rows_and_rejects_invalid_maps() {
     cells[0] = f64::MAX;
     assert!(super::MeshAffineTransform::new(cells).is_err());
 }
+
+#[test]
+fn mesh_texture_file_derives_basename_and_offset_without_wire_changes() {
+    let wire = serde_json::json!({
+        "ordinal": 0, "resource_guid": "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
+        "flags_guid_offset": 29, "flags": 7, "flags_offset": 65,
+        "filename_ordinal": 0, "filename_guid_offset": 77,
+        "filename_record": {"class_tag": "256", "record_index": 8, "byte_offset": 200, "frame_length": 39},
+        "filename_record_reference_offset": 113,
+        "filename": "é😀.png", "filename_offset": 225,
+        "archive_entry_name": "Textures/é😀.png", "asset": "asset:texture"
+    });
+    // The basename has seven UTF-16 code units, including the surrogate pair.
+    let resource: super::DesignMeshTextureResource = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(resource.file.filename(), "é😀.png");
+    assert_eq!(resource.file.filename_offset(), 225);
+    assert_eq!(serde_json::to_value(resource).unwrap(), wire);
+    for field in ["filename", "archive_entry_name", "filename_offset"] {
+        let mut bad = wire.clone();
+        bad[field] = if field == "filename_offset" { 226.into() } else { "other.png".into() };
+        assert!(serde_json::from_value::<super::DesignMeshTextureResource>(bad).is_err());
+    }
+    let mut bad = wire.clone();
+    bad["filename_record"]["frame_length"] = 38.into();
+    assert!(serde_json::from_value::<super::DesignMeshTextureResource>(bad).is_err());
+    let mut bad = wire;
+    bad["filename_record"]["byte_offset"] = (u64::MAX - 20).into();
+    assert!(serde_json::from_value::<super::DesignMeshTextureResource>(bad).is_err());
+}

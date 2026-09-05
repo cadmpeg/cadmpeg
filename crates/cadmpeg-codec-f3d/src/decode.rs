@@ -3223,7 +3223,7 @@ fn project_mesh_bodies(
         {
             continue;
         }
-        let media_type = std::path::Path::new(&texture.filename)
+        let media_type = std::path::Path::new(texture.file.filename())
             .extension()
             .and_then(|extension| extension.to_str())
             .and_then(|extension| match extension.to_ascii_lowercase().as_str() {
@@ -3234,12 +3234,12 @@ fn project_mesh_bodies(
             .map(str::to_owned);
         texture_assets.push(cadmpeg_ir::assets::Asset {
             id: texture.asset.clone(),
-            name: Some(texture.filename.clone()),
+            name: Some(texture.file.filename().to_owned()),
             media_type,
             content: cadmpeg_ir::assets::AssetContent::Embedded {
-                data: scan.entry_bytes(&texture.archive_entry_name)?.to_vec(),
+                data: scan.entry_bytes(texture.file.archive_entry_name())?.to_vec(),
             },
-            native_ref: Some(crate::ids::native_scope(&texture.archive_entry_name)),
+            native_ref: Some(crate::ids::native_scope(texture.file.archive_entry_name())),
         });
     }
     extend_unique_assets(&mut ir.model.assets, texture_assets)?;
