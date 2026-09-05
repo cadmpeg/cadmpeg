@@ -5084,11 +5084,10 @@ pub fn bind_mirror_constructions(
             )
             .is_some()
         };
-        let (plane_scope_record_index, plane_reference_offset, plane_selection_record_index) =
+        let (plane_scope_record_index, plane_selection_record_index) =
             if let Some((plane_scope_record_index, plane_reference_offset)) = work_plane {
                 (
-                    Some(plane_scope_record_index),
-                    Some(plane_reference_offset),
+                    Some(crate::records::Located { value: plane_scope_record_index, offset: plane_reference_offset }),
                     None,
                 )
             } else if crate::design::decode::operands::parse_entity_selection_operand(
@@ -5100,7 +5099,7 @@ pub fn bind_mirror_constructions(
             .is_some()
                 || face_recipe
             {
-                (None, None, Some(*plane_member))
+                (None, Some(*plane_member))
             } else {
                 continue;
             };
@@ -5193,10 +5192,8 @@ pub fn bind_mirror_constructions(
                 stitch_tolerance_scope,
                 seed_group_record_index: seed_group.record_index,
                 plane_group_record_index: plane_group.record_index,
-                seed_feature_scope_record_index: seed_feature.map(|(record_index, _)| record_index),
-                seed_feature_reference_offset: seed_feature.map(|(_, offset)| offset),
+                seed_feature_scope_record_index: seed_feature.map(|(value, offset)| crate::records::Located { value, offset }),
                 plane_scope_record_index,
-                plane_reference_offset,
                 plane_selection_record_index,
                 plane: None,
             });

@@ -2729,6 +2729,7 @@ pub struct DesignCopyPasteComponentOperation {
 /// Exact construction carried by a Mirror scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignMirrorConstructionWire", into = "DesignMirrorConstructionWire")]
 pub struct DesignMirrorConstruction {
     /// Fixed instance count, including the seed.
     pub count: u32,
@@ -2753,22 +2754,103 @@ pub struct DesignMirrorConstruction {
     pub plane_group_record_index: u32,
     /// Referenced seed feature scope when the seed is a complete feature.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub seed_feature_scope_record_index: Option<u32>,
-    /// Byte offset of the optional seed-feature reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub seed_feature_reference_offset: Option<u64>,
+    pub seed_feature_scope_record_index: Option<Located<u32>>,
     /// Referenced `WorkPlane` scope, when the plane operand names one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plane_scope_record_index: Option<u32>,
-    /// Byte offset of the optional `WorkPlane` reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plane_reference_offset: Option<u64>,
+    pub plane_scope_record_index: Option<Located<u32>>,
     /// Persistent entity-selection record used as the mirror plane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plane_selection_record_index: Option<u32>,
     /// Proven selected-face mirror plane, when exact.
     #[serde(flatten)]
     pub plane: Option<MirrorPlaneWire>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignMirrorConstructionWire {
+    /// Fixed instance count, including the seed.
+    count: u32,
+    /// Parameter-owner record carrying `count`.
+    count_record_index: u32,
+    /// Byte offset of the evaluated count scalar.
+    count_offset: u64,
+    /// Positive model-space stitch tolerance in source centimetres.
+    stitch_tolerance: f64,
+    /// Parameter-owner record carrying `stitch_tolerance`, when the source
+    /// stores the scalar in a separate owner record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stitch_tolerance_record_index: Option<u32>,
+    /// Byte offset of the evaluated stitch-tolerance scalar.
+    stitch_tolerance_offset: u64,
+    /// Inline scope-frame carrier used by the legacy Mirror envelope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stitch_tolerance_scope: Option<DesignMirrorScopeTolerance>,
+    /// Seed group selected by the source operation.
+    seed_group_record_index: u32,
+    /// Role-`0x5` mirror-plane group.
+    plane_group_record_index: u32,
+    /// Referenced seed feature scope when the seed is a complete feature.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    seed_feature_scope_record_index: Option<u32>,
+    /// Byte offset of the optional seed-feature reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    seed_feature_reference_offset: Option<u64>,
+    /// Referenced `WorkPlane` scope, when the plane operand names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    plane_scope_record_index: Option<u32>,
+    /// Byte offset of the optional `WorkPlane` reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    plane_reference_offset: Option<u64>,
+    /// Persistent entity-selection record used as the mirror plane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    plane_selection_record_index: Option<u32>,
+    /// Proven selected-face mirror plane, when exact.
+    #[serde(flatten)]
+    plane: Option<MirrorPlaneWire>,
+}
+
+impl TryFrom<DesignMirrorConstructionWire> for DesignMirrorConstruction {
+    type Error = String;
+    fn try_from(wire: DesignMirrorConstructionWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            count: wire.count,
+            count_record_index: wire.count_record_index,
+            count_offset: wire.count_offset,
+            stitch_tolerance: wire.stitch_tolerance,
+            stitch_tolerance_record_index: wire.stitch_tolerance_record_index,
+            stitch_tolerance_offset: wire.stitch_tolerance_offset,
+            stitch_tolerance_scope: wire.stitch_tolerance_scope,
+            seed_group_record_index: wire.seed_group_record_index,
+            plane_group_record_index: wire.plane_group_record_index,
+            seed_feature_scope_record_index: Located::from_wire(wire.seed_feature_scope_record_index, wire.seed_feature_reference_offset, "seed_feature_scope_record_index").map_err(|_| "seed_feature_scope_record_index and seed_feature_reference_offset must occur together")?,
+            plane_scope_record_index: Located::from_wire(wire.plane_scope_record_index, wire.plane_reference_offset, "plane_scope_record_index").map_err(|_| "plane_scope_record_index and plane_reference_offset must occur together")?,
+            plane_selection_record_index: wire.plane_selection_record_index,
+            plane: wire.plane,
+        })
+    }
+}
+
+impl From<DesignMirrorConstruction> for DesignMirrorConstructionWire {
+    fn from(record: DesignMirrorConstruction) -> Self {
+        Self {
+            count: record.count,
+            count_record_index: record.count_record_index,
+            count_offset: record.count_offset,
+            stitch_tolerance: record.stitch_tolerance,
+            stitch_tolerance_record_index: record.stitch_tolerance_record_index,
+            stitch_tolerance_offset: record.stitch_tolerance_offset,
+            stitch_tolerance_scope: record.stitch_tolerance_scope,
+            seed_group_record_index: record.seed_group_record_index,
+            plane_group_record_index: record.plane_group_record_index,
+            seed_feature_scope_record_index: record.seed_feature_scope_record_index.map(|reference| reference.value),
+            seed_feature_reference_offset: record.seed_feature_scope_record_index.map(|reference| reference.offset),
+            plane_scope_record_index: record.plane_scope_record_index.map(|reference| reference.value),
+            plane_reference_offset: record.plane_scope_record_index.map(|reference| reference.offset),
+            plane_selection_record_index: record.plane_selection_record_index,
+            plane: record.plane,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -8059,10 +8141,8 @@ pub struct DesignLoftLegacyBodyCarrier {
     pub next_record_index: u32,
     /// Byte offset of the marked `N+1` reference.
     pub next_reference_offset: u64,
-    /// Additional owning-scope reference in the class-`411` form.
-    pub trailing_scope_record_index: Option<u32>,
-    /// Byte offset of the additional owning-scope reference.
-    pub trailing_scope_reference_offset: Option<u64>,
+    /// Additional owning-scope reference and its source location, when present.
+    pub trailing_scope_record_index: Option<Located<u32>>,
     /// Per-file dynamic paired class tag (`262` or `266`).
     pub paired_class_tag: String,
     /// Same-index paired-header byte offset.
@@ -8141,8 +8221,8 @@ impl TryFrom<DesignLoftLegacyBodyCarrierSerde> for DesignLoftLegacyBodyCarrier {
             flags_offset: wire.flags_offset,
             next_record_index: wire.next_record_index,
             next_reference_offset: wire.next_reference_offset,
-            trailing_scope_record_index: wire.trailing_scope_record_index,
-            trailing_scope_reference_offset: wire.trailing_scope_reference_offset,
+            trailing_scope_record_index: Located::from_wire(wire.trailing_scope_record_index, wire.trailing_scope_reference_offset, "trailing_scope_record_index")
+                .map_err(|_| "trailing_scope_record_index and trailing_scope_reference_offset must occur together")?,
             paired_class_tag: wire.paired_class_tag,
             paired_byte_offset: wire.paired_byte_offset,
         })
@@ -8176,8 +8256,8 @@ impl From<DesignLoftLegacyBodyCarrier> for DesignLoftLegacyBodyCarrierSerde {
             flags_offset: carrier.flags_offset,
             next_record_index: carrier.next_record_index,
             next_reference_offset: carrier.next_reference_offset,
-            trailing_scope_record_index: carrier.trailing_scope_record_index,
-            trailing_scope_reference_offset: carrier.trailing_scope_reference_offset,
+            trailing_scope_record_index: carrier.trailing_scope_record_index.map(|reference| reference.value),
+            trailing_scope_reference_offset: carrier.trailing_scope_record_index.map(|reference| reference.offset),
             paired_class_tag: carrier.paired_class_tag,
             paired_byte_offset: carrier.paired_byte_offset,
         }
