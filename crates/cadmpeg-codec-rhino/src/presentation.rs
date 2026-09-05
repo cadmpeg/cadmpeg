@@ -824,9 +824,9 @@ fn first_user_string_records(
 ) -> (Vec<UserStringRecord>, Vec<UserStringRecord>) {
     let geometry = class_userdata
         .iter()
-        .find(|value| value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
+        .find(|value| value.class_uuid() == USER_STRING_LIST && value.item_uuid() == USER_STRING_LIST)
         .and_then(|value| {
-            match parse_user_string_list(data, value.payload_range.clone(), archive) {
+            match parse_user_string_list(data, value.payload_range().clone(), archive) {
                 Ok(entries) => Some(user_string_records(entries)),
                 Err(error) => {
                     losses.push(RhinoLossCode::ObjectDecodeDiagnostic.note(format!(
@@ -840,10 +840,10 @@ fn first_user_string_records(
     let mut attributes = attribute_userdata
         .iter()
         .find(|value| {
-            value.class_uuid == Some(USER_STRING_LIST) && value.item_uuid == Some(USER_STRING_LIST)
+            value.class_uuid() == Some(USER_STRING_LIST) && value.item_uuid() == Some(USER_STRING_LIST)
         })
         .and_then(|value| {
-            let Some(payload_range) = value.payload_range.clone() else {
+            let Some(payload_range) = value.payload_range().clone() else {
                 losses.push(RhinoLossCode::ObjectDecodeDiagnostic.note(format!(
                     "object-attributes user-string userdata at offset {source_offset} has no payload"
                 )));
@@ -1295,13 +1295,13 @@ fn legacy_rdk_material_instance_id(data: &[u8], userdata: &[UserdataDescriptor])
     userdata
         .iter()
         .filter(|value| {
-            value.class_uuid == RDK_CLASS
-                && value.item_uuid == RDK_USERDATA
-                && (value.application_uuid.is_none()
-                    || value.application_uuid == Some(RDK_APPLICATION))
+            value.class_uuid() == RDK_CLASS
+                && value.item_uuid() == RDK_USERDATA
+                && (value.application_uuid().is_none()
+                    || value.application_uuid() == Some(RDK_APPLICATION))
         })
         .filter_map(|value| {
-            parse_legacy_rdk_material_instance_id(data, value.payload_range.clone())
+            parse_legacy_rdk_material_instance_id(data, value.payload_range().clone())
                 .ok()
                 .flatten()
         })
@@ -1312,14 +1312,14 @@ fn rdk_material_userdata_requires_opaque(data: &[u8], userdata: &[UserdataDescri
     userdata
         .iter()
         .filter(|value| {
-            value.class_uuid == RDK_CLASS
-                && value.item_uuid == RDK_USERDATA
-                && (value.application_uuid.is_none()
-                    || value.application_uuid == Some(RDK_APPLICATION))
+            value.class_uuid() == RDK_CLASS
+                && value.item_uuid() == RDK_USERDATA
+                && (value.application_uuid().is_none()
+                    || value.application_uuid() == Some(RDK_APPLICATION))
         })
         .any(|value| {
             !matches!(
-                classify_rdk_material_payload(data, value.payload_range.clone()),
+                classify_rdk_material_payload(data, value.payload_range().clone()),
                 Ok(RdkMaterialPayload::Compatibility(_))
             )
         })
@@ -1485,16 +1485,16 @@ fn parse_light_record_attributes(
         .map(|range| parse_attribute_userdata(data, range.clone(), archive, &mut warnings))
         .unwrap_or_default();
     let userdata_requires_opaque = attributes_userdata.iter().any(|descriptor| {
-        if !descriptor.known {
+        if !descriptor.is_known() {
             return true;
         }
-        let is_user_string = descriptor.class_uuid == Some(USER_STRING_LIST)
-            && descriptor.item_uuid == Some(USER_STRING_LIST);
+        let is_user_string = descriptor.class_uuid() == Some(USER_STRING_LIST)
+            && descriptor.item_uuid() == Some(USER_STRING_LIST);
         if !is_user_string {
             return false;
         }
         descriptor
-            .payload_range
+            .payload_range()
             .as_ref()
             .is_none_or(|payload_range| {
                 parse_user_string_list(data, payload_range.clone(), archive).is_err()
@@ -2757,7 +2757,7 @@ fn parse_v5_dimension_style_extra(
     archive: ArchiveVersion,
     scale: f64,
 ) -> Result<V5DimensionStyleExtraRecord, FramingError> {
-    let (mut reader, version) = anonymous(data, extra.payload_range.clone(), archive)?;
+    let (mut reader, version) = anonymous(data, extra.payload_range().clone(), archive)?;
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             reader.position() - 8,
@@ -3394,9 +3394,9 @@ fn parse_texture_mapping(
         let (value, userdata) =
             parse_class_wrapper_with_userdata(data, object.range(), archive, &mut warnings)?;
         let cache_requires_opaque = userdata.iter().any(|value| {
-            value.class_uuid == MAPPING_CRC_CACHE
-                && value.item_uuid == MAPPING_CRC_CACHE
-                && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
+            value.class_uuid() == MAPPING_CRC_CACHE
+                && value.item_uuid() == MAPPING_CRC_CACHE
+                && parse_mapping_crc_cache(data, value.payload_range().clone()).is_err()
         });
         (Some(value.class_uuid.to_string()), cache_requires_opaque)
     };
@@ -3881,15 +3881,15 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                     let physically_based = userdata
                         .iter()
                         .find(|value| {
-                            value.class_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
-                                && value.item_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
-                                && (value.application_uuid.is_none()
-                                    || value.application_uuid == Some(OPENNURBS6_APPLICATION))
+                            value.class_uuid() == PHYSICALLY_BASED_MATERIAL_USERDATA
+                                && value.item_uuid() == PHYSICALLY_BASED_MATERIAL_USERDATA
+                                && (value.application_uuid().is_none()
+                                    || value.application_uuid() == Some(OPENNURBS6_APPLICATION))
                         })
                         .and_then(|value| {
                             match parse_physically_based_material(
                                 scan.data,
-                                value.payload_range.clone(),
+                                value.payload_range().clone(),
                                 scan.archive,
                             ) {
                                 Ok(material) => Some(material),
@@ -3997,7 +3997,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                         class_data_with_userdata(scan.data, record, scan.archive, V5_DIMSTYLE)
                     {
                         let extra = userdata.into_iter().find(|value| {
-                            value.class_uuid == DIMSTYLE_EXTRA && value.item_uuid == DIMSTYLE_EXTRA
+                            value.class_uuid() == DIMSTYLE_EXTRA
+                                && value.item_uuid() == DIMSTYLE_EXTRA
                         });
                         let extra = match extra {
                             Some(value) => match parse_v5_dimension_style_extra(
@@ -5163,7 +5164,7 @@ mod tests {
     fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
         let base = v5_dimension_style_chunk();
         let extra_bytes = v5_dimension_style_extra_chunk();
-        let descriptor = UserdataDescriptor {
+        let descriptor = UserdataDescriptor::Known {
             range: 0..extra_bytes.len(),
             version: (2, 2),
             class_uuid: DIMSTYLE_EXTRA,
@@ -5175,7 +5176,6 @@ mod tests {
             archive_version: None,
             writer_version: None,
             payload_range: 0..extra_bytes.len(),
-            unknown_version: false,
         };
         let extra =
             parse_v5_dimension_style_extra(&extra_bytes, &descriptor, ArchiveVersion::V5, 2.0)
@@ -5221,7 +5221,12 @@ mod tests {
         minor_zero_body.extend([0xee, 0xff]);
         let minor_zero = anonymous(0, &minor_zero_body);
         let mut minor_zero_descriptor = descriptor;
-        minor_zero_descriptor.payload_range = 0..minor_zero.len();
+        let crate::objects::UserdataDescriptor::Known { payload_range, .. } =
+            &mut minor_zero_descriptor
+        else {
+            panic!("expected known userdata");
+        };
+        *payload_range = 0..minor_zero.len();
         let minor_zero = parse_v5_dimension_style_extra(
             &minor_zero,
             &minor_zero_descriptor,
@@ -5264,7 +5269,7 @@ mod tests {
         let geometry_start = 0;
         let attributes_start = geometry.len();
         let data = [geometry, attributes].concat();
-        let descriptor = |range: Range<usize>| UserdataDescriptor {
+        let descriptor = |range: Range<usize>| UserdataDescriptor::Known {
             range: range.clone(),
             version: (2, 2),
             class_uuid: USER_STRING_LIST,
@@ -5276,16 +5281,14 @@ mod tests {
             archive_version: None,
             writer_version: None,
             payload_range: range,
-            unknown_version: false,
         };
-        let attribute_descriptor = |range: Range<usize>| AttributeUserdataDescriptor {
+        let attribute_descriptor = |range: Range<usize>| AttributeUserdataDescriptor::Known {
             range,
-            known: true,
-            class_uuid: Some(USER_STRING_LIST),
-            item_uuid: Some(USER_STRING_LIST),
+            class_uuid: USER_STRING_LIST,
+            item_uuid: USER_STRING_LIST,
             application_uuid: None,
             writer_version: None,
-            payload_range: Some(attributes_start..data.len()),
+            payload_range: attributes_start..data.len(),
         };
         let mut losses = Vec::new();
         let (geometry_values, attribute_values) = first_user_string_records(
@@ -5748,7 +5751,7 @@ mod tests {
     }
 
     fn legacy_rdk_descriptor(payload_range: Range<usize>) -> UserdataDescriptor {
-        UserdataDescriptor {
+        UserdataDescriptor::Known {
             range: payload_range.clone(),
             version: (2, 2),
             class_uuid: RDK_CLASS,
@@ -5760,7 +5763,6 @@ mod tests {
             archive_version: Some(5),
             writer_version: Some(0),
             payload_range,
-            unknown_version: false,
         }
     }
 

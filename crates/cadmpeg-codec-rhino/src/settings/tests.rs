@@ -868,7 +868,7 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
     outer_body.extend(entries);
     outer_body.extend([0xbe, 0xef]);
     let payload = anonymous_chunk(archive, 0, &outer_body);
-    let descriptor = crate::objects::UserdataDescriptor {
+    let descriptor = crate::objects::UserdataDescriptor::Known {
         range: 0..payload.len(),
         version: (2, 2),
         class_uuid: settings::LAYER_EXTENSIONS,
@@ -880,7 +880,6 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
         archive_version: None,
         writer_version: None,
         payload_range: 0..payload.len(),
-        unknown_version: false,
     };
     let values = settings::parse_layer_extensions(
         &payload,
@@ -909,7 +908,7 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
 fn layer_extensions_reject_negative_count() {
     let archive = ArchiveVersion::V8;
     let payload = anonymous_chunk(archive, 0, &(-1_i32).to_le_bytes());
-    let descriptor = crate::objects::UserdataDescriptor {
+    let descriptor = crate::objects::UserdataDescriptor::Known {
         range: 0..payload.len(),
         version: (2, 2),
         class_uuid: settings::LAYER_EXTENSIONS,
@@ -921,7 +920,6 @@ fn layer_extensions_reject_negative_count() {
         archive_version: None,
         writer_version: None,
         payload_range: 0..payload.len(),
-        unknown_version: false,
     };
     assert!(settings::parse_layer_extensions(&payload, &descriptor, archive, None).is_err());
 }

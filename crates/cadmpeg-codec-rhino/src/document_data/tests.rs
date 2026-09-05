@@ -310,20 +310,47 @@ fn render_userdata_uses_shared_header_grammar_and_outer_suffix_boundaries() {
     assert_eq!(descriptor.unknown_chunks.len(), 1);
     assert_eq!(descriptor.suffix, data.len() - 2..data.len());
     let modern = &descriptor.items[0];
-    assert_eq!(modern.version, (2, 15));
-    assert_eq!(modern.class_uuid, class_uuid);
-    assert_eq!(modern.item_uuid, item_uuid);
-    assert_eq!(modern.copy_count, 1);
-    assert_eq!(modern.application_uuid, Some(application_uuid));
-    assert_eq!(modern.last_saved_as_goo, Some(false));
-    assert_eq!(modern.archive_version, Some(60));
-    assert_eq!(modern.writer_version, Some(202_400));
-    assert!(!modern.payload_range.is_empty());
+    let crate::objects::UserdataDescriptor::Known {
+        version,
+        class_uuid: modern_class,
+        item_uuid: modern_item,
+        copy_count,
+        application_uuid: modern_application,
+        last_saved_as_goo,
+        archive_version,
+        writer_version,
+        payload_range,
+        ..
+    } = modern
+    else {
+        panic!("expected known userdata");
+    };
+    assert_eq!(*version, (2, 15));
+    assert_eq!(*modern_class, class_uuid);
+    assert_eq!(*modern_item, item_uuid);
+    assert_eq!(*copy_count, 1);
+    assert_eq!(*modern_application, Some(application_uuid));
+    assert_eq!(*last_saved_as_goo, Some(false));
+    assert_eq!(*archive_version, Some(60));
+    assert_eq!(*writer_version, Some(202_400));
+    assert!(!payload_range.is_empty());
     let legacy = &descriptor.items[1];
-    assert_eq!(legacy.version, (1, 0));
-    assert_eq!(legacy.copy_count, 2);
-    assert_eq!(legacy.application_uuid, None);
-    assert_eq!(legacy.last_saved_as_goo, None);
-    assert_eq!(legacy.archive_version, None);
-    assert_eq!(legacy.writer_version, None);
+    let crate::objects::UserdataDescriptor::Known {
+        version,
+        copy_count,
+        application_uuid,
+        last_saved_as_goo,
+        archive_version,
+        writer_version,
+        ..
+    } = legacy
+    else {
+        panic!("expected known userdata");
+    };
+    assert_eq!(*version, (1, 0));
+    assert_eq!(*copy_count, 2);
+    assert_eq!(*application_uuid, None);
+    assert_eq!(*last_saved_as_goo, None);
+    assert_eq!(*archive_version, None);
+    assert_eq!(*writer_version, None);
 }

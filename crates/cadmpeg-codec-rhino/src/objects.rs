@@ -42,50 +42,156 @@ const IDEF_OBJECT_MODE: u8 = 3;
 
 /// A class-userdata descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct UserdataDescriptor {
-    /// Complete wrapper range.
-    pub(crate) range: Range<usize>,
-    /// Packed wrapper version.
-    pub(crate) version: (u8, u8),
-    /// Userdata class UUID.
-    pub(crate) class_uuid: Uuid,
-    /// Userdata item UUID.
-    pub(crate) item_uuid: Uuid,
-    /// Copy count.
-    pub(crate) copy_count: i32,
-    /// Transform byte range.
-    pub(crate) transform_range: Range<usize>,
-    /// Optional application UUID.
-    pub(crate) application_uuid: Option<Uuid>,
-    /// Optional last-saved-as-goo flag.
-    pub(crate) last_saved_as_goo: Option<bool>,
-    /// Optional userdata archive version.
-    pub(crate) archive_version: Option<i32>,
-    /// Optional userdata writer version.
-    pub(crate) writer_version: Option<i32>,
-    /// Anonymous payload range, excluding its framing.
-    pub(crate) payload_range: Range<usize>,
-    /// Unknown future-version payload range.
-    pub(crate) unknown_version: bool,
+pub(crate) enum UserdataDescriptor {
+    /// Recognized class-userdata framing.
+    Known {
+        /// Complete wrapper range.
+        range: Range<usize>,
+        /// Packed wrapper version.
+        version: (u8, u8),
+        /// Userdata class UUID.
+        class_uuid: Uuid,
+        /// Userdata item UUID.
+        item_uuid: Uuid,
+        /// Copy count.
+        copy_count: i32,
+        /// Transform byte range.
+        transform_range: Range<usize>,
+        /// Optional application UUID.
+        application_uuid: Option<Uuid>,
+        /// Optional last-saved-as-goo flag.
+        last_saved_as_goo: Option<bool>,
+        /// Optional userdata archive version.
+        archive_version: Option<i32>,
+        /// Optional userdata writer version.
+        writer_version: Option<i32>,
+        /// Anonymous payload range, excluding its framing.
+        payload_range: Range<usize>,
+    },
+    /// Future-version payload retained as an opaque range.
+    UnknownVersion {
+        /// Complete wrapper range.
+        range: Range<usize>,
+        /// Packed wrapper version.
+        version: (u8, u8),
+        /// Unknown future-version payload range.
+        payload_range: Range<usize>,
+    },
+}
+
+impl UserdataDescriptor {
+    pub(crate) fn range(&self) -> Range<usize> {
+        match self {
+            Self::Known { range, .. } | Self::UnknownVersion { range, .. } => range.clone(),
+        }
+    }
+
+    pub(crate) fn payload_range(&self) -> Range<usize> {
+        match self {
+            Self::Known { payload_range, .. } | Self::UnknownVersion { payload_range, .. } => {
+                payload_range.clone()
+            }
+        }
+    }
+
+    pub(crate) fn class_uuid(&self) -> Uuid {
+        match self {
+            Self::Known { class_uuid, .. } => *class_uuid,
+            Self::UnknownVersion { .. } => Uuid::nil(),
+        }
+    }
+
+    pub(crate) fn item_uuid(&self) -> Uuid {
+        match self {
+            Self::Known { item_uuid, .. } => *item_uuid,
+            Self::UnknownVersion { .. } => Uuid::nil(),
+        }
+    }
+
+    pub(crate) fn application_uuid(&self) -> Option<Uuid> {
+        match self {
+            Self::Known {
+                application_uuid, ..
+            } => *application_uuid,
+            Self::UnknownVersion { .. } => None,
+        }
+    }
+
+    pub(crate) fn transform_range(&self) -> Range<usize> {
+        match self {
+            Self::Known {
+                transform_range, ..
+            } => transform_range.clone(),
+            Self::UnknownVersion { .. } => 0..0,
+        }
+    }
 }
 
 /// An attribute-userdata record, retained independently of object attributes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AttributeUserdataDescriptor {
-    /// Complete userdata chunk range.
-    pub(crate) range: Range<usize>,
-    /// Whether the class-userdata framing was recognized.
-    pub(crate) known: bool,
-    /// Userdata class UUID when the framing supplied one.
-    pub(crate) class_uuid: Option<Uuid>,
-    /// Userdata item UUID when the framing supplied one.
-    pub(crate) item_uuid: Option<Uuid>,
-    /// Userdata application UUID from a major-2 minor-1 header.
-    pub(crate) application_uuid: Option<Uuid>,
-    /// Userdata writer version from a major-2 header.
-    pub(crate) writer_version: Option<i64>,
-    /// Bounded anonymous payload range.
-    pub(crate) payload_range: Option<Range<usize>>,
+pub(crate) enum AttributeUserdataDescriptor {
+    /// Unrecognized or short attribute-userdata chunk.
+    Unknown {
+        /// Complete userdata chunk range.
+        range: Range<usize>,
+    },
+    /// Recognized class-userdata framing.
+    Known {
+        /// Complete userdata chunk range.
+        range: Range<usize>,
+        /// Userdata class UUID.
+        class_uuid: Uuid,
+        /// Userdata item UUID.
+        item_uuid: Uuid,
+        /// Userdata application UUID from a major-2 minor-1 header.
+        application_uuid: Option<Uuid>,
+        /// Userdata writer version from a major-2 header.
+        writer_version: Option<i64>,
+        /// Bounded anonymous payload range.
+        payload_range: Range<usize>,
+    },
+}
+
+impl AttributeUserdataDescriptor {
+    pub(crate) fn range(&self) -> Range<usize> {
+        match self {
+            Self::Unknown { range } | Self::Known { range, .. } => range.clone(),
+        }
+    }
+
+    pub(crate) fn is_known(&self) -> bool {
+        matches!(self, Self::Known { .. })
+    }
+
+    pub(crate) fn class_uuid(&self) -> Option<Uuid> {
+        match self {
+            Self::Known { class_uuid, .. } => Some(*class_uuid),
+            Self::Unknown { .. } => None,
+        }
+    }
+
+    pub(crate) fn item_uuid(&self) -> Option<Uuid> {
+        match self {
+            Self::Known { item_uuid, .. } => Some(*item_uuid),
+            Self::Unknown { .. } => None,
+        }
+    }
+
+    pub(crate) fn payload_range(&self) -> Option<Range<usize>> {
+        match self {
+            Self::Known { payload_range, .. } => Some(payload_range.clone()),
+            Self::Unknown { .. } => None,
+        }
+    }
+
+    pub(crate) fn application_uuid(&self) -> Option<Uuid> {
+        match self {
+            Self::Known {
+                application_uuid, ..
+            } => *application_uuid,
+            Self::Unknown { .. } => None,
+        }
+    }
 }
 
 /// Raw object attributes decoded from an object-attributes chunk.
@@ -486,7 +592,7 @@ pub(crate) fn parse_userdata(
         if let Some(note) = checksum_warning_excluding(bytes, wrapper, &[payload.range()])? {
             warnings.push(note);
         }
-        return Ok(UserdataDescriptor {
+        return Ok(UserdataDescriptor::Known {
             range: chunk_range(wrapper),
             version,
             class_uuid,
@@ -498,23 +604,13 @@ pub(crate) fn parse_userdata(
             archive_version: None,
             writer_version: None,
             payload_range: payload.body,
-            unknown_version: false,
         });
     }
     if version.0 != 2 {
-        return Ok(UserdataDescriptor {
+        return Ok(UserdataDescriptor::UnknownVersion {
             range: chunk_range(wrapper),
             version,
-            class_uuid: Uuid::nil(),
-            item_uuid: Uuid::nil(),
-            copy_count: 0,
-            transform_range: 0..0,
-            application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
             payload_range: wrapper.body.clone(),
-            unknown_version: true,
         });
     }
     let header = child(bytes, reader.position(), wrapper.body.end, archive, false)?;
@@ -556,7 +652,7 @@ pub(crate) fn parse_userdata(
     {
         warnings.push(note);
     }
-    Ok(UserdataDescriptor {
+    Ok(UserdataDescriptor::Known {
         range: chunk_range(wrapper),
         version,
         class_uuid,
@@ -568,7 +664,6 @@ pub(crate) fn parse_userdata(
         archive_version,
         writer_version,
         payload_range: payload.body,
-        unknown_version: false,
     })
 }
 
@@ -1141,34 +1236,30 @@ pub(crate) fn parse_attribute_userdata(
                 "unknown attribute userdata chunk {:#x} at {}",
                 item.typecode, item.header_start
             ));
-            result.push(AttributeUserdataDescriptor {
+            result.push(AttributeUserdataDescriptor::Unknown {
                 range: item.range(),
-                known: false,
-                class_uuid: None,
-                item_uuid: None,
-                application_uuid: None,
-                writer_version: None,
-                payload_range: None,
             });
         } else {
             match parse_userdata(bytes, &item, archive, warnings) {
-                Ok(value) => result.push(AttributeUserdataDescriptor {
-                    range: value.range,
-                    known: !value.unknown_version,
-                    class_uuid: (!value.unknown_version).then_some(value.class_uuid),
-                    item_uuid: (!value.unknown_version).then_some(value.item_uuid),
-                    application_uuid: (!value.unknown_version)
-                        .then_some(value.application_uuid)
-                        .flatten(),
-                    writer_version: (!value.unknown_version)
-                        .then_some(
-                            value
-                                .writer_version
-                                .map(|version| i64::from(version as u32)),
-                        )
-                        .flatten(),
-                    payload_range: (!value.unknown_version).then_some(value.payload_range),
+                Ok(UserdataDescriptor::Known {
+                    range,
+                    class_uuid,
+                    item_uuid,
+                    application_uuid,
+                    writer_version,
+                    payload_range,
+                    ..
+                }) => result.push(AttributeUserdataDescriptor::Known {
+                    range,
+                    class_uuid,
+                    item_uuid,
+                    application_uuid,
+                    writer_version: writer_version.map(|version| i64::from(version as u32)),
+                    payload_range,
                 }),
+                Ok(UserdataDescriptor::UnknownVersion { range, .. }) => {
+                    result.push(AttributeUserdataDescriptor::Unknown { range });
+                }
                 Err(error) => warnings.push(format!(
                     "attribute userdata at {} degraded: {error}",
                     item.header_start
@@ -1203,20 +1294,23 @@ fn parse_obsolete_custom_mesh_userdata(
     warnings: &mut Vec<String>,
 ) -> Option<settings::MeshParameters> {
     let descriptor = descriptors.iter().find(|descriptor| {
-        descriptor.class_uuid == Some(OBSOLETE_CUSTOM_MESH_USERDATA)
-            && descriptor.item_uuid == Some(OBSOLETE_CUSTOM_MESH_USERDATA)
+        descriptor.class_uuid() == Some(OBSOLETE_CUSTOM_MESH_USERDATA)
+            && descriptor.item_uuid() == Some(OBSOLETE_CUSTOM_MESH_USERDATA)
     })?;
-    let Some(payload_range) = descriptor.payload_range.clone() else {
+    let Some(payload_range) = descriptor.payload_range().clone() else {
         warnings.push(format!(
             "obsolete custom mesh userdata at {} has no bounded payload",
-            descriptor.range.start
+            descriptor.range().start
         ));
         return None;
     };
     let parsed = (|| {
         let mut reader = BoundedReader::new(bytes, payload_range.start, payload_range.end)?;
         let _legacy_value = reader.i32()?;
-        let in_use = reader.bool_with_writer_version(descriptor.writer_version)?;
+        let in_use = reader.bool_with_writer_version(match descriptor {
+            AttributeUserdataDescriptor::Known { writer_version, .. } => *writer_version,
+            AttributeUserdataDescriptor::Unknown { .. } => None,
+        })?;
         let mut mesh = settings::parse_mesh_parameters(bytes, &mut reader, archive, true)?;
         reader.skip_remaining()?;
 
@@ -1232,7 +1326,7 @@ fn parse_obsolete_custom_mesh_userdata(
         Err(error) => {
             warnings.push(format!(
                 "obsolete custom mesh userdata at {} dropped: {error}",
-                descriptor.range.start
+                descriptor.range().start
             ));
             None
         }
@@ -1246,13 +1340,13 @@ fn parse_per_object_mesh_userdata(
     warnings: &mut Vec<String>,
 ) -> Option<settings::MeshParameters> {
     let descriptor = descriptors.iter().find(|descriptor| {
-        descriptor.class_uuid == Some(PER_OBJECT_MESH_PARAMETERS_USERDATA)
-            && descriptor.item_uuid == Some(PER_OBJECT_MESH_PARAMETERS_USERDATA)
+        descriptor.class_uuid() == Some(PER_OBJECT_MESH_PARAMETERS_USERDATA)
+            && descriptor.item_uuid() == Some(PER_OBJECT_MESH_PARAMETERS_USERDATA)
     })?;
-    let Some(payload_range) = descriptor.payload_range.clone() else {
+    let Some(payload_range) = descriptor.payload_range().clone() else {
         warnings.push(format!(
             "per-object mesh userdata at {} has no bounded payload",
-            descriptor.range.start
+            descriptor.range().start
         ));
         return None;
     };
@@ -1304,7 +1398,7 @@ fn parse_per_object_mesh_userdata(
         Err(error) => {
             warnings.push(format!(
                 "per-object mesh userdata at {} dropped: {error}",
-                descriptor.range.start
+                descriptor.range().start
             ));
             None
         }

@@ -258,8 +258,8 @@ pub(crate) fn decode_mesh_proxy(
 ) -> Result<Option<DecodedSubd>, SubdError> {
     let outer = chunk_at(
         data,
-        extra.payload_range.start,
-        extra.payload_range.end,
+        extra.payload_range().start,
+        extra.payload_range().end,
         archive,
         false,
     )?;
@@ -293,7 +293,7 @@ pub(crate) fn decode_mesh_proxy(
     let vertex_sha1 = read_proxy_sha1(&mut reader, archive)?;
     reader.skip_remaining()?;
 
-    let transform_is_identity = identity_userdata_transform(data, &extra.transform_range)?;
+    let transform_is_identity = identity_userdata_transform(data, &extra.transform_range())?;
     let counts_match = usize::try_from(face_count).ok() == Some(fingerprint.face_count)
         && usize::try_from(vertex_count).ok() == Some(fingerprint.vertex_count);
     let hashes_match = face_sha1 == fingerprint.face_sha1 && vertex_sha1 == fingerprint.vertex_sha1;

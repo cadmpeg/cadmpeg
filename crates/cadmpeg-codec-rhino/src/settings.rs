@@ -753,8 +753,8 @@ fn parse_layer_extensions(
 ) -> Result<Vec<LayerPerViewportSettings>, FramingError> {
     let outer = chunk_at(
         data,
-        descriptor.payload_range.start,
-        descriptor.payload_range.end,
+        descriptor.payload_range().start,
+        descriptor.payload_range().end,
         archive,
         false,
     )?;
@@ -2249,7 +2249,7 @@ fn parse_layer(
     };
     let mut userdata_degraded = false;
     if let Some(descriptor) = userdata.iter().find(|descriptor| {
-        descriptor.class_uuid == LAYER_EXTENSIONS && descriptor.item_uuid == LAYER_EXTENSIONS
+        descriptor.class_uuid() == LAYER_EXTENSIONS && descriptor.item_uuid() == LAYER_EXTENSIONS
     }) {
         match parse_layer_extensions(data, descriptor, archive, layer.parent_id) {
             Ok(settings) => layer.per_viewport_settings = settings,
@@ -2257,7 +2257,7 @@ fn parse_layer(
                 userdata_degraded = true;
                 warnings.push(format!(
                     "layer per-viewport userdata at offset {} could not be transferred: {error}",
-                    descriptor.range.start
+                    descriptor.range().start
                 ));
             }
         }
