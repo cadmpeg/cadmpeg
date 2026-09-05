@@ -1142,8 +1142,129 @@ pub struct GuiPropertyRecord {
     pub byte_end: u64,
 }
 
+/// ZIP physical-ledger role stored on one archive span.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArchiveSpanRole {
+    /// ZIP local-header signature for the named entry.
+    LocalSignature(String),
+    /// ZIP local-header fields for the named entry.
+    LocalFields(String),
+    /// ZIP local-header name for the named entry.
+    LocalName(String),
+    /// ZIP local-header extra data for the named entry.
+    LocalExtra(String),
+    /// ZIP compressed payload for the named entry.
+    CompressedPayload(String),
+    /// ZIP data descriptor for the named entry.
+    DataDescriptor(String),
+    /// ZIP padding following the named entry.
+    EntryArchivePadding(String),
+    /// ZIP central-header signature for the named entry.
+    CentralSignature(String),
+    /// ZIP central-header fields for the named entry.
+    CentralFields(String),
+    /// ZIP central-header name for the named entry.
+    CentralName(String),
+    /// ZIP central-header extra data for the named entry.
+    CentralExtra(String),
+    /// ZIP central-header comment for the named entry.
+    CentralComment(String),
+    /// ZIP64 end-of-central-directory record.
+    Zip64EndRecord,
+    /// ZIP64 end-of-central-directory locator.
+    Zip64EndLocator,
+    /// ZIP end-of-central-directory record.
+    EndRecord,
+    /// ZIP padding not owned by an entry.
+    ArchivePadding,
+}
+
+impl ArchiveSpanRole {
+    /// Stable physical-ledger label retained on the CADIR wire.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::LocalSignature(_) => "local-signature",
+            Self::LocalFields(_) => "local-fields",
+            Self::LocalName(_) => "local-name",
+            Self::LocalExtra(_) => "local-extra",
+            Self::CompressedPayload(_) => "compressed-payload",
+            Self::DataDescriptor(_) => "data-descriptor",
+            Self::EntryArchivePadding(_) | Self::ArchivePadding => "archive-padding",
+            Self::CentralSignature(_) => "central-signature",
+            Self::CentralFields(_) => "central-fields",
+            Self::CentralName(_) => "central-name",
+            Self::CentralExtra(_) => "central-extra",
+            Self::CentralComment(_) => "central-comment",
+            Self::Zip64EndRecord => "zip64-end-record",
+            Self::Zip64EndLocator => "zip64-end-locator",
+            Self::EndRecord => "end-record",
+        }
+    }
+
+    /// Owning entry, when the role is entry-owned.
+    pub fn entry(&self) -> Option<&str> {
+        match self {
+            Self::LocalSignature(entry)
+            | Self::LocalFields(entry)
+            | Self::LocalName(entry)
+            | Self::LocalExtra(entry)
+            | Self::CompressedPayload(entry)
+            | Self::DataDescriptor(entry)
+            | Self::EntryArchivePadding(entry)
+            | Self::CentralSignature(entry)
+            | Self::CentralFields(entry)
+            | Self::CentralName(entry)
+            | Self::CentralExtra(entry)
+            | Self::CentralComment(entry) => Some(entry),
+            Self::Zip64EndRecord
+            | Self::Zip64EndLocator
+            | Self::EndRecord
+            | Self::ArchivePadding => None,
+        }
+    }
+
+    pub(crate) fn from_label(label: &str, entry: Option<String>) -> Result<Self, String> {
+        let named = |entry: Option<String>, ctor: fn(String) -> Self| {
+            entry
+                .map(ctor)
+                .ok_or_else(|| format!("archive span role {label} requires an owning entry"))
+        };
+        let unit = |entry: Option<String>, role: Self| {
+            if entry.is_some() {
+                Err(format!(
+                    "archive span role {label} cannot carry an owning entry"
+                ))
+            } else {
+                Ok(role)
+            }
+        };
+        match label {
+            "local-signature" => named(entry, Self::LocalSignature),
+            "local-fields" => named(entry, Self::LocalFields),
+            "local-name" => named(entry, Self::LocalName),
+            "local-extra" => named(entry, Self::LocalExtra),
+            "compressed-payload" => named(entry, Self::CompressedPayload),
+            "data-descriptor" => named(entry, Self::DataDescriptor),
+            "archive-padding" => match entry {
+                Some(entry) => Ok(Self::EntryArchivePadding(entry)),
+                None => Ok(Self::ArchivePadding),
+            },
+            "central-signature" => named(entry, Self::CentralSignature),
+            "central-fields" => named(entry, Self::CentralFields),
+            "central-name" => named(entry, Self::CentralName),
+            "central-extra" => named(entry, Self::CentralExtra),
+            "central-comment" => named(entry, Self::CentralComment),
+            "zip64-end-record" => unit(entry, Self::Zip64EndRecord),
+            "zip64-end-locator" => unit(entry, Self::Zip64EndLocator),
+            "end-record" => unit(entry, Self::EndRecord),
+            _ => Err(format!("unknown archive span role {label}")),
+        }
+    }
+}
+
 /// One physical archive span.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "ArchiveSpanWire", into = "ArchiveSpanWire")]
 pub struct ArchiveSpan {
     /// Stable span identity.
     pub id: String,
@@ -1152,9 +1273,41 @@ pub struct ArchiveSpan {
     /// Exclusive byte offset.
     pub end: u64,
     /// Structural role.
-    pub role: String,
-    /// Owning entry, when applicable.
-    pub entry: Option<String>,
+    pub role: ArchiveSpanRole,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ArchiveSpanWire {
+    id: String,
+    start: u64,
+    end: u64,
+    role: String,
+    entry: Option<String>,
+}
+
+impl From<ArchiveSpan> for ArchiveSpanWire {
+    fn from(value: ArchiveSpan) -> Self {
+        Self {
+            id: value.id,
+            start: value.start,
+            end: value.end,
+            role: value.role.as_str().to_owned(),
+            entry: value.role.entry().map(str::to_owned),
+        }
+    }
+}
+
+impl TryFrom<ArchiveSpanWire> for ArchiveSpan {
+    type Error = String;
+
+    fn try_from(wire: ArchiveSpanWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            start: wire.start,
+            end: wire.end,
+            role: ArchiveSpanRole::from_label(&wire.role, wire.entry)?,
+        })
+    }
 }
 
 /// Metadata read from the persistence document.

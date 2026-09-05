@@ -89,14 +89,19 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
         .physical_ledger()?
         .into_iter()
         .enumerate()
-        .map(|(index, span)| ArchiveSpan {
-            id: crate::native::native_id("archive-span", index.to_string()),
-            start: span.start,
-            end: span.end,
-            role: span.role.label().into(),
-            entry: span.role.entry().map(str::to_owned),
+        .map(|(index, span)| {
+            Ok(ArchiveSpan {
+                id: crate::native::native_id("archive-span", index.to_string()),
+                start: span.start,
+                end: span.end,
+                role: crate::native::ArchiveSpanRole::from_label(
+                    span.role.label(),
+                    span.role.entry().map(str::to_owned),
+                )
+                .map_err(CodecError::malformed)?,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     Ok(Scan {
         entries: archive.container_entries(classify),
         document,
