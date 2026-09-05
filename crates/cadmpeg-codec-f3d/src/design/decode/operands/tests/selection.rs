@@ -505,8 +505,6 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_frame: None,
-        joint_origin_reference: None,
-        joint_origin_reference_offset: None,
         work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
         hole_construction: None,
