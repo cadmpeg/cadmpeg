@@ -15,9 +15,9 @@ use std::io::{Cursor, Write};
 
 use crate::records::{DesignBodyBinding, DesignMaterialAssignment};
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::CodecError;
 use cadmpeg_core::bytes::find_from;
-use cadmpeg_core::decode::{DecodeContext, View, bounded_len};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
 };
@@ -30,8 +30,8 @@ use cadmpeg_protein::{
 use crate::bytes::{is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, take_lp_utf8};
 use crate::container::ContainerScan;
 use crate::design::presentation::{
-    APPEARANCE_LIBRARY_ID, GUID_LEN, MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
-    visual_token,
+    visual_token, APPEARANCE_LIBRARY_ID, GUID_LEN,
+    MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
 };
 /// The `AssetLibID` [`encode_protein`] writes for an appearance that names no
 /// library. A stored library identifier is a library GUID or a library path;
@@ -311,7 +311,10 @@ fn patch_instance_colors(
                     .properties
                     .get(property_id)
                     .filter(|property| {
-                        matches!(&property.value, cadmpeg_protein::PropertyValue::Color(_))
+                        matches!(
+                            property.value(),
+                            Some(cadmpeg_protein::property::PropertyValue::Color(_))
+                        )
                     })
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!(
@@ -366,7 +369,10 @@ fn patch_instance_colors(
                     .properties
                     .get(property_id)
                     .filter(|property| {
-                        matches!(&property.value, cadmpeg_protein::PropertyValue::Float(_))
+                        matches!(
+                            property.value(),
+                            Some(cadmpeg_protein::property::PropertyValue::Float(_))
+                        )
                     })
                     .map(|property| property.value_offset)
                     .ok_or_else(|| {
@@ -684,10 +690,12 @@ fn appearances_from_schema_records(
             let mut properties = BTreeMap::new();
             let mut connected = Vec::new();
             for (id, property) in &record.properties {
-                if let cadmpeg_protein::PropertyValue::Float(value) = property.value {
-                    properties.insert(neutral_property_name(id).to_owned(), value);
+                if let Some(cadmpeg_protein::property::PropertyValue::Float(value)) =
+                    property.value()
+                {
+                    properties.insert(neutral_property_name(id).to_owned(), *value);
                 }
-                for guid in &property.connections {
+                for guid in property.connections() {
                     if let Some(texture) = textures.get(guid) {
                         connected.push(texture.clone().into_ref(id.clone()));
                     }
@@ -733,8 +741,8 @@ fn appearance_base_color_property_id(
         record
             .properties
             .get("common_Tint_toggle")
-            .map(|property| &property.value),
-        Some(cadmpeg_protein::PropertyValue::Boolean(true))
+            .and_then(|property| property.value()),
+        Some(cadmpeg_protein::property::PropertyValue::Boolean(true))
     ) {
         return Some("common_Tint_color");
     }
@@ -757,8 +765,11 @@ fn appearance_base_color_property_id(
 }
 
 fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<Color> {
-    let cadmpeg_protein::PropertyValue::Color([r, g, b, a]) =
-        record.properties.get(id).map(|property| &property.value)?
+    let cadmpeg_protein::property::PropertyValue::Color([r, g, b, a]) =
+        record
+            .properties
+            .get(id)
+            .and_then(|property| property.value())?
     else {
         return None;
     };
@@ -813,18 +824,22 @@ fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> (Option<TextureAsse
         .iter()
         .find_map(|(id, property)| {
             (id.ends_with("_Bitmap"))
-                .then_some(&property.value)
+                .then(|| property.value())
+                .flatten()
                 .and_then(|value| match value {
-                    cadmpeg_protein::PropertyValue::TextureUri(paths) => Some(paths.clone()),
+                    cadmpeg_protein::property::PropertyValue::TextureUri(paths) => {
+                        Some(paths.clone())
+                    }
                     _ => None,
                 })
         })
         .unwrap_or_default();
     let urn = record.properties.iter().find_map(|(id, property)| {
         (id.ends_with("_Bitmap_urn"))
-            .then_some(&property.value)
+            .then(|| property.value())
+            .flatten()
             .and_then(|value| match value {
-                cadmpeg_protein::PropertyValue::String(value) if !value.is_empty() => {
+                cadmpeg_protein::property::PropertyValue::String(value) if !value.is_empty() => {
                     Some(value.clone())
                 }
                 _ => None,
@@ -876,13 +891,13 @@ fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> (Option<TextureAsse
 fn property_with_suffix<'a>(
     record: &'a cadmpeg_protein::DecodedRecord,
     suffix: &str,
-) -> Option<&'a cadmpeg_protein::PropertyValue> {
+) -> Option<&'a cadmpeg_protein::property::PropertyValue> {
     let qualified_suffix = format!("_{suffix}");
     record
         .properties
         .iter()
         .find(|(id, _)| *id == suffix || id.ends_with(&qualified_suffix))
-        .map(|(_, property)| &property.value)
+        .and_then(|(_, property)| property.value())
 }
 
 fn neutral_property_name(id: &str) -> &str {
@@ -899,21 +914,21 @@ fn is_physical_schema(schema: &str) -> bool {
 
 fn integer_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<u32> {
     match property_with_suffix(record, suffix)? {
-        cadmpeg_protein::PropertyValue::Integer(value) => Some(*value),
+        cadmpeg_protein::property::PropertyValue::Integer(value) => Some(*value),
         _ => None,
     }
 }
 
 fn float_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<f64> {
     match property_with_suffix(record, suffix)? {
-        cadmpeg_protein::PropertyValue::Float(value) => Some(*value),
+        cadmpeg_protein::property::PropertyValue::Float(value) => Some(*value),
         _ => None,
     }
 }
 
 fn boolean_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<bool> {
     match property_with_suffix(record, suffix)? {
-        cadmpeg_protein::PropertyValue::Boolean(value) => Some(*value),
+        cadmpeg_protein::property::PropertyValue::Boolean(value) => Some(*value),
         _ => None,
     }
 }
@@ -922,7 +937,7 @@ fn distance_property(
     record: &cadmpeg_protein::DecodedRecord,
     suffix: &str,
 ) -> Result<Option<f64>, u32> {
-    let Some(cadmpeg_protein::PropertyValue::Distance { unit, value }) =
+    let Some(cadmpeg_protein::property::PropertyValue::Distance { unit, value }) =
         property_with_suffix(record, suffix)
     else {
         return Ok(None);
