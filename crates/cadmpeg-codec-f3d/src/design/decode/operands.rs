@@ -541,7 +541,8 @@ pub fn bind_edge_treatment_vertex_candidates(
 
 /// Whether a feature family owns edge-recipe operands directly or through a
 /// counted construction-operand group.
-pub(crate) fn has_edge_recipe_operands(kind: &str) -> bool {
+pub(crate) fn has_edge_recipe_operands(kind: impl AsRef<str>) -> bool {
+    let kind = kind.as_ref();
     matches!(
         design_feature_family(kind),
         Some(
@@ -561,7 +562,8 @@ pub(crate) fn has_edge_recipe_operands(kind: &str) -> bool {
 
 /// Indexed-record distance from an edge-recipe primary record to its terminal
 /// record for the owning consumer.
-pub(crate) fn edge_recipe_terminal_delta(kind: &str) -> u32 {
+pub(crate) fn edge_recipe_terminal_delta(kind: impl AsRef<str>) -> u32 {
+    let kind = kind.as_ref();
     match design_feature_family(kind) {
         Some(DesignFeatureFamily::Sweep) => 7,
         _ if kind == "WorkPoint" => 5,
@@ -5055,7 +5057,7 @@ pub(crate) fn parse_face_operand(
     })
 }
 
-pub(crate) fn has_typed_edge_treatment_group(kind: &str) -> bool {
+pub(crate) fn has_typed_edge_treatment_group(kind: impl AsRef<str>) -> bool {
     matches!(
         design_feature_family(kind),
         Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)

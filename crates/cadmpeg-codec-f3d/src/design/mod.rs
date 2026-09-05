@@ -64,8 +64,8 @@ pub(crate) enum DesignFeatureFamily {
 
 /// Return the canonical operation family while preserving `kind` verbatim on
 /// the native scope. Fusion serializes this field through its UI localization.
-pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
-    match kind {
+pub(crate) fn design_feature_family(kind: impl AsRef<str>) -> Option<DesignFeatureFamily> {
+    match kind.as_ref() {
         "Sketch" | "Esquisse" | "Skizze" | "Esboço" => Some(DesignFeatureFamily::Sketch),
         "Assemble" | "As-built" => Some(DesignFeatureFamily::Assemble),
         "Extrude" | "Extrusion" | "Extrusão" => Some(DesignFeatureFamily::Extrude),
