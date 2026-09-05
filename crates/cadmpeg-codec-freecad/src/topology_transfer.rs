@@ -226,23 +226,33 @@ impl<'a> Builder<'a> {
                 continue;
             };
             for (representation_index, representation) in representations.iter().enumerate() {
-                if !matches!(representation.kind, 2 | 3) {
-                    continue;
-                }
-                let parameter_affine = representation
-                    .surface
-                    .and_then(|surface| self.tables.surfaces.get(surface - 1))
+                let (primary, secondary, surface, parameter_range) = match representation {
+                    TextEdgeRepresentation::Pcurve {
+                        curve,
+                        surface,
+                        parameter_range,
+                        ..
+                    } => (*curve, None, *surface, *parameter_range),
+                    TextEdgeRepresentation::PcurvePair {
+                        curves,
+                        surface,
+                        parameter_range,
+                        ..
+                    } => (curves[0], Some(curves[1]), *surface, *parameter_range),
+                    _ => continue,
+                };
+                let parameter_affine = self
+                    .tables
+                    .surfaces
+                    .get(surface - 1)
                     .map(surface_parameter_affine);
-                let Some(primary_geometry) =
-                    pcurve_geometry(&self.tables.curve2ds[representation.primary - 1])
-                        .map(|geometry| transformed_pcurve_geometry(geometry, parameter_affine))
+                let Some(primary_geometry) = pcurve_geometry(&self.tables.curve2ds[primary - 1])
+                    .map(|geometry| transformed_pcurve_geometry(geometry, parameter_affine))
                 else {
                     continue;
                 };
-                let primary_range = normalize_pcurve_parameter_range(
-                    &primary_geometry,
-                    representation.parameter_range,
-                );
+                let primary_range =
+                    normalize_pcurve_parameter_range(&primary_geometry, Some(parameter_range));
                 ir.model.pcurves.push(Pcurve {
                     id: self.pcurve_id(shape.index, representation_index, false),
                     geometry: primary_geometry,
@@ -252,7 +262,7 @@ impl<'a> Builder<'a> {
                         None,
                     ),
                 });
-                if let Some(secondary) = representation.secondary {
+                if let Some(secondary) = secondary {
                     let Some(secondary_geometry) =
                         pcurve_geometry(&self.tables.curve2ds[secondary - 1]).map(|geometry| {
                             transformed_pcurve_geometry(geometry, parameter_affine)
@@ -262,7 +272,7 @@ impl<'a> Builder<'a> {
                     };
                     let secondary_range = normalize_pcurve_parameter_range(
                         &secondary_geometry,
-                        representation.parameter_range,
+                        Some(parameter_range),
                     );
                     ir.model.pcurves.push(Pcurve {
                         id: self.pcurve_id(shape.index, representation_index, true),
@@ -368,9 +378,9 @@ impl<'a> Builder<'a> {
                 unreachable!("edge kind and geometry must agree")
             };
             if !degenerated
-                && !representations
-                    .iter()
-                    .any(|representation| representation.kind == 1)
+                && !representations.iter().any(|representation| {
+                    matches!(representation, TextEdgeRepresentation::Curve3d { .. })
+                })
             {
                 return Err(CodecError::malformed(format_args!(
                     "unbounded edge TShape {} has no exact curve",
@@ -932,17 +942,22 @@ impl<'a> Builder<'a> {
         };
         let curve = if degenerated {
             None
-        } else if let Some((_, representation)) = curve_representation {
-            let carrier_transform =
-                transform.compose(self.tables.location(representation.location));
-            Some(self.located_curve(ir, representation.primary, carrier_transform)?)
+        } else if let Some((
+            _,
+            TextEdgeRepresentation::Curve3d {
+                curve, location, ..
+            },
+        )) = curve_representation
+        {
+            let carrier_transform = transform.compose(self.tables.location(*location));
+            Some(self.located_curve(ir, *curve, carrier_transform)?)
         } else if let Some((ordinal, representation)) = polygon_representation {
             Some(self.polygon_curve(ir, &id, ordinal, representation, transform)?)
         } else {
             None
         };
         let param_range = curve_representation
-            .and_then(|(_, representation)| representation.parameter_range)
+            .and_then(|(_, representation)| representation.parameter_range())
             .or_else(|| {
                 polygon_representation.and_then(|(_, representation)| {
                     self.polygon_parameters(representation)
@@ -976,18 +991,27 @@ impl<'a> Builder<'a> {
         representation: &TextEdgeRepresentation,
         transform: Transform,
     ) -> Result<CurveId, CodecError> {
-        let carrier_transform = transform.compose(self.tables.location(representation.location));
+        let carrier_transform = transform.compose(self.tables.location(representation.location()));
         let scale = similarity(carrier_transform)?.scale;
-        let (points, parameters, deflection) = match representation.kind {
-            5 => {
-                let polygon = &self.tables.polygons3d[representation.primary - 1];
+        let (points, parameters, deflection) = match representation {
+            TextEdgeRepresentation::Polygon3d { polygon, .. } => {
+                let polygon = &self.tables.polygons3d[polygon - 1];
                 (
                     polygon.nodes.clone(),
                     polygon.parameters.clone(),
                     polygon.deflection,
                 )
             }
-            6 | 7 => self.indexed_polygon(representation.primary, representation)?,
+            TextEdgeRepresentation::PolygonOnTriangulation {
+                polygon,
+                triangulation,
+                ..
+            } => self.indexed_polygon(*polygon, *triangulation)?,
+            TextEdgeRepresentation::PolygonPair {
+                polygons,
+                triangulation,
+                ..
+            } => self.indexed_polygon(polygons[0], *triangulation)?,
             _ => {
                 return Err(CodecError::Malformed(
                     "non-polygon edge representation reached polygon transfer".into(),
@@ -1011,27 +1035,30 @@ impl<'a> Builder<'a> {
             ),
             source_object: Some(self.source_association()),
         });
-        if representation.kind == 7 {
-            if let Some(secondary) = representation.secondary {
-                let (points, parameters, deflection) =
-                    self.indexed_polygon(secondary, representation)?;
-                ir.model.curves.push(Curve {
-                    id: CurveId::mint(format!("{}:polygon:{}:secondary", edge.0, ordinal + 1))
-                        .expect("identity grammar"),
-                    geometry: CurveGeometry::Polyline(
-                        PolylineCurve::new(
-                            points
-                                .iter()
-                                .map(|point| carrier_transform.apply_point(*point))
-                                .collect(),
-                            parameters,
-                            deflection * scale,
-                        )
-                        .map_err(|error| CodecError::Malformed(error.to_string()))?,
-                    ),
-                    source_object: Some(self.source_association()),
-                });
-            }
+        if let TextEdgeRepresentation::PolygonPair {
+            polygons,
+            triangulation,
+            ..
+        } = representation
+        {
+            let (points, parameters, deflection) =
+                self.indexed_polygon(polygons[1], *triangulation)?;
+            ir.model.curves.push(Curve {
+                id: CurveId::mint(format!("{}:polygon:{}:secondary", edge.0, ordinal + 1))
+                    .expect("identity grammar"),
+                geometry: CurveGeometry::Polyline(
+                    PolylineCurve::new(
+                        points
+                            .iter()
+                            .map(|point| carrier_transform.apply_point(*point))
+                            .collect(),
+                        parameters,
+                        deflection * scale,
+                    )
+                    .map_err(|error| CodecError::Malformed(error.to_string()))?,
+                ),
+                source_object: Some(self.source_association()),
+            });
         }
         Ok(id)
     }
@@ -1039,12 +1066,9 @@ impl<'a> Builder<'a> {
     fn indexed_polygon(
         &self,
         index: usize,
-        representation: &TextEdgeRepresentation,
+        triangulation_index: usize,
     ) -> Result<IndexedPolygon, CodecError> {
         let polygon = &self.tables.polygons_on_triangulations[index - 1];
-        let triangulation_index = representation.surface.ok_or_else(|| {
-            CodecError::Malformed("indexed polygon has no triangulation reference".into())
-        })?;
         let triangulation = &self.tables.triangulations[triangulation_index - 1];
         let points = polygon
             .nodes
@@ -1065,13 +1089,20 @@ impl<'a> Builder<'a> {
     }
 
     fn polygon_parameters(&self, representation: &TextEdgeRepresentation) -> Option<&[f64]> {
-        match representation.kind {
-            5 => self.tables.polygons3d[representation.primary - 1]
-                .parameters
-                .as_deref(),
-            6 | 7 => self.tables.polygons_on_triangulations[representation.primary - 1]
-                .parameters
-                .as_deref(),
+        match representation {
+            TextEdgeRepresentation::Polygon3d { polygon, .. } => {
+                self.tables.polygons3d[polygon - 1].parameters.as_deref()
+            }
+            TextEdgeRepresentation::PolygonOnTriangulation { polygon, .. } => {
+                self.tables.polygons_on_triangulations[polygon - 1]
+                    .parameters
+                    .as_deref()
+            }
+            TextEdgeRepresentation::PolygonPair { polygons, .. } => {
+                self.tables.polygons_on_triangulations[polygons[0] - 1]
+                    .parameters
+                    .as_deref()
+            }
             _ => None,
         }
     }
@@ -1252,26 +1283,48 @@ impl<'a> Builder<'a> {
             return None;
         };
         let (index, representation) =
-            first_edge_representation(representations, |representation| {
-                matches!(representation.kind, 2 | 3)
-                    && representation.surface == Some(surface)
-                    && exact_transforms_equal(
-                        edge_transform.compose(self.tables.location(representation.location)),
-                        surface_transform,
-                    )
+            first_edge_representation(representations, |representation| match representation {
+                TextEdgeRepresentation::Pcurve {
+                    surface: candidate_surface,
+                    location,
+                    ..
+                }
+                | TextEdgeRepresentation::PcurvePair {
+                    surface: candidate_surface,
+                    location,
+                    ..
+                } => {
+                    *candidate_surface == surface
+                        && exact_transforms_equal(
+                            edge_transform.compose(self.tables.location(*location)),
+                            surface_transform,
+                        )
+                }
+                _ => false,
             })?;
         let reversed = is_reversed(edge_use.orientation);
-        let secondary = representation.secondary.is_some() && reversed;
-        let curve_index = if secondary {
-            representation
-                .secondary
-                .expect("secondary representation exists")
-        } else {
-            representation.primary
+        let (curve_index, parameter_range, secondary) = match representation {
+            TextEdgeRepresentation::Pcurve {
+                curve,
+                parameter_range,
+                ..
+            } => (*curve, *parameter_range, false),
+            TextEdgeRepresentation::PcurvePair {
+                curves,
+                parameter_range,
+                ..
+            } => {
+                let secondary = reversed;
+                (
+                    if secondary { curves[1] } else { curves[0] },
+                    *parameter_range,
+                    secondary,
+                )
+            }
+            _ => return None,
         };
         let geometry = pcurve_geometry(&self.tables.curve2ds[curve_index - 1])?;
-        let parameter_range =
-            normalize_pcurve_parameter_range(&geometry, representation.parameter_range);
+        let parameter_range = normalize_pcurve_parameter_range(&geometry, Some(parameter_range));
         Some((
             self.pcurve_id(edge_use.shape, index, secondary),
             bounded_pcurve_range(*degenerated, parameter_range),
@@ -1742,7 +1795,9 @@ fn select_exact_curve_representation<'a>(
     let mut matches = representations
         .iter()
         .enumerate()
-        .filter(|(_, representation)| representation.kind == 1);
+        .filter(|(_, representation)| {
+            matches!(representation, TextEdgeRepresentation::Curve3d { .. })
+        });
     let Some(first) = matches.next() else {
         return Ok(None);
     };
@@ -1761,15 +1816,30 @@ fn equivalent_exact_curve_representation(
     right: &TextEdgeRepresentation,
     tables: &Tables<'_>,
 ) -> bool {
-    let Some(left_curve) = left.primary.checked_sub(1) else {
+    let (
+        TextEdgeRepresentation::Curve3d {
+            curve: left_curve,
+            location: left_location,
+            parameter_range: left_range,
+        },
+        TextEdgeRepresentation::Curve3d {
+            curve: right_curve,
+            location: right_location,
+            parameter_range: right_range,
+        },
+    ) = (left, right)
+    else {
         return false;
     };
-    let Some(right_curve) = right.primary.checked_sub(1) else {
+    let Some(left_curve) = left_curve.checked_sub(1) else {
+        return false;
+    };
+    let Some(right_curve) = right_curve.checked_sub(1) else {
         return false;
     };
     tables.curves.get(left_curve) == tables.curves.get(right_curve)
-        && tables.location(left.location) == tables.location(right.location)
-        && left.parameter_range == right.parameter_range
+        && tables.location(*left_location) == tables.location(*right_location)
+        && left_range == right_range
 }
 
 fn unique_fallback_polygon_representation(
@@ -1779,7 +1849,14 @@ fn unique_fallback_polygon_representation(
     let mut matches = representations
         .iter()
         .enumerate()
-        .filter(|(_, representation)| matches!(representation.kind, 5..=7));
+        .filter(|(_, representation)| {
+            matches!(
+                representation,
+                TextEdgeRepresentation::Polygon3d { .. }
+                    | TextEdgeRepresentation::PolygonOnTriangulation { .. }
+                    | TextEdgeRepresentation::PolygonPair { .. }
+            )
+        });
     let Some(first) = matches.next() else {
         return Ok(None);
     };

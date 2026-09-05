@@ -314,17 +314,29 @@ fn endpoint_selection_requires_unique_oriented_direct_children() {
 
 #[test]
 fn edge_representation_selection_follows_family_rules() {
-    let representation = |kind, primary| TextEdgeRepresentation {
-        kind,
-        primary,
-        secondary: None,
-        surface: None,
-        second_surface: None,
-        location: 0,
-        second_location: None,
-        parameter_range: None,
-        continuity: None,
-        uv_endpoints: None,
+    let representation = |kind, primary| match kind {
+        1 => TextEdgeRepresentation::Curve3d {
+            curve: primary,
+            location: 0,
+            parameter_range: [0.0, 0.0],
+        },
+        2 => TextEdgeRepresentation::Pcurve {
+            curve: primary,
+            surface: 0,
+            location: 0,
+            parameter_range: [0.0, 0.0],
+            uv_endpoints: None,
+        },
+        5 => TextEdgeRepresentation::Polygon3d {
+            polygon: primary,
+            location: 0,
+        },
+        6 => TextEdgeRepresentation::PolygonOnTriangulation {
+            polygon: primary,
+            triangulation: 0,
+            location: 0,
+        },
+        _ => panic!("test helper kind {kind}"),
     };
     let curves = [
         TextCurve::Line {
@@ -370,8 +382,10 @@ fn edge_representation_selection_follows_family_rules() {
     ));
 
     let matching_pcurves = [representation(2, 1), representation(2, 1)];
-    let selected = first_edge_representation(&matching_pcurves, |candidate| candidate.kind == 2)
-        .expect("first matching pcurve");
+    let selected = first_edge_representation(&matching_pcurves, |candidate| {
+        matches!(candidate, TextEdgeRepresentation::Pcurve { .. })
+    })
+    .expect("first matching pcurve");
     assert_eq!(selected.0, 0);
 
     let exact_precedes_polygon = [representation(5, 1), representation(1, 1)];

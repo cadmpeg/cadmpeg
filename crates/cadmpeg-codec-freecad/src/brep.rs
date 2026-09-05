@@ -331,27 +331,371 @@ pub struct TextPointRepresentation {
 
 /// One edge representation record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextEdgeRepresentation {
-    /// Representation code 1 through 7.
-    pub kind: u8,
-    /// Primary curve or polygon index.
-    pub primary: usize,
-    /// Optional secondary curve or polygon index.
-    pub secondary: Option<usize>,
-    /// Optional first surface index.
-    pub surface: Option<usize>,
-    /// Optional second surface index for regularity records.
-    pub second_surface: Option<usize>,
+#[serde(
+    try_from = "TextEdgeRepresentationWire",
+    into = "TextEdgeRepresentationWire"
+)]
+pub enum TextEdgeRepresentation {
+    /// Kind 1: exact 3D curve.
+    Curve3d {
+        /// One-based 3D curve index.
+        curve: usize,
+        /// Location index, or zero for identity.
+        location: usize,
+        /// Curve parameter range.
+        parameter_range: [f64; 2],
+    },
+    /// Kind 2: one parameter-space curve on a surface.
+    Pcurve {
+        /// One-based 2D curve index.
+        curve: usize,
+        /// One-based surface index.
+        surface: usize,
+        /// Surface location index, or zero for identity.
+        location: usize,
+        /// Parameter-curve range.
+        parameter_range: [f64; 2],
+        /// Optional V2 cached UV endpoints.
+        uv_endpoints: Option<[Point2; 2]>,
+    },
+    /// Kind 3: a pair of parameter-space curves on one surface.
+    PcurvePair {
+        /// One-based primary and secondary 2D curve indices.
+        curves: [usize; 2],
+        /// Continuity token joining the pair.
+        continuity: String,
+        /// One-based surface index.
+        surface: usize,
+        /// Surface location index, or zero for identity.
+        location: usize,
+        /// Parameter-curve range.
+        parameter_range: [f64; 2],
+        /// Optional V2 cached UV endpoints.
+        uv_endpoints: Option<[Point2; 2]>,
+    },
+    /// Kind 4: regularity between two surfaces.
+    Regularity {
+        /// Continuity token.
+        continuity: String,
+        /// One-based first and second surface indices.
+        surfaces: [usize; 2],
+        /// First and second location indices.
+        locations: [usize; 2],
+    },
+    /// Kind 5: standalone 3D polygon.
+    Polygon3d {
+        /// One-based 3D polygon index.
+        polygon: usize,
+        /// Location index, or zero for identity.
+        location: usize,
+    },
+    /// Kind 6: polygon on one triangulation.
+    PolygonOnTriangulation {
+        /// One-based polygon-on-triangulation index.
+        polygon: usize,
+        /// One-based triangulation index.
+        triangulation: usize,
+        /// Location index, or zero for identity.
+        location: usize,
+    },
+    /// Kind 7: a pair of polygons on one triangulation.
+    PolygonPair {
+        /// One-based primary and secondary polygon-on-triangulation indices.
+        polygons: [usize; 2],
+        /// One-based triangulation index.
+        triangulation: usize,
+        /// Location index, or zero for identity.
+        location: usize,
+    },
+}
+
+impl TextEdgeRepresentation {
+    /// Representation code 1 through 7 retained on the CADIR wire.
+    pub const fn kind(&self) -> u8 {
+        match self {
+            Self::Curve3d { .. } => 1,
+            Self::Pcurve { .. } => 2,
+            Self::PcurvePair { .. } => 3,
+            Self::Regularity { .. } => 4,
+            Self::Polygon3d { .. } => 5,
+            Self::PolygonOnTriangulation { .. } => 6,
+            Self::PolygonPair { .. } => 7,
+        }
+    }
+
     /// Primary location index, or zero for identity.
-    pub location: usize,
-    /// Optional second location index.
-    pub second_location: Option<usize>,
-    /// Optional parameter range.
-    pub parameter_range: Option<[f64; 2]>,
-    /// Optional continuity token.
-    pub continuity: Option<String>,
-    /// Optional V2 cached UV endpoints.
-    pub uv_endpoints: Option<[Point2; 2]>,
+    pub const fn location(&self) -> usize {
+        match *self {
+            Self::Curve3d { location, .. }
+            | Self::Pcurve { location, .. }
+            | Self::PcurvePair { location, .. }
+            | Self::Regularity {
+                locations: [location, _],
+                ..
+            }
+            | Self::Polygon3d { location, .. }
+            | Self::PolygonOnTriangulation { location, .. }
+            | Self::PolygonPair { location, .. } => location,
+        }
+    }
+
+    /// Parameter range when the representation carries one.
+    pub const fn parameter_range(&self) -> Option<[f64; 2]> {
+        match *self {
+            Self::Curve3d {
+                parameter_range, ..
+            }
+            | Self::Pcurve {
+                parameter_range, ..
+            }
+            | Self::PcurvePair {
+                parameter_range, ..
+            } => Some(parameter_range),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct TextEdgeRepresentationWire {
+    kind: u8,
+    primary: usize,
+    secondary: Option<usize>,
+    surface: Option<usize>,
+    second_surface: Option<usize>,
+    location: usize,
+    second_location: Option<usize>,
+    parameter_range: Option<[f64; 2]>,
+    continuity: Option<String>,
+    uv_endpoints: Option<[Point2; 2]>,
+}
+
+impl From<TextEdgeRepresentation> for TextEdgeRepresentationWire {
+    fn from(value: TextEdgeRepresentation) -> Self {
+        let kind = value.kind();
+        match value {
+            TextEdgeRepresentation::Curve3d {
+                curve,
+                location,
+                parameter_range,
+            } => Self {
+                kind,
+                primary: curve,
+                secondary: None,
+                surface: None,
+                second_surface: None,
+                location,
+                second_location: None,
+                parameter_range: Some(parameter_range),
+                continuity: None,
+                uv_endpoints: None,
+            },
+            TextEdgeRepresentation::Pcurve {
+                curve,
+                surface,
+                location,
+                parameter_range,
+                uv_endpoints,
+            } => Self {
+                kind,
+                primary: curve,
+                secondary: None,
+                surface: Some(surface),
+                second_surface: None,
+                location,
+                second_location: None,
+                parameter_range: Some(parameter_range),
+                continuity: None,
+                uv_endpoints,
+            },
+            TextEdgeRepresentation::PcurvePair {
+                curves,
+                continuity,
+                surface,
+                location,
+                parameter_range,
+                uv_endpoints,
+            } => Self {
+                kind,
+                primary: curves[0],
+                secondary: Some(curves[1]),
+                surface: Some(surface),
+                second_surface: None,
+                location,
+                second_location: None,
+                parameter_range: Some(parameter_range),
+                continuity: Some(continuity),
+                uv_endpoints,
+            },
+            TextEdgeRepresentation::Regularity {
+                continuity,
+                surfaces,
+                locations,
+            } => Self {
+                kind,
+                primary: 0,
+                secondary: None,
+                surface: Some(surfaces[0]),
+                second_surface: Some(surfaces[1]),
+                location: locations[0],
+                second_location: Some(locations[1]),
+                parameter_range: None,
+                continuity: Some(continuity),
+                uv_endpoints: None,
+            },
+            TextEdgeRepresentation::Polygon3d { polygon, location } => Self {
+                kind,
+                primary: polygon,
+                secondary: None,
+                surface: None,
+                second_surface: None,
+                location,
+                second_location: None,
+                parameter_range: None,
+                continuity: None,
+                uv_endpoints: None,
+            },
+            TextEdgeRepresentation::PolygonOnTriangulation {
+                polygon,
+                triangulation,
+                location,
+            } => Self {
+                kind,
+                primary: polygon,
+                secondary: None,
+                surface: Some(triangulation),
+                second_surface: None,
+                location,
+                second_location: None,
+                parameter_range: None,
+                continuity: None,
+                uv_endpoints: None,
+            },
+            TextEdgeRepresentation::PolygonPair {
+                polygons,
+                triangulation,
+                location,
+            } => Self {
+                kind,
+                primary: polygons[0],
+                secondary: Some(polygons[1]),
+                surface: Some(triangulation),
+                second_surface: None,
+                location,
+                second_location: None,
+                parameter_range: None,
+                continuity: None,
+                uv_endpoints: None,
+            },
+        }
+    }
+}
+
+impl TryFrom<TextEdgeRepresentationWire> for TextEdgeRepresentation {
+    type Error = String;
+
+    fn try_from(wire: TextEdgeRepresentationWire) -> Result<Self, Self::Error> {
+        match (
+            wire.kind,
+            wire.primary,
+            wire.secondary,
+            wire.surface,
+            wire.second_surface,
+            wire.location,
+            wire.second_location,
+            wire.parameter_range,
+            wire.continuity,
+            wire.uv_endpoints,
+        ) {
+            (1, curve, None, None, None, location, None, Some(parameter_range), None, None) => {
+                Ok(Self::Curve3d {
+                    curve,
+                    location,
+                    parameter_range,
+                })
+            }
+            (
+                2,
+                curve,
+                None,
+                Some(surface),
+                None,
+                location,
+                None,
+                Some(parameter_range),
+                None,
+                uv_endpoints,
+            ) => Ok(Self::Pcurve {
+                curve,
+                surface,
+                location,
+                parameter_range,
+                uv_endpoints,
+            }),
+            (
+                3,
+                primary,
+                Some(secondary),
+                Some(surface),
+                None,
+                location,
+                None,
+                Some(parameter_range),
+                Some(continuity),
+                uv_endpoints,
+            ) => Ok(Self::PcurvePair {
+                curves: [primary, secondary],
+                continuity,
+                surface,
+                location,
+                parameter_range,
+                uv_endpoints,
+            }),
+            (
+                4,
+                0,
+                None,
+                Some(first_surface),
+                Some(second_surface),
+                location,
+                Some(second_location),
+                None,
+                Some(continuity),
+                None,
+            ) => Ok(Self::Regularity {
+                continuity,
+                surfaces: [first_surface, second_surface],
+                locations: [location, second_location],
+            }),
+            (5, polygon, None, None, None, location, None, None, None, None) => {
+                Ok(Self::Polygon3d { polygon, location })
+            }
+            (6, polygon, None, Some(triangulation), None, location, None, None, None, None) => {
+                Ok(Self::PolygonOnTriangulation {
+                    polygon,
+                    triangulation,
+                    location,
+                })
+            }
+            (
+                7,
+                primary,
+                Some(secondary),
+                Some(triangulation),
+                None,
+                location,
+                None,
+                None,
+                None,
+                None,
+            ) => Ok(Self::PolygonPair {
+                polygons: [primary, secondary],
+                triangulation,
+                location,
+            }),
+            _ => Err("edge representation kind disagrees with payload fields".to_owned()),
+        }
+    }
 }
 
 /// Geometry and flags specific to a topology record.
@@ -1545,152 +1889,187 @@ fn parse_binary_edge_representation(
     indexed_polygon_count: usize,
     triangulation_count: usize,
 ) -> Result<TextEdgeRepresentation, CodecError> {
-    let mut record = TextEdgeRepresentation {
-        kind,
-        primary: 0,
-        secondary: None,
-        surface: None,
-        second_surface: None,
-        location: 0,
-        second_location: None,
-        parameter_range: None,
-        continuity: None,
-        uv_endpoints: None,
-    };
     match kind {
         1 => {
-            record.primary = checked_binary_reference(
+            let curve = checked_binary_reference(
                 cursor.i32("binary edge curve")?,
                 curve_count,
                 false,
                 "edge curve",
             )?;
-            record.location = checked_binary_reference(
+            let location = checked_binary_reference(
                 cursor.i32("binary edge curve location")?,
                 location_count,
                 true,
                 "edge curve location",
             )?;
-            record.parameter_range = Some([
+            let parameter_range = [
                 cursor.f64("binary edge curve start")?,
                 cursor.f64("binary edge curve end")?,
-            ]);
+            ];
+            Ok(TextEdgeRepresentation::Curve3d {
+                curve,
+                location,
+                parameter_range,
+            })
         }
         2 | 3 => {
-            record.primary = checked_binary_reference(
+            let curve = checked_binary_reference(
                 cursor.i32("binary edge pcurve")?,
                 curve2d_count,
                 false,
                 "edge pcurve",
             )?;
-            if kind == 3 {
-                record.secondary = Some(checked_binary_reference(
-                    cursor.i32("binary edge secondary pcurve")?,
-                    curve2d_count,
-                    false,
-                    "edge secondary pcurve",
-                )?);
-                record.continuity = Some(cursor.u8("binary edge continuity")?.to_string());
-            }
-            record.surface = Some(checked_binary_reference(
+            let secondary = if kind == 3 {
+                Some((
+                    checked_binary_reference(
+                        cursor.i32("binary edge secondary pcurve")?,
+                        curve2d_count,
+                        false,
+                        "edge secondary pcurve",
+                    )?,
+                    cursor.u8("binary edge continuity")?.to_string(),
+                ))
+            } else {
+                None
+            };
+            let surface = checked_binary_reference(
                 cursor.i32("binary edge surface")?,
                 surface_count,
                 false,
                 "edge surface",
-            )?);
-            record.location = checked_binary_reference(
+            )?;
+            let location = checked_binary_reference(
                 cursor.i32("binary edge surface location")?,
                 location_count,
                 true,
                 "edge surface location",
             )?;
-            record.parameter_range = Some([
+            let parameter_range = [
                 cursor.f64("binary edge pcurve start")?,
                 cursor.f64("binary edge pcurve end")?,
-            ]);
-            if matches!(version, 2 | 3) {
-                record.uv_endpoints = Some([
+            ];
+            let uv_endpoints = if matches!(version, 2 | 3) {
+                Some([
                     cursor.point2("binary edge first UV endpoint")?,
                     cursor.point2("binary edge last UV endpoint")?,
-                ]);
-            }
+                ])
+            } else {
+                None
+            };
+            Ok(if let Some((secondary, continuity)) = secondary {
+                TextEdgeRepresentation::PcurvePair {
+                    curves: [curve, secondary],
+                    continuity,
+                    surface,
+                    location,
+                    parameter_range,
+                    uv_endpoints,
+                }
+            } else {
+                TextEdgeRepresentation::Pcurve {
+                    curve,
+                    surface,
+                    location,
+                    parameter_range,
+                    uv_endpoints,
+                }
+            })
         }
         4 => {
-            record.continuity = Some(cursor.u8("binary edge continuity")?.to_string());
-            record.surface = Some(checked_binary_reference(
+            let continuity = cursor.u8("binary edge continuity")?.to_string();
+            let first_surface = checked_binary_reference(
                 cursor.i32("binary edge regularity surface")?,
                 surface_count,
                 false,
                 "edge regularity surface",
-            )?);
-            record.location = checked_binary_reference(
+            )?;
+            let location = checked_binary_reference(
                 cursor.i32("binary edge regularity location")?,
                 location_count,
                 true,
                 "edge regularity location",
             )?;
-            record.second_surface = Some(checked_binary_reference(
+            let second_surface = checked_binary_reference(
                 cursor.i32("binary edge second regularity surface")?,
                 surface_count,
                 false,
                 "edge second regularity surface",
-            )?);
-            record.second_location = Some(checked_binary_reference(
+            )?;
+            let second_location = checked_binary_reference(
                 cursor.i32("binary edge second regularity location")?,
                 location_count,
                 true,
                 "edge second regularity location",
-            )?);
+            )?;
+            Ok(TextEdgeRepresentation::Regularity {
+                continuity,
+                surfaces: [first_surface, second_surface],
+                locations: [location, second_location],
+            })
         }
         5 => {
-            record.primary = checked_binary_reference(
+            let polygon = checked_binary_reference(
                 cursor.i32("binary edge 3D polygon")?,
                 polygon3d_count,
                 false,
                 "edge 3D polygon",
             )?;
-            record.location = checked_binary_reference(
+            let location = checked_binary_reference(
                 cursor.i32("binary edge polygon location")?,
                 location_count,
                 true,
                 "edge polygon location",
             )?;
+            Ok(TextEdgeRepresentation::Polygon3d { polygon, location })
         }
         6 | 7 => {
-            record.primary = checked_binary_reference(
+            let polygon = checked_binary_reference(
                 cursor.i32("binary edge indexed polygon")?,
                 indexed_polygon_count,
                 false,
                 "edge indexed polygon",
             )?;
-            if kind == 7 {
-                record.secondary = Some(checked_binary_reference(
+            let secondary = if kind == 7 {
+                Some(checked_binary_reference(
                     cursor.i32("binary edge secondary indexed polygon")?,
                     indexed_polygon_count,
                     false,
                     "edge secondary indexed polygon",
-                )?);
-            }
-            record.surface = Some(checked_binary_reference(
+                )?)
+            } else {
+                None
+            };
+            let triangulation = checked_binary_reference(
                 cursor.i32("binary edge triangulation")?,
                 triangulation_count,
                 false,
                 "edge triangulation",
-            )?);
-            record.location = checked_binary_reference(
+            )?;
+            let location = checked_binary_reference(
                 cursor.i32("binary edge triangulation location")?,
                 location_count,
                 true,
                 "edge triangulation location",
             )?;
+            Ok(if let Some(secondary) = secondary {
+                TextEdgeRepresentation::PolygonPair {
+                    polygons: [polygon, secondary],
+                    triangulation,
+                    location,
+                }
+            } else {
+                TextEdgeRepresentation::PolygonOnTriangulation {
+                    polygon,
+                    triangulation,
+                    location,
+                }
+            })
         }
-        other => {
-            return Err(CodecError::malformed(format_args!(
-                "invalid binary edge representation kind {other}"
-            )))
-        }
+        other => Err(CodecError::malformed(format_args!(
+            "invalid binary edge representation kind {other}"
+        ))),
     }
-    Ok(record)
 }
 
 fn checked_binary_reference(
@@ -3006,125 +3385,146 @@ fn parse_edge_representation(
     counts: &BTreeMap<String, usize>,
     topology_version: u8,
 ) -> Result<TextEdgeRepresentation, CodecError> {
-    let mut record = TextEdgeRepresentation {
-        kind: u8::try_from(kind)
-            .map_err(|_| CodecError::Malformed("invalid edge representation kind".into()))?,
-        primary: 0,
-        secondary: None,
-        surface: None,
-        second_surface: None,
-        location: 0,
-        second_location: None,
-        parameter_range: None,
-        continuity: None,
-        uv_endpoints: None,
-    };
+    u8::try_from(kind)
+        .map_err(|_| CodecError::Malformed("invalid edge representation kind".into()))?;
     match kind {
         1 => {
-            record.primary = parse_reference(cursor, "edge 3D curve", counts["Curves"], false)?;
-            record.location =
+            let curve = parse_reference(cursor, "edge 3D curve", counts["Curves"], false)?;
+            let location =
                 parse_reference(cursor, "edge curve location", counts["Locations"], true)?;
-            record.parameter_range = Some(parse_range(cursor, "edge curve")?);
+            let parameter_range = parse_range(cursor, "edge curve")?;
+            Ok(TextEdgeRepresentation::Curve3d {
+                curve,
+                location,
+                parameter_range,
+            })
         }
         2 | 3 => {
-            record.primary =
-                parse_reference(cursor, "edge parameter curve", counts["Curve2ds"], false)?;
-            if kind == 3 {
+            let curve = parse_reference(cursor, "edge parameter curve", counts["Curve2ds"], false)?;
+            let secondary = if kind == 3 {
                 let (secondary, joined_continuity) = parse_reference_suffix(
                     cursor,
                     "edge secondary parameter curve",
                     counts["Curve2ds"],
                 )?;
-                record.secondary = Some(secondary);
-                record.continuity = Some(
-                    joined_continuity
-                        .map_or_else(|| cursor.next("edge continuity").map(str::to_owned), Ok)?,
-                );
-            }
-            record.surface = Some(parse_reference(
-                cursor,
-                "edge surface",
-                counts["Surfaces"],
-                false,
-            )?);
-            record.location =
+                let continuity = joined_continuity
+                    .map_or_else(|| cursor.next("edge continuity").map(str::to_owned), Ok)?;
+                Some((secondary, continuity))
+            } else {
+                None
+            };
+            let surface = parse_reference(cursor, "edge surface", counts["Surfaces"], false)?;
+            let location =
                 parse_reference(cursor, "edge surface location", counts["Locations"], true)?;
-            record.parameter_range = Some(parse_range(cursor, "edge parameter curve")?);
-            if topology_version == 2 {
-                record.uv_endpoints = Some([
+            let parameter_range = parse_range(cursor, "edge parameter curve")?;
+            let uv_endpoints = if topology_version == 2 {
+                Some([
                     cursor.point2("edge first UV endpoint")?,
                     cursor.point2("edge last UV endpoint")?,
-                ]);
-            }
+                ])
+            } else {
+                None
+            };
+            Ok(if let Some((secondary, continuity)) = secondary {
+                TextEdgeRepresentation::PcurvePair {
+                    curves: [curve, secondary],
+                    continuity,
+                    surface,
+                    location,
+                    parameter_range,
+                    uv_endpoints,
+                }
+            } else {
+                TextEdgeRepresentation::Pcurve {
+                    curve,
+                    surface,
+                    location,
+                    parameter_range,
+                    uv_endpoints,
+                }
+            })
         }
         4 => {
-            record.continuity = Some(cursor.next("edge continuity")?.to_owned());
-            record.surface = Some(parse_reference(
-                cursor,
-                "edge regularity surface",
-                counts["Surfaces"],
-                false,
-            )?);
-            record.location = parse_reference(
+            let continuity = cursor.next("edge continuity")?.to_owned();
+            let first_surface =
+                parse_reference(cursor, "edge regularity surface", counts["Surfaces"], false)?;
+            let location = parse_reference(
                 cursor,
                 "edge regularity location",
                 counts["Locations"],
                 true,
             )?;
-            record.second_surface = Some(parse_reference(
+            let second_surface = parse_reference(
                 cursor,
                 "edge second regularity surface",
                 counts["Surfaces"],
                 false,
-            )?);
-            record.second_location = Some(parse_reference(
+            )?;
+            let second_location = parse_reference(
                 cursor,
                 "edge second regularity location",
                 counts["Locations"],
                 true,
-            )?);
+            )?;
+            Ok(TextEdgeRepresentation::Regularity {
+                continuity,
+                surfaces: [first_surface, second_surface],
+                locations: [location, second_location],
+            })
         }
         5 => {
-            record.primary =
-                parse_reference(cursor, "edge 3D polygon", counts["Polygon3D"], false)?;
-            record.location =
+            let polygon = parse_reference(cursor, "edge 3D polygon", counts["Polygon3D"], false)?;
+            let location =
                 parse_reference(cursor, "edge polygon location", counts["Locations"], true)?;
+            Ok(TextEdgeRepresentation::Polygon3d { polygon, location })
         }
         6 | 7 => {
-            record.primary = parse_reference(
+            let polygon = parse_reference(
                 cursor,
                 "edge polygon on triangulation",
                 counts["PolygonOnTriangulations"],
                 false,
             )?;
-            if kind == 7 {
-                record.secondary = Some(parse_reference(
+            let secondary = if kind == 7 {
+                Some(parse_reference(
                     cursor,
                     "edge second polygon on triangulation",
                     counts["PolygonOnTriangulations"],
                     false,
-                )?);
-            }
-            record.surface = Some(parse_reference(
+                )?)
+            } else {
+                None
+            };
+            let triangulation = parse_reference(
                 cursor,
                 "edge triangulation",
                 counts["Triangulations"],
                 false,
-            )?);
-            record.location = parse_reference(
+            )?;
+            let location = parse_reference(
                 cursor,
                 "edge triangulation location",
                 counts["Locations"],
                 true,
             )?;
+            Ok(if let Some(secondary) = secondary {
+                TextEdgeRepresentation::PolygonPair {
+                    polygons: [polygon, secondary],
+                    triangulation,
+                    location,
+                }
+            } else {
+                TextEdgeRepresentation::PolygonOnTriangulation {
+                    polygon,
+                    triangulation,
+                    location,
+                }
+            })
         }
-        other => {
-            return Err(CodecError::malformed(format_args!(
-                "invalid edge representation kind {other}"
-            )))
-        }
+        other => Err(CodecError::malformed(format_args!(
+            "invalid edge representation kind {other}"
+        ))),
     }
-    Ok(record)
 }
 
 fn parse_face_geometry(
@@ -4438,9 +4838,14 @@ pub(crate) mod tests {
         ]);
         let record = parse_edge_representation(3, &mut cursor, &counts, 1)
             .expect("joined pcurve continuity");
-        assert_eq!(record.primary, 1);
-        assert_eq!(record.secondary, Some(2));
-        assert_eq!(record.continuity.as_deref(), Some("CN"));
+        let TextEdgeRepresentation::PcurvePair {
+            curves, continuity, ..
+        } = record
+        else {
+            panic!("expected pcurve pair");
+        };
+        assert_eq!(curves, [1, 2]);
+        assert_eq!(continuity, "CN");
         assert!(cursor.is_empty());
     }
 
@@ -4884,7 +5289,7 @@ pub(crate) mod tests {
         else {
             panic!("expected edge geometry")
         };
-        assert_eq!(representations[0].parameter_range, Some([0.0, 1.0]));
+        assert_eq!(representations[0].parameter_range(), Some([0.0, 1.0]));
         assert_eq!(facts.roots.len(), 1);
         assert_eq!(facts.roots[0].shape, 8);
     }
