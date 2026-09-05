@@ -80,15 +80,46 @@ impl Serialize for NativeCard<'_> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-struct NativeQuarantinedRecord {
-    id: String,
-    section: &'static str,
-    sequence: u32,
-    source_offset: u64,
-    cards: usize,
-    bytes: Vec<u8>,
-    defect: &'static str,
+enum NativeQuarantinedRecord<'a> {
+    Directory(&'a QuarantinedDirectoryRecord),
+    Parameter(&'a QuarantinedParameterRecord),
+}
+
+impl Serialize for NativeQuarantinedRecord<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a, D: Serialize> {
+            id: String,
+            section: &'static str,
+            sequence: u32,
+            source_offset: u64,
+            cards: usize,
+            bytes: &'a [u8],
+            defect: D,
+        }
+        match self {
+            Self::Directory(record) => Wire {
+                id: record.identity(),
+                section: "directory-entry",
+                sequence: record.sequence,
+                source_offset: record.source_offset,
+                cards: record.cards,
+                bytes: &record.bytes,
+                defect: record.defect,
+            }
+            .serialize(serializer),
+            Self::Parameter(record) => Wire {
+                id: record.identity(),
+                section: "parameter-data",
+                sequence: record.sequence,
+                source_offset: record.source_offset(),
+                cards: record.cards(),
+                bytes: record.bytes(),
+                defect: record.defect,
+            }
+            .serialize(serializer),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -135,7 +166,7 @@ struct NativeCopiousData {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeBoundaryVertexEndpoint {
     edge: String,
-    endpoint: &'static str,
+    endpoint: BoundaryEndpoint,
     position: [f64; 3],
 }
 
@@ -362,11 +393,84 @@ struct NativeDefinitionLevels {
     levels: Vec<Option<i64>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PrimitiveSolidKind {
+    Block,
+    RightAngularWedge,
+    RightCircularCylinder,
+    RightCircularConeFrustum,
+    Sphere,
+    Torus,
+    Ellipsoid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ProceduralSolidKind {
+    Revolution,
+    LinearExtrusion,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ExternalReferenceKind {
+    ExternalDefinition,
+    ExternalFileDefinition,
+    ExternalLogical,
+    NativeDefinition,
+    NativeLibraryDefinition,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ProductPropertyKind {
+    ReferenceDesignator,
+    Name,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ViewProjection {
+    OrthographicParallel,
+    Perspective,
+}
+
+impl ExternalReferenceKind {
+    const fn form(self) -> i64 {
+        match self {
+            Self::ExternalDefinition => 0,
+            Self::ExternalFileDefinition => 1,
+            Self::ExternalLogical => 2,
+            Self::NativeDefinition => 3,
+            Self::NativeLibraryDefinition => 4,
+        }
+    }
+}
+
+impl ProductPropertyKind {
+    const fn form(self) -> i64 {
+        match self {
+            Self::ReferenceDesignator => 7,
+            Self::Name => 15,
+        }
+    }
+}
+
+impl ViewProjection {
+    const fn form(self) -> i64 {
+        match self {
+            Self::OrthographicParallel => 0,
+            Self::Perspective => 1,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativePrimitiveSolid {
     id: String,
     source_entity: String,
-    kind: String,
+    kind: PrimitiveSolidKind,
     dimensions: BTreeMap<String, Option<f64>>,
     origin: [Option<f64>; 3],
     x_axis: Option<[Option<f64>; 3]>,
@@ -378,7 +482,7 @@ struct NativePrimitiveSolid {
 struct NativeProceduralSolid {
     id: String,
     source_entity: String,
-    kind: String,
+    kind: ProceduralSolidKind,
     form: i64,
     profile: Option<String>,
     amount: Option<f64>,
@@ -564,8 +668,7 @@ struct NativeCircularArray {
 struct NativeExternalReference {
     id: String,
     source_entity: String,
-    form: i64,
-    reference_kind: String,
+    reference_kind: ExternalReferenceKind,
     file_identifier: Option<Vec<u8>>,
     symbolic_name: Option<Vec<u8>>,
     library_name: Option<Vec<u8>>,
@@ -578,7 +681,7 @@ impl Serialize for NativeExternalReference {
             id: &'a str,
             source_entity: &'a str,
             form: i64,
-            reference_kind: &'a str,
+            reference_kind: &'a ExternalReferenceKind,
             file_identifier: &'a Option<Vec<u8>>,
             symbolic_name: &'a Option<Vec<u8>>,
             library_name: &'a Option<Vec<u8>>,
@@ -587,7 +690,7 @@ impl Serialize for NativeExternalReference {
         Wire {
             id: &self.id,
             source_entity: &self.source_entity,
-            form: self.form,
+            form: self.reference_kind.form(),
             reference_kind: &self.reference_kind,
             file_identifier: &self.file_identifier,
             symbolic_name: &self.symbolic_name,
@@ -788,14 +891,36 @@ struct NativeAttributeTableInstance {
     rows: Vec<Vec<TokenValue>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 struct NativeProductProperty {
     id: String,
     source_entity: String,
-    form: i64,
-    property_kind: String,
+    property_kind: ProductPropertyKind,
     value: Option<Vec<u8>>,
     owners: Vec<String>,
+}
+
+impl Serialize for NativeProductProperty {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            id: &'a String,
+            source_entity: &'a String,
+            form: i64,
+            property_kind: &'a ProductPropertyKind,
+            value: &'a Option<Vec<u8>>,
+            owners: &'a Vec<String>,
+        }
+        Wire {
+            id: &self.id,
+            source_entity: &self.source_entity,
+            form: self.property_kind.form(),
+            property_kind: &self.property_kind,
+            value: &self.value,
+            owners: &self.owners,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1181,12 +1306,11 @@ pub(crate) struct NativeStoreResult {
     pub(crate) overdeclared_counts: BTreeMap<u32, OverdeclaredCount>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 struct NativeView {
     id: String,
     source_entity: String,
-    form: i64,
-    projection: String,
+    projection: ViewProjection,
     view_number: Option<i64>,
     scale: Option<f64>,
     model_to_view: Option<String>,
@@ -1199,6 +1323,49 @@ struct NativeView {
     clipping_window: Option<[Option<f64>; 4]>,
     depth_clipping: Option<i64>,
     depth_range: Option<[Option<f64>; 2]>,
+}
+
+impl Serialize for NativeView {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            id: &'a String,
+            source_entity: &'a String,
+            form: i64,
+            projection: &'a ViewProjection,
+            view_number: &'a Option<i64>,
+            scale: &'a Option<f64>,
+            model_to_view: &'a Option<String>,
+            clipping_planes: &'a Vec<Option<String>>,
+            view_plane_normal: &'a Option<[Option<f64>; 3]>,
+            view_reference_point: &'a Option<[Option<f64>; 3]>,
+            center_of_projection: &'a Option<[Option<f64>; 3]>,
+            view_up: &'a Option<[Option<f64>; 3]>,
+            view_plane_distance: &'a Option<f64>,
+            clipping_window: &'a Option<[Option<f64>; 4]>,
+            depth_clipping: &'a Option<i64>,
+            depth_range: &'a Option<[Option<f64>; 2]>,
+        }
+        Wire {
+            id: &self.id,
+            source_entity: &self.source_entity,
+            form: self.projection.form(),
+            projection: &self.projection,
+            view_number: &self.view_number,
+            scale: &self.scale,
+            model_to_view: &self.model_to_view,
+            clipping_planes: &self.clipping_planes,
+            view_plane_normal: &self.view_plane_normal,
+            view_reference_point: &self.view_reference_point,
+            center_of_projection: &self.center_of_projection,
+            view_up: &self.view_up,
+            view_plane_distance: &self.view_plane_distance,
+            clipping_window: &self.clipping_window,
+            depth_clipping: &self.depth_clipping,
+            depth_range: &self.depth_range,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1693,28 +1860,12 @@ pub(crate) fn store(
     let quarantined_directory_records = quarantine
         .directory
         .iter()
-        .map(|record| NativeQuarantinedRecord {
-            id: record.identity(),
-            section: "directory-entry",
-            sequence: record.sequence,
-            source_offset: record.source_offset,
-            cards: record.cards,
-            bytes: record.bytes.clone(),
-            defect: record.defect.key(),
-        })
+        .map(NativeQuarantinedRecord::Directory)
         .collect::<Vec<_>>();
     let quarantined_parameter_records = quarantine
         .parameters
         .iter()
-        .map(|record| NativeQuarantinedRecord {
-            id: record.identity(),
-            section: "parameter-data",
-            sequence: record.sequence,
-            source_offset: record.source_offset(),
-            cards: record.cards(),
-            bytes: record.bytes().to_vec(),
-            defect: record.defect.key(),
-        })
+        .map(NativeQuarantinedRecord::Parameter)
         .collect::<Vec<_>>();
     let cards = scan
         .lines
@@ -2320,43 +2471,43 @@ pub(crate) fn store(
             let (kind, dimension_names, origin_start, x_axis_start, z_axis_start) =
                 match entry.entity_type {
                     150 => (
-                        "block",
+                        PrimitiveSolidKind::Block,
                         vec!["x_length", "y_length", "z_length"],
                         4,
                         Some(7),
                         Some(10),
                     ),
                     152 => (
-                        "right_angular_wedge",
+                        PrimitiveSolidKind::RightAngularWedge,
                         vec!["x_length", "y_length", "z_length", "top_x_length"],
                         5,
                         Some(8),
                         Some(11),
                     ),
                     154 => (
-                        "right_circular_cylinder",
+                        PrimitiveSolidKind::RightCircularCylinder,
                         vec!["height", "radius"],
                         3,
                         None,
                         Some(6),
                     ),
                     156 => (
-                        "right_circular_cone_frustum",
+                        PrimitiveSolidKind::RightCircularConeFrustum,
                         vec!["height", "large_radius", "small_radius"],
                         4,
                         None,
                         Some(7),
                     ),
-                    158 => ("sphere", vec!["radius"], 2, None, None),
+                    158 => (PrimitiveSolidKind::Sphere, vec!["radius"], 2, None, None),
                     160 => (
-                        "torus",
+                        PrimitiveSolidKind::Torus,
                         vec!["major_radius", "minor_radius"],
                         3,
                         None,
                         Some(6),
                     ),
                     168 => (
-                        "ellipsoid",
+                        PrimitiveSolidKind::Ellipsoid,
                         vec!["x_radius", "y_radius", "z_radius"],
                         4,
                         Some(7),
@@ -2373,7 +2524,7 @@ pub(crate) fn store(
             Some(NativePrimitiveSolid {
                 id: format!("iges:solid:primitive#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                kind: kind.into(),
+                kind,
                 dimensions,
                 origin: axis(origin_start),
                 x_axis: x_axis_start.map(axis),
@@ -2395,9 +2546,9 @@ pub(crate) fn store(
                 id: format!("iges:solid:procedural#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 kind: if revolution {
-                    "revolution".into()
+                    ProceduralSolidKind::Revolution
                 } else {
-                    "linear_extrusion".into()
+                    ProceduralSolidKind::LinearExtrusion
                 },
                 form: entry.form,
                 profile: record
@@ -3061,18 +3212,37 @@ pub(crate) fn store(
         .filter_map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let (reference_kind, file_index, symbolic_index, library_index) = match entry.form {
-                0 => ("external_definition", Some(1), Some(2), None),
-                1 => ("external_file_definition", Some(1), None, None),
-                2 => ("external_logical", Some(1), Some(2), None),
-                3 => ("native_definition", None, Some(1), None),
-                4 => ("native_library_definition", None, Some(2), Some(1)),
+                0 => (
+                    ExternalReferenceKind::ExternalDefinition,
+                    Some(1),
+                    Some(2),
+                    None,
+                ),
+                1 => (
+                    ExternalReferenceKind::ExternalFileDefinition,
+                    Some(1),
+                    None,
+                    None,
+                ),
+                2 => (
+                    ExternalReferenceKind::ExternalLogical,
+                    Some(1),
+                    Some(2),
+                    None,
+                ),
+                3 => (ExternalReferenceKind::NativeDefinition, None, Some(1), None),
+                4 => (
+                    ExternalReferenceKind::NativeLibraryDefinition,
+                    None,
+                    Some(2),
+                    Some(1),
+                ),
                 _ => return None,
             };
             Some(NativeExternalReference {
                 id: format!("iges:product:external-reference#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                form: entry.form,
-                reference_kind: reference_kind.into(),
+                reference_kind,
                 file_identifier: file_index.and_then(|index| {
                     record
                         .and_then(|record| record.string(index))
@@ -4010,11 +4180,10 @@ pub(crate) fn store(
             NativeProductProperty {
                 id: format!("iges:product:property#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                form: entry.form,
                 property_kind: if entry.form == 7 {
-                    "reference_designator".into()
+                    ProductPropertyKind::ReferenceDesignator
                 } else {
-                    "name".into()
+                    ProductPropertyKind::Name
                 },
                 value: record
                     .and_then(|record| record.string(2))
@@ -4455,11 +4624,10 @@ pub(crate) fn store(
             NativeView {
                 id: format!("iges:presentation:view#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                form: entry.form,
                 projection: if entry.form == 0 {
-                    "orthographic_parallel".into()
+                    ViewProjection::OrthographicParallel
                 } else {
-                    "perspective".into()
+                    ViewProjection::Perspective
                 },
                 view_number: record.and_then(|record| record.integer(1)),
                 scale: record.and_then(|record| record.number(2)),
@@ -5064,10 +5232,7 @@ pub(crate) fn store(
                 .iter()
                 .map(|endpoint| NativeBoundaryVertexEndpoint {
                     edge: endpoint.edge.clone(),
-                    endpoint: match endpoint.endpoint {
-                        BoundaryEndpoint::Start => "start",
-                        BoundaryEndpoint::End => "end",
-                    },
+                    endpoint: endpoint.endpoint,
                     position: [
                         endpoint.position.x,
                         endpoint.position.y,

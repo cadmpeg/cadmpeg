@@ -6,7 +6,7 @@ use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::SourceProvenance;
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 
 /// Four two-digit fields in the Directory Entry status number.
@@ -79,6 +79,12 @@ pub(crate) enum DirectoryDefect {
     StatusNumberInvalid,
     RepeatedEntityTypeMismatch { declared: i64, repeated: i64 },
     UnpairedCard,
+}
+
+impl Serialize for DirectoryDefect {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.key())
+    }
 }
 
 impl DirectoryDefect {
