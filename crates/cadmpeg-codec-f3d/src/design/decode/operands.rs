@@ -1266,7 +1266,7 @@ pub fn bind_sketch_profiles(
             .collect::<Vec<_>>();
         if let [profile] = candidates.as_slice() {
             if scope.kind == "BaseFlange" {
-                scope.base_flange_profile = Some(profile.clone());
+                scope.ensure_base_flange().base_flange_profile = Some(profile.clone());
             } else if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep) {
                 scope.sweep_profile = Some(profile.clone());
             } else {

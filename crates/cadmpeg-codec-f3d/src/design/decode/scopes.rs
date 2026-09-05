@@ -9115,7 +9115,10 @@ pub(crate) fn parse_parameter_scope(
         surface_offset_operation: None,
         ruled_surface_operation,
         surface_patch_boundaries,
-        base_flange_operation,
+        base_flange: base_flange_operation.map(|operation| crate::records::DesignBaseFlangeScope {
+            base_flange_operation: Some(operation),
+            ..crate::records::DesignBaseFlangeScope::default()
+        }),
         edge_flange_operation,
         hem_operation: None,
         fixed_fillet_parameters: None,
@@ -9140,7 +9143,6 @@ pub(crate) fn parse_parameter_scope(
         derived_instance_construction: None,
         copy_paste_component_operation: None,
         mirror_construction: None,
-        base_flange_profile: None,
         sketch_entity: None,
         paired_class_tag,
         paired_byte_offset: paired_at as u64,
