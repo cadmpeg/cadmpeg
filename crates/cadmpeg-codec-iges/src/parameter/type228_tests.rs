@@ -61,9 +61,9 @@ fn type228_standard_and_implementor_forms_share_entity_table_boundary() {
 
         assert_eq!(entity_primary_end(&record, &directory), Some(6));
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        let groups = analysis.groups.expect("Type 228 table boundary");
+        let groups = analysis.groups().expect("Type 228 table boundary");
         assert_eq!(groups.token_start, 6);
-        assert_eq!(groups.associations, vec![1]);
-        assert!(groups.properties.is_empty());
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
     }
 }

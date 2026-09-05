@@ -117,10 +117,10 @@ fn fixed_and_counted_fem_boundaries_stop_before_pointer_groups() {
     for (case_index, (_entry, record, expected_end)) in cases.into_iter().enumerate() {
         assert_eq!(entity_primary_end(&record, &directory), Some(expected_end));
         let groups = analyze_trailing_pointer_groups(&record, &directory)
-            .groups
+            .groups()
             .unwrap_or_else(|| panic!("FEM trailing pointer groups case {case_index}"));
         assert_eq!(groups.token_start, expected_end);
-        assert_eq!(groups.associations, vec![1]);
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
     }
 }
 
@@ -168,17 +168,17 @@ fn fem_table_boundaries_precede_fully_valid_structural_alternatives() {
             candidates.iter().any(|candidate| {
                 candidate.token_start < expected_end
                     && groups_for_candidate(&record, &directory, *candidate)
-                        .is_some_and(|groups| groups.fully_valid)
+                        .is_some_and(|groups| groups.fully_valid())
             }),
             "Type {entity_type} Form {form}"
         );
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("FEM table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("FEM table boundary");
         assert_eq!(groups.token_start, expected_end);
-        assert_eq!(groups.associations, vec![1]);
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
     }
 }
 
@@ -271,7 +271,7 @@ fn malformed_fem_counted_spans_do_not_enable_generic_recovery() {
         let record = token_record(sequence, &values);
         assert_eq!(entity_primary_end(&record, &directory), Some(values.len()));
         assert!(analyze_trailing_pointer_groups(&record, &directory)
-            .groups
+            .groups()
             .is_none());
     }
 }
@@ -287,6 +287,6 @@ fn element_results_boundary_rejects_an_incomplete_variable_item() {
         Some(record.tokens.len())
     );
     assert!(analyze_trailing_pointer_groups(&record, &directory)
-        .groups
+        .groups()
         .is_none());
 }
