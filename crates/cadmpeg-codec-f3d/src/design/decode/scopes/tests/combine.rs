@@ -355,24 +355,18 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         operation,
         DesignCombineOperation {
             form: DesignCombineForm::Standard,
-            operation: DesignExtrudeOperation::Join,
+            operation: cadmpeg_ir::features::BooleanKind::Join,
             operation_offset: 20,
             keep_tools: true,
             keep_tools_offset: 25,
-            target: DesignCombineBodySelection {
-                record_index: 96,
-                external_identity: None,
-            },
-            tools: vec![
-                DesignCombineBodySelection {
+            target_record_index: 96,
+            tools: crate::records::DesignCombineTools { first: DesignCombineBodySelection {
                     record_index: 92,
                     external_identity: None,
-                },
-                DesignCombineBodySelection {
+                }, additional: vec![DesignCombineBodySelection {
                     record_index: 94,
                     external_identity: None,
-                },
-            ],
+                },] },
         }
     );
     if let crate::records::DesignScopePayload::Combine(slot) = &mut scope.payload {
@@ -414,11 +408,11 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         &compact_scope,
     )
     .expect("compact Combine construction");
-    assert_eq!(compact.operation, DesignExtrudeOperation::Join);
+    assert_eq!(compact.operation, cadmpeg_ir::features::BooleanKind::Join);
     assert_eq!(compact.operation_offset, 21);
     assert!(!compact.keep_tools);
     assert_eq!(compact.form, DesignCombineForm::Compact);
-    assert_eq!(compact.target.record_index, 96);
+    assert_eq!(compact.target_record_index, 96);
     assert_eq!(
         compact
             .tools
@@ -549,14 +543,13 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     let operation = exact_combine_operation(&bytes, &records, &scope)
         .expect("extended-reference Combine construction");
     assert_eq!(operation.form, DesignCombineForm::ExtendedReference);
-    assert_eq!(operation.operation, DesignExtrudeOperation::Cut);
+    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
     assert_eq!(operation.operation_offset, 31);
     assert!(operation.keep_tools);
     assert_eq!(operation.keep_tools_offset, 30);
-    assert_eq!(operation.target.record_index, 94);
-    let [tool] = operation.tools.as_slice() else {
-        panic!("one external tool");
-    };
+    assert_eq!(operation.target_record_index, 94);
+    assert!(operation.tools.additional.is_empty());
+    let tool = &operation.tools.first;
     let identity = tool
         .external_identity
         .as_ref()
@@ -599,5 +592,5 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         &scope,
     )
     .expect("operation remains exact when only the optional external identity is malformed");
-    assert!(operation.tools[0].external_identity.is_none());
+    assert!(operation.tools.first.external_identity.is_none());
 }

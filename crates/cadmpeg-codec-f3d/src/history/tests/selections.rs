@@ -576,15 +576,12 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
     if let crate::records::DesignScopePayload::Combine(slot) = &mut scope.payload {
         *slot = Some(crate::records::DesignCombineOperation {
             form: crate::records::DesignCombineForm::ExtendedReference,
-            operation: crate::records::DesignExtrudeOperation::Join,
+            operation: cadmpeg_ir::features::BooleanKind::Join,
             operation_offset: 0,
             keep_tools: false,
             keep_tools_offset: 0,
-            target: crate::records::DesignCombineBodySelection {
-                record_index: 11,
-                external_identity: None,
-            },
-            tools: vec![tool(12, 500), tool(13, 501)],
+            target_record_index: 11,
+            tools: crate::records::DesignCombineTools { first: tool(12, 500), additional: vec![tool(13, 501)] },
         });
     }
     let BodySelection::Local { bodies, native } =
@@ -599,7 +596,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
     scope
         .combine_operation_mut()
         .expect("Combine operation")
-        .tools[1] = tool(13, 500);
+        .tools.additional[0] = tool(13, 500);
     assert!(super::super::combine_external_local_tools(&scope).is_none());
 }
 

@@ -265,7 +265,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
         DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignCombineBodySelection,
-        DesignCombineForm, DesignCombineOperation, DesignExtrudeOperation, DesignOperandOwner,
+        DesignCombineForm, DesignCombineOperation, DesignOperandOwner,
         DesignParameterScope, DesignRecordHeader,
     };
 
@@ -299,26 +299,23 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         if let crate::records::DesignScopePayload::Combine(slot) = &mut scope.payload {
             *slot = (!hole_scope).then_some(DesignCombineOperation {
                 form: DesignCombineForm::Standard,
-                operation: DesignExtrudeOperation::Join,
+                operation: cadmpeg_ir::features::BooleanKind::Join,
                 operation_offset: 0,
                 keep_tools: false,
                 keep_tools_offset: 0,
-                target: DesignCombineBodySelection {
-                    record_index: if empty_legacy_tool {
+                target_record_index: if empty_legacy_tool {
                         operand_record_index + 1
                     } else {
                         operand_record_index
                     },
-                    external_identity: None,
-                },
-                tools: vec![DesignCombineBodySelection {
+                tools: crate::records::DesignCombineTools { first: DesignCombineBodySelection {
                     record_index: if empty_legacy_tool {
                         operand_record_index
                     } else {
                         operand_record_index + 1
                     },
                     external_identity: None,
-                }],
+                }, additional: vec![] },
             });
         }
         scopes.push(scope);

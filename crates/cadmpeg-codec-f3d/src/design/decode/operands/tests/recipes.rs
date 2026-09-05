@@ -187,15 +187,12 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     if let crate::records::DesignScopePayload::Combine(slot) = &mut combine_scope.payload {
         *slot = Some(crate::records::DesignCombineOperation {
             form: crate::records::DesignCombineForm::Standard,
-            operation: crate::records::DesignExtrudeOperation::Join,
+            operation: cadmpeg_ir::features::BooleanKind::Join,
             operation_offset: 0,
             keep_tools: false,
             keep_tools_offset: 0,
-            target: crate::records::DesignCombineBodySelection {
-                record_index: 0,
-                external_identity: None,
-            },
-            tools: Vec::new(),
+            target_record_index: 0,
+            tools: crate::records::DesignCombineTools { first: crate::records::DesignCombineBodySelection { record_index: record.record_index, external_identity: None }, additional: Vec::new() },
         });
     }
     let mut combine_recipe = recipe.clone();

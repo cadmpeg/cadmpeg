@@ -4744,11 +4744,12 @@ pub struct DesignCombineBodySelection {
 /// Exact Boolean construction carried by a `Combine` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignCombineOperationWire", into = "DesignCombineOperationWire")]
 pub struct DesignCombineOperation {
     /// Serialized scope-prologue form.
     pub form: DesignCombineForm,
     /// Join, cut, or intersect operation.
-    pub operation: DesignExtrudeOperation,
+    pub operation: cadmpeg_ir::features::BooleanKind,
     /// Byte offset of the operation u32.
     pub operation_offset: u64,
     /// Whether the source operation retains its tool bodies.
@@ -4756,9 +4757,82 @@ pub struct DesignCombineOperation {
     /// Byte offset of the keep-tools Boolean.
     pub keep_tools_offset: u64,
     /// Boolean target body selector.
-    pub target: DesignCombineBodySelection,
+    pub target_record_index: u32,
     /// Boolean tool body selectors in source order.
-    pub tools: Vec<DesignCombineBodySelection>,
+    pub tools: DesignCombineTools,
+}
+
+/// Ordered nonempty tools of a Combine operation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignCombineTools {
+    pub first: DesignCombineBodySelection,
+    pub additional: Vec<DesignCombineBodySelection>,
+}
+
+impl DesignCombineTools {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &DesignCombineBodySelection> {
+        std::iter::once(&self.first).chain(&self.additional)
+    }
+}
+
+/// Exact Boolean construction carried by a `Combine` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignCombineOperationWire {
+    /// Serialized scope-prologue form.
+    form: DesignCombineForm,
+    /// Join, cut, or intersect operation.
+    #[serde(deserialize_with = "deserialize_combine_operation_kind")]
+    operation: cadmpeg_ir::features::BooleanKind,
+    /// Byte offset of the operation u32.
+    operation_offset: u64,
+    /// Whether the source operation retains its tool bodies.
+    keep_tools: bool,
+    /// Byte offset of the keep-tools Boolean.
+    keep_tools_offset: u64,
+    /// Boolean target body selector.
+    target: DesignCombineBodySelection,
+    /// Boolean tool body selectors in source order.
+    tools: Vec<DesignCombineBodySelection>,
+}
+
+fn deserialize_combine_operation_kind<'de, D: Deserializer<'de>>(deserializer: D) -> Result<cadmpeg_ir::features::BooleanKind, D::Error> {
+    cadmpeg_ir::features::BooleanKind::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format!("operation: {error}")))
+}
+
+impl TryFrom<DesignCombineOperationWire> for DesignCombineOperation {
+    type Error = String;
+    fn try_from(wire: DesignCombineOperationWire) -> Result<Self, Self::Error> {
+        if wire.target.external_identity.is_some() {
+            return Err("target.external_identity must be absent".into());
+        }
+        let mut tools = wire.tools.into_iter();
+        let first = tools.next().ok_or("tools must contain at least one body selection")?;
+        Ok(Self {
+            form: wire.form,
+            operation: wire.operation,
+            operation_offset: wire.operation_offset,
+            keep_tools: wire.keep_tools,
+            keep_tools_offset: wire.keep_tools_offset,
+            target_record_index: wire.target.record_index,
+            tools: DesignCombineTools { first, additional: tools.collect() },
+        })
+    }
+}
+
+impl From<DesignCombineOperation> for DesignCombineOperationWire {
+    fn from(operation: DesignCombineOperation) -> Self {
+        Self {
+            form: operation.form,
+            operation: operation.operation,
+            operation_offset: operation.operation_offset,
+            keep_tools: operation.keep_tools,
+            keep_tools_offset: operation.keep_tools_offset,
+            target: DesignCombineBodySelection { record_index: operation.target_record_index, external_identity: None },
+            tools: std::iter::once(operation.tools.first).chain(operation.tools.additional).collect(),
+        }
+    }
 }
 
 /// Thread construction form selected by the scope prefix and payload marker.
