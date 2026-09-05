@@ -113,11 +113,11 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
     bind_extrude_selection_history(&mut members, &naming_spaces, &body_bindings, &histories);
 
     assert_eq!(
-        members[0].historical_entity_kind(),
+        members[0].historical.as_ref().map(|binding| binding.kind),
         Some(AsmHistoricalEntityKind::Loop)
     );
-    assert_eq!(members[0].historical_entity_ref(), Some(42));
-    assert_eq!(members[0].historical_state_ids(), [2]);
+    assert_eq!(members[0].historical.as_ref().map(|binding| binding.entity_ref), Some(42));
+    assert_eq!(members[0].historical.as_ref().unwrap().state_ids, [2]);
 }
 
 #[test]

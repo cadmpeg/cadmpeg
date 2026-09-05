@@ -8019,10 +8019,9 @@ pub(crate) fn bind_edge_identity_history(
             }
         }
         let direct = operand
-            .historical_entity_kind()
-            .zip(operand.historical_entity_ref())
-            .filter(|_| operand.historical_state_ids().contains(&previous_state_id))
-            .and_then(|(kind, entity_ref)| historical_identity_edge(kind, entity_ref, topology));
+            .historical.as_ref()
+            .filter(|binding| binding.state_ids.contains(&previous_state_id))
+            .and_then(|binding| historical_identity_edge(binding.kind, binding.entity_ref, topology));
         if let Some(edge) = direct {
             operand.resolved_edge_slot = Some(edge);
             operand.resolution_identity_id = Some(operand.id.clone());

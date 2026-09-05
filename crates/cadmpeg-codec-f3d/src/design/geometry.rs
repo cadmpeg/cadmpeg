@@ -2407,19 +2407,17 @@ pub(crate) fn historical_member_points_in_state(
 ) -> Option<Vec<Point3>> {
     use crate::records::AsmHistoricalEntityKind;
 
-    let kind =
-        member
-            .historical_entity_kind()
-            .or_else(|| match member.resolved_geometry.as_ref()? {
-                SketchRelationOperand::Point { .. } => Some(AsmHistoricalEntityKind::Point),
-                SketchRelationOperand::Curve { .. } => Some(AsmHistoricalEntityKind::Curve),
-                SketchRelationOperand::Surface { .. } | SketchRelationOperand::Record { .. } => {
-                    None
-                }
-            })?;
-    let entity_ref = member
-        .historical_entity_ref()
-        .or_else(|| i64::try_from(member.local_id).ok())?;
+    let (kind, entity_ref) = match &member.historical {
+        Some(binding) => (binding.kind, binding.entity_ref),
+        None => {
+            let kind = match member.resolved_geometry.as_ref()? {
+                SketchRelationOperand::Point { .. } => AsmHistoricalEntityKind::Point,
+                SketchRelationOperand::Curve { .. } => AsmHistoricalEntityKind::Curve,
+                SketchRelationOperand::Surface { .. } | SketchRelationOperand::Record { .. } => return None,
+            };
+            (kind, i64::try_from(member.local_id).ok()?)
+        }
+    };
     historical_entity_positions(kind, entity_ref, topology)
 }
 
