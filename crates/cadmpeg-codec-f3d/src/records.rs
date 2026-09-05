@@ -3557,10 +3557,12 @@ struct DesignParameterScopeSerde {
     /// Extrude prologue, fixed parameters, and profile.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "extrude_scope_is_absent")]
+    #[serde(deserialize_with = "deserialize_flattened_scope")]
     pub extrude: Option<DesignExtrudeScope>,
     /// Coil discriminators, placement, and transform.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "coil_scope_is_absent")]
+    #[serde(deserialize_with = "deserialize_flattened_scope")]
     pub coil: Option<DesignCoilScope>,
     /// One-based ordinal among scopes of the same feature family.
     pub feature_ordinal: u32,
@@ -3614,6 +3616,7 @@ struct DesignParameterScopeSerde {
     /// BaseFlange operation and sketch profile.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "base_flange_scope_is_absent")]
+    #[serde(deserialize_with = "deserialize_flattened_scope")]
     pub base_flange: Option<DesignBaseFlangeScope>,
     /// Per-boundary-component settings carried by a `SurfacePatch` scope, in
     /// scope reference order.
@@ -3635,6 +3638,7 @@ struct DesignParameterScopeSerde {
     /// Path-feature construction and Sweep sketch profile.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "path_feature_scope_is_absent")]
+    #[serde(deserialize_with = "deserialize_flattened_scope")]
     pub path_feature: Option<DesignPathFeatureWire>,
     /// Exact Boolean construction carried by a `Combine` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3675,6 +3679,7 @@ struct DesignParameterScopeSerde {
     /// Exact row-major local-to-model frame carried by a `WorkPlane` scope.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "deserialize_work_plane_frame")]
     pub work_plane_frame: Option<DesignWorkPlaneTransform>,
     /// Exact two-point construction carried by a `WorkAxis` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3682,6 +3687,7 @@ struct DesignParameterScopeSerde {
     /// Exact row-major local-to-model frame owned by a `JointOrigin` scope.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "deserialize_joint_origin_frame")]
     pub joint_origin_frame: Option<DesignJointOriginTransform>,
 
     /// Exact solved construction carried by a `WorkPoint` scope.
@@ -3698,11 +3704,112 @@ struct DesignParameterScopeSerde {
     /// Sketch-module entity bound to this sketch scope.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "deserialize_sketch_entity")]
     pub sketch_entity: Option<DesignSketchEntityBinding>,
     /// Per-file dynamic class tag of the paired header.
     pub paired_class_tag: String,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
+}
+
+// Deserialize the payload itself: flattened Option<T> suppresses T's errors.
+fn deserialize_flattened_scope<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}
+
+#[derive(Deserialize)]
+struct WorkPlaneFrameWire {
+    work_plane_transform: Option<[[f64; 4]; 4]>,
+    work_plane_transform_offset: Option<u64>,
+    work_plane_reference: Option<u32>,
+    work_plane_reference_offset: Option<u64>,
+    work_plane_construction: Option<DesignWorkPlaneConstruction>,
+}
+
+fn deserialize_work_plane_frame<'de, D>(deserializer: D) -> Result<Option<DesignWorkPlaneTransform>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let wire = WorkPlaneFrameWire::deserialize(deserializer)?;
+    let reference = match (wire.work_plane_reference, wire.work_plane_reference_offset) {
+        (None, None) => None,
+        (Some(work_plane_reference), Some(work_plane_reference_offset)) => Some(DesignWorkPlaneReference { work_plane_reference, work_plane_reference_offset }),
+        _ => return Err(serde::de::Error::custom("work_plane_reference and work_plane_reference_offset must occur together")),
+    };
+    match (wire.work_plane_transform, wire.work_plane_transform_offset) {
+        (None, None) if reference.is_none() && wire.work_plane_construction.is_none() => Ok(None),
+        (Some(work_plane_transform), Some(work_plane_transform_offset)) => Ok(Some(DesignWorkPlaneTransform {
+            work_plane_transform,
+            work_plane_transform_offset,
+            reference,
+            work_plane_construction: wire.work_plane_construction,
+        })),
+        _ => Err(serde::de::Error::custom("work_plane_transform and work_plane_transform_offset are required for work_plane frame data")),
+    }
+}
+
+impl<'de> Deserialize<'de> for DesignWorkPlaneTransform {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserialize_work_plane_frame(deserializer)?.ok_or_else(|| serde::de::Error::missing_field("work_plane_transform"))
+    }
+}
+
+#[derive(Deserialize)]
+struct JointOriginFrameWire {
+    joint_origin_transform: Option<[[f64; 4]; 4]>,
+    joint_origin_transform_offset: Option<u64>,
+    joint_origin_reference: Option<u32>,
+    joint_origin_reference_offset: Option<u64>,
+}
+
+fn deserialize_joint_origin_frame<'de, D>(deserializer: D) -> Result<Option<DesignJointOriginTransform>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let wire = JointOriginFrameWire::deserialize(deserializer)?;
+    let reference = match (wire.joint_origin_reference, wire.joint_origin_reference_offset) {
+        (None, None) => None,
+        (Some(joint_origin_reference), Some(joint_origin_reference_offset)) => Some(DesignJointOriginReference { joint_origin_reference, joint_origin_reference_offset }),
+        _ => return Err(serde::de::Error::custom("joint_origin_reference and joint_origin_reference_offset must occur together")),
+    };
+    match (wire.joint_origin_transform, wire.joint_origin_transform_offset) {
+        (None, None) if reference.is_none() => Ok(None),
+        (Some(joint_origin_transform), Some(joint_origin_transform_offset)) => Ok(Some(DesignJointOriginTransform {
+            joint_origin_transform,
+            joint_origin_transform_offset,
+            reference,
+        })),
+        _ => Err(serde::de::Error::custom("joint_origin_transform and joint_origin_transform_offset are required for joint_origin frame data")),
+    }
+}
+
+impl<'de> Deserialize<'de> for DesignJointOriginTransform {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserialize_joint_origin_frame(deserializer)?.ok_or_else(|| serde::de::Error::missing_field("joint_origin_transform"))
+    }
+}
+
+#[derive(Deserialize)]
+struct SketchEntityWire {
+    entity_id: Option<String>,
+    entity_suffix: Option<u64>,
+    entity_reference_offset: Option<u64>,
+}
+
+fn deserialize_sketch_entity<'de, D>(deserializer: D) -> Result<Option<DesignSketchEntityBinding>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let wire = SketchEntityWire::deserialize(deserializer)?;
+    match (wire.entity_id, wire.entity_suffix, wire.entity_reference_offset) {
+        (None, None, None) => Ok(None),
+        (Some(entity_id), Some(entity_suffix), Some(entity_reference_offset)) => Ok(Some(DesignSketchEntityBinding { entity_id, entity_suffix, entity_reference_offset })),
+        _ => Err(serde::de::Error::custom("entity_id, entity_suffix, and entity_reference_offset must occur together")),
+    }
 }
 
 fn base_flange_scope_is_absent(base_flange: &Option<DesignBaseFlangeScope>) -> bool {
@@ -3867,7 +3974,7 @@ pub struct DesignSketchEntityBinding {
 }
 
 /// Explicit 16-f64 frame carried by a `WorkPlane` scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignWorkPlaneTransform {
     /// Exact row-major local-to-model frame.
@@ -3894,7 +4001,7 @@ pub struct DesignWorkPlaneReference {
 }
 
 /// Explicit 16-f64 frame carried by a `JointOrigin` scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignJointOriginTransform {
     /// Exact row-major local-to-model frame.
@@ -11027,3 +11134,6 @@ pub struct XrefReference {
     pub transform: Option<[[f64; 4]; 4]>,
 }
 
+
+#[cfg(test)]
+mod tests;
