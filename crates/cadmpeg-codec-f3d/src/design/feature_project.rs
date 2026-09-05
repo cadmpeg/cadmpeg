@@ -5969,10 +5969,8 @@ pub(crate) fn project_fixed_loft(
         .collect::<Vec<_>>();
     let legacy_body_group_identity = match matching_legacy_carriers.as_slice() {
         [] => None,
-        [carrier] => {
-            if carrier.scope_reference_ordinal != 0
-                || groups.iter().any(|group| group.role == ROLE_0X4)
-            {
+        [_] => {
+            if groups.iter().any(|group| group.role == ROLE_0X4) {
                 return None;
             }
             let mut body_groups = groups

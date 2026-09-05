@@ -1421,7 +1421,6 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     let parsed_322 = parse_loft_legacy_body_carrier(
         &class_322,
         &scope,
-        0,
         &crate::records::DesignRecordHeader {
             id: "header-322".into(),
             record_index: 100,
@@ -1432,8 +1431,8 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     .expect("class-322 legacy Loft carrier");
     assert_eq!(parsed_322.paired_class_tag, "262");
     assert_eq!(parsed_322.paired_byte_offset, 87);
-    assert_eq!(parsed_322.members, vec![900]);
-    assert_eq!(parsed_322.member_offsets, vec![36]);
+    assert_eq!(parsed_322.member, 900);
+    assert_eq!(parsed_322.member_offset, 36);
     assert_eq!(parsed_322.opaque_index, 89);
     assert_eq!(parsed_322.opaque_scalar, 1.25);
     assert_eq!(parsed_322.next_next_record_index, 102);
@@ -1444,7 +1443,6 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     let parsed_322_tail = parse_loft_legacy_body_carrier(
         &class_322_tail,
         &scope,
-        0,
         &crate::records::DesignRecordHeader {
             id: "header-322-tail".into(),
             record_index: 200,
@@ -1462,7 +1460,6 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     let parsed_411 = parse_loft_legacy_body_carrier(
         &class_411,
         &scope,
-        0,
         &crate::records::DesignRecordHeader {
             id: "header-411".into(),
             record_index: 300,
@@ -1481,7 +1478,6 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     assert!(parse_loft_legacy_body_carrier(
         &wrong_presence,
         &scope,
-        0,
         &crate::records::DesignRecordHeader {
             id: "header-322".into(),
             record_index: 100,
@@ -1495,7 +1491,6 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     assert!(parse_loft_legacy_body_carrier(
         &wrong_pair,
         &scope,
-        0,
         &crate::records::DesignRecordHeader {
             id: "header-322".into(),
             record_index: 400,

@@ -1439,8 +1439,7 @@ pub fn decode_loft_legacy_body_carriers(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(mut carrier) = parse_loft_legacy_body_carrier(bytes, scope, ordinal, header)
-            else {
+            let Some(mut carrier) = parse_loft_legacy_body_carrier(bytes, scope, header) else {
                 continue;
             };
             carrier.id =
@@ -1457,7 +1456,6 @@ pub fn decode_loft_legacy_body_carriers(
 pub(crate) fn parse_loft_legacy_body_carrier(
     bytes: &[u8],
     scope: &DesignParameterScope,
-    scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
 ) -> Option<DesignLoftLegacyBodyCarrier> {
     let start = usize::try_from(header.byte_offset).ok()?;
@@ -1576,7 +1574,6 @@ pub(crate) fn parse_loft_legacy_body_carrier(
     Some(DesignLoftLegacyBodyCarrier {
         id: String::new(),
         scope_record_index: scope.record_index,
-        scope_reference_ordinal,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
@@ -1585,9 +1582,8 @@ pub(crate) fn parse_loft_legacy_body_carrier(
             start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX,
         )
         .ok()?,
-        members: vec![member],
-        member_offsets: vec![u64::try_from(member_offset).ok()?],
-        member_count: 1,
+        member,
+        member_offset: u64::try_from(member_offset).ok()?,
         member_count_offset: u64::try_from(start + legacy_loft_322::MEMBER_COUNT).ok()?,
         opaque_index,
         opaque_index_offset: u64::try_from(start + legacy_loft_322::OPAQUE_INDEX).ok()?,
