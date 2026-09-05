@@ -257,7 +257,6 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
         global.native_file_name().as_deref(),
         Some(WRITER_NATIVE_FILE_NAME)
     );
-    assert_eq!(global.units_flag(), Some(WRITER_UNITS_FLAG));
     assert_eq!(global.units_name().as_deref(), Some(WRITER_UNITS_NAME));
     assert_eq!(global.version(), Some(IgesVersion::V5_3));
     assert!(
@@ -266,14 +265,6 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
             .expect("generated Global resolves a millimetre length factor")
             .minimum_resolution_mm()
             - 0.01)
-            .abs()
-            <= f64::EPSILON * 64.0
-    );
-    assert!(
-        (global
-            .maximum_coordinate_mm()
-            .expect("generated Global declares a maximum coordinate")
-            - 123.0)
             .abs()
             <= f64::EPSILON * 64.0
     );
@@ -290,6 +281,7 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     assert!(global_text.starts_with(
         "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H"
     ));
+    assert!(global_text.contains(",1.2300000000000000D+02,"));
     assert!(global_text.contains(",6Hauthor,7Hcadmpeg,11,0,0H,0H;"));
 }
 

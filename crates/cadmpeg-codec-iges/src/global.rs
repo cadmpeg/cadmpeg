@@ -157,13 +157,9 @@ pub(crate) struct ResolvedGlobal {
     receiver_product: Option<String>,
     native_file_name: Option<String>,
     units_name: Option<String>,
-    #[cfg(test)]
-    units_flag: Option<i64>,
     precision: RealPrecision,
     numeric_limits: NumericLimits,
     minimum_resolution: f64,
-    #[cfg(test)]
-    maximum_coordinate: Option<f64>,
     length_factor_mm: Option<f64>,
     line_weight_scale: Option<LineWeightScale>,
     double_magnitude_absent: bool,
@@ -1282,15 +1278,10 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
             None
         }
     };
-    let (units_flag, units_name, length_factor_mm) = resolution.length_unit(global_table);
-    #[cfg(not(test))]
-    let _ = units_flag;
+    let (_units_flag, units_name, length_factor_mm) = resolution.length_unit(global_table);
     let line_weight_scale = resolution.line_weight_scale(global_table);
     resolution.metadata_date(FIELD_GENERATION_DATE, global_table);
     let minimum_resolution = resolution.minimum_resolution(global_table);
-    #[cfg(test)]
-    let maximum_coordinate = resolution.maximum_coordinate(global_table);
-    #[cfg(not(test))]
     let _ = resolution.maximum_coordinate(global_table);
     resolution.metadata_string(FIELD_AUTHOR, global_table);
     resolution.metadata_string(FIELD_ORGANIZATION, global_table);
@@ -1311,8 +1302,6 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         receiver_product,
         native_file_name,
         units_name,
-        #[cfg(test)]
-        units_flag,
         precision: RealPrecision {
             single_significance,
             double_significance,
@@ -1323,8 +1312,6 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
             double_magnitude,
         },
         minimum_resolution,
-        #[cfg(test)]
-        maximum_coordinate,
         length_factor_mm,
         line_weight_scale,
         double_magnitude_absent,
@@ -1357,11 +1344,6 @@ impl ResolvedGlobal {
         self.numeric_limits
     }
 
-    #[cfg(test)]
-    pub(crate) fn units_flag(&self) -> Option<i64> {
-        self.units_flag
-    }
-
     pub(crate) fn sender_product(&self) -> Option<String> {
         self.sender_product.clone()
     }
@@ -1376,11 +1358,6 @@ impl ResolvedGlobal {
 
     pub(crate) fn units_name(&self) -> Option<String> {
         self.units_name.clone()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn maximum_coordinate_mm(&self) -> Option<f64> {
-        Some(self.maximum_coordinate? * self.length_factor_mm?)
     }
 
     /// The version flag as declared, with the specification default for an absent field.
