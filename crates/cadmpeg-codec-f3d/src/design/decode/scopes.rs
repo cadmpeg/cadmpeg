@@ -6958,7 +6958,7 @@ pub(crate) fn exact_fixed_extrude_parameters(
                         native_stream(&parameter.id) == native_stream(&scope.id)
                             && parameter.record_index == owner.parameter_record_index
                     })
-                    .map(|parameter| parameter.source_kind.as_str())
+                    .map(|parameter| parameter.source_kind())
             });
         match source_kind {
             Some("AlongDistance") if lane.value != 0.0 && along_distance.is_none() => {
@@ -9769,7 +9769,7 @@ fn bind_coil_extent_from_parameters(
                     native_stream(&parameter.id) == Some(stream)
                         && parameter.record_index == owner.parameter_record_index
                 })
-                .map(|parameter| (owner.local_ordinal, parameter.source_kind.as_str()))
+                .map(|parameter| (owner.local_ordinal, parameter.source_kind()))
         })
         .collect::<Vec<_>>();
     owned_kinds.sort_unstable_by_key(|(ordinal, _)| *ordinal);

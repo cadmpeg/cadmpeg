@@ -469,7 +469,7 @@ pub fn bind_work_plane_constructions(
             native_stream(&parameter.id) == Some(stream.as_str())
                 && parameter.record_index == owner.parameter_record_index
                 && parameter.owner_record_index() == Some(owner.record_index)
-                && parameter.source_kind == "ExtraOffset"
+                && parameter.source_kind() == "ExtraOffset"
                 && parameter.evaluated_value.is_finite()
                 && parameter.evaluated_value == 0.0
         }) {
@@ -1707,12 +1707,12 @@ pub fn decode_fillet_radius_groups(
         owned_parameters.sort_by_key(|(ordinal, _)| *ordinal);
         let radii = owned_parameters
             .iter()
-            .filter_map(|(_, parameter)| (parameter.source_kind == "Radius").then_some(*parameter))
+            .filter_map(|(_, parameter)| (parameter.source_kind() == "Radius").then_some(*parameter))
             .collect::<Vec<_>>();
         let weights = owned_parameters
             .iter()
             .filter_map(|(_, parameter)| {
-                (parameter.source_kind == "TangencyWeight").then_some(*parameter)
+                (parameter.source_kind() == "TangencyWeight").then_some(*parameter)
             })
             .collect::<Vec<_>>();
         if owned_parameters.len() == radii.len() + weights.len()
@@ -1745,7 +1745,7 @@ pub fn decode_fillet_radius_groups(
         let chord_lengths = owned_parameters
             .iter()
             .filter_map(|(_, parameter)| {
-                (parameter.source_kind == "ChordLen").then_some(parameter.record_index)
+                (parameter.source_kind() == "ChordLen").then_some(parameter.record_index)
             })
             .collect::<Vec<_>>();
         // TangencyWeight is optional for the chordal law; older records carry
@@ -1775,7 +1775,7 @@ pub fn decode_fillet_radius_groups(
             owned_parameters
                 .iter()
                 .filter_map(|(_, parameter)| {
-                    (parameter.source_kind == kind).then_some(parameter.record_index)
+                    (parameter.source_kind() == kind).then_some(parameter.record_index)
                 })
                 .collect::<Vec<_>>()
         };
@@ -1808,7 +1808,7 @@ pub fn decode_fillet_radius_groups(
             owned_parameters
                 .iter()
                 .filter_map(|(_, parameter)| {
-                    (parameter.source_kind == kind).then_some(parameter.record_index)
+                    (parameter.source_kind() == kind).then_some(parameter.record_index)
                 })
                 .collect::<Vec<_>>()
         };

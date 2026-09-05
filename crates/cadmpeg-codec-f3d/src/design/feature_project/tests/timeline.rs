@@ -263,9 +263,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
     .expect("synthetic internal parameter");
     parameter.id = format!("{stream}:design-parameter#41");
     parameter.record_index = 41;
-    parameter.owner = crate::records::DesignParameterOwnerKind::Feature {
-        owner_record_index: 40,
-    };
+    parameter.source = crate::records::DesignParameterSource::new(parameter.source_kind().to_owned(), Some(40), parameter.family_discriminator()).unwrap();
     let owner = DesignParameterOwner {
         id: format!("{stream}:design-parameter-owner#40"),
         byte_offset: 0,

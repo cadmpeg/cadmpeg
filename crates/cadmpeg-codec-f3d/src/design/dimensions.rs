@@ -392,7 +392,7 @@ fn project_all_dimension_constraints(
         if !design_dimension_unit(source_parameter) {
             return None;
         }
-        let source_kind = source_parameter.source_kind.as_str();
+        let source_kind = source_parameter.source_kind();
         let evaluated_value = source_parameter.evaluated_value;
         let entities = indices
             .iter()
@@ -506,7 +506,7 @@ fn project_all_dimension_constraints(
                     .copied()
             })
             .collect::<Option<Vec<_>>>()?;
-        if parameter.source_kind.starts_with("Angular Dimension") {
+        if parameter.source_kind().starts_with("Angular Dimension") {
             let indices = group
                 .loci
                 .iter()
@@ -534,13 +534,13 @@ fn project_all_dimension_constraints(
         if let Some(definition) = radial_locus_dimension_definition(
             &locus_entities,
             entities,
-            &parameter.source_kind,
+            parameter.source_kind(),
             parameter.evaluated_value,
             &parameter_id,
         ) {
             return Some(definition);
         }
-        if parameter.source_kind.starts_with("Linear Dimension") {
+        if parameter.source_kind().starts_with("Linear Dimension") {
             if group.state == 0x20 {
                 let entities_by_record = group
                     .loci
@@ -720,7 +720,7 @@ fn project_all_dimension_constraints(
                 .unwrap_or_else(|| {
                     native_definition(
                         scope,
-                        &parameter.source_kind,
+                        parameter.source_kind(),
                         None,
                         &[
                             ("first_locus", Some(pair.first_role), indices[0]),
@@ -777,7 +777,7 @@ fn project_all_dimension_constraints(
                     );
                     native_definition(
                         scope,
-                        &parameter.source_kind,
+                        parameter.source_kind(),
                         Some(u64::from(group.state)),
                         &operands,
                         parameter_id,
@@ -848,7 +848,7 @@ fn project_all_dimension_constraints(
                         })
                         .collect();
                     Definition::Native {
-                        native_kind: parameter.source_kind.clone(),
+                        native_kind: parameter.source_kind().to_owned(),
                         native_state: None,
                         native_flags: None,
                         native_properties: std::collections::BTreeMap::new(),
@@ -897,7 +897,7 @@ fn project_all_dimension_constraints(
                     if let Some(definition) = null_locus_dimension_definition(
                         pair,
                         entity,
-                        &parameter.source_kind,
+                        parameter.source_kind(),
                         parameter.evaluated_value,
                         parameter_id.clone(),
                         linear_tolerance,
@@ -939,7 +939,7 @@ fn project_all_dimension_constraints(
                 id: constraint_id,
                 sketch,
                 definition: Definition::Native {
-                    native_kind: parameter.source_kind.clone(),
+                    native_kind: parameter.source_kind().to_owned(),
                     native_state: None,
                     native_flags: None,
                     native_properties: std::collections::BTreeMap::new(),
@@ -1013,7 +1013,7 @@ fn project_all_dimension_constraints(
             let sketch = sketches_by_scope
                 .get(&(scope.as_str(), owner.scope_record_index))?
                 .clone();
-            let linear_candidates = if parameter.source_kind.starts_with("Linear Dimension")
+            let linear_candidates = if parameter.source_kind().starts_with("Linear Dimension")
                 && design_dimension_unit(parameter)
             {
                 recipe_linear_dimension_candidates(
@@ -1054,7 +1054,7 @@ fn project_all_dimension_constraints(
                     | (_, _, Some(definition), _)
                     | (_, _, _, Some(definition)) => definition,
                     _ => Definition::Native {
-                        native_kind: parameter.source_kind.clone(),
+                        native_kind: parameter.source_kind().to_owned(),
                         native_state: None,
                         native_flags: None,
                         native_properties: std::collections::BTreeMap::new(),
@@ -1232,7 +1232,7 @@ fn project_all_dimension_constraints(
             return None;
         }
         let definition = exact_definition.unwrap_or_else(|| Definition::Native {
-            native_kind: parameter.source_kind.clone(),
+            native_kind: parameter.source_kind().to_owned(),
             native_state: None,
             native_flags: None,
             native_properties: std::collections::BTreeMap::new(),
@@ -1300,18 +1300,18 @@ fn presentation_dimension_definition(
         return None;
     }
     match entities.as_slice() {
-        [entity] if parameter.source_kind.starts_with("Tangent Dimension") => {
+        [entity] if parameter.source_kind().starts_with("Tangent Dimension") => {
             tangent_radius_dimension_definition(entity, parameter, parameter_id, linear_tolerance)
         }
         [entity] => radial_dimension_definition_at_tolerance(
             entity,
-            &parameter.source_kind,
+            parameter.source_kind(),
             parameter.evaluated_value,
             parameter_id.clone(),
             linear_tolerance,
         )
         .or_else(|| {
-            if !parameter.source_kind.starts_with("Linear Dimension") {
+            if !parameter.source_kind().starts_with("Linear Dimension") {
                 return None;
             }
             let SketchGeometry::Line { start, end } = &entity.geometry else {
@@ -1325,7 +1325,7 @@ fn presentation_dimension_definition(
                     parameter: parameter_id.clone(),
                 })
         }),
-        [first, second] if parameter.source_kind.starts_with("Tangent Dimension") => {
+        [first, second] if parameter.source_kind().starts_with("Tangent Dimension") => {
             tangent_entity_distance_definition(
                 first,
                 second,
@@ -1334,7 +1334,7 @@ fn presentation_dimension_definition(
                 linear_tolerance,
             )
         }
-        [first, second] if parameter.source_kind.starts_with("Linear Dimension") => {
+        [first, second] if parameter.source_kind().starts_with("Linear Dimension") => {
             explicit_linear_dimension_definition(
                 first,
                 second,
@@ -1343,7 +1343,7 @@ fn presentation_dimension_definition(
                 linear_tolerance,
             )
         }
-        [first, second] if parameter.source_kind.starts_with("Angular Dimension") => {
+        [first, second] if parameter.source_kind().starts_with("Angular Dimension") => {
             line_angle_matches(&first.geometry, &second.geometry, parameter.evaluated_value).then(
                 || Definition::Angle {
                     first: first.id().clone(),
@@ -1525,7 +1525,7 @@ pub(crate) fn preceding_incident_angular_dimension_definition(
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
 
-    if !parameter.source_kind.starts_with("Angular Dimension")
+    if !parameter.source_kind().starts_with("Angular Dimension")
         || !design_dimension_unit(parameter)
         || !parameter.evaluated_value.is_finite()
     {
@@ -1606,7 +1606,7 @@ pub(crate) fn owner_scoped_angular_dimension_definition(
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
 
-    if !parameter.source_kind.starts_with("Angular Dimension")
+    if !parameter.source_kind().starts_with("Angular Dimension")
         || !design_dimension_unit(parameter)
         || !parameter.evaluated_value.is_finite()
     {
@@ -1656,7 +1656,7 @@ pub(crate) fn parallel_group_axis_angle_definition(
     let [first, second] = entities else {
         return None;
     };
-    if parameter.source_kind != "Angular Dimension-2"
+    if parameter.source_kind() != "Angular Dimension-2"
         || !design_dimension_unit(parameter)
         || parallel_line_distance(first, second).is_none()
     {
@@ -1693,7 +1693,7 @@ pub(crate) fn concentric_circle_dimension_definition(
         SketchGeometry, SketchLocus,
     };
 
-    if !parameter.source_kind.starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
         return None;
     }
     let evaluated_mm = parameter.evaluated_value * 10.0;
@@ -1756,7 +1756,7 @@ pub(crate) fn unique_point_line_dimension_definition(
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
 
-    if !parameter.source_kind.starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
         return None;
     }
     let evaluated_mm = parameter.evaluated_value * 10.0;
@@ -1804,7 +1804,7 @@ pub(crate) fn unique_parallel_line_dimension_definition(
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
 
-    if !parameter.source_kind.starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
         return None;
     }
     let evaluated_mm = parameter.evaluated_value * 10.0;
@@ -1846,7 +1846,7 @@ pub(crate) fn owner_scoped_parallel_line_set_dimension_definition(
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
 
-    if !parameter.source_kind.starts_with("Linear Dimension")
+    if !parameter.source_kind().starts_with("Linear Dimension")
         || !design_dimension_unit(parameter)
         || !linear_tolerance.is_finite()
         || linear_tolerance < 0.0
@@ -1939,7 +1939,7 @@ pub(crate) fn owner_scoped_line_length_dimension_definition(
         SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
     };
 
-    if !parameter.source_kind.starts_with("Linear Dimension")
+    if !parameter.source_kind().starts_with("Linear Dimension")
         || !design_dimension_unit(parameter)
         || !linear_tolerance.is_finite()
         || linear_tolerance < 0.0
@@ -1996,7 +1996,7 @@ pub(crate) fn unique_point_class_dimension_definition(
         SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
     };
 
-    if !parameter.source_kind.starts_with("Linear Dimension")
+    if !parameter.source_kind().starts_with("Linear Dimension")
         || !design_dimension_unit(parameter)
         || !linear_tolerance.is_finite()
         || linear_tolerance < 0.0
@@ -2119,7 +2119,7 @@ pub(crate) fn owner_scoped_radial_dimension_definition(
         .filter_map(|entity| {
             radial_dimension_definition_at_tolerance(
                 entity,
-                &parameter.source_kind,
+                parameter.source_kind(),
                 parameter.evaluated_value,
                 parameter_id.clone(),
                 linear_tolerance,
@@ -2652,7 +2652,7 @@ pub fn project_spatial_dimension_constraints(
             id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
             sketch,
             definition: SpatialSketchConstraintDefinition::Native {
-                native_kind: parameter.source_kind.clone(),
+                native_kind: parameter.source_kind().to_owned(),
                 native_state: None,
                 parameter: Some(parameter_id),
                 operands: vec![SketchNativeOperand {
@@ -2687,7 +2687,7 @@ pub(crate) fn owner_scoped_spatial_line_length_dimension_definition(
         SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometry,
     };
 
-    if !parameter.source_kind.starts_with("Linear Dimension")
+    if !parameter.source_kind().starts_with("Linear Dimension")
         || !design_dimension_unit(parameter)
         || !linear_tolerance.is_finite()
         || linear_tolerance < 0.0
@@ -2737,7 +2737,7 @@ pub(crate) fn unique_spatial_parallel_line_dimension_definition(
         SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometry,
     };
 
-    if !parameter.source_kind.starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
         return None;
     }
     let expected = (parameter.evaluated_value * 10.0).abs();
@@ -2785,7 +2785,7 @@ pub(crate) fn owner_scoped_spatial_repeated_profile_line_distance_definition(
         SpatialSketchConstraintDefinition as Definition, SpatialSketchEntityPair,
     };
 
-    if !parameter.source_kind.starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
         return None;
     }
     let expected = (parameter.evaluated_value * 10.0).abs();
@@ -2848,7 +2848,7 @@ pub(crate) fn owner_scoped_spatial_parallel_line_set_dimension_definition(
         SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometry,
     };
 
-    if !parameter.source_kind.starts_with("Linear Dimension")
+    if !parameter.source_kind().starts_with("Linear Dimension")
         || !design_dimension_unit(parameter)
         || !linear_tolerance.is_finite()
         || linear_tolerance < 0.0
@@ -3458,7 +3458,7 @@ pub(crate) fn annotation_offset_dimension_definition(
     use cadmpeg_ir::features::Length;
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchOffsetPair};
 
-    if !parameter.source_kind.starts_with("Linear Dimension")
+    if !parameter.source_kind().starts_with("Linear Dimension")
         || !design_dimension_unit(parameter)
         || !linear_tolerance.is_finite()
         || linear_tolerance < 0.0
@@ -3698,9 +3698,9 @@ pub(crate) fn radial_extension_annotation_group(
     use cadmpeg_ir::sketches::SketchGeometry;
 
     if !design_dimension_unit(parameter)
-        || !(parameter.source_kind.starts_with("Radius Dimension")
-            || parameter.source_kind.starts_with("Radial Dimension")
-            || parameter.source_kind.starts_with("Diameter Dimension"))
+        || !(parameter.source_kind().starts_with("Radius Dimension")
+            || parameter.source_kind().starts_with("Radial Dimension")
+            || parameter.source_kind().starts_with("Diameter Dimension"))
     {
         return false;
     }
@@ -4587,7 +4587,7 @@ pub(crate) fn symmetric_parallel_line_dimension_definition(
 
     if first_role == 0
         || second_role == 0
-        || !parameter.source_kind.starts_with("Linear Dimension")
+        || !parameter.source_kind().starts_with("Linear Dimension")
         || !design_dimension_unit(parameter)
     {
         return None;

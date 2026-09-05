@@ -27,15 +27,10 @@ fn parameter(
         byte_offset: 0,
         class_tag: "000".into(),
         record_index,
-        family_discriminator: None,
         source_ordinal: 0,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(
-            DesignParameterKind::Feature,
-            None,
-        ),
+        source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None).unwrap(),
         expression: value.to_string(),
         expression_offset: 0,
-        source_kind: source_kind.into(),
         source_kind_offset: 0,
 
         unit: unit.map(|value| crate::records::RecordedValue { value: value.to_owned(), offset: None }),

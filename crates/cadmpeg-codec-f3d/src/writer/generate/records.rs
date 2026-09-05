@@ -114,6 +114,7 @@ pub(crate) fn encode_design_bulkstream(
     target: &CadIr,
     native: &F3dNative,
     registry: &GeneratedDesignRegistry,
+    parameter_bytes: Vec<u8>,
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
     let (_, projected_parameters) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -186,11 +187,8 @@ pub(crate) fn encode_design_bulkstream(
         return Ok(None);
     }
 
-    let mut out = Vec::new();
+    let mut out = parameter_bytes;
     let mut primary_records = Vec::new();
-    for parameter in &native.design_parameters {
-        encode_document_parameter(&mut out, parameter)?;
-    }
     if !registry.body_map.is_empty() {
         let class_tag = registry.body_map_class_tag.as_deref().ok_or_else(|| {
             CodecError::Malformed("generated F3D body map has no registered type".into())
@@ -405,37 +403,67 @@ fn primary_record_u64(
     })
 }
 
-fn encode_document_parameter(
-    out: &mut Vec<u8>,
-    parameter: &crate::records::DesignParameter,
-) -> Result<(), CodecError> {
-    validate_dynamic_class_tag(&parameter.class_tag, "Design parameter")?;
-    native_lp_ascii(out, &parameter.class_tag)?;
-    out.extend_from_slice(&parameter.record_index.to_le_bytes());
-    out.extend_from_slice(&[0; 11]);
-    out.extend_from_slice(
-        &parameter
-            .family_discriminator
-            .expect("source-less parameter preconditions require a discriminator")
-            .value.to_le_bytes(),
-    );
-    out.push(0);
-    out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
-    out.push(0);
-    native_lp_utf16(out, &parameter.expression)?;
-    out.extend_from_slice(&[0; 8]);
-    out.push(1);
-    native_lp_utf16(out, &parameter.source_kind)?;
-    out.extend_from_slice(&0u32.to_le_bytes());
-    if let Some(unit) = &parameter.unit {
-        native_lp_utf16(out, &unit.value)?;
-    } else {
+pub(super) fn encode_document_parameters(parameters: &[crate::records::DesignParameter]) -> Result<Vec<u8>, CodecError> {
+    let mut out = Vec::new();
+    let mut parameter_indices = std::collections::BTreeSet::new();
+    let mut parameter_ordinals = std::collections::BTreeSet::new();
+    for parameter in parameters {
+        let expected_discriminator =
+            crate::design::decode::parameters::design_parameter_discriminator(
+                parameter.source_kind(),
+            );
+        if parameter.family_discriminator().map(|value| value.value.code()) != Some(expected_discriminator) {
+            return Err(CodecError::InvalidInput(format!(
+                "F3D Design parameter {} has discriminator {:?}, expected {expected_discriminator} for {}",
+                parameter.id, parameter.family_discriminator().map(|value| value.value.code()), parameter.source_kind()
+            )));
+        }
+        validate_dynamic_class_tag(&parameter.class_tag, "Design parameter")?;
+        let crate::records::DesignParameterSource::User { family_discriminator } = &parameter.source else {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D owned Design parameter records are not writable".into(),
+            ));
+        };
+        if parameter.expression.is_empty()
+            || parameter.name.is_empty()
+            || parameter.unit.as_ref().is_some_and(|field| field.value.is_empty())
+            || !parameter.evaluated_value.is_finite()
+        {
+            return Err(CodecError::InvalidInput(format!(
+                "F3D Design parameter {} has an invalid document parameter value",
+                parameter.id
+            )));
+        }
+        if !parameter_indices.insert(parameter.record_index)
+            || !parameter_ordinals.insert(parameter.source_ordinal)
+        {
+            return Err(CodecError::InvalidInput(format!(
+                "F3D Design parameter {} duplicates a record index or source ordinal",
+                parameter.id
+            )));
+        }
+        native_lp_ascii(&mut out, &parameter.class_tag)?;
+        out.extend_from_slice(&parameter.record_index.to_le_bytes());
+        out.extend_from_slice(&[0; 11]);
+        out.extend_from_slice(&family_discriminator.value.code().to_le_bytes());
+        out.push(0);
+        out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
+        out.push(0);
+        native_lp_utf16(&mut out, &parameter.expression)?;
+        out.extend_from_slice(&[0; 8]);
+        out.push(1);
+        native_lp_utf16(&mut out, "User Parameter")?;
         out.extend_from_slice(&0u32.to_le_bytes());
+        if let Some(unit) = &parameter.unit {
+            native_lp_utf16(&mut out, &unit.value)?;
+        } else {
+            out.extend_from_slice(&0u32.to_le_bytes());
+        }
+        native_lp_utf16(&mut out, &parameter.name)?;
+        out.extend_from_slice(&parameter.evaluated_value.to_le_bytes());
+        out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
-    native_lp_utf16(out, &parameter.name)?;
-    out.extend_from_slice(&parameter.evaluated_value.to_le_bytes());
-    out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    Ok(())
+    Ok(out)
 }
 
 fn encode_sketch_record_header(

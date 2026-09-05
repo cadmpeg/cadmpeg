@@ -3015,7 +3015,7 @@ pub(super) fn bind_hem_operation_from_parameters(
                     native_stream(&parameter.id) == Some(stream)
                         && parameter.record_index == owner.parameter_record_index
                 })
-                .map(move |parameter| (owner.record_index, parameter.source_kind.as_str()))
+                .map(move |parameter| (owner.record_index, parameter.source_kind()))
         })
         .collect::<Vec<_>>();
     let Some(start) = usize::try_from(scope.byte_offset).ok() else {

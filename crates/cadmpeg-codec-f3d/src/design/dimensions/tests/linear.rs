@@ -718,15 +718,10 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 20,
-        family_discriminator: Some(crate::records::Located { value: 0, offset: 0 }),
         source_ordinal: 4,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(
-            DesignParameterKind::Dimension,
-            Some(21),
-        ),
+        source: crate::records::DesignParameterSource::new("Linear Dimension-4".into(), Some(21), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 0 })).unwrap(),
         expression: "2 mm".into(),
         expression_offset: 0,
-        source_kind: "Linear Dimension-4".into(),
         source_kind_offset: 0,
 
         unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
@@ -1004,7 +999,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         next_byte_offset: 0,
     };
     let mut symmetry_parameter = parameter.clone();
-    symmetry_parameter.source_kind = "Linear Dimension-6".into();
+    symmetry_parameter.source = crate::records::DesignParameterSource::new("Linear Dimension-6".into(), symmetry_parameter.owner_record_index(), symmetry_parameter.family_discriminator()).unwrap();
     let mut symmetry_entities = spatial_entities.clone();
     symmetry_entities.push(axis_entity.clone());
     let symmetry_constraints = project_spatial_dimension_constraints(

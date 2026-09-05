@@ -568,47 +568,6 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
 }
 
 pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Result<(), CodecError> {
-    let mut parameter_indices = BTreeSet::new();
-    let mut parameter_ordinals = BTreeSet::new();
-    for parameter in &native.design_parameters {
-        let expected_discriminator =
-            crate::design::decode::parameters::design_parameter_discriminator(
-                &parameter.source_kind,
-            );
-        if parameter.family_discriminator.map(|value| value.value) != Some(expected_discriminator) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design parameter {} has discriminator {:?}, expected {expected_discriminator} for {}",
-                parameter.id, parameter.family_discriminator.map(|value| value.value), parameter.source_kind
-            )));
-        }
-        validate_dynamic_class_tag(&parameter.class_tag, "Design parameter")?;
-        if parameter.kind() != crate::records::DesignParameterKind::User
-            || parameter.source_kind != "User Parameter"
-            || parameter.owner_record_index().is_some()
-        {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D owned Design parameter records are not writable".into(),
-            ));
-        }
-        if parameter.expression.is_empty()
-            || parameter.name.is_empty()
-            || parameter.unit.as_ref().is_some_and(|field| field.value.is_empty())
-            || !parameter.evaluated_value.is_finite()
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design parameter {} has an invalid document parameter value",
-                parameter.id
-            )));
-        }
-        if !parameter_indices.insert(parameter.record_index)
-            || !parameter_ordinals.insert(parameter.source_ordinal)
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design parameter {} duplicates a record index or source ordinal",
-                parameter.id
-            )));
-        }
-    }
     let mut types_by_guid = BTreeMap::new();
     let mut entity_types = BTreeMap::new();
     let mut entity_modules = BTreeMap::new();

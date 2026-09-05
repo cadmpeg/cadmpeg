@@ -73,15 +73,10 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             byte_offset: 0,
             class_tag: "000".into(),
             record_index,
-            family_discriminator: None,
             source_ordinal: 0,
-            owner: crate::records::DesignParameterOwnerKind::from_kind(
-                DesignParameterKind::Dimension,
-                None,
-            ),
+            source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None).unwrap(),
             expression: String::new(),
             expression_offset: 0,
-            source_kind: source_kind.into(),
             source_kind_offset: 0,
 
             unit: Some(crate::records::RecordedValue { value: unit.into(), offset: None }),
@@ -196,9 +191,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         *slot = Some(offset_operation);
     }
     let mut offset_parameters = parameters.clone();
-    offset_parameters[0].source_kind = "EdgeOffset_1".into();
+    offset_parameters[0].source = crate::records::DesignParameterSource::new("EdgeOffset_1".into(), offset_parameters[0].owner_record_index(), offset_parameters[0].family_discriminator()).unwrap();
     offset_parameters[0].evaluated_value = -3.0;
-    offset_parameters[1].source_kind = "EdgeOffset_2".into();
+    offset_parameters[1].source = crate::records::DesignParameterSource::new("EdgeOffset_2".into(), offset_parameters[1].owner_record_index(), offset_parameters[1].family_discriminator()).unwrap();
     offset_parameters[1].evaluated_value = -1.5;
     let offset_inputs = crate::design::feature_project::ProjectInputs {
         native: &offset_parameters,
@@ -289,8 +284,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     );
 
     let mut per_edge_parameters = parameters.clone();
-    per_edge_parameters[0].source_kind = "EdgeWidth".into();
-    per_edge_parameters[1].source_kind = "EdgeWidth".into();
+    per_edge_parameters[0].source = crate::records::DesignParameterSource::new("EdgeWidth".into(), per_edge_parameters[0].owner_record_index(), per_edge_parameters[0].family_discriminator()).unwrap();
+    per_edge_parameters[1].source = crate::records::DesignParameterSource::new("EdgeWidth".into(), per_edge_parameters[1].owner_record_index(), per_edge_parameters[1].family_discriminator()).unwrap();
     per_edge_parameters[1].evaluated_value = 3.0;
     let mut per_edge_operation = multi_operation;
     per_edge_operation.shape = crate::records::DesignEdgeFlangeShape::SymmetricPerEdge(
@@ -488,15 +483,10 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             byte_offset: 0,
             class_tag: "000".into(),
             record_index,
-            family_discriminator: None,
             source_ordinal: 0,
-            owner: crate::records::DesignParameterOwnerKind::from_kind(
-                DesignParameterKind::Dimension,
-                None,
-            ),
+            source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None).unwrap(),
             expression: String::new(),
             expression_offset: 0,
-            source_kind: source_kind.into(),
             source_kind_offset: 0,
 
             unit: Some(crate::records::RecordedValue { value: unit.into(), offset: None }),
@@ -912,15 +902,10 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             byte_offset: 0,
             class_tag: "000".into(),
             record_index,
-            family_discriminator: None,
             source_ordinal: 0,
-            owner: crate::records::DesignParameterOwnerKind::from_kind(
-                DesignParameterKind::Dimension,
-                None,
-            ),
+            source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None).unwrap(),
             expression: String::new(),
             expression_offset: 0,
-            source_kind: source_kind.into(),
             source_kind_offset: 0,
 
             unit: Some(crate::records::RecordedValue { value: unit.into(), offset: None }),

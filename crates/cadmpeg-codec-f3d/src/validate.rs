@@ -4392,7 +4392,7 @@ fn valid_work_plane_construction(
             design_stream(&parameter.id) == native_stream
                 && parameter.record_index == owner.parameter_record_index
                 && parameter.owner_record_index() == Some(owner.record_index)
-                && parameter.source_kind == "ExtraOffset"
+                && parameter.source_kind() == "ExtraOffset"
                 && parameter.evaluated_value.is_finite()
                 && parameter.evaluated_value == 0.0
         })
@@ -5446,7 +5446,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .filter_map(|owner| {
                         parameters_by_index.get(&(native_stream, owner.parameter_record_index))
                     })
-                    .filter(|parameter| parameter.source_kind == source_kind)
+                    .filter(|parameter| parameter.source_kind() == source_kind)
                     .count()
             };
             let parameter_kind_values = |source_kind: &str| {
@@ -5460,7 +5460,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .filter_map(|owner| {
                         parameters_by_index.get(&(native_stream, owner.parameter_record_index))
                     })
-                    .filter(|parameter| parameter.source_kind == source_kind)
+                    .filter(|parameter| parameter.source_kind() == source_kind)
                     .map(|parameter| parameter.evaluated_value)
                     .collect::<Vec<_>>()
             };
@@ -5715,7 +5715,7 @@ fn validate_fillet_radius_groups<'a>(
                     radius_parameter_record_index,
                 } => {
                     assignment_parameter(*radius_parameter_record_index).is_some_and(|parameter| {
-                        parameter.source_kind == "Radius"
+                        parameter.source_kind() == "Radius"
                             && parameter
                                 .unit.as_ref().map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
@@ -5727,7 +5727,7 @@ fn validate_fillet_radius_groups<'a>(
                     chord_length_parameter_record_index,
                 } => assignment_parameter(*chord_length_parameter_record_index).is_some_and(
                     |parameter| {
-                        parameter.source_kind == "ChordLen"
+                        parameter.source_kind() == "ChordLen"
                             && parameter
                                 .unit.as_ref().map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
@@ -5745,7 +5745,7 @@ fn validate_fillet_radius_groups<'a>(
                 .into_iter()
                 .all(|(record_index, kind)| {
                     assignment_parameter(record_index).is_some_and(|parameter| {
-                        parameter.source_kind == kind
+                        parameter.source_kind() == kind
                             && parameter
                                 .unit.as_ref().map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
@@ -5761,7 +5761,7 @@ fn validate_fillet_radius_groups<'a>(
                     let radius = |record_index: u32, kind: &str| {
                         assignment_parameter(record_index)
                             .filter(|parameter| {
-                                parameter.source_kind == kind
+                                parameter.source_kind() == kind
                                     && parameter
                                         .unit.as_ref().map(|field| field.value.as_str())
                                         .is_some_and(design::feature_project::design_length_unit)
@@ -5781,7 +5781,7 @@ fn validate_fillet_radius_groups<'a>(
                         .map(|row| {
                             assignment_parameter(row.parameter_record_index)
                                 .filter(|parameter| {
-                                    parameter.source_kind == "MidParams"
+                                    parameter.source_kind() == "MidParams"
                                         && parameter.unit.is_none()
                                         && parameter.evaluated_value.is_finite()
                                         && (0.0..1.0).contains(&parameter.evaluated_value)
@@ -5801,7 +5801,7 @@ fn validate_fillet_radius_groups<'a>(
                 .tangency_weight_parameter_record_index
                 .is_none_or(|_| {
                     tangency_weight.is_some_and(|parameter| {
-                        parameter.source_kind == "TangencyWeight"
+                        parameter.source_kind() == "TangencyWeight"
                             && parameter.unit.is_none()
                             && parameter.evaluated_value.is_finite()
                     })
@@ -8532,22 +8532,15 @@ fn validate_dimension_null_locus_pairs<'a>(
     }
 }
 
-/// Validate parameter records, family discriminators, and owner shape.
+/// Validate parameter frame positions and record identities.
 fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let mut parameter_indices = HashSet::new();
     for parameter in &native.design_parameters {
         let native_stream = design_stream(&parameter.id);
         let unique_index = parameter_indices.insert((native_stream, parameter.record_index));
-        let expected_kind = if parameter.source_kind == "User Parameter" {
-            records::DesignParameterKind::User
-        } else if parameter.source_kind.contains("Dimension") {
-            records::DesignParameterKind::Dimension
-        } else {
-            records::DesignParameterKind::Feature
-        };
         let offsets_ordered = parameter.byte_offset < parameter.expression_offset
-            && parameter.family_discriminator.is_none_or(|discriminator| {
+            && parameter.family_discriminator().is_none_or(|discriminator| {
                 let offset = discriminator.offset;
                 offset == parameter.byte_offset.saturating_add(22)
                     && offset < parameter.expression_offset
@@ -8566,16 +8559,9 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && !parameter.expression.is_empty()
-            && !parameter.source_kind.is_empty()
             && !parameter.name.is_empty()
             && parameter.unit.as_ref().is_none_or(|unit| !unit.value.is_empty())
             && parameter.evaluated_value.is_finite()
-            && (parameter.family_discriminator.is_some()
-                || parameter.owner_record_index().is_some())
-            && parameter.family_discriminator.is_none_or(|value| {
-                design::decode::parameters::valid_design_parameter_discriminator(value.value)
-            })
-            && parameter.kind() == expected_kind
             && offsets_ordered
             && unique_index;
         if !valid {

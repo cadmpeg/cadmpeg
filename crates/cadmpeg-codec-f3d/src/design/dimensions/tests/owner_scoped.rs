@@ -575,7 +575,7 @@ fn radial_extension_annotations_require_a_point_on_the_line_carrier() {
     ));
 
     let mut linear = parameter;
-    linear.source_kind = "Linear Dimension-2".into();
+    linear.source = crate::records::DesignParameterSource::new("Linear Dimension-2".into(), linear.owner_record_index(), linear.family_discriminator()).unwrap();
     assert!(!radial_extension_annotation_group(
         &[&extension_point, &line],
         &linear,
