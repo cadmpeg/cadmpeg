@@ -1096,7 +1096,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         4,
     )
     .expect("SurfacePatch two-clause recipe structure");
-    assert_eq!(surface_patch.root, 2);
     assert_eq!(surface_patch.clauses.len(), 2);
     assert_eq!(surface_patch.clauses[0].face_reference_ordinals, [2, 1]);
     assert_eq!(surface_patch.clauses[0].edge_reference_ordinals, [0, 2]);

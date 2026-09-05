@@ -12042,11 +12042,37 @@ pub struct DesignEdgeRecipeStructure {
 /// edge recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignSurfacePatchRecipeStructureWire", into = "DesignSurfacePatchRecipeStructureWire")]
+#[cfg_attr(feature = "schema", schemars(with = "DesignSurfacePatchRecipeStructureWire"))]
 pub struct DesignSurfacePatchRecipeStructure {
-    /// Root discriminator. Value `2` identifies the two-clause form.
-    pub root: i32,
     /// Ordered clauses in the recipe program.
-    pub clauses: Vec<DesignSurfacePatchRecipeClause>,
+    pub clauses: [DesignSurfacePatchRecipeClause; 2],
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignSurfacePatchRecipeStructureWire {
+    root: i32,
+    clauses: Vec<DesignSurfacePatchRecipeClause>,
+}
+
+impl TryFrom<DesignSurfacePatchRecipeStructureWire> for DesignSurfacePatchRecipeStructure {
+    type Error = String;
+
+    fn try_from(wire: DesignSurfacePatchRecipeStructureWire) -> Result<Self, Self::Error> {
+        if wire.root != 2 {
+            return Err("surface patch recipe root must be 2".into());
+        }
+        let clauses = wire.clauses.try_into()
+            .map_err(|_| "surface patch recipe clauses must contain exactly two clauses".to_owned())?;
+        Ok(Self { clauses })
+    }
+}
+
+impl From<DesignSurfacePatchRecipeStructure> for DesignSurfacePatchRecipeStructureWire {
+    fn from(value: DesignSurfacePatchRecipeStructure) -> Self {
+        Self { root: 2, clauses: value.clauses.into() }
+    }
 }
 
 /// One clause in a `SurfacePatch` edge recipe.

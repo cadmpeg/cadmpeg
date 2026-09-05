@@ -528,8 +528,13 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
     first.recipe_references = vec![recipe_reference(&[17])];
     first.surface_patch_recipe_structure =
         Some(crate::records::DesignSurfacePatchRecipeStructure {
-            root: 2,
-            clauses: Vec::new(),
+            clauses: std::array::from_fn(|_| crate::records::DesignSurfacePatchRecipeClause {
+                fields: vec![vec![0], vec![0], vec![2, 0], vec![0, 0], vec![0], vec![0, 0]],
+                face_reference_ordinals: [0, 0],
+                edge_reference_ordinals: [0, 0],
+                payload_entry_count: 0,
+                entries: Vec::new(),
+            }),
         });
     let mut second = recipe_edge_operand(11, &[], &[]);
     second.recipe_references = vec![recipe_reference(&[18])];

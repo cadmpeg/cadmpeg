@@ -364,8 +364,7 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         entries: Vec::new(),
     };
     let structure = DesignSurfacePatchRecipeStructure {
-        root: 2,
-        clauses: vec![clause([1, 2], [0, 3]), clause([4, 1], [0, 5])],
+        clauses: [clause([1, 2], [0, 3]), clause([4, 1], [0, 5])],
     };
     let reference = |candidate_faces, candidate_edges| DesignRecipeReference {
         selector: 0,

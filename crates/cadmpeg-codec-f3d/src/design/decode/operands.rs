@@ -4558,9 +4558,10 @@ pub(crate) fn surface_patch_recipe_structure(
         }
         remaining = &remaining[1..];
     }
-    remaining
-        .is_empty()
-        .then_some(crate::records::DesignSurfacePatchRecipeStructure { root, clauses })
+    if !remaining.is_empty() {
+        return None;
+    }
+    Some(crate::records::DesignSurfacePatchRecipeStructure { clauses: clauses.try_into().ok()? })
 }
 
 pub(crate) fn edge_recipe_local_topology_references(
