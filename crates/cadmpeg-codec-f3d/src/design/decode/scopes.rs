@@ -251,10 +251,13 @@ pub fn decode_parameter_scopes(
                     }
                 }
                 if let [(entity, relative_offset)] = matches.as_slice() {
-                    scope.entity_id = Some(entity.entity_id.clone());
-                    scope.entity_suffix = Some(entity.entity_suffix);
-                    scope.entity_reference_offset =
-                        Some(scope.byte_offset.saturating_add(*relative_offset as u64));
+                    scope.sketch_entity = Some(crate::records::DesignSketchEntityBinding {
+                        entity_id: entity.entity_id.clone(),
+                        entity_suffix: entity.entity_suffix,
+                        entity_reference_offset: scope
+                            .byte_offset
+                            .saturating_add(*relative_offset as u64),
+                    });
                 }
             }
             if scope.kind == "WorkPlane" {
@@ -9129,9 +9132,7 @@ pub(crate) fn parse_parameter_scope(
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
-        entity_id: None,
-        entity_suffix: None,
-        entity_reference_offset: None,
+        sketch_entity: None,
         paired_class_tag,
         paired_byte_offset: paired_at as u64,
     })

@@ -290,9 +290,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
-        entity_id: None,
-        entity_suffix: None,
-        entity_reference_offset: None,
+        sketch_entity: None,
         paired_class_tag: "261".into(),
         paired_byte_offset: 300,
     };
@@ -479,9 +477,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
-        entity_id: None,
-        entity_suffix: None,
-        entity_reference_offset: None,
+        sketch_entity: None,
         paired_class_tag: "302".into(),
         paired_byte_offset: u64::from(record_index) + 100,
     };
@@ -675,9 +671,7 @@ fn parameter_expressions_project_feature_dependencies() {
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
-        entity_id: None,
-        entity_suffix: None,
-        entity_reference_offset: None,
+        sketch_entity: None,
         paired_class_tag: "261".into(),
         paired_byte_offset: byte_offset + 200,
     };

@@ -782,9 +782,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
-        entity_id: None,
-        entity_suffix: None,
-        entity_reference_offset: None,
+        sketch_entity: None,
         paired_class_tag: "261".into(),
         paired_byte_offset: byte_offset + 200,
     };

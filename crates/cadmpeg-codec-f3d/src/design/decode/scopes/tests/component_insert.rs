@@ -131,9 +131,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         extrude_profile: None,
         sweep_profile: None,
         base_flange_profile: None,
-        entity_id: None,
-        entity_suffix: None,
-        entity_reference_offset: None,
+        sketch_entity: None,
         paired_class_tag: "259".into(),
         paired_byte_offset: (scope_at + 399) as u64,
     };
