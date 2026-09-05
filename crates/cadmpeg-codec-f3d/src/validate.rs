@@ -9584,7 +9584,6 @@ fn validate_body_links(ctx: &Ctx, findings: &mut Vec<Finding>) {
             _ => None,
         };
         let valid = target_key.is_some()
-            && link.entity_kind == 3
             && !link.design_id.is_empty()
             && link.design_id.bytes().all(|byte| byte.is_ascii_digit());
         if !valid {

@@ -932,12 +932,9 @@ pub(crate) fn validate_source_less_design_links(
                 link.id
             )));
         };
-        if link.entity_kind != 3
-            || link.design_id.is_empty()
-            || !link.design_id.bytes().all(|byte| byte.is_ascii_digit())
-        {
+        if link.design_id.is_empty() || !link.design_id.bytes().all(|byte| byte.is_ascii_digit()) {
             return Err(CodecError::InvalidInput(format!(
-                "F3D persistent body link {} has an invalid kind or design id",
+                "F3D persistent body link {} has an invalid design id",
                 link.id
             )));
         }
