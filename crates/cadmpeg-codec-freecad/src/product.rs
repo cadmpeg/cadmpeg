@@ -211,7 +211,7 @@ pub(crate) fn transfer_neutral(
     component_objects.extend(
         joints
             .iter()
-            .flat_map(|joint| &joint.references)
+            .flat_map(|joint| joint.references().into_iter().cloned())
             .filter(|reference| reference.document.is_none())
             .filter_map(|reference| reference.object.clone())
             .filter(|object| !object.is_empty() && !occurrence_objects.contains(object.as_str())),

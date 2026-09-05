@@ -577,22 +577,19 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     for joint in &joints {
         let missing_link = !object_ids.contains(joint.object.as_str())
-            || joint.references.iter().any(|reference| {
+            || joint.references().iter().any(|reference| {
                 reference.document.is_none()
                     && reference.object.as_ref().is_some_and(|object| {
                         !object.is_empty() && !object_ids.contains(object.as_str())
                     })
             });
-        let expected_placements = if joint.kind == "grounded" { 1 } else { 2 };
-        let invalid_frames = joint.placements.len() != expected_placements
-            || (!joint.offsets.is_empty() && joint.offsets.len() != expected_placements)
-            || joint
-                .placements
-                .iter()
-                .flatten()
-                .flatten()
-                .chain(joint.offsets.iter().flatten().flatten())
-                .any(|value| !value.is_finite());
+        let invalid_frames = joint
+            .placements()
+            .iter()
+            .flatten()
+            .flatten()
+            .chain(joint.offsets().iter().flatten().flatten())
+            .any(|value| !value.is_finite());
         if missing_link || invalid_frames {
             findings.push(finding(
                 Check::NativeLinks,
