@@ -4,6 +4,49 @@
 use super::validate_detached_cms;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
+struct SignatureView {
+    span: std::ops::Range<usize>,
+    payload: std::ops::Range<usize>,
+    signed: std::ops::Range<usize>,
+    cms: Vec<u8>,
+}
+
+impl SignatureView {
+    fn signed_alphabet_bytes(&self, input: &[u8]) -> Option<Vec<u8>> {
+        Some(
+            input
+                .get(self.signed.clone())?
+                .iter()
+                .copied()
+                .filter(|byte| !byte.is_ascii_control())
+                .collect(),
+        )
+    }
+}
+
+fn sections(exchange: &crate::parse::Exchange, input: impl AsRef<[u8]>) -> Vec<SignatureView> {
+    let input = input.as_ref();
+    let tokens = crate::lex::lex(input).expect("signature tokens");
+    let exchange_start = tokens[0].span.start;
+    exchange
+        .signatures
+        .iter()
+        .map(|span| {
+            let section_tokens = tokens
+                .iter()
+                .filter(|token| token.span.start >= span.start && token.span.end <= span.end)
+                .collect::<Vec<_>>();
+            let payload = section_tokens[1].span.end..section_tokens[2].span.start;
+            SignatureView {
+                span: span.clone(),
+                signed: exchange_start..span.start,
+                cms: super::decode_payload(input, &payload).expect("admitted CMS payload"),
+                payload,
+            }
+        })
+        .collect()
+}
+
 #[test]
 fn accepts_a_minimal_detached_signed_data_envelope() {
     let cms = [
@@ -54,7 +97,7 @@ fn parser_retains_base64_encoded_ber_cms() {
     let (exchange, diagnostics) = crate::parse::parse(source.as_bytes()).expect("BER CMS witness");
 
     assert!(diagnostics.is_empty());
-    assert_eq!(exchange.signature_sections[0].cms, BER_CMS_INDEFINITE);
+    assert_eq!(sections(&exchange, &source)[0].cms, BER_CMS_INDEFINITE);
 }
 
 #[test]
@@ -84,9 +127,9 @@ fn parser_retains_multiple_signature_sections_after_exchange_terminator() {
     assert!(source[exchange.signatures[1].clone()]
         .windows(b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=".len())
         .any(|bytes| bytes == b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA="));
-    assert_eq!(exchange.signature_sections.len(), 2);
-    let first = &exchange.signature_sections[0];
-    let second = &exchange.signature_sections[1];
+    assert_eq!(sections(&exchange, &source).len(), 2);
+    let first = &sections(&exchange, &source)[0];
+    let second = &sections(&exchange, &source)[1];
     assert_eq!(first.signed.end, first.span.start);
     assert_eq!(second.signed.end, second.span.start);
     let first_section = &source[first.span.clone()];
@@ -105,7 +148,7 @@ fn parser_accepts_signature_edge_separators_and_keeps_each_boundary() {
     let (exchange, diagnostics) = crate::parse::parse(source.as_bytes()).expect("edge separators");
 
     assert!(diagnostics.is_empty());
-    assert_eq!(exchange.signature_sections.len(), 2);
+    assert_eq!(sections(&exchange, &source).len(), 2);
     assert_eq!(exchange.signatures.len(), 2);
     assert!(source.as_bytes()[exchange.signatures[0].clone()].ends_with(b"DSEC;"));
     assert!(source.as_bytes()[exchange.signatures[0].clone()]
@@ -113,16 +156,16 @@ fn parser_accepts_signature_edge_separators_and_keeps_each_boundary() {
         .any(|bytes| bytes == b"EN\nDSEC;"));
     assert!(source.as_bytes()[exchange.signatures[1].clone()].ends_with(b"ENDSEC;"));
     assert_eq!(
-        exchange.signature_sections[0].signed.end,
+        sections(&exchange, &source)[0].signed.end,
         exchange.signatures[0].start
     );
     assert_eq!(
-        exchange.signature_sections[1].signed.end,
+        sections(&exchange, &source)[1].signed.end,
         exchange.signatures[1].start
     );
     assert_eq!(exchange.signatures[1].start, exchange.signatures[0].end);
-    assert_eq!(exchange.signature_sections[0].cms.len(), 92);
-    assert_eq!(exchange.signature_sections[1].cms.len(), 92);
+    assert_eq!(sections(&exchange, &source)[0].cms.len(), 92);
+    assert_eq!(sections(&exchange, &source)[1].cms.len(), 92);
 }
 
 #[test]
@@ -146,7 +189,7 @@ fn parser_exposes_the_detached_signature_contract() {
     let (exchange, diagnostics) = crate::parse::parse(source).expect("signature contract");
 
     assert!(diagnostics.is_empty());
-    let section = &exchange.signature_sections[0];
+    let section = &sections(&exchange, &source)[0];
     let signed = &source[section.signed.clone()];
     assert!(signed.starts_with(b"ISO-10303-21;"));
     assert!(signed.ends_with(b"END-ISO-10303-21;"));
@@ -183,14 +226,14 @@ fn parser_does_not_verify_detached_content_during_structural_admission() {
     assert!(original_diagnostics.is_empty());
     assert!(tampered_diagnostics.is_empty());
     assert_eq!(
-        original.signature_sections[0].cms,
-        tampered.signature_sections[0].cms
+        sections(&original, source)[0].cms,
+        sections(&tampered, &tampered_source)[0].cms
     );
     assert_ne!(
-        original.signature_sections[0]
+        sections(&original, source)[0]
             .signed_alphabet_bytes(source)
             .expect("original signed content"),
-        tampered.signature_sections[0]
+        sections(&tampered, &tampered_source)[0]
             .signed_alphabet_bytes(&tampered_source)
             .expect("tampered signed content")
     );
@@ -212,20 +255,20 @@ fn real_detached_cms_witness_remains_structural_after_source_tampering() {
 
     assert!(original_diagnostics.is_empty());
     assert!(tampered_diagnostics.is_empty());
-    assert_eq!(original.signature_sections[0].cms.len(), 1324);
+    assert_eq!(sections(&original, source)[0].cms.len(), 1324);
     assert_eq!(
-        super::validate_detached_cms(&original.signature_sections[0].cms),
+        super::validate_detached_cms(&sections(&original, source)[0].cms),
         Ok(())
     );
     assert_eq!(
-        original.signature_sections[0].cms,
-        tampered.signature_sections[0].cms
+        sections(&original, source)[0].cms,
+        sections(&tampered, &tampered_source)[0].cms
     );
     assert_ne!(
-        original.signature_sections[0]
+        sections(&original, source)[0]
             .signed_alphabet_bytes(source)
             .expect("original signed content"),
-        tampered.signature_sections[0]
+        sections(&tampered, &tampered_source)[0]
             .signed_alphabet_bytes(&tampered_source)
             .expect("tampered signed content")
     );
@@ -237,8 +280,8 @@ fn signature_method_and_parameters_are_inside_cms_payload() {
     let (exchange, diagnostics) = crate::parse::parse(source).expect("signature method witness");
 
     assert!(diagnostics.is_empty());
-    assert_eq!(exchange.signature_sections.len(), 1);
-    let section = &exchange.signature_sections[0];
+    assert_eq!(sections(&exchange, &source).len(), 1);
+    let section = &sections(&exchange, &source)[0];
     assert_eq!(
         &source[section.span.clone()],
         b"SIGNATURE;\nMFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nENDSEC;"
@@ -257,9 +300,9 @@ fn parser_projects_each_signature_to_preceding_alphabet_bytes() {
     let (exchange, diagnostics) = crate::parse::parse(source).expect("signed byte witness");
 
     assert!(diagnostics.is_empty());
-    assert_eq!(exchange.signature_sections.len(), 2);
-    let first = &exchange.signature_sections[0];
-    let second = &exchange.signature_sections[1];
+    assert_eq!(sections(&exchange, &source).len(), 2);
+    let first = &sections(&exchange, &source)[0];
+    let second = &sections(&exchange, &source)[1];
     assert_eq!(first.signed.start, 0);
     assert_eq!(first.signed.end, first.span.start);
     assert_eq!(second.signed.start, 0);

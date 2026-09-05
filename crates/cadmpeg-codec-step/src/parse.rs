@@ -12,7 +12,6 @@ use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
@@ -175,45 +174,6 @@ pub struct ReferenceEntry {
     pub uri: String,
 }
 
-/// One Part 21 edition-3 detached CMS signature section.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SignatureSection {
-    /// Complete `SIGNATURE;...ENDSEC;` byte range.
-    pub span: Range<usize>,
-    /// Base64 payload byte range between the section delimiters.
-    pub payload: Range<usize>,
-    /// Exchange byte range authenticated by this signature before alphabet
-    /// filtering. The range starts at `ISO-10303-21;` and ends at the `S` in
-    /// this section's `SIGNATURE;` token.
-    pub signed: Range<usize>,
-    /// Structurally admitted, decoded CMS `SignedData` payload.
-    ///
-    /// This is not a cryptographic verification result. A downstream verifier
-    /// must apply the CMS content, key, and caller-supplied trust checks.
-    pub cms: Vec<u8>,
-}
-
-impl SignatureSection {
-    /// Returns the Part 21 alphabet bytes covered by this signature.
-    ///
-    /// The source range is retained separately because the signature input is
-    /// defined by the alphabet projection, not by transport controls such as
-    /// line endings. A CMS verifier supplies these bytes as the detached
-    /// content. `None` means that the supplied source does not contain the
-    /// recorded range.
-    #[allow(dead_code)] // Alphabet projection for signature verification; not on the decode path.
-    pub fn signed_alphabet_bytes(&self, input: &[u8]) -> Option<Vec<u8>> {
-        Some(
-            input
-                .get(self.signed.clone())?
-                .iter()
-                .copied()
-                .filter(|byte| !byte.is_ascii_control())
-                .collect(),
-        )
-    }
-}
-
 /// Parsed exchange structure and global DATA record graph.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Exchange {
@@ -227,9 +187,6 @@ pub struct Exchange {
     pub data: Vec<DataSection>,
     /// Complete SIGNATURE section byte ranges in source order.
     pub signatures: Vec<Range<usize>>,
-    /// Parsed signature payload ranges and detached signed-content ranges in
-    /// source order.
-    pub signature_sections: Vec<SignatureSection>,
     /// DATA instances indexed across every DATA section.
     pub records: BTreeMap<u64, RawRecord>,
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
@@ -313,7 +270,6 @@ impl Exchange {
         self.references.clear();
         self.data.clear();
         self.signatures.clear();
-        self.signature_sections.clear();
         self.records.clear();
         self.schema_identifiers.clear();
         self.implementation_level.clear();
@@ -675,7 +631,6 @@ fn omitted_entity_name(partial: &PartialRecord) -> bool {
 
 impl Parser<'_, '_, '_> {
     fn exchange(mut self) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
-        let exchange_start = self.current_offset();
         self.name("ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
         self.name("HEADER")?;
@@ -889,7 +844,6 @@ impl Parser<'_, '_, '_> {
         self.name("END-ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
         let mut signatures = Vec::new();
-        let mut signature_sections = Vec::new();
         if !implementation_level.allows_edition3_sections() && self.peek_name("SIGNATURE") {
             return self.err(match implementation_level {
                 ImplementationLevel::LegacyEdition1 => "2;1 forbids SIGNATURE sections",
@@ -916,15 +870,7 @@ impl Parser<'_, '_, '_> {
             self.punct(&TokenKind::Semicolon)?;
             let span = start..self.previous_end();
             let payload = payload_start..payload_end;
-            let mut cms = decode_signature_payload(self.lexer.input(), &payload)?;
-            cms.shrink_to_fit();
-            self.charge_vec_storage(&cms, "step_parse_signature_storage")?;
-            signature_sections.push(SignatureSection {
-                span: span.clone(),
-                payload,
-                signed: exchange_start..start,
-                cms,
-            });
+            crate::signature::decode_payload(self.lexer.input(), &payload)?;
             signatures.push(span);
         }
         if self.current.is_some() {
@@ -1115,7 +1061,6 @@ impl Parser<'_, '_, '_> {
             compact_vec(&mut reference_entries),
             compact_vec(&mut data),
             compact_vec(&mut signatures),
-            compact_vec(&mut signature_sections),
         ] {
             self.charge_retained(capacity, "step_parse_exchange_storage")?;
         }
@@ -1126,7 +1071,6 @@ impl Parser<'_, '_, '_> {
                 references: reference_entries,
                 data,
                 signatures,
-                signature_sections,
                 records,
                 schema_identifiers: header_admission.schema_identifiers,
                 implementation_level: header_admission.implementation_level,
@@ -2047,49 +1991,6 @@ fn valid_base64_text(bytes: &[u8]) -> bool {
         }
     }
     quantum_len == 0
-}
-
-fn decode_signature_payload(input: &[u8], payload: &Range<usize>) -> Result<Vec<u8>, ParseError> {
-    let mut compact = Vec::with_capacity(payload.len());
-    let mut at = payload.start;
-    while at < payload.end {
-        if input[at].is_ascii_control() || input[at] == b' ' {
-            at += 1;
-            continue;
-        }
-        if let Some(end) = crate::lex::print_control_end(input, at) {
-            if end <= payload.end {
-                at = end;
-                continue;
-            }
-        }
-        if input.get(at..at + 2) == Some(b"/*") {
-            let body = at + 2;
-            if let Some(end) = input[body..payload.end]
-                .windows(2)
-                .position(|window| window == b"*/")
-            {
-                at = body + end + 2;
-                continue;
-            }
-        }
-        compact.push(input[at]);
-        at += 1;
-    }
-    let cms = STANDARD
-        .decode(compact)
-        .map_err(|error| ParseError::Syntax {
-            offset: payload.start,
-            message: format!("invalid SIGNATURE Base64 payload: {error}"),
-        })?;
-    // SG-04: this is a structural detached-CMS gate. It does not compute the
-    // Part 21 alphabet digest, verify a signer key, or apply caller policy;
-    // the codec retains an admitted signature as opaque source data.
-    crate::signature::validate_detached_cms(&cms).map_err(|message| ParseError::Syntax {
-        offset: payload.start,
-        message: format!("invalid detached CMS SIGNATURE payload: {message}"),
-    })?;
-    Ok(cms)
 }
 
 fn decoded_string(value: &Value, implementation_level: ImplementationLevel) -> Option<String> {

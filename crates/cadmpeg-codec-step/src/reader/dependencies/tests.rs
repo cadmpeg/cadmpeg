@@ -791,7 +791,7 @@ fn signed_resource_digest_and_timestamp_are_retained_without_cache_identity() {
     let signed_exchange = crate::parse::parse(signed_resource)
         .expect("parse signed resource")
         .0;
-    assert_eq!(signed_exchange.signature_sections.len(), 1);
+    assert_eq!(signed_exchange.signatures.len(), 1);
 
     let population = exchange
         .header
