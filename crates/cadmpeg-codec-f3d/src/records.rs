@@ -3082,12 +3082,7 @@ pub struct DesignParameterScope {
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joint_origin_frame: Option<DesignJointOriginTransform>,
-    /// Construction record referenced by the `JointOrigin` frame.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub joint_origin_reference: Option<u32>,
-    /// Byte offset of the `JointOrigin` construction reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub joint_origin_reference_offset: Option<u64>,
+
     /// Exact solved construction carried by a `WorkPoint` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_point_construction: Option<DesignWorkPointConstruction>,
@@ -3161,6 +3156,20 @@ pub struct DesignJointOriginTransform {
     pub joint_origin_transform: [[f64; 4]; 4],
     /// Byte offset of the explicit 16-f64 matrix.
     pub joint_origin_transform_offset: u64,
+    /// Construction record referenced by the frame, when present.
+    #[serde(flatten)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<DesignJointOriginReference>,
+}
+
+/// Construction record named by a `JointOrigin` frame.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignJointOriginReference {
+    /// Construction record referenced by the `JointOrigin` frame.
+    pub joint_origin_reference: u32,
+    /// Byte offset of the `JointOrigin` construction reference.
+    pub joint_origin_reference_offset: u64,
 }
 
 /// Fixed operation records named by a `SurfaceStitch` scope.
@@ -3613,6 +3622,24 @@ impl DesignParameterScope {
             .as_ref()
             .map(|frame| frame.joint_origin_transform_offset)
     }
+
+    pub(crate) fn joint_origin_reference(&self) -> Option<u32> {
+        self.joint_origin_frame.as_ref().and_then(|frame| {
+            frame
+                .reference
+                .as_ref()
+                .map(|reference| reference.joint_origin_reference)
+        })
+    }
+
+    pub(crate) fn joint_origin_reference_offset(&self) -> Option<u64> {
+        self.joint_origin_frame.as_ref().and_then(|frame| {
+            frame
+                .reference
+                .as_ref()
+                .map(|reference| reference.joint_origin_reference_offset)
+        })
+    }
 }
 
 #[cfg(test)]
@@ -3639,6 +3666,7 @@ impl DesignParameterScope {
         self.joint_origin_frame = Some(DesignJointOriginTransform {
             joint_origin_transform: transform,
             joint_origin_transform_offset: 0,
+            reference: None,
         });
     }
 
@@ -3705,8 +3733,6 @@ impl DesignParameterScope {
             work_plane_construction: None,
             work_axis_construction: None,
             joint_origin_frame: None,
-            joint_origin_reference: None,
-            joint_origin_reference_offset: None,
             work_point_construction: None,
             unclosed_construction_operand_groups: Vec::new(),
             hole_construction: None,

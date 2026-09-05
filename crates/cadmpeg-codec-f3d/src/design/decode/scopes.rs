@@ -282,11 +282,13 @@ pub fn decode_parameter_scopes(
                     scope.joint_origin_frame = Some(crate::records::DesignJointOriginTransform {
                         joint_origin_transform: frame.transform,
                         joint_origin_transform_offset: frame.transform_offset,
+                        reference: frame.reference.map(|(record_index, offset)| {
+                            crate::records::DesignJointOriginReference {
+                                joint_origin_reference: record_index,
+                                joint_origin_reference_offset: offset,
+                            }
+                        }),
                     });
-                    if let Some((reference, reference_offset)) = frame.reference {
-                        scope.joint_origin_reference = Some(reference);
-                        scope.joint_origin_reference_offset = Some(reference_offset);
-                    }
                 }
             }
             scope.work_point_construction =
@@ -746,11 +748,13 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
         scope.joint_origin_frame = Some(crate::records::DesignJointOriginTransform {
             joint_origin_transform: *transform,
             joint_origin_transform_offset: *transform_offset,
+            reference: reference.map(|(record_index, offset)| {
+                crate::records::DesignJointOriginReference {
+                    joint_origin_reference: record_index,
+                    joint_origin_reference_offset: offset,
+                }
+            }),
         });
-        if let Some((record_index, offset)) = reference {
-            scope.joint_origin_reference = Some(*record_index);
-            scope.joint_origin_reference_offset = Some(*offset);
-        }
     }
     let resolved_origins = scopes
         .iter()
@@ -9121,8 +9125,6 @@ pub(crate) fn parse_parameter_scope(
         work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_frame: None,
-        joint_origin_reference: None,
-        joint_origin_reference_offset: None,
         work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
         hole_construction: None,

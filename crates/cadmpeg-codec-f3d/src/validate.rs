@@ -3686,8 +3686,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let joint_origin_link = match (
             scope.joint_origin_transform(),
             scope.joint_origin_transform_offset(),
-            scope.joint_origin_reference,
-            scope.joint_origin_reference_offset,
+            scope.joint_origin_reference(),
+            scope.joint_origin_reference_offset(),
         ) {
             (None, None, None, None) => true,
             (Some(transform), Some(transform_offset), reference, reference_offset) => {
