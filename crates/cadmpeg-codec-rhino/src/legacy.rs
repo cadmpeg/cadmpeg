@@ -1331,10 +1331,16 @@ fn legacy_surface(
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mate {
+    None,
+    Seam,
+    Mated,
+}
+
 #[derive(Clone)]
 struct LegacyTrim {
-    has_mate: bool,
-    seam: bool,
+    mate: Mate,
     reversed: bool,
     tolerance_3d: f64,
     tolerance_2d: f64,
@@ -1426,7 +1432,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             .copied()
             .filter(|index| {
                 let (_, loop_index, trim_index) = trim_paths[*index];
-                face.loops[loop_index].trims[trim_index].seam
+                face.loops[loop_index].trims[trim_index].mate == Mate::Seam
             })
             .collect::<Vec<_>>();
         if face.seam_glue.len() == seams.len() {
@@ -1442,7 +1448,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         .enumerate()
         .filter_map(|(index, (face, loop_index, trim))| {
             let record = &brep.faces[*face].loops[*loop_index].trims[*trim];
-            (record.has_mate && !record.seam).then_some(index)
+            (record.mate == Mate::Mated).then_some(index)
         })
         .collect::<Vec<_>>();
     if brep.shell_glue.len() == mates.len() {
@@ -1804,8 +1810,13 @@ fn legacy_trim(
         BoundedReader::new(data, stuff.body().start, stuff.body().end).map_err(malformed)?;
     let flags = reader.u8().map_err(malformed)?;
     let has_edge = flags % 2 != 0;
-    let has_mate = flags & 6 != 0;
-    let seam = flags & 2 != 0;
+    let mate = if flags & 2 != 0 {
+        Mate::Seam
+    } else if flags & 6 != 0 {
+        Mate::Mated
+    } else {
+        Mate::None
+    };
     let reversed = reader.i32().map_err(malformed)? != 0;
     let _continuity = reader.i32().map_err(malformed)?;
     let _monotonicity = reader.i32().map_err(malformed)?;
@@ -1820,8 +1831,7 @@ fn legacy_trim(
         None
     };
     Ok(LegacyTrim {
-        has_mate,
-        seam,
+        mate,
         reversed,
         tolerance_3d,
         tolerance_2d,
