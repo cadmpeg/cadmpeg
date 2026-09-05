@@ -488,7 +488,7 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
                 context_id: "context".into(),
                 context_id_offset: 0,
                 selector_tail: None,
-                selector_tail_offset: None,
+
                 references: vec![DesignBodyRecipeReference {
                     design_reference: if recipe.design_id.as_deref() == Some("family") {
                         413

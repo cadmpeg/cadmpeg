@@ -85,7 +85,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         context_id: "context".into(),
         context_id_offset: 0,
         selector_tail: None,
-        selector_tail_offset: None,
+
         references: vec![DesignBodyRecipeReference {
             design_reference: 326,
             design_reference_offset: 0,
@@ -199,7 +199,7 @@ fn surface_trim_projects_body_target_and_curve_tool() {
         context_id: "context".into(),
         context_id_offset: 0,
         selector_tail: None,
-        selector_tail_offset: None,
+
         references: vec![DesignBodyRecipeReference {
             design_reference: 326,
             design_reference_offset: 0,

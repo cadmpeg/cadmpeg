@@ -61,7 +61,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         context_id: "context".into(),
         context_id_offset: 0,
         selector_tail: None,
-        selector_tail_offset: None,
+
         references: vec![crate::records::DesignBodyRecipeReference {
             design_reference: 301,
             design_reference_offset: 0,

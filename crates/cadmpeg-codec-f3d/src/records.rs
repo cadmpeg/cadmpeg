@@ -7796,6 +7796,7 @@ pub struct DesignEntitySelectionEdgeCandidate {
 /// Whole-body construction operand carrying a persistent body-recipe reference.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignBodyRecipeOperandWire", into = "DesignBodyRecipeOperandWire")]
 pub struct DesignBodyRecipeOperand {
     /// Globally unique deterministic identifier for this native operand.
     pub id: String,
@@ -7823,10 +7824,7 @@ pub struct DesignBodyRecipeOperand {
     /// Class `365` varies this member without a settled neutral meaning;
     /// class `367` stores `01 00 00 00`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub selector_tail: Option<[u8; 4]>,
-    /// Byte offset of the raw selector-tail member.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub selector_tail_offset: Option<u64>,
+    pub selector_tail: Option<Located<[u8; 4]>>,
     /// Counted persistent Design references carried by this operand.
     pub references: Vec<DesignBodyRecipeReference>,
     /// Tagged nested record reference following the Design reference.
@@ -7851,6 +7849,123 @@ pub struct DesignBodyRecipeOperand {
     pub next_record_index: u32,
     /// Byte offset of the indexed record immediately following this operand.
     pub next_byte_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignBodyRecipeOperandWire {
+    /// Globally unique deterministic identifier for this native operand.
+    id: String,
+    /// Owning feature scope record.
+    scope_record_index: u32,
+    /// Exact feature-scope ownership form.
+    #[serde(flatten)]
+    owner: DesignOperandOwner,
+    /// Primary indexed-record identity.
+    record_index: u32,
+    /// Primary indexed-header byte offset.
+    byte_offset: u64,
+    /// Source per-file dynamic primary class tag.
+    class_tag: String,
+    /// Asset UUID qualifying the persistent selection namespace.
+    asset_id: String,
+    /// Byte offset of the asset UUID's UTF-16LE code units.
+    asset_id_offset: u64,
+    /// UUID of the selection context.
+    context_id: String,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    context_id_offset: u64,
+    /// Raw four-byte selector-tail member after the fixed `u32 2`.
+    ///
+    /// Class `365` varies this member without a settled neutral meaning;
+    /// class `367` stores `01 00 00 00`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    selector_tail: Option<[u8; 4]>,
+    /// Byte offset of the raw selector-tail member.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    selector_tail_offset: Option<u64>,
+    /// Counted persistent Design references carried by this operand.
+    references: Vec<DesignBodyRecipeReference>,
+    /// Tagged nested record reference following the Design reference.
+    nested_record_index: u64,
+    /// Byte offset of `nested_record_index`.
+    nested_record_index_offset: u64,
+    /// Body construction recipe contained by this operand record.
+    recipe_id: String,
+    /// Unique input-state face selected by this operand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolved_face_slot: Option<i64>,
+    /// Exact ASM input state containing the resolved body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolved_body_state_id: Option<i64>,
+    /// Unique input-state body containing every reference's candidate faces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolved_body_slot: Option<i64>,
+    /// Complete boundary-face set of the resolved body in its input state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    resolved_body_face_slots: Vec<i64>,
+    /// Identity of the indexed record immediately following this operand.
+    next_record_index: u32,
+    /// Byte offset of the indexed record immediately following this operand.
+    next_byte_offset: u64,
+}
+
+impl TryFrom<DesignBodyRecipeOperandWire> for DesignBodyRecipeOperand {
+    type Error = String;
+    fn try_from(wire: DesignBodyRecipeOperandWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            scope_record_index: wire.scope_record_index,
+            owner: wire.owner,
+            record_index: wire.record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            asset_id: wire.asset_id,
+            asset_id_offset: wire.asset_id_offset,
+            context_id: wire.context_id,
+            context_id_offset: wire.context_id_offset,
+            selector_tail: Located::from_wire(wire.selector_tail, wire.selector_tail_offset, "selector_tail")?,
+            references: wire.references,
+            nested_record_index: wire.nested_record_index,
+            nested_record_index_offset: wire.nested_record_index_offset,
+            recipe_id: wire.recipe_id,
+            resolved_face_slot: wire.resolved_face_slot,
+            resolved_body_state_id: wire.resolved_body_state_id,
+            resolved_body_slot: wire.resolved_body_slot,
+            resolved_body_face_slots: wire.resolved_body_face_slots,
+            next_record_index: wire.next_record_index,
+            next_byte_offset: wire.next_byte_offset,
+        })
+    }
+}
+
+impl From<DesignBodyRecipeOperand> for DesignBodyRecipeOperandWire {
+    fn from(record: DesignBodyRecipeOperand) -> Self {
+        Self {
+            id: record.id,
+            scope_record_index: record.scope_record_index,
+            owner: record.owner,
+            record_index: record.record_index,
+            byte_offset: record.byte_offset,
+            class_tag: record.class_tag,
+            asset_id: record.asset_id,
+            asset_id_offset: record.asset_id_offset,
+            context_id: record.context_id,
+            context_id_offset: record.context_id_offset,
+            selector_tail: record.selector_tail.map(|tail| tail.value),
+            selector_tail_offset: record.selector_tail.map(|tail| tail.offset),
+            references: record.references,
+            nested_record_index: record.nested_record_index,
+            nested_record_index_offset: record.nested_record_index_offset,
+            recipe_id: record.recipe_id,
+            resolved_face_slot: record.resolved_face_slot,
+            resolved_body_state_id: record.resolved_body_state_id,
+            resolved_body_slot: record.resolved_body_slot,
+            resolved_body_face_slots: record.resolved_body_face_slots,
+            next_record_index: record.next_record_index,
+            next_byte_offset: record.next_byte_offset,
+        }
+    }
 }
 
 /// Construction-operand group record and member position.
