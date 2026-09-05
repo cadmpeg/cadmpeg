@@ -2971,7 +2971,7 @@ fn selected_historical_face_selection(
     let [selection] = selections.as_slice() else {
         return None;
     };
-    if selection.secondary_identity.is_some() || selection.curve_secondary_identity.is_some() {
+    if selection.secondary.is_some() {
         return None;
     }
     let mut face_slots = selection
@@ -3116,7 +3116,7 @@ fn selected_work_planes<'a>(
         let [selection] = selections.as_slice() else {
             return None;
         };
-        if selection.secondary_identity.is_some() || selection.curve_secondary_identity.is_some() {
+        if selection.secondary.is_some() {
             return None;
         }
         let target_record_index = u32::try_from(selection.primary_identity)
@@ -3169,8 +3169,7 @@ fn resolved_split_face_path(
         });
         let selection = selections.next()?;
         if selections.next().is_some()
-            || selection.secondary_identity.is_some()
-            || selection.curve_secondary_identity.is_some()
+            || selection.secondary.is_some()
         {
             return None;
         }

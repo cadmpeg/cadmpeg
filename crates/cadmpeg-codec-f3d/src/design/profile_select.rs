@@ -1827,7 +1827,7 @@ fn resolve_entity_selection_path(
         return None;
     }
     let stream = native_stream(&group.id)?;
-    let mut selected_operands = Vec::with_capacity(group.members.len());
+    let mut selected_identities = Vec::with_capacity(group.members.len());
     let mut member_records = HashSet::with_capacity(group.members.len());
     let mut primary_identity = None;
     let mut asset_id = None;
@@ -1845,9 +1845,10 @@ fn resolve_entity_selection_path(
                 && operand.record_index == record_index
         });
         let operand = matches.next()?;
-        if matches.next().is_some() || operand.secondary_identity.is_none() {
+        if matches.next().is_some() {
             return None;
         }
+        let secondary = operand.secondary?;
         if let Some(expected) = primary_identity {
             if expected != operand.primary_identity {
                 return None;
@@ -1869,7 +1870,7 @@ fn resolve_entity_selection_path(
         } else {
             context_id = Some(operand.context_id.as_str());
         }
-        selected_operands.push(operand);
+        selected_identities.push(secondary);
     }
     let primary_identity = primary_identity?;
     let mut matching_placements = resolution.placements.iter().filter(|placement| {
@@ -1880,18 +1881,17 @@ fn resolve_entity_selection_path(
         return None;
     }
 
-    let mut curve_ids = Vec::with_capacity(selected_operands.len());
-    let mut selected_curve_identities = HashSet::with_capacity(selected_operands.len());
-    for operand in &selected_operands {
-        let owner_reference = u32::try_from(operand.primary_identity).ok()?;
-        let secondary_identity = operand.secondary_identity?.value;
+    let mut curve_ids = Vec::with_capacity(selected_identities.len());
+    let mut selected_curve_identities = HashSet::with_capacity(selected_identities.len());
+    let owner_reference = u32::try_from(primary_identity).ok()?;
+    for secondary in &selected_identities {
+        let secondary_identity = secondary.identity.value;
         let mut curves = resolution.curve_identities.iter().filter(|curve| {
             native_stream(&curve.id) == Some(stream)
                 && curve.owner_reference == Some(owner_reference)
                 && curve.primary_id == secondary_identity
-                && operand
-                    .curve_secondary_identity
-                    .is_none_or(|secondary| curve.secondary_id == secondary.value)
+                && secondary.curve_identity
+                    .is_none_or(|identity| curve.secondary_id == identity.value)
         });
         let curve = curves.next()?;
         if curves.next().is_some()

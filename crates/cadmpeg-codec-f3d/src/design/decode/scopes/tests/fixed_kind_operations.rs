@@ -596,8 +596,7 @@ pub(super) fn continue_fixed_kind_operations(
         identity_record_offset: 0,
         primary_identity: 100,
         primary_identity_offset: 0,
-        secondary_identity: Some(crate::records::Located { value: 104, offset: 0 }),
-        curve_secondary_identity: None,
+        secondary: Some(crate::records::DesignSecondaryIdentity { identity: crate::records::Located { value: 104, offset: 0 }, curve_identity: None }),
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
@@ -664,7 +663,7 @@ pub(super) fn continue_fixed_kind_operations(
             axis.origin == Point3::new(1.0, 2.0, 3.0)
                 && axis.direction == Vector3::new(0.0, -1.0, 0.0))
     ));
-    axis_selection.secondary_identity = None;
+    axis_selection.secondary = None;
     axis_selection.historical_face_candidates =
         vec![crate::records::DesignEntitySelectionFaceCandidate {
             history_id: "history".into(),
@@ -1356,8 +1355,7 @@ pub(super) fn continue_fixed_kind_operations(
         identity_record_offset: 31_180,
         primary_identity: 2718,
         primary_identity_offset: 31_200,
-        secondary_identity: Some(crate::records::Located { value: 164, offset: 31_208 }),
-        curve_secondary_identity: None,
+        secondary: Some(crate::records::DesignSecondaryIdentity { identity: crate::records::Located { value: 164, offset: 31_208 }, curve_identity: None }),
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
