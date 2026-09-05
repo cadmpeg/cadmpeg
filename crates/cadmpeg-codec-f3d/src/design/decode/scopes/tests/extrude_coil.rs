@@ -993,22 +993,22 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
 
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("Coil scope");
-    assert_eq!(scope.coil_operation, Some(DesignExtrudeOperation::Cut));
-    assert_eq!(scope.coil_operation_offset, Some(20));
-    assert_eq!(scope.coil_extent, Some(DesignCoilExtent::HeightPitch));
-    assert_eq!(scope.coil_extent_offset, Some(30));
+    assert_eq!(scope.coil_operation(), Some(DesignExtrudeOperation::Cut));
+    assert_eq!(scope.coil_operation_offset(), Some(20));
+    assert_eq!(scope.coil_extent(), Some(DesignCoilExtent::HeightPitch));
+    assert_eq!(scope.coil_extent_offset(), Some(30));
     assert_eq!(
-        scope.coil_section,
+        scope.coil_section(),
         Some(DesignCoilSection::ExternalTriangle)
     );
-    assert_eq!(scope.coil_section_offset, Some(92));
+    assert_eq!(scope.coil_section_offset(), Some(92));
     assert_eq!(
-        scope.coil_section_placement,
+        scope.coil_section_placement(),
         Some(DesignCoilSectionPlacement::Inside)
     );
-    assert_eq!(scope.coil_section_placement_offset, Some(107));
-    assert_eq!(scope.coil_clockwise, Some(true));
-    assert_eq!(scope.coil_clockwise_offset, Some(24));
+    assert_eq!(scope.coil_section_placement_offset(), Some(107));
+    assert_eq!(scope.coil_clockwise(), Some(true));
+    assert_eq!(scope.coil_clockwise_offset(), Some(24));
 }
 
 #[test]
@@ -1049,14 +1049,20 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
 
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("compact Coil scope");
-    assert_eq!(scope.coil_operation, Some(DesignExtrudeOperation::NewBody));
-    assert_eq!(scope.coil_extent, Some(DesignCoilExtent::RevolutionsHeight));
-    assert_eq!(scope.coil_section, Some(DesignCoilSection::Circular));
     assert_eq!(
-        scope.coil_section_placement,
+        scope.coil_operation(),
+        Some(DesignExtrudeOperation::NewBody)
+    );
+    assert_eq!(
+        scope.coil_extent(),
+        Some(DesignCoilExtent::RevolutionsHeight)
+    );
+    assert_eq!(scope.coil_section(), Some(DesignCoilSection::Circular));
+    assert_eq!(
+        scope.coil_section_placement(),
         Some(DesignCoilSectionPlacement::Inside)
     );
-    assert_eq!(scope.coil_clockwise, Some(false));
+    assert_eq!(scope.coil_clockwise(), Some(false));
 
     for (placement_code, placement) in [
         (1u32, DesignCoilSectionPlacement::Inside),
@@ -1074,15 +1080,15 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
             let parsed =
                 parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
                     .expect("compact Coil scope");
-            assert_eq!(parsed.coil_section, Some(section));
-            assert_eq!(parsed.coil_section_placement, Some(placement));
+            assert_eq!(parsed.coil_section(), Some(section));
+            assert_eq!(parsed.coil_section_placement(), Some(placement));
         }
     }
 
     bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
     let unsupported = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("unsupported Coil operation remains a native scope");
-    assert!(unsupported.coil_operation.is_none());
+    assert!(unsupported.coil_operation().is_none());
 }
 
 #[test]
@@ -1405,7 +1411,10 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
         .expect("compact Coil new-body scope");
     assert_eq!(scope.frame_length, 442);
     assert_eq!(scope.kind, "CoilPrimitive");
-    assert_eq!(scope.coil_operation, Some(DesignExtrudeOperation::NewBody));
+    assert_eq!(
+        scope.coil_operation(),
+        Some(DesignExtrudeOperation::NewBody)
+    );
     assert_eq!(scope.history_state_id, Some(3));
     assert_eq!(scope.previous_history_state_id, None);
     assert_eq!(scope.previous_history_state_id_offset, 0);
@@ -1917,26 +1926,26 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
     };
 
     let boolean = scope(450, 1);
-    assert_eq!(boolean.coil_operation, Some(DesignExtrudeOperation::Join));
-    assert_eq!(boolean.coil_operation_offset, Some(22));
-    assert_eq!(boolean.coil_extent, None);
-    assert_eq!(boolean.coil_section, Some(DesignCoilSection::Circular));
-    assert_eq!(boolean.coil_section_offset, None);
+    assert_eq!(boolean.coil_operation(), Some(DesignExtrudeOperation::Join));
+    assert_eq!(boolean.coil_operation_offset(), Some(22));
+    assert_eq!(boolean.coil_extent(), None);
+    assert_eq!(boolean.coil_section(), Some(DesignCoilSection::Circular));
+    assert_eq!(boolean.coil_section_offset(), None);
     assert_eq!(
-        boolean.coil_section_placement,
+        boolean.coil_section_placement(),
         Some(DesignCoilSectionPlacement::Inside)
     );
-    assert_eq!(boolean.coil_section_placement_offset, None);
-    assert_eq!(boolean.coil_clockwise, Some(false));
-    assert_eq!(boolean.coil_clockwise_offset, None);
+    assert_eq!(boolean.coil_section_placement_offset(), None);
+    assert_eq!(boolean.coil_clockwise(), Some(false));
+    assert_eq!(boolean.coil_clockwise_offset(), None);
 
     let new_body = scope(578, 2);
     assert_eq!(
-        new_body.coil_operation,
+        new_body.coil_operation(),
         Some(DesignExtrudeOperation::NewBody)
     );
-    assert_eq!(new_body.coil_operation_offset, Some(22));
-    let transform = new_body.coil_transform.expect("long Coil placement");
+    assert_eq!(new_body.coil_operation_offset(), Some(22));
+    let transform = new_body.coil_transform().expect("long Coil placement");
     assert_eq!(transform.transform_offset, 77);
     assert_eq!(
         transform.transform,
@@ -1954,8 +1963,8 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
         (3, DesignExtrudeOperation::Intersect),
     ] {
         let boolean = scope(572, operation);
-        assert_eq!(boolean.coil_operation, Some(expected));
-        let transform = boolean.coil_transform.expect("572-byte Coil placement");
+        assert_eq!(boolean.coil_operation(), Some(expected));
+        let transform = boolean.coil_transform().expect("572-byte Coil placement");
         assert_eq!(transform.transform_offset, 77);
         assert_eq!(
             transform.transform,

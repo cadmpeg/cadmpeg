@@ -296,7 +296,9 @@ pub fn decode_parameter_scopes(
                 exact_work_point_construction(bytes, &records, &scope, &stream_types);
             scope.hole_construction =
                 exact_hole_construction(bytes, &records, &scope, &stream_types);
-            scope.coil_placement = exact_coil_placement(bytes, &records, &scope, recipes);
+            if let Some(placement) = exact_coil_placement(bytes, &records, &scope, recipes) {
+                scope.ensure_coil().coil_placement = Some(placement);
+            }
             scope.solid_primitive =
                 exact_solid_primitive(bytes, &records, &scope, parameter_owners);
             scope.direct_face_operation = exact_direct_face_operation(bytes, &records, &scope);
@@ -9071,6 +9073,27 @@ pub(crate) fn parse_parameter_scope(
     } else {
         None
     };
+    let coil = if family == Some(DesignFeatureFamily::Coil)
+        || coil_operation.is_some()
+        || coil_transform.is_some()
+    {
+        Some(crate::records::DesignCoilScope {
+            coil_operation,
+            coil_operation_offset,
+            coil_extent,
+            coil_extent_offset,
+            coil_section,
+            coil_section_offset,
+            coil_section_placement,
+            coil_section_placement_offset,
+            coil_clockwise,
+            coil_clockwise_offset,
+            coil_placement: None,
+            coil_transform,
+        })
+    } else {
+        None
+    };
     Some(DesignParameterScope {
         id: String::new(),
         byte_offset: header.byte_offset,
@@ -9083,18 +9106,7 @@ pub(crate) fn parse_parameter_scope(
             extrude_prologue: Some(prologue),
             ..crate::records::DesignExtrudeScope::default()
         }),
-        coil_operation,
-        coil_operation_offset,
-        coil_extent,
-        coil_extent_offset,
-        coil_section,
-        coil_section_offset,
-        coil_section_placement,
-        coil_section_placement_offset,
-        coil_clockwise,
-        coil_clockwise_offset,
-        coil_placement: None,
-        coil_transform,
+        coil,
         feature_ordinal,
         feature_ordinal_offset: u64::try_from(kind_end).ok()?,
         history_state_id,
@@ -9244,7 +9256,7 @@ fn exact_coil_placement(
     ) {
         ("393", "258", 427, 8) => {}
         ("353", "259", 427, 8) => {}
-        (_, _, 411, 7) if matches!(scope.coil_extent, Some(DesignCoilExtent::Spiral)) => {}
+        (_, _, 411, 7) if matches!(scope.coil_extent(), Some(DesignCoilExtent::Spiral)) => {}
         (_, _, 432 | 442, 8) => {}
         _ => return None,
     }
@@ -9820,7 +9832,7 @@ fn bind_coil_extent_from_parameters(
     parameters: &[DesignParameter],
     parameter_owners: &[crate::records::DesignParameterOwner],
 ) {
-    if scope.kind != "CoilPrimitive" || scope.coil_extent.is_some() {
+    if scope.kind != "CoilPrimitive" || scope.coil_extent().is_some() {
         return;
     }
     let Some(stream) = native_stream(&scope.id) else {
@@ -9864,7 +9876,9 @@ fn bind_coil_extent_from_parameters(
         | ["Diameter", "SectionSize", "Pitch", "Revolutions"] => Some(DesignCoilExtent::Spiral),
         _ => None,
     };
-    scope.coil_extent = extent;
+    if let Some(extent) = extent {
+        scope.ensure_coil().coil_extent = Some(extent);
+    }
 }
 
 pub(crate) fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {

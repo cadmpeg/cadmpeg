@@ -5230,7 +5230,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         group.role
                             == if scope.kind == "CoilPrimitive"
                                 && scope.reference_members.len() == 10
-                                && scope.coil_operation_offset == scope.byte_offset.checked_add(22)
+                                && scope.coil_operation_offset()
+                                    == scope.byte_offset.checked_add(22)
                             {
                                 0x0000_0004_0000_0000
                             } else {

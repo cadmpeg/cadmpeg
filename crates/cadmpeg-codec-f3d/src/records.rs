@@ -2924,45 +2924,10 @@ pub struct DesignParameterScope {
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "extrude_scope_is_absent")]
     pub extrude: Option<DesignExtrudeScope>,
-    /// Coil result operation from the fixed scope prologue.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coil_operation: Option<DesignExtrudeOperation>,
-    /// Byte offset of the Coil operation enum.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coil_operation_offset: Option<u64>,
-    /// Coil driving-dimension mode.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coil_extent: Option<DesignCoilExtent>,
-    /// Byte offset of the Coil mode enum, when the form stores one.
-    ///
-    /// A form that derives its mode from its owned parameter source kinds has
-    /// no fixed selector and leaves this offset absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coil_extent_offset: Option<u64>,
-    /// Generated Coil section family.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coil_section: Option<DesignCoilSection>,
-    /// Byte offset of the Coil section enum, when the form stores one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coil_section_offset: Option<u64>,
-    /// Radial placement of the generated Coil section.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coil_section_placement: Option<DesignCoilSectionPlacement>,
-    /// Byte offset of the Coil section-placement enum, when the form stores one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coil_section_placement_offset: Option<u64>,
-    /// Whether Coil angular travel is clockwise.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coil_clockwise: Option<bool>,
-    /// Byte offset of the Coil direction enum, when the form stores one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coil_clockwise_offset: Option<u64>,
-    /// Exact placement construction carried by a compact Coil scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coil_placement: Option<DesignCoilPlacement>,
-    /// Direct rigid placement carried by the long ten-reference Coil form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coil_transform: Option<DesignCoilTransform>,
+    /// Coil discriminators, placement, and transform.
+    #[serde(flatten)]
+    #[serde(default, skip_serializing_if = "coil_scope_is_absent")]
+    pub coil: Option<DesignCoilScope>,
     /// One-based ordinal among scopes of the same feature family.
     pub feature_ordinal: u32,
     /// Byte offset of `feature_ordinal`.
@@ -3113,6 +3078,26 @@ fn base_flange_scope_is_absent(base_flange: &Option<DesignBaseFlangeScope>) -> b
     }
 }
 
+fn coil_scope_is_absent(coil: &Option<DesignCoilScope>) -> bool {
+    match coil {
+        None => true,
+        Some(coil) => {
+            coil.coil_operation.is_none()
+                && coil.coil_operation_offset.is_none()
+                && coil.coil_extent.is_none()
+                && coil.coil_extent_offset.is_none()
+                && coil.coil_section.is_none()
+                && coil.coil_section_offset.is_none()
+                && coil.coil_section_placement.is_none()
+                && coil.coil_section_placement_offset.is_none()
+                && coil.coil_clockwise.is_none()
+                && coil.coil_clockwise_offset.is_none()
+                && coil.coil_placement.is_none()
+                && coil.coil_transform.is_none()
+        }
+    }
+}
+
 fn extrude_scope_is_absent(extrude: &Option<DesignExtrudeScope>) -> bool {
     match extrude {
         None => true,
@@ -3149,6 +3134,48 @@ pub struct DesignExtrudeScope {
     /// Profile operand carried by an Extrude scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extrude_profile: Option<DesignSketchProfileOperand>,
+}
+
+/// Coil-specific records carried by a Coil parameter scope.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignCoilScope {
+    /// Coil result operation from the fixed scope prologue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_operation: Option<DesignExtrudeOperation>,
+    /// Byte offset of the Coil operation enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_operation_offset: Option<u64>,
+    /// Coil driving-dimension mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_extent: Option<DesignCoilExtent>,
+    /// Byte offset of the Coil mode enum, when the form stores one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_extent_offset: Option<u64>,
+    /// Generated Coil section family.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_section: Option<DesignCoilSection>,
+    /// Byte offset of the Coil section enum, when the form stores one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_section_offset: Option<u64>,
+    /// Radial placement of the generated Coil section.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_section_placement: Option<DesignCoilSectionPlacement>,
+    /// Byte offset of the Coil section-placement enum, when the form stores one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_section_placement_offset: Option<u64>,
+    /// Whether Coil angular travel is clockwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_clockwise: Option<bool>,
+    /// Byte offset of the Coil direction enum, when the form stores one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_clockwise_offset: Option<u64>,
+    /// Exact placement construction carried by a compact Coil scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_placement: Option<DesignCoilPlacement>,
+    /// Direct rigid placement carried by the long ten-reference Coil form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_transform: Option<DesignCoilTransform>,
 }
 
 /// Sketch-module entity named by a sketch parameter scope.
@@ -3656,6 +3683,70 @@ impl DesignParameterScope {
             .and_then(|base_flange| base_flange.base_flange_profile.as_ref())
     }
 
+    pub(crate) fn ensure_coil(&mut self) -> &mut DesignCoilScope {
+        self.coil.get_or_insert_with(DesignCoilScope::default)
+    }
+
+    pub(crate) fn coil_operation(&self) -> Option<DesignExtrudeOperation> {
+        self.coil.as_ref().and_then(|coil| coil.coil_operation)
+    }
+
+    pub(crate) fn coil_operation_offset(&self) -> Option<u64> {
+        self.coil
+            .as_ref()
+            .and_then(|coil| coil.coil_operation_offset)
+    }
+
+    pub(crate) fn coil_extent(&self) -> Option<DesignCoilExtent> {
+        self.coil.as_ref().and_then(|coil| coil.coil_extent)
+    }
+
+    pub(crate) fn coil_section(&self) -> Option<DesignCoilSection> {
+        self.coil.as_ref().and_then(|coil| coil.coil_section)
+    }
+
+    pub(crate) fn coil_section_placement(&self) -> Option<DesignCoilSectionPlacement> {
+        self.coil
+            .as_ref()
+            .and_then(|coil| coil.coil_section_placement)
+    }
+
+    pub(crate) fn coil_clockwise(&self) -> Option<bool> {
+        self.coil.as_ref().and_then(|coil| coil.coil_clockwise)
+    }
+
+    pub(crate) fn coil_extent_offset(&self) -> Option<u64> {
+        self.coil.as_ref().and_then(|coil| coil.coil_extent_offset)
+    }
+
+    pub(crate) fn coil_section_offset(&self) -> Option<u64> {
+        self.coil.as_ref().and_then(|coil| coil.coil_section_offset)
+    }
+
+    pub(crate) fn coil_section_placement_offset(&self) -> Option<u64> {
+        self.coil
+            .as_ref()
+            .and_then(|coil| coil.coil_section_placement_offset)
+    }
+
+    pub(crate) fn coil_clockwise_offset(&self) -> Option<u64> {
+        self.coil
+            .as_ref()
+            .and_then(|coil| coil.coil_clockwise_offset)
+    }
+
+    pub(crate) fn coil_placement(&self) -> Option<&DesignCoilPlacement> {
+        self.coil
+            .as_ref()
+            .and_then(|coil| coil.coil_placement.as_ref())
+    }
+
+    pub(crate) fn coil_transform(&self) -> Option<&DesignCoilTransform> {
+        self.coil
+            .as_ref()
+            .and_then(|coil| coil.coil_transform.as_ref())
+    }
+
     pub(crate) fn ensure_extrude(&mut self) -> &mut DesignExtrudeScope {
         self.extrude.get_or_insert_with(DesignExtrudeScope::default)
     }
@@ -3788,18 +3879,7 @@ impl DesignParameterScope {
             kind: kind.into(),
             kind_offset: 0,
             extrude: None,
-            coil_operation: None,
-            coil_operation_offset: None,
-            coil_extent: None,
-            coil_extent_offset: None,
-            coil_section: None,
-            coil_section_offset: None,
-            coil_section_placement: None,
-            coil_section_placement_offset: None,
-            coil_clockwise: None,
-            coil_clockwise_offset: None,
-            coil_placement: None,
-            coil_transform: None,
+            coil: None,
             feature_ordinal: 0,
             feature_ordinal_offset: 0,
             history_state_id: None,

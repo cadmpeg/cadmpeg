@@ -8274,7 +8274,7 @@ fn project_coil(
         (parameter.unit.is_none() && parameter.evaluated_value.is_finite())
             .then_some(parameter.evaluated_value)
     };
-    let (extent, taper, expected_parameter_kinds): (_, _, &[&str]) = match scope.coil_extent? {
+    let (extent, taper, expected_parameter_kinds): (_, _, &[&str]) = match scope.coil_extent()? {
         DesignCoilExtent::RevolutionsHeight => (
             CoilExtent::RevolutionsHeight {
                 revolutions: dimensionless("Revolutions")?,
@@ -8327,7 +8327,7 @@ fn project_coil(
     {
         return None;
     }
-    let section = match scope.coil_section? {
+    let section = match scope.coil_section()? {
         DesignCoilSection::Circular => CoilSection::Circular {
             diameter: section_size,
         },
@@ -8335,12 +8335,12 @@ fn project_coil(
         DesignCoilSection::ExternalTriangle => CoilSection::ExternalTriangle { size: section_size },
         DesignCoilSection::InternalTriangle => CoilSection::InternalTriangle { size: section_size },
     };
-    let section_placement = match scope.coil_section_placement? {
+    let section_placement = match scope.coil_section_placement()? {
         DesignCoilSectionPlacement::Inside => CoilSectionPlacement::Inside,
         DesignCoilSectionPlacement::Center => CoilSectionPlacement::Center,
         DesignCoilSectionPlacement::Outside => CoilSectionPlacement::Outside,
     };
-    let operation = scope.coil_operation?;
+    let operation = scope.coil_operation()?;
     let stream = native_stream(&scope.id)?;
     let first_body_group = if operation == DesignExtrudeOperation::NewBody {
         // The long Coil form carries one role-4 construction group for its
@@ -8348,7 +8348,7 @@ fn project_coil(
         // Boolean target and must not suppress the typed result.
         None
     } else {
-        let expected_role = if scope.coil_operation_offset
+        let expected_role = if scope.coil_operation_offset()
             == scope.byte_offset.checked_add(coil_long::OPERATION as u64)
         {
             0x0000_0004_0000_0000
@@ -8380,12 +8380,12 @@ fn project_coil(
         _ => return None,
     };
     let placement = scope
-        .coil_placement
+        .coil_placement()
         .as_ref()
         .map(|placement| &placement.transform)
         .or_else(|| {
             scope
-                .coil_transform
+                .coil_transform()
                 .as_ref()
                 .map(|transform| &transform.transform)
         })
@@ -8410,7 +8410,7 @@ fn project_coil(
             extent,
             section,
             section_placement,
-            clockwise: scope.coil_clockwise?,
+            clockwise: scope.coil_clockwise()?,
             taper,
         },
         result,
