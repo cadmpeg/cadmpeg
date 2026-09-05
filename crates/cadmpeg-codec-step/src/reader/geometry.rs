@@ -25,7 +25,7 @@ use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::index::{step_instance_id, CarrierIndex};
+use super::index::{step_instance_id, CarrierIndex, CurveIndex, PointIndex, SurfaceIndex};
 use super::{opaque_record_id, StageOutcome};
 
 const EPS_GEOMETRY_READ_COARSE_GEOMETRY: f64 = 1.0e-6;
@@ -894,12 +894,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(basis) = ir
                 .model
                 .curves
-                .get(parent_index)
+                .get(parent_index.0)
                 .map(|curve| curve.geometry.clone())
             else {
                 continue;
             };
-            let curve_index = ir.model.curves.len();
+            let curve_index = CurveIndex(ir.model.curves.len());
             let curve = CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar");
             ir.model.curves.push(Curve {
                 id: curve.clone(),
@@ -949,7 +949,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(geometry) = carrier_index
                 .curves
                 .get(&basis_step)
-                .and_then(|index| ir.model.curves.get(*index))
+                .and_then(|index| ir.model.curves.get(index.0))
                 .map(|candidate| candidate.geometry.clone())
             else {
                 continue;
@@ -987,7 +987,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 continue;
             };
             let parameter_range = trimmed_curve_parameter_range(&geometry, start, end, sense);
-            let curve_index = ir.model.curves.len();
+            let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
                 id: curve.clone(),
                 geometry,
@@ -1031,7 +1031,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             };
             let curve = CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar");
             typed.extend(segments.iter().map(|(segment, _)| *segment));
-            let curve_index = ir.model.curves.len();
+            let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
                 id: curve.clone(),
                 geometry: CurveGeometry::Composite {
@@ -1082,13 +1082,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let Some(geometry) = carrier_index
             .curves
             .get(&source_step)
-            .and_then(|index| ir.model.curves.get(*index))
+            .and_then(|index| ir.model.curves.get(index.0))
             .map(|candidate| candidate.geometry.clone())
         else {
             continue;
         };
         let curve = CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar");
-        let curve_index = ir.model.curves.len();
+        let curve_index = CurveIndex(ir.model.curves.len());
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry,
@@ -1119,7 +1119,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             warnings.push(format!(
                 "CURVE_REPLICA #{id} has invalid or unresolved parent/operator"
             ));
-            let curve_index = ir.model.curves.len();
+            let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
                 id: CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar"),
                 geometry: CurveGeometry::Unknown {
@@ -1172,7 +1172,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     {
         if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
             let curve = CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar");
-            let curve_index = ir.model.curves.len();
+            let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
                 id: curve.clone(),
                 geometry: CurveGeometry::Unknown {
@@ -1478,7 +1478,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(geometry) = carrier_index
                 .surfaces
                 .get(&support_step)
-                .and_then(|index| ir.model.surfaces.get(*index))
+                .and_then(|index| ir.model.surfaces.get(index.0))
                 .map(|surface| surface.geometry.clone())
             else {
                 surface_waiting_on.entry(support_step).or_default().push(id);
@@ -1549,7 +1549,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             );
             carrier_index
                 .surfaces
-                .insert(id, ir.model.surfaces.len() - 1);
+                .insert(id, SurfaceIndex(ir.model.surfaces.len() - 1));
             typed.insert(id);
             true
         } else if record.partial("CURVE_BOUNDED_SURFACE").is_some() {
@@ -1592,7 +1592,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some((boundaries, implicit_outer, geometry)) = ir
                 .model
                 .surfaces
-                .get(support_index)
+                .get(support_index.0)
                 .map(|surface| surface.geometry.clone())
                 .zip(boundaries)
                 .zip(implicit_outer)
@@ -1609,7 +1609,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             else {
                 continue;
             };
-            let surface_index = ir.model.surfaces.len();
+            let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
                 geometry,
@@ -1658,7 +1658,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some((distance, self_intersect)) = distance.zip(self_intersect) else {
                 continue;
             };
-            let surface_index = ir.model.surfaces.len();
+            let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Unknown { record: None },
@@ -1701,14 +1701,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(basis) = ir
                 .model
                 .surfaces
-                .get(parent_index)
+                .get(parent_index.0)
                 .map(|surface| surface.geometry.clone())
             else {
                 continue;
             };
             let surface =
                 SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar");
-            let surface_index = ir.model.surfaces.len();
+            let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Transformed {
@@ -1746,7 +1746,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             warnings.push(format!(
                 "SURFACE_REPLICA #{id} has invalid or unresolved parent/operator"
             ));
-            let surface_index = ir.model.surfaces.len();
+            let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar"),
                 geometry: SurfaceGeometry::Unknown {
@@ -1789,7 +1789,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             continue;
         };
         if let Entry::Vacant(entry) = carrier_index.curves.entry(curve_step) {
-            let curve_index = ir.model.curves.len();
+            let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
                 id: CurveId::mint(StepIdentity::data("curve", curve_step))
                     .expect("identity grammar"),
@@ -1814,7 +1814,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     ]) {
         let surface = SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar");
         if let Entry::Vacant(entry) = carrier_index.surfaces.entry(id) {
-            let surface_index = ir.model.surfaces.len();
+            let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: surface,
                 geometry: SurfaceGeometry::Unknown {
@@ -1843,7 +1843,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             continue;
         };
         if let Entry::Vacant(entry) = carrier_index.surfaces.entry(surface_step) {
-            let surface_index = ir.model.surfaces.len();
+            let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: SurfaceId::mint(StepIdentity::data("surface", surface_step))
                     .expect("identity grammar"),
@@ -2190,15 +2190,15 @@ pub(super) fn associate_free_geometric_set_members(
                 if owned.curves.contains(index) {
                     continue;
                 }
-                ir.model.curves[*index]
+                ir.model.curves[index.0]
                     .source_object
                     .get_or_insert_with(association);
             }
-            if let Some(index) = index.points.get(&member) {
+            if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if owned.points.contains(index) {
                     continue;
                 }
-                ir.model.points[*index]
+                ir.model.points[index.0]
                     .source_object
                     .get_or_insert_with(association);
             }
@@ -2206,7 +2206,7 @@ pub(super) fn associate_free_geometric_set_members(
                 if owned.surfaces.contains(index) {
                     continue;
                 }
-                ir.model.surfaces[*index]
+                ir.model.surfaces[index.0]
                     .source_object
                     .get_or_insert_with(association);
             }
@@ -2262,21 +2262,21 @@ pub(super) fn associate_free_representation_members(
             };
             if let Some(index) = index.curves.get(&member) {
                 if !owned.curves.contains(index) {
-                    ir.model.curves[*index]
+                    ir.model.curves[index.0]
                         .source_object
                         .get_or_insert_with(association);
                 }
             }
-            if let Some(index) = index.points.get(&member) {
+            if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if !owned.points.contains(index) {
-                    ir.model.points[*index]
+                    ir.model.points[index.0]
                         .source_object
                         .get_or_insert_with(association);
                 }
             }
             if let Some(index) = index.surfaces.get(&member) {
                 if !owned.surfaces.contains(index) {
-                    ir.model.surfaces[*index]
+                    ir.model.surfaces[index.0]
                         .source_object
                         .get_or_insert_with(association);
                 }
@@ -2355,21 +2355,21 @@ fn associate_presentation_carrier(
     };
     if let Some(index) = index.curves.get(&target) {
         if !owned.curves.contains(index) {
-            ir.model.curves[*index]
+            ir.model.curves[index.0]
                 .source_object
                 .get_or_insert_with(association);
         }
     }
-    if let Some(index) = index.points.get(&target) {
+    if let Some(index) = index.points.get(&target).map(|point| &point.index) {
         if !owned.points.contains(index) {
-            ir.model.points[*index]
+            ir.model.points[index.0]
                 .source_object
                 .get_or_insert_with(association);
         }
     }
     if let Some(index) = index.surfaces.get(&target) {
         if !owned.surfaces.contains(index) {
-            ir.model.surfaces[*index]
+            ir.model.surfaces[index.0]
                 .source_object
                 .get_or_insert_with(association);
         }
@@ -2538,9 +2538,9 @@ fn surface_curve_basis(record: &RawRecord) -> Option<u64> {
 }
 
 pub(super) struct OwnedCarriers {
-    pub(super) curves: HashSet<usize>,
-    pub(super) surfaces: HashSet<usize>,
-    pub(super) points: HashSet<usize>,
+    pub(super) curves: HashSet<CurveIndex>,
+    pub(super) surfaces: HashSet<SurfaceIndex>,
+    pub(super) points: HashSet<PointIndex>,
 }
 
 pub(super) fn topology_owned_carriers(ir: &CadIr, index: &CarrierIndex) -> OwnedCarriers {
@@ -2570,7 +2570,7 @@ pub(super) fn topology_owned_carriers(ir: &CadIr, index: &CarrierIndex) -> Owned
         .vertices
         .iter()
         .filter_map(|vertex| step_instance_id(&vertex.point.0))
-        .filter_map(|id| index.points.get(&id).copied())
+        .filter_map(|id| index.points.get(&id).map(|point| &point.index).copied())
         .collect();
     OwnedCarriers {
         curves,
@@ -2597,7 +2597,7 @@ pub(super) fn associate_topology_carriers(
         if owned.curves.contains(index) {
             continue;
         }
-        ir.model.curves[*index]
+        ir.model.curves[index.0]
             .source_object
             .get_or_insert_with(|| SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
@@ -2619,7 +2619,7 @@ pub(super) fn associate_topology_carriers(
         if owned.surfaces.contains(index) {
             continue;
         }
-        ir.model.surfaces[*index]
+        ir.model.surfaces[index.0]
             .source_object
             .get_or_insert_with(|| SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
@@ -2635,13 +2635,13 @@ pub(super) fn associate_topology_carriers(
         let Some(point_step) = vertex_point_reference(vertex) else {
             continue;
         };
-        let Some(index) = index.points.get(&point_step) else {
+        let Some(index) = index.points.get(&point_step).map(|point| &point.index) else {
             continue;
         };
         if owned.points.contains(index) {
             continue;
         }
-        ir.model.points[*index]
+        ir.model.points[index.0]
             .source_object
             .get_or_insert_with(|| SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
@@ -2671,7 +2671,7 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         let Some(parent_index) = index.curves.get(&parent_id).copied() else {
             continue;
         };
-        ir.model.curves[parent_index]
+        ir.model.curves[parent_index.0]
             .source_object
             .get_or_insert_with(|| SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
@@ -2692,7 +2692,7 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         let Some(parent_index) = index.surfaces.get(&parent_id).copied() else {
             continue;
         };
-        ir.model.surfaces[parent_index]
+        ir.model.surfaces[parent_index.0]
             .source_object
             .get_or_insert_with(|| SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
@@ -2750,7 +2750,7 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
         let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
             continue;
         };
-        ir.model.surfaces[surface_index]
+        ir.model.surfaces[surface_index.0]
             .source_object
             .get_or_insert_with(|| SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
@@ -2790,7 +2790,7 @@ pub(super) fn associate_surface_curve_supports(
             .and_then(|basis| index.curves.get(&basis))
             .copied()
         {
-            ir.model.curves[curve_index]
+            ir.model.curves[curve_index.0]
                 .source_object
                 .get_or_insert_with(|| SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
@@ -2806,7 +2806,7 @@ pub(super) fn associate_surface_curve_supports(
             let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
                 continue;
             };
-            ir.model.surfaces[surface_index]
+            ir.model.surfaces[surface_index.0]
                 .source_object
                 .get_or_insert_with(|| SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
