@@ -1732,6 +1732,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert!(matches!(
         resolved_historical_split_face_target_group(
             &split_scope,
+            split_scope.previous_history_state_id,
             &split_group,
             &[split_selected.clone(), split_context.clone()],
         ),
@@ -1752,6 +1753,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     candidate_context.recipe_program = vec![0, -1, 2];
     assert!(resolved_historical_split_face_target_group(
         &split_scope,
+        split_scope.previous_history_state_id,
         &split_group,
         &[split_selected.clone(), candidate_context],
     )
@@ -1763,6 +1765,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     }
     assert!(resolved_historical_split_face_target_group(
         &split_scope,
+        split_scope.previous_history_state_id,
         &split_group,
         &[split_selected, unresolved_context],
     )

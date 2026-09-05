@@ -6327,6 +6327,7 @@ fn bind_face_selection(
     if let Some(resolved) =
         crate::design::face_resolve::resolved_historical_split_face_target_group_with_updated_faces(
             scope,
+            scope.previous_history_state_id,
             group,
             operands,
             updated_face_slots,
