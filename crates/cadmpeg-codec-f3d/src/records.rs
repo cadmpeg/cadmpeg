@@ -477,47 +477,77 @@ pub enum DesignParameterKind {
     Feature,
 }
 
-/// Who owns a Design parameter: a user parameter, a dimension, or a feature.
+/// Admitted Design parameter family discriminator values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DesignParameterOwnerKind {
-    User,
-    Dimension { owner_record_index: u32 },
-    Feature { owner_record_index: u32 },
+#[repr(u64)]
+pub enum DesignParameterDiscriminator {
+    Code0 = 0,
+    Code3 = 3,
+    Code4 = 4,
+    Code5 = 5,
+    Code6 = 6,
 }
 
-impl DesignParameterOwnerKind {
-    pub(crate) fn kind(self) -> DesignParameterKind {
-        match self {
-            Self::User => DesignParameterKind::User,
-            Self::Dimension { .. } => DesignParameterKind::Dimension,
-            Self::Feature { .. } => DesignParameterKind::Feature,
+impl DesignParameterDiscriminator {
+    pub(crate) fn code(self) -> u64 {
+        self as u64
+    }
+}
+
+impl TryFrom<u64> for DesignParameterDiscriminator {
+    type Error = String;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Code0),
+            3 => Ok(Self::Code3),
+            4 => Ok(Self::Code4),
+            5 => Ok(Self::Code5),
+            6 => Ok(Self::Code6),
+            _ => Err(format!("invalid design parameter family_discriminator {value}")),
+        }
+    }
+}
+
+/// Source family and ownership of one Design parameter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DesignParameterSource {
+    User { family_discriminator: Located<DesignParameterDiscriminator> },
+    Owned(OwnedDesignParameter),
+}
+
+/// An owned source family. Its nonempty name cannot identify a user parameter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnedDesignParameter {
+    source_kind: String,
+    owner_record_index: u32,
+    family_discriminator: Option<Located<DesignParameterDiscriminator>>,
+}
+
+impl DesignParameterSource {
+    pub(crate) fn new(
+        source_kind: String,
+        owner_record_index: Option<u32>,
+        family_discriminator: Option<Located<DesignParameterDiscriminator>>,
+    ) -> Result<Self, String> {
+        match (source_kind.as_str(), owner_record_index) {
+            ("", _) => Err("design parameter source_kind is empty".into()),
+            ("User Parameter", None) => family_discriminator
+                .map(|family_discriminator| Self::User { family_discriminator })
+                .ok_or_else(|| "design parameter family_discriminator is missing for user source_kind".into()),
+            ("User Parameter", Some(_)) => Err("design parameter owner_record_index is present for user source_kind".into()),
+            (_, Some(owner_record_index)) => Ok(Self::Owned(OwnedDesignParameter { source_kind, owner_record_index, family_discriminator })),
+            (_, None) => Err("design parameter owner_record_index is missing for owned source_kind".into()),
         }
     }
 
-    pub(crate) fn owner_record_index(self) -> Option<u32> {
-        match self {
-            Self::User => None,
-            Self::Dimension { owner_record_index } | Self::Feature { owner_record_index } => {
-                Some(owner_record_index)
-            }
-        }
-    }
-
-    pub(crate) fn from_kind(kind: DesignParameterKind, owner_record_index: Option<u32>) -> Self {
-        match (kind, owner_record_index) {
-            (DesignParameterKind::User, _) => Self::User,
-            (DesignParameterKind::Dimension, Some(owner_record_index)) => {
-                Self::Dimension { owner_record_index }
-            }
-            (DesignParameterKind::Feature, Some(owner_record_index)) => {
-                Self::Feature { owner_record_index }
-            }
-            (DesignParameterKind::Dimension, None) => Self::Dimension {
-                owner_record_index: 0,
-            },
-            (DesignParameterKind::Feature, None) => Self::Feature {
-                owner_record_index: 0,
-            },
+    pub(crate) fn translate_discriminator_offset(&mut self, offset: u64) {
+        let discriminator = match self {
+            Self::User { family_discriminator } => Some(family_discriminator),
+            Self::Owned(source) => source.family_discriminator.as_mut(),
+        };
+        if let Some(discriminator) = discriminator {
+            discriminator.offset += offset;
         }
     }
 }
@@ -536,21 +566,15 @@ pub struct DesignParameter {
     pub class_tag: String,
     /// Source indexed-record identity.
     pub record_index: u32,
-    /// Parameter-family discriminator when the frame carries one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub family_discriminator: Option<Located<u64>>,
     /// Source ordering value stored by the parameter record.
     pub source_ordinal: u32,
     /// Indexed owner: user parameters have none; feature and dimension
     /// parameters name their owning record.
-    pub owner: DesignParameterOwnerKind,
+    pub source: DesignParameterSource,
     /// Literal or symbolic source expression.
     pub expression: String,
     /// Byte offset of the expression's UTF-16LE code units.
     pub expression_offset: u64,
-    /// Source family label such as `User Parameter`, `AlongDistance`, or
-    /// `Linear Dimension-2`.
-    pub source_kind: String,
     /// Byte offset of the source-family UTF-16LE code units.
     pub source_kind_offset: u64,
     /// Declared unit token; absent for dimensionless and Boolean parameters.
@@ -567,12 +591,29 @@ pub struct DesignParameter {
 }
 
 impl DesignParameter {
+    pub(crate) fn family_discriminator(&self) -> Option<Located<DesignParameterDiscriminator>> {
+        match &self.source {
+            DesignParameterSource::User { family_discriminator } => Some(*family_discriminator),
+            DesignParameterSource::Owned(source) => source.family_discriminator,
+        }
+    }
+
+    pub(crate) fn source_kind(&self) -> &str {
+        match &self.source {
+            DesignParameterSource::User { .. } => "User Parameter",
+            DesignParameterSource::Owned(source) => &source.source_kind,
+        }
+    }
+
     pub(crate) fn kind(&self) -> DesignParameterKind {
-        self.owner.kind()
+        design_parameter_kind_from_source(self.source_kind())
     }
 
     pub(crate) fn owner_record_index(&self) -> Option<u32> {
-        self.owner.owner_record_index()
+        match &self.source {
+            DesignParameterSource::User { .. } => None,
+            DesignParameterSource::Owned(source) => Some(source.owner_record_index),
+        }
     }
 }
 
@@ -623,29 +664,19 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
         if wire.kind != derived {
             return Err("design parameter kind disagrees with source_kind".into());
         }
-        let owner = match (wire.kind, wire.owner_record_index) {
-            (DesignParameterKind::User, None) => DesignParameterOwnerKind::User,
-            (DesignParameterKind::Dimension, Some(owner_record_index)) => {
-                DesignParameterOwnerKind::Dimension { owner_record_index }
-            }
-            (DesignParameterKind::Feature, Some(owner_record_index)) => {
-                DesignParameterOwnerKind::Feature { owner_record_index }
-            }
-            _ => {
-                return Err("design parameter owner_record_index disagrees with kind".into());
-            }
-        };
+        let family_discriminator = Located::from_wire(wire.family_discriminator, wire.family_discriminator_offset, "DesignParameter.family_discriminator")?
+            .map(|field| Ok::<_, String>(Located { value: DesignParameterDiscriminator::try_from(field.value)?, offset: field.offset }))
+            .transpose()?;
+        let source = DesignParameterSource::new(wire.source_kind, wire.owner_record_index, family_discriminator)?;
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
             class_tag: wire.class_tag,
             record_index: wire.record_index,
-            family_discriminator: Located::from_wire(wire.family_discriminator, wire.family_discriminator_offset, "DesignParameter.family_discriminator")?,
             source_ordinal: wire.source_ordinal,
-            owner,
+            source,
             expression: wire.expression,
             expression_offset: wire.expression_offset,
-            source_kind: wire.source_kind,
             source_kind_offset: wire.source_kind_offset,
             unit: RecordedValue::from_wire(wire.unit, wire.unit_offset, "unit")?,
             name: wire.name,
@@ -660,18 +691,23 @@ impl From<DesignParameter> for DesignParameterSerde {
     fn from(parameter: DesignParameter) -> Self {
         let kind = parameter.kind();
         let owner_record_index = parameter.owner_record_index();
+        let family_discriminator = parameter.family_discriminator();
+        let source_kind = match parameter.source {
+            DesignParameterSource::User { .. } => "User Parameter".to_owned(),
+            DesignParameterSource::Owned(source) => source.source_kind,
+        };
         Self {
             id: parameter.id,
             byte_offset: parameter.byte_offset,
             class_tag: parameter.class_tag,
             record_index: parameter.record_index,
-            family_discriminator: parameter.family_discriminator.map(|value| value.value),
-            family_discriminator_offset: parameter.family_discriminator.map(|value| value.offset),
+            family_discriminator: family_discriminator.map(|value| value.value.code()),
+            family_discriminator_offset: family_discriminator.map(|value| value.offset),
             source_ordinal: parameter.source_ordinal,
             owner_record_index,
             expression: parameter.expression,
             expression_offset: parameter.expression_offset,
-            source_kind: parameter.source_kind,
+            source_kind,
             source_kind_offset: parameter.source_kind_offset,
             kind,
             unit_offset: parameter.unit.as_ref().and_then(|field| field.offset),

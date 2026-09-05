@@ -545,15 +545,10 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
         byte_offset: 0,
         class_tag: "301".into(),
         record_index: 7,
-        family_discriminator: None,
         source_ordinal: 0,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(
-            crate::records::DesignParameterKind::Feature,
-            Some(8),
-        ),
+        source: crate::records::DesignParameterSource::new("AlongDistance".into(), Some(8), None).unwrap(),
         expression: "12.5 mm".into(),
         expression_offset: 0,
-        source_kind: "AlongDistance".into(),
         source_kind_offset: 0,
 
         unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),

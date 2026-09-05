@@ -926,7 +926,7 @@ mod tests {
         translated_sketch_geometry_matches, RectangularPatternDistanceForm,
     };
     use crate::records::{
-        DesignParameter, DesignParameterKind, SketchRelation, SketchRelationKind,
+        DesignParameter, SketchRelation, SketchRelationKind,
         SketchRelationMember, SketchRelationReturnMember,
     };
     use cadmpeg_ir::math::Point2;
@@ -1045,15 +1045,10 @@ mod tests {
             byte_offset: 0,
             class_tag: "373".into(),
             record_index,
-            family_discriminator: Some(crate::records::Located { value: 6, offset: 0 }),
             source_ordinal: 0,
-            owner: crate::records::DesignParameterOwnerKind::from_kind(
-                DesignParameterKind::Feature,
-                Some(record_index),
-            ),
+            source: crate::records::DesignParameterSource::new("R-Pattern1-distance".into(), Some(record_index), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code6, offset: 0 })).unwrap(),
             expression: value.to_string(),
             expression_offset: 0,
-            source_kind: "R-Pattern1-distance".into(),
             source_kind_offset: 0,
 
             unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),

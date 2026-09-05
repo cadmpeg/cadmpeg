@@ -1656,3 +1656,45 @@ fn variable_fillet_midpoints_preserve_wire_and_reject_unpaired_records() {
         assert!(error.contains("middle_parameter_record_indices"));
     }
 }
+
+#[test]
+fn parameter_source_preserves_wire_and_rejects_inconsistent_ownership() {
+    let prefix = r#"{"id":"parameter","byte_offset":0,"class_tag":"123","record_index":1"#;
+    let tail = r#","name":"d1","name_offset":80,"evaluated_value":1.0,"evaluated_value_offset":90}"#;
+    for (source_kind, kind, owner) in [
+        ("User Parameter", "user", ""),
+        ("Linear Dimension-2", "dimension", ",\"owner_record_index\":2"),
+        ("Distance", "feature", ",\"owner_record_index\":2"),
+    ] {
+        for discriminator in [0, 3, 4, 5, 6] {
+            let wire = format!("{prefix},\"family_discriminator\":{discriminator},\"family_discriminator_offset\":22,\"source_ordinal\":0{owner},\"expression\":\"1\",\"expression_offset\":40,\"source_kind\":\"{source_kind}\",\"source_kind_offset\":60,\"kind\":\"{kind}\"{tail}");
+            let parameter: super::DesignParameter = serde_json::from_str(&wire).unwrap();
+            assert_eq!(parameter.source_kind(), source_kind);
+            assert_eq!(serde_json::to_string(&parameter).unwrap(), wire);
+            let value: serde_json::Value = serde_json::from_str(&wire).unwrap();
+            let mut wrong_kind = value.clone();
+            wrong_kind["kind"] = serde_json::json!(if kind == "user" { "feature" } else { "user" });
+            assert!(serde_json::from_value::<super::DesignParameter>(wrong_kind).unwrap_err().to_string().contains("kind"));
+            let mut wrong_owner = value.clone();
+            if kind == "user" {
+                wrong_owner["owner_record_index"] = serde_json::json!(2);
+            } else {
+                wrong_owner.as_object_mut().unwrap().remove("owner_record_index");
+            }
+            assert!(serde_json::from_value::<super::DesignParameter>(wrong_owner).unwrap_err().to_string().contains("owner_record_index"));
+            let mut invalid_discriminator = value.clone();
+            invalid_discriminator["family_discriminator"] = serde_json::json!(7);
+            assert!(serde_json::from_value::<super::DesignParameter>(invalid_discriminator).unwrap_err().to_string().contains("family_discriminator"));
+            let mut no_discriminator = value;
+            no_discriminator.as_object_mut().unwrap().remove("family_discriminator");
+            no_discriminator.as_object_mut().unwrap().remove("family_discriminator_offset");
+            if kind == "user" {
+                assert!(serde_json::from_value::<super::DesignParameter>(no_discriminator).unwrap_err().to_string().contains("family_discriminator"));
+            } else {
+                let parameter: super::DesignParameter = serde_json::from_value(no_discriminator.clone()).unwrap();
+                assert_eq!(serde_json::to_value(parameter).unwrap(), no_discriminator);
+            }
+        }
+    }
+    assert!(super::DesignParameterSource::new(String::new(), Some(2), None).unwrap_err().contains("source_kind"));
+}

@@ -777,15 +777,10 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             byte_offset: 0,
             class_tag: "305".into(),
             record_index: 700,
-            family_discriminator: Some(crate::records::Located { value: 0, offset: 22 }),
             source_ordinal: 0,
-            owner: crate::records::DesignParameterOwnerKind::from_kind(
-                crate::records::DesignParameterKind::User,
-                None,
-            ),
+            source: crate::records::DesignParameterSource::User { family_discriminator: crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 22 } },
             expression: "Width / 2".into(),
             expression_offset: 36,
-            source_kind: "User Parameter".into(),
             source_kind_offset: 70,
 
             unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(110) }),
@@ -801,15 +796,10 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             byte_offset: 0,
             class_tag: "305".into(),
             record_index: 701,
-            family_discriminator: Some(crate::records::Located { value: 0, offset: 22 }),
             source_ordinal: 1,
-            owner: crate::records::DesignParameterOwnerKind::from_kind(
-                crate::records::DesignParameterKind::User,
-                None,
-            ),
+            source: crate::records::DesignParameterSource::User { family_discriminator: crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 22 } },
             expression: "60 mm".into(),
             expression_offset: 36,
-            source_kind: "User Parameter".into(),
             source_kind_offset: 70,
 
             unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(110) }),

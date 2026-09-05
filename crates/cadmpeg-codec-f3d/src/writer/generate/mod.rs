@@ -28,7 +28,7 @@ use preconditions::{
     validate_source_less_topology_tolerances,
 };
 use presentation::GeneratedDesignRegistry;
-use records::{encode_design_bulkstream, encode_design_metastream};
+use records::{encode_design_bulkstream, encode_design_metastream, encode_document_parameters};
 use smbh::encode_smbh;
 
 /// Write a canonical source-less F3D archive for the currently supported
@@ -63,9 +63,11 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         ));
     }
     let design_bindings = validate_source_less_design_bindings(&native)?;
+    let mut parameter_bytes = Vec::new();
     if has_native {
         validate_configuration_projection(target, &native)?;
         validate_source_less_history_graph(target, &native)?;
+        parameter_bytes = encode_document_parameters(&native.design_parameters)?;
         validate_source_less_design_ownership(&native)?;
         validate_source_less_sketch_graph(&native)?;
         validate_source_less_recipes(&native)?;
@@ -141,7 +143,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             archive.write_all(&payload)?;
         }
     }
-    let design_bulk = encode_design_bulkstream(target, &native, &design_registry)?;
+    let design_bulk = encode_design_bulkstream(target, &native, &design_registry, parameter_bytes)?;
     if let Some(bulk_stream) = &design_bulk {
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)

@@ -791,7 +791,7 @@ fn validation_rejects_duplicate_design_entity_suffixes() {
 }
 
 #[test]
-fn validation_rejects_invalid_design_parameter_family_and_owner() {
+fn validation_accepts_user_design_parameter_frame() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -802,15 +802,10 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
         byte_offset: 100,
         class_tag: "305".into(),
         record_index: 900,
-        family_discriminator: Some(crate::records::Located { value: 0, offset: 122 }),
         source_ordinal: 0,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(
-            crate::records::DesignParameterKind::User,
-            None,
-        ),
+        source: crate::records::DesignParameterSource::User { family_discriminator: crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 122 } },
         expression: "60 mm".into(),
         expression_offset: 136,
-        source_kind: "User Parameter".into(),
         source_kind_offset: 166,
 
         unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(210) }),
@@ -821,45 +816,12 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
     };
     f3d_native_mut(&mut ir).design_parameters.push(parameter);
     assert!(crate::validate::validate_native(&ir).is_empty());
-
-    f3d_native_mut(&mut ir).design_parameters[0].family_discriminator = Some(crate::records::Located { value: 7, offset: 122 });
-    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
-            && finding.entity.as_deref() == Some("generated:design-parameter#0")
-            && finding.message.contains("family discriminator")
-    }));
-    f3d_native_mut(&mut ir).design_parameters[0].family_discriminator = Some(crate::records::Located { value: 0, offset: 122 });
-
-    {
-        let parameter = &mut f3d_native_mut(&mut ir).design_parameters[0];
-        parameter.family_discriminator = None;
-    }
-    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
-            && finding.entity.as_deref() == Some("generated:design-parameter#0")
-            && finding.message.contains("family discriminator")
-    }));
-    {
-        let parameter = &mut f3d_native_mut(&mut ir).design_parameters[0];
-        parameter.family_discriminator = Some(crate::records::Located { value: 0, offset: 122 });
-    }
-
-    {
-        let mut native = f3d_native_mut(&mut ir);
-        native.design_parameters[0].owner = crate::records::DesignParameterOwnerKind::Feature {
-            owner_record_index: 1234,
-        };
-    }
-    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
-            && finding.entity.as_deref() == Some("generated:design-parameter#0")
-    }));
 }
 
 #[test]
 fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
     use crate::records::{
-        DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+        DesignParameter, DesignParameterCompanion, DesignParameterOwner,
         DesignRecordHeader,
     };
 
@@ -870,15 +832,10 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         byte_offset: 1_068,
         class_tag: "305".into(),
         record_index: 101,
-        family_discriminator: None,
         source_ordinal: 0,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(
-            DesignParameterKind::Feature,
-            Some(100),
-        ),
+        source: crate::records::DesignParameterSource::new("Feature Input".into(), Some(100), None).unwrap(),
         expression: "6 cm".into(),
         expression_offset: 1_080,
-        source_kind: "Feature Input".into(),
         source_kind_offset: 1_100,
 
         unit: Some(crate::records::RecordedValue { value: "cm".into(), offset: Some(1_120) }),
@@ -919,15 +876,10 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         byte_offset: 1_400,
         class_tag: "287".into(),
         record_index: 201,
-        family_discriminator: None,
         source_ordinal: 1,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(
-            DesignParameterKind::Feature,
-            Some(200),
-        ),
+        source: crate::records::DesignParameterSource::new("Feature Input".into(), Some(200), None).unwrap(),
         expression: "OffsetX".into(),
         expression_offset: 1_440,
-        source_kind: "Feature Input".into(),
         source_kind_offset: 1_470,
 
         unit: None,

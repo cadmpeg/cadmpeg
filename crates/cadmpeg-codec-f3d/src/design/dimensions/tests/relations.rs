@@ -480,15 +480,10 @@ fn single_curve_annotation_projects_parameterized_offset() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 12,
-        family_discriminator: Some(crate::records::Located { value: 6, offset: 0 }),
         source_ordinal: 0,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(
-            DesignParameterKind::Dimension,
-            Some(13),
-        ),
+        source: crate::records::DesignParameterSource::new("Linear Dimension-2".into(), Some(13), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code6, offset: 0 })).unwrap(),
         expression: "2 mm".into(),
         expression_offset: 0,
-        source_kind: "Linear Dimension-2".into(),
         source_kind_offset: 0,
 
         unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
@@ -782,15 +777,10 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 20,
-        family_discriminator: Some(crate::records::Located { value: 0, offset: 0 }),
         source_ordinal: 4,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(
-            DesignParameterKind::Dimension,
-            Some(21),
-        ),
+        source: crate::records::DesignParameterSource::new("Angular Dimension-4".into(), Some(21), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 0 })).unwrap(),
         expression: "1.0471975512 rad".into(),
         expression_offset: 0,
-        source_kind: "Angular Dimension-4".into(),
         source_kind_offset: 0,
 
         unit: Some(crate::records::RecordedValue { value: "rad".into(), offset: Some(0) }),

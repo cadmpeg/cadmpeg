@@ -33,15 +33,10 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 20,
-        family_discriminator: Some(crate::records::Located { value: 0, offset: 0 }),
         source_ordinal: 4,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(
-            DesignParameterKind::Dimension,
-            Some(21),
-        ),
+        source: crate::records::DesignParameterSource::new("Linear Dimension-4".into(), Some(21), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 0 })).unwrap(),
         expression: "thickness".into(),
         expression_offset: 0,
-        source_kind: "Linear Dimension-4".into(),
         source_kind_offset: 0,
 
         unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
@@ -161,7 +156,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     ));
 
     let mut radial_parameter = parameter.clone();
-    radial_parameter.source_kind = "Radial Dimension-4".into();
+    radial_parameter.source = crate::records::DesignParameterSource::new("Radial Dimension-4".into(), radial_parameter.owner_record_index(), radial_parameter.family_discriminator()).unwrap();
     let circle = SketchEntity::new(
         SketchEntityId("radial-circle".into()),
         sketch.clone(),
@@ -383,7 +378,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         SketchConstraintDefinition::Parallel { .. }
     )));
     let mut radial_parameter = parameter.clone();
-    radial_parameter.source_kind = "Radial Dimension-2".into();
+    radial_parameter.source = crate::records::DesignParameterSource::new("Radial Dimension-2".into(), radial_parameter.owner_record_index(), radial_parameter.family_discriminator()).unwrap();
     let radial_with_independent_relation = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
@@ -517,7 +512,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     ));
 
     let mut radial_parameter = parameter.clone();
-    radial_parameter.source_kind = "Radial Dimension-2".into();
+    radial_parameter.source = crate::records::DesignParameterSource::new("Radial Dimension-2".into(), radial_parameter.owner_record_index(), radial_parameter.family_discriminator()).unwrap();
     let radial_entity = SketchEntity::new(
         SketchEntityId("circle".into()),
         sketch.clone(),
@@ -760,15 +755,10 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 1,
-        family_discriminator: Some(crate::records::Located { value: 0, offset: 0 }),
         source_ordinal: 1,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(
-            DesignParameterKind::Dimension,
-            Some(2),
-        ),
+        source: crate::records::DesignParameterSource::new("Linear Dimension-2".into(), Some(2), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 0 })).unwrap(),
         expression: "2 mm".into(),
         expression_offset: 0,
-        source_kind: "Linear Dimension-2".into(),
         source_kind_offset: 0,
 
         unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
@@ -952,15 +942,10 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 1,
-        family_discriminator: Some(crate::records::Located { value: 0, offset: 0 }),
         source_ordinal: 1,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(
-            DesignParameterKind::Dimension,
-            Some(2),
-        ),
+        source: crate::records::DesignParameterSource::new("Linear Dimension-2".into(), Some(2), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 0 })).unwrap(),
         expression: "2 mm".into(),
         expression_offset: 0,
-        source_kind: "Linear Dimension-2".into(),
         source_kind_offset: 0,
 
         unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),

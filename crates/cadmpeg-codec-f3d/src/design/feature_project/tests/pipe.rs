@@ -47,15 +47,10 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         byte_offset: 0,
         class_tag: "277".into(),
         record_index,
-        family_discriminator: None,
         source_ordinal: record_index,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(
-            DesignParameterKind::Feature,
-            None,
-        ),
+        source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None).unwrap(),
         expression: String::new(),
         expression_offset: 0,
-        source_kind: source_kind.into(),
         source_kind_offset: 0,
 
         unit: unit.map(|value| crate::records::RecordedValue { value: value.to_owned(), offset: None }),

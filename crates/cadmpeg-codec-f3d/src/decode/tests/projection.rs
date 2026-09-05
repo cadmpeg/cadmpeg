@@ -23,7 +23,7 @@ use crate::native::F3dNative;
 use crate::records::{
     DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
     DesignDimensionRecipeRecord, DesignFeatureTimeline, DesignParameter, DesignParameterCompanion,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignSketchPlacement,
+    DesignParameterOwner, DesignParameterScope, DesignSketchPlacement,
     LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationKind,
 };
 
@@ -1326,15 +1326,10 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         byte_offset: 0,
         class_tag: "000".into(),
         record_index: 2,
-        family_discriminator: Some(crate::records::Located { value: 0, offset: 0 }),
         source_ordinal: 2,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(
-            DesignParameterKind::Dimension,
-            Some(3),
-        ),
+        source: crate::records::DesignParameterSource::new("Linear Dimension-2".into(), Some(3), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 0 })).unwrap(),
         expression: "1 mm".into(),
         expression_offset: 0,
-        source_kind: "Linear Dimension-2".into(),
         source_kind_offset: 0,
 
         unit: Some(crate::records::RecordedValue { value: "native-unit".into(), offset: Some(0) }),
@@ -1644,15 +1639,10 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 10,
-        family_discriminator: Some(crate::records::Located { value: 0, offset: 22 }),
         source_ordinal: 0,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(
-            DesignParameterKind::Dimension,
-            Some(20),
-        ),
+        source: crate::records::DesignParameterSource::new("Linear Dimension-2".into(), Some(20), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 22 })).unwrap(),
         expression: "5 mm".into(),
         expression_offset: 40,
-        source_kind: "Linear Dimension-2".into(),
         source_kind_offset: 60,
 
         unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(90) }),

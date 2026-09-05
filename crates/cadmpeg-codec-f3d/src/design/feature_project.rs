@@ -1499,7 +1499,7 @@ pub fn project_parameter_design_with_edge_identities(
                 native_owner.and_then(|owner| scope_ids.get(&(stream, owner.scope_record_index)));
             let mut properties = BTreeMap::new();
             if parameter.kind() != DesignParameterKind::User {
-                properties.insert("source_kind".into(), parameter.source_kind.clone());
+                properties.insert("source_kind".into(), parameter.source_kind().to_owned());
             }
             if let (Some(owner_record_index), None) = (parameter.owner_record_index(), owner) {
                 properties.insert("owner_record_index".into(), owner_record_index.to_string());
@@ -1529,9 +1529,9 @@ pub fn project_parameter_design_with_edge_identities(
                     .map_or(parameter.source_ordinal, |(_, owner)| owner.local_ordinal),
                 name: parameter.name.clone(),
                 expression: parameter.expression.clone(),
-                display: if parameter.source_kind.contains("Diameter Dimension") {
+                display: if parameter.source_kind().contains("Diameter Dimension") {
                     Some(DimensionDisplay::Diameter)
-                } else if parameter.source_kind.contains("Radius Dimension") {
+                } else if parameter.source_kind().contains("Radius Dimension") {
                     Some(DimensionDisplay::Radius)
                 } else {
                     None
@@ -1913,7 +1913,7 @@ fn project_work_point_construction(
             let mut distances = parameters
                 .iter()
                 .map(|(_, parameter)| *parameter)
-                .filter(|parameter| parameter.source_kind == "PathDistance");
+                .filter(|parameter| parameter.source_kind() == "PathDistance");
             let distance = distances.next()?;
             if distances.next().is_some() || !(0.0..=1.0).contains(&distance.evaluated_value) {
                 return None;
@@ -2112,7 +2112,7 @@ fn project_fillet_arm(
         let incomplete_assignment = if assignments.is_empty() {
             let radii = parameters
                 .iter()
-                .filter(|(_, parameter)| parameter.source_kind == "Radius")
+                .filter(|(_, parameter)| parameter.source_kind() == "Radius")
                 .map(|(_, parameter)| *parameter)
                 .collect::<Vec<_>>();
             radii.len() != 1
@@ -2121,12 +2121,12 @@ fn project_fillet_arm(
                     .any(|parameter| design_length(parameter).is_none_or(|value| value.0 <= 0.0))
                 || parameters
                     .iter()
-                    .any(|(_, parameter)| parameter.source_kind != "Radius")
+                    .any(|(_, parameter)| parameter.source_kind() != "Radius")
         } else {
             assigned_parameter_records.len() != parameters.len()
                 || parameters.iter().any(|(_, parameter)| {
                     !matches!(
-                        parameter.source_kind.as_str(),
+                        parameter.source_kind(),
                         "Radius" | "ChordLen" | "EdgeOffset1" | "EdgeOffset2" | "TangencyWeight"
                     ) || assigned_parameter_records
                         .iter()
@@ -2136,7 +2136,7 @@ fn project_fillet_arm(
                 })
                 || parameters.iter().any(|(_, parameter)| {
                     if matches!(
-                        parameter.source_kind.as_str(),
+                        parameter.source_kind(),
                         "Radius" | "ChordLen" | "EdgeOffset1" | "EdgeOffset2"
                     ) {
                         design_length(parameter).is_none_or(|value| value.0 <= 0.0)
@@ -2255,7 +2255,7 @@ fn project_fillet_arm(
                         radius: RadiusSpec::Constant {
                             radius: parameters
                                 .iter()
-                                .filter(|(_, parameter)| parameter.source_kind == "Radius")
+                                .filter(|(_, parameter)| parameter.source_kind() == "Radius")
                                 .find_map(|(_, parameter)| design_length(parameter))
                                 .expect("complete ungrouped Fillet has one positive radius"),
                         },
@@ -3222,7 +3222,7 @@ pub(crate) fn project_offset_faces(
 
     let parameter_distance = match parameters {
         [] => None,
-        [(_, distance)] if distance.source_kind == "distance" => Some(design_length(distance)?),
+        [(_, distance)] if distance.source_kind() == "distance" => Some(design_length(distance)?),
         _ => return None,
     };
     let fixed_distance = match &scope.payload {
@@ -3443,7 +3443,7 @@ pub(crate) fn project_edge_flange(
         parameters.iter().find(|parameter| {
             native_stream(&parameter.id) == Some(stream)
                 && parameter.record_index == owner.parameter_record_index
-                && parameter.source_kind == source_kind
+                && parameter.source_kind() == source_kind
         })
     };
 
@@ -3657,7 +3657,7 @@ pub(crate) fn project_hem(
         let mut matching_parameters = parameters.iter().filter(|parameter| {
             native_stream(&parameter.id) == Some(stream)
                 && parameter.record_index == owner.parameter_record_index
-                && parameter.source_kind == source_kind
+                && parameter.source_kind() == source_kind
         });
         let parameter = matching_parameters.next()?;
         matching_parameters.next().is_none().then_some(parameter)
@@ -3833,7 +3833,7 @@ pub(crate) fn project_ruled_surface(
         parameters.iter().find(|parameter| {
             native_stream(&parameter.id) == Some(stream)
                 && parameter.record_index == owner.parameter_record_index
-                && parameter.source_kind == source_kind
+                && parameter.source_kind() == source_kind
         })
     };
     let distance = design_length(parameter(
@@ -5050,17 +5050,17 @@ pub(crate) fn design_angle_unit(unit: &str) -> bool {
 
 pub(crate) fn design_dimension_unit(parameter: &DesignParameter) -> bool {
     let unit = parameter.unit.as_ref().map(|field| field.value.as_str());
-    if parameter.source_kind.starts_with("Linear Dimension")
-        || parameter.source_kind.starts_with("Radius Dimension")
-        || parameter.source_kind.starts_with("Radial Dimension")
-        || parameter.source_kind.starts_with("Diameter Dimension")
+    if parameter.source_kind().starts_with("Linear Dimension")
+        || parameter.source_kind().starts_with("Radius Dimension")
+        || parameter.source_kind().starts_with("Radial Dimension")
+        || parameter.source_kind().starts_with("Diameter Dimension")
     {
         return unit.is_some_and(design_length_unit);
     }
-    if parameter.source_kind.starts_with("Angular Dimension") {
+    if parameter.source_kind().starts_with("Angular Dimension") {
         return unit.is_some_and(design_angle_unit);
     }
-    if parameter.source_kind.starts_with("Tangent Dimension") {
+    if parameter.source_kind().starts_with("Tangent Dimension") {
         return unit.is_some_and(design_length_unit);
     }
     false
@@ -5117,7 +5117,7 @@ pub(crate) fn variable_fillet_law(
     let unique_parameter = |kind: &str| {
         let mut matches = parameters
             .iter()
-            .filter_map(|(_, parameter)| (parameter.source_kind == kind).then_some(*parameter));
+            .filter_map(|(_, parameter)| (parameter.source_kind() == kind).then_some(*parameter));
         let parameter = matches.next()?;
         matches.next().is_none().then_some(parameter)
     };
@@ -5128,7 +5128,7 @@ pub(crate) fn variable_fillet_law(
     }
     let tangency_weight = {
         let mut matches = parameters.iter().filter_map(|(_, parameter)| {
-            (parameter.source_kind == "TangencyWeight").then_some(*parameter)
+            (parameter.source_kind() == "TangencyWeight").then_some(*parameter)
         });
         match (matches.next(), matches.next()) {
             (None, None) => None,
@@ -5146,13 +5146,13 @@ pub(crate) fn variable_fillet_law(
     let mut middle_radii = parameters
         .iter()
         .filter_map(|(ordinal, parameter)| {
-            (parameter.source_kind == "MidRadius").then_some((*ordinal, *parameter))
+            (parameter.source_kind() == "MidRadius").then_some((*ordinal, *parameter))
         })
         .collect::<Vec<_>>();
     let mut middle_parameters = parameters
         .iter()
         .filter_map(|(ordinal, parameter)| {
-            (parameter.source_kind == "MidParams").then_some((*ordinal, *parameter))
+            (parameter.source_kind() == "MidParams").then_some((*ordinal, *parameter))
         })
         .collect::<Vec<_>>();
     middle_radii.sort_by_key(|(ordinal, _)| *ordinal);
@@ -5160,7 +5160,7 @@ pub(crate) fn variable_fillet_law(
     if middle_radii.len() != middle_parameters.len()
         || parameters.iter().any(|(_, parameter)| {
             !matches!(
-                parameter.source_kind.as_str(),
+                parameter.source_kind(),
                 "StartRadius" | "EndRadius" | "MidRadius" | "MidParams" | "TangencyWeight"
             )
         })
@@ -5259,7 +5259,7 @@ fn project_chamfer(
     let ordered_parameters = |source_kind: &str| {
         let mut matches = parameters
             .iter()
-            .filter(|(_, parameter)| parameter.source_kind == source_kind)
+            .filter(|(_, parameter)| parameter.source_kind() == source_kind)
             .copied()
             .collect::<Vec<_>>();
         matches.sort_by_key(|(local_ordinal, _)| *local_ordinal);
@@ -5277,7 +5277,7 @@ fn project_chamfer(
         .iter()
         .filter(|(_, parameter)| {
             matches!(
-                parameter.source_kind.as_str(),
+                parameter.source_kind(),
                 "Angle" | "Rotate Angle" | "rotateAngle"
             )
         })
@@ -5291,7 +5291,7 @@ fn project_chamfer(
 
     if !parameters.iter().all(|(_, parameter)| {
         matches!(
-            parameter.source_kind.as_str(),
+            parameter.source_kind(),
             "Distance"
                 | "Distance 1"
                 | "Distance 2"
@@ -6667,7 +6667,7 @@ fn project_fixed_pipe(
     let unique = |source_kind: &str| {
         let matches = parameters
             .iter()
-            .filter(|(_, parameter)| parameter.source_kind == source_kind)
+            .filter(|(_, parameter)| parameter.source_kind() == source_kind)
             .map(|(_, parameter)| *parameter)
             .collect::<Vec<_>>();
         let [parameter] = matches.as_slice() else {
@@ -7022,7 +7022,7 @@ fn project_hole(
     let parameter = |source_kind: &str| {
         let matches = parameters
             .iter()
-            .filter(|(_, parameter)| parameter.source_kind == source_kind)
+            .filter(|(_, parameter)| parameter.source_kind() == source_kind)
             .map(|(_, parameter)| *parameter)
             .collect::<Vec<_>>();
         let [parameter] = matches.as_slice() else {
@@ -7541,7 +7541,7 @@ pub(crate) fn project_extrude(
     };
     if parameters
         .iter()
-        .any(|(_, parameter)| !supported_parameter(&parameter.source_kind))
+        .any(|(_, parameter)| !supported_parameter(parameter.source_kind()))
     {
         return None;
     }
@@ -7641,7 +7641,7 @@ pub(crate) fn project_extrude(
         let matches = parameters
             .iter()
             .map(|(_, parameter)| *parameter)
-            .filter(|parameter| parameter.source_kind == source_kind)
+            .filter(|parameter| parameter.source_kind() == source_kind)
             .collect::<Vec<_>>();
         (matches.len() <= 1).then(|| matches.first().copied())
     };
@@ -7687,7 +7687,7 @@ pub(crate) fn project_extrude(
     };
     let side_one_offset_count = parameters
         .iter()
-        .filter(|(_, parameter)| parameter.source_kind == "Side1Offset")
+        .filter(|(_, parameter)| parameter.source_kind() == "Side1Offset")
         .count();
     let omitted_zero_side_one_offset = side_one_offset.is_none()
         && extrude_omits_zero_side_one_offset(scope, &prologue, side_one_offset_count);
@@ -8207,7 +8207,7 @@ fn project_coil(
     let unique = |kind: &str| {
         let mut matches = parameters
             .iter()
-            .filter_map(|(_, parameter)| (parameter.source_kind == kind).then_some(*parameter));
+            .filter_map(|(_, parameter)| (parameter.source_kind() == kind).then_some(*parameter));
         let parameter = matches.next()?;
         matches.next().is_none().then_some(parameter)
     };
@@ -8269,7 +8269,7 @@ fn project_coil(
     };
     if parameters.len() != expected_parameter_kinds.len()
         || parameters.iter().any(|(_, parameter)| {
-            !expected_parameter_kinds.contains(&parameter.source_kind.as_str())
+            !expected_parameter_kinds.contains(&parameter.source_kind())
         })
     {
         return None;

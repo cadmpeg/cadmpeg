@@ -18,7 +18,7 @@ use crate::layout::indexed_companion_record_prefix as companion_prefix;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::records::{
     ConstructionRecipe, DesignEntityHeader, DesignParameter, DesignParameterCompanion,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::View;
@@ -65,7 +65,7 @@ pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, C
                 }
                 parameter.id = ids::native_design_parameter_id(&entry.name, at);
                 parameter.byte_offset = at as u64;
-                if let Some(discriminator) = &mut parameter.family_discriminator { discriminator.offset += at as u64; }
+                parameter.source.translate_discriminator_offset(at as u64);
                 parameter.expression_offset += at as u64;
                 parameter.source_kind_offset += at as u64;
                 if let Some(unit) = &mut parameter.unit {
@@ -106,7 +106,7 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
     }
     let (family_discriminator, source_ordinal, owner_record_index, expression_at, trailer_len) =
         if discriminated {
-            let discriminator = View::u64_le_at(payload, 22)?;
+            let discriminator = crate::records::DesignParameterDiscriminator::try_from(View::u64_le_at(payload, 22)?).ok()?;
             let owner = match payload.get(35)? {
                 0 => (None, 36, 9),
                 1 if payload.get(40..46) == Some(&[0; 6]) => {
@@ -152,9 +152,6 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         expression_end + trailer_len
     };
     let (source_kind, source_kind_end) = lp_utf16_bounded(payload, source_kind_at, 1..=256)?;
-    if family_discriminator.is_some_and(|value| !valid_design_parameter_discriminator(value)) {
-        return None;
-    }
     let first_at = source_kind_end + usize::from(discriminated) * 4;
     if discriminated && View::u32_le_at(payload, source_kind_end) != Some(0) {
         return None;
@@ -190,24 +187,15 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
     {
         return None;
     }
-    let kind = if source_kind == "User Parameter" {
-        DesignParameterKind::User
-    } else if source_kind.contains("Dimension") {
-        DesignParameterKind::Dimension
-    } else {
-        DesignParameterKind::Feature
-    };
     Some(DesignParameter {
         id: String::new(),
         byte_offset: 0,
         class_tag,
         record_index,
-        family_discriminator: family_discriminator.map(|value| crate::records::Located { value, offset: 22 }),
         source_ordinal,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(kind, owner_record_index),
+        source: crate::records::DesignParameterSource::new(source_kind, owner_record_index, family_discriminator.map(|value| crate::records::Located { value, offset: 22 })).ok()?,
         expression,
         expression_offset: (expression_at + 4) as u64,
-        source_kind,
         source_kind_offset: (source_kind_at + 4) as u64,
         unit,
         name,
@@ -275,18 +263,15 @@ fn parse_legacy_287_design_parameter(
     {
         return None;
     }
-    let kind = design_parameter_kind(&source_kind);
     Some(DesignParameter {
         id: String::new(),
         byte_offset: 0,
         class_tag,
         record_index,
-        family_discriminator: None,
         source_ordinal,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(kind, Some(owner_record_index)),
+        source: crate::records::DesignParameterSource::new(source_kind, Some(owner_record_index), None).ok()?,
         expression,
         expression_offset: u64::try_from(legacy_287::EXPRESSION_LENGTH + 4).ok()?,
-        source_kind,
         source_kind_offset: u64::try_from(source_kind_at.checked_add(4)?).ok()?,
         unit,
         name,
@@ -333,18 +318,15 @@ fn parse_legacy_design_parameter(
     {
         return None;
     }
-    let kind = design_parameter_kind(&source_kind);
     Some(DesignParameter {
         id: String::new(),
         byte_offset: 0,
         class_tag,
         record_index,
-        family_discriminator: None,
         source_ordinal,
-        owner: crate::records::DesignParameterOwnerKind::from_kind(kind, Some(owner_record_index)),
+        source: crate::records::DesignParameterSource::new(source_kind, Some(owner_record_index), None).ok()?,
         expression,
         expression_offset: (expression_at + 4) as u64,
-        source_kind,
         source_kind_offset: (source_kind_at + 4) as u64,
         unit: Some(crate::records::RecordedValue { value: unit, offset: Some((unit_at + 4) as u64) }),
         name,
@@ -354,26 +336,12 @@ fn parse_legacy_design_parameter(
     })
 }
 
-fn design_parameter_kind(source_kind: &str) -> DesignParameterKind {
-    if source_kind == "User Parameter" {
-        DesignParameterKind::User
-    } else if source_kind.contains("Dimension") {
-        DesignParameterKind::Dimension
-    } else {
-        DesignParameterKind::Feature
-    }
-}
-
 pub(crate) fn design_parameter_discriminator(source_kind: &str) -> u64 {
     match source_kind {
         "ScaleFactor" => 5,
         "TangencyWeight" => 6,
         _ => 0,
     }
-}
-
-pub(crate) fn valid_design_parameter_discriminator(value: u64) -> bool {
-    matches!(value, 0 | 3 | 4 | 5 | 6)
 }
 
 /// Whether a class tag admits the legacy owner grammar without scope or scalar
@@ -391,13 +359,14 @@ pub(crate) fn is_legacy_parameter_owner_88_class(class_tag: &str) -> bool {
     matches!(class_tag, "284" | "282" | "336" | "325" | "297")
 }
 
-fn valid_design_parameter_family(discriminator: Option<u64>, source_kind: &str, tail: u8) -> bool {
+fn valid_design_parameter_family(discriminator: Option<crate::records::DesignParameterDiscriminator>, source_kind: &str, tail: u8) -> bool {
+    use crate::records::DesignParameterDiscriminator::{Code0, Code3, Code4, Code5, Code6};
     match tail {
         16 => {
-            (discriminator == Some(5) && source_kind == "ScaleFactor") || discriminator == Some(6)
+            (discriminator == Some(Code5) && source_kind == "ScaleFactor") || discriminator == Some(Code6)
         }
         19 => discriminator.is_none_or(|value| {
-            matches!(value, 0 | 3 | 4) || (value == 6 && source_kind == "TangencyWeight")
+            matches!(value, Code0 | Code3 | Code4) || (value == Code6 && source_kind == "TangencyWeight")
         }),
         _ => false,
     }
