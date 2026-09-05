@@ -9,11 +9,13 @@ use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::SourceProvenance;
+use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 /// One typed lexical value in an entity parameter record.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub(crate) enum TokenValue {
     Omitted,
     Integer(i64),
@@ -26,6 +28,23 @@ pub(crate) enum TokenValue {
 pub(crate) struct Token {
     pub(crate) value: TokenValue,
     pub(crate) span: Range<usize>,
+}
+
+impl Serialize for Token {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            start: usize,
+            end: usize,
+            value: &'a TokenValue,
+        }
+        Wire {
+            start: self.span.start,
+            end: self.span.end,
+            value: &self.value,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// One entity's assembled Parameter Data.
@@ -68,9 +87,15 @@ pub(crate) struct TrailingPointer {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OverdeclaredCount {
+    pub(crate) declared: usize,
+    pub(crate) present: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DefaultTailCount {
     Held(usize),
-    Overdeclared { declared: usize, present: usize },
+    Overdeclared(OverdeclaredCount),
     Unreadable,
 }
 
@@ -275,10 +300,10 @@ impl ParameterRecord {
         if count <= present {
             DefaultTailCount::Held(count)
         } else {
-            DefaultTailCount::Overdeclared {
+            DefaultTailCount::Overdeclared(OverdeclaredCount {
                 declared: count,
                 present,
-            }
+            })
         }
     }
 
@@ -303,10 +328,10 @@ impl ParameterRecord {
         if count <= present {
             DefaultTailCount::Held(count)
         } else {
-            DefaultTailCount::Overdeclared {
+            DefaultTailCount::Overdeclared(OverdeclaredCount {
                 declared: count,
                 present,
-            }
+            })
         }
     }
 
