@@ -3,7 +3,8 @@ use crate::layout::base_feature_class_377_prefix as class_377;
 use crate::layout::base_feature_class_452_262_compact as class_452_compact;
 use crate::layout::base_feature_class_452_262_expanded as class_452_expanded;
 use crate::records::{
-    DesignBaseFeatureBodyReferenceForm, DesignBaseFeatureConstruction, DesignParameterScope,
+    DesignBaseFeatureBodyReferenceForm, DesignBaseFeatureConstruction, DesignBaseFeatureEntry,
+    DesignLegacyBaseFeatureBody, DesignParameterScope, Located,
 };
 use cadmpeg_core::decode::View;
 
@@ -254,36 +255,21 @@ fn exact_base_feature_legacy_compact(
             previous_history_state_id: class_452_compact::PREVIOUS_HISTORY_STATE_ID,
         },
     )?;
-    let body_entity_suffixes = vec![body_entity_suffix];
     Some(DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
-        form: DesignBaseFeatureBodyReferenceForm::CompactOneBody(crate::records::Located {
-            value: mode,
-            offset: scope.byte_offset + u64::try_from(class_452_compact::MODE).ok()?,
-        }),
-        body_entity_suffixes,
-        body_entity_suffix_offsets: vec![
-            scope.byte_offset + u64::try_from(class_452_compact::BODY_ENTITY_SUFFIX).ok()?,
-        ],
-        body_entity_fields: vec![body_entity_field],
-        body_reference_records: vec![u32::try_from(body_entity_suffix).ok()?],
-        body_reference_record_offsets: vec![
-            scope.byte_offset + u64::try_from(class_452_compact::BODY_ENTITY_SUFFIX).ok()?,
-        ],
-        parameter_body_records: vec![parameter_body_record],
-        parameter_body_record_offsets: vec![
-            scope.byte_offset + u64::try_from(class_452_compact::PARAMETER_BODY_RECORD).ok()?,
-        ],
-        auxiliary_records: vec![auxiliary_record],
-        auxiliary_record_offsets: vec![
-            scope.byte_offset + u64::try_from(class_452_compact::AUXILIARY_RECORD).ok()?,
-        ],
+        form: DesignBaseFeatureBodyReferenceForm::CompactOneBody {
+            mode: Located { value: mode, offset: scope.byte_offset + u64::try_from(class_452_compact::MODE).ok()? },
+            body: DesignLegacyBaseFeatureBody {
+                entity: DesignBaseFeatureEntry { value: u32::try_from(body_entity_suffix).ok()?, offset: scope.byte_offset + u64::try_from(class_452_compact::BODY_ENTITY_SUFFIX).ok()?, field: body_entity_field },
+                parameter_body: Located { value: parameter_body_record, offset: scope.byte_offset + u64::try_from(class_452_compact::PARAMETER_BODY_RECORD).ok()? },
+                auxiliary: Located { value: auxiliary_record, offset: scope.byte_offset + u64::try_from(class_452_compact::AUXILIARY_RECORD).ok()? },
+            },
+        },
         scope_reference,
         scope_reference_offset: scope.byte_offset
             + u64::try_from(class_452_compact::SCOPE_REFERENCE).ok()?,
         envelope_guid,
         envelope_guid_offset: scope.byte_offset
             + u64::try_from(class_452_compact::ENVELOPE_GUID).ok()?,
-        tag_body_based_on_faces: true,
         tag_body_based_on_faces_offset: scope.byte_offset
             + u64::try_from(class_452_compact::TAG_BODY_BASED_ON_FACES_VALUE).ok()?,
     })
@@ -424,46 +410,23 @@ fn exact_base_feature_legacy_expanded(
             previous_history_state_id: class_452_expanded::PREVIOUS_HISTORY_STATE_ID,
         },
     )?;
-    let body_entity_suffixes = body_entity_suffixes.to_vec();
     Some(DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
-        form: DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody,
-        body_reference_records: body_entity_suffixes
-            .iter()
-            .copied()
-            .map(u32::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .ok()?,
-        body_entity_fields: body_entity_fields.to_vec(),
-        body_entity_suffix_offsets: vec![
-            scope.byte_offset + u64::try_from(class_452_expanded::BODY_ENTITY_ONE_SUFFIX).ok()?,
-            scope.byte_offset + u64::try_from(class_452_expanded::BODY_ENTITY_TWO_SUFFIX).ok()?,
-        ],
-        body_reference_record_offsets: vec![
-            scope.byte_offset + u64::try_from(class_452_expanded::BODY_ENTITY_ONE_SUFFIX).ok()?,
-            scope.byte_offset + u64::try_from(class_452_expanded::BODY_ENTITY_TWO_SUFFIX).ok()?,
-        ],
-        body_entity_suffixes,
-        parameter_body_records: parameter_body_records.into_iter().map(u64::from).collect(),
-        parameter_body_record_offsets: vec![
-            scope.byte_offset
-                + u64::try_from(class_452_expanded::PARAMETER_BODY_ONE_RECORD).ok()?,
-            scope.byte_offset
-                + u64::try_from(class_452_expanded::PARAMETER_BODY_TWO_RECORD).ok()?,
-        ],
-        auxiliary_records: auxiliary_records.into_iter().map(u64::from).collect(),
-        auxiliary_record_offsets: vec![
-            scope.byte_offset
-                + u64::try_from(class_452_expanded::AUXILIARY_BODY_ONE_RECORD).ok()?,
-            scope.byte_offset
-                + u64::try_from(class_452_expanded::AUXILIARY_BODY_TWO_RECORD).ok()?,
-        ],
+        form: DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody { bodies: [DesignLegacyBaseFeatureBody {
+                entity: DesignBaseFeatureEntry { value: u32::try_from(body_entity_suffixes[0]).ok()?, offset: scope.byte_offset + u64::try_from(class_452_expanded::BODY_ENTITY_ONE_SUFFIX).ok()?, field: body_entity_fields[0] },
+                parameter_body: Located { value: u64::from(parameter_body_records[0]), offset: scope.byte_offset + u64::try_from(class_452_expanded::PARAMETER_BODY_ONE_RECORD).ok()? },
+                auxiliary: Located { value: u64::from(auxiliary_records[0]), offset: scope.byte_offset + u64::try_from(class_452_expanded::AUXILIARY_BODY_ONE_RECORD).ok()? },
+            },
+DesignLegacyBaseFeatureBody {
+                entity: DesignBaseFeatureEntry { value: u32::try_from(body_entity_suffixes[1]).ok()?, offset: scope.byte_offset + u64::try_from(class_452_expanded::BODY_ENTITY_TWO_SUFFIX).ok()?, field: body_entity_fields[1] },
+                parameter_body: Located { value: u64::from(parameter_body_records[1]), offset: scope.byte_offset + u64::try_from(class_452_expanded::PARAMETER_BODY_TWO_RECORD).ok()? },
+                auxiliary: Located { value: u64::from(auxiliary_records[1]), offset: scope.byte_offset + u64::try_from(class_452_expanded::AUXILIARY_BODY_TWO_RECORD).ok()? },
+            }] },
         scope_reference: u64::from(scope_reference),
         scope_reference_offset: scope.byte_offset
             + u64::try_from(class_452_expanded::SCOPE_REFERENCE).ok()?,
         envelope_guid,
         envelope_guid_offset: scope.byte_offset
             + u64::try_from(class_452_expanded::ENVELOPE_GUID).ok()?,
-        tag_body_based_on_faces: true,
         tag_body_based_on_faces_offset: scope.byte_offset
             + u64::try_from(class_452_expanded::TAG_BODY_BASED_ON_FACES_VALUE).ok()?,
     })

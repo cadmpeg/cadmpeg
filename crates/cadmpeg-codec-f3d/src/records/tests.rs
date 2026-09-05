@@ -537,6 +537,22 @@ fn legacy_base_feature_form_owns_its_compact_mode() {
             let parsed = serde_json::from_str::<super::DesignBaseFeatureConstruction>(&wire);
             if (form == "compact_one_body" && mask == 3) || (form == "expanded_two_body" && mask == 0) {
                 assert_eq!(serde_json::to_string(&parsed.expect("complete legacy form")).expect("legacy wire"), wire);
+                let value: serde_json::Value = serde_json::from_str(&wire).expect("legacy JSON");
+                for field in ["body_entity_suffixes", "body_entity_suffix_offsets", "body_entity_fields", "body_reference_records", "body_reference_record_offsets", "parameter_body_records", "parameter_body_record_offsets", "auxiliary_records", "auxiliary_record_offsets"] {
+                    let mut invalid = value.clone();
+                    invalid[field].as_array_mut().expect("body array").pop();
+                    assert!(serde_json::from_value::<super::DesignBaseFeatureConstruction>(invalid).is_err(), "{field}");
+                }
+                for field in ["body_reference_records", "body_reference_record_offsets"] {
+                    let mut invalid = value.clone();
+                    invalid[field][0] = serde_json::json!(999);
+                    let error = serde_json::from_value::<super::DesignBaseFeatureConstruction>(invalid).expect_err("conflicting body view").to_string();
+                    assert!(error.contains(field));
+                }
+                let mut invalid = value;
+                invalid["tag_body_based_on_faces"] = serde_json::json!(false);
+                let error = serde_json::from_value::<super::DesignBaseFeatureConstruction>(invalid).expect_err("false body-source tag").to_string();
+                assert!(error.contains("tag_body_based_on_faces"));
             } else {
                 let error = parsed.expect_err("mixed legacy mode form").to_string();
                 assert!(error.contains("form"));
