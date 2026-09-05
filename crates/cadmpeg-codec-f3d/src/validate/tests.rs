@@ -165,17 +165,13 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
             ),
         ],
         design_feature_timelines: vec![crate::records::DesignFeatureTimeline {
-            id: crate::ids::native_design_feature_timeline_id(bulk_entry, 200),
-            byte_offset: 200,
-            class_tag: "256".into(),
-            record_index: 35,
-            source_ordinal: 0,
-            frame_length: 60,
-            context_record_index: 17,
-            context_record_index_offset: 220,
-            item_count_offset: 240,
-            items: vec![crate::records::Located { value: 101, offset: 245 }],
-        }],
+frame: crate::records::DesignTimelineFrame::new(200, 60, 220, 240, vec![crate::records::Located { value: 101, offset: 245 }]).unwrap(),
+id: crate::ids::native_design_feature_timeline_id(bulk_entry, 200),
+class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+record_index: std::num::NonZeroU64::new(35).unwrap(),
+source_ordinal: 0,
+context_record_index: std::num::NonZeroU64::new(17).unwrap(),
+}],
         ..crate::native::F3dNative::default()
     };
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -205,17 +201,9 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
             && finding.message == "Fusion Design feature timeline has an invalid typed frame"
     }));
 
-    let mut invalid_offsets = native.clone();
-    invalid_offsets.design_feature_timelines[0].items[0].offset = 244;
-    invalid_offsets
-        .store(ir.native.namespace_mut("f3d", std::num::NonZeroU32::MIN))
-        .unwrap();
-    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.entity.as_deref() == Some(invalid_offsets.design_feature_timelines[0].id.as_str())
-            && finding.message == "Fusion Design feature timeline has an invalid typed frame"
-    }));
-
-    native.design_feature_timelines[0].items[0].value = 102;
+    native.design_feature_timelines[0].frame = crate::records::DesignTimelineFrame::new(
+        200, 60, 220, 240, vec![crate::records::Located { value: 102, offset: 245 }],
+    ).unwrap();
     native
         .store(ir.native.namespace_mut("f3d", std::num::NonZeroU32::MIN))
         .unwrap();

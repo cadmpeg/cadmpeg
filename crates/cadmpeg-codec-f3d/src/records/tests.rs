@@ -748,7 +748,7 @@ fn copied_body_rows_preserve_wire_and_reject_unequal_runs() {
 
 #[test]
 fn timeline_items_preserve_wire_and_reject_unequal_offsets() {
-    for offsets in ["[0,0]", "[245,256]"] {
+    for offsets in ["[245,256]", "[245,278]"] {
         let wire = format!(r#"{{"id":"timeline","byte_offset":200,"class_tag":"256","record_index":35,"source_ordinal":0,"frame_length":100,"context_record_index":17,"context_record_index_offset":220,"item_count_offset":240,"item_record_indices":[101,102],"item_record_index_offsets":{offsets}}}"#);
         let timeline: super::DesignFeatureTimeline = serde_json::from_str(&wire).expect("timeline items");
         assert_eq!(serde_json::to_string(&timeline).expect("timeline wire"), wire);
@@ -2489,4 +2489,40 @@ fn sketch_placement_extent_and_matrix_are_checked_at_construction() {
     matrix[0][1] = 1.0;
     matrix[1][1] = 0.0;
     assert!(SketchPlacementMatrix::try_from(matrix).unwrap_err().contains("transform"));
+}
+
+#[test]
+fn timeline_frame_rejects_invalid_source_spans() {
+    let wire = serde_json::json!({
+        "id": "timeline", "byte_offset": 200, "class_tag": "256",
+        "record_index": 35, "source_ordinal": 0, "frame_length": 100,
+        "context_record_index": 17, "context_record_index_offset": 220,
+        "item_count_offset": 240, "item_record_indices": [101, 102],
+        "item_record_index_offsets": [245, 278]
+    });
+    for (field, bad, diagnostic) in [
+        ("class_tag", serde_json::json!("25x"), "class_tag"),
+        ("record_index", serde_json::json!(0), "record_index"),
+        ("context_record_index", serde_json::json!(0), "context_record_index"),
+        ("item_record_indices", serde_json::json!([101, 0]), "item_record_indices"),
+        ("item_record_indices", serde_json::json!([101, 101]), "item_record_indices"),
+        ("frame_length", serde_json::json!(u64::MAX), "frame_length"),
+        ("context_record_index_offset", serde_json::json!(200), "context_record_index_offset"),
+        ("context_record_index_offset", serde_json::json!(231), "context_record_index_offset"),
+        ("context_record_index_offset", serde_json::json!(u64::MAX), "context_record_index_offset"),
+        ("item_count_offset", serde_json::json!(297), "item_count_offset"),
+        ("item_count_offset", serde_json::json!(u64::MAX), "item_count_offset"),
+        ("item_record_index_offsets", serde_json::json!([0, 0]), "item_record_index_offsets"),
+        ("item_record_index_offsets", serde_json::json!([244, 278]), "item_record_index_offsets"),
+        ("item_record_index_offsets", serde_json::json!([245, 255]), "item_record_index_offsets"),
+        ("item_record_index_offsets", serde_json::json!([245, 291]), "item_record_index_offsets"),
+        ("item_record_index_offsets", serde_json::json!([245, u64::MAX]), "item_record_index_offsets"),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = bad;
+        let error = serde_json::from_value::<super::DesignFeatureTimeline>(invalid).unwrap_err().to_string();
+        assert!(error.contains(diagnostic), "{field}: {error}");
+    }
+    let empty = super::DesignTimelineFrame::new(200, 44, 220, 240, Vec::new()).unwrap();
+    assert!(empty.items().is_empty());
 }

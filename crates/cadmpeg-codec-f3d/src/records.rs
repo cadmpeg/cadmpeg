@@ -13386,6 +13386,48 @@ impl From<SegmentType> for SegmentTypeWire {
     }
 }
 
+/// Source timeline frame with bounded, ordered reference locations.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignTimelineFrame {
+    byte_offset: u64,
+    frame_length: u64,
+    context_record_index_offset: u64,
+    item_count_offset: u64,
+    items: Vec<Located<u64>>,
+}
+
+impl DesignTimelineFrame {
+    pub fn new(byte_offset: u64, frame_length: u64, context_record_index_offset: u64, item_count_offset: u64, items: Vec<Located<u64>>) -> Result<Self, String> {
+        let end = byte_offset.checked_add(frame_length).ok_or("timeline.frame_length overflows byte_offset")?;
+        if context_record_index_offset <= byte_offset || context_record_index_offset.checked_add(10).is_none_or(|after| after > item_count_offset) {
+            return Err("timeline.context_record_index_offset is outside the context span".into());
+        }
+        if item_count_offset.checked_add(4).is_none_or(|after| after > end) {
+            return Err("timeline.item_count_offset is outside the frame".into());
+        }
+        if items.first().is_some_and(|item| item_count_offset.checked_add(5) != Some(item.offset)) {
+            return Err("timeline.item_record_index_offsets must start after the item count".into());
+        }
+        if items.windows(2).any(|pair| pair[0].offset.checked_add(11).is_none_or(|minimum| pair[1].offset < minimum)) || items.iter().any(|item| item.offset.checked_add(10).is_none_or(|after| after > end)) {
+            return Err("timeline.item_record_index_offsets overlap or exceed the frame".into());
+        }
+        let mut unique = std::collections::HashSet::with_capacity(items.len());
+        if items.iter().any(|item| item.value == 0 || !unique.insert(item.value)) {
+            return Err("timeline.item_record_indices must be nonzero and unique".into());
+        }
+        Ok(Self { byte_offset, frame_length, context_record_index_offset, item_count_offset, items })
+    }
+    pub fn byte_offset(&self) -> u64 { self.byte_offset }
+    pub fn frame_length(&self) -> u64 { self.frame_length }
+    pub fn items(&self) -> &[Located<u64>] { &self.items }
+
+    #[cfg(test)]
+    pub fn test_items(byte_offset: u64, items: Vec<Located<u64>>) -> Self {
+        let items = items.into_iter().enumerate().map(|(index, item)| Located { value: item.value, offset: byte_offset + 35 + index as u64 * 11 }).collect::<Vec<_>>();
+        Self::new(byte_offset, 34 + items.len() as u64 * 11, byte_offset + 20, byte_offset + 30, items).unwrap()
+    }
+}
+
 /// Counted Design timeline-item list that carries authored feature order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -13394,24 +13436,16 @@ impl From<SegmentType> for SegmentTypeWire {
 pub struct DesignFeatureTimeline {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Byte offset of this record in its Design `BulkStream`.
-    pub byte_offset: u64,
+    /// Checked source frame and ordered item locations.
+    pub frame: DesignTimelineFrame,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Design entity identity of the timeline record.
-    pub record_index: u64,
+    pub record_index: std::num::NonZeroU64,
     /// Zero-based position in the `MetaStream` timeline-record list.
     pub source_ordinal: u32,
-    /// Complete top-level record length.
-    pub frame_length: u64,
     /// Same-segment context record referenced before the scope list.
-    pub context_record_index: u64,
-    /// Byte offset of `context_record_index`.
-    pub context_record_index_offset: u64,
-    /// Byte offset of the timeline-item count.
-    pub item_count_offset: u64,
-    /// Design record indices in authored timeline order.
-    pub items: Vec<Located<u64>>,
+    pub context_record_index: std::num::NonZeroU64,
 }
 
 /// Counted Design timeline-item list that carries authored feature order.
@@ -13448,33 +13482,30 @@ impl TryFrom<DesignFeatureTimelineWire> for DesignFeatureTimeline {
         if wire.item_record_indices.len() != wire.item_record_index_offsets.len() {
             return Err("item_record_indices and item_record_index_offsets must have equal lengths".into());
         }
+        let items = wire.item_record_indices.into_iter().zip(wire.item_record_index_offsets).map(|(value, offset)| Located { value, offset }).collect();
         Ok(Self {
-            items: wire.item_record_indices.into_iter().zip(wire.item_record_index_offsets).map(|(value, offset)| Located { value, offset }).collect(),
+            frame: DesignTimelineFrame::new(wire.byte_offset, wire.frame_length, wire.context_record_index_offset, wire.item_count_offset, items)?,
             id: wire.id,
-            byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
-            record_index: wire.record_index,
+            class_tag: DesignClassTag::try_from(wire.class_tag)?,
+            record_index: std::num::NonZeroU64::new(wire.record_index).ok_or("timeline.record_index must be nonzero")?,
             source_ordinal: wire.source_ordinal,
-            frame_length: wire.frame_length,
-            context_record_index: wire.context_record_index,
-            context_record_index_offset: wire.context_record_index_offset,
-            item_count_offset: wire.item_count_offset,
+            context_record_index: std::num::NonZeroU64::new(wire.context_record_index).ok_or("timeline.context_record_index must be nonzero")?,
         })
     }
 }
 impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
     fn from(value: DesignFeatureTimeline) -> Self {
-        let (item_record_indices, item_record_index_offsets) = value.items.into_iter().map(|item| (item.value, item.offset)).unzip();
+        let (item_record_indices, item_record_index_offsets) = value.frame.items.into_iter().map(|item| (item.value, item.offset)).unzip();
         Self { item_record_indices, item_record_index_offsets,
             id: value.id,
-            byte_offset: value.byte_offset,
-            class_tag: value.class_tag,
-            record_index: value.record_index,
+            byte_offset: value.frame.byte_offset,
+            class_tag: value.class_tag.into(),
+            record_index: value.record_index.get(),
             source_ordinal: value.source_ordinal,
-            frame_length: value.frame_length,
-            context_record_index: value.context_record_index,
-            context_record_index_offset: value.context_record_index_offset,
-            item_count_offset: value.item_count_offset,
+            frame_length: value.frame.frame_length,
+            context_record_index: value.context_record_index.get(),
+            context_record_index_offset: value.frame.context_record_index_offset,
+            item_count_offset: value.frame.item_count_offset,
         }
     }
 }
