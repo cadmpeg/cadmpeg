@@ -291,15 +291,8 @@ fn valid_sketch_profile_region_selection(
                 return false;
             };
             if member.kind_offset != cursor
-                || member.curve_primary_id == 0
-                || member.curve_primary_id > u64::from(u32::MAX)
                 || member.curve_primary_id_offset != curve_primary_id_offset
                 || member.incidence_words_offset != incidence_words_offset
-                || member.incidence_words[..3] != [0; 3]
-                || !matches!(member.incidence_words[3], 0 | 1)
-                || !matches!(member.incidence_words[4], 1 | 2)
-                || !matches!(member.incidence_words[5], 1 | 2)
-                || member.incidence_words[6..] != [0; 2]
             {
                 return false;
             }

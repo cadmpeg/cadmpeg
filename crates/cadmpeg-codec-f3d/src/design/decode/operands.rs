@@ -4157,10 +4157,10 @@ fn parse_sketch_profile_region_selection(
         for _ in 0..member_count {
             let kind_offset = cursor;
             let kind = View::u32_le_at(bytes, cursor)?;
-            let curve_primary_id = u64::from(View::u32_le_at(
+            let curve_primary_id = std::num::NonZeroU32::new(View::u32_le_at(
                 bytes,
                 cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
-            )?);
+            )?)?;
             let incidence_words_offset = cursor.checked_add(region_member::ZERO_WORDS_3)?;
             let mut incidence_words = [0; 8];
             for (ordinal, word) in incidence_words.iter_mut().enumerate() {
@@ -4170,24 +4170,21 @@ fn parse_sketch_profile_region_selection(
                 )?;
             }
             if kind != 3
-                || curve_primary_id == 0
                 || incidence_words[..3] != [0; 3]
                 || !matches!(incidence_words[3], 0 | 1)
-                || !matches!(incidence_words[4], 1 | 2)
-                || !matches!(incidence_words[5], 1 | 2)
                 || incidence_words[6..] != [0; 2]
             {
                 return None;
             }
             members.push(DesignSketchProfileRegionMember {
-                kind: crate::records::DesignSketchProfileRegionMemberKind::from_code(kind)?,
                 kind_offset: u64::try_from(kind_offset).ok()?,
                 curve_primary_id,
                 curve_primary_id_offset: u64::try_from(
                     cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
                 )
                 .ok()?,
-                incidence_words,
+                incidence_flag: incidence_words[3] == 1,
+                incidence_values: [crate::records::DesignRegionIncidence::try_from(incidence_words[4]).ok()?, crate::records::DesignRegionIncidence::try_from(incidence_words[5]).ok()?],
                 incidence_words_offset: u64::try_from(incidence_words_offset).ok()?,
             });
             cursor = cursor.checked_add(region_member::LEN)?;

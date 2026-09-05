@@ -149,13 +149,13 @@ fn planar_resolution<'a>(
     }
 }
 
-fn profile_region_member(curve_primary_id: u64) -> DesignSketchProfileRegionMember {
+fn profile_region_member(curve_primary_id: u32) -> DesignSketchProfileRegionMember {
     DesignSketchProfileRegionMember {
-        kind: crate::records::DesignSketchProfileRegionMemberKind::Curve,
         kind_offset: 0,
-        curve_primary_id,
+        curve_primary_id: std::num::NonZeroU32::new(curve_primary_id).expect("curve identity"),
         curve_primary_id_offset: 0,
-        incidence_words: [0, 0, 0, 0, 1, 1, 0, 0],
+        incidence_flag: false,
+        incidence_values: [crate::records::DesignRegionIncidence::One; 2],
         incidence_words_offset: 0,
     }
 }

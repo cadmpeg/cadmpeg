@@ -6379,42 +6379,6 @@ impl DesignPatchContinuity {
     }
 }
 
-/// Native member-kind code of a sketch profile-region member.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "u32", into = "u32")]
-pub enum DesignSketchProfileRegionMemberKind {
-    /// Profile-region curve member (serialized value 3).
-    Curve,
-}
-
-impl DesignSketchProfileRegionMemberKind {
-    #[must_use]
-    pub fn from_code(code: u32) -> Option<Self> {
-        (code == 3).then_some(Self::Curve)
-    }
-
-    #[must_use]
-    pub fn code(self) -> u32 {
-        3
-    }
-}
-
-impl TryFrom<u32> for DesignSketchProfileRegionMemberKind {
-    type Error = String;
-
-    fn try_from(code: u32) -> Result<Self, Self::Error> {
-        Self::from_code(code)
-            .ok_or_else(|| format!("sketch profile-region member kind must be 3, not {code}"))
-    }
-}
-
-impl From<DesignSketchProfileRegionMemberKind> for u32 {
-    fn from(kind: DesignSketchProfileRegionMemberKind) -> Self {
-        kind.code()
-    }
-}
-
 /// ACT root-component registry flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -9109,19 +9073,106 @@ pub struct DesignSketchProfileRegion {
 /// One fixed-width persistent curve member of a selected sketch region.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignSketchProfileRegionMemberWire", into = "DesignSketchProfileRegionMemberWire")]
 pub struct DesignSketchProfileRegionMember {
-    /// Native member-kind code. Profile-region curve members use value three.
-    pub kind: DesignSketchProfileRegionMemberKind,
     /// Byte offset of the member-kind code.
     pub kind_offset: u64,
     /// Primary persistent identity of the selected Sketch curve.
-    pub curve_primary_id: u64,
+    pub curve_primary_id: std::num::NonZeroU32,
     /// Byte offset of the persistent curve identity.
     pub curve_primary_id_offset: u64,
-    /// Structural region-incidence words retained in source order.
-    pub incidence_words: [u32; 8],
+    /// First incidence value, encoded as zero or one.
+    pub incidence_flag: bool,
+    /// Second and third incidence values, in source order.
+    pub incidence_values: [DesignRegionIncidence; 2],
     /// Byte offset of the first incidence word.
     pub incidence_words_offset: u64,
+}
+
+/// One of the two admitted nonzero region-incidence values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesignRegionIncidence {
+    One,
+    Two,
+}
+
+impl TryFrom<u32> for DesignRegionIncidence {
+    type Error = String;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::One),
+            2 => Ok(Self::Two),
+            _ => Err("incidence_words second and third values must be 1 or 2".into()),
+        }
+    }
+}
+
+impl From<DesignRegionIncidence> for u32 {
+    fn from(value: DesignRegionIncidence) -> Self {
+        match value {
+            DesignRegionIncidence::One => 1,
+            DesignRegionIncidence::Two => 2,
+        }
+    }
+}
+
+/// One fixed-width persistent curve member of a selected sketch region.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignSketchProfileRegionMemberWire {
+    /// Native member-kind code. Profile-region curve members use value three.
+    kind: u32,
+    /// Byte offset of the member-kind code.
+    kind_offset: u64,
+    /// Primary persistent identity of the selected Sketch curve.
+    curve_primary_id: u64,
+    /// Byte offset of the persistent curve identity.
+    curve_primary_id_offset: u64,
+    /// Structural region-incidence words retained in source order.
+    incidence_words: [u32; 8],
+    /// Byte offset of the first incidence word.
+    incidence_words_offset: u64,
+}
+
+impl TryFrom<DesignSketchProfileRegionMemberWire> for DesignSketchProfileRegionMember {
+    type Error = String;
+    fn try_from(wire: DesignSketchProfileRegionMemberWire) -> Result<Self, Self::Error> {
+        if wire.kind != 3 {
+            return Err("kind must be 3 for a profile-region curve member".into());
+        }
+        let curve_primary_id = u32::try_from(wire.curve_primary_id).ok()
+            .and_then(std::num::NonZeroU32::new)
+            .ok_or("curve_primary_id must be a nonzero u32")?;
+        let [0, 0, 0, flag, first, second, 0, 0] = wire.incidence_words else {
+            return Err("incidence_words must contain three leading and two trailing zeros".into());
+        };
+        let incidence_flag = match flag {
+            0 => false,
+            1 => true,
+            _ => return Err("incidence_words first value must be 0 or 1".into()),
+        };
+        Ok(Self {
+            kind_offset: wire.kind_offset,
+            curve_primary_id,
+            curve_primary_id_offset: wire.curve_primary_id_offset,
+            incidence_flag,
+            incidence_values: [DesignRegionIncidence::try_from(first)?, DesignRegionIncidence::try_from(second)?],
+            incidence_words_offset: wire.incidence_words_offset,
+        })
+    }
+}
+
+impl From<DesignSketchProfileRegionMember> for DesignSketchProfileRegionMemberWire {
+    fn from(member: DesignSketchProfileRegionMember) -> Self {
+        Self {
+            kind: 3,
+            kind_offset: member.kind_offset,
+            curve_primary_id: u64::from(member.curve_primary_id.get()),
+            curve_primary_id_offset: member.curve_primary_id_offset,
+            incidence_words: [0, 0, 0, u32::from(member.incidence_flag), member.incidence_values[0].into(), member.incidence_values[1].into(), 0, 0],
+            incidence_words_offset: member.incidence_words_offset,
+        }
+    }
 }
 
 /// Counted selection group owned by an Extrude parameter scope.

@@ -134,7 +134,7 @@ fn sketch_profile_region_selection_preserves_region_and_curve_order() {
                 region
                     .members
                     .iter()
-                    .map(|member| member.curve_primary_id)
+                    .map(|member| member.curve_primary_id.get())
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(),
@@ -165,7 +165,7 @@ fn sketch_profile_region_selection_derives_companion_after_header_shaped_member(
         parse_sketch_profile_region_selection(&bytes, 100, 0).expect("profile-region selection");
 
     assert_eq!(
-        selection.regions[0].members[0].curve_primary_id,
+        u64::from(selection.regions[0].members[0].curve_primary_id.get()),
         u64::from(u32::from_le_bytes(*b"123X"))
     );
 }
