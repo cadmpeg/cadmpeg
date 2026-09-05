@@ -541,8 +541,9 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
         material[0]
             .identity()
             .expect("required invariant")
-            .layer_name
-            .as_deref(),
+            .layer
+            .as_ref()
+            .map(|layer| layer.name.as_str()),
         Some("Layer")
     );
 

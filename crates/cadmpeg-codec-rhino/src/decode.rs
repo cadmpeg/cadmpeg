@@ -5397,10 +5397,12 @@ fn source_association(
         name: (!identity.name.is_empty()).then(|| identity.name.clone()),
         color: identity.effective_color.map(color).or(parent_color),
         visible: Some(parent_visible.unwrap_or(true) && identity.effective_visible),
-        layer: identity
-            .layer_id
-            .map(|id| id.to_string())
-            .or_else(|| identity.layer_name.clone()),
+        layer: identity.layer.as_ref().and_then(|layer| {
+            layer
+                .id
+                .map(|id| id.to_string())
+                .or_else(|| Some(layer.name.clone()))
+        }),
         instance_path: instance_path.to_vec(),
     }
 }
