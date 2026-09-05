@@ -36,9 +36,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         height_owner_record_index: 399,
         height_extent: crate::records::DesignEdgeFlangeHeightExtent::Distance,
         angle_owner_record_index: 402,
-        width_mode: None,
-        width_distance_owner_record_indices: vec![393, 396],
-        width_distance_owner_record_indices_by_edge: Vec::new(),
+        width: crate::records::DesignEdgeWidth::from_wire(None, vec![393, 396], Vec::new())
+            .expect("edge flange width"),
         auxiliary_reference_record_indices: Vec::new(),
         width_parameter_source: crate::records::DesignEdgeFlangeWidthParameterSource::EdgeWidth,
         settings_record_index: 411,
@@ -191,9 +190,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         .edge_flange_operation()
         .cloned()
         .expect("single-edge operation fixture");
-    offset_operation.width_mode = Some(crate::records::DesignEdgeWidthMode::TwoSidesPerEdge);
-    offset_operation.width_distance_owner_record_indices = vec![393, 396];
-    offset_operation.width_distance_owner_record_indices_by_edge = vec![[393, 396]];
+    offset_operation.width = crate::records::DesignEdgeWidth::TwoSidesPerEdge(vec![[393, 396]]);
     offset_operation.width_parameter_source =
         crate::records::DesignEdgeFlangeWidthParameterSource::EdgeOffset;
     offset_scope.set_edge_flange_operation(Some(offset_operation));
@@ -288,7 +285,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     per_edge_parameters[1].source_kind = "EdgeWidth".into();
     per_edge_parameters[1].evaluated_value = 3.0;
     let mut per_edge_operation = multi_operation;
-    per_edge_operation.width_mode = Some(crate::records::DesignEdgeWidthMode::SymmetricPerEdge);
+    per_edge_operation.width =
+        crate::records::DesignEdgeWidth::SymmetricPerEdge(per_edge_operation.width.owner_indices());
     multi_scope.set_edge_flange_operation(Some(per_edge_operation));
     let per_edge_inputs = crate::design::feature_project::ProjectInputs {
         native: &per_edge_parameters,
@@ -354,11 +352,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         .edge_flange_operation()
         .cloned()
         .expect("per-edge width operation fixture");
-    two_sided_per_edge_operation.width_mode =
-        Some(crate::records::DesignEdgeWidthMode::TwoSidesPerEdge);
-    two_sided_per_edge_operation.width_distance_owner_record_indices = vec![393, 396, 414, 417];
-    two_sided_per_edge_operation.width_distance_owner_record_indices_by_edge =
-        vec![[393, 396], [414, 417]];
+    two_sided_per_edge_operation.width =
+        crate::records::DesignEdgeWidth::TwoSidesPerEdge(vec![[393, 396], [414, 417]]);
     multi_scope.set_edge_flange_operation(Some(two_sided_per_edge_operation));
     let mut two_sided_owners = owners.to_vec();
     two_sided_owners.push(owner(414, 413));
@@ -439,9 +434,8 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             reference_record_indices: [469, 470],
         },
         angle_owner_record_index: 402,
-        width_mode: None,
-        width_distance_owner_record_indices: Vec::new(),
-        width_distance_owner_record_indices_by_edge: Vec::new(),
+        width: crate::records::DesignEdgeWidth::from_wire(None, Vec::new(), Vec::new())
+            .expect("edge flange width"),
         auxiliary_reference_record_indices: Vec::new(),
         width_parameter_source: crate::records::DesignEdgeFlangeWidthParameterSource::EdgeWidth,
         settings_record_index: 411,
@@ -640,9 +634,8 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         height_owner_record_index: 331,
         height_extent: crate::records::DesignEdgeFlangeHeightExtent::Distance,
         angle_owner_record_index: 334,
-        width_mode: None,
-        width_distance_owner_record_indices: vec![328],
-        width_distance_owner_record_indices_by_edge: Vec::new(),
+        width: crate::records::DesignEdgeWidth::from_wire(None, vec![328], Vec::new())
+            .expect("edge flange width"),
         auxiliary_reference_record_indices: Vec::new(),
         width_parameter_source: crate::records::DesignEdgeFlangeWidthParameterSource::EdgeWidth,
         settings_record_index: 343,

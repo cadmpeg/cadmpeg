@@ -4396,6 +4396,84 @@ pub enum DesignEdgeWidthMode {
     TwoSidesPerEdge,
 }
 
+/// Width law of an `EdgeFlange` operation, including the owner records it names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DesignEdgeWidth {
+    FullEdge,
+    Symmetric(u32),
+    TwoSides([u32; 2]),
+    SymmetricPerEdge(Vec<u32>),
+    TwoSidesPerEdge(Vec<[u32; 2]>),
+}
+
+impl DesignEdgeWidth {
+    pub(crate) fn mode(&self) -> DesignEdgeWidthMode {
+        match self {
+            Self::FullEdge => DesignEdgeWidthMode::FullEdge,
+            Self::Symmetric(_) => DesignEdgeWidthMode::Symmetric,
+            Self::TwoSides(_) => DesignEdgeWidthMode::TwoSides,
+            Self::SymmetricPerEdge(_) => DesignEdgeWidthMode::SymmetricPerEdge,
+            Self::TwoSidesPerEdge(_) => DesignEdgeWidthMode::TwoSidesPerEdge,
+        }
+    }
+
+    pub(crate) fn owner_indices(&self) -> Vec<u32> {
+        match self {
+            Self::FullEdge => Vec::new(),
+            Self::Symmetric(owner) => vec![*owner],
+            Self::TwoSides(owners) => owners.to_vec(),
+            Self::SymmetricPerEdge(owners) => owners.clone(),
+            Self::TwoSidesPerEdge(pairs) => pairs.iter().flat_map(|pair| *pair).collect(),
+        }
+    }
+
+    pub(crate) fn owner_indices_by_edge(&self) -> Vec<[u32; 2]> {
+        match self {
+            Self::TwoSidesPerEdge(pairs) => pairs.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    pub(crate) fn from_wire(
+        width_mode: Option<DesignEdgeWidthMode>,
+        owners: Vec<u32>,
+        owners_by_edge: Vec<[u32; 2]>,
+    ) -> Result<Self, String> {
+        let mode = width_mode.unwrap_or(match owners.len() {
+            0 => DesignEdgeWidthMode::FullEdge,
+            1 => DesignEdgeWidthMode::Symmetric,
+            _ => DesignEdgeWidthMode::TwoSides,
+        });
+        match mode {
+            DesignEdgeWidthMode::FullEdge if owners.is_empty() && owners_by_edge.is_empty() => {
+                Ok(Self::FullEdge)
+            }
+            DesignEdgeWidthMode::Symmetric if owners.len() == 1 && owners_by_edge.is_empty() => {
+                Ok(Self::Symmetric(owners[0]))
+            }
+            DesignEdgeWidthMode::TwoSides if owners.len() == 2 && owners_by_edge.is_empty() => {
+                Ok(Self::TwoSides([owners[0], owners[1]]))
+            }
+            DesignEdgeWidthMode::SymmetricPerEdge
+                if !owners.is_empty() && owners_by_edge.is_empty() =>
+            {
+                Ok(Self::SymmetricPerEdge(owners))
+            }
+            DesignEdgeWidthMode::TwoSidesPerEdge
+                if !owners_by_edge.is_empty()
+                    && owners
+                        == owners_by_edge
+                            .iter()
+                            .flat_map(|pair| *pair)
+                            .collect::<Vec<_>>() =>
+            {
+                Ok(Self::TwoSidesPerEdge(owners_by_edge))
+            }
+            _ => Err("edge flange width mode disagrees with owner records".into()),
+        }
+    }
+}
+
 /// Parameter source used by a typed `EdgeFlange` width law.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5968,6 +6046,11 @@ pub enum DesignEdgeFlangeHeightExtent {
 /// Fixed construction carried by a sheet-metal `EdgeFlange` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignEdgeFlangeOperationSerde"))]
+#[serde(
+    try_from = "DesignEdgeFlangeOperationSerde",
+    into = "DesignEdgeFlangeOperationSerde"
+)]
 pub struct DesignEdgeFlangeOperation {
     /// Per-edge selection-wrapper records in source order.
     pub edge_wrapper_record_indices: Vec<u32>,
@@ -5986,22 +6069,8 @@ pub struct DesignEdgeFlangeOperation {
     pub height_extent: DesignEdgeFlangeHeightExtent,
     /// Angle parameter-owner record.
     pub angle_owner_record_index: u32,
-    /// Explicit width-mode override for classed layouts whose owner count alone
-    /// does not identify the mode. Older native records omit this field and use
-    /// the owner-count derivation below.
-    #[serde(default)]
-    pub width_mode: Option<DesignEdgeWidthMode>,
-    /// Width-distance parameter-owner records the edge-width mode adds, in source order.
-    pub width_distance_owner_record_indices: Vec<u32>,
-    /// Two-sided width-owner pairs parallel to the selected-edge wrappers.
-    ///
-    /// This is populated by the classed two-sided-per-edge layout. The flat
-    /// owner list above remains the source-order representation used by older
-    /// forms; this grouped view preserves the wrapper-local association needed
-    /// to normalize an edge orientation without assuming one operation-wide
-    /// width law.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub width_distance_owner_record_indices_by_edge: Vec<[u32; 2]>,
+    /// Width law and the owner records it names.
+    pub width: DesignEdgeWidth,
     /// Scope references retained by a classed layout after typed roles and
     /// width owners have been claimed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -6016,11 +6085,6 @@ pub struct DesignEdgeFlangeOperation {
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
     /// CADIR `reference_side_code`. Always `4` on the wire (DR-09A).
-    #[serde(
-        serialize_with = "serialize_u32_4",
-        deserialize_with = "deserialize_ignore_u32"
-    )]
-    #[cfg_attr(feature = "schema", schemars(with = "u32"))]
     pub(crate) reference_side_code: (),
     /// Face pair the flange height is measured from.
     pub height_datum: DesignSheetMetalHeightDatum,
@@ -6029,19 +6093,111 @@ pub struct DesignEdgeFlangeOperation {
 }
 
 impl DesignEdgeFlangeOperation {
-    /// Return the native width mode.
-    ///
-    /// Classed layouts can carry an explicit mode because one owner per selected
-    /// edge is not the same as two owners for one edge. Older records omit the
-    /// override, so their owner count remains the compatibility fallback.
     #[must_use]
     pub fn edge_width_mode(&self) -> DesignEdgeWidthMode {
-        self.width_mode
-            .unwrap_or(match self.width_distance_owner_record_indices.len() {
-                0 => DesignEdgeWidthMode::FullEdge,
-                1 => DesignEdgeWidthMode::Symmetric,
-                _ => DesignEdgeWidthMode::TwoSides,
-            })
+        self.width.mode()
+    }
+
+    pub(crate) fn width_distance_owner_record_indices(&self) -> Vec<u32> {
+        self.width.owner_indices()
+    }
+
+    pub(crate) fn width_distance_owner_record_indices_by_edge(&self) -> Vec<[u32; 2]> {
+        self.width.owner_indices_by_edge()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignEdgeFlangeOperationSerde {
+    edge_wrapper_record_indices: Vec<u32>,
+    edge_group_record_indices: Vec<u32>,
+    edge_operand_record_indices: Vec<u32>,
+    aggregate_group_record_index: u32,
+    aggregate_operand_record_indices: Vec<u32>,
+    height_owner_record_index: u32,
+    #[serde(default)]
+    height_extent: DesignEdgeFlangeHeightExtent,
+    angle_owner_record_index: u32,
+    #[serde(default)]
+    width_mode: Option<DesignEdgeWidthMode>,
+    width_distance_owner_record_indices: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    width_distance_owner_record_indices_by_edge: Vec<[u32; 2]>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    auxiliary_reference_record_indices: Vec<u32>,
+    #[serde(default)]
+    width_parameter_source: DesignEdgeFlangeWidthParameterSource,
+    settings_record_index: u32,
+    bend_radius: f64,
+    bend_radius_offset: u64,
+    #[serde(
+        serialize_with = "serialize_u32_4",
+        deserialize_with = "deserialize_ignore_u32"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "u32"))]
+    reference_side_code: (),
+    height_datum: DesignSheetMetalHeightDatum,
+    bend_position: DesignBendPosition,
+}
+
+impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
+    type Error = String;
+
+    fn try_from(wire: DesignEdgeFlangeOperationSerde) -> Result<Self, Self::Error> {
+        let width = DesignEdgeWidth::from_wire(
+            wire.width_mode,
+            wire.width_distance_owner_record_indices,
+            wire.width_distance_owner_record_indices_by_edge,
+        )?;
+        Ok(Self {
+            edge_wrapper_record_indices: wire.edge_wrapper_record_indices,
+            edge_group_record_indices: wire.edge_group_record_indices,
+            edge_operand_record_indices: wire.edge_operand_record_indices,
+            aggregate_group_record_index: wire.aggregate_group_record_index,
+            aggregate_operand_record_indices: wire.aggregate_operand_record_indices,
+            height_owner_record_index: wire.height_owner_record_index,
+            height_extent: wire.height_extent,
+            angle_owner_record_index: wire.angle_owner_record_index,
+            width,
+            auxiliary_reference_record_indices: wire.auxiliary_reference_record_indices,
+            width_parameter_source: wire.width_parameter_source,
+            settings_record_index: wire.settings_record_index,
+            bend_radius: wire.bend_radius,
+            bend_radius_offset: wire.bend_radius_offset,
+            reference_side_code: wire.reference_side_code,
+            height_datum: wire.height_datum,
+            bend_position: wire.bend_position,
+        })
+    }
+}
+
+impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
+    fn from(operation: DesignEdgeFlangeOperation) -> Self {
+        let width_mode = Some(operation.width.mode());
+        let width_distance_owner_record_indices = operation.width.owner_indices();
+        let width_distance_owner_record_indices_by_edge = operation.width.owner_indices_by_edge();
+        Self {
+            edge_wrapper_record_indices: operation.edge_wrapper_record_indices,
+            edge_group_record_indices: operation.edge_group_record_indices,
+            edge_operand_record_indices: operation.edge_operand_record_indices,
+            aggregate_group_record_index: operation.aggregate_group_record_index,
+            aggregate_operand_record_indices: operation.aggregate_operand_record_indices,
+            height_owner_record_index: operation.height_owner_record_index,
+            height_extent: operation.height_extent,
+            angle_owner_record_index: operation.angle_owner_record_index,
+            width_mode,
+            width_distance_owner_record_indices,
+            width_distance_owner_record_indices_by_edge,
+            auxiliary_reference_record_indices: operation.auxiliary_reference_record_indices,
+            width_parameter_source: operation.width_parameter_source,
+            settings_record_index: operation.settings_record_index,
+            bend_radius: operation.bend_radius,
+            bend_radius_offset: operation.bend_radius_offset,
+            reference_side_code: operation.reference_side_code,
+            height_datum: operation.height_datum,
+            bend_position: operation.bend_position,
+        }
     }
 }
 
