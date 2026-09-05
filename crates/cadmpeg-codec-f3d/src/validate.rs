@@ -1429,23 +1429,12 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
 }
 
-fn valid_mesh_record_identity(record: &records::DesignMeshRecordIdentity) -> bool {
-    record.record_index != 0
-        && record.frame_length >= 11
-        && record
-            .byte_offset
-            .checked_add(record.frame_length)
-            .is_some()
-        && record.class_tag.len() == 3
-        && record.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-}
-
 fn mesh_record_offset_is(
     record: &records::DesignMeshRecordIdentity,
     relative: u64,
     offset: u64,
 ) -> bool {
-    record.byte_offset.checked_add(relative) == Some(offset)
+    record.byte_offset().checked_add(relative) == Some(offset)
 }
 
 /// Validate complete `Base Mesh Feature` record graphs and their neutral links.
@@ -1483,7 +1472,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let stream = design_stream(&feature.id);
         let scope = ctx
             .scopes_by_index
-            .get(&(stream, feature.scope_record.record_index));
+            .get(&(stream, feature.scope_record.record_index()));
         let body_count = feature.bodies.len();
         let body_count_u64 = u64::try_from(body_count).unwrap_or(u64::MAX);
         let expected_collection_length = body_count_u64
@@ -1492,61 +1481,50 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let expected_collection_owner_reference = body_count_u64
             .checked_mul(11)
             .and_then(|body_bytes| body_bytes.checked_add(62))
-            .and_then(|relative| feature.collection_record.byte_offset.checked_add(relative));
+            .and_then(|relative| feature.collection_record.byte_offset().checked_add(relative));
         let expected_scope_offsets = (0..body_count)
             .filter_map(|ordinal| {
                 u64::try_from(ordinal)
                     .ok()?
                     .checked_mul(11)?
-                    .checked_add(feature.scope_record.byte_offset.checked_add(25)?)
+                    .checked_add(feature.scope_record.byte_offset().checked_add(25)?)
             });
         let expected_collection_offsets = (0..body_count)
             .filter_map(|ordinal| {
                 u64::try_from(ordinal)
                     .ok()?
                     .checked_mul(11)?
-                    .checked_add(feature.collection_record.byte_offset.checked_add(62)?)
+                    .checked_add(feature.collection_record.byte_offset().checked_add(62)?)
             });
         let mut valid = feature_ids.insert(feature.id.as_str())
-            && scope_records.insert((stream, feature.scope_record.record_index))
-            && collection_records.insert((stream, feature.collection_record.record_index))
-            && valid_mesh_record_identity(&feature.scope_record)
-            && valid_mesh_record_identity(&feature.scope_base_record)
-            && valid_mesh_record_identity(&feature.collection_record)
-            && valid_mesh_record_identity(&feature.collection_base_record)
-            && valid_mesh_record_identity(&feature.texture_table_record)
-            && valid_mesh_record_identity(&feature.collection_owner_record)
-            && texture_table_records.insert((stream, feature.texture_table_record.record_index))
+            && scope_records.insert((stream, feature.scope_record.record_index()))
+            && collection_records.insert((stream, feature.collection_record.record_index()))
+            && texture_table_records.insert((stream, feature.texture_table_record.record_index()))
             && collection_owner_records
-                .insert((stream, feature.collection_owner_record.record_index))
-            && feature.scope_base_record.record_index == feature.scope_record.record_index
-            && feature.collection_base_record.record_index
-                == feature.collection_record.record_index
+                .insert((stream, feature.collection_owner_record.record_index()))
+            && feature.scope_base_record.record_index() == feature.scope_record.record_index()
+            && feature.collection_base_record.record_index()
+                == feature.collection_record.record_index()
             && feature
-                .scope_record
-                .byte_offset
+                .scope_record.byte_offset()
                 .checked_add(scope.map_or(0, |scope| scope.frame_length))
-                == Some(feature.scope_base_record.byte_offset)
-            && feature.scope_base_record.frame_length == 30
+                == Some(feature.scope_base_record.byte_offset())
+            && feature.scope_base_record.frame_length() == 30
             && feature
-                .scope_base_record
-                .byte_offset
-                .checked_add(feature.scope_base_record.frame_length)
+                .scope_base_record.byte_offset()
+                .checked_add(feature.scope_base_record.frame_length())
                 == feature
-                    .scope_record
-                    .byte_offset
-                    .checked_add(feature.scope_record.frame_length)
-            && feature.collection_record.byte_offset.checked_add(38)
-                == Some(feature.collection_base_record.byte_offset)
+                    .scope_record.byte_offset()
+                    .checked_add(feature.scope_record.frame_length())
+            && feature.collection_record.byte_offset().checked_add(38)
+                == Some(feature.collection_base_record.byte_offset())
             && feature
-                .collection_base_record
-                .byte_offset
-                .checked_add(feature.collection_base_record.frame_length)
+                .collection_base_record.byte_offset()
+                .checked_add(feature.collection_base_record.frame_length())
                 == feature
-                    .collection_record
-                    .byte_offset
-                    .checked_add(feature.collection_record.frame_length)
-            && Some(feature.collection_record.frame_length) == expected_collection_length
+                    .collection_record.byte_offset()
+                    .checked_add(feature.collection_record.frame_length())
+            && Some(feature.collection_record.frame_length()) == expected_collection_length
             && mesh_record_offset_is(&feature.scope_record, 21, feature.body_count_offsets[0])
             && mesh_record_offset_is(
                 &feature.collection_record,
@@ -1567,7 +1545,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             )
             && expected_collection_owner_reference
                 == Some(feature.collection_owner_reference_offset)
-            && feature.collection_owner_record.frame_length >= 273
+            && feature.collection_owner_record.frame_length() >= 273
             && mesh_record_offset_is(
                 &feature.collection_owner_record,
                 262,
@@ -1586,11 +1564,11 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             )
             && scope.is_some_and(|scope| {
                 scope.kind() == crate::records::DesignFeatureKind::BaseMeshFeature
-                    && scope.byte_offset == feature.scope_record.byte_offset
-                    && scope.paired_byte_offset == feature.scope_base_record.byte_offset
+                    && scope.byte_offset == feature.scope_record.byte_offset()
+                    && scope.paired_byte_offset == feature.scope_base_record.byte_offset()
             });
 
-        let mut texture_cursor = feature.texture_table_record.byte_offset.checked_add(25);
+        let mut texture_cursor = feature.texture_table_record.byte_offset().checked_add(25);
         let mut resources = feature.textures.iter().collect::<Vec<_>>();
         let mut resource_guids = HashSet::new();
         resources.sort_by_key(|resource| resource.ordinal);
@@ -1613,7 +1591,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
         resources.sort_by_key(|resource| resource.filename_ordinal);
         let filename_order_valid = resources.iter().enumerate().all(|(ordinal, resource)| {
             let filename_units = u64::try_from(resource.filename.encode_utf16().count()).ok();
-            let filename_key = (stream, resource.filename_record.record_index);
+            let filename_key = (stream, resource.filename_record.record_index());
             let filename_record_consistent = filename_records
                 .get(&filename_key)
                 .is_none_or(|record| *record == &resource.filename_record);
@@ -1626,13 +1604,12 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             });
             let valid = resource.filename_ordinal == u32::try_from(ordinal).unwrap_or(u32::MAX)
                 && offsets_valid
-                && valid_mesh_record_identity(&resource.filename_record)
                 && filename_record_consistent
                 && mesh_record_offset_is(&resource.filename_record, 25, resource.filename_offset)
                 && filename_units
                     .and_then(|units| units.checked_mul(2))
                     .and_then(|bytes| bytes.checked_add(25))
-                    == Some(resource.filename_record.frame_length)
+                    == Some(resource.filename_record.frame_length())
                 && resource.archive_entry_name.rsplit('/').next()
                     == Some(resource.filename.as_str())
                 && asset_ids.contains(&resource.asset);
@@ -1641,13 +1618,12 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
         });
         valid &= filename_order_valid
             && feature
-                .texture_table_record
-                .byte_offset
-                .checked_add(feature.texture_table_record.frame_length)
+                .texture_table_record.byte_offset()
+                .checked_add(feature.texture_table_record.frame_length())
                 == texture_cursor;
 
         for body in &feature.bodies {
-            let owner_key = (stream, body.owner_record.record_index);
+            let owner_key = (stream, body.owner_record.record_index());
             let owner_consistent = body_owner_records
                 .get(&owner_key)
                 .is_none_or(|record| *record == &body.owner_record);
@@ -1655,29 +1631,20 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .entry(owner_key)
                 .or_insert(&body.owner_record);
             let body_end = body
-                .body_record
-                .byte_offset
-                .checked_add(body.body_record.frame_length);
-            valid &= body_records.insert((stream, body.body_record.record_index))
-                && entry_records.insert((stream, body.entry_name_record.record_index))
-                && guid_records.insert((stream, body.guid_record.record_index))
-                && wrapper_records.insert((stream, body.wrapper_record.record_index))
-                && state_records.insert((stream, body.scene_state_record.record_index))
-                && node_records.insert((stream, body.scene_node_record.record_index))
-                && auxiliary_records.insert((stream, body.scene_auxiliary_record.record_index))
-                && valid_mesh_record_identity(&body.body_record)
-                && valid_mesh_record_identity(&body.entry_name_record)
-                && valid_mesh_record_identity(&body.guid_record)
-                && valid_mesh_record_identity(&body.wrapper_record)
-                && valid_mesh_record_identity(&body.scene_state_record)
-                && valid_mesh_record_identity(&body.scene_node_record)
-                && valid_mesh_record_identity(&body.scene_auxiliary_record)
-                && valid_mesh_record_identity(&body.owner_record)
+                .body_record.byte_offset()
+                .checked_add(body.body_record.frame_length());
+            valid &= body_records.insert((stream, body.body_record.record_index()))
+                && entry_records.insert((stream, body.entry_name_record.record_index()))
+                && guid_records.insert((stream, body.guid_record.record_index()))
+                && wrapper_records.insert((stream, body.wrapper_record.record_index()))
+                && state_records.insert((stream, body.scene_state_record.record_index()))
+                && node_records.insert((stream, body.scene_node_record.record_index()))
+                && auxiliary_records.insert((stream, body.scene_auxiliary_record.record_index()))
                 && owner_consistent
-                && body.body_record.frame_length >= 575
-                && body.wrapper_record.frame_length == 40
-                && body.scene_state_record.frame_length == 95
-                && body.scene_node_record.frame_length == 133
+                && body.body_record.frame_length() >= 575
+                && body.wrapper_record.frame_length() == 40
+                && body.scene_state_record.frame_length() == 95
+                && body.scene_node_record.frame_length() == 133
                 && mesh_record_offset_is(&body.body_record, 508, body.scope_reference_offset)
                 && mesh_record_offset_is(&body.body_record, 519, body.wrapper_reference_offset)
                 && mesh_record_offset_is(&body.body_record, 530, body.owner_reference_offset)
@@ -1713,14 +1680,14 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .ok()
                     .and_then(|units| units.checked_mul(2))
                     .and_then(|bytes| bytes.checked_add(36))
-                    == Some(body.entry_name_record.frame_length)
+                    == Some(body.entry_name_record.frame_length())
                 && valid_design_guid(&body.fusion_uuid)
                 && body
                     .container_mesh_uuid
                     .as_deref()
                     .is_none_or(crate::paramesh::valid_mesh_uuid)
                 && mesh_record_offset_is(&body.guid_record, 36, body.fusion_uuid_offset)
-                && body.guid_record.frame_length >= 83
+                && body.guid_record.frame_length() >= 83
                 && design::decode::mesh::valid_mesh_transform(body.transform)
                 && body.tessellation_id.as_deref().is_none_or(|id| {
                     tessellation_ids.contains(id) && projected_tessellations.insert(id)
