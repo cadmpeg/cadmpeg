@@ -1857,7 +1857,8 @@ fn apply_native_edge_owners(
         {
             return Err(CodecError::malformed(format_args!(
                 "F3D edge ownership {} references missing edge {}",
-                ownership.id, ownership.edge
+                ownership.id(),
+                ownership.edge
             )));
         }
         let owner = match &ownership.owner_coedge {
@@ -1873,7 +1874,7 @@ fn apply_native_edge_owners(
                     if coedge.edge != ownership.edge {
                         return Err(CodecError::malformed(format_args!(
                             "F3D edge ownership {} selects a coedge of another edge",
-                            ownership.id
+                            ownership.id()
                         )));
                     }
                     native_record_index(coedge_start, ordinal)?
@@ -1882,7 +1883,7 @@ fn apply_native_edge_owners(
                 } else {
                     return Err(CodecError::malformed(format_args!(
                         "F3D edge ownership {} references missing coedge {owner}",
-                        ownership.id
+                        ownership.id()
                     )));
                 }
             }

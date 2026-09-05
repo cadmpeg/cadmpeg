@@ -846,7 +846,7 @@ pub(crate) fn validate_source_less_design_links(
     if let Some(sentinel) = native.mesh_surface_sentinels.first() {
         return Err(CodecError::NotImplemented(format!(
             "source-less F3D cannot serialize mesh-surface sentinel {} without its retained ASM record",
-            sentinel.id
+            sentinel.id()
         )));
     }
     let coedges = target
@@ -986,7 +986,8 @@ pub(crate) fn validate_source_less_design_links(
         if !coedge_ids.contains(&parameters.coedge) {
             return Err(CodecError::InvalidInput(format!(
                 "F3D tolerant-coedge metadata {} targets missing coedge {}",
-                parameters.id, parameters.coedge
+                parameters.id(),
+                parameters.coedge
             )));
         }
         if !tolerant_coedges.insert(&parameters.coedge) {
@@ -1002,7 +1003,7 @@ pub(crate) fn validate_source_less_design_links(
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D tolerant-coedge metadata {} has non-finite parameters",
-                parameters.id
+                parameters.id()
             )));
         }
         match &parameters.extension {
@@ -1020,7 +1021,7 @@ pub(crate) fn validate_source_less_design_links(
                 let use_curve = coedge.use_curve.as_ref().ok_or_else(|| {
                     CodecError::InvalidInput(format!(
                         "F3D tolerant-coedge extension {} has no use curve",
-                        parameters.id
+                        parameters.id()
                     ))
                 })?;
                 let curve = curve_by_id
@@ -1029,13 +1030,14 @@ pub(crate) fn validate_source_less_design_links(
                     .ok_or_else(|| {
                         CodecError::InvalidInput(format!(
                             "F3D tolerant-coedge extension {} references missing use curve {}",
-                            parameters.id, use_curve.curve
+                            parameters.id(),
+                            use_curve.curve
                         ))
                     })?;
                 if !matches!(curve.geometry, CurveGeometry::Nurbs(_)) {
                     return Err(CodecError::NotImplemented(format!(
                         "source-less F3D tolerant-coedge extension {} requires a NURBS use curve",
-                        parameters.id
+                        parameters.id()
                     )));
                 }
                 let effective_range = parameter_range.unwrap_or(parameters.parameter_range);
@@ -1044,7 +1046,7 @@ pub(crate) fn validate_source_less_design_links(
                 {
                     return Err(CodecError::InvalidInput(format!(
                         "F3D tolerant-coedge extension {} has an inconsistent use-curve parameter range",
-                        parameters.id
+                        parameters.id()
                     )));
                 }
             }
@@ -1056,7 +1058,7 @@ pub(crate) fn validate_source_less_design_links(
             } => {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D cannot relocate tolerant-coedge extension {}",
-                    parameters.id
+                    parameters.id()
                 )));
             }
         }
@@ -1106,13 +1108,16 @@ pub(crate) fn validate_source_less_design_links(
         .map(|face| (face.id.as_str(), face))
         .collect::<std::collections::HashMap<_, _>>();
     macro_rules! validate_unique_targets {
-        ($items:expr, $field:ident, $valid:expr, $label:literal) => {{
+        ($items:expr, $field:ident, $valid:expr, $label:literal) => {
+            validate_unique_targets!($items, $field, $valid, $label, id());
+        };
+        ($items:expr, $field:ident, $valid:expr, $label:literal, $id:ident $( $call:tt )?) => {{
             let mut seen = BTreeSet::new();
             for item in $items {
                 if !$valid.contains(&item.$field) {
                     return Err(CodecError::InvalidInput(format!(
                         "F3D {} metadata {} targets missing entity {}",
-                        $label, item.id, item.$field
+                        $label, item.$id $( $call )?, item.$field
                     )));
                 }
                 if !seen.insert(&item.$field) {
@@ -1125,7 +1130,13 @@ pub(crate) fn validate_source_less_design_links(
         }};
     }
     validate_unique_targets!(&native.body_native_keys, body, bodies, "body-native-key");
-    validate_unique_targets!(&native.body_visibilities, body, bodies, "body-visibility");
+    validate_unique_targets!(
+        &native.body_visibilities,
+        body,
+        bodies,
+        "body-visibility",
+        id
+    );
     validate_unique_targets!(&native.transform_hints, body, bodies, "transform-hint");
     validate_unique_targets!(&native.edge_continuities, edge, edges, "edge-continuity");
     validate_unique_targets!(&native.edge_ownerships, edge, edges, "edge-ownership");
@@ -1148,7 +1159,8 @@ pub(crate) fn validate_source_less_design_links(
         if !shells.contains(&wire.shell) {
             return Err(CodecError::InvalidInput(format!(
                 "F3D wire-topology metadata {} targets missing entity {}",
-                wire.id, wire.shell
+                wire.id(),
+                wire.shell
             )));
         }
         if !wire_record_indices.insert(wire.record_index) {
@@ -1186,7 +1198,7 @@ pub(crate) fn validate_source_less_design_links(
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D transform hints {} target a body without a transform",
-                hints.id
+                hints.id()
             )));
         }
     }
@@ -1202,7 +1214,7 @@ pub(crate) fn validate_source_less_design_links(
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D tolerant-vertex metadata {} requires finite fields and a tolerant vertex",
-                tail.id
+                tail.id()
             )));
         }
     }
@@ -1214,7 +1226,7 @@ pub(crate) fn validate_source_less_design_links(
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D tolerant-edge metadata {} requires a tolerant edge",
-                tail.id
+                tail.id()
             )));
         }
     }
@@ -1233,7 +1245,7 @@ pub(crate) fn validate_source_less_design_links(
         if !member_form_is_valid {
             return Err(CodecError::InvalidInput(format!(
                 "F3D wire metadata {} has invalid edge-ring or isolated-vertex membership",
-                wire.id
+                wire.id()
             )));
         }
     }
@@ -1245,7 +1257,8 @@ pub(crate) fn validate_source_less_design_links(
         if sidedness.normalized_sense != face.sense {
             return Err(CodecError::InvalidInput(format!(
                 "F3D face sidedness {} normalized sense conflicts with face {}",
-                sidedness.id, sidedness.face
+                sidedness.id(),
+                sidedness.face
             )));
         }
     }

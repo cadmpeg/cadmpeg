@@ -206,7 +206,8 @@ pub(crate) fn keep_faces_and_carriers(
                     .any(|sentinel| sentinel.record_index == surf_rec.index as u32)
                 {
                     out.mesh_surface_sentinels.push(MeshSurfaceSentinel {
-                        id: format!("{format}:asm:mesh-surface-sentinel#{}", surf_rec.index),
+                        source_namespace:
+                            crate::brep::records::identity::NativeRecordNamespace::new(format),
                         surface: SurfaceId::mint(id(format, surf_ref)).expect("identity grammar"),
                         record_index: surf_rec.index as u32,
                     });
@@ -611,7 +612,8 @@ pub(crate) fn collect_wire_topology(
                 }
                 if let Some(side) = side {
                     out.wire_topologies.push(WireTopology {
-                        id: format!("{format}:asm:wire-topology#{wire_index}"),
+                        source_namespace:
+                            crate::brep::records::identity::NativeRecordNamespace::new(format),
                         shell: ShellId::mint(id(format, shell_index)).expect("identity grammar"),
                         record_index: wire.index as u32,
                         edges: wire_edges

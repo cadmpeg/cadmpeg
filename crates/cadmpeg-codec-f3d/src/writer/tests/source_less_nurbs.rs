@@ -610,7 +610,9 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
     let tolerant_coedge = source_less.model.coedges[7].id.clone();
     f3d_native_mut(&mut source_less).tolerant_coedge_parameters =
         vec![cadmpeg_asm::brep::records::TolerantCoedgeParameters {
-            id: "f3d:asm:tolerant-coedge-parameters#cube".into(),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
             coedge: tolerant_coedge,
             record_index: 0,
             parameter_range: [-1.5, 2.25],

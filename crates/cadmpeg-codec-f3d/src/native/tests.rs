@@ -393,7 +393,9 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     });
     f3d_native_mut(&mut source_less).tolerant_coedge_parameters =
         vec![cadmpeg_asm::brep::records::TolerantCoedgeParameters {
-            id: "generated:tolerant-coedge-parameters#0".into(),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                cadmpeg_asm::ids::IdFormat("generated"),
+            ),
             coedge: tolerant_coedge,
             record_index: 0,
             parameter_range: [0.0, 1.0],

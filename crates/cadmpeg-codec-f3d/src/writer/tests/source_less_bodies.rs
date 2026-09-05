@@ -408,7 +408,9 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
         let mut native = f3d_native_mut(&mut source_less);
         native.edge_continuities = [0, 1]
             .map(|ordinal| EdgeContinuity {
-                id: format!("f3d:asm:edge-continuity#generated-{ordinal}"),
+                source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                    crate::ids::ID_FORMAT,
+                ),
                 edge: edge.clone(),
                 record_index: ordinal,
                 sense: cadmpeg_ir::topology::Sense::Forward,
@@ -428,7 +430,9 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
         let mut native = f3d_native_mut(&mut source_less);
         native.edge_continuities.truncate(1);
         native.tolerant_vertex_tails = vec![TolerantVertexTail {
-            id: "f3d:asm:tolerant-vertex-tail#generated".into(),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
             vertex,
             record_index: 0,
             leading_tolerances: [1.0, 2.0],

@@ -2091,14 +2091,14 @@ fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && binding.blob_name_offset > binding.entity_suffix_offset
             && binding.body.as_ref().is_none_or(|body| {
                 let has_named_source = native.body_native_keys.iter().any(|key| {
-                    ids::same_native_occurrence(&key.id, &binding.id)
+                    ids::same_native_occurrence(&key.id(), &binding.id)
                         && key.source_brep.as_deref() == Some(binding.blob_name.as_str())
                 });
                 let source_keys = native
                     .body_native_keys
                     .iter()
                     .filter(|key| {
-                        ids::same_native_occurrence(&key.id, &binding.id)
+                        ids::same_native_occurrence(&key.id(), &binding.id)
                             && if has_named_source {
                                 key.source_brep.as_deref() == Some(binding.blob_name.as_str())
                             } else {

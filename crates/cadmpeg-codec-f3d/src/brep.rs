@@ -772,7 +772,10 @@ mod tests {
                 }],
 
                 body_native_keys: vec![BodyNativeKey {
-                    id: "f3d:asm:body-native-key#1".into(),
+                    source_namespace:
+                        cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                            crate::ids::ID_FORMAT,
+                        ),
                     body,
                     record_index: 1,
                     body_ordinal: 0,
@@ -827,7 +830,9 @@ mod tests {
             visible: None,
         };
         let native_key = |index, key| BodyNativeKey {
-            id: format!("f3d:asm:body-native-key#{index}"),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
             body: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
             record_index: index,
             body_ordinal: index - 1,
@@ -886,7 +891,9 @@ mod tests {
             visible: None,
         };
         let native_key = |index, key| BodyNativeKey {
-            id: format!("f3d:asm:body-native-key#{index}"),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
             body: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
             record_index: index,
             body_ordinal: index - 1,
@@ -1017,7 +1024,10 @@ mod tests {
                 ],
 
                 body_native_keys: vec![BodyNativeKey {
-                    id: "f3d:asm:body-native-key#1".into(),
+                    source_namespace:
+                        cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                            crate::ids::ID_FORMAT,
+                        ),
                     body: native_body,
                     record_index: 1,
                     body_ordinal: 0,
@@ -1039,7 +1049,9 @@ mod tests {
     #[test]
     fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
         let native_key = |ordinal, key| BodyNativeKey {
-            id: format!("f3d:asm:body-native-key#{ordinal}"),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
             body: BodyId::mint(format!("f3d:brep:entity#{ordinal}")).expect("identity grammar"),
             record_index: ordinal,
             body_ordinal: ordinal,
@@ -1073,7 +1085,9 @@ mod tests {
     #[test]
     fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
         let native_key = |ordinal, key| BodyNativeKey {
-            id: format!("f3d:asm:body-native-key#{ordinal}"),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
             body: BodyId::mint(format!("f3d:brep:entity#{ordinal}")).expect("identity grammar"),
             record_index: ordinal,
             body_ordinal: ordinal,

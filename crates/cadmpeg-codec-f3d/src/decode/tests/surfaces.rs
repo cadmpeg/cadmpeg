@@ -61,8 +61,7 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
     assert_eq!(replay, source);
 
     let mut edited = result.ir().clone();
-    f3d_native_mut(&mut edited).mesh_surface_sentinels[0].id =
-        "f3d:asm:mesh-surface-sentinel#edited".into();
+    f3d_native_mut(&mut edited).mesh_surface_sentinels[0].record_index += 1;
     let error = F3dCodec
         .plan(
             EncodeInput::new(&edited, Some(result.source_fidelity())),

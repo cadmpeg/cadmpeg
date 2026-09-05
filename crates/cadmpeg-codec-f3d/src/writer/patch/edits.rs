@@ -132,11 +132,11 @@ pub(crate) fn validate_edge_continuity_edits(
         .map_or(&[][..], |native| native.edge_continuities.as_slice());
     let baseline_by_id = baseline
         .iter()
-        .map(|metadata| (metadata.id.as_str(), metadata))
+        .map(|metadata| (metadata.id(), metadata))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|metadata| (metadata.id.as_str(), metadata))
+        .map(|metadata| (metadata.id(), metadata))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -145,7 +145,7 @@ pub(crate) fn validate_edge_continuity_edits(
     }
     let mut edits = BTreeMap::new();
     for (id, before) in baseline_by_id {
-        let after = target_by_id[id];
+        let after = target_by_id[&id];
         let mut normalized = after.clone();
         normalized.sense = before.sense;
         normalized.continuity.clone_from(&before.continuity);
@@ -183,11 +183,11 @@ pub(crate) fn validate_edge_ownership_edits(
         .map_or(&[][..], |native| native.edge_ownerships.as_slice());
     let baseline_by_id = baseline
         .iter()
-        .map(|ownership| (ownership.id.as_str(), ownership))
+        .map(|ownership| (ownership.id(), ownership))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target_ownerships
         .iter()
-        .map(|ownership| (ownership.id.as_str(), ownership))
+        .map(|ownership| (ownership.id(), ownership))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -196,7 +196,7 @@ pub(crate) fn validate_edge_ownership_edits(
     }
     let mut edits = BTreeMap::new();
     for (id, before) in baseline_by_id {
-        let after = target_by_id[id];
+        let after = target_by_id[&id];
         let mut normalized = after.clone();
         normalized.owner_coedge.clone_from(&before.owner_coedge);
         if &normalized != before {
@@ -252,11 +252,11 @@ pub(crate) fn validate_vertex_ownership_edits(
         .map_or(&[][..], |native| native.vertex_ownerships.as_slice());
     let baseline_by_id = baseline
         .iter()
-        .map(|metadata| (metadata.id.as_str(), metadata))
+        .map(|metadata| (metadata.id(), metadata))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target_native
         .iter()
-        .map(|metadata| (metadata.id.as_str(), metadata))
+        .map(|metadata| (metadata.id(), metadata))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -265,7 +265,7 @@ pub(crate) fn validate_vertex_ownership_edits(
     }
     let mut edits = BTreeMap::new();
     for (id, before) in baseline_by_id {
-        let after = target_by_id[id];
+        let after = target_by_id[&id];
         let mut normalized = after.clone();
         normalized.owning_edge.clone_from(&before.owning_edge);
         normalized.endpoint_index = before.endpoint_index;
@@ -329,11 +329,11 @@ pub(crate) fn validate_face_sidedness_edits(
         .map_or(&[][..], |native| native.face_sidedness.as_slice());
     let baseline_by_id = baseline
         .iter()
-        .map(|metadata| (metadata.id.as_str(), metadata))
+        .map(|metadata| (metadata.id(), metadata))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|metadata| (metadata.id.as_str(), metadata))
+        .map(|metadata| (metadata.id(), metadata))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -342,7 +342,7 @@ pub(crate) fn validate_face_sidedness_edits(
     }
     let mut edits = BTreeMap::new();
     for (id, before) in baseline_by_id {
-        let after = target_by_id[id];
+        let after = target_by_id[&id];
         let mut normalized = after.clone();
         normalized.containment = before.containment;
         if &normalized != before {
@@ -424,11 +424,11 @@ pub(crate) fn validate_tolerant_vertex_edits(
     }
     let baseline_by_id = baseline_tails
         .iter()
-        .map(|tail| (tail.id.as_str(), tail))
+        .map(|tail| (tail.id(), tail))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target_tails
         .iter()
-        .map(|tail| (tail.id.as_str(), tail))
+        .map(|tail| (tail.id(), tail))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -437,7 +437,7 @@ pub(crate) fn validate_tolerant_vertex_edits(
     }
     let mut edits = BTreeMap::new();
     for (id, before) in baseline_by_id {
-        let after = target_by_id[id];
+        let after = target_by_id[&id];
         let mut normalized = after.clone();
         normalized.leading_tolerances = before.leading_tolerances;
         if &normalized != before {
@@ -531,11 +531,11 @@ pub(crate) fn validate_tolerant_edge_edits(
         .map_or(&[][..], |native| native.tolerant_edge_tails.as_slice());
     let baseline_by_id = baseline_tails
         .iter()
-        .map(|tail| (tail.id.as_str(), tail))
+        .map(|tail| (tail.id(), tail))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target_tails
         .iter()
-        .map(|tail| (tail.id.as_str(), tail))
+        .map(|tail| (tail.id(), tail))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -544,7 +544,7 @@ pub(crate) fn validate_tolerant_edge_edits(
     }
     let mut edits = BTreeMap::new();
     for (id, before) in baseline_by_id {
-        let after = target_by_id[id];
+        let after = target_by_id[&id];
         if after != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D tolerant-edge tail edit changes retained fields: {id}"
@@ -603,11 +603,11 @@ pub(crate) fn validate_tolerant_coedge_edits(
     });
     let baseline_by_id = baseline_parameters
         .iter()
-        .map(|parameters| (parameters.id.as_str(), parameters))
+        .map(|parameters| (parameters.id(), parameters))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target_parameters
         .iter()
-        .map(|parameters| (parameters.id.as_str(), parameters))
+        .map(|parameters| (parameters.id(), parameters))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -616,7 +616,7 @@ pub(crate) fn validate_tolerant_coedge_edits(
     }
     let mut edits = BTreeMap::new();
     for (id, before) in baseline_by_id {
-        let after = target_by_id[id];
+        let after = target_by_id[&id];
         let mut normalized = after.clone();
         normalized.parameter_range = before.parameter_range;
         if &normalized != before {
@@ -647,11 +647,11 @@ pub(crate) fn validate_wire_topology_edits(
         .map_or(&[][..], |native| native.wire_topologies.as_slice());
     let baseline_by_id = baseline_wires
         .iter()
-        .map(|wire| (wire.id.as_str(), wire))
+        .map(|wire| (wire.id(), wire))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target_wires
         .iter()
-        .map(|wire| (wire.id.as_str(), wire))
+        .map(|wire| (wire.id(), wire))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -660,7 +660,7 @@ pub(crate) fn validate_wire_topology_edits(
     }
     let mut edits = BTreeMap::new();
     for (id, before) in baseline_by_id {
-        let after = target_by_id[id];
+        let after = target_by_id[&id];
         let mut normalized = after.clone();
         normalized.side = before.side;
         if &normalized != before {
@@ -1794,11 +1794,11 @@ pub(crate) fn validate_transform_hint_edits(
         .map_or(&[][..], |native| native.transform_hints.as_slice());
     let baseline = baseline
         .iter()
-        .map(|hints| (hints.id.as_str(), hints))
+        .map(|hints| (hints.id(), hints))
         .collect::<BTreeMap<_, _>>();
     let target = target
         .iter()
-        .map(|hints| (hints.id.as_str(), hints))
+        .map(|hints| (hints.id(), hints))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1807,7 +1807,7 @@ pub(crate) fn validate_transform_hint_edits(
     }
     let mut edits = BTreeMap::new();
     for (id, before) in baseline {
-        let after = target[id];
+        let after = target[&id];
         let mut normalized = after.clone();
         normalized.rotation = before.rotation;
         normalized.reflection = before.reflection;
@@ -1838,12 +1838,12 @@ pub(crate) fn validate_body_native_key_edits(
     let baseline = baseline_native
         .map_or(&[][..], |native| native.body_native_keys.as_slice())
         .iter()
-        .map(|key| (key.id.as_str(), key))
+        .map(|key| (key.id(), key))
         .collect::<BTreeMap<_, _>>();
     let target = target_native
         .map_or(&[][..], |native| native.body_native_keys.as_slice())
         .iter()
-        .map(|key| (key.id.as_str(), key))
+        .map(|key| (key.id(), key))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1852,7 +1852,7 @@ pub(crate) fn validate_body_native_key_edits(
     }
     let mut edits = BodyNativeKeyEdits::default();
     for (id, before) in baseline {
-        let after = target[id];
+        let after = target[&id];
         let mut normalized = after.clone();
         normalized.asm_body_key = before.asm_body_key;
         if &normalized != before {
