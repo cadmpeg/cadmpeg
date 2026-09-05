@@ -604,25 +604,19 @@ pub(super) fn continue_fixed_kind_operations(
         next_byte_offset: 0,
     };
     let axis_placement = DesignSketchPlacement {
-        member_run_head: false,
+        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
+
         id: "stream:indexed-axis-placement".into(),
         scope_record_index: Some(10),
         entity_id: crate::records::DesignEntityId::try_from("Sketch_100".to_owned()).expect("valid entity ID"),
 
         visibility: None,
-        byte_offset: 0,
+
         class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 904,
-        frame_length: 201,
-        transform: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-        transform_offset: Some(0),
+
         paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
-        paired_byte_offset: 0,
+
     };
     let axis_curve = SketchCurveIdentity {
         id: "stream:indexed-axis-curve".into(),

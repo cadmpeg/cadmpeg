@@ -59,25 +59,18 @@ fn sketch_text_alignment_ordinals_project_to_named_positions() {
 #[test]
 fn sketch_container_visibility_projects_to_the_neutral_sketch() {
     let placement = DesignSketchPlacement {
+        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::MemberCompact { paired_byte_offset: 34 }).unwrap(),
         id: "f3d:design:design-sketch-placement#1".into(),
         scope_record_index: None,
         entity_id: crate::records::DesignEntityId::try_from("Sketch_201".to_owned()).expect("valid entity ID"),
 
         visibility: Some(DesignSketchVisibility::new(std::num::NonZeroU32::new(1).unwrap(), 30, false).unwrap()),
-        byte_offset: 0,
+
         class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 1,
-        frame_length: 34,
-        transform: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-        transform_offset: None,
+
         paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
-        paired_byte_offset: 34,
-        member_run_head: true,
+
     };
 
     let (sketches, entities) = project_sketch_design(&[placement], &[], &[], &[], &[], 1.0e-6);
@@ -89,25 +82,18 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
 #[test]
 fn text_frame_curves_are_construction_geometry_not_profiles() {
     let placement = DesignSketchPlacement {
+        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
         id: "f3d:BulkStream.dat:placement#0".into(),
         scope_record_index: None,
         entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned()).expect("valid entity ID"),
 
         visibility: None,
-        byte_offset: 0,
+
         class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 1,
-        frame_length: 0,
-        transform: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-        transform_offset: None,
+
         paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-        member_run_head: false,
+
     };
     let curve =
         |record_index, primary_id, start: (f64, f64), end: (f64, f64)| SketchCurveIdentity {
@@ -242,25 +228,18 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
 #[test]
 fn point_closure_does_not_mark_construction_geometry() {
     let placement = DesignSketchPlacement {
+        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
         id: "f3d:BulkStream.dat:placement#0".into(),
         scope_record_index: None,
         entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned()).expect("valid entity ID"),
 
         visibility: None,
-        byte_offset: 0,
+
         class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 1,
-        frame_length: 0,
-        transform: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-        transform_offset: None,
+
         paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-        member_run_head: false,
+
     };
     let point = SketchPoint {
         id: "f3d:BulkStream.dat:point#10".into(),
@@ -331,25 +310,24 @@ fn point_closure_does_not_mark_construction_geometry() {
 #[test]
 fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let placement = DesignSketchPlacement {
-        member_run_head: false,
+        frame: crate::records::DesignSketchFrame::new(100, crate::records::DesignSketchFrameForm::ScopeExplicit(crate::records::SketchPlacementMatrix::try_from([
+            [0.0, 0.0, 1.0, 10.0],
+            [1.0, 0.0, 0.0, 20.0],
+            [0.0, 1.0, 0.0, 30.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]).unwrap())).unwrap(),
+
         id: "f3d:native:placement#0".into(),
         scope_record_index: Some(177),
         entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned()).expect("valid entity ID"),
 
         visibility: None,
-        byte_offset: 100,
+
         class_tag: crate::records::DesignClassTag::try_from("356".to_owned()).unwrap(),
         record_index: 185,
-        frame_length: 329,
-        transform: [
-            [0.0, 0.0, 1.0, 10.0],
-            [1.0, 0.0, 0.0, 20.0],
-            [0.0, 1.0, 0.0, 30.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-        transform_offset: Some(155),
+
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        paired_byte_offset: 429,
+
     };
     let point = SketchPoint {
         id: "f3d:native:point#175".into(),
@@ -709,25 +687,24 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     use cadmpeg_ir::sketches::SpatialSketchGeometry;
 
     let placement = DesignSketchPlacement {
-        member_run_head: false,
+        frame: crate::records::DesignSketchFrame::new(100, crate::records::DesignSketchFrameForm::ScopeExplicit(crate::records::SketchPlacementMatrix::try_from([
+            [0.0, 0.0, 1.0, 10.0],
+            [1.0, 0.0, 0.0, 20.0],
+            [0.0, 1.0, 0.0, 30.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]).unwrap())).unwrap(),
+
         id: "f3d:Design/BulkStream.dat:placement#100".into(),
         scope_record_index: None,
         entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned()).expect("valid entity ID"),
 
         visibility: None,
-        byte_offset: 100,
+
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         record_index: 100,
-        frame_length: 329,
-        transform: [
-            [0.0, 0.0, 1.0, 10.0],
-            [1.0, 0.0, 0.0, 20.0],
-            [0.0, 1.0, 0.0, 30.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-        transform_offset: Some(155),
+
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        paired_byte_offset: 429,
+
     };
     let curve = |record_index, primary_id, geometry| SketchCurveIdentity {
         id: format!("f3d:Design/BulkStream.dat:curve#{record_index}"),

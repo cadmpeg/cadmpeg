@@ -2474,7 +2474,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && instances.instance_count() == count
                         && instances.frames().all(|frame| {
                             let transform = &frame.transform.value;
-                            design::decode::sketch::valid_sketch_transform(transform)
+                            crate::records::valid_sketch_transform(transform)
                                 && (0..3).all(|row| {
                                     (0..3).all(|column| {
                                         (transform[row][column] - first[row][column]).abs()
@@ -2654,7 +2654,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         frame.reference_record_index,
                                     ))
                                 };
-                                design::decode::sketch::valid_sketch_transform(&frame.transform)
+                                crate::records::valid_sketch_transform(&frame.transform)
                                     && offsets_match
                                     && reference_exists
                             })
@@ -2680,7 +2680,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && frame.transform_offset
                             == frame.record_byte_offset
                                 + u64::try_from(generation.matrix_offset()).unwrap_or(u64::MAX)
-                        && design::decode::sketch::valid_sketch_transform(&frame.transform)
+                        && crate::records::valid_sketch_transform(&frame.transform)
                 });
                 let operand_qualifiers_link = match alignment.form.as_ref() {
                     Some(records::DesignAssemblyAlignmentForm::Qualified(operands)) => {
@@ -2978,7 +2978,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 scope.reference_members.values().copied().eq([construction.relation_record_index])
                     && construction.carrier_record_index != construction.relation_record_index
                     && role_valid
-                    && design::decode::sketch::valid_sketch_transform(construction.transform())
+                    && crate::records::valid_sketch_transform(construction.transform())
                     && frame_matches_transform
                     && relation.is_some_and(|relation| {
                         construction
@@ -3020,8 +3020,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         != operation.copied_occurrence_record_index
                     && operation.source_transform_offset == scope.byte_offset + source_at
                     && operation.copied_transform_offset == scope.byte_offset + source_at + 156
-                    && design::decode::sketch::valid_sketch_transform(&operation.source_transform)
-                    && design::decode::sketch::valid_sketch_transform(&operation.copied_transform)
+                    && crate::records::valid_sketch_transform(&operation.source_transform)
+                    && crate::records::valid_sketch_transform(&operation.copied_transform)
                     && source.is_some_and(|source| {
                         source
                             .component_guid
@@ -3347,7 +3347,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && reference.joint_origin_reference_offset == assembly.byte_offset + 25
                 })
             });
-            design::decode::sketch::valid_sketch_transform(&transform)
+            crate::records::valid_sketch_transform(&transform)
                 && (inline || assembly_operand || single_operand_assembly)
         });
         let work_point_link = valid_work_point_construction(ctx, scope, native_stream);
@@ -4294,7 +4294,7 @@ fn valid_work_plane_construction(
             .work_plane_frame()
             .and_then(|frame| frame.reference.as_ref())
             .is_some()
-        && design::decode::sketch::valid_sketch_transform(&transform)
+        && crate::records::valid_sketch_transform(&transform)
         && transform_offset > placement_header.byte_offset
         && inputs
             .iter()
@@ -4432,7 +4432,7 @@ fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 records::DesignComponentOccurrencePlacement::Explicit { ordinal, transform } => {
                     (occurrence.class_tag == "327" || ordinal.get() > 1)
                         && transform.offset == occurrence.byte_offset + 209
-                        && design::decode::sketch::valid_sketch_transform(&transform.value)
+                        && crate::records::valid_sketch_transform(&transform.value)
                 }
             };
         // The duplicated references must agree within one carrier, which
@@ -4613,7 +4613,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             header.byte_offset == transform.byte_offset
                                 && header.class_tag == transform.class_tag
                         })
-                    && crate::design::decode::sketch::valid_sketch_transform(&transform.transform)
+                    && crate::records::valid_sketch_transform(&transform.transform)
                     && transform.following_record_index == transform.record_index.saturating_add(1)
                     && transform.transform_offset == transform.byte_offset.saturating_add(22)
                     && transform.following_byte_offset == transform.byte_offset.saturating_add(152)
@@ -4643,10 +4643,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     && transform.first_transform_offset == transform.byte_offset.saturating_add(21)
                     && transform.second_transform_offset
                         == transform.byte_offset.saturating_add(149)
-                    && crate::design::decode::sketch::valid_sketch_transform(
+                    && crate::records::valid_sketch_transform(
                         &transform.first_transform,
                     )
-                    && crate::design::decode::sketch::valid_sketch_transform(
+                    && crate::records::valid_sketch_transform(
                         &transform.second_transform,
                     )
             })
@@ -4702,7 +4702,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                     == path.byte_offset.saturating_add(174)
                                 && path.following_byte_offset
                                     == path.byte_offset.saturating_add(190)
-                                && crate::design::decode::sketch::valid_sketch_transform(&transform.value)
+                                && crate::records::valid_sketch_transform(&transform.value)
                         }
                         crate::records::DesignConstructionPathPlacement::Compact(_) => {
                             path.scope_record_index_offset == path.byte_offset.saturating_add(35)
@@ -7600,28 +7600,6 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let scope = placement
             .scope_record_index
             .and_then(|index| scopes_by_index.get(&(native_stream, index)));
-        let identity = placement.transform
-            == [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ];
-        let compact =
-            placement.frame_length == 201 && placement.transform_offset.is_none() && identity;
-        let explicit = placement.frame_length == 329
-            && placement.transform_offset == Some(placement.byte_offset.saturating_add(55));
-        let legacy_explicit = matches!(placement.frame_length, 305 | 325)
-            && placement.transform_offset == Some(placement.byte_offset.saturating_add(48));
-        let genesis_compact =
-            placement.frame_length == 213 && placement.transform_offset.is_none() && identity;
-        let genesis_explicit = placement.frame_length == 341
-            && placement.transform_offset == Some(placement.byte_offset.saturating_add(66));
-        let member_run_head = (placement.frame_length == 34
-            && placement.transform_offset.is_none()
-            && identity)
-            || (placement.frame_length == 162
-                && placement.transform_offset == Some(placement.byte_offset.saturating_add(22)));
         let visibility_valid = placement.visibility.as_ref().is_none_or(|visibility| {
             ctx.entities_by_suffix
                 .get(&(native_stream, placement.entity_id.suffix()))
@@ -7629,31 +7607,17 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 && visibility_ordinals.insert((native_stream, visibility.stream_ordinal.get()))
                 && visibility_offsets.insert((native_stream, visibility.visible_offset()))
         });
-        let frame_valid = if placement.member_run_head {
-            // The paired member-run record precedes the head record; the
-            // frame length covers the head record alone.
-            member_run_head
-                && scope.is_none_or(|scope| {
-                    design::design_feature_family(&scope.kind())
-                        == Some(design::DesignFeatureFamily::Sketch)
-                })
+        let scope_valid = if placement.member_run_head() {
+            scope.is_none_or(|scope| {
+                design::design_feature_family(&scope.kind()) == Some(design::DesignFeatureFamily::Sketch)
+            })
         } else {
-            placement.paired_byte_offset
-                == placement.byte_offset.saturating_add(placement.frame_length)
-                && (compact || explicit || legacy_explicit || genesis_compact || genesis_explicit)
-                && scope.is_some_and(|scope| {
-                    design::design_feature_family(&scope.kind())
-                        == Some(design::DesignFeatureFamily::Sketch)
-                        && scope.sketch_entity().is_some_and(|binding| {
-                            binding.entity_id == placement.entity_id
-                        })
-                })
+            scope.is_some_and(|scope| {
+                design::design_feature_family(&scope.kind()) == Some(design::DesignFeatureFamily::Sketch)
+                    && scope.sketch_entity().is_some_and(|binding| binding.entity_id == placement.entity_id)
+            })
         };
-        let valid = frame_valid
-            && design::decode::sketch::valid_sketch_transform(&placement.transform)
-            && unique_record
-            && unique_scope
-            && visibility_valid;
+        let valid = scope_valid && unique_record && unique_scope && visibility_valid;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,

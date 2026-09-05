@@ -2445,7 +2445,7 @@ fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
             *cell = view.f64_le()?;
         }
     }
-    crate::design::decode::sketch::valid_sketch_transform(&transform).then_some(transform)
+    crate::records::valid_sketch_transform(&transform).then_some(transform)
 }
 
 /// Take one reference naming a record of the same segment, advancing `at` past

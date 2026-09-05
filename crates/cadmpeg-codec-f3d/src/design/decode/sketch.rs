@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design sketch placements, headers, relations, and geometry.
 
+use crate::records::{DesignSketchFrame, DesignSketchFrameForm, SketchPlacementMatrix};
+
 use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::{
@@ -176,7 +178,7 @@ pub fn decode_sketch_placements(
                 continue;
             };
             placement.id =
-                ids::native_design_sketch_placement_id(&entry.name, placement.byte_offset);
+                ids::native_design_sketch_placement_id(&entry.name, placement.byte_offset());
             out.push(placement);
         }
     }
@@ -232,7 +234,7 @@ pub fn decode_sketch_placements(
         if let [scope] = matching_scopes.as_slice() {
             placement.scope_record_index = Some(scope.record_index);
         }
-        placement.id = ids::native_design_sketch_placement_id(entry_name, placement.byte_offset);
+        placement.id = ids::native_design_sketch_placement_id(entry_name, placement.byte_offset());
         out.push(placement);
     }
     for placement in &mut out {
@@ -423,12 +425,12 @@ pub(crate) fn parse_member_run_head_placement(
     }
     let head_end = next_indexed_record_offset(bytes, head_at + 11).unwrap_or(bytes.len());
     let frame_length = head_end.checked_sub(head_at)?;
-    let (transform, transform_offset) = match frame_length {
+    let form = match frame_length {
         34 if bytes.get(head_at + 11..head_at + 21) == Some(&[0u8; 10][..])
             && bytes.get(head_at + 21..head_at + 24) == Some(&[1, 0, 1][..])
             && bytes.get(head_at + 28..head_at + 34) == Some(&[0u8; 6][..]) =>
         {
-            (identity_matrix(), None)
+            DesignSketchFrameForm::MemberCompact { paired_byte_offset: paired_at as u64 }
         }
         MEMBER_RUN_HEAD_FRAME if bytes.get(head_at + 11..head_at + 22) == Some(&[0u8; 11][..]) => {
             let values = f64s_at(bytes, head_at + 22, 16)?;
@@ -436,12 +438,11 @@ pub(crate) fn parse_member_run_head_placement(
             for (ordinal, value) in values.iter().copied().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
             }
-            if !valid_sketch_transform(&transform)
-                || bytes.get(head_at + 150..head_at + 152) != Some(&[0, 1][..])
+            if bytes.get(head_at + 150..head_at + 152) != Some(&[0, 1][..])
             {
                 return None;
             }
-            (transform, Some((head_at + 22) as u64))
+            DesignSketchFrameForm::MemberExplicit { paired_byte_offset: paired_at as u64, transform: SketchPlacementMatrix::try_from(transform).ok()? }
         }
         _ => return None,
     };
@@ -451,15 +452,10 @@ pub(crate) fn parse_member_run_head_placement(
         entity_id: entity.entity_id.clone(),
 
         visibility: None,
-        byte_offset: head_at as u64,
+        frame: DesignSketchFrame::new(head_at as u64, form).ok()?,
         class_tag,
         record_index: head_index,
-        frame_length: frame_length as u64,
-        transform,
-        transform_offset,
         paired_class_tag,
-        paired_byte_offset: paired_at as u64,
-        member_run_head: true,
     })
 }
 
@@ -496,8 +492,8 @@ pub(crate) fn parse_sketch_placement_candidates(
         }
         let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag) else { continue; };
         let Ok(paired_class_tag) = crate::records::DesignClassTag::try_from(paired_class_tag) else { continue; };
-        let (transform, transform_offset) = match frame_length {
-            201 => (identity_matrix(), None),
+        let form = match frame_length {
+            201 => DesignSketchFrameForm::ScopeCompact,
             305 | 325 => {
                 let Some(values) = f64s_at(bytes, start + 48, 16) else {
                     continue;
@@ -506,10 +502,8 @@ pub(crate) fn parse_sketch_placement_candidates(
                 for (ordinal, value) in values.iter().copied().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
                 }
-                if !valid_sketch_transform(&transform) {
-                    continue;
-                }
-                (transform, Some((start + 48) as u64))
+                let Ok(transform) = SketchPlacementMatrix::try_from(transform) else { continue; };
+                if frame_length == 305 { DesignSketchFrameForm::ScopeLegacy305(transform) } else { DesignSketchFrameForm::ScopeLegacy325(transform) }
             }
             329 => {
                 let Some(values) = f64s_at(bytes, start + 55, 16) else {
@@ -519,10 +513,8 @@ pub(crate) fn parse_sketch_placement_candidates(
                 for (ordinal, value) in values.iter().copied().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
                 }
-                if !valid_sketch_transform(&transform) {
-                    continue;
-                }
-                (transform, Some((start + 55) as u64))
+                let Ok(transform) = SketchPlacementMatrix::try_from(transform) else { continue; };
+                DesignSketchFrameForm::ScopeExplicit(transform)
             }
             // The `EntityGenesis`-flavor frame: `0x01` at offset 55, nine
             // zero bytes, and a form byte at offset 65. Form `0x01` is the
@@ -537,7 +529,7 @@ pub(crate) fn parse_sketch_placement_candidates(
                     continue;
                 }
                 match (frame_length, bytes.get(start + 65)) {
-                    (213, Some(&1)) => (identity_matrix(), None),
+                    (213, Some(&1)) => DesignSketchFrameForm::ScopeGenesisCompact,
                     (341, Some(&0)) => {
                         let Some(values) = f64s_at(bytes, start + 66, 16) else {
                             continue;
@@ -546,31 +538,25 @@ pub(crate) fn parse_sketch_placement_candidates(
                         for (ordinal, value) in values.iter().copied().enumerate() {
                             transform[ordinal / 4][ordinal % 4] = value;
                         }
-                        if !valid_sketch_transform(&transform) {
-                            continue;
-                        }
-                        (transform, Some((start + 66) as u64))
+                        let Ok(transform) = SketchPlacementMatrix::try_from(transform) else { continue; };
+                        DesignSketchFrameForm::ScopeGenesisExplicit(transform)
                     }
                     _ => continue,
                 }
             }
             _ => continue,
         };
+        let Ok(frame) = DesignSketchFrame::new(start as u64, form) else { continue; };
         out.push(DesignSketchPlacement {
             id: String::new(),
             scope_record_index: Some(scope_record_index),
             entity_id: entity_id.clone(),
 
             visibility: None,
-            byte_offset: start as u64,
+            frame,
             class_tag,
             record_index,
-            frame_length: frame_length as u64,
-            transform,
-            transform_offset,
             paired_class_tag,
-            paired_byte_offset: paired_at as u64,
-            member_run_head: false,
         });
     }
     out
@@ -583,37 +569,6 @@ pub(crate) fn identity_matrix() -> [[f64; 4]; 4] {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ]
-}
-
-pub(crate) fn valid_sketch_transform(transform: &[[f64; 4]; 4]) -> bool {
-    const EPSILON: f64 = 1.0e-10;
-    if !transform.iter().flatten().all(|value| value.is_finite())
-        || transform[3] != [0.0, 0.0, 0.0, 1.0]
-    {
-        return false;
-    }
-    let columns = [
-        [transform[0][0], transform[1][0], transform[2][0]],
-        [transform[0][1], transform[1][1], transform[2][1]],
-        [transform[0][2], transform[1][2], transform[2][2]],
-    ];
-    for (ordinal, column) in columns.iter().enumerate() {
-        let norm = column.iter().map(|value| value * value).sum::<f64>();
-        if (norm - 1.0).abs() > EPSILON {
-            return false;
-        }
-        for other in &columns[..ordinal] {
-            let dot = column
-                .iter()
-                .zip(other)
-                .map(|(left, right)| left * right)
-                .sum::<f64>();
-            if dot.abs() > EPSILON {
-                return false;
-            }
-        }
-    }
-    true
 }
 
 /// Decode the persistent u64 point and curve identity references

@@ -2431,3 +2431,62 @@ fn lost_edge_reference_requires_three_digit_class_tags() {
         assert_eq!(serde_json::to_value(tag).unwrap(), serde_json::json!(value));
     }
 }
+
+#[test]
+fn sketch_placement_layouts_preserve_wire_and_reject_conflicting_offsets() {
+    for (member, length, matrix_delta) in [
+        (false, 201, None), (false, 213, None),
+        (false, 305, Some(48)), (false, 325, Some(48)),
+        (false, 329, Some(55)), (false, 341, Some(66)),
+        (true, 34, None), (true, 162, Some(22)),
+    ] {
+        let mut transform = super::IDENTITY_MATRIX;
+        if matrix_delta.is_some() { transform[0][3] = 12.0; }
+        let paired = if member { 50 } else { 100 + length };
+        let mut wire = serde_json::json!({
+            "id": "placement", "scope_record_index": 1,
+            "entity_id": "Sketch_7", "entity_suffix": 7,
+            "byte_offset": 100, "class_tag": "300", "record_index": 1,
+            "frame_length": length, "transform": transform,
+            "paired_class_tag": "301", "paired_byte_offset": paired,
+        });
+        if member { wire["member_run_head"] = true.into(); }
+        if let Some(delta) = matrix_delta { wire["transform_offset"] = (100 + delta).into(); }
+        let placement: super::DesignSketchPlacement = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(placement).unwrap(), wire);
+        let mut invalid = wire.clone();
+        invalid["transform_offset"] = 99.into();
+        assert!(serde_json::from_value::<super::DesignSketchPlacement>(invalid).unwrap_err().to_string().contains("transform_offset"));
+        let mut invalid = wire.clone();
+        invalid["member_run_head"] = (!member).into();
+        assert!(serde_json::from_value::<super::DesignSketchPlacement>(invalid).unwrap_err().to_string().contains("frame_length"));
+        let mut invalid = wire.clone();
+        invalid["transform"][0][0] = 2.0.into();
+        assert!(serde_json::from_value::<super::DesignSketchPlacement>(invalid).unwrap_err().to_string().contains("transform"));
+        if !member {
+            let mut invalid = wire;
+            invalid["paired_byte_offset"] = 50.into();
+            assert!(serde_json::from_value::<super::DesignSketchPlacement>(invalid).unwrap_err().to_string().contains("paired_byte_offset"));
+        }
+    }
+}
+
+#[test]
+fn sketch_placement_extent_and_matrix_are_checked_at_construction() {
+    use super::{DesignSketchFrame, DesignSketchFrameForm, SketchPlacementMatrix};
+    assert!(DesignSketchFrame::new(u64::MAX - 200, DesignSketchFrameForm::ScopeCompact).unwrap_err().contains("byte_offset"));
+    let end = DesignSketchFrame::new(u64::MAX - 201, DesignSketchFrameForm::ScopeCompact).unwrap();
+    assert_eq!(end.paired_byte_offset(), u64::MAX);
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut matrix = super::IDENTITY_MATRIX;
+        matrix[0][3] = invalid;
+        assert!(SketchPlacementMatrix::try_from(matrix).unwrap_err().contains("transform"));
+    }
+    let mut matrix = super::IDENTITY_MATRIX;
+    matrix[3][0] = 1.0;
+    assert!(SketchPlacementMatrix::try_from(matrix).unwrap_err().contains("transform"));
+    let mut matrix = super::IDENTITY_MATRIX;
+    matrix[0][1] = 1.0;
+    matrix[1][1] = 0.0;
+    assert!(SketchPlacementMatrix::try_from(matrix).unwrap_err().contains("transform"));
+}

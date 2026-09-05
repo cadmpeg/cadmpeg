@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse parameter scopes and exact feature-construction frames.
 
+use crate::records::valid_sketch_transform;
 use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::{f64s_at, is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
@@ -14,7 +15,7 @@ use crate::design::decode::operands::{
     parse_face_operand, ConstructionOperandGroupParse,
 };
 use crate::design::decode::sketch::{
-    identity_matrix, next_indexed_record_offset, valid_sketch_transform, IndexedRecordOffsets,
+    identity_matrix, next_indexed_record_offset, IndexedRecordOffsets,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};

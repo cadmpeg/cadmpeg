@@ -5844,29 +5844,29 @@ fn resolve_sketch_axis_selection(
     };
     let origin_scale = crate::design::face_resolve::placement_origin_scale(placement);
     let origin = Point3::new(
-        placement.transform[0][0] * start.x
-            + placement.transform[0][1] * start.y
-            + placement.transform[0][2] * start.z
-            + placement.transform[0][3] * origin_scale,
-        placement.transform[1][0] * start.x
-            + placement.transform[1][1] * start.y
-            + placement.transform[1][2] * start.z
-            + placement.transform[1][3] * origin_scale,
-        placement.transform[2][0] * start.x
-            + placement.transform[2][1] * start.y
-            + placement.transform[2][2] * start.z
-            + placement.transform[2][3] * origin_scale,
+        placement.transform()[0][0] * start.x
+            + placement.transform()[0][1] * start.y
+            + placement.transform()[0][2] * start.z
+            + placement.transform()[0][3] * origin_scale,
+        placement.transform()[1][0] * start.x
+            + placement.transform()[1][1] * start.y
+            + placement.transform()[1][2] * start.z
+            + placement.transform()[1][3] * origin_scale,
+        placement.transform()[2][0] * start.x
+            + placement.transform()[2][1] * start.y
+            + placement.transform()[2][2] * start.z
+            + placement.transform()[2][3] * origin_scale,
     );
     let direction = Vector3::new(
-        placement.transform[0][0] * direction.x
-            + placement.transform[0][1] * direction.y
-            + placement.transform[0][2] * direction.z,
-        placement.transform[1][0] * direction.x
-            + placement.transform[1][1] * direction.y
-            + placement.transform[1][2] * direction.z,
-        placement.transform[2][0] * direction.x
-            + placement.transform[2][1] * direction.y
-            + placement.transform[2][2] * direction.z,
+        placement.transform()[0][0] * direction.x
+            + placement.transform()[0][1] * direction.y
+            + placement.transform()[0][2] * direction.z,
+        placement.transform()[1][0] * direction.x
+            + placement.transform()[1][1] * direction.y
+            + placement.transform()[1][2] * direction.z,
+        placement.transform()[2][0] * direction.x
+            + placement.transform()[2][1] * direction.y
+            + placement.transform()[2][2] * direction.z,
     );
     let length = direction.norm();
     (origin.x.is_finite()

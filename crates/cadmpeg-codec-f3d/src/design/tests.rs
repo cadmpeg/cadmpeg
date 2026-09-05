@@ -10,7 +10,7 @@
 use crate::design::constraints::project_sketch_constraints;
 use crate::design::decode::operands::has_typed_edge_treatment_group;
 use crate::design::decode::parameters::parse_design_parameter;
-use crate::design::decode::sketch::{bind_sketch_graph, identity_matrix};
+use crate::design::decode::sketch::bind_sketch_graph;
 use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::feature_project::project_parameter_design;
 use crate::design::sketch_project::project_sketch_design;
@@ -212,20 +212,19 @@ fn governing_dimension_identity_uses_parameter_identity() {
 #[test]
 fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let placement = |stream: &str| DesignSketchPlacement {
-        member_run_head: false,
+        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
+
         id: format!("f3d:{stream}:design-sketch-placement#0"),
         scope_record_index: Some(10),
         entity_id: crate::records::DesignEntityId::try_from(format!("{stream}_100")).expect("valid entity ID"),
 
         visibility: None,
-        byte_offset: 0,
+
         class_tag: crate::records::DesignClassTag::try_from("356".to_owned()).unwrap(),
         record_index: 11,
-        frame_length: 201,
-        transform: identity_matrix(),
-        transform_offset: None,
+
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        paired_byte_offset: 201,
+
     };
     let header = |stream: &str| DesignEntityHeader {
         id: format!("f3d:{stream}:design-entity-header#0"),

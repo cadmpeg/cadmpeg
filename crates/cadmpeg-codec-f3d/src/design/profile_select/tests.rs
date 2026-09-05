@@ -91,25 +91,18 @@ fn operand(
 
 fn placement() -> DesignSketchPlacement {
     DesignSketchPlacement {
+        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
         id: "stream:placement".into(),
         scope_record_index: Some(7),
         entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned()).expect("valid entity ID"),
 
         visibility: None,
-        byte_offset: 0,
+
         class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 20,
-        frame_length: 0,
-        transform: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-        transform_offset: None,
+
         paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-        member_run_head: false,
+
     }
 }
 

@@ -12742,38 +12742,145 @@ impl From<DesignSketchVisibility> for DesignSketchVisibilityWire {
 pub struct DesignSketchPlacement {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Owning parameter-scope record; absent when the sketch has no parameter
-    /// scope. A localized Sketch scope can own a member-run head placement
-    /// through record interval order without directly referencing it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Owning parameter scope, when the sketch has a parameter scope.
     pub scope_record_index: Option<u32>,
     /// Full Design entity id of the placed sketch.
     pub entity_id: DesignEntityId,
     /// Typed sketch-container visibility for the placed sketch entity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<DesignSketchVisibility>,
-    /// Byte offset of the primary indexed record header.
-    pub byte_offset: u64,
-    /// Source per-file dynamic three-digit ASCII primary class tag.
+    /// Source dynamic three-digit ASCII primary class tag.
     pub class_tag: DesignClassTag,
     /// Shared logical record identity.
     pub record_index: u32,
-    /// Byte length from the primary header to the paired header.
-    pub frame_length: u64,
-    /// Row-major local-to-model affine transform.
-    pub transform: [[f64; 4]; 4],
-    /// Byte offset of the explicit 16-f64 matrix; absent for the compact identity form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform_offset: Option<u64>,
-    /// Per-file dynamic class tag of the paired header.
+    /// Source dynamic class tag of the paired header.
     pub paired_class_tag: DesignClassTag,
-    /// Byte offset of the paired indexed record header.
-    pub paired_byte_offset: u64,
-    /// Whether this placement is the transform-carrying member-run head
-    /// record named by the sketch entity's paired record rather than a
-    /// parameter-scope placement frame.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub member_run_head: bool,
+    /// Source layout and its checked placement matrix and byte extent.
+    pub frame: DesignSketchFrame,
+}
+
+pub(crate) fn valid_sketch_transform(transform: &[[f64; 4]; 4]) -> bool {
+    const EPSILON: f64 = 1.0e-10;
+    if !transform.iter().flatten().all(|value| value.is_finite())
+        || transform[3] != [0.0, 0.0, 0.0, 1.0]
+    {
+        return false;
+    }
+    let columns = [
+        [transform[0][0], transform[1][0], transform[2][0]],
+        [transform[0][1], transform[1][1], transform[2][1]],
+        [transform[0][2], transform[1][2], transform[2][2]],
+    ];
+    for (ordinal, column) in columns.iter().enumerate() {
+        let norm = column.iter().map(|value| value * value).sum::<f64>();
+        if (norm - 1.0).abs() > EPSILON {
+            return false;
+        }
+        for other in &columns[..ordinal] {
+            let dot = column
+                .iter()
+                .zip(other)
+                .map(|(left, right)| left * right)
+                .sum::<f64>();
+            if dot.abs() > EPSILON {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// A finite affine placement with orthonormal basis columns.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchPlacementMatrix([[f64; 4]; 4]);
+
+impl TryFrom<[[f64; 4]; 4]> for SketchPlacementMatrix {
+    type Error = String;
+    fn try_from(value: [[f64; 4]; 4]) -> Result<Self, Self::Error> {
+        if valid_sketch_transform(&value) {
+            Ok(Self(value))
+        } else {
+            Err("transform must be a finite affine matrix with orthonormal columns".into())
+        }
+    }
+}
+
+/// The matrix-bearing payload of each source placement layout.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DesignSketchFrameForm {
+    ScopeCompact,
+    ScopeGenesisCompact,
+    ScopeLegacy305(SketchPlacementMatrix),
+    ScopeLegacy325(SketchPlacementMatrix),
+    ScopeExplicit(SketchPlacementMatrix),
+    ScopeGenesisExplicit(SketchPlacementMatrix),
+    MemberCompact { paired_byte_offset: u64 },
+    MemberExplicit { paired_byte_offset: u64, transform: SketchPlacementMatrix },
+}
+
+/// A placement layout whose complete byte extent fits in its address space.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignSketchFrame {
+    byte_offset: u64,
+    form: DesignSketchFrameForm,
+}
+
+impl DesignSketchFrame {
+    pub(crate) fn form(&self) -> &DesignSketchFrameForm { &self.form }
+    pub(crate) fn new(byte_offset: u64, form: DesignSketchFrameForm) -> Result<Self, String> {
+        let value = Self { byte_offset, form };
+        byte_offset.checked_add(value.frame_length()).ok_or("byte_offset overflows the sketch frame extent")?;
+        Ok(value)
+    }
+    fn frame_length(&self) -> u64 {
+        match self.form {
+            DesignSketchFrameForm::ScopeCompact => 201,
+            DesignSketchFrameForm::ScopeGenesisCompact => 213,
+            DesignSketchFrameForm::ScopeLegacy305(_) => 305,
+            DesignSketchFrameForm::ScopeLegacy325(_) => 325,
+            DesignSketchFrameForm::ScopeExplicit(_) => 329,
+            DesignSketchFrameForm::ScopeGenesisExplicit(_) => 341,
+            DesignSketchFrameForm::MemberCompact { .. } => 34,
+            DesignSketchFrameForm::MemberExplicit { .. } => 162,
+        }
+    }
+    fn transform(&self) -> &[[f64; 4]; 4] {
+        match &self.form {
+            DesignSketchFrameForm::ScopeCompact | DesignSketchFrameForm::ScopeGenesisCompact
+            | DesignSketchFrameForm::MemberCompact { .. } => &IDENTITY_MATRIX,
+            DesignSketchFrameForm::ScopeLegacy305(matrix) | DesignSketchFrameForm::ScopeLegacy325(matrix)
+            | DesignSketchFrameForm::ScopeExplicit(matrix) | DesignSketchFrameForm::ScopeGenesisExplicit(matrix)
+            | DesignSketchFrameForm::MemberExplicit { transform: matrix, .. } => &matrix.0,
+        }
+    }
+    fn transform_offset(&self) -> Option<u64> {
+        let relative = match self.form {
+            DesignSketchFrameForm::ScopeCompact | DesignSketchFrameForm::ScopeGenesisCompact
+            | DesignSketchFrameForm::MemberCompact { .. } => return None,
+            DesignSketchFrameForm::ScopeLegacy305(_) | DesignSketchFrameForm::ScopeLegacy325(_) => 48,
+            DesignSketchFrameForm::ScopeExplicit(_) => 55,
+            DesignSketchFrameForm::ScopeGenesisExplicit(_) => 66,
+            DesignSketchFrameForm::MemberExplicit { .. } => 22,
+        };
+        Some(self.byte_offset + relative)
+    }
+    fn paired_byte_offset(&self) -> u64 {
+        match self.form {
+            DesignSketchFrameForm::MemberCompact { paired_byte_offset }
+            | DesignSketchFrameForm::MemberExplicit { paired_byte_offset, .. } => paired_byte_offset,
+            _ => self.byte_offset + self.frame_length(),
+        }
+    }
+}
+
+impl DesignSketchPlacement {
+    pub(crate) fn byte_offset(&self) -> u64 { self.frame.byte_offset }
+    pub(crate) fn frame_length(&self) -> u64 { self.frame.frame_length() }
+    pub(crate) fn transform(&self) -> &[[f64; 4]; 4] { self.frame.transform() }
+    pub(crate) fn transform_offset(&self) -> Option<u64> { self.frame.transform_offset() }
+    pub(crate) fn paired_byte_offset(&self) -> u64 { self.frame.paired_byte_offset() }
+    pub(crate) fn member_run_head(&self) -> bool {
+        matches!(self.frame.form, DesignSketchFrameForm::MemberCompact { .. } | DesignSketchFrameForm::MemberExplicit { .. })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -12824,20 +12931,37 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
         if entity_id.suffix() != wire.entity_suffix {
             return Err("entity_suffix disagrees with entity_id".into());
         }
+        use DesignSketchFrameForm as Form;
+        let form = match (wire.member_run_head, wire.frame_length) {
+            (false, 201) => Form::ScopeCompact,
+            (false, 213) => Form::ScopeGenesisCompact,
+            (false, 305) => Form::ScopeLegacy305(wire.transform.try_into()?),
+            (false, 325) => Form::ScopeLegacy325(wire.transform.try_into()?),
+            (false, 329) => Form::ScopeExplicit(wire.transform.try_into()?),
+            (false, 341) => Form::ScopeGenesisExplicit(wire.transform.try_into()?),
+            (true, 34) => Form::MemberCompact { paired_byte_offset: wire.paired_byte_offset },
+            (true, 162) => Form::MemberExplicit { paired_byte_offset: wire.paired_byte_offset, transform: wire.transform.try_into()? },
+            _ => return Err("frame_length is invalid for member_run_head".into()),
+        };
+        let frame = DesignSketchFrame::new(wire.byte_offset, form)?;
+        if frame.transform().iter().flatten().zip(wire.transform.iter().flatten()).any(|(left, right)| left.to_bits() != right.to_bits()) {
+            return Err("transform disagrees with the compact frame identity".into());
+        }
+        if wire.transform_offset != frame.transform_offset() {
+            return Err("transform_offset disagrees with the sketch frame layout".into());
+        }
+        if wire.paired_byte_offset != frame.paired_byte_offset() {
+            return Err("paired_byte_offset disagrees with the sketch frame extent".into());
+        }
         Ok(Self {
             id: wire.id,
             scope_record_index: wire.scope_record_index,
             entity_id,
             visibility: wire.visibility,
-            byte_offset: wire.byte_offset,
             class_tag: DesignClassTag::try_from(wire.class_tag)?,
             record_index: wire.record_index,
-            frame_length: wire.frame_length,
-            transform: wire.transform,
-            transform_offset: wire.transform_offset,
             paired_class_tag: DesignClassTag::try_from(wire.paired_class_tag).map_err(|error| format!("paired_class_tag: {error}"))?,
-            paired_byte_offset: wire.paired_byte_offset,
-            member_run_head: wire.member_run_head,
+            frame,
         })
     }
 }
@@ -12845,25 +12969,30 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
 impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
     fn from(value: DesignSketchPlacement) -> Self {
         let entity_suffix = value.entity_id.suffix();
+        let byte_offset = value.byte_offset();
+        let frame_length = value.frame_length();
+        let transform = *value.transform();
+        let transform_offset = value.transform_offset();
+        let paired_byte_offset = value.paired_byte_offset();
+        let member_run_head = value.member_run_head();
         Self {
             id: value.id,
             scope_record_index: value.scope_record_index,
             entity_id: value.entity_id.0,
             entity_suffix,
             visibility: value.visibility,
-            byte_offset: value.byte_offset,
+            byte_offset,
             class_tag: value.class_tag.into(),
             record_index: value.record_index,
-            frame_length: value.frame_length,
-            transform: value.transform,
-            transform_offset: value.transform_offset,
+            frame_length,
+            transform,
+            transform_offset,
             paired_class_tag: value.paired_class_tag.into(),
-            paired_byte_offset: value.paired_byte_offset,
-            member_run_head: value.member_run_head,
+            paired_byte_offset,
+            member_run_head,
         }
     }
 }
-
 
 /// Persistent-reference channel in the Design construction stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
