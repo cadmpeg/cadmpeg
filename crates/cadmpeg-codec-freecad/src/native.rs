@@ -110,6 +110,7 @@ pub struct CarrierCensusRecord {
 
 /// One support attachment and its distinct persisted frames.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "AttachmentRecordWire", into = "AttachmentRecordWire")]
 pub struct AttachmentRecord {
     /// Stable attachment identity.
     pub id: String,
@@ -123,8 +124,60 @@ pub struct AttachmentRecord {
     pub placement: Option<[[f64; 4]; 4]>,
     /// Persisted attachment-local offset.
     pub offset: Option<[[f64; 4]; 4]>,
+}
+
+impl AttachmentRecord {
     /// Effective frame used for neutral geometry.
-    pub effective_frame: [[f64; 4]; 4],
+    pub fn effective_frame(&self) -> [[f64; 4]; 4] {
+        crate::attachment::effective_frame(self.placement, self.offset)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct AttachmentRecordWire {
+    id: String,
+    object: String,
+    supports: Vec<LinkTarget>,
+    map_mode: Option<String>,
+    placement: Option<[[f64; 4]; 4]>,
+    offset: Option<[[f64; 4]; 4]>,
+    effective_frame: [[f64; 4]; 4],
+}
+
+impl From<AttachmentRecord> for AttachmentRecordWire {
+    fn from(value: AttachmentRecord) -> Self {
+        let effective_frame = value.effective_frame();
+        Self {
+            id: value.id,
+            object: value.object,
+            supports: value.supports,
+            map_mode: value.map_mode,
+            placement: value.placement,
+            offset: value.offset,
+            effective_frame,
+        }
+    }
+}
+
+impl TryFrom<AttachmentRecordWire> for AttachmentRecord {
+    type Error = String;
+
+    fn try_from(wire: AttachmentRecordWire) -> Result<Self, Self::Error> {
+        let record = Self {
+            id: wire.id,
+            object: wire.object,
+            supports: wire.supports,
+            map_mode: wire.map_mode,
+            placement: wire.placement,
+            offset: wire.offset,
+        };
+        if wire.effective_frame != record.effective_frame() {
+            return Err(
+                "attachment effective_frame disagrees with placement and offset".to_owned(),
+            );
+        }
+        Ok(record)
+    }
 }
 
 /// Document-level GUI state outside application-object view providers.
