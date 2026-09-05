@@ -13,18 +13,15 @@ use crate::entities::structure::{
 use crate::global::{RealPrecision, ResolvedGlobal};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
-    connect_node_layout, signal_string_layout, text_node_layout, DefaultTailCount, ParameterRecord,
-    QuarantinedParameterRecord, Token, TokenValue, TrailingPointerAnalysis,
+    connect_node_layout, signal_string_layout, text_node_layout, DefaultTailCount,
+    OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, Token, TokenValue,
+    TrailingPointerAnalysis,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
-
-fn serialize_not_attempted<S: Serializer>(_: &(), serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str("not_attempted")
-}
 
 mod annotations;
 mod fem;
@@ -56,22 +53,6 @@ pub(crate) struct NativeCard {
     line_ending: Vec<u8>,
     section: Option<String>,
     sequence: Option<u32>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-enum NativeTokenValue {
-    Omitted,
-    Integer(i64),
-    Real(f64),
-    String(Vec<u8>),
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-struct NativeToken {
-    start: usize,
-    end: usize,
-    value: NativeTokenValue,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -492,7 +473,7 @@ struct NativeCircularArray {
     transformation: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 struct NativeExternalReference {
     id: String,
     source_entity: String,
@@ -501,8 +482,33 @@ struct NativeExternalReference {
     file_identifier: Option<Vec<u8>>,
     symbolic_name: Option<Vec<u8>>,
     library_name: Option<Vec<u8>>,
-    #[serde(serialize_with = "serialize_not_attempted")]
-    resolution_state: (),
+}
+
+impl Serialize for NativeExternalReference {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            id: &'a str,
+            source_entity: &'a str,
+            form: i64,
+            reference_kind: &'a str,
+            file_identifier: &'a Option<Vec<u8>>,
+            symbolic_name: &'a Option<Vec<u8>>,
+            library_name: &'a Option<Vec<u8>>,
+            resolution_state: &'static str,
+        }
+        Wire {
+            id: &self.id,
+            source_entity: &self.source_entity,
+            form: self.form,
+            reference_kind: &self.reference_kind,
+            file_identifier: &self.file_identifier,
+            symbolic_name: &self.symbolic_name,
+            library_name: &self.library_name,
+            resolution_state: "not_attempted",
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -614,7 +620,7 @@ enum NativeAssociativity {
         declared_point_count: Option<i64>,
         declared_data_count: Option<i64>,
         points: Vec<Option<String>>,
-        data: Vec<NativeTokenValue>,
+        data: Vec<TokenValue>,
     },
     DimensionedGeometry {
         id: String,
@@ -662,7 +668,7 @@ enum NativeAssociativity {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeAttributeValue {
-    value: NativeTokenValue,
+    value: TokenValue,
     display_template: Option<String>,
 }
 
@@ -692,7 +698,7 @@ struct NativeAttributeTableInstance {
     form: i64,
     definition: Option<String>,
     declared_row_count: Option<i64>,
-    rows: Vec<Vec<NativeTokenValue>>,
+    rows: Vec<Vec<TokenValue>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -897,7 +903,7 @@ struct NativeIndependentVariable {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeGenericPropertyValue {
     data_type: Option<i64>,
-    value: NativeTokenValue,
+    value: TokenValue,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -948,14 +954,36 @@ struct NativeProductOccurrence {
     world_transform: [[f64; 4]; 3],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct NativeProductOccurrenceExpansion {
     id: String,
     output_limit: usize,
     depth_limit: usize,
     emitted: usize,
-    truncated: bool,
     issues: Vec<ProductOccurrenceIssue>,
+}
+
+impl Serialize for NativeProductOccurrenceExpansion {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            id: &'a str,
+            output_limit: usize,
+            depth_limit: usize,
+            emitted: usize,
+            truncated: bool,
+            issues: &'a [ProductOccurrenceIssue],
+        }
+        Wire {
+            id: &self.id,
+            output_limit: self.output_limit,
+            depth_limit: self.depth_limit,
+            emitted: self.emitted,
+            truncated: !self.issues.is_empty(),
+            issues: &self.issues,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -986,11 +1014,6 @@ pub(crate) struct AmbiguousParameterBoundary {
     pub(crate) sequence: u32,
     pub(crate) candidate_count: usize,
     pub(crate) equally_valid: bool,
-}
-
-pub(crate) struct OverdeclaredCount {
-    pub(crate) declared: usize,
-    pub(crate) present: usize,
 }
 
 /// Collects at most one overdeclared-count verdict per Directory Entry. The
@@ -1052,10 +1075,8 @@ impl OverdeclaredCounts {
     fn admit(&mut self, sequence: u32, verdict: DefaultTailCount) -> usize {
         match verdict {
             DefaultTailCount::Held(count) => count,
-            DefaultTailCount::Overdeclared { declared, present } => {
-                self.0
-                    .entry(sequence)
-                    .or_insert(OverdeclaredCount { declared, present });
+            DefaultTailCount::Overdeclared(count) => {
+                self.0.entry(sequence).or_insert(count);
                 0
             }
             DefaultTailCount::Unreadable => 0,
@@ -1114,9 +1135,9 @@ struct NativeSegmentDisplay {
     view: Option<String>,
     breakpoint: Option<f64>,
     display_flag: Option<i64>,
-    color: NativeTokenValue,
-    line_font: NativeTokenValue,
-    line_weight: NativeTokenValue,
+    color: TokenValue,
+    line_font: TokenValue,
+    line_weight: TokenValue,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1223,7 +1244,7 @@ pub(crate) struct NativeEntity {
     parameter_line_start: Option<u32>,
     parameter_line_end: Option<u32>,
     parameter_bytes: Vec<u8>,
-    parameters: Vec<NativeToken>,
+    parameters: Vec<Token>,
     association_links: Vec<String>,
     property_links: Vec<String>,
     comment: Vec<u8>,
@@ -1249,20 +1270,7 @@ struct NativeMacroInstance {
     form: i64,
     macro_definition: Option<String>,
     macro_library: Option<String>,
-    parameters: Vec<NativeToken>,
-}
-
-fn token(token: &Token) -> NativeToken {
-    NativeToken {
-        start: token.span.start,
-        end: token.span.end,
-        value: match &token.value {
-            TokenValue::Omitted => NativeTokenValue::Omitted,
-            TokenValue::Integer(value) => NativeTokenValue::Integer(*value),
-            TokenValue::Real(value) => NativeTokenValue::Real(*value),
-            TokenValue::String(value) => NativeTokenValue::String(value.clone()),
-        },
-    }
+    parameters: Vec<Token>,
 }
 
 fn binary_integer(value: Option<i64>) -> Option<bool> {
@@ -1643,7 +1651,7 @@ pub(crate) fn store(
                 form: entry.form,
                 macro_definition,
                 macro_library,
-                parameters: record.tokens.iter().skip(1).map(token).collect(),
+                parameters: record.tokens.iter().skip(1).cloned().collect(),
             })
         })
         .collect::<Vec<_>>();
@@ -1796,7 +1804,7 @@ pub(crate) fn store(
                     .unwrap_or_default(),
                 parameters: parameters
                     .into_iter()
-                    .flat_map(|record| record.tokens.iter().map(token))
+                    .flat_map(|record| record.tokens.iter().cloned())
                     .collect(),
                 association_links,
                 property_links,
@@ -2945,7 +2953,6 @@ pub(crate) fn store(
                         .and_then(|record| record.string(index))
                         .map(<[u8]>::to_vec)
                 }),
-                resolution_state: (),
             })
         })
         .collect::<Vec<_>>();
@@ -3355,7 +3362,7 @@ pub(crate) fn store(
                                 .map(|offset| {
                                     record
                                         .and_then(|record| record.token(data_start + offset))
-                                        .map_or(NativeTokenValue::Omitted, |item| token(item).value)
+                                        .map_or(TokenValue::Omitted, |item| item.value.clone())
                                 })
                                 .collect(),
                         }
@@ -3724,8 +3731,8 @@ pub(crate) fn store(
                             let value = record
                                 .tokens
                                 .get(value_index)
-                                .map(token)
-                                .map_or(NativeTokenValue::Omitted, |token| token.value);
+                                .cloned()
+                                .map_or(TokenValue::Omitted, |token| token.value);
                             let display_template = (entry.form == 2)
                                 .then(|| record.integer(value_index + 1))
                                 .flatten()
@@ -3841,8 +3848,8 @@ pub(crate) fn store(
                                         .tokens
                                         .get(value_start + row * values_per_row + column)
                                 })
-                                .map(token)
-                                .map_or(NativeTokenValue::Omitted, |token| token.value)
+                                .cloned()
+                                .map_or(TokenValue::Omitted, |token| token.value)
                         })
                         .collect()
                 })
@@ -4120,8 +4127,8 @@ pub(crate) fn store(
                                     value: record
                                         .tokens
                                         .get(index + 1)
-                                        .map(token)
-                                        .map_or(NativeTokenValue::Omitted, |token| token.value),
+                                        .cloned()
+                                        .map_or(TokenValue::Omitted, |token| token.value),
                                 }
                             })
                             .collect(),
@@ -4462,8 +4469,8 @@ pub(crate) fn store(
             let value = |index| {
                 record
                     .and_then(|record| record.token(index))
-                    .map(token)
-                    .map_or(NativeTokenValue::Omitted, |token| token.value)
+                    .cloned()
+                    .map_or(TokenValue::Omitted, |token| token.value)
             };
             NativeSegmentedVisibility {
                 id: format!("iges:presentation:segmented-visibility#D{}", entry.sequence),
@@ -4865,7 +4872,6 @@ pub(crate) fn store(
         output_limit: limits.output,
         depth_limit: limits.depth,
         emitted: product_occurrences.len(),
-        truncated: !issues.is_empty(),
         issues,
     }];
     let boundary_vertex_sewing = boundary_vertex_derivations

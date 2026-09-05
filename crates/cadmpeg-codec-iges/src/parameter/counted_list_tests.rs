@@ -93,10 +93,10 @@ fn a_declared_count_above_the_items_present_in_whole_or_in_part_is_not_admitted(
                 );
                 assert_eq!(
                     record.count_with_stride_before_default_tail(1, stride, record.parameter_end()),
-                    DefaultTailCount::Overdeclared {
+                    DefaultTailCount::Overdeclared(super::OverdeclaredCount {
                         declared: present + 1,
                         present
-                    },
+                    }),
                     "stride {stride}, {complete} complete items, {partial} trailing tokens"
                 );
             }
@@ -132,10 +132,10 @@ fn a_list_that_a_suffix_follows_holds_only_its_complete_items() {
     );
     assert_eq!(
         record.count_with_stride_before_default_tail(1, stride, list_end),
-        DefaultTailCount::Overdeclared {
+        DefaultTailCount::Overdeclared(super::OverdeclaredCount {
             declared,
             present: complete
-        }
+        })
     );
 
     let (exact, exact_end) = counted_record_with_suffix(1, stride, 2);
@@ -167,10 +167,10 @@ fn an_empty_list_admits_a_zero_count_and_no_item() {
     let overdeclared = counted_record(declared, 0);
     assert_eq!(
         overdeclared.count_with_stride_before_default_tail(1, stride, overdeclared.parameter_end()),
-        DefaultTailCount::Overdeclared {
+        DefaultTailCount::Overdeclared(super::OverdeclaredCount {
             declared,
             present: 0
-        }
+        })
     );
 }
 
@@ -182,10 +182,10 @@ fn an_item_start_past_the_count_excludes_the_fields_that_precede_the_list() {
     assert_eq!(record.items_before_default_tail_at(7, stride, 9), Some(1));
     assert_eq!(
         record.count_with_stride_before_default_tail_at(1, 7, stride, 9),
-        DefaultTailCount::Overdeclared {
+        DefaultTailCount::Overdeclared(super::OverdeclaredCount {
             declared: 3,
             present: 1
-        }
+        })
     );
     assert_eq!(
         record.count_with_stride_before_default_tail(1, stride, 9),
