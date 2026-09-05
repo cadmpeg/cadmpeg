@@ -1738,11 +1738,9 @@ pub(super) fn continue_fixed_kind_operations(
         module: Some("MSketch".into()),
         record_reference: None,
         record_reference_offset: None,
-        declared_reference_count: None,
-        reference_indices: Vec::new(),
-        reference_offsets: Vec::new(),
-        member_indices: Vec::new(),
-        member_offsets: Vec::new(),
+        reference_count_present: false,
+        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
     };
     bind_parameter_companion_payloads(
         std::slice::from_mut(&mut companion),

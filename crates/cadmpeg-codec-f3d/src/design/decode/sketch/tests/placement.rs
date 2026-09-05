@@ -306,11 +306,9 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: None,
         record_reference_offset: None,
-        declared_reference_count: None,
-        reference_indices: Vec::new(),
-        reference_offsets: Vec::new(),
-        member_indices: Vec::new(),
-        member_offsets: Vec::new(),
+        reference_count_present: false,
+        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
     };
     let records = IndexedRecordOffsets::build(&bytes);
     let placement =
@@ -326,7 +324,7 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         crate::design::decode::sketch::parse_legacy_sketch_container_members(
             &bytes, 0, 100, &records,
         ),
-        Some((Vec::new(), Vec::new()))
+        Some(Vec::new())
     );
 
     bytes.truncate(head_at);
@@ -373,11 +371,11 @@ fn legacy_sketch_pair_decodes_its_complete_member_run() {
         bytes.extend_from_slice(&[0; 6]);
     }
 
-    let (members, offsets) =
+    let members =
         crate::design::decode::sketch::parse_legacy_sketch_member_run(&bytes, 0, 100)
             .expect("legacy sketch member run");
-    assert_eq!(members, [300, 301]);
-    assert_eq!(offsets, [(paired_at + 46) as u64, (paired_at + 57) as u64]);
+    assert_eq!(members.iter().map(|row| row.value).collect::<Vec<_>>(), [300, 301]);
+    assert_eq!(members.iter().map(|row| row.offset).collect::<Vec<_>>(), [(paired_at + 46) as u64, (paired_at + 57) as u64]);
 }
 
 #[test]
@@ -744,15 +742,15 @@ fn sketch_member_run_backfills_relation_free_owners() {
     bytes.extend_from_slice(&[0; 8]);
     assert_eq!(
         crate::design::decode::sketch::parse_sketch_member_run(&bytes, 0, 100),
-        (vec![99, 20, 21], member_offsets)
+        vec![99, 20, 21].into_iter().zip(member_offsets).map(|(value, offset)| crate::records::Located { value, offset }).collect::<Vec<_>>()
     );
     assert_eq!(
         crate::design::decode::sketch::parse_sketch_member_run(&bytes, 0, 101),
-        (vec![], vec![])
+        vec![]
     );
     assert_eq!(
         crate::design::decode::sketch::parse_sketch_member_run(&bytes, paired_at + 1, 100),
-        (vec![], vec![])
+        vec![]
     );
 
     let header = |suffix: u64, members: Vec<u32>| DesignEntityHeader {
@@ -765,11 +763,9 @@ fn sketch_member_run_backfills_relation_free_owners() {
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: None,
         record_reference_offset: None,
-        declared_reference_count: None,
-        reference_indices: Vec::new(),
-        reference_offsets: Vec::new(),
-        member_offsets: members.iter().map(|_| 0).collect(),
-        member_indices: members,
+        reference_count_present: false,
+        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        members: crate::records::ReferenceRun::Located(members.into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect()),
     };
     let point = |record_index: u32| SketchPoint {
         id: format!("f3d:native:sketch-point#{record_index}"),

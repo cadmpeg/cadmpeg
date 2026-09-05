@@ -44,11 +44,9 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: Some(200),
         record_reference_offset: Some(1010),
-        declared_reference_count: Some(0),
-        reference_indices: Vec::new(),
-        reference_offsets: Vec::new(),
-        member_indices: Vec::new(),
-        member_offsets: Vec::new(),
+        reference_count_present: true,
+        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
     };
 
     let profile = parse_sketch_profile(
@@ -153,11 +151,9 @@ fn generated_base_flange_profile_frame_resolves() {
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: None,
         record_reference_offset: None,
-        declared_reference_count: None,
-        reference_indices: Vec::new(),
-        reference_offsets: Vec::new(),
-        member_indices: Vec::new(),
-        member_offsets: Vec::new(),
+        reference_count_present: false,
+        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
     };
     let profile = parse_sketch_profile(
         &bytes,

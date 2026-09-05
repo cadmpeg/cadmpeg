@@ -281,7 +281,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
         .design_entity_headers
         .iter()
         .filter(|header| header.in_sketch_module())
-        .flat_map(|header| header.reference_indices.iter().copied())
+        .flat_map(|header| header.references.values().copied())
         .collect::<BTreeSet<_>>();
     let mut typed_indices = BTreeMap::<u32, &str>::new();
     let mut typed_records = Vec::new();
@@ -675,14 +675,10 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
                 header.id
             )));
         }
-        if header.in_sketch_module() {
-            // `record_reference` is absent on the sentinel (no-base-record)
-            // reference-list form. The writer derives the list count from the
-            // references because decoded source streams are merged into one
-            // canonical Design stream.
-        } else if header.record_reference.is_some()
-            || header.declared_reference_count.is_some()
-            || !header.reference_indices.is_empty()
+        if !header.in_sketch_module()
+            && (header.record_reference.is_some()
+                || header.reference_count_present
+                || !header.references.is_empty())
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D non-sketch Design header {} carries discarded sketch references",

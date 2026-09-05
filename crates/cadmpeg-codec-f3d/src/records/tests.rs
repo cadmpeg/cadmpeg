@@ -833,3 +833,41 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
     let error = serde_json::from_value::<super::DesignMeshFeature>(changed_identity).expect_err("conflicting body identity").to_string();
     assert!(error.contains("body_record_indices"));
 }
+
+#[test]
+fn entity_header_runs_derive_counts_and_preserve_absent_reference_slots() {
+    let prefix = r#"{"id":"header","byte_offset":0,"entity_suffix":1,"entity_id":"0_1","class_tag":"256","optional_slot_present":false"#;
+    for (fields, references, offsets, members) in [
+        ("", "[]", "[]", ""),
+        ("", "[34]", "[]", ""),
+        (r#","record_reference":33,"declared_reference_count":1"#, "[34]", "[]", ""),
+        (r#","record_reference_offset":40,"declared_reference_count":0"#, "[]", "[]", ""),
+        (r#","record_reference":33,"record_reference_offset":40,"declared_reference_count":2"#, "[34,35]", "[50,61]", r#","member_indices":[11],"member_offsets":[0]"#),
+        ("", "[]", "[]", r#","member_indices":[11]"#),
+    ] {
+        let wire = format!("{prefix}{fields},\"reference_indices\":{references},\"reference_offsets\":{offsets}{members}}}");
+        let header: super::DesignEntityHeader = serde_json::from_str(&wire).expect("header runs");
+        assert_eq!(serde_json::to_string(&header).expect("header wire"), wire);
+    }
+    for suffix in [
+        r#","declared_reference_count":1,"reference_indices":[],"reference_offsets":[]}"#,
+        r#","reference_indices":[34,35],"reference_offsets":[50]}"#,
+        r#","reference_indices":[],"reference_offsets":[50]}"#,
+        r#","reference_indices":[],"reference_offsets":[],"member_indices":[11,12],"member_offsets":[0]}"#,
+        r#","reference_indices":[],"reference_offsets":[],"member_offsets":[0]}"#,
+    ] {
+        assert!(serde_json::from_str::<super::DesignEntityHeader>(&format!("{prefix}{suffix}")).is_err());
+    }
+}
+
+#[test]
+fn empty_reference_runs_compare_equal_across_wire_round_trip() {
+    let wire = r#"{"id":"header","byte_offset":0,"entity_suffix":1,"entity_id":"0_1","class_tag":"256","optional_slot_present":false,"declared_reference_count":0,"reference_indices":[],"reference_offsets":[]}"#;
+    let mut header: super::DesignEntityHeader = serde_json::from_str(wire).expect("empty header");
+    header.references = super::ReferenceRun::Located(Vec::new());
+    header.members = super::ReferenceRun::Located(Vec::new());
+    let serialized = serde_json::to_string(&header).expect("empty located runs");
+    assert_eq!(serialized, wire);
+    let decoded: super::DesignEntityHeader = serde_json::from_str(&serialized).expect("empty run wire");
+    assert_eq!(decoded, header);
+}

@@ -1632,24 +1632,29 @@ pub(crate) fn validate_entity_header_edits(
         let after = target_by_id[id];
         let mut normalized = after.clone();
         normalized.record_reference = before.record_reference;
-        normalized
-            .reference_indices
-            .clone_from(&before.reference_indices);
-        if &normalized != before {
+        normalized.references.clone_from(&before.references);
+        let same_reference_locations = match (&before.references, &after.references) {
+            (crate::records::ReferenceRun::Located(before), crate::records::ReferenceRun::Located(after)) => before.iter().map(|row| row.offset).eq(after.iter().map(|row| row.offset)),
+            (crate::records::ReferenceRun::Unlocated(_), crate::records::ReferenceRun::Unlocated(_)) => true,
+            (before, after) => before.is_empty() && after.is_empty(),
+        };
+        if &normalized != before || !same_reference_locations || before.declared_reference_count() != after.declared_reference_count() {
             return Err(CodecError::NotImplemented(format!(
                 "F3D entity-header edit changes fields outside fixed record references: {id}"
             )));
         }
         if after.record_reference == before.record_reference
-            && after.reference_indices == before.reference_indices
+            && after.references.values().eq(before.references.values())
         {
             continue;
         }
-        if after.reference_indices.len() != after.reference_offsets.len() {
-            return Err(CodecError::malformed(format_args!(
+        let after_references: &[crate::records::Located<u32>] = match &after.references {
+            crate::records::ReferenceRun::Located(references) => references,
+            crate::records::ReferenceRun::Unlocated(references) if references.is_empty() => &[],
+            crate::records::ReferenceRun::Unlocated(_) => return Err(CodecError::malformed(format_args!(
                 "F3D entity header {id} has mismatched reference values and offsets"
-            )));
-        }
+            ))),
+        };
         let record_reference = if after.record_reference == before.record_reference {
             None
         } else {
@@ -1666,14 +1671,11 @@ pub(crate) fn validate_entity_header_edits(
                 })?,
             })
         };
-        let references = after
-            .reference_offsets
+        let references = after_references
             .iter()
-            .copied()
-            .zip(after.reference_indices.iter().copied())
-            .zip(&before.reference_indices)
-            .filter_map(|((offset, value), before)| {
-                (value != *before).then_some(Edit { offset, value })
+            .zip(before.references.values())
+            .filter_map(|(after, before)| {
+                (after.value != *before).then_some(Edit { offset: after.offset, value: after.value })
             })
             .collect();
         let stream = id

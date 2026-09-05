@@ -1064,8 +1064,8 @@ fn decode_transfers_generated_protein_appearance() {
         Some(crate::records::DESIGN_MODULE_SKETCH)
     );
     assert_eq!(sketch_header.record_reference, Some(584));
-    assert_eq!(sketch_header.declared_reference_count, Some(2));
-    assert_eq!(sketch_header.reference_indices, [33, 44]);
+    assert_eq!(sketch_header.declared_reference_count(), Some(2));
+    assert_eq!(sketch_header.references.values().copied().collect::<Vec<_>>(), [33, 44]);
     assert_eq!(f3d_native(result.ir()).design_record_headers.len(), 6);
     let record_33 = f3d_native(result.ir())
         .design_record_headers
