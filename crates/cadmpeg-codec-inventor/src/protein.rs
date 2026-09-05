@@ -143,7 +143,7 @@ fn decode_instances_from(
     entries
         .into_iter()
         .map(|entry| {
-            let instance = archive.open(ctx, entry)?;
+            let instance = archive.open(ctx, &entry.name)?;
             let outcome = cadmpeg_protein::decode_detailed(payload.window(), instance.window())?;
             Ok(ProteinInstanceRecords {
                 entry_name: entry.name.clone(),

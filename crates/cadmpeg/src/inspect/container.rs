@@ -82,7 +82,7 @@ pub fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Result<Vec<u
         .entry(name)
         .ok_or_else(|| anyhow::anyhow!("{}", missing_member_message(&snapshot, name)))?;
     let view = snapshot
-        .open(&ctx, entry)
+        .open(&ctx, &entry.name)
         .with_context(|| format!("opening entry {}", shell_quote(name)))?;
     Ok(view.window().to_vec())
 }
