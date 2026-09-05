@@ -394,5 +394,5 @@ pub fn attribute_chain_name(entity: &Record, by_index: &HashMap<i64, &Record>) -
 /// `UnknownRecord` and any `SurfaceGeometry::Unknown` that links to it, so the
 /// reference resolves under validation.
 pub fn unknown_record_id(rec: &Record, format: IdFormat<'_>) -> String {
-    format!("{format}:brep:{}#{}", rec.head, rec.index)
+    format!("{format}:brep:{}#{}", rec.head(), rec.index)
 }

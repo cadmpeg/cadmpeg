@@ -29,11 +29,11 @@ pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet
     let mut surface_geo: HashMap<i64, (SurfaceGeometry, bool)> = HashMap::new();
     let mut curve_geo: HashMap<i64, CurveGeometry> = HashMap::new();
     for r in records {
-        if is_analytic_surface(&r.head) {
+        if is_analytic_surface(r.head()) {
             if let Some(g) = decode_surface(r) {
                 surface_geo.insert(r.index as i64, g);
             }
-        } else if is_analytic_curve(&r.head) {
+        } else if is_analytic_curve(r.head()) {
             if let Some(g) = decode_curve(r) {
                 curve_geo.insert(r.index as i64, g);
             }
@@ -81,7 +81,7 @@ pub(crate) fn keep_faces_and_carriers(
         ..
     } = &mut *reach;
     for r in records {
-        if r.head != "face" {
+        if r.head() != "face" {
             continue;
         }
         let Some(surf_ref) = r.ref_at(7) else {
@@ -101,7 +101,7 @@ pub(crate) fn keep_faces_and_carriers(
         };
         kept_faces.insert(r.index as i64);
         if purpose == DecodePurpose::History {
-            let native_kind = (surf_rec.head == "spline")
+            let native_kind = (surf_rec.head() == "spline")
                 .then(|| nurbs::toks::owned_construction_subtype(&surf_rec.tokens))
                 .flatten();
             if native_kind
@@ -148,7 +148,8 @@ pub(crate) fn keep_faces_and_carriers(
                     nurbs::core::surface_cache_resolving_refs(&surf_rec.tokens, token_table)
                 {
                     e.insert((SurfaceGeometry::Nurbs(ns), false));
-                    if surf_rec.head == "spline" && !procedural_surface_defs.contains_key(&surf_ref)
+                    if surf_rec.head() == "spline"
+                        && !procedural_surface_defs.contains_key(&surf_ref)
                     {
                         cached_unknown_procedural_surfaces.insert(surf_ref);
                     }
@@ -199,7 +200,7 @@ pub(crate) fn keep_faces_and_carriers(
         } else {
             unknown_surface_records.insert(surf_ref);
             undecoded_carriers.insert(surf_ref);
-            if surf_rec.head == "mesh_surface" && surf_rec.chunks().next().is_none() {
+            if surf_rec.head() == "mesh_surface" && surf_rec.chunks().next().is_none() {
                 if !out
                     .mesh_surface_sentinels
                     .iter()
@@ -214,11 +215,11 @@ pub(crate) fn keep_faces_and_carriers(
                 out.stats.mesh_surface_faces += 1;
             } else {
                 out.stats.unknown_surface_faces += 1;
-                let native_kind = if surf_rec.head == "spline" {
+                let native_kind = if surf_rec.head() == "spline" {
                     nurbs::toks::owned_construction_subtype(&surf_rec.tokens)
-                        .unwrap_or_else(|| surf_rec.head.clone())
+                        .unwrap_or_else(|| surf_rec.head().to_owned())
                 } else {
-                    surf_rec.head.clone()
+                    surf_rec.head().to_owned()
                 };
                 count_kind(&mut out.stats.unknown_surface_kinds, &native_kind);
             }
@@ -270,7 +271,7 @@ pub(crate) fn walk_reachable_topology(
                 break;
             }
             let Some(lp) = by_index.get(&li) else { break };
-            if lp.head != "loop" {
+            if lp.head() != "loop" {
                 break;
             }
             kept_loops.insert(li);
@@ -334,7 +335,7 @@ pub(crate) fn walk_reachable_topology(
                                     {
                                         by_index
                                             .get(reference)
-                                            .filter(|record| record.head == "intcurve")
+                                            .filter(|record| record.head() == "intcurve")
                                             .and_then(|intcurve| {
                                                 nurbs::proc_curve::pcurve_for_selector_with_chart(
                                                     &intcurve.tokens,
@@ -360,7 +361,7 @@ pub(crate) fn walk_reachable_topology(
                                             .and_then(|surface| by_index.get(&surface))
                                         {
                                             nurbs::proc_curve::normalize_pcurve_for_surface_record(
-                                                &surface.head,
+                                                surface.head(),
                                                 &surface.tokens,
                                                 &mut decoded,
                                             );
@@ -376,7 +377,7 @@ pub(crate) fn walk_reachable_topology(
                                     kept_pcurves.insert(pc);
                                 } else {
                                     out.stats.undecoded_pcurve_refs += 1;
-                                    count_kind(&mut out.stats.undecoded_pcurve_kinds, &prec.head);
+                                    count_kind(&mut out.stats.undecoded_pcurve_kinds, prec.head());
                                 }
                             }
                         } else {
@@ -483,7 +484,7 @@ pub(crate) fn walk_reachable_topology(
                                                 out.stats.procedural_curve_edges += 1;
                                                 count_kind(
                                                     &mut out.stats.procedural_curve_kinds,
-                                                    &crec.head,
+                                                    crec.head(),
                                                 );
                                             }
                                         } else {
@@ -549,7 +550,7 @@ pub(crate) fn collect_wire_topology(
             }
         }
     }
-    for shell in records.iter().filter(|record| record.head == "shell") {
+    for shell in records.iter().filter(|record| record.head() == "shell") {
         let shell_index = shell.index as i64;
         let mut wire_guard = HashSet::new();
         for root in shell_wire_roots(shell, by_index) {
@@ -557,7 +558,7 @@ pub(crate) fn collect_wire_topology(
             while let Some(wire_index) = wire_ref.filter(|index| wire_guard.insert(*index)) {
                 let Some(wire) = by_index
                     .get(&wire_index)
-                    .filter(|record| record.head == "wire")
+                    .filter(|record| record.head() == "wire")
                 else {
                     break;
                 };
@@ -767,7 +768,7 @@ fn keep_wire_edge(
             } else {
                 undecoded_carriers.insert(curve_index);
                 out.stats.procedural_curve_edges += 1;
-                count_kind(&mut out.stats.procedural_curve_kinds, &curve_record.head);
+                count_kind(&mut out.stats.procedural_curve_kinds, curve_record.head());
             }
         }
     }
@@ -880,18 +881,18 @@ pub(crate) fn subshell_ancestor_shells(
     by_index: &HashMap<i64, &Record>,
 ) -> HashMap<i64, i64> {
     let mut out = HashMap::new();
-    for record in records.iter().filter(|record| record.head == "subshell") {
+    for record in records.iter().filter(|record| record.head() == "subshell") {
         let mut owner = record.ref_at(3);
         let mut guard = HashSet::new();
         while let Some(index) = owner.filter(|index| guard.insert(*index)) {
             let Some(parent) = by_index.get(&index) else {
                 break;
             };
-            if parent.head == "shell" {
+            if parent.head() == "shell" {
                 out.insert(record.index as i64, index);
                 break;
             }
-            if parent.head != "subshell" {
+            if parent.head() != "subshell" {
                 break;
             }
             owner = parent.ref_at(3);
@@ -912,7 +913,7 @@ pub(crate) fn shell_faces(
     while let Some(index) = pending.pop().filter(|index| guard.insert(*index)) {
         let Some(record) = by_index
             .get(&index)
-            .filter(|record| record.head == "subshell")
+            .filter(|record| record.head() == "subshell")
         else {
             break;
         };
@@ -934,7 +935,7 @@ pub(crate) fn shell_wire_roots(shell: &Record, by_index: &HashMap<i64, &Record>)
     while let Some(index) = pending.pop().filter(|index| guard.insert(*index)) {
         let Some(record) = by_index
             .get(&index)
-            .filter(|record| record.head == "subshell")
+            .filter(|record| record.head() == "subshell")
         else {
             break;
         };

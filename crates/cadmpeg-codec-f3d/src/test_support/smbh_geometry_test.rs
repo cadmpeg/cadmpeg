@@ -182,7 +182,7 @@ pub(crate) fn append_generated_record_tail(bytes: &mut Vec<u8>, head: &str, tail
     )
     .expect("generated ASM records must frame")
     .into_iter()
-    .filter(|record| record.head == head)
+    .filter(|record| record.head() == head)
     .map(|record| record.offset + record.len - 1)
     .collect::<Vec<_>>();
     for offset in offsets.into_iter().rev() {
@@ -442,7 +442,7 @@ pub(crate) fn synthetic_geometry_with_mesh_surface_smbh() -> Vec<u8> {
     .expect("generated SAB");
     let plane = records
         .iter()
-        .find(|record| record.head == "plane")
+        .find(|record| record.head() == "plane")
         .expect("generated plane surface");
     let mut sentinel = Vec::new();
     t_ident(&mut sentinel, "mesh_surface");

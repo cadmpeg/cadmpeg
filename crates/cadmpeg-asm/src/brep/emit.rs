@@ -3427,7 +3427,7 @@ pub(crate) fn emit_carrier_records(
 ) {
     for r in records {
         let i = r.index as i64;
-        match r.head.as_str() {
+        match r.head() {
             _ if reach.surfaces.contains(&i) => {
                 emit_carrier_surface(out, r, i, carriers, reach, format);
             }
@@ -3535,7 +3535,7 @@ pub(crate) fn emit_points(
     } = reach;
     for r in records {
         let i = r.index as i64;
-        if r.head == "point" && kept_points.contains(&i) {
+        if r.head() == "point" && kept_points.contains(&i) {
             let c = collect_carrier(r);
             if let Some(p) = c.positions.first() {
                 out.points.push(Point {
@@ -3574,7 +3574,7 @@ pub(crate) fn emit_vertices(
                         // sentinel, a marker rather than a length: the
                         // neutral vertex carries no tolerance and the native
                         // tail keeps the unset fact.
-                        tolerance: matches!(r.head.as_str(), "tvertex")
+                        tolerance: matches!(r.head(), "tvertex")
                             .then(|| {
                                 // The save-format 700 layout stores one
                                 // tolerance directly after the point.
@@ -3591,7 +3591,7 @@ pub(crate) fn emit_vertices(
                             })
                             .flatten(),
                     });
-                    if r.head == "tvertex" {
+                    if r.head() == "tvertex" {
                         if let (Some(Token::Double(first)), Some(Token::Double(second))) =
                             (r.chunk(6), r.chunk(7))
                         {
@@ -3671,7 +3671,7 @@ pub(crate) fn emit_edges(
             let param_range = match (double_at(r, 4), double_at(r, 6)) {
                 (Some(mut a), Some(mut b)) => {
                     if let Some(curve_record) = curve.and_then(|curve| by_index.get(&curve)) {
-                        if curve_record.head == "ellipse" {
+                        if curve_record.head() == "ellipse" {
                             // Native conic parameters are angles from the
                             // major axis, matching the IR carrier's own
                             // parameterization directly. Wrap the arc start
@@ -3689,7 +3689,7 @@ pub(crate) fn emit_edges(
                                 }
                                 b = a + sweep;
                             }
-                        } else if curve_record.head == "straight" {
+                        } else if curve_record.head() == "straight" {
                             // Native line parameters are multiples of the
                             // stored direction vector, whose length is the
                             // parameter scale; the IR carrier's unit direction
@@ -3719,7 +3719,7 @@ pub(crate) fn emit_edges(
             // present when the stream's full format version (save format
             // x 100 + header revision) is at least 2250003. All forms are
             // retained verbatim.
-            let tolerant_tail = match (r.head.as_str(), r.chunk(11), r.chunk(12)) {
+            let tolerant_tail = match (r.head(), r.chunk(11), r.chunk(12)) {
                 ("tedge", Some(Token::Double(tolerance)), Some(Token::Long(revision)))
                     if tolerance.is_finite() && *tolerance >= 0.0 =>
                 {
@@ -3807,7 +3807,7 @@ pub(crate) fn emit_coedges(
                 continue;
             }
             let partner = r.ref_at(5).filter(|p| kept_coedges.contains(p));
-            let tolerant = if r.head == "tcoedge" {
+            let tolerant = if r.head() == "tcoedge" {
                 match (r.chunk(11), r.chunk(12)) {
                     (Some(Token::Double(start)), Some(Token::Double(end))) => {
                         let extension = match save_format_major {
@@ -3906,7 +3906,7 @@ pub(crate) fn emit_loops(
     } = reach;
     for r in records {
         let i = r.index as i64;
-        if r.head == "loop" && kept_loops.contains(&i) {
+        if r.head() == "loop" && kept_loops.contains(&i) {
             let Some(owner) = r.ref_at(5) else { continue };
             let coedges = ring_coedges(r, by_index, kept_coedges, format);
             out.loops.push(Loop {
@@ -3940,7 +3940,7 @@ pub(crate) fn emit_faces(
     let attribute_name = |entity: &Record| attribute_chain_name(entity, by_index);
     for r in records {
         let i = r.index as i64;
-        if r.head == "face" && kept_faces.contains(&i) {
+        if r.head() == "face" && kept_faces.contains(&i) {
             let (Some(surface), Some(owner)) = (r.ref_at(7), r.ref_at(5)) else {
                 continue;
             };
@@ -3955,7 +3955,7 @@ pub(crate) fn emit_faces(
             let mut sense = native_sense;
             if by_index
                 .get(&surface)
-                .is_some_and(|surf| surf.head == "spline" && record_reversed(surf))
+                .is_some_and(|surf| surf.head() == "spline" && record_reversed(surf))
                 ^ inward_normal_surfaces.contains(&surface)
             {
                 sense = match sense {
@@ -4027,7 +4027,7 @@ pub(crate) fn emit_containers(
     let attribute_name = |entity: &Record| attribute_chain_name(entity, by_index);
     for r in records {
         let i = r.index as i64;
-        match r.head.as_str() {
+        match r.head() {
             "shell" => {
                 let Some(owner) = r.ref_at(7) else { continue };
                 let faces = shell_faces(r, by_index, kept_faces, format);
@@ -4189,7 +4189,7 @@ pub(crate) fn emit_attributes(
     let mut attribute_targets = HashMap::new();
     for record in records {
         let index = record.index as i64;
-        let target = match record.head.as_str() {
+        let target = match record.head() {
             "body"
                 if out
                     .bodies
@@ -4311,7 +4311,7 @@ pub(crate) fn count_other_records(
     // Count remaining record kinds we neither emitted nor preserved.
     let kept_transforms: HashSet<i64> = records
         .iter()
-        .filter(|record| record.head == "body")
+        .filter(|record| record.head() == "body")
         .filter_map(|record| record.ref_at(5))
         .collect();
     let pcurve_intcurves: HashSet<i64> = records
@@ -4329,7 +4329,7 @@ pub(crate) fn count_other_records(
             || kept_transforms.contains(&i)
             || emitted_attributes.contains(&i)
             || pcurve_intcurves.contains(&i);
-        if !is_known_record_head(&r.head)
+        if !is_known_record_head(r.head())
             && !is_asm_stream_delimiter(&r.name)
             && !undecoded_carriers.contains(&i)
             && !transferred
@@ -4397,7 +4397,7 @@ pub(crate) fn emit_annotation_records(
         let entity_id = id(format, record.index as i64);
         if emitted_ids.contains(entity_id.as_str()) {
             let mut derived_fields = Vec::new();
-            match record.head.as_str() {
+            match record.head() {
                 "plane" => {
                     derived_fields.extend(["geometry.normal", "geometry.u_axis"]);
                 }
@@ -4427,7 +4427,7 @@ pub(crate) fn emit_annotation_records(
                     .ref_at(8)
                     .and_then(|reference| by_index.get(&reference))
                 {
-                    if curve.head == "ellipse" {
+                    if curve.head() == "ellipse" {
                         derived_fields.push("param_range");
                     }
                 }

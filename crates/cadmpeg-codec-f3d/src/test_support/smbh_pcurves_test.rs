@@ -278,7 +278,7 @@ pub(crate) fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) 
     .unwrap();
     let pcurve = records
         .iter()
-        .find(|record| record.head == "pcurve")
+        .find(|record| record.head() == "pcurve")
         .expect("generated pcurve record");
     let offsets = cadmpeg_asm::sab::payload_token_offsets(
         &bytes,
@@ -303,7 +303,7 @@ pub(crate) fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<
     .unwrap();
     let pcurve = records
         .iter()
-        .find(|record| record.head == "pcurve")
+        .find(|record| record.head() == "pcurve")
         .expect("generated pcurve record");
     let integers = cadmpeg_asm::sab::payload_token_offsets(
         &bytes,
@@ -330,7 +330,7 @@ pub(crate) fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8])
     .unwrap();
     let pcurve = records
         .iter()
-        .find(|record| record.head == "pcurve")
+        .find(|record| record.head() == "pcurve")
         .expect("generated pcurve record");
     let companion_index = pcurve.ref_at(4).expect("generated ref-form companion");
     let companion = &records[usize::try_from(companion_index).unwrap()];
@@ -355,7 +355,7 @@ pub(crate) fn with_ref_pcurve_companion_reversed(mut bytes: Vec<u8>) -> Vec<u8> 
     .unwrap();
     let pcurve = records
         .iter()
-        .find(|record| record.head == "pcurve")
+        .find(|record| record.head() == "pcurve")
         .expect("generated pcurve record");
     let companion_index = pcurve.ref_at(4).expect("generated ref-form companion");
     let companion = &records[usize::try_from(companion_index).unwrap()];

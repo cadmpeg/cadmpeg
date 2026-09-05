@@ -141,13 +141,15 @@ impl AsmEditSet {
             sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "{} record {} lacks payload field {index}",
-                    record.head, record.index
+                    record.head(),
+                    record.index
                 ))
             })?;
         if bytes.get(offset) != Some(&tag) {
             return Err(CodecError::malformed(format_args!(
                 "{} record {} payload field {index} is not tag {tag:#04x}",
-                record.head, record.index
+                record.head(),
+                record.index
             )));
         }
         Ok(offset)
@@ -178,13 +180,15 @@ impl AsmEditSet {
             sab::payload_token_offset(bytes, record, self.ref_width, index).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "{} record {} lacks payload field {index}",
-                    record.head, record.index
+                    record.head(),
+                    record.index
                 ))
             })?;
         if !matches!(bytes.get(offset), Some(0x0a | 0x0b)) {
             return Err(CodecError::malformed(format_args!(
                 "{} record {} payload field {index} is not a sense token",
-                record.head, record.index
+                record.head(),
+                record.index
             )));
         }
         bytes[offset] = match sense {
@@ -206,13 +210,15 @@ impl AsmEditSet {
             sab::payload_token_offset(bytes, record, self.ref_width, index).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "{} record {} lacks boolean field {index}",
-                    record.head, record.index
+                    record.head(),
+                    record.index
                 ))
             })?;
         Self::patch_boolean_at(bytes, offset, value).map_err(|_| {
             CodecError::malformed(format_args!(
                 "{} record {} payload field {index} is not a boolean token",
-                record.head, record.index
+                record.head(),
+                record.index
             ))
         })
     }
@@ -242,12 +248,13 @@ impl AsmEditSet {
     ) -> Result<(), CodecError> {
         let offset = self.required_payload_field(bytes, record, index, 0x07)?;
         let encoded_length = bytes.get(offset + 1).copied().ok_or_else(|| {
-            CodecError::malformed(format_args!("{} record string is truncated", record.head))
+            CodecError::malformed(format_args!("{} record string is truncated", record.head()))
         })? as usize;
         if value.len() != encoded_length || !value.is_ascii() {
             return Err(CodecError::NotImplemented(format!(
                 "{} record {} string edit must retain its encoded ASCII length",
-                record.head, record.index
+                record.head(),
+                record.index
             )));
         }
         bytes[offset + 2..offset + 2 + encoded_length].copy_from_slice(value.as_bytes());
@@ -266,7 +273,8 @@ impl AsmEditSet {
             sab::payload_token_offset(bytes, record, self.ref_width, field).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "{} record {} lacks packed truecolor field {field}",
-                    record.head, record.index
+                    record.head(),
+                    record.index
                 ))
             })?;
         match (bytes.get(offset).copied(), self.ref_width) {
@@ -282,7 +290,8 @@ impl AsmEditSet {
             _ => {
                 return Err(CodecError::malformed(format_args!(
                     "{} record {} truecolor field {field} is not an integer",
-                    record.head, record.index
+                    record.head(),
+                    record.index
                 )));
             }
         }
@@ -300,14 +309,16 @@ impl AsmEditSet {
         let Some(sab::Token::Str(current)) = record.chunk(field) else {
             return Err(CodecError::malformed(format_args!(
                 "{} record {} decimal-color field {field} is not text",
-                record.head, record.index
+                record.head(),
+                record.index
             )));
         };
         let offset =
             sab::payload_token_offset(bytes, record, self.ref_width, field).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "{} record {} lacks decimal-color field {field}",
-                    record.head, record.index
+                    record.head(),
+                    record.index
                 ))
             })?;
         let length_width = match bytes.get(offset).copied() {
@@ -317,7 +328,8 @@ impl AsmEditSet {
             _ => {
                 return Err(CodecError::malformed(format_args!(
                     "{} record {} decimal-color field {field} has an invalid text tag",
-                    record.head, record.index
+                    record.head(),
+                    record.index
                 )));
             }
         };
@@ -326,7 +338,8 @@ impl AsmEditSet {
         if value.len() > width {
             return Err(CodecError::NotImplemented(format!(
                 "{} record {} decimal-color edit exceeds its encoded text width",
-                record.head, record.index
+                record.head(),
+                record.index
             )));
         }
         let encoded = format!("{packed:0width$}");
@@ -334,7 +347,8 @@ impl AsmEditSet {
         let output = bytes.get_mut(start..start + width).ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "{} record {} decimal-color text is truncated",
-                record.head, record.index
+                record.head(),
+                record.index
             ))
         })?;
         output.copy_from_slice(encoded.as_bytes());
@@ -1719,14 +1733,14 @@ fn patch_nurbs_pcurve_record(
         )));
     };
     let ref_width = stream_width;
-    let scope = if record.head == "pcurve" {
+    let scope = if record.head() == "pcurve" {
         sab::payload_subtype_range(bytes, record, 5, ref_width, "exp_par_cur").ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "pcurve record {} has no exp_par_cur payload",
                 record.index
             ))
         })?
-    } else if record.head == "intcurve" {
+    } else if record.head() == "intcurve" {
         record.offset..record.offset.checked_add(record.len).ok_or_else(|| {
             CodecError::Malformed("NURBS pcurve record extent overflows address space".into())
         })?
@@ -1771,7 +1785,7 @@ fn patch_nurbs_pcurve_record(
         let at = scope.start + layout.periodic_value_offset;
         AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, value)?;
     }
-    if record.head == "pcurve" {
+    if record.head() == "pcurve" {
         if let Some(reversed) = edit.wrapper_reversed {
             let offset =
                 sab::payload_token_offset(bytes, record, ref_width, 4).ok_or_else(|| {

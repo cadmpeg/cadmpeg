@@ -906,7 +906,7 @@ fn analytic_carrier_decode_covers_each_shape() {
         Record {
             index: 0,
             name: head.to_string(),
-            head: head.to_string(),
+
             tokens: tokens.into(),
             offset: 0,
             len: 0,
@@ -1250,7 +1250,7 @@ fn decode_reports_faces_with_missing_surface_references() {
         .unwrap();
         let face = records
             .iter()
-            .filter(|record| record.head == "face")
+            .filter(|record| record.head() == "face")
             .nth(1)
             .expect("second generated face");
         let record = &mut smbh[face.offset..face.offset + face.len];

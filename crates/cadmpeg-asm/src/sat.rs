@@ -441,12 +441,12 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
             }
             prims.push(prim);
         }
-        let head = name.split('-').next().unwrap_or_default().to_owned();
-        let tokens = type_record(&head, &prims, len_factor);
+        let head = name.split_once('-').map_or(name.as_str(), |(head, _)| head);
+        let tokens = type_record(head, &prims, len_factor);
         records.push(Record {
             index: records.len(),
             name,
-            head,
+
             tokens: tokens.into(),
             offset: rec_start,
             len: reader.pos - rec_start,
@@ -1515,7 +1515,7 @@ mod tests {
         assert_eq!(acis.header.save_format_version, 700);
         assert!(approx(acis.header.scale, 25.4));
         // No asmheader record: the first record is `body` at index 0.
-        assert_eq!(acis.records[0].head, "body");
+        assert_eq!(acis.records[0].head(), "body");
         assert_eq!(acis.records[0].index, 0);
     }
 
@@ -1878,7 +1878,7 @@ mod tests {
         assert_eq!(stream.records.len(), 4);
         let lump = stream.records[0].ref_at(3).expect("first lump ref");
         assert_eq!(
-            stream.records[usize::try_from(lump).expect("index")].head,
+            stream.records[usize::try_from(lump).expect("index")].head(),
             "lump"
         );
         let owner = stream.records[2].ref_at(5).expect("lump owner");

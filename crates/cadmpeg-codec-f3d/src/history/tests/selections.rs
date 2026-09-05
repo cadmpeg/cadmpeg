@@ -967,7 +967,7 @@ fn materialized_record_table_normalizes_revision_references() {
         .map(|(index, name)| cadmpeg_asm::sab::Record {
             index,
             name: name.into(),
-            head: name.into(),
+
             tokens: Vec::new().into(),
             offset: 0,
             len: 0,
@@ -1061,7 +1061,7 @@ fn qualified_history_marker_remains_an_archived_record() {
         .map(|(index, name)| cadmpeg_asm::sab::Record {
             index,
             name: name.into(),
-            head: name.into(),
+
             tokens: Vec::new().into(),
             offset: 0,
             len: 0,
