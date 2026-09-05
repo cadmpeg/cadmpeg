@@ -2288,7 +2288,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 // The ordered reference table is in record-index order, so the
                 // check is that every role names a distinct table entry and that
                 // the entries no role claims are exactly the width owners.
-                let edge_count = operation.edge_wrapper_record_indices.len();
+                let edge_count = operation.edges.len();
                 let width_owner_count = operation.width_distance_owner_record_indices().len();
                 let width_source_valid = match operation.width_parameter_source {
                     records::DesignEdgeFlangeWidthParameterSource::EdgeWidth => true,
@@ -2304,11 +2304,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .collect::<Vec<_>>();
                 let width_owners = operation.width_distance_owner_record_indices();
                 let claimed = operation
-                    .edge_wrapper_record_indices
+                    .edges
                     .iter()
-                    .chain(&operation.edge_group_record_indices)
-                    .chain(&operation.edge_operand_record_indices)
-                    .chain(&operation.aggregate_operand_record_indices)
+                    .flat_map(|edge| [
+                        &edge.wrapper_record_index,
+                        &edge.group_record_index,
+                        &edge.operand_record_index,
+                        &edge.aggregate_operand_record_index,
+                    ])
                     .chain(&width_owners)
                     .chain(&operation.auxiliary_reference_record_indices)
                     .chain([
@@ -2335,9 +2338,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 }
                 edge_count > 0
                     && width_source_valid
-                    && operation.edge_group_record_indices.len() == edge_count
-                    && operation.edge_operand_record_indices.len() == edge_count
-                    && operation.aggregate_operand_record_indices.len() == edge_count
                     && match operation.edge_width_mode() {
                         records::DesignEdgeWidthMode::FullEdge => width_owner_count == 0,
                         records::DesignEdgeWidthMode::Symmetric => width_owner_count == 1,
@@ -2369,20 +2369,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && claimed
                         .iter()
                         .all(|index| scope.reference_members.contains(index))
-                    && operation
-                        .edge_group_record_indices
-                        .iter()
-                        .zip(&operation.edge_operand_record_indices)
-                        .all(|(group, operand)| *operand == group.saturating_add(3))
-                    && if edge_count == 1 {
-                        operation.aggregate_operand_record_indices
-                            == [operation.aggregate_group_record_index.saturating_add(3)]
-                    } else {
-                        // Multi-edge aggregate members are named by the ordered
-                        // reference table. Their group-relative spacing is not
-                        // fixed across the settled legacy layouts.
-                        operation.aggregate_operand_record_indices.len() == edge_count
-                    }
+                    && operation.edges.iter().all(|edge| {
+                        edge.operand_record_index == edge.group_record_index.saturating_add(3)
+                    })
+                    && (edge_count != 1 || operation.edges[0].aggregate_operand_record_index
+                        == operation.aggregate_group_record_index.saturating_add(3))
                     && operation.bend_radius.is_finite()
                     && operation.bend_radius > 0.0
                     && operation.bend_radius_offset > scope.byte_offset

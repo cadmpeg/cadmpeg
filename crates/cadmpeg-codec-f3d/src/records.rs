@@ -7564,6 +7564,35 @@ pub enum DesignEdgeFlangeHeightExtent {
     },
 }
 
+/// One selected flange edge and its aggregate operand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DesignEdgeFlangeEdge {
+    pub wrapper_record_index: u32,
+    pub group_record_index: u32,
+    pub operand_record_index: u32,
+    pub aggregate_operand_record_index: u32,
+}
+
+impl DesignEdgeFlangeEdge {
+    pub(crate) fn from_columns(
+        wrappers: Vec<u32>,
+        groups: Vec<u32>,
+        operands: Vec<u32>,
+        aggregate_operands: Vec<u32>,
+    ) -> Result<Vec<Self>, String> {
+        if groups.len() != wrappers.len()
+            || operands.len() != wrappers.len()
+            || aggregate_operands.len() != wrappers.len()
+        {
+            return Err("edge_wrapper_record_indices, edge_group_record_indices, edge_operand_record_indices, and aggregate_operand_record_indices must have equal lengths".into());
+        }
+        Ok(wrappers.into_iter().zip(groups).zip(operands).zip(aggregate_operands)
+            .map(|(((wrapper_record_index, group_record_index), operand_record_index), aggregate_operand_record_index)| Self {
+                wrapper_record_index, group_record_index, operand_record_index, aggregate_operand_record_index,
+            }).collect())
+    }
+}
+
 /// Fixed construction carried by a sheet-metal `EdgeFlange` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7573,16 +7602,10 @@ pub enum DesignEdgeFlangeHeightExtent {
     into = "DesignEdgeFlangeOperationSerde"
 )]
 pub struct DesignEdgeFlangeOperation {
-    /// Per-edge selection-wrapper records in source order.
-    pub edge_wrapper_record_indices: Vec<u32>,
-    /// Per-edge role-`0x08` operand-group records parallel to the wrappers.
-    pub edge_group_record_indices: Vec<u32>,
-    /// Per-edge recipe-backed operand records parallel to the wrappers.
-    pub edge_operand_record_indices: Vec<u32>,
+    /// Selected edges in source order, including their aggregate operands.
+    pub edges: Vec<DesignEdgeFlangeEdge>,
     /// Role-`0x43` aggregate operand-group record.
     pub aggregate_group_record_index: u32,
-    /// Recipe-backed aggregate operands in source order.
-    pub aggregate_operand_record_indices: Vec<u32>,
     /// Height parameter-owner record.
     pub height_owner_record_index: u32,
     /// Height extent law and, for a to-object form, its target records.
@@ -7668,11 +7691,13 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
             wire.width_distance_owner_record_indices_by_edge,
         )?;
         Ok(Self {
-            edge_wrapper_record_indices: wire.edge_wrapper_record_indices,
-            edge_group_record_indices: wire.edge_group_record_indices,
-            edge_operand_record_indices: wire.edge_operand_record_indices,
+            edges: DesignEdgeFlangeEdge::from_columns(
+                wire.edge_wrapper_record_indices,
+                wire.edge_group_record_indices,
+                wire.edge_operand_record_indices,
+                wire.aggregate_operand_record_indices,
+            )?,
             aggregate_group_record_index: wire.aggregate_group_record_index,
-            aggregate_operand_record_indices: wire.aggregate_operand_record_indices,
             height_owner_record_index: wire.height_owner_record_index,
             height_extent: wire.height_extent,
             angle_owner_record_index: wire.angle_owner_record_index,
@@ -7694,11 +7719,11 @@ impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
         let width_distance_owner_record_indices = operation.width.owner_indices();
         let width_distance_owner_record_indices_by_edge = operation.width.owner_indices_by_edge();
         Self {
-            edge_wrapper_record_indices: operation.edge_wrapper_record_indices,
-            edge_group_record_indices: operation.edge_group_record_indices,
-            edge_operand_record_indices: operation.edge_operand_record_indices,
+            edge_wrapper_record_indices: operation.edges.iter().map(|edge| edge.wrapper_record_index).collect(),
+            edge_group_record_indices: operation.edges.iter().map(|edge| edge.group_record_index).collect(),
+            edge_operand_record_indices: operation.edges.iter().map(|edge| edge.operand_record_index).collect(),
             aggregate_group_record_index: operation.aggregate_group_record_index,
-            aggregate_operand_record_indices: operation.aggregate_operand_record_indices,
+            aggregate_operand_record_indices: operation.edges.iter().map(|edge| edge.aggregate_operand_record_index).collect(),
             height_owner_record_index: operation.height_owner_record_index,
             height_extent: operation.height_extent,
             angle_owner_record_index: operation.angle_owner_record_index,

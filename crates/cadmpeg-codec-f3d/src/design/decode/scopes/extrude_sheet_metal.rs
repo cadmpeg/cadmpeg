@@ -2618,11 +2618,13 @@ fn legacy_edge_flange_operation_at(
             Vec::new()
         };
     Some(DesignEdgeFlangeOperation {
-        edge_wrapper_record_indices,
-        edge_group_record_indices,
-        edge_operand_record_indices,
+        edges: crate::records::DesignEdgeFlangeEdge::from_columns(
+            edge_wrapper_record_indices,
+            edge_group_record_indices,
+            edge_operand_record_indices,
+            aggregate_operand_record_indices,
+        ).ok()?,
         aggregate_group_record_index,
-        aggregate_operand_record_indices,
         height_owner_record_index,
         height_extent: DesignEdgeFlangeHeightExtent::Distance,
         angle_owner_record_index,
@@ -2683,10 +2685,10 @@ fn edge_flange_operation_at(
     };
 
     let mut cursor = common.checked_add(edge_flange::EDGE_WRAPPER_REFERENCE)?;
-    let edge_wrapper_record_indices = vec![claim(
+    let edge_wrapper_record_index = claim(
         marked_record_reference(bytes, cursor)?,
         &mut unclaimed,
-    )?];
+    )?;
     cursor = common.checked_add(edge_flange::SETTINGS_REFERENCE)?;
     let settings_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     cursor = common.checked_add(edge_flange::HEIGHT_DATUM)?;
@@ -2714,13 +2716,12 @@ fn edge_flange_operation_at(
     let first_edge_group = marked_record_reference(bytes, aggregate_slot.checked_add(27)?)?;
 
     // A group's recipe-backed operand is the record three after the group.
-    let aggregate_operand_record_indices = vec![claim(
+    let aggregate_operand_record_index = claim(
         aggregate_group_record_index.checked_add(3)?,
         &mut unclaimed,
-    )?];
-    let edge_group_record_indices = vec![claim(first_edge_group, &mut unclaimed)?];
-    let edge_operand_record_indices =
-        vec![claim(first_edge_group.checked_add(3)?, &mut unclaimed)?];
+    )?;
+    let edge_group_record_index = claim(first_edge_group, &mut unclaimed)?;
+    let edge_operand_record_index = claim(first_edge_group.checked_add(3)?, &mut unclaimed)?;
 
     if unclaimed.len() > MAX_EDGE_WIDTH_DISTANCE_OWNERS {
         return None;
@@ -2736,11 +2737,13 @@ fn edge_flange_operation_at(
         return None;
     }
     Some(DesignEdgeFlangeOperation {
-        edge_wrapper_record_indices,
-        edge_group_record_indices,
-        edge_operand_record_indices,
+        edges: vec![crate::records::DesignEdgeFlangeEdge {
+            wrapper_record_index: edge_wrapper_record_index,
+            group_record_index: edge_group_record_index,
+            operand_record_index: edge_operand_record_index,
+            aggregate_operand_record_index,
+        }],
         aggregate_group_record_index,
-        aggregate_operand_record_indices,
         height_owner_record_index,
         height_extent: DesignEdgeFlangeHeightExtent::Distance,
         angle_owner_record_index,
@@ -2790,10 +2793,10 @@ fn edge_flange_to_object_operation_at(
         Some(index)
     };
     let mut cursor = common.checked_add(edge_flange::EDGE_WRAPPER_REFERENCE)?;
-    let edge_wrapper_record_indices = vec![claim(
+    let edge_wrapper_record_index = claim(
         marked_record_reference(bytes, cursor)?,
         &mut unclaimed,
-    )?];
+    )?;
     cursor = common.checked_add(edge_flange::SETTINGS_REFERENCE)?;
     let settings_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     cursor = common.checked_add(edge_flange::HEIGHT_DATUM)?;
@@ -2883,15 +2886,14 @@ fn edge_flange_to_object_operation_at(
     )?;
     let target_operand_record_index =
         claim(target_group_record_index.checked_add(3)?, &mut unclaimed)?;
-    let aggregate_operand_record_indices = vec![claim(
+    let aggregate_operand_record_index = claim(
         aggregate_group_record_index.checked_add(3)?,
         &mut unclaimed,
-    )?];
-    let edge_group_record_indices = vec![edge_group_record_index];
-    let edge_operand_record_indices = vec![claim(
+    )?;
+    let edge_operand_record_index = claim(
         edge_group_record_index.checked_add(3)?,
         &mut unclaimed,
-    )?];
+    )?;
     let [offset_owner_record_index] = unclaimed.as_slice() else {
         return None;
     };
@@ -2900,11 +2902,13 @@ fn edge_flange_to_object_operation_at(
         return None;
     }
     Some(DesignEdgeFlangeOperation {
-        edge_wrapper_record_indices,
-        edge_group_record_indices,
-        edge_operand_record_indices,
+        edges: vec![crate::records::DesignEdgeFlangeEdge {
+            wrapper_record_index: edge_wrapper_record_index,
+            group_record_index: edge_group_record_index,
+            operand_record_index: edge_operand_record_index,
+            aggregate_operand_record_index,
+        }],
         aggregate_group_record_index,
-        aggregate_operand_record_indices,
         height_owner_record_index,
         height_extent: DesignEdgeFlangeHeightExtent::ToObject {
             target_group_record_index,

@@ -1035,3 +1035,45 @@ fn rectangular_pattern_rows_preserve_wire_and_reject_parallel_mismatch() {
     });
     assert!(serde_json::from_value::<super::DesignRectangularPatternInstances>(empty_component).unwrap_err().to_string().contains("seed"));
 }
+
+#[test]
+fn edge_flange_rows_preserve_wire_and_reject_parallel_mismatch() {
+    for count in [0, 1, 3] {
+        let wire = super::DesignEdgeFlangeOperationSerde {
+            edge_wrapper_record_indices: (0..count).map(|index| 100 + index).collect(),
+            edge_group_record_indices: (0..count).map(|index| 200 + index).collect(),
+            edge_operand_record_indices: (0..count).map(|index| 203 + index).collect(),
+            aggregate_group_record_index: 300,
+            aggregate_operand_record_indices: (0..count).map(|index| 303 + index).collect(),
+            height_owner_record_index: 400,
+            height_extent: super::DesignEdgeFlangeHeightExtent::Distance,
+            angle_owner_record_index: 401,
+            width_mode: Some(super::DesignEdgeWidthMode::FullEdge),
+            width_distance_owner_record_indices: Vec::new(),
+            width_distance_owner_record_indices_by_edge: Vec::new(),
+            auxiliary_reference_record_indices: Vec::new(),
+            width_parameter_source: super::DesignEdgeFlangeWidthParameterSource::EdgeWidth,
+            settings_record_index: 402,
+            bend_radius: 0.25,
+            bend_radius_offset: 500,
+            reference_side_code: 4,
+            height_datum: super::DesignSheetMetalHeightDatum::InnerFaces,
+            bend_position: super::DesignBendPosition::Adjacent,
+        };
+        let expected = serde_json::to_string(&wire).unwrap();
+        let native: super::DesignEdgeFlangeOperation = serde_json::from_str(&expected).unwrap();
+        assert_eq!(native.edges.len(), count as usize);
+        assert_eq!(serde_json::to_string(&native).unwrap(), expected);
+        for field in [
+            "edge_wrapper_record_indices",
+            "edge_group_record_indices",
+            "edge_operand_record_indices",
+            "aggregate_operand_record_indices",
+        ] {
+            let mut invalid = serde_json::to_value(&wire).unwrap();
+            invalid[field].as_array_mut().unwrap().push(serde_json::json!(999));
+            assert!(serde_json::from_value::<super::DesignEdgeFlangeOperation>(invalid)
+                .unwrap_err().to_string().contains(field));
+        }
+    }
+}

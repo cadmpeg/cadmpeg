@@ -29,11 +29,13 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     scope.reference_members = vec![383, 385, 388, 393, 396, 399, 402, 404, 407, 411];
     if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
         *slot = Some(DesignEdgeFlangeOperation {
-            edge_wrapper_record_indices: vec![383],
-            edge_group_record_indices: vec![385],
-            edge_operand_record_indices: vec![388],
+            edges: vec![crate::records::DesignEdgeFlangeEdge {
+                wrapper_record_index: 383,
+                group_record_index: 385,
+                operand_record_index: 388,
+                aggregate_operand_record_index: 407,
+            }],
             aggregate_group_record_index: 404,
-            aggregate_operand_record_indices: vec![407],
             height_owner_record_index: 399,
             height_extent: crate::records::DesignEdgeFlangeHeightExtent::Distance,
             angle_owner_record_index: 402,
@@ -239,9 +241,12 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         .edge_flange_operation()
         .cloned()
         .expect("single-edge operation fixture");
-    multi_operation.edge_group_record_indices = vec![385, 415];
-    multi_operation.edge_operand_record_indices = vec![388, 418];
-    multi_operation.aggregate_operand_record_indices = vec![407, 420];
+    multi_operation.edges.push(crate::records::DesignEdgeFlangeEdge {
+        wrapper_record_index: multi_operation.edges[0].wrapper_record_index,
+        group_record_index: 415,
+        operand_record_index: 418,
+        aggregate_operand_record_index: 420,
+    });
     if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut multi_scope.payload {
         *slot = Some(multi_operation.clone());
     }
@@ -427,11 +432,13 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     );
     if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
         *slot = Some(DesignEdgeFlangeOperation {
-            edge_wrapper_record_indices: vec![383],
-            edge_group_record_indices: vec![385],
-            edge_operand_record_indices: vec![388],
+            edges: vec![crate::records::DesignEdgeFlangeEdge {
+                wrapper_record_index: 383,
+                group_record_index: 385,
+                operand_record_index: 388,
+                aggregate_operand_record_index: 407,
+            }],
             aggregate_group_record_index: 404,
-            aggregate_operand_record_indices: vec![407],
             height_owner_record_index: 399,
             height_extent: DesignEdgeFlangeHeightExtent::ToObject {
                 target_group_record_index: 421,
@@ -626,11 +633,13 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
     scope.reference_members = vec![318, 320, 323, 328, 331, 334, 336, 339, 343];
     if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
         *slot = Some(DesignEdgeFlangeOperation {
-            edge_wrapper_record_indices: vec![318],
-            edge_group_record_indices: vec![320],
-            edge_operand_record_indices: vec![323],
+            edges: vec![crate::records::DesignEdgeFlangeEdge {
+                wrapper_record_index: 318,
+                group_record_index: 320,
+                operand_record_index: 323,
+                aggregate_operand_record_index: 339,
+            }],
             aggregate_group_record_index: 336,
-            aggregate_operand_record_indices: vec![339],
             height_owner_record_index: 331,
             height_extent: crate::records::DesignEdgeFlangeHeightExtent::Distance,
             angle_owner_record_index: 334,
