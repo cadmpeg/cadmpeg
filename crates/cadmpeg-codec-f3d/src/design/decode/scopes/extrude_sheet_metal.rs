@@ -307,7 +307,7 @@ fn exact_compact_shifted_extrude_prologue(
         _ => return None,
     };
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
         operation,
         operation_offset: operation_offset as u64,
         direction_face_extend_values,
@@ -396,7 +396,7 @@ fn exact_compact_shifted_extrude_mixed_prologue(
         _ => return None,
     };
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
         direction_face_extend_values,
@@ -501,7 +501,7 @@ fn exact_class_296_one_sided_to_face_extrude_prologue(
         _ => return None,
     };
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
         direction_face_extend_values,
@@ -606,7 +606,7 @@ fn exact_class_296_symmetric_distance_extrude_prologue(
         _ => return None,
     };
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
         direction_face_extend_values,
@@ -759,7 +759,7 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
         return None;
     }
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
         direction_face_extend_values,
@@ -948,7 +948,7 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
         return None;
     }
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
         direction_face_extend_values,
@@ -1096,9 +1096,8 @@ fn exact_current_extrude_prologue(
                 record_index,
                 record_index_offset: reference_record_index_offset as u64,
                 trailing_zero_count,
-                operation_prefix_marker: operation_marker_offset
-                    .and_then(|offset| u64::try_from(offset).ok())
-                    .map(|offset| crate::records::Located { value: 1, offset }),
+                operation_prefix_marker_offset: operation_marker_offset
+                    .and_then(|offset| u64::try_from(offset).ok()),
             },
         ))
     } else {
@@ -1671,7 +1670,7 @@ fn exact_legacy_shifted_extrude_prologue(
         return None;
     }
     let marker_offset = start.checked_add(shifted_extrude::OPERATION)?;
-    let (operation_prefix_marker, field_shift) =
+    let (operation_prefix_marker_offset, field_shift) =
         if matches!(View::u32_le_at(bytes, marker_offset), Some(1..=4)) {
             (None, 0)
         } else if bytes.get(marker_offset) == Some(&1)
@@ -1680,7 +1679,7 @@ fn exact_legacy_shifted_extrude_prologue(
                 Some(1..=4)
             )
         {
-            (Some(crate::records::Located { value: 1, offset: marker_offset as u64 }), 1)
+            (Some(marker_offset as u64), 1)
         } else {
             return None;
         };
@@ -1833,7 +1832,7 @@ fn exact_legacy_shifted_extrude_prologue(
         _ => return None,
     };
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker,
+        operation_prefix_marker_offset,
         operation,
         operation_offset: operation_offset as u64,
         direction_face_extend_values,
@@ -1981,7 +1980,7 @@ pub(crate) fn exact_class_338_two_sided_distance_extrude_prologue(
         return None;
     }
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
         direction_face_extend_values,

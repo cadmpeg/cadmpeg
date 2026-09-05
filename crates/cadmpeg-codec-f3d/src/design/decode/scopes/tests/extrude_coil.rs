@@ -212,7 +212,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                 record_index: 77,
                 record_index_offset: 26,
                 trailing_zero_count: 8,
-                operation_prefix_marker: None,
+                operation_prefix_marker_offset: None,
             }),
             operation: DesignExtrudeOperation::Intersect,
             operation_offset: 38,
@@ -294,8 +294,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     else {
         panic!("marked indexed-reference Extrude prologue");
     };
-    assert_eq!(reference.operation_prefix_marker.map(|marker| marker.value), Some(1));
-    assert_eq!(reference.operation_prefix_marker.map(|marker| marker.offset), Some(37));
+    assert_eq!(reference.operation_prefix_marker_offset, Some(37));
     assert_eq!(operation_offset, 38);
 
     let to_face = scope(
@@ -445,7 +444,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert!(matches!(
         shifted_compact_symmetric.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: None,
+            operation_prefix_marker_offset: None,
             side_extent_discriminator_offsets: [116, 130],
             extent: Some(DesignExtrudeExtent::SymmetricDistance),
             ..
@@ -467,7 +466,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert!(matches!(
         shifted_marked_symmetric.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: Some(crate::records::Located { value: 1, offset: 27 }),
+            operation_prefix_marker_offset: Some(27),
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 28,
             direction_face_extend_values: [3, 2],
@@ -496,7 +495,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert!(matches!(
         shifted_offset_profile.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: None,
+            operation_prefix_marker_offset: None,
             operation: DesignExtrudeOperation::Cut,
             operation_offset: 27,
             side_extent_discriminator_offsets: [116, 130],
@@ -848,7 +847,7 @@ fn compact_shifted_extrude_scope_decodes_one_sided_distance() {
     assert_eq!(
         scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: None,
+            operation_prefix_marker_offset: None,
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: OPERATION_OFFSET as u64,
             direction_face_extend_values: [1, 2],
@@ -924,7 +923,7 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
     assert_eq!(
         scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: None,
+            operation_prefix_marker_offset: None,
             operation: DesignExtrudeOperation::Join,
             operation_offset: OPERATION_OFFSET as u64,
             direction_face_extend_values: [2, 0],

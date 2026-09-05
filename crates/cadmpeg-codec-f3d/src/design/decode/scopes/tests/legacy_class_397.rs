@@ -66,7 +66,7 @@ fn legacy_class_397_symmetric_extrude_scope_decodes_473_byte_frame() {
     assert_eq!(
         prologue,
         DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: None,
+            operation_prefix_marker_offset: None,
             operation: DesignExtrudeOperation::Cut,
             operation_offset: 27,
             direction_face_extend_values: [3, 2],

@@ -69,7 +69,7 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
         assert_eq!(
             scope.extrude_prologue(),
             Some(DesignExtrudePrologue::LegacyShifted {
-                operation_prefix_marker: None,
+                operation_prefix_marker_offset: None,
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: layout::OPERATION as u64,
                 direction_face_extend_values: [1, 2],
@@ -172,7 +172,7 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
     assert_eq!(
         scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: None,
+            operation_prefix_marker_offset: None,
             operation: DesignExtrudeOperation::Cut,
             operation_offset: layout::OPERATION as u64,
             direction_face_extend_values: [3, 2],
@@ -290,7 +290,7 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
     assert_eq!(
         scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: None,
+            operation_prefix_marker_offset: None,
             operation: DesignExtrudeOperation::Join,
             operation_offset: layout::OPERATION as u64,
             direction_face_extend_values: [2, 2],
@@ -447,7 +447,7 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
         assert_eq!(
             scope.extrude_prologue(),
             Some(DesignExtrudePrologue::LegacyShifted {
-                operation_prefix_marker: None,
+                operation_prefix_marker_offset: None,
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: scalar_54::OPERATION as u64,
                 direction_face_extend_values: [1, face_extend],
