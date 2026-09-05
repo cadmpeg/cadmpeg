@@ -2032,10 +2032,7 @@ fn scope_properties(
     for (ordinal, record_index) in scope.reference_members.iter().enumerate() {
         properties.insert(format!("reference:{ordinal}"), record_index.to_string());
     }
-    if let Some(profile) = scope
-        .extrude_profile()
-        .or(scope.base_flange_profile.as_ref())
-    {
+    if let Some(profile) = scope.extrude_profile().or(scope.base_flange_profile()) {
         if let Some(placement) = placements.iter().find(|placement| {
             native_stream(&placement.id) == Some(native_scope)
                 && placement.entity_id == profile.entity_id
@@ -3378,7 +3375,7 @@ fn project_base_flange(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, Length, ProfileRef, SheetMetalThicknessSide};
 
-    let operation = scope.base_flange_operation.as_ref()?;
+    let operation = scope.base_flange_operation()?;
     let matching = groups
         .iter()
         .filter(|group| {
@@ -3396,7 +3393,7 @@ fn project_base_flange(
     {
         return None;
     }
-    let profile = scope.base_flange_profile.as_ref()?;
+    let profile = scope.base_flange_profile()?;
     if profile.scope_reference_ordinal != 1
         || profile.record_index != operation.profile_record_index
     {

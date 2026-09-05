@@ -2294,12 +2294,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .is_none_or(|profile| is_sweep && valid_sketch_profile(profile));
         let is_base_flange = scope.kind == "BaseFlange";
         let base_flange_profile_link = scope
-            .base_flange_profile
-            .as_ref()
+            .base_flange_profile()
             .map_or(!is_base_flange, |profile| {
                 is_base_flange && valid_sketch_profile(profile)
             });
-        let base_flange_link = match (&scope.base_flange_operation, scope.kind.as_str()) {
+        let base_flange_link = match (scope.base_flange_operation(), scope.kind.as_str()) {
             (None, kind) => kind != "BaseFlange",
             (Some(_), kind) if kind != "BaseFlange" => false,
             (Some(operation), _) => {
@@ -2310,7 +2309,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         operation.thickness_record_index,
                         operation.settings_record_index,
                     ]
-                    && scope.base_flange_profile.as_ref().is_some_and(|profile| {
+                    && scope.base_flange_profile().is_some_and(|profile| {
                         profile.record_index == operation.profile_record_index
                             && profile.scope_reference_ordinal == 1
                     })
@@ -5433,7 +5432,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                             && scope
-                                .base_flange_profile
+                                .base_flange_profile()
                                 .as_ref()
                                 .is_some_and(|profile| group.members == [profile.record_index])
                     }
@@ -6961,7 +6960,7 @@ fn validate_operand_group_carriers<'a>(
                     scope
                         .extrude_profile()
                         .or(scope.sweep_profile.as_ref())
-                        .or(scope.base_flange_profile.as_ref())
+                        .or(scope.base_flange_profile())
                         .is_some_and(|profile| group.members == [profile.record_index])
                 });
         let has_exact_group_members = !group.members.is_empty()

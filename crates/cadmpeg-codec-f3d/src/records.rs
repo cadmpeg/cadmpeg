@@ -3007,9 +3007,10 @@ pub struct DesignParameterScope {
     /// Exact mode, parameter, and selection records carried by a `SurfaceRuled` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ruled_surface_operation: Option<DesignRuledSurfaceOperation>,
-    /// Exact profile and thickness records carried by a `BaseFlange` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_flange_operation: Option<DesignBaseFlangeOperation>,
+    /// BaseFlange operation and sketch profile.
+    #[serde(flatten)]
+    #[serde(default, skip_serializing_if = "base_flange_scope_is_absent")]
+    pub base_flange: Option<DesignBaseFlangeScope>,
     /// Per-boundary-component settings carried by a `SurfacePatch` scope, in
     /// scope reference order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -3092,9 +3093,7 @@ pub struct DesignParameterScope {
     /// Sketch-profile operand carried by a `Sweep` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sweep_profile: Option<DesignSketchProfileOperand>,
-    /// Sketch-profile operand carried by a `BaseFlange` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_flange_profile: Option<DesignSketchProfileOperand>,
+
     /// Sketch-module entity bound to this sketch scope.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3103,6 +3102,15 @@ pub struct DesignParameterScope {
     pub paired_class_tag: String,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
+}
+
+fn base_flange_scope_is_absent(base_flange: &Option<DesignBaseFlangeScope>) -> bool {
+    match base_flange {
+        None => true,
+        Some(base_flange) => {
+            base_flange.base_flange_operation.is_none() && base_flange.base_flange_profile.is_none()
+        }
+    }
 }
 
 fn extrude_scope_is_absent(extrude: &Option<DesignExtrudeScope>) -> bool {
@@ -3114,6 +3122,18 @@ fn extrude_scope_is_absent(extrude: &Option<DesignExtrudeScope>) -> bool {
                 && extrude.extrude_profile.is_none()
         }
     }
+}
+
+/// BaseFlange-specific records carried by a BaseFlange parameter scope.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignBaseFlangeScope {
+    /// Exact profile and thickness records carried by a `BaseFlange` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_flange_operation: Option<DesignBaseFlangeOperation>,
+    /// Sketch-profile operand carried by a `BaseFlange` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_flange_profile: Option<DesignSketchProfileOperand>,
 }
 
 /// Extrude-specific records carried by an Extrude parameter scope.
@@ -3619,6 +3639,23 @@ pub enum DesignEdgeFlangeWidthParameterSource {
 
 impl DesignParameterScope {
     /// The WorkPlane frame matrix, when the scope carries one.
+    pub(crate) fn ensure_base_flange(&mut self) -> &mut DesignBaseFlangeScope {
+        self.base_flange
+            .get_or_insert_with(DesignBaseFlangeScope::default)
+    }
+
+    pub(crate) fn base_flange_operation(&self) -> Option<&DesignBaseFlangeOperation> {
+        self.base_flange
+            .as_ref()
+            .and_then(|base_flange| base_flange.base_flange_operation.as_ref())
+    }
+
+    pub(crate) fn base_flange_profile(&self) -> Option<&DesignSketchProfileOperand> {
+        self.base_flange
+            .as_ref()
+            .and_then(|base_flange| base_flange.base_flange_profile.as_ref())
+    }
+
     pub(crate) fn ensure_extrude(&mut self) -> &mut DesignExtrudeScope {
         self.extrude.get_or_insert_with(DesignExtrudeScope::default)
     }
@@ -3780,7 +3817,7 @@ impl DesignParameterScope {
             surface_extend_operation: None,
             surface_offset_operation: None,
             ruled_surface_operation: None,
-            base_flange_operation: None,
+            base_flange: None,
             surface_patch_boundaries: Vec::new(),
             edge_flange_operation: None,
             hem_operation: None,
@@ -3806,7 +3843,7 @@ impl DesignParameterScope {
             unclosed_construction_operand_groups: Vec::new(),
             hole_construction: None,
             sweep_profile: None,
-            base_flange_profile: None,
+
             sketch_entity: None,
             paired_class_tag: String::new(),
             paired_byte_offset: 0,

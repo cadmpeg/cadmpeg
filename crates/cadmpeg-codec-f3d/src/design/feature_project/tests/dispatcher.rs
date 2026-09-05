@@ -421,7 +421,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
 
     let mut base_flange =
         DesignParameterScope::empty(&format!("{stream}:scope#base-flange"), "BaseFlange", 10);
-    base_flange.base_flange_operation = Some(DesignBaseFlangeOperation {
+    base_flange.ensure_base_flange().base_flange_operation = Some(DesignBaseFlangeOperation {
         thickness: 0.2,
         thickness_offset: 0,
         profile_group_record_index: 100,
@@ -429,7 +429,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         thickness_record_index: 102,
         settings_record_index: 103,
     });
-    base_flange.base_flange_profile = Some(DesignSketchProfileOperand {
+    base_flange.ensure_base_flange().base_flange_profile = Some(DesignSketchProfileOperand {
         scope_reference_ordinal: 1,
         record_index: 101,
         byte_offset: 0,
