@@ -188,7 +188,7 @@ fn relation_leading_block_selects_member_run_and_mask_width() {
     );
     let modern_parsed = parse_classed_sketch_relation(&modern, SketchRelationClass::Plain).unwrap();
     assert_eq!(modern_parsed.state, 0x0020_0000_0000);
-    assert_eq!(modern_parsed.members, [300]);
+    assert_eq!(modern_parsed.members.iter().map(|row| row.reference.value).collect::<Vec<_>>(), [300]);
 
     let legacy = legacy_relation_record(201, 0x8000_0000, &[300]);
     assert_eq!(
@@ -198,7 +198,7 @@ fn relation_leading_block_selects_member_run_and_mask_width() {
     let legacy_parsed = parse_classed_sketch_relation(&legacy, SketchRelationClass::Plain).unwrap();
     assert_eq!(legacy_parsed.state, 0x8000_0000);
     assert!(legacy_parsed.members.is_empty());
-    assert_eq!(legacy_parsed.return_members, [300]);
+    assert_eq!(legacy_parsed.return_members.iter().map(|row| row.value).collect::<Vec<_>>(), [300]);
 
     let mut invalid = legacy;
     invalid[19] = 2;
@@ -213,8 +213,8 @@ fn plain_relation_reads_parent_node_without_class_members() {
         .expect("the classed parse reads the record");
     assert_eq!(parsed.owner_reference, 201);
     assert_eq!(parsed.state, 0x1);
-    assert_eq!(parsed.members, [300, 301]);
-    assert_eq!(parsed.return_members, [300, 301]);
+    assert_eq!(parsed.members.iter().map(|row| row.reference.value).collect::<Vec<_>>(), [300, 301]);
+    assert_eq!(parsed.return_members.iter().map(|row| row.value).collect::<Vec<_>>(), [300, 301]);
     assert!(parsed.auxiliary_references.is_empty());
     assert_eq!(parsed.parsed_end, record.len());
 }
@@ -256,7 +256,7 @@ fn circular_pattern_relation_reads_its_parameters_and_tables() {
     let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
         .expect("the classed parse reads the record");
     assert_eq!(parsed.owner_reference, 201);
-    assert_eq!(parsed.auxiliary_references, [336, 333]);
+    assert_eq!(parsed.auxiliary_references.iter().map(|row| row.value).collect::<Vec<_>>(), [336, 333]);
     assert_eq!(parsed.parsed_end, record.len());
     assert_eq!(
         decode_pattern_definition(&record, &parsed),
@@ -313,7 +313,7 @@ fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clause
     let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
         .expect("the classed parse reads the record");
     assert_eq!(parsed.owner_reference, 201);
-    assert_eq!(parsed.auxiliary_references, [900, 464, 470, 467, 473]);
+    assert_eq!(parsed.auxiliary_references.iter().map(|row| row.value).collect::<Vec<_>>(), [900, 464, 470, 467, 473]);
     assert_eq!(parsed.rectangular_reference_count, Some(1));
     assert_eq!(parsed.rectangular_clause_ordinal, Some(1));
     assert_eq!(parsed.parsed_end, record.len());
@@ -350,7 +350,7 @@ fn rectangular_pattern_relation_reads_clauses_after_an_empty_reference_run() {
     let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
     let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
         .expect("the classed parse reads the record");
-    assert_eq!(parsed.auxiliary_references, [464, 470, 467, 473]);
+    assert_eq!(parsed.auxiliary_references.iter().map(|row| row.value).collect::<Vec<_>>(), [464, 470, 467, 473]);
     assert_eq!(parsed.rectangular_reference_count, Some(0));
     assert_eq!(parsed.rectangular_clause_ordinal, Some(0));
     assert_eq!(parsed.parsed_end, record.len());
@@ -375,7 +375,7 @@ fn rectangular_pattern_retains_nonempty_count_with_an_absent_reference() {
     let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
         .expect("the classed parse reads the absent run member");
 
-    assert_eq!(parsed.auxiliary_references, [464, 470, 467, 473]);
+    assert_eq!(parsed.auxiliary_references.iter().map(|row| row.value).collect::<Vec<_>>(), [464, 470, 467, 473]);
     assert_eq!(parsed.rectangular_reference_count, Some(1));
     assert_eq!(parsed.rectangular_clause_ordinal, Some(0));
     assert!(matches!(
@@ -413,7 +413,7 @@ fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
     let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
         .expect("the classed parse retains the incomplete relation");
 
-    assert_eq!(parsed.auxiliary_references, [900, 901, 470, 467, 473]);
+    assert_eq!(parsed.auxiliary_references.iter().map(|row| row.value).collect::<Vec<_>>(), [900, 901, 470, 467, 473]);
     assert_eq!(parsed.rectangular_reference_count, Some(2));
     assert_eq!(parsed.rectangular_clause_ordinal, None);
     assert_eq!(decode_pattern_definition(&record, &parsed), None);
@@ -433,7 +433,7 @@ fn text_frame_relation_reads_its_two_references() {
     );
     let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
         .expect("the classed parse reads the record");
-    assert_eq!(parsed.auxiliary_references, [2394]);
+    assert_eq!(parsed.auxiliary_references.iter().map(|row| row.value).collect::<Vec<_>>(), [2394]);
     assert_eq!(parsed.parsed_end, record.len());
     assert_eq!(
         decode_pattern_definition(&record, &parsed),
@@ -454,7 +454,7 @@ fn text_frame_relation_reads_its_two_references() {
     );
     let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
         .expect("the classed parse reads the record");
-    assert_eq!(parsed.auxiliary_references, [2404, 2394]);
+    assert_eq!(parsed.auxiliary_references.iter().map(|row| row.value).collect::<Vec<_>>(), [2404, 2394]);
     assert_eq!(parsed.parsed_end, record.len());
 }
 
@@ -476,7 +476,7 @@ fn text_path_relation_reads_its_glyph_run_at_both_versions() {
         let parsed =
             parse_classed_sketch_relation(&record, SketchRelationClass::TextPath { leading_flag })
                 .expect("the classed parse reads the record");
-        assert_eq!(parsed.auxiliary_references, [2]);
+        assert_eq!(parsed.auxiliary_references.iter().map(|row| row.value).collect::<Vec<_>>(), [2]);
         assert_eq!(parsed.parsed_end, record.len());
         let Some(SketchPatternDefinition::TextPath {
             text_reference,

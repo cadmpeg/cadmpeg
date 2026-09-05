@@ -1253,29 +1253,17 @@ pub fn decode_sketch_relations(
             if !kind.agrees_with_state(parsed.state) {
                 continue;
             }
-            let Ok(members) = crate::records::zip_relation_members(
-                parsed.members,
-                parsed
-                    .member_offsets
-                    .into_iter()
-                    .map(|offset| offset as u32)
-                    .collect(),
-                parsed.member_relation_ordinals,
-                Vec::new(),
-            ) else {
-                continue;
-            };
-            let Ok(return_members) = crate::records::zip_return_members(
-                parsed.return_members,
-                parsed
-                    .return_member_offsets
-                    .into_iter()
-                    .map(|offset| offset as u32)
-                    .collect(),
-                Vec::new(),
-            ) else {
-                continue;
-            };
+            let members = parsed.members.into_iter().map(|member| crate::records::SketchRelationMember {
+                record_index: member.reference.value,
+                offset: member.reference.offset as u32,
+                relation_ordinal: member.relation_ordinal,
+                resolved: None,
+            }).collect();
+            let return_members = parsed.return_members.into_iter().map(|member| crate::records::SketchRelationReturnMember {
+                record_index: member.value,
+                offset: member.offset as u32,
+                resolved: None,
+            }).collect();
             out.push(SketchRelation {
                 id: ids::native_sketch_relation_id(&entry.name, record.record_index),
                 record_index: record.record_index,
@@ -1285,12 +1273,7 @@ pub fn decode_sketch_relations(
                 owner_reference: parsed.owner_reference,
                 owner_entity_id: String::new(),
                 owner_reference_offset: parsed.owner_reference_offset as u32,
-                auxiliary_references: parsed.auxiliary_references,
-                auxiliary_reference_offsets: parsed
-                    .auxiliary_reference_offsets
-                    .into_iter()
-                    .map(|offset| offset as u32)
-                    .collect(),
+                auxiliary_references: crate::records::ReferenceRun::Located(parsed.auxiliary_references.into_iter().map(|row| crate::records::Located { value: row.value, offset: row.offset as u32 }).collect()),
                 rectangular_counted_reference_count: parsed.rectangular_reference_count,
                 members,
                 state: parsed.state,
@@ -1321,7 +1304,7 @@ pub(crate) fn decode_pattern_definition(
 ) -> Option<crate::records::SketchPatternDefinition> {
     use crate::records::{SketchPatternDefinition, SketchPatternDirection};
     let f64_at = |at: usize| View::f64_le_at(payload, at).filter(|value| value.is_finite());
-    let reference_end = |ordinal: usize| Some(parsed.auxiliary_reference_offsets.get(ordinal)? + 4);
+    let reference_end = |ordinal: usize| Some(parsed.auxiliary_references.get(ordinal)?.offset + 4);
     if parsed.state == 0x1000_0000 && parsed.auxiliary_references.len() == 2 {
         let angle_at = reference_end(1)? + 6;
         let evaluated_angle = f64_at(angle_at)?;
@@ -1330,8 +1313,8 @@ pub(crate) fn decode_pattern_definition(
             return None;
         }
         return Some(SketchPatternDefinition::Circular {
-            angle_parameter: parsed.auxiliary_references[0],
-            count_parameter: parsed.auxiliary_references[1],
+            angle_parameter: parsed.auxiliary_references[0].value,
+            count_parameter: parsed.auxiliary_references[1].value,
             evaluated_angle,
             evaluated_count,
         });
@@ -1349,12 +1332,12 @@ pub(crate) fn decode_pattern_definition(
         let mut directions = Vec::with_capacity(2);
         let clauses = [
             (
-                parsed.auxiliary_reference_offsets[clause_ordinal].checked_sub(5)?,
+                parsed.auxiliary_references[clause_ordinal].offset.checked_sub(5)?,
                 clause_ordinal,
                 clause_ordinal + 1,
             ),
             (
-                parsed.auxiliary_reference_offsets[clause_ordinal + 2].checked_sub(5)?,
+                parsed.auxiliary_references[clause_ordinal + 2].offset.checked_sub(5)?,
                 clause_ordinal + 2,
                 clause_ordinal + 3,
             ),
@@ -1376,10 +1359,10 @@ pub(crate) fn decode_pattern_definition(
             }
             directions.push(SketchPatternDirection {
                 evaluated_count,
-                count_parameter: parsed.auxiliary_references[count_ordinal],
+                count_parameter: parsed.auxiliary_references[count_ordinal].value,
                 direction,
                 evaluated_distance: f64_at(direction_at + 24)?,
-                distance_parameter: parsed.auxiliary_references[distance_ordinal],
+                distance_parameter: parsed.auxiliary_references[distance_ordinal].value,
             });
         }
         return Some(SketchPatternDefinition::Rectangular {
@@ -1388,19 +1371,19 @@ pub(crate) fn decode_pattern_definition(
     }
     if parsed.state == 0x100_0000_0000
         && parsed.auxiliary_references.len() == 1
-        && parsed.members.contains(&parsed.auxiliary_references[0])
+        && parsed.members.iter().any(|member| member.reference.value == parsed.auxiliary_references[0].value)
     {
         return Some(SketchPatternDefinition::TextFrame {
-            text_reference: parsed.auxiliary_references[0],
+            text_reference: parsed.auxiliary_references[0].value,
         });
     }
     if parsed.state == 0x200_0000_0000
         && parsed.auxiliary_references.len() == 1
-        && parsed.members.contains(&parsed.auxiliary_references[0])
+        && parsed.members.iter().any(|member| member.reference.value == parsed.auxiliary_references[0].value)
     {
         if let Some(glyph_transforms) = parsed.text_glyph_transforms.clone() {
             return Some(SketchPatternDefinition::TextPath {
-                text_reference: parsed.auxiliary_references[0],
+                text_reference: parsed.auxiliary_references[0].value,
                 glyph_transforms,
             });
         }
@@ -3514,12 +3497,14 @@ fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<Sket
     })
 }
 
+pub(crate) struct ParsedSketchRelationMember {
+    pub(crate) reference: crate::records::Located<u32, usize>,
+    pub(crate) relation_ordinal: u32,
+}
+
 pub(crate) struct ParsedSketchRelation {
-    pub(crate) members: Vec<u32>,
-    pub(crate) member_offsets: Vec<usize>,
-    pub(crate) member_relation_ordinals: Vec<u32>,
-    pub(crate) auxiliary_references: Vec<u32>,
-    pub(crate) auxiliary_reference_offsets: Vec<usize>,
+    pub(crate) members: Vec<ParsedSketchRelationMember>,
+    pub(crate) auxiliary_references: Vec<crate::records::Located<u32, usize>>,
     pub(crate) owner_reference: u32,
     pub(crate) owner_reference_offset: usize,
     pub(crate) state: u64,
@@ -3534,8 +3519,7 @@ pub(crate) struct ParsedSketchRelation {
     /// references are all present. `None` for every other relation class and
     /// when a rectangular clause reference is absent.
     pub(crate) rectangular_clause_ordinal: Option<usize>,
-    pub(crate) return_members: Vec<u32>,
-    pub(crate) return_member_offsets: Vec<usize>,
+    pub(crate) return_members: Vec<crate::records::Located<u32, usize>>,
     pub(crate) parsed_end: usize,
 }
 
@@ -3654,10 +3638,10 @@ pub(crate) fn relation_mask_width(record: &[u8]) -> Option<SketchRelationMaskWid
 /// byte offset of the target within the reference. Relation members address
 /// records in the relation's own segment, so a reference whose target does not
 /// fit a `u32` is a misparse.
-fn take_relation_reference(payload: &[u8], cursor: &mut usize) -> Option<(u32, usize)> {
+fn take_relation_reference(payload: &[u8], cursor: &mut usize) -> Option<crate::records::Located<u32, usize>> {
     let at = *cursor;
     let reference = take_reference(payload, cursor)?;
-    Some((u32::try_from(reference.target?).ok()?, at + 1))
+    Some(crate::records::Located { value: u32::try_from(reference.target?).ok()?, offset: at + 1 })
 }
 
 /// Take one reference member that the class may leave absent, recording it in
@@ -3666,16 +3650,14 @@ fn take_relation_reference(payload: &[u8], cursor: &mut usize) -> Option<(u32, u
 fn take_auxiliary_relation_reference(
     payload: &[u8],
     cursor: &mut usize,
-    auxiliary_references: &mut Vec<u32>,
-    auxiliary_reference_offsets: &mut Vec<usize>,
+    auxiliary_references: &mut Vec<crate::records::Located<u32, usize>>,
 ) -> Option<bool> {
     let at = *cursor;
     let reference = take_reference(payload, cursor)?;
     let Some(target) = reference.target else {
         return Some(false);
     };
-    auxiliary_references.push(u32::try_from(target).ok()?);
-    auxiliary_reference_offsets.push(at + 1);
+    auxiliary_references.push(crate::records::Located { value: u32::try_from(target).ok()?, offset: at + 1 });
     Some(true)
 }
 
@@ -3718,8 +3700,7 @@ fn parse_relation_class_members(
     payload: &[u8],
     cursor: &mut usize,
     class: SketchRelationClass,
-    auxiliary_references: &mut Vec<u32>,
-    auxiliary_reference_offsets: &mut Vec<usize>,
+    auxiliary_references: &mut Vec<crate::records::Located<u32, usize>>,
 ) -> Option<RelationClassMembers> {
     let mut members = RelationClassMembers {
         rectangular_reference_count: None,
@@ -3732,7 +3713,6 @@ fn parse_relation_class_members(
                 payload,
                 cursor,
                 auxiliary_references,
-                auxiliary_reference_offsets,
             )
         };
     }
@@ -3778,7 +3758,7 @@ fn parse_relation_class_members(
             }
             members.rectangular_reference_count = Some(reference_count);
             skip_pattern_tables(payload, cursor)?;
-            let clause_ordinal = auxiliary_reference_offsets.len();
+            let clause_ordinal = auxiliary_references.len();
             let mut complete = true;
             for _ in 0..2 {
                 // The evaluated instance count precedes the count-parameter
@@ -3799,8 +3779,7 @@ fn parse_relation_class_members(
                 *cursor += 1;
             }
             let (text_reference, transforms, end) = parse_text_glyph_run(payload, *cursor)?;
-            auxiliary_references.push(text_reference);
-            auxiliary_reference_offsets.push(*cursor + 1);
+            auxiliary_references.push(crate::records::Located { value: text_reference, offset: *cursor + 1 });
             members.text_glyph_transforms = Some(transforms);
             *cursor = end;
         }
@@ -3822,10 +3801,6 @@ pub(crate) fn parse_classed_sketch_relation(
     payload: &[u8],
     class: SketchRelationClass,
 ) -> Option<ParsedSketchRelation> {
-    parse_relation(payload, class)
-}
-
-fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSketchRelation> {
     // The record header is the LP-ASCII class tag, the u64 entity id, and the
     // LP-ASCII record name; the member payload follows it.
     let (_, start) = lp_ascii_filtered(payload, 15, 0..=256, u8::is_ascii_graphic)?;
@@ -3833,8 +3808,6 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
     let paired_run = mask_width.has_paired_member_run();
     let mut cursor = start + 1;
     let mut members = Vec::new();
-    let mut member_offsets = Vec::new();
-    let mut member_relation_ordinals = Vec::new();
     if paired_run {
         let member_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
         if member_count > MAX_RELATION_RUN {
@@ -3842,13 +3815,9 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
         }
         cursor += 4;
         members.reserve(member_count);
-        member_offsets.reserve(member_count);
-        member_relation_ordinals.reserve(member_count);
         for _ in 0..member_count {
-            let (member, offset) = take_relation_reference(payload, &mut cursor)?;
-            members.push(member);
-            member_offsets.push(offset);
-            member_relation_ordinals.push(View::u32_le_at(payload, cursor)?);
+            let reference = take_relation_reference(payload, &mut cursor)?;
+            members.push(ParsedSketchRelationMember { reference, relation_ordinal: View::u32_le_at(payload, cursor)? });
             cursor += 4;
         }
     }
@@ -3860,18 +3829,16 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
         .find(|(key, _)| key == "EntityGenesis")
         .map(|(_, value)| value);
     let mut auxiliary_references = Vec::new();
-    let mut auxiliary_reference_offsets = Vec::new();
     let class_members = parse_relation_class_members(
         payload,
         &mut cursor,
         class,
         &mut auxiliary_references,
-        &mut auxiliary_reference_offsets,
     )?;
     let rectangular_reference_count = class_members.rectangular_reference_count;
     let rectangular_clause_ordinal = class_members.rectangular_clause_ordinal;
     let text_glyph_transforms = class_members.text_glyph_transforms;
-    let (owner_reference, owner_reference_offset) = take_relation_reference(payload, &mut cursor)?;
+    let owner = take_relation_reference(payload, &mut cursor)?;
     let state_offset = cursor;
     // The constraint mask follows `ParentNode` directly. It is a u64 in the
     // paired-run form and a u32 at relation base-class version 0.
@@ -3888,11 +3855,8 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
     }
     cursor += 4;
     let mut return_members = Vec::with_capacity(return_count);
-    let mut return_member_offsets = Vec::with_capacity(return_count);
     for _ in 0..return_count {
-        let (member, offset) = take_relation_reference(payload, &mut cursor)?;
-        return_members.push(member);
-        return_member_offsets.push(offset);
+        return_members.push(take_relation_reference(payload, &mut cursor)?);
     }
     if payload.get(cursor) != Some(&0) {
         return None;
@@ -3900,12 +3864,9 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
     let parsed_end = cursor + 1;
     Some(ParsedSketchRelation {
         members,
-        member_offsets,
-        member_relation_ordinals,
         auxiliary_references,
-        auxiliary_reference_offsets,
-        owner_reference,
-        owner_reference_offset,
+        owner_reference: owner.value,
+        owner_reference_offset: owner.offset,
         state,
         state_offset,
         entity_genesis,
@@ -3913,7 +3874,6 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
         rectangular_reference_count,
         rectangular_clause_ordinal,
         return_members,
-        return_member_offsets,
         parsed_end,
     })
 }

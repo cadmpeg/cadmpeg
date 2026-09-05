@@ -93,7 +93,7 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
         let relation = &mut native.sketch_relations[0];
         relation.state = 0x40;
         relation.members.reverse();
-        for reference in &mut relation.auxiliary_references {
+        for reference in relation.auxiliary_references.values_mut() {
             *reference = reference.saturating_add(1);
         }
         relation.return_members.reverse();

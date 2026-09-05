@@ -8913,13 +8913,10 @@ fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let sketch_owner_ids = &ctx.sketch_owner_ids;
     for relation in &native.sketch_relations {
         let native_stream = design_stream(&relation.id);
-        let member_offsets = relation.member_offsets();
-        let return_member_offsets = relation.return_member_offsets();
-        let offsets_fit = member_offsets
-            .iter()
-            .chain(&relation.auxiliary_reference_offsets)
+        let offsets_fit = relation.members.iter().map(|row| &row.offset)
+            .chain(relation.auxiliary_references.offsets())
             .chain(std::iter::once(&relation.owner_reference_offset))
-            .chain(&return_member_offsets)
+            .chain(relation.return_members.iter().map(|row| &row.offset))
             .all(|offset| {
                 usize::try_from(*offset)
                     .ok()
@@ -8932,7 +8929,10 @@ fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .copied()
                 == Some(relation.owner_entity_id.as_str())
             && relation.raw_bytes.len() >= 24
-            && relation.auxiliary_references.len() == relation.auxiliary_reference_offsets.len()
+            && match &relation.auxiliary_references {
+                records::ReferenceRun::Unlocated(values) => values.is_empty(),
+                records::ReferenceRun::Located(_) => true,
+            }
             && offsets_fit;
         if !valid {
             findings.push(Finding {

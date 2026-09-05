@@ -830,7 +830,7 @@ fn encode_sketch_relation(
     }
     for reference in relation
         .auxiliary_references
-        .iter()
+        .values()
         .chain(std::iter::once(&relation.owner_reference))
     {
         write_reference(&mut record, *reference);

@@ -950,3 +950,22 @@ fn component_placement_preserves_wire_and_rejects_partial_location() {
         assert!(serde_json::from_value::<super::DesignComponentOccurrence>(wire).unwrap_err().to_string().contains("transform"));
     }
 }
+
+#[test]
+fn sketch_auxiliary_rows_preserve_absent_and_complete_offset_runs() {
+    let base = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":0,"constraint_kinds":[],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":null,"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":""}"#;
+    for (values, offsets) in [(vec![], vec![]), (vec![2], vec![]), (vec![2], vec![0]), (vec![2, 3], vec![0, 10])] {
+        let expected = base.replace("\"auxiliary_references\":[]", &format!("\"auxiliary_references\":{}", serde_json::to_string(&values).unwrap()))
+            .replace("\"auxiliary_reference_offsets\":[]", &format!("\"auxiliary_reference_offsets\":{}", serde_json::to_string(&offsets).unwrap()));
+        let relation: super::SketchRelation = serde_json::from_str(&expected).unwrap();
+        assert_eq!(relation.auxiliary_references.values().copied().collect::<Vec<_>>(), values);
+        assert_eq!(relation.auxiliary_references.offsets().copied().collect::<Vec<_>>(), offsets);
+        assert_eq!(serde_json::to_string(&relation).unwrap(), expected);
+    }
+    for (values, offsets) in [(vec![], vec![10]), (vec![2], vec![10, 20]), (vec![2, 3], vec![10])] {
+        let mut wire: serde_json::Value = serde_json::from_str(base).unwrap();
+        wire["auxiliary_references"] = serde_json::json!(values);
+        wire["auxiliary_reference_offsets"] = serde_json::json!(offsets);
+        assert!(serde_json::from_value::<super::SketchRelation>(wire).unwrap_err().to_string().contains("auxiliary_reference"));
+    }
+}

@@ -11,13 +11,13 @@ use std::num::NonZeroU32;
 /// A source value and the byte offset of its encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct Located<T> {
+pub struct Located<T, O = u64> {
     pub value: T,
-    pub offset: u64,
+    pub offset: O,
 }
 
-impl<T> Located<T> {
-    fn from_wire(value: Option<T>, offset: Option<u64>, field: &str) -> Result<Option<Self>, String> {
+impl<T, O> Located<T, O> {
+    fn from_wire(value: Option<T>, offset: Option<O>, field: &str) -> Result<Option<Self>, String> {
         match (value, offset) {
             (None, None) => Ok(None),
             (Some(value), Some(offset)) => Ok(Some(Self { value, offset })),
@@ -28,12 +28,12 @@ impl<T> Located<T> {
 
 /// An ordered run whose encoding locations are either complete or absent.
 #[derive(Debug, Clone)]
-pub enum ReferenceRun<T> {
+pub enum ReferenceRun<T, O = u64> {
     Unlocated(Vec<T>),
-    Located(Vec<Located<T>>),
+    Located(Vec<Located<T, O>>),
 }
 
-impl<T: PartialEq> PartialEq for ReferenceRun<T> {
+impl<T: PartialEq, O: PartialEq> PartialEq for ReferenceRun<T, O> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Unlocated(left), Self::Unlocated(right)) => left == right,
@@ -44,15 +44,32 @@ impl<T: PartialEq> PartialEq for ReferenceRun<T> {
     }
 }
 
-impl<T: Eq> Eq for ReferenceRun<T> {}
+impl<T: Eq, O: Eq> Eq for ReferenceRun<T, O> {}
 
-impl<T> ReferenceRun<T> {
+impl<T, O> ReferenceRun<T, O> {
     pub fn values(&self) -> impl DoubleEndedIterator<Item = &T> {
-        let (unlocated, located): (&[T], &[Located<T>]) = match self {
+        let (unlocated, located): (&[T], &[Located<T, O>]) = match self {
             Self::Unlocated(values) => (values, &[]),
             Self::Located(values) => (&[], values),
         };
         unlocated.iter().chain(located.iter().map(|row| &row.value))
+    }
+
+    pub fn offsets(&self) -> impl Iterator<Item = &O> {
+        let rows: &[Located<T, O>] = match self {
+            Self::Unlocated(_) => &[],
+            Self::Located(rows) => rows,
+        };
+        rows.iter().map(|row| &row.offset)
+    }
+
+    #[cfg(test)]
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        let (unlocated, located): (&mut [T], &mut [Located<T, O>]) = match self {
+            Self::Unlocated(values) => (values, &mut []),
+            Self::Located(values) => (&mut [], values),
+        };
+        unlocated.iter_mut().chain(located.iter_mut().map(|row| &mut row.value))
     }
 
     pub fn len(&self) -> usize {
@@ -69,7 +86,7 @@ impl<T> ReferenceRun<T> {
         }
     }
 
-    fn from_wire(values: Vec<T>, offsets: Vec<u64>, field: &str) -> Result<Self, String> {
+    fn from_wire(values: Vec<T>, offsets: Vec<O>, field: &str) -> Result<Self, String> {
         if offsets.is_empty() {
             return Ok(Self::Unlocated(values));
         }
@@ -79,7 +96,7 @@ impl<T> ReferenceRun<T> {
         Ok(Self::Located(values.into_iter().zip(offsets).map(|(value, offset)| Located { value, offset }).collect()))
     }
 
-    fn into_wire(self) -> (Vec<T>, Vec<u64>) {
+    fn into_wire(self) -> (Vec<T>, Vec<O>) {
         match self {
             Self::Unlocated(values) => (values, Vec::new()),
             Self::Located(values) => values.into_iter().map(|row| (row.value, row.offset)).unzip(),
@@ -12294,11 +12311,7 @@ pub struct SketchRelation {
     #[serde(default)]
     pub owner_entity_id: String,
     /// Nullable or role-specific references stored before the owner reference.
-    #[serde(default)]
-    pub auxiliary_references: Vec<u32>,
-    /// Payload offsets parallel to `auxiliary_references`, relative to the record.
-    #[serde(default)]
-    pub auxiliary_reference_offsets: Vec<u32>,
+    pub auxiliary_references: ReferenceRun<u32, u32>,
     /// Serialized count of the rectangular class's reference run. Zero selects
     /// seed-to-final spans; a nonzero count selects adjacent spacing. `None`
     /// for other relation classes and native data that did not retain it.
@@ -12420,7 +12433,7 @@ impl SketchRelation {
     }
 }
 
-pub(crate) fn zip_relation_members(
+fn zip_relation_members(
     members: Vec<u32>,
     offsets: Vec<u32>,
     ordinals: Vec<u32>,
@@ -12446,7 +12459,7 @@ pub(crate) fn zip_relation_members(
         .collect())
 }
 
-pub(crate) fn zip_return_members(
+fn zip_return_members(
     members: Vec<u32>,
     offsets: Vec<u32>,
     resolved: Vec<SketchRelationOperand>,
@@ -12577,8 +12590,7 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
             owner_entity_id: wire.owner_entity_id,
-            auxiliary_references: wire.auxiliary_references,
-            auxiliary_reference_offsets: wire.auxiliary_reference_offsets,
+            auxiliary_references: ReferenceRun::from_wire(wire.auxiliary_references, wire.auxiliary_reference_offsets, "auxiliary_reference").map_err(SketchRelationPayloadError)?,
             rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
             members: zip_relation_members(
                 wire.members,
@@ -12616,6 +12628,7 @@ impl From<SketchRelation> for SketchRelationSerde {
             .members
             .iter()
             .any(|member| member.relation_ordinal != 0);
+        let (auxiliary_references, auxiliary_reference_offsets) = relation.auxiliary_references.into_wire();
         Self {
             id: relation.id,
             record_index: relation.record_index,
@@ -12624,8 +12637,8 @@ impl From<SketchRelation> for SketchRelationSerde {
             state_offset: relation.state_offset,
             owner_reference: relation.owner_reference,
             owner_entity_id: relation.owner_entity_id,
-            auxiliary_references: relation.auxiliary_references,
-            auxiliary_reference_offsets: relation.auxiliary_reference_offsets,
+            auxiliary_references,
+            auxiliary_reference_offsets,
             rectangular_counted_reference_count: relation.rectangular_counted_reference_count,
             members: relation
                 .members

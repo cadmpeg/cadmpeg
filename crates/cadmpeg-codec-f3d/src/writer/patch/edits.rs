@@ -2552,7 +2552,7 @@ pub(crate) fn validate_sketch_relation_edits(
         normalized.state = before.state;
         normalized.kind.clone_from(&before.kind);
         normalized.return_members.clone_from(&before.return_members);
-        if &normalized != before {
+        if &normalized != before || relation.auxiliary_references.offsets().ne(before.auxiliary_references.offsets()) {
             return Err(CodecError::NotImplemented(format!(
                 "F3D sketch-relation edit changes fields outside its writable references and constraint mask: {}",
                 relation.id
@@ -2577,18 +2577,25 @@ pub(crate) fn validate_sketch_relation_edits(
         let mut values = Vec::new();
         collect_sketch_reference_edits(
             relation,
-            &before.member_indices(),
-            &relation.member_indices(),
-            &relation.member_offsets(),
+            before.members.iter().map(|row| row.record_index),
+            relation.members.iter().map(|row| (row.record_index, row.offset)),
             &mut values,
         )?;
-        collect_sketch_reference_edits(
-            relation,
-            &before.auxiliary_references,
-            &relation.auxiliary_references,
-            &relation.auxiliary_reference_offsets,
-            &mut values,
-        )?;
+        match &relation.auxiliary_references {
+            crate::records::ReferenceRun::Located(after) if before.auxiliary_references.len() == after.len() => {
+                values.extend(before.auxiliary_references.values().zip(after)
+                    .filter(|(before, after)| **before != after.value)
+                    .map(|(_, after)| Edit {
+                        offset: relation.byte_offset + u64::from(after.offset),
+                        value: after.value.to_le_bytes().to_vec(),
+                    }));
+            }
+            crate::records::ReferenceRun::Unlocated(after) if after.is_empty() && before.auxiliary_references.is_empty() => {}
+            _ => return Err(CodecError::NotImplemented(format!(
+                "F3D sketch relation {} must retain reference cardinality and offsets",
+                relation.id
+            ))),
+        }
         if relation.owner_reference != before.owner_reference {
             values.push(Edit {
                 offset: relation.byte_offset + u64::from(relation.owner_reference_offset),
@@ -2597,9 +2604,8 @@ pub(crate) fn validate_sketch_relation_edits(
         }
         collect_sketch_reference_edits(
             relation,
-            &before.return_member_indices(),
-            &relation.return_member_indices(),
-            &relation.return_member_offsets(),
+            before.return_members.iter().map(|row| row.record_index),
+            relation.return_members.iter().map(|row| (row.record_index, row.offset)),
             &mut values,
         )?;
         if relation.state != before.state {
@@ -2617,12 +2623,11 @@ pub(crate) fn validate_sketch_relation_edits(
 
 fn collect_sketch_reference_edits(
     relation: &crate::records::SketchRelation,
-    before: &[u32],
-    after: &[u32],
-    offsets: &[u32],
+    before: impl ExactSizeIterator<Item = u32>,
+    after: impl ExactSizeIterator<Item = (u32, u32)>,
     edits: &mut Vec<Edit<Vec<u8>>>,
 ) -> Result<(), CodecError> {
-    if before.len() != after.len() || after.len() != offsets.len() {
+    if before.len() != after.len() {
         return Err(CodecError::NotImplemented(format!(
             "F3D sketch relation {} must retain reference cardinality and offsets",
             relation.id
@@ -2630,12 +2635,10 @@ fn collect_sketch_reference_edits(
     }
     edits.extend(
         before
-            .iter()
             .zip(after)
-            .zip(offsets)
-            .filter(|((before, after), _)| before != after)
-            .map(|((_, after), offset)| Edit {
-                offset: relation.byte_offset + u64::from(*offset),
+            .filter(|(before, (after, _))| before != after)
+            .map(|(_, (after, offset))| Edit {
+                offset: relation.byte_offset + u64::from(offset),
                 value: after.to_le_bytes().to_vec(),
             }),
     );

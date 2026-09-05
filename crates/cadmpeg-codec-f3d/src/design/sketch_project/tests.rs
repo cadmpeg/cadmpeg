@@ -194,8 +194,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         state_offset: 0,
         owner_reference: 42,
         owner_entity_id: "Sketch_42".into(),
-        auxiliary_references: vec![20],
-        auxiliary_reference_offsets: Vec::new(),
+        auxiliary_references: crate::records::ReferenceRun::Unlocated(vec![20]),
         rectangular_counted_reference_count: None,
         members: vec![
             SketchRelationMember::from_index(20),
@@ -488,8 +487,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         state_offset: 70,
         owner_reference: 172,
         owner_entity_id: "0_172".into(),
-        auxiliary_references: Vec::new(),
-        auxiliary_reference_offsets: Vec::new(),
+        auxiliary_references: crate::records::ReferenceRun::Unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
         members: vec![member]
             .into_iter()
@@ -546,12 +544,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     );
     // Reverse the first run so only the specified semantic run can satisfy the
     // assertion below.
-    spline_group.members =
-        crate::records::zip_relation_members(vec![218, 217], vec![25, 40], Vec::new(), Vec::new())
-            .expect("spline members");
-    spline_group.return_members =
-        crate::records::zip_return_members(vec![217, 218], vec![80, 95], Vec::new())
-            .expect("spline return members");
+    spline_group.members = [(218, 25), (217, 40)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationMember { record_index, offset, relation_ordinal: 0, resolved: None }).collect();
+    spline_group.return_members = [(217, 80), (218, 95)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationReturnMember { record_index, offset, resolved: None }).collect();
     spline_group.state = 0x8000_0000;
     let mut horizontal_point = relation(
         701,
@@ -561,7 +555,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             persistent_id: Some(10),
         },
     );
-    horizontal_point.auxiliary_references = vec![999];
+    horizontal_point.auxiliary_references = crate::records::ReferenceRun::Unlocated(vec![999]);
     horizontal_point.return_members = vec![
         SketchRelationReturnMember::from_index(175),
         SketchRelationReturnMember::from_index(175),
@@ -822,8 +816,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         state_offset: 0,
         owner_reference: 42,
         owner_entity_id: "Sketch_42".into(),
-        auxiliary_references: Vec::new(),
-        auxiliary_reference_offsets: Vec::new(),
+        auxiliary_references: crate::records::ReferenceRun::Unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
         // Member run order disagrees with semantic order below.
         members: vec![

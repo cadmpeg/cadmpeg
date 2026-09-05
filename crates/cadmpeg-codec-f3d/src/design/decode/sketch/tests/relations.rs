@@ -42,14 +42,14 @@ fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
 
     assert_eq!(next_indexed_record_offset(&bytes, 11), Some(127));
     let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::Plain).unwrap();
-    assert_eq!(parsed.members, [1224, 1228, 1236]);
-    assert_eq!(parsed.member_relation_ordinals, [3, 1, 0]);
-    assert_eq!(parsed.auxiliary_references, [] as [u32; 0]);
+    assert_eq!(parsed.members.iter().map(|row| row.reference.value).collect::<Vec<_>>(), [1224, 1228, 1236]);
+    assert_eq!(parsed.members.iter().map(|row| row.relation_ordinal).collect::<Vec<_>>(), [3, 1, 0]);
+    assert_eq!(parsed.auxiliary_references.iter().map(|row| row.value).collect::<Vec<_>>(), [] as [u32; 0]);
     assert_eq!(parsed.owner_reference, 1041);
     assert_eq!(parsed.state, 4);
     assert_eq!(parsed.state_offset, 81);
     assert_eq!(parsed.entity_genesis, None);
-    assert_eq!(parsed.return_members, [1224, 1228, 1236]);
+    assert_eq!(parsed.return_members.iter().map(|row| row.value).collect::<Vec<_>>(), [1224, 1228, 1236]);
     assert_eq!(parsed.parsed_end, 127);
 }
 
@@ -89,13 +89,13 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         &[2403, 2404],
     );
     let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
-    assert_eq!(parsed.members, [2394, 2403, 2404]);
-    assert_eq!(parsed.member_relation_ordinals, [0, 0, 0]);
+    assert_eq!(parsed.members.iter().map(|row| row.reference.value).collect::<Vec<_>>(), [2394, 2403, 2404]);
+    assert_eq!(parsed.members.iter().map(|row| row.relation_ordinal).collect::<Vec<_>>(), [0, 0, 0]);
     assert_eq!(parsed.entity_genesis, Some(2));
-    assert_eq!(parsed.auxiliary_references, [2394]);
+    assert_eq!(parsed.auxiliary_references.iter().map(|row| row.value).collect::<Vec<_>>(), [2394]);
     assert_eq!(parsed.owner_reference, 1425);
     assert_eq!(parsed.state, 0x100_0000_0000);
-    assert_eq!(parsed.return_members, [2403, 2404]);
+    assert_eq!(parsed.return_members.iter().map(|row| row.value).collect::<Vec<_>>(), [2403, 2404]);
     assert_eq!(
         decode_constraint_kinds(parsed.state),
         (vec![SketchConstraintKind::TextFrame], 0)
@@ -147,13 +147,13 @@ fn genesis_relation_parses_text_path_glyph_run() {
         SketchRelationClass::TextPath { leading_flag: true },
     )
     .unwrap();
-    assert_eq!(parsed.members, [237, 304]);
-    assert_eq!(parsed.member_relation_ordinals, [1, 0]);
+    assert_eq!(parsed.members.iter().map(|row| row.reference.value).collect::<Vec<_>>(), [237, 304]);
+    assert_eq!(parsed.members.iter().map(|row| row.relation_ordinal).collect::<Vec<_>>(), [1, 0]);
     assert_eq!(parsed.entity_genesis, Some(2));
-    assert_eq!(parsed.auxiliary_references, [304]);
+    assert_eq!(parsed.auxiliary_references.iter().map(|row| row.value).collect::<Vec<_>>(), [304]);
     assert_eq!(parsed.owner_reference, 201);
     assert_eq!(parsed.state, 0x200_0000_0000);
-    assert_eq!(parsed.return_members, [237]);
+    assert_eq!(parsed.return_members.iter().map(|row| row.value).collect::<Vec<_>>(), [237]);
     assert_eq!(parsed.text_glyph_transforms.as_deref(), Some(&glyphs[..]));
     assert_eq!(
         decode_constraint_kinds(parsed.state),
@@ -188,8 +188,8 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
     );
     let parsed =
         parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern).unwrap();
-    assert_eq!(parsed.member_relation_ordinals, [1, 1, 0, 0]);
-    assert_eq!(parsed.auxiliary_references, [336, 333]);
+    assert_eq!(parsed.members.iter().map(|row| row.relation_ordinal).collect::<Vec<_>>(), [1, 1, 0, 0]);
+    assert_eq!(parsed.auxiliary_references.iter().map(|row| row.value).collect::<Vec<_>>(), [336, 333]);
     assert_eq!(parsed.state, 0x1000_0000);
     assert_eq!(
         decode_pattern_definition(&record, &parsed),
@@ -233,8 +233,8 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
     );
     let parsed =
         parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern).unwrap();
-    assert_eq!(parsed.member_relation_ordinals, [3, 1, 0, 0]);
-    assert_eq!(parsed.auxiliary_references, [464, 470, 467, 473]);
+    assert_eq!(parsed.members.iter().map(|row| row.relation_ordinal).collect::<Vec<_>>(), [3, 1, 0, 0]);
+    assert_eq!(parsed.auxiliary_references.iter().map(|row| row.value).collect::<Vec<_>>(), [464, 470, 467, 473]);
     assert_eq!(parsed.rectangular_reference_count, Some(0));
     assert_eq!(parsed.state, 0x2000_0000);
     let Some(crate::records::SketchPatternDefinition::Rectangular { directions }) =
