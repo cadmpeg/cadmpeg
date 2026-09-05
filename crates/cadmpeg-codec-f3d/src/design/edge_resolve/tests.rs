@@ -1224,16 +1224,13 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
     let triplet = DesignTopologyRecipeTriplet {
         outer: std::num::NonZeroU32::new(3).unwrap(),
         middle: 2,
-        vertex_ordinal: 2,
-        incident_edge_ordinal: Some(1),
-        incident_side: Some(DesignTopologyIncidentSide::Preceding),
+        incident: Some(crate::records::DesignTopologyIncident { ordinal: 1, side: DesignTopologyIncidentSide::Preceding }),
     };
     let mut common = selector(0, &[]);
     common.clauses[0] = Some(crate::records::DesignEdgeRecipeSelectorClause { entry: DesignTopologyRecipeEntry {
         selector: 0,
         boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
         topology_triplets: [triplet.clone(), triplet.clone()],
-        common_incident_edge_ordinal: Some(1),
     }, triplet_edge_slots: [vec![17, 18], vec![17]] });
     assert_eq!(
         resolved_edge_candidate_intersection(&[common.clone()], [&[17, 18][..]]),
@@ -1248,7 +1245,6 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         selector: 0,
         boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
         topology_triplets: [triplet.clone(), triplet.clone()],
-        common_incident_edge_ordinal: Some(1),
     }, triplet_edge_slots: [vec![17, 18, 19], vec![17, 18]] });
     assert_eq!(
         resolved_edge_candidate_intersection(&[common.clone()], [&[17][..]]),
@@ -1263,9 +1259,8 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
             selector: 0,
             boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
             topology_triplets: [triplet.clone(), DesignTopologyRecipeTriplet {
-                vertex_ordinal: 3, incident_edge_ordinal: Some(2), ..triplet.clone()
+                outer: std::num::NonZeroU32::new(4).unwrap(), incident: Some(crate::records::DesignTopologyIncident { ordinal: 2, side: DesignTopologyIncidentSide::Preceding }), ..triplet.clone()
             }],
-            common_incident_edge_ordinal: None,
         },
         triplet_edge_slots,
     });

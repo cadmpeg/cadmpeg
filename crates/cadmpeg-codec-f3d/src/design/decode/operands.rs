@@ -4797,11 +4797,6 @@ pub(crate) fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRec
                 .then_some(DesignTopologyRecipeEntry {
                     selector,
                     boundary_edge_count,
-                    common_incident_edge_ordinal: topology_triplets[0]
-                        .incident_edge_ordinal
-                        .filter(|ordinal| {
-                            topology_triplets[1].incident_edge_ordinal == Some(*ordinal)
-                        }),
                     topology_triplets,
                 })
         })
@@ -4843,9 +4838,7 @@ fn edge_recipe_topology_triplet(
     Some(DesignTopologyRecipeTriplet {
         outer,
         middle: *middle,
-        vertex_ordinal,
-        incident_edge_ordinal: incident.map(|(_, ordinal)| ordinal),
-        incident_side: incident.map(|(side, _)| side),
+        incident: incident.map(|(side, ordinal)| crate::records::DesignTopologyIncident { ordinal, side }),
     })
 }
 

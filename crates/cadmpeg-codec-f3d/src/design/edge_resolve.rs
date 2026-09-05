@@ -2136,7 +2136,7 @@ fn corroborated_common_triplet_intersection(
             .iter()
             .flatten()
             .filter_map(|clause| {
-                clause.entry.common_incident_edge_ordinal?;
+                clause.entry.common_incident_edge_ordinal()?;
                 let [first, second] = &clause.triplet_edge_slots;
                 let mut common = first.clone();
                 common.retain(|edge| second.contains(edge));

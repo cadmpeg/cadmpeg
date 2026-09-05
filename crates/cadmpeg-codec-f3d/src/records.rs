@@ -12086,6 +12086,8 @@ pub struct DesignTopologyRecipeSide {
 /// One eight-word topology entry in an edge-recipe side clause.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignTopologyRecipeEntryWire", into = "DesignTopologyRecipeEntryWire")]
+#[cfg_attr(feature = "schema", schemars(with = "DesignTopologyRecipeEntryWire"))]
 pub struct DesignTopologyRecipeEntry {
     /// Nonnegative clause-local selector, strictly increasing within one clause.
     pub selector: i32,
@@ -12093,28 +12095,136 @@ pub struct DesignTopologyRecipeEntry {
     pub boundary_edge_count: NonZeroU32,
     /// Two ordered topology triplets.
     pub topology_triplets: [DesignTopologyRecipeTriplet; 2],
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignTopologyRecipeEntryWire {
+    /// Nonnegative clause-local selector, strictly increasing within one clause.
+    selector: i32,
+    /// Number of boundary edges on the referenced face loop.
+    boundary_edge_count: NonZeroU32,
+    /// Two ordered topology triplets.
+    topology_triplets: [DesignTopologyRecipeTriplet; 2],
     /// Zero-based boundary-edge ordinal named by both triplets when equal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub common_incident_edge_ordinal: Option<u32>,
+    common_incident_edge_ordinal: Option<u32>,
 }
+
+impl DesignTopologyRecipeEntry {
+    /// Return the incident edge ordinal shared by both triplets.
+    pub fn common_incident_edge_ordinal(&self) -> Option<u32> {
+        self.topology_triplets[0].incident.map(|incident| incident.ordinal).filter(|ordinal| self.topology_triplets[1].incident.map(|incident| incident.ordinal) == Some(*ordinal))
+    }
+}
+
+impl TryFrom<DesignTopologyRecipeEntryWire> for DesignTopologyRecipeEntry {
+    type Error = String;
+    fn try_from(wire: DesignTopologyRecipeEntryWire) -> Result<Self, Self::Error> {
+        let value = Self {
+            selector: wire.selector,
+            boundary_edge_count: wire.boundary_edge_count,
+            topology_triplets: wire.topology_triplets,
+        };
+        if value.common_incident_edge_ordinal() != wire.common_incident_edge_ordinal {
+            return Err("common_incident_edge_ordinal disagrees with its source fields".into());
+        }
+        Ok(value)
+    }
+}
+
+impl From<DesignTopologyRecipeEntry> for DesignTopologyRecipeEntryWire {
+    fn from(value: DesignTopologyRecipeEntry) -> Self {
+        let common_incident_edge_ordinal = value.common_incident_edge_ordinal();
+        Self {
+            selector: value.selector,
+            boundary_edge_count: value.boundary_edge_count,
+            topology_triplets: value.topology_triplets,
+            common_incident_edge_ordinal,
+        }
+    }
+}
+
 
 /// One three-word invariant in an edge-recipe entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignTopologyRecipeTripletWire", into = "DesignTopologyRecipeTripletWire")]
+#[cfg_attr(feature = "schema", schemars(with = "DesignTopologyRecipeTripletWire"))]
 pub struct DesignTopologyRecipeTriplet {
     /// Equal positive first and third words, not exceeding the containing
     /// entry's boundary-edge count.
     pub outer: NonZeroU32,
     /// Signed middle word retained from the source triplet.
     pub middle: i32,
+    /// Incident edge and its side at the encoded vertex, when derived.
+    pub incident: Option<DesignTopologyIncident>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignTopologyRecipeTripletWire {
+    /// Equal positive first and third words, not exceeding the containing
+    /// entry's boundary-edge count.
+    outer: NonZeroU32,
+    /// Signed middle word retained from the source triplet.
+    middle: i32,
     /// Zero-based loop vertex ordinal encoded by `outer`.
-    pub vertex_ordinal: u32,
+    vertex_ordinal: u32,
     /// Zero-based boundary-edge ordinal incident to `vertex_ordinal`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub incident_edge_ordinal: Option<u32>,
+    incident_edge_ordinal: Option<u32>,
     /// Whether the incident edge precedes or follows the vertex in loop order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub incident_side: Option<DesignTopologyIncidentSide>,
+    incident_side: Option<DesignTopologyIncidentSide>,
+}
+
+impl DesignTopologyRecipeTriplet {
+    /// Return the zero-based vertex ordinal encoded by the outer word.
+    pub fn vertex_ordinal(&self) -> u32 {
+        self.outer.get() - 1
+    }
+}
+
+impl TryFrom<DesignTopologyRecipeTripletWire> for DesignTopologyRecipeTriplet {
+    type Error = String;
+    fn try_from(wire: DesignTopologyRecipeTripletWire) -> Result<Self, Self::Error> {
+        let incident = match (wire.incident_edge_ordinal, wire.incident_side) {
+            (None, None) => None,
+            (Some(ordinal), Some(side)) => Some(DesignTopologyIncident { ordinal, side }),
+            _ => return Err("incident_edge_ordinal and incident_side must occur together".into()),
+        };
+        let value = Self {
+            outer: wire.outer,
+            middle: wire.middle,
+            incident,
+        };
+        if value.vertex_ordinal() != wire.vertex_ordinal {
+            return Err("vertex_ordinal disagrees with its source fields".into());
+        }
+        Ok(value)
+    }
+}
+
+impl From<DesignTopologyRecipeTriplet> for DesignTopologyRecipeTripletWire {
+    fn from(value: DesignTopologyRecipeTriplet) -> Self {
+        let vertex_ordinal = value.vertex_ordinal();
+        Self {
+            outer: value.outer,
+            middle: value.middle,
+            incident_edge_ordinal: value.incident.map(|incident| incident.ordinal),
+            incident_side: value.incident.map(|incident| incident.side),
+            vertex_ordinal,
+        }
+    }
+}
+
+
+/// One incident boundary edge and its side at the selected vertex.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DesignTopologyIncident {
+    pub ordinal: u32,
+    pub side: DesignTopologyIncidentSide,
 }
 
 /// Which loop edge incident to a recipe vertex is named by a topology triplet.

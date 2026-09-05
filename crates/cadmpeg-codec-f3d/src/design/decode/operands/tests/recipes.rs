@@ -864,15 +864,15 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         4
     );
     assert_eq!(
-        structured.sides[0].entries[0].topology_triplets[0].vertex_ordinal,
+        structured.sides[0].entries[0].topology_triplets[0].vertex_ordinal(),
         3
     );
     assert_eq!(
-        structured.sides[0].entries[0].topology_triplets[0].incident_edge_ordinal,
+        structured.sides[0].entries[0].topology_triplets[0].incident.map(|incident| incident.ordinal),
         Some(3)
     );
     assert_eq!(
-        structured.sides[0].entries[0].topology_triplets[0].incident_side,
+        structured.sides[0].entries[0].topology_triplets[0].incident.map(|incident| incident.side),
         Some(crate::records::DesignTopologyIncidentSide::Following)
     );
     assert_eq!(
@@ -886,11 +886,11 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         3
     );
     assert_eq!(
-        structured.sides[0].entries[0].topology_triplets[1].incident_edge_ordinal,
+        structured.sides[0].entries[0].topology_triplets[1].incident.map(|incident| incident.ordinal),
         Some(2)
     );
     assert_eq!(
-        structured.sides[0].entries[0].topology_triplets[1].incident_side,
+        structured.sides[0].entries[0].topology_triplets[1].incident.map(|incident| incident.side),
         Some(crate::records::DesignTopologyIncidentSide::Preceding)
     );
     assert_eq!(structured.sides[1].field_count.get(), 3);
@@ -937,7 +937,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             .expect("signed topology middle is retained");
     assert_eq!(signed_middle[0].topology_triplets[0].middle, -2);
     assert_eq!(
-        signed_middle[0].topology_triplets[0].incident_edge_ordinal,
+        signed_middle[0].topology_triplets[0].incident.map(|incident| incident.ordinal),
         None
     );
     let signed_face = crate::design::decode::operands::face_recipe_structure(&[
@@ -950,7 +950,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         -2
     );
     assert_eq!(
-        signed_face.sides[0].entries[0].topology_triplets[0].incident_edge_ordinal,
+        signed_face.sides[0].entries[0].topology_triplets[0].incident.map(|incident| incident.ordinal),
         None
     );
     let postlude_face = crate::design::decode::operands::face_recipe_structure(&[
@@ -988,24 +988,24 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     let wrap =
         crate::design::decode::operands::edge_recipe_entries(&[1, 5, 1, 0, 1, 1, 1, 1]).unwrap();
-    assert_eq!(wrap[0].topology_triplets[0].vertex_ordinal, 0);
-    assert_eq!(wrap[0].topology_triplets[0].incident_edge_ordinal, Some(4));
-    assert_eq!(wrap[0].common_incident_edge_ordinal, None);
+    assert_eq!(wrap[0].topology_triplets[0].vertex_ordinal(), 0);
+    assert_eq!(wrap[0].topology_triplets[0].incident.map(|incident| incident.ordinal), Some(4));
+    assert_eq!(wrap[0].common_incident_edge_ordinal(), None);
     assert_eq!(
-        wrap[0].topology_triplets[0].incident_side,
+        wrap[0].topology_triplets[0].incident.map(|incident| incident.side),
         Some(crate::records::DesignTopologyIncidentSide::Preceding)
     );
     let common =
         crate::design::decode::operands::edge_recipe_entries(&[1, 5, 1, 1, 1, 1, 1, 1]).unwrap();
-    assert_eq!(common[0].common_incident_edge_ordinal, Some(0));
+    assert_eq!(common[0].common_incident_edge_ordinal(), Some(0));
     let underived =
         crate::design::decode::operands::edge_recipe_entries(&[0, 6, 6, 4, 6, 1, 1, 1]).unwrap();
-    assert_eq!(underived[0].topology_triplets[0].vertex_ordinal, 5);
+    assert_eq!(underived[0].topology_triplets[0].vertex_ordinal(), 5);
     assert_eq!(
-        underived[0].topology_triplets[0].incident_edge_ordinal,
+        underived[0].topology_triplets[0].incident.map(|incident| incident.ordinal),
         None
     );
-    assert_eq!(underived[0].topology_triplets[0].incident_side, None);
+    assert_eq!(underived[0].topology_triplets[0].incident.map(|incident| incident.side), None);
     assert_eq!(
         crate::design::decode::operands::edge_recipe_entries(&[3, 5, 1, 1, 1, 2, 1, 2]).unwrap()[0]
             .selector,
