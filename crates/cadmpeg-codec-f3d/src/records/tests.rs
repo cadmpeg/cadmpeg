@@ -197,6 +197,11 @@ fn extrude_prefixes_preserve_wire_and_reject_partial_locations() {
         let value: super::DesignExtrudePrologueReference = serde_json::from_str(&wire).expect("prologue reference");
         assert_eq!(serde_json::to_string(&value).expect("prologue reference wire"), wire);
     }
+    for marker in [0, 2, u8::MAX] {
+        let wire = format!("{reference},\"operation_prefix_marker\":{marker},\"operation_prefix_marker_offset\":37}}");
+        let error = serde_json::from_str::<super::DesignExtrudePrologueReference>(&wire).expect_err("invalid prefix marker");
+        assert!(error.to_string().contains("operation_prefix_marker"));
+    }
     for field in ["operation_prefix_marker", "operation_prefix_marker_offset"] {
         let error = serde_json::from_str::<super::DesignExtrudePrologueReference>(&format!("{reference},\"{field}\":1}}"))
             .expect_err("partial prologue reference marker");
@@ -215,6 +220,11 @@ fn extrude_prefixes_preserve_wire_and_reject_partial_locations() {
             let wire = format!("{{\"layout\":\"{layout}\"{fields}{suffix}");
             let value: super::DesignExtrudePrologue = serde_json::from_str(&wire).expect("extrude prologue");
             assert_eq!(serde_json::to_string(&value).expect("extrude prologue wire"), wire);
+        }
+        for invalid in [2, u8::MAX] {
+            let wire = format!("{{\"layout\":\"{layout}\",\"{field}\":{invalid},\"{field}_offset\":21{suffix}");
+            let error = serde_json::from_str::<super::DesignExtrudePrologue>(&wire).expect_err("invalid prologue prefix");
+            assert!(error.to_string().contains(field));
         }
         for partial_field in [field.to_owned(), format!("{field}_offset")] {
             let wire = format!("{{\"layout\":\"{layout}\",\"{partial_field}\":1{suffix}");
