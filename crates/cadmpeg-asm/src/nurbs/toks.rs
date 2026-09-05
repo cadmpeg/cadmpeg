@@ -7,7 +7,7 @@
 //! positions. Token positions identify fields within a record payload without
 //! depending on serialized byte offsets.
 
-use crate::nurbs::reader::checked_knot_layout;
+use crate::nurbs::reader::{checked_knot_layout, Nullable};
 use crate::sab::Token;
 
 /// A cursor over one record's payload tokens.
@@ -187,8 +187,7 @@ impl<'a> Cur<'a> {
     /// Consume one optional range bound: `True` + `Double` or a bare `Double`
     /// is a present bound, `False` is an absent bound. The outer `None` is a
     /// parse failure.
-    #[allow(clippy::option_option)] // Outer None is parse failure; inner None is an absent bound.
-    pub(crate) fn take_optional_range_value(&mut self) -> Option<Option<f64>> {
+    pub(crate) fn take_optional_range_value(&mut self) -> Option<Nullable<f64>> {
         let mark = self.pos;
         match self.peek()? {
             Token::True => {
@@ -197,13 +196,13 @@ impl<'a> Cur<'a> {
                     self.pos = mark;
                     return None;
                 };
-                Some(Some(value))
+                Some(Nullable::Value(value))
             }
             Token::False => {
                 self.pos += 1;
-                Some(None)
+                Some(Nullable::Null)
             }
-            Token::Double(_) => self.take_f64().map(Some),
+            Token::Double(_) => self.take_f64().map(Nullable::Value),
             _ => None,
         }
     }

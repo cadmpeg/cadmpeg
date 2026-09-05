@@ -11,7 +11,7 @@ use crate::nurbs::proc_curve::{
     embedded_base_curve_resolving_refs, embedded_surface, embedded_surface_with_ranges,
     optional_embedded_surface_with_bounds, optional_helix_revision,
 };
-use crate::nurbs::reader::{normalized, take_native_ident, LEN_TO_MM};
+use crate::nurbs::reader::{normalized, take_native_ident, Nullable, LEN_TO_MM};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_core::decode::bounded_len;
@@ -500,34 +500,32 @@ pub struct EmbeddedG2Blend {
     pub discontinuities: [Vec<f64>; 3],
 }
 
-#[allow(clippy::option_option)] // Outer None is parse failure; inner None is native nullbs.
 pub(crate) fn decode_nullable_embedded_pcurve(
     bytes: &[u8],
     position: &mut usize,
     int_width: usize,
-) -> Option<Option<NurbsPcurve>> {
+) -> Option<Nullable<NurbsPcurve>> {
     let saved = *position;
     if take_native_ident(bytes, position).as_deref() == Some("nullbs") {
-        return Some(None);
+        return Some(Nullable::Null);
     }
     *position = saved;
     let (pcurve, end) = decode_pcurve_block_with_end(bytes, *position, int_width)?;
     *position = end;
-    Some(Some(pcurve))
+    Some(Nullable::Value(pcurve))
 }
 
 /// Decode a `nullbs`-or-2D-block pcurve slot. Token-space counterpart of
 /// [`decode_nullable_embedded_pcurve`].
-#[allow(clippy::option_option)] // Outer None is parse failure; inner None is native nullbs.
-pub(crate) fn nullable_embedded_pcurve(cur: &mut Cur<'_>) -> Option<Option<NurbsPcurve>> {
+pub(crate) fn nullable_embedded_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<NurbsPcurve>> {
     let saved = cur.pos();
     if cur.take_ident() == Some("nullbs") {
-        return Some(None);
+        return Some(Nullable::Null);
     }
     cur.set_pos(saved);
     let (pcurve, end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
     cur.set_pos(end);
-    Some(Some(pcurve))
+    Some(Nullable::Value(pcurve))
 }
 
 fn g2_side(cur: &mut Cur<'_>) -> Option<EmbeddedG2Side> {
@@ -535,9 +533,9 @@ fn g2_side(cur: &mut Cur<'_>) -> Option<EmbeddedG2Side> {
     let surface = embedded_surface(cur)?;
     let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
     cur.set_pos(curve_end);
-    let first = nullable_embedded_pcurve(cur)?;
+    let first = nullable_embedded_pcurve(cur)?.value();
     let direction = cur.take_vector3()?;
-    let second = nullable_embedded_pcurve(cur)?;
+    let second = nullable_embedded_pcurve(cur)?.value();
     Some(EmbeddedG2Side {
         label,
         surface,
@@ -559,16 +557,12 @@ fn bridge_token(cur: &mut Cur<'_>) -> Option<cadmpeg_ir::geometry::LoftBridgeTok
     }
 }
 
-#[allow(
-    clippy::option_option,
-    reason = "outer None rejects malformed trailing fields; inner None is a valid absent tolerance"
-)]
-fn optional_trailing_cache_tolerance(cur: &mut Cur<'_>) -> Option<Option<f64>> {
+fn optional_trailing_cache_tolerance(cur: &mut Cur<'_>) -> Option<Nullable<f64>> {
     if cur.at_scope_end() {
-        Some(None)
+        Some(Nullable::Null)
     } else {
         let tolerance = cur.take_f64()? * LEN_TO_MM;
-        cur.at_scope_end().then_some(Some(tolerance))
+        cur.at_scope_end().then_some(Nullable::Value(tolerance))
     }
 }
 
@@ -597,8 +591,8 @@ fn g2_blend_spl_sur(
         let table = resolver?;
         let center = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let center_range = [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ];
         let radii = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
         let radius_selector = match cur.take_enum()? {
@@ -608,12 +602,12 @@ fn g2_blend_spl_sur(
             },
         };
         let u_range = [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ];
         let v_range = [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ];
         let shape_prefix = cur.take_long()?;
         let shape_parameter = cur.take_f64()?;
@@ -682,7 +676,7 @@ fn g2_blend_spl_sur(
             if matches!(token, Token::Str(_)) || token.is_payload_ident()))
         .then(|| bridge_token(&mut cur))
         .flatten();
-        let pcurve = nullable_embedded_pcurve(&mut cur)?;
+        let pcurve = nullable_embedded_pcurve(&mut cur)?.value();
         EmbeddedG2FirstShape::None {
             coefficients,
             tolerance,
@@ -1427,10 +1421,9 @@ pub enum EmbeddedDeformableSurfaceData {
     },
 }
 
-#[allow(clippy::option_option)] // Outer None is parse failure; inner None is an absent scale slot.
-fn compound_loft_scale(cur: &mut Cur<'_>) -> Option<Option<EmbeddedCompoundLoftScale>> {
+fn compound_loft_scale(cur: &mut Cur<'_>) -> Option<Nullable<EmbeddedCompoundLoftScale>> {
     if matches!(cur.peek(), Some(Token::True | Token::False)) {
-        return Some(None);
+        return Some(Nullable::Null);
     }
     let count = usize::try_from(cur.take_long()?).ok()?;
     if count > 100_000 {
@@ -1462,7 +1455,7 @@ fn compound_loft_scale(cur: &mut Cur<'_>) -> Option<Option<EmbeddedCompoundLoftS
         auxiliaries.push(curve);
     }
     let tail = [cur.take_long()?, cur.take_long()?];
-    Some(Some(EmbeddedCompoundLoftScale {
+    Some(Nullable::Value(EmbeddedCompoundLoftScale {
         members,
         path,
         auxiliaries,
@@ -1574,13 +1567,13 @@ fn revision_loft_profile_data(
     let (surface, support_bounds, pcurve, secondary_pcurve, first_flag) = match form {
         RevisionLoftMemberForm::Support => {
             let (surface, support_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
-            let pcurve = nullable_embedded_pcurve(cur)?;
+            let pcurve = nullable_embedded_pcurve(cur)?.value();
             let first_flag = cur.take_bool()?;
             (surface, support_bounds, pcurve, None, Some(first_flag))
         }
         RevisionLoftMemberForm::PcurvePair => {
-            let pcurve = nullable_embedded_pcurve(cur)?;
-            let secondary_pcurve = nullable_embedded_pcurve(cur)?;
+            let pcurve = nullable_embedded_pcurve(cur)?.value();
+            let secondary_pcurve = nullable_embedded_pcurve(cur)?.value();
             (None, [None; 4], pcurve, secondary_pcurve, None)
         }
     };
@@ -1627,8 +1620,8 @@ fn revision_loft_section(
             let type_code = cur.take_long()?;
             let curve = embedded_base_curve_resolving_refs(cur, table)?;
             let endpoints = [
-                cur.take_optional_range_value()?,
-                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?.value(),
+                cur.take_optional_range_value()?.value(),
             ];
             let data = revision_loft_profile_data(
                 cur,
@@ -1650,8 +1643,8 @@ fn revision_loft_section(
             cur.set_pos(saved);
             let curve = embedded_base_curve_resolving_refs(cur, table)?;
             let endpoints = [
-                cur.take_optional_range_value()?,
-                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?.value(),
+                cur.take_optional_range_value()?.value(),
             ];
             (Some(curve), Some(endpoints))
         };
@@ -1830,12 +1823,12 @@ fn revision_loft(
     ];
     let wrap_ranges = [
         [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ],
         [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ],
     ];
     let mut flags = [false; 4];
@@ -1913,7 +1906,7 @@ fn loft_spl_sur(
     }
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
-    let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?;
+    let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?.value();
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
@@ -1946,8 +1939,8 @@ fn revision_cl_scale(
         let type_code = cur.take_long()?;
         let curve = embedded_base_curve_resolving_refs(cur, table)?;
         let endpoints = [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ];
         let data = revision_loft_profile_data(
             cur,
@@ -1969,8 +1962,8 @@ fn revision_cl_scale(
         cur.set_pos(saved);
         let curve = embedded_base_curve_resolving_refs(cur, table)?;
         let endpoints = [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ];
         (Some(curve), Some(endpoints))
     };
@@ -2044,8 +2037,8 @@ fn revision_compound_loft(
         }
     };
     let interval = [
-        cur.take_optional_range_value()?,
-        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?.value(),
+        cur.take_optional_range_value()?.value(),
     ];
     // Both parameter values select a trailing curve. The stream has no separate
     // marker; the parameter pair selects it.
@@ -2093,13 +2086,13 @@ fn compound_loft_spl_sur(
     cur.set_pos(cache_end);
     let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let scales = Box::new([
-        compound_loft_scale(&mut cur)?,
-        compound_loft_scale(&mut cur)?,
-        compound_loft_scale(&mut cur)?,
-        compound_loft_scale(&mut cur)?,
+        compound_loft_scale(&mut cur)?.value(),
+        compound_loft_scale(&mut cur)?.value(),
+        compound_loft_scale(&mut cur)?.value(),
+        compound_loft_scale(&mut cur)?.value(),
     ]);
     let fifth_scale = if matches!(cur.peek(), Some(Token::Long(_))) {
-        compound_loft_scale(&mut cur)?.map(Box::new)
+        compound_loft_scale(&mut cur)?.value().map(Box::new)
     } else {
         None
     };
@@ -2108,7 +2101,7 @@ fn compound_loft_spl_sur(
     let tail = match kind {
         6 => {
             let tail_flags = [cur.take_bool()?, cur.take_bool()?];
-            let scale = Box::new(compound_loft_scale(&mut cur)??);
+            let scale = Box::new(compound_loft_scale(&mut cur)?.value()?);
             let selector = cur.take_long()?;
             let direction = cur.take_vector3()?;
             let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
@@ -2124,9 +2117,9 @@ fn compound_loft_spl_sur(
         }
         7 => {
             let first_flag = cur.take_bool()?;
-            let first_scale = compound_loft_scale(&mut cur)?.map(Box::new);
+            let first_scale = compound_loft_scale(&mut cur)?.value().map(Box::new);
             let second_flag = cur.take_bool()?;
-            let second_scale = Box::new(compound_loft_scale(&mut cur)??);
+            let second_scale = Box::new(compound_loft_scale(&mut cur)?.value()?);
             let selector = cur.take_long()?;
             let direction = cur.take_vector3()?;
             let trailing_flags = [cur.take_bool()?, cur.take_bool()?];
@@ -2212,17 +2205,17 @@ fn scaled_compound_loft_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurfa
     ];
     let discontinuity_flag = cur.take_bool()?;
     let scales = Box::new([
-        compound_loft_scale(&mut cur)?,
-        compound_loft_scale(&mut cur)?,
-        compound_loft_scale(&mut cur)?,
+        compound_loft_scale(&mut cur)?.value(),
+        compound_loft_scale(&mut cur)?.value(),
+        compound_loft_scale(&mut cur)?.value(),
     ]);
     let flags = [cur.take_bool()?, cur.take_bool()?];
     let selector = cur.take_long()?;
     let extended = cur.take_bool()?;
     let branch = if extended {
-        let first_scale = compound_loft_scale(&mut cur)?.map(Box::new);
+        let first_scale = compound_loft_scale(&mut cur)?.value().map(Box::new);
         if cur.take_bool()? {
-            let second_scale = Box::new(compound_loft_scale(&mut cur)??);
+            let second_scale = Box::new(compound_loft_scale(&mut cur)?.value()?);
             let selector = cur.take_long()?;
             let direction = cur.take_vector3()?;
             EmbeddedScaledCompoundLoftBranch::ExtendedVector {
@@ -2375,8 +2368,8 @@ fn law_expression_resolving(
                 let endpoints = matches!(cur.peek(), Some(Token::True | Token::False))
                     .then(|| {
                         Some([
-                            cur.take_optional_range_value()?,
-                            cur.take_optional_range_value()?,
+                            cur.take_optional_range_value()?.value(),
+                            cur.take_optional_range_value()?.value(),
                         ])
                     })
                     .flatten();
@@ -2385,8 +2378,8 @@ fn law_expression_resolving(
                 let table = resolver?;
                 let curve = embedded_base_curve_resolving_refs(cur, table)?;
                 let endpoints = Some([
-                    cur.take_optional_range_value()?,
-                    cur.take_optional_range_value()?,
+                    cur.take_optional_range_value()?.value(),
+                    cur.take_optional_range_value()?.value(),
                 ]);
                 (curve, endpoints)
             };
@@ -2954,12 +2947,12 @@ fn revision_sweep_sur(
     let mode = cur.take_long()?;
     let profile = embedded_base_curve_resolving_refs(&mut cur, table)?;
     let profile_endpoints = [
-        cur.take_optional_range_value()?,
-        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?.value(),
+        cur.take_optional_range_value()?.value(),
     ];
     let profile_range = [
-        cur.take_optional_range_value()??,
-        cur.take_optional_range_value()??,
+        cur.take_optional_range_value()?.value()?,
+        cur.take_optional_range_value()?.value()?,
     ];
     let profile_frame = if cur.take_bool()? {
         let point = cur.take_position()?;
@@ -2990,20 +2983,20 @@ fn revision_sweep_sur(
         let first_law = sweep_law_expression(&mut cur)?;
         let first_mode = cur.take_long()?;
         let first_range = [
-            cur.take_optional_range_value()??,
-            cur.take_optional_range_value()??,
+            cur.take_optional_range_value()?.value()?,
+            cur.take_optional_range_value()?.value()?,
         ];
         let law_direction = cur.take_vector3()?;
         let path_mode = cur.take_long()?;
         let path_flag = cur.take_bool()?;
         let path = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let path_endpoints = [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ];
         let path_range = [
-            cur.take_optional_range_value()?? * LEN_TO_MM,
-            cur.take_optional_range_value()?? * LEN_TO_MM,
+            cur.take_optional_range_value()?.value()? * LEN_TO_MM,
+            cur.take_optional_range_value()?.value()? * LEN_TO_MM,
         ];
         let path_parameter = cur.take_f64()?;
         let second_law_flag = cur.take_bool()?;
@@ -3042,12 +3035,12 @@ fn revision_sweep_sur(
         let trajectory_flag = cur.take_bool()?;
         let path = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let path_endpoints = [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ];
         let path_range = [
-            cur.take_optional_range_value()?? * LEN_TO_MM,
-            cur.take_optional_range_value()?? * LEN_TO_MM,
+            cur.take_optional_range_value()?.value()? * LEN_TO_MM,
+            cur.take_optional_range_value()?.value()? * LEN_TO_MM,
         ];
         let path_parameter = cur.take_f64()?;
         let formula_flag = cur.take_bool()?;
@@ -3133,10 +3126,10 @@ fn taper_spl_sur(
         let support = support?;
         let reference = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let reference_endpoints = [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ];
-        let pcurve = nullable_embedded_pcurve(&mut cur)?;
+        let pcurve = nullable_embedded_pcurve(&mut cur)?.value();
         let parameter = cur.take_f64()?;
         let RevisionSurfaceTail {
             enumeration: tail_enum,
@@ -3300,12 +3293,12 @@ pub fn revision_surface_tail(cur: &mut Cur<'_>) -> Option<RevisionSurfaceTail> {
         }
         2 => {
             let u_interval = [
-                cur.take_optional_range_value()?,
-                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?.value(),
+                cur.take_optional_range_value()?.value(),
             ];
             let v_interval = [
-                cur.take_optional_range_value()?,
-                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?.value(),
+                cur.take_optional_range_value()?.value(),
             ];
             (
                 None,
@@ -3435,7 +3428,7 @@ fn off_spl_sur(
     };
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
-    let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?;
+    let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?.value();
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Offset {
             support,
@@ -3466,8 +3459,8 @@ fn rot_spl_sur(
         let table = resolver?;
         let profile = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let profile_endpoints = [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ];
         let origin = cur.take_position()?;
         let axis = cur.take_vector3()?;
@@ -3525,7 +3518,7 @@ fn rot_spl_sur(
     let (cache, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let angular_interval = [*cache.v_knots().first()?, *cache.v_knots().last()?];
-    let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?;
+    let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?.value();
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Revolution {
             directrix: CurveGeometry::Nurbs(directrix),
@@ -3557,13 +3550,13 @@ fn sum_spl_sur(
         let table = resolver?;
         let first = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let first_endpoints = [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ];
         let second = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let second_endpoints = [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ];
         let origin = cur.take_position()?;
         let RevisionSurfaceTail {
@@ -3614,7 +3607,7 @@ fn sum_spl_sur(
     } else {
         let (_, cache_end) = surface_block(span, cur.pos())?;
         cur.set_pos(cache_end);
-        optional_trailing_cache_tolerance(&mut cur)?
+        optional_trailing_cache_tolerance(&mut cur)?.value()
     };
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sum {
@@ -3641,7 +3634,7 @@ fn ruled_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     } else {
         let (_, cache_end) = surface_block(span, cur.pos())?;
         cur.set_pos(cache_end);
-        optional_trailing_cache_tolerance(&mut cur)?
+        optional_trailing_cache_tolerance(&mut cur)?.value()
     };
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Ruled { first, second },
@@ -3675,12 +3668,12 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         // intervals by position and use the specification's labels.
         let unextended_ranges = [
             [
-                cur.take_optional_range_value()?,
-                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?.value(),
+                cur.take_optional_range_value()?.value(),
             ],
             [
-                cur.take_optional_range_value()?,
-                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?.value(),
+                cur.take_optional_range_value()?.value(),
             ],
         ];
         let extension = cur.take_enum()?;
@@ -3757,7 +3750,7 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         } = revision_surface_tail(&mut cur)?;
         let mut bounds = [None; 4];
         for bound in &mut bounds {
-            *bound = cur.take_optional_range_value()?;
+            *bound = cur.take_optional_range_value()?.value();
         }
         cache_fit_tolerance = fit_tolerance;
         discontinuities = tail_discontinuities.clone();

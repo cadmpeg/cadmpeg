@@ -845,8 +845,8 @@ fn embedded_deformable(
         }
     };
     let source_parameter_range = [
-        cur.take_optional_range_value()?,
-        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?.value(),
+        cur.take_optional_range_value()?.value(),
     ];
     let mode = cur.take_long()?;
     let data = match mode {
@@ -928,29 +928,27 @@ fn embedded_deformable(
 
 /// Decode one law support surface, mapping the `null_surface` sentinel to an
 /// absent side.
-#[allow(clippy::option_option)] // Outer None is parse failure; inner None is a null carrier.
-fn nullable_law_surface(cur: &mut Cur<'_>) -> Option<Option<SurfaceGeometry>> {
+fn nullable_law_surface(cur: &mut Cur<'_>) -> Option<Nullable<SurfaceGeometry>> {
     let saved = cur.pos();
     if cur.take_ident() == Some("null_surface") {
-        return Some(None);
+        return Some(Nullable::Null);
     }
     cur.set_pos(saved);
-    Some(Some(embedded_surface(cur)?))
+    Some(Nullable::Value(embedded_surface(cur)?))
 }
 
 /// Consume one version-form interval bound: a bare `false` unbounded sentinel
 /// or a `true`-prefixed double. Any other encoding fails the strict match so
 /// the record falls back to verbatim retention.
-#[allow(clippy::option_option)] // Outer None is parse failure; inner None is an unbounded bound.
-fn law_version_bound(cur: &mut Cur<'_>) -> Option<Option<f64>> {
+fn law_version_bound(cur: &mut Cur<'_>) -> Option<Nullable<f64>> {
     match cur.peek()? {
         Token::False => {
             cur.bump();
-            Some(None)
+            Some(Nullable::Null)
         }
         Token::True => {
             cur.bump();
-            cur.take_f64().map(Some)
+            cur.take_f64().map(Nullable::Value)
         }
         _ => None,
     }
@@ -980,13 +978,13 @@ fn embedded_law_curve(toks: &[Token]) -> Option<EmbeddedLawCurve> {
     cur.set_pos(solved_end);
     cur.take_f64()?;
     let first_surface_start = cur.pos();
-    let first_surface = nullable_law_surface(&mut cur)?;
+    let first_surface = nullable_law_surface(&mut cur)?.value();
     let second_surface_start = cur.pos();
-    let second_surface = nullable_law_surface(&mut cur)?;
+    let second_surface = nullable_law_surface(&mut cur)?.value();
     let surfaces = [first_surface, second_surface];
     let mut pcurves = [
-        nullable_embedded_pcurve(&mut cur)?,
-        nullable_embedded_pcurve(&mut cur)?,
+        nullable_embedded_pcurve(&mut cur)?.value(),
+        nullable_embedded_pcurve(&mut cur)?.value(),
     ];
     for (pcurve, chart) in pcurves.iter_mut().zip([
         native_support_chart(toks, first_surface_start),
@@ -997,7 +995,10 @@ fn embedded_law_curve(toks: &[Token]) -> Option<EmbeddedLawCurve> {
         }
     }
     let (parameter_range, version) = if let Some((stamp, post_enum)) = stamp {
-        let bounds = [law_version_bound(&mut cur)?, law_version_bound(&mut cur)?];
+        let bounds = [
+            law_version_bound(&mut cur)?.value(),
+            law_version_bound(&mut cur)?.value(),
+        ];
         let domain = nurbs_curve_parameter_domain(&solved).unwrap_or([0.0, 0.0]);
         let parameter_range = [
             bounds[0].unwrap_or(domain[0]),
@@ -1504,21 +1505,21 @@ fn embedded_surface_offset(
     if matches!(cur.peek(), Some(Token::Long(_))) {
         let context = cache_first_curve_context(&mut cur, solved, table)?;
         let base_u_range = [
-            cur.take_optional_range_value()??,
-            cur.take_optional_range_value()??,
+            cur.take_optional_range_value()?.value()?,
+            cur.take_optional_range_value()?.value()?,
         ];
         let base_v_range = [
-            cur.take_optional_range_value()??,
-            cur.take_optional_range_value()??,
+            cur.take_optional_range_value()?.value()?,
+            cur.take_optional_range_value()?.value()?,
         ];
         let base = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let base_endpoints = [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ];
         let base_range = [
-            cur.take_optional_range_value()??,
-            cur.take_optional_range_value()??,
+            cur.take_optional_range_value()?.value()?,
+            cur.take_optional_range_value()?.value()?,
         ];
         return Some(EmbeddedSurfaceOffset {
             context: EmbeddedIntersection {
@@ -1796,8 +1797,8 @@ pub fn decode_par_int_cur_isoline(
         decode_optional_rolling_ball_surface(scope, &mut position, int_width, reference_context)?.0,
     ];
     let pcurves = [
-        decode_nullable_embedded_pcurve(scope, &mut position, int_width)?,
-        decode_nullable_embedded_pcurve(scope, &mut position, int_width)?,
+        decode_nullable_embedded_pcurve(scope, &mut position, int_width)?.value(),
+        decode_nullable_embedded_pcurve(scope, &mut position, int_width)?.value(),
     ];
     // The support-slot selector puts the parametric support and its parameter
     // curve in the same slot and nulls the other; a support without its pcurve,
@@ -1834,8 +1835,8 @@ pub(crate) fn par_int_cur_isoline(
         optional_rolling_ball_surface(&mut cur, reference_context)?.0,
     ];
     let pcurves = [
-        nullable_embedded_pcurve(&mut cur)?,
-        nullable_embedded_pcurve(&mut cur)?,
+        nullable_embedded_pcurve(&mut cur)?.value(),
+        nullable_embedded_pcurve(&mut cur)?.value(),
     ];
     // The support-slot selector puts the parametric support and its parameter
     // curve in the same slot and nulls the other; a support without its pcurve,
@@ -1942,8 +1943,8 @@ fn cache_first_curve_context(
         2 => cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(
             cadmpeg_ir::geometry::CacheFirstCurveParameterization {
                 interval: [
-                    cur.take_optional_range_value()?,
-                    cur.take_optional_range_value()?,
+                    cur.take_optional_range_value()?.value(),
+                    cur.take_optional_range_value()?.value(),
                 ],
                 closed_form: cur.take_enum()?,
             },
@@ -1957,8 +1958,8 @@ fn cache_first_curve_context(
     let second_support_present = support_slot_present(cur, table);
     let (second_surface, second_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
     let mut pcurves = [
-        nullable_embedded_pcurve(cur)?,
-        nullable_embedded_pcurve(cur)?,
+        nullable_embedded_pcurve(cur)?.value(),
+        nullable_embedded_pcurve(cur)?.value(),
     ];
     if let Some(pcurve) = &mut pcurves[0] {
         normalize_support_pcurve(
@@ -1973,8 +1974,8 @@ fn cache_first_curve_context(
         );
     }
     let solved_range = [
-        cur.take_optional_range_value()?,
-        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?.value(),
+        cur.take_optional_range_value()?.value(),
     ];
     let domain = nurbs_curve_parameter_domain(solved)?;
     let parameter_range = [
@@ -2373,15 +2374,15 @@ fn cache_first_intersection(
     cur.take_f64()?;
     let first_surface_start = cur.pos();
     let first_support_present = support_slot_present(&cur, table);
-    let first_surface = optional_embedded_surface_resolving_ref(&mut cur, table)?;
+    let first_surface = optional_embedded_surface_with_bounds(&mut cur, table)?.0;
     let second_surface_start = cur.pos();
     let second_support_present = support_slot_present(&cur, table);
-    let second_surface = optional_embedded_surface_resolving_ref(&mut cur, table)?;
+    let second_surface = optional_embedded_surface_with_bounds(&mut cur, table)?.0;
     let surfaces = [first_surface, second_surface];
     let support_present = [first_support_present, second_support_present];
     let mut pcurves = [
-        nullable_embedded_pcurve(&mut cur)?,
-        nullable_embedded_pcurve(&mut cur)?,
+        nullable_embedded_pcurve(&mut cur)?.value(),
+        nullable_embedded_pcurve(&mut cur)?.value(),
     ];
     if let Some(pcurve) = &mut pcurves[0] {
         normalize_support_pcurve(native_support_chart(toks, first_surface_start), pcurve);
@@ -2391,8 +2392,12 @@ fn cache_first_intersection(
     }
     let domain = nurbs_curve_parameter_domain(solved)?;
     let parameter_range = [
-        cur.take_optional_range_value()?.unwrap_or(domain[0]),
-        cur.take_optional_range_value()?.unwrap_or(domain[1]),
+        cur.take_optional_range_value()?
+            .value()
+            .unwrap_or(domain[0]),
+        cur.take_optional_range_value()?
+            .value()
+            .unwrap_or(domain[1]),
     ];
     let discontinuities = [
         cur.take_float_array()?,
@@ -2941,14 +2946,6 @@ fn decode_embedded_surface_fields(
     }
 }
 
-#[allow(clippy::option_option)] // Outer None is parse failure; inner None is an unresolved ref.
-fn optional_embedded_surface_resolving_ref(
-    cur: &mut Cur<'_>,
-    table: &SubtypeTable,
-) -> Option<Option<SurfaceGeometry>> {
-    optional_embedded_surface_with_bounds(cur, table).map(|(surface, _)| surface)
-}
-
 /// Optional embedded support surface plus its four optional U/V bound fields.
 #[allow(clippy::type_complexity)]
 pub(crate) fn optional_embedded_surface_with_bounds(
@@ -2982,7 +2979,7 @@ pub(crate) fn optional_embedded_surface_with_bounds(
                 .map(SurfaceGeometry::Nurbs);
             let mut bounds = [None; 4];
             for bound in &mut bounds {
-                *bound = cur.take_optional_range_value()?;
+                *bound = cur.take_optional_range_value()?.value();
             }
             return Some((surface, bounds));
         }
@@ -2992,7 +2989,7 @@ pub(crate) fn optional_embedded_surface_with_bounds(
         let mut bounds = [None; 4];
         if kind == Some("plane") || kind == Some("spline") {
             for bound in &mut bounds {
-                *bound = cur.take_optional_range_value()?;
+                *bound = cur.take_optional_range_value()?.value();
             }
         }
         return Some((Some(surface), bounds));
@@ -3022,7 +3019,7 @@ pub(crate) fn optional_embedded_surface_with_bounds(
             cur.set_pos(cur.pos() + scope.len());
             let mut bounds = [None; 4];
             for bound in &mut bounds {
-                *bound = cur.take_optional_range_value()?;
+                *bound = cur.take_optional_range_value()?.value();
             }
             return Some((surface, bounds));
         }
@@ -3260,7 +3257,7 @@ pub fn record_trailing_surface_bounds(toks: &[Token]) -> Option<[Option<f64>; 4]
     let mut cur = Cur::at(toks, position);
     let mut bounds = [None; 4];
     for bound in &mut bounds {
-        *bound = cur.take_optional_range_value()?;
+        *bound = cur.take_optional_range_value()?.value();
     }
     Some(bounds)
 }
