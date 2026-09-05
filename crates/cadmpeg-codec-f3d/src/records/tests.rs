@@ -3392,3 +3392,45 @@ fn sketch_text_layout_rejects_partial_placement_and_alignment() {
         assert!(error.to_string().contains(field), "{error}");
     }
 }
+
+#[test]
+fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
+    use super::SketchPoint;
+    use serde_json::json;
+
+    for (form, count) in [
+        (json!({"kind": "version0"}), 1),
+        (json!({"kind": "version8"}), 7),
+        (json!({"kind": "version10"}), 7),
+        (json!({"kind": "version10_inline_typed", "trailing_reference": 3}), 7),
+        (json!({"kind": "version11", "padded_paired_reference": false}), 8),
+        (json!({"kind": "version11_inline_typed", "trailing_reference": 3}), 8),
+    ] {
+        let mut base = json!({
+            "id": "point", "record_index": 1, "class_tag": "000",
+            "byte_offset": 0, "coordinate_offset": 1, "record_form": form,
+            "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0
+        });
+        if count > 1 {
+            base["persistent_id"] = json!(4);
+            base["closure"] = json!({"selector": 0, "state": 0});
+        }
+        let point: SketchPoint = serde_json::from_value(base.clone()).expect("omitted zero flags");
+        assert_eq!(serde_json::to_value(point).unwrap(), base);
+        for lane in 0..8 {
+            for value in [1, 2, 255] {
+                let mut wire = base.clone();
+                let mut flags = [0; 8];
+                flags[lane] = value;
+                wire["flags"] = json!(flags);
+                let decoded = serde_json::from_value::<SketchPoint>(wire.clone());
+                if lane < count && value == 1 {
+                    assert_eq!(serde_json::to_value(decoded.expect("boolean flag")).unwrap(), wire);
+                } else {
+                    let error = decoded.unwrap_err();
+                    assert!(error.to_string().contains("flags"), "{error}");
+                }
+            }
+        }
+    }
+}

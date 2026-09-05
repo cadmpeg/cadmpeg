@@ -213,7 +213,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     identityless_point.record_index = 21;
     identityless_point.coordinate_offset = 33;
     identityless_point.entity_genesis = None;
-    identityless_point.record_form = crate::records::SketchPointRecordForm::Version0 { flag: 0 };
+    identityless_point.record_form = crate::records::SketchPointRecordForm::Version0 { flag: false };
 
     // The `EntityGenesis`-flavor frame stores its origin in centimetres
     // while the sketch records carry ten-times-centimetre values; the

@@ -520,13 +520,7 @@ fn encode_sketch_point(
     record[62 + shift..70 + shift].copy_from_slice(&persistent_id.to_le_bytes());
     record[70 + shift] = 1;
     record[71 + shift..75 + shift].copy_from_slice(&point.paired_reference.to_le_bytes());
-    if flags.iter().any(|flag| *flag > 1) {
-        return Err(CodecError::malformed(format_args!(
-            "source-less sketch point {} has a flag outside zero or one",
-            point.id
-        )));
-    }
-    record[81 + shift..89 + shift].copy_from_slice(flags);
+    record[81 + shift..89 + shift].copy_from_slice(&flags.map(u8::from));
     record[89 + shift..97 + shift]
         .copy_from_slice(&(point.coordinates.u / LEN_TO_MM).to_le_bytes());
     record[97 + shift..105 + shift]

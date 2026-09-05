@@ -8187,7 +8187,6 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 entity: Some(point.id.clone()),
             });
         }
-        let flags_valid = point.flags().iter().all(|flag| *flag <= 1);
         let companion_curves_unique = point.companion.as_ref().is_none_or(|companion| {
             companion
                 .incident_curves
@@ -8224,7 +8223,7 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 persistent_id, ..
             } => persistent_id != 0,
         };
-        if !flags_valid || !companion_curves_unique || !companion_form_valid || !identity_form_valid
+        if !companion_curves_unique || !companion_form_valid || !identity_form_valid
         {
             findings.push(Finding {
                 check: Check::NativeLinks,

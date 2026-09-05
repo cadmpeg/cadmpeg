@@ -16660,13 +16660,13 @@ impl SketchPointClosure10Inline {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SketchPointRecordForm {
     /// Class version 0: one flag, two coordinates, and no persistent identity.
-    Version0 { flag: u8 },
+    Version0 { flag: bool },
     /// Class version 8: seven flags and an eight-zero closure lane.
-    Version8 { persistent_id: u64, flags: [u8; 7] },
+    Version8 { persistent_id: u64, flags: [bool; 7] },
     /// Class version 10 with same-segment references and seven flags.
     Version10 {
         persistent_id: u64,
-        flags: [u8; 7],
+        flags: [bool; 7],
         closure: SketchPointClosure10,
     },
     /// Class version 10 with inline target-type GUIDs on its references.
@@ -16674,7 +16674,7 @@ pub enum SketchPointRecordForm {
         /// Final inline-typed reference following the repeated companion reference.
         trailing_reference: u32,
         persistent_id: u64,
-        flags: [u8; 7],
+        flags: [bool; 7],
         closure: SketchPointClosure10Inline,
     },
     /// Class version 11 with same-segment references and eight flags.
@@ -16682,7 +16682,7 @@ pub enum SketchPointRecordForm {
         /// Whether four fixed zero bytes follow the repeated companion reference.
         padded_paired_reference: bool,
         persistent_id: u64,
-        flags: [u8; 8],
+        flags: [bool; 8],
         closure: SketchPointClosure,
     },
     /// Class version 11 with inline target-type GUIDs on its references and eight flags.
@@ -16690,7 +16690,7 @@ pub enum SketchPointRecordForm {
         /// Final inline-typed reference following the repeated companion reference.
         trailing_reference: u32,
         persistent_id: u64,
-        flags: [u8; 8],
+        flags: [bool; 8],
         closure: SketchPointClosure,
     },
 }
@@ -16706,7 +16706,7 @@ impl SketchPointRecordForm {
         Self::Version11 {
             padded_paired_reference: false,
             persistent_id,
-            flags: [0; 8],
+            flags: [false; 8],
             closure,
         }
     }
@@ -16754,29 +16754,16 @@ impl SketchPointRecordForm {
     pub(crate) fn flags(&self) -> [u8; 8] {
         let mut flags = [0; 8];
         match self {
-            Self::Version0 { flag } => flags[0] = *flag,
+            Self::Version0 { flag } => flags[0] = u8::from(*flag),
             Self::Version8 { flags: source, .. }
             | Self::Version10 { flags: source, .. }
             | Self::Version10InlineTyped { flags: source, .. } => {
-                flags[..7].copy_from_slice(source);
+                flags[..7].copy_from_slice(&source.map(u8::from));
             }
             Self::Version11 { flags: source, .. }
-            | Self::Version11InlineTyped { flags: source, .. } => flags = *source,
+            | Self::Version11InlineTyped { flags: source, .. } => flags = source.map(u8::from),
         }
         flags
-    }
-
-    pub(crate) fn set_flags(&mut self, flags: [u8; 8]) {
-        match self {
-            Self::Version0 { flag } => *flag = flags[0],
-            Self::Version8 { flags: dest, .. }
-            | Self::Version10 { flags: dest, .. }
-            | Self::Version10InlineTyped { flags: dest, .. } => {
-                dest.copy_from_slice(&flags[..7]);
-            }
-            Self::Version11 { flags: dest, .. }
-            | Self::Version11InlineTyped { flags: dest, .. } => *dest = flags,
-        }
     }
 
     pub(crate) fn closure(&self) -> Option<SketchPointClosure> {
@@ -16872,10 +16859,6 @@ impl SketchPoint {
         self.record_form.flags()
     }
 
-    pub(crate) fn set_flags(&mut self, flags: [u8; 8]) {
-        self.record_form.set_flags(flags);
-    }
-
     pub(crate) fn closure(&self) -> Option<SketchPointClosure> {
         self.record_form.closure()
     }
@@ -16929,11 +16912,11 @@ impl Default for SketchPointRecordFormSerde {
     }
 }
 
-fn seven_flags(flags: [u8; 8]) -> Result<[u8; 7], String> {
-    if flags[7] != 0 {
+fn seven_flags(flags: [bool; 8]) -> Result<[bool; 7], String> {
+    if flags[7] {
         return Err("sketch point flags beyond the form width must be zero".into());
     }
-    let mut dest = [0; 7];
+    let mut dest = [false; 7];
     dest.copy_from_slice(&flags[..7]);
     Ok(dest)
 }
@@ -16945,10 +16928,11 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
         if wire.flags.iter().any(|flag| *flag > 1) {
             return Err("sketch point flags must be zero or one".into());
         }
+        let flags = wire.flags.map(|flag| flag == 1);
         let closure = wire.closure.map(SketchPointClosure::try_from).transpose()?;
         let record_form = match (wire.record_form, wire.persistent_id, closure) {
             (SketchPointRecordFormSerde::Version0, None, None) => SketchPointRecordForm::Version0 {
-                flag: wire.flags[0],
+                flag: flags[0],
             },
             (
                 SketchPointRecordFormSerde::Version8,
@@ -16956,12 +16940,12 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 Some(SketchPointClosure::Selector0State0),
             ) => SketchPointRecordForm::Version8 {
                 persistent_id,
-                flags: seven_flags(wire.flags)?,
+                flags: seven_flags(flags)?,
             },
             (SketchPointRecordFormSerde::Version10, Some(persistent_id), Some(closure)) => {
                 SketchPointRecordForm::Version10 {
                     persistent_id,
-                    flags: seven_flags(wire.flags)?,
+                    flags: seven_flags(flags)?,
                     closure: SketchPointClosure10::from_closure(closure).ok_or_else(|| {
                         "sketch point version-10 closure must be selector 0 with state 0 or 1"
                             .to_string()
@@ -16975,7 +16959,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             ) => SketchPointRecordForm::Version10InlineTyped {
                 trailing_reference,
                 persistent_id,
-                flags: seven_flags(wire.flags)?,
+                flags: seven_flags(flags)?,
                 closure: SketchPointClosure10Inline::from_closure(closure).ok_or_else(|| {
                     "sketch point version-10 inline closure must be (0,0), (0,1), or (2,1)"
                         .to_string()
@@ -16990,7 +16974,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             ) => SketchPointRecordForm::Version11 {
                 padded_paired_reference,
                 persistent_id,
-                flags: wire.flags,
+                flags,
                 closure,
             },
             (
@@ -17000,7 +16984,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             ) => SketchPointRecordForm::Version11InlineTyped {
                 trailing_reference,
                 persistent_id,
-                flags: wire.flags,
+                flags,
                 closure,
             },
             _ => {

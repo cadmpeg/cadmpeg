@@ -2261,7 +2261,7 @@ fn decode_version_zero_sketch_point(
         owner_reference: Some(owner_reference),
         coordinate_offset,
         entity_genesis: None,
-        record_form: SketchPointRecordForm::Version0 { flag },
+        record_form: SketchPointRecordForm::Version0 { flag: flag == 1 },
         paired_reference,
         coordinates: [x, y, 0.0],
     })
@@ -2354,7 +2354,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 (
                     SketchPointRecordForm::Version8 {
                         persistent_id,
-                        flags: seven,
+                        flags: seven.map(|flag| flag == 1),
                     },
                     Some(owner),
                 )
@@ -2364,7 +2364,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 (
                     SketchPointRecordForm::Version10 {
                         persistent_id,
-                        flags: seven,
+                        flags: seven.map(|flag| flag == 1),
                         closure: crate::records::SketchPointClosure10::from_closure(closure)?,
                     },
                     Some(owner),
@@ -2382,7 +2382,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                     SketchPointRecordForm::Version10InlineTyped {
                         trailing_reference,
                         persistent_id,
-                        flags: seven,
+                        flags: seven.map(|flag| flag == 1),
                         closure: crate::records::SketchPointClosure10Inline::from_closure(closure)?,
                     },
                     None,
@@ -2400,7 +2400,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                     SketchPointRecordForm::Version11InlineTyped {
                         trailing_reference,
                         persistent_id,
-                        flags,
+                        flags: flags.map(|flag| flag == 1),
                         closure,
                     },
                     None,
@@ -2420,7 +2420,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                     SketchPointRecordForm::Version11 {
                         padded_paired_reference,
                         persistent_id,
-                        flags,
+                        flags: flags.map(|flag| flag == 1),
                         closure,
                     },
                     Some(owner),

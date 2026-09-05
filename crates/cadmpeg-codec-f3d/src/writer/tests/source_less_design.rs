@@ -807,7 +807,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         point.record_form = crate::records::SketchPointRecordForm::Version11 {
             padded_paired_reference: true,
             persistent_id,
-            flags: [1, 0, 0, 1, 0, 1, 0, 1],
+            flags: [true, false, false, true, false, true, false, true],
             closure: crate::records::SketchPointClosure::Selector4State0,
         };
         point.companion = Some(crate::records::SketchPointCompanion {
