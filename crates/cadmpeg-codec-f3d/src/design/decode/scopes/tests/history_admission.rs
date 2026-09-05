@@ -93,8 +93,7 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
     older.class_tag = "392".into();
     older.frame_length = 260;
     older.feature_ordinal = 1;
-    older.reference_members = vec![101, 102, 103];
-    older.reference_member_offsets = vec![110, 120, 130];
+    older.reference_members = crate::records::ReferenceRun::from_columns(vec![101, 102, 103], vec![110, 120, 130], "reference_members").unwrap();
     older.paired_class_tag = "262".into();
     let mut newer = older.clone();
     newer.id = "f3d:stream:design-parameter-scope#200".into();
@@ -102,7 +101,7 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
     newer.class_tag = "404".into();
     newer.frame_length = 340;
     newer.history_state_id = Some(9);
-    newer.reference_member_offsets = vec![210, 220, 230];
+    newer.reference_members = crate::records::ReferenceRun::from_columns(newer.reference_members.values().copied().collect(), vec![210, 220, 230], "reference_members").unwrap();
     newer.paired_class_tag = "258".into();
 
     let mut scopes = vec![older, newer];

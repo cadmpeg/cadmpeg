@@ -74,8 +74,7 @@ fn exact_base_feature_scope_tail(
         || scope.frame_length != u64::try_from(layout.frame_length).ok()?
         || scope.reference_count_offset
             != scope.byte_offset + u64::try_from(layout.reference_count).ok()?
-        || scope.reference_member_offsets.as_slice()
-            != [scope.byte_offset + u64::try_from(layout.generic_scope_reference_record).ok()?]
+        || !scope.reference_members.offsets().copied().eq([scope.byte_offset + u64::try_from(layout.generic_scope_reference_record).ok()?])
         || scope.history_state_id_offset
             != scope.byte_offset + u64::try_from(layout.history_state_id).ok()?
         || scope.kind_offset != scope.byte_offset + u64::try_from(layout.kind).ok()?
@@ -88,7 +87,7 @@ fn exact_base_feature_scope_tail(
         || bytes.get(start + layout.generic_scope_reference_marker)
             != Some(&class_377::GENERIC_SCOPE_REFERENCE_MARKER_VALUE)
         || marked_record_reference(bytes, start + layout.generic_scope_reference_marker)
-            != Some(scope.reference_members[0])
+            != Some(*scope.reference_members.values().next()?)
         || bytes
             .get(start + layout.generic_scope_reference_field..start + layout.history_state_id)?
             != [0; 6]
@@ -218,7 +217,7 @@ fn exact_base_feature_legacy_compact(
             start + class_452_compact::AUXILIARY_REFERENCE_FIELD
                 ..start + class_452_compact::ENVELOPE_GUID_CODE_UNIT_COUNT,
         )? != [0; 10]
-        || scope.reference_members.as_slice() != [u32::try_from(scope_reference).ok()?]
+        || !scope.reference_members.values().copied().eq([u32::try_from(scope_reference).ok()?])
     {
         return None;
     }
@@ -355,7 +354,7 @@ fn exact_base_feature_legacy_expanded(
         )? != [0; 6]
         || bytes.get(start + class_452_expanded::PARAMETER_BODY_SEPARATOR)
             != Some(&class_452_expanded::PARAMETER_BODY_SEPARATOR_VALUE)
-        || scope_reference != scope.reference_members.first().copied()?
+        || scope_reference != scope.reference_members.values().next().copied()?
         || bytes.get(
             start + class_452_expanded::SCOPE_REFERENCE_FIELD
                 ..start + class_452_expanded::AUXILIARY_BODY_COUNT,
@@ -444,9 +443,8 @@ fn exact_base_feature_direct_body_based_on_faces(
         || scope.reference_members.len() != 1
         || scope.reference_count_offset
             != scope.byte_offset + u64::try_from(class_377::REFERENCE_COUNT).ok()?
-        || scope.reference_member_offsets.as_slice()
-            != [scope.byte_offset
-                + u64::try_from(class_377::GENERIC_SCOPE_REFERENCE_RECORD).ok()?]
+        || !scope.reference_members.offsets().copied().eq([scope.byte_offset
+                + u64::try_from(class_377::GENERIC_SCOPE_REFERENCE_RECORD).ok()?])
         || scope.history_state_id_offset
             != scope.byte_offset + u64::try_from(class_377::HISTORY_STATE_ID).ok()?
         || scope.kind_offset
@@ -522,7 +520,7 @@ fn exact_base_feature_direct_body_based_on_faces(
                 ..start + class_377::SCOPE_REFERENCE_MEMBER_MARKER,
         )? != [0; 7]
         || marked_record_reference(bytes, start + class_377::SCOPE_REFERENCE_MEMBER_MARKER)?
-            != scope.reference_members[0]
+            != *scope.reference_members.values().next()?
         || bytes.get(
             start + class_377::SCOPE_REFERENCE_MEMBER_FIELD
                 ..start + class_377::AUXILIARY_GROUP_MARKER,
@@ -566,7 +564,7 @@ fn exact_base_feature_direct_body_based_on_faces(
         || View::u32_le_at(bytes, start + class_377::REFERENCE_COUNT)?
             != class_377::REFERENCE_COUNT_VALUE
         || marked_record_reference(bytes, start + class_377::GENERIC_SCOPE_REFERENCE_MARKER)?
-            != scope.reference_members[0]
+            != *scope.reference_members.values().next()?
         || View::u32_le_at(bytes, start + class_377::HISTORY_STATE_ID)?
             != scope
                 .history_state_id

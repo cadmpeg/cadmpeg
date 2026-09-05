@@ -47,15 +47,34 @@ impl<T: PartialEq, O: PartialEq> PartialEq for ReferenceRun<T, O> {
 impl<T: Eq, O: Eq> Eq for ReferenceRun<T, O> {}
 
 impl<T, O> ReferenceRun<T, O> {
-    pub fn values(&self) -> impl DoubleEndedIterator<Item = &T> {
-        let (unlocated, located): (&[T], &[Located<T, O>]) = match self {
-            Self::Unlocated(values) => (values, &[]),
-            Self::Located(values) => (&[], values),
-        };
-        unlocated.iter().chain(located.iter().map(|row| &row.value))
+    pub fn values(&self) -> impl ExactSizeIterator<Item = &T> + DoubleEndedIterator + Clone {
+        (0..self.len()).map(|index| match self {
+            Self::Unlocated(values) => &values[index],
+            Self::Located(values) => &values[index].value,
+        })
     }
 
-    pub fn offsets(&self) -> impl Iterator<Item = &O> {
+    pub fn values_in(&self, range: std::ops::Range<usize>) -> Option<impl ExactSizeIterator<Item = &T> + DoubleEndedIterator + Clone> {
+        if range.start > range.end || range.end > self.len() {
+            return None;
+        }
+        Some(self.values().skip(range.start).take(range.end - range.start))
+    }
+
+    pub fn values_array<const N: usize>(&self) -> Option<[&T; N]> {
+        match self {
+            Self::Unlocated(values) => {
+                let values: &[T; N] = values.as_slice().try_into().ok()?;
+                Some(values.each_ref())
+            }
+            Self::Located(values) => {
+                let values: &[Located<T, O>; N] = values.as_slice().try_into().ok()?;
+                Some(values.each_ref().map(|row| &row.value))
+            }
+        }
+    }
+
+    pub fn offsets(&self) -> impl ExactSizeIterator<Item = &O> + DoubleEndedIterator + Clone {
         let rows: &[Located<T, O>] = match self {
             Self::Unlocated(_) => &[],
             Self::Located(rows) => rows,
@@ -86,7 +105,7 @@ impl<T, O> ReferenceRun<T, O> {
         }
     }
 
-    fn from_wire(values: Vec<T>, offsets: Vec<O>, field: &str) -> Result<Self, String> {
+    pub(crate) fn from_columns(values: Vec<T>, offsets: Vec<O>, field: &str) -> Result<Self, String> {
         if offsets.is_empty() {
             return Ok(Self::Unlocated(values));
         }
@@ -5036,9 +5055,7 @@ pub struct DesignParameterScope {
     /// Byte offset of the ordered reference-table count.
     pub reference_count_offset: u64,
     /// Ordered indexed-record references carried by the scope.
-    pub reference_members: Vec<u32>,
-    /// Byte offsets parallel to `reference_members`.
-    pub reference_member_offsets: Vec<u64>,
+    pub reference_members: ReferenceRun<u32>,
     /// Family-specific construction records.
     pub payload: DesignScopePayload,
     /// Reference members whose records open a construction-operand group the
@@ -6667,8 +6684,8 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             previous_history_state_id: wire.previous_history_state_id,
             previous_history_state_id_offset: wire.previous_history_state_id_offset,
             reference_count_offset: wire.reference_count_offset,
-            reference_members: wire.reference_members,
-            reference_member_offsets: wire.reference_member_offsets,
+            reference_members: ReferenceRun::from_columns(wire.reference_members, wire.reference_member_offsets, "reference_members/reference_member_offsets")
+                .map_err(DesignParameterScopePayloadError)?,
             payload,
             unclosed_construction_operand_groups: wire.unclosed_construction_operand_groups,
             paired_class_tag: wire.paired_class_tag,
@@ -6680,6 +6697,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
 impl From<DesignParameterScope> for DesignParameterScopeSerde {
     fn from(scope: DesignParameterScope) -> Self {
         let kind = scope.kind();
+        let (reference_members, reference_member_offsets) = scope.reference_members.into_wire();
         let mut wire = DesignParameterScopeSerde {
             id: scope.id,
             byte_offset: scope.byte_offset,
@@ -6697,8 +6715,8 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             previous_history_state_id: scope.previous_history_state_id,
             previous_history_state_id_offset: scope.previous_history_state_id_offset,
             reference_count_offset: scope.reference_count_offset,
-            reference_members: scope.reference_members,
-            reference_member_offsets: scope.reference_member_offsets,
+            reference_members,
+            reference_member_offsets,
             solid_primitive: None,
             direct_face_operation: None,
             move_operation: None,
@@ -7552,8 +7570,7 @@ impl DesignParameterScope {
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
             reference_count_offset: 0,
-            reference_members: Vec::new(),
-            reference_member_offsets: Vec::new(),
+            reference_members: ReferenceRun::Unlocated(Vec::new()),
             payload: kind.into(),
             unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: String::new(),
@@ -11319,7 +11336,7 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
             version: wire.version,
             version_offset: wire.version_offset,
             module: wire.module,
-            entities: ReferenceRun::from_wire(wire.entity_ids, wire.entity_id_offsets, "entity_ids/entity_id_offsets")?,
+            entities: ReferenceRun::from_columns(wire.entity_ids, wire.entity_id_offsets, "entity_ids/entity_id_offsets")?,
             base_type_guid: RecordedValue::from_wire(wire.base_type_guid, wire.base_type_guid_offset, "base_type_guid")?,
         })
     }
@@ -11533,8 +11550,8 @@ impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
         }
         Ok(Self {
             reference_count_present: wire.declared_reference_count.is_some(),
-            references: ReferenceRun::from_wire(wire.reference_indices, wire.reference_offsets, "reference_indices/reference_offsets")?,
-            members: ReferenceRun::from_wire(wire.member_indices, wire.member_offsets, "member_indices/member_offsets")?,
+            references: ReferenceRun::from_columns(wire.reference_indices, wire.reference_offsets, "reference_indices/reference_offsets")?,
+            members: ReferenceRun::from_columns(wire.member_indices, wire.member_offsets, "member_indices/member_offsets")?,
             id: wire.id,
             byte_offset: wire.byte_offset,
             entity_suffix: wire.entity_suffix,
@@ -12696,7 +12713,7 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
             owner_entity_id: wire.owner_entity_id,
-            auxiliary_references: ReferenceRun::from_wire(wire.auxiliary_references, wire.auxiliary_reference_offsets, "auxiliary_reference").map_err(SketchRelationPayloadError)?,
+            auxiliary_references: ReferenceRun::from_columns(wire.auxiliary_references, wire.auxiliary_reference_offsets, "auxiliary_reference").map_err(SketchRelationPayloadError)?,
             rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
             members: zip_relation_members(
                 wire.members,

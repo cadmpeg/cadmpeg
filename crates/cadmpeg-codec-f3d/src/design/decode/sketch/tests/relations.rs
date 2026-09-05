@@ -97,7 +97,7 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
     assert_eq!(parsed.state, 0x100_0000_0000);
     assert_eq!(parsed.return_members.iter().map(|row| row.value).collect::<Vec<_>>(), [2403, 2404]);
     assert_eq!(
-        decode_constraint_kinds(parsed.state),
+        crate::records::constraint_kinds_from_state(parsed.state),
         (vec![SketchConstraintKind::TextFrame], 0)
     );
     assert_eq!(
@@ -156,7 +156,7 @@ fn genesis_relation_parses_text_path_glyph_run() {
     assert_eq!(parsed.return_members.iter().map(|row| row.value).collect::<Vec<_>>(), [237]);
     assert_eq!(parsed.text_glyph_transforms.as_deref(), Some(&glyphs[..]));
     assert_eq!(
-        decode_constraint_kinds(parsed.state),
+        crate::records::constraint_kinds_from_state(parsed.state),
         (vec![SketchConstraintKind::TextPath], 0)
     );
     assert_eq!(

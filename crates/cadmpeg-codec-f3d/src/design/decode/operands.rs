@@ -132,7 +132,7 @@ pub fn decode_edge_operands(
         let records = record_offset_index
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
+        for (ordinal, record_index) in scope.reference_members.values().copied().enumerate() {
             if !member_indices.contains(&record_index) {
                 continue;
             }
@@ -204,7 +204,7 @@ pub fn decode_edge_treatment_vertex_operands(
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         for (scope_reference_ordinal, record_index) in
-            scope.reference_members.iter().copied().enumerate()
+            scope.reference_members.values().copied().enumerate()
         {
             let matches = groups
                 .iter()
@@ -448,8 +448,7 @@ pub fn bind_work_plane_constructions(
         let records = record_offset_index
             .entry(stream.clone())
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        let [placement_record_index, first, second, third, extra_offset] =
-            scope.reference_members.as_slice()
+        let Some([placement_record_index, first, second, third, extra_offset]) = scope.reference_members.values_array()
         else {
             continue;
         };
@@ -791,9 +790,9 @@ pub fn decode_face_operands(
                     }
                     scope
                         .reference_members
-                        .iter()
+                        .values()
                         .position(|candidate| candidate == record_index)
-                        .and_then(|ordinal| scope.reference_members.get(ordinal + 1))
+                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal + 1))
                         .and_then(|record_index| headers.get(&(stream, *record_index)))
                         .map(|header| header.byte_offset)
                 });
@@ -857,7 +856,7 @@ pub fn decode_face_operands(
             (0..scope.reference_members.len()).collect::<Vec<_>>()
         };
         for ordinal in ordinals {
-            let Some(record_index) = scope.reference_members.get(ordinal).copied() else {
+            let Some(record_index) = scope.reference_members.values().nth(ordinal).copied() else {
                 continue;
             };
             if !seen.insert((stream, scope.record_index, record_index)) {
@@ -878,7 +877,7 @@ pub fn decode_face_operands(
             {
                 scope
                     .reference_members
-                    .get(ordinal + 1)
+                    .values().nth(ordinal + 1)
                     .and_then(|record_index| headers.get(&(stream, *record_index)))
                     .map(|header| header.byte_offset)
             } else {
@@ -930,7 +929,7 @@ pub fn decode_face_source_groups(
             continue;
         };
         let mut reference_headers = Vec::with_capacity(scope.reference_members.len());
-        for record_index in &scope.reference_members {
+        for record_index in scope.reference_members.values() {
             let Some(byte_offset) = records.first_at_or_after(
                 scope_start.saturating_add(indexed_header::LEN),
                 *record_index,
@@ -1261,7 +1260,7 @@ pub fn bind_sketch_profiles(
         let bytes = scan.entry_bytes(&entry.name)?;
         let candidates = scope
             .reference_members
-            .iter()
+            .values()
             .copied()
             .enumerate()
             .filter_map(|(ordinal, record_index)| {
@@ -1325,7 +1324,7 @@ pub fn decode_extrude_selection_groups(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
+        for (ordinal, record_index) in scope.reference_members.values().copied().enumerate() {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
@@ -1407,7 +1406,7 @@ pub fn decode_construction_operand_groups(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut unclosed = Vec::new();
-        for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
+        for (ordinal, record_index) in scope.reference_members.values().copied().enumerate() {
             let (Ok(ordinal), Some(header)) =
                 (u32::try_from(ordinal), headers.get(&(stream, record_index)))
             else {
@@ -1462,7 +1461,7 @@ pub fn decode_loft_legacy_body_carriers(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
+        for (ordinal, record_index) in scope.reference_members.values().copied().enumerate() {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
@@ -3375,18 +3374,15 @@ pub fn decode_body_recipe_operands(
         let records = record_offset_index
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        let combine_record_indexes = scope.combine_operation().map(|operation| {
-            std::iter::once(operation.target.record_index)
-                .chain(operation.tools.iter().map(|tool| tool.record_index))
-                .collect::<Vec<_>>()
-        });
-        let record_indexes = combine_record_indexes
-            .as_deref()
-            .unwrap_or(&scope.reference_members);
+        let operation = scope.combine_operation();
+        let record_indexes = operation.into_iter().flat_map(|operation| {
+            std::iter::once(&operation.target.record_index)
+                .chain(operation.tools.iter().map(|tool| &tool.record_index))
+        }).chain(scope.reference_members.values().filter(|_| operation.is_none()));
         for record_index in record_indexes {
             let mut ordinals = scope
                 .reference_members
-                .iter()
+                .values()
                 .enumerate()
                 .filter(|(_, member)| *member == record_index)
                 .filter_map(|(ordinal, _)| u32::try_from(ordinal).ok());

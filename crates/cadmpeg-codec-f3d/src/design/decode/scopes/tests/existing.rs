@@ -200,7 +200,7 @@ fn compact_coil_placement_fixture(
         42,
     );
     scope.frame_length = 442;
-    scope.reference_members = vec![
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
         selection_record_index,
         transform_record_index,
         300,
@@ -209,7 +209,7 @@ fn compact_coil_placement_fixture(
         303,
         304,
         305,
-    ];
+    ]);
     (bytes, scope, transform_start)
 }
 
@@ -397,7 +397,7 @@ fn legacy_coil_placement_identity_fixture() -> (Vec<u8>, DesignParameterScope, u
 fn compact_coil_spiral_placement_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
     let (bytes, mut scope, transform_start) = compact_coil_placement_fixture(None);
     scope.frame_length = 411;
-    scope.reference_members.pop();
+    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.pop(); crate::records::ReferenceRun::Unlocated(values) };
     if let crate::records::DesignScopePayload::SpirePrimitive(slot)
     | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
     {
@@ -456,7 +456,7 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
         42,
     );
     scope.frame_length = 432;
-    scope.reference_members = vec![
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
         selection_record_index,
         transform_record_index,
         300,
@@ -465,7 +465,7 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
         303,
         304,
         305,
-    ];
+    ]);
     let recipes = vec![ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{recipe_byte_offset}"),
         byte_offset: recipe_byte_offset as u64,
@@ -910,7 +910,7 @@ fn hole_point_stream_version(version: u32) -> (Vec<u8>, DesignParameterScope, us
         crate::records::DesignFeatureKind::Hole,
         12,
     );
-    scope.reference_members.push(55);
+    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.push(55); crate::records::ReferenceRun::Unlocated(values) };
     (bytes, scope, position_at, input_reference_at)
 }
 
@@ -1007,7 +1007,7 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
         crate::records::DesignFeatureKind::Hole,
         12,
     );
-    scope.reference_members.push(100);
+    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.push(100); crate::records::ReferenceRun::Unlocated(values) };
     let selection = exact_hole_face_selection(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),

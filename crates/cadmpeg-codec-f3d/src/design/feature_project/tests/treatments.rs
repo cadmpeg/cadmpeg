@@ -58,8 +58,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: byte_offset + 80,
-        reference_members: vec![record_index + 1],
-        reference_member_offsets: vec![byte_offset + 85],
+        reference_members: crate::records::ReferenceRun::from_columns(vec![record_index + 1], vec![byte_offset + 85], "reference_members").unwrap(),
         payload: crate::records::DesignFeatureKind::from(kind.to_owned()).into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
@@ -87,7 +86,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             face_selection: None,
         });
     }
-    scopes[2].reference_members = vec![0, 363, 0, 370, 0, 378];
+    scopes[2].reference_members = crate::records::ReferenceRun::Unlocated(vec![0, 363, 0, 370, 0, 378]);
     let hole_face_operand = |record_index, scope_reference_ordinal| DesignFaceOperand {
         id: format!("f3d:native:face-operand#{record_index}"),
         scope_record_index: 32,
@@ -567,7 +566,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     );
     scope.feature_ordinal = 1;
     scope.previous_history_state_id = Some(7);
-    scope.reference_members = vec![101, 111, 102, 112];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![101, 111, 102, 112]);
     if let crate::records::DesignScopePayload::Draft(slot) = &mut scope.payload {
         *slot = Some(DesignDraftOperation {
             angle: -0.25,
@@ -881,8 +880,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 180,
-        reference_members: vec![100, 101],
-        reference_member_offsets: vec![185, 196],
+        reference_members: crate::records::ReferenceRun::from_columns(vec![100, 101], vec![185, 196], "reference_members").unwrap(),
         payload: crate::records::DesignFeatureKind::Conge.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
@@ -1253,7 +1251,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let mut patch_scope = scope.clone();
     patch_scope.payload = crate::records::DesignFeatureKind::SurfacePatch.into();
     patch_scope.frame_length = 354;
-    patch_scope.reference_members = vec![100, 200, 300, 301];
+    patch_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 300, 301]);
     let patch_boundary = |scope_reference_ordinal, record_index, model_reference| {
         crate::records::DesignSurfacePatchBoundary {
             scope_reference_ordinal,
@@ -1293,7 +1291,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
 
     patch_scope.frame_length = 398;
-    patch_scope.reference_members = vec![100, 200, 300, 101, 201, 301, 102];
+    patch_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 300, 101, 201, 301, 102]);
     if let crate::records::DesignScopePayload::SurfacePatch(slot) = &mut patch_scope.payload {
         *slot = vec![patch_boundary(2, 300, 100), patch_boundary(5, 301, 101)];
     }
@@ -1361,7 +1359,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_scope.previous_history_state_id = None;
 
     patch_scope.frame_length = 339;
-    patch_scope.reference_members = vec![100, 200, 300];
+    patch_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 300]);
     if let crate::records::DesignScopePayload::SurfacePatch(slot) = &mut patch_scope.payload {
         *slot = vec![patch_boundary(2, 300, 100)];
     }
@@ -1394,7 +1392,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         Some(FeatureDefinition::FilledSurface { .. })
     ));
     patch_scope.frame_length = 340;
-    patch_scope.reference_members = vec![100, 200, 300, 301];
+    patch_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 300, 301]);
     if let crate::records::DesignScopePayload::SurfacePatch(slot) = &mut patch_scope.payload {
         *slot = vec![patch_boundary(2, 300, 100)];
     }
@@ -1408,7 +1406,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         ),
         Some(FeatureDefinition::FilledSurface { .. })
     ));
-    patch_scope.reference_members = vec![100, 200, 300, 301, 302];
+    patch_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 300, 301, 302]);
     assert!(crate::design::feature_project::project_surface_patch(
         &patch_scope,
         std::slice::from_ref(&patch_group),
@@ -1418,7 +1416,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     .is_none());
 
     patch_scope.frame_length = 343;
-    patch_scope.reference_members = vec![100, 200, 201, 202, 203, 300];
+    patch_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 201, 202, 203, 300]);
     patch_scope.payload = crate::records::DesignScopePayload::SurfacePatch(Vec::new());
     patch_group.members = vec![200, 201, 202, 203].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
     let grouped_projection = crate::design::feature_project::project_surface_patch(
@@ -1442,7 +1440,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
 
     let mut fill_scope = scope.clone();
     fill_scope.payload = crate::records::DesignFeatureKind::BoundaryFill.into();
-    fill_scope.reference_members = vec![100, 200, 201, 300, 301, 400];
+    fill_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 201, 300, 301, 400]);
     let mut tools = group(100, 0, vec![200, 201]);
     tools.role = 0x0000_0004_0000_0000;
     let mut cell = group(300, 3, vec![301]);

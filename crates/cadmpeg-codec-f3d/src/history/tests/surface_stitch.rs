@@ -34,7 +34,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     );
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
-    scope.reference_members = vec![100, 200, 110, 210, 300, 301];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 110, 210, 300, 301]);
     let group = |record_index, scope_reference_ordinal, member| DesignConstructionOperandGroup {
         id: format!("{stream}:design-construction-operand-group#{record_index}"),
         scope_record_index: 42,

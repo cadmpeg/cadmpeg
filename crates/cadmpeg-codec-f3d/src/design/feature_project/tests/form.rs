@@ -375,7 +375,7 @@ fn reads_class_328_form_envelope() {
         crate::records::DesignFeatureKind::Form,
         scope_record,
     );
-    scope.reference_members = vec![group_record, metadata_record];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![group_record, metadata_record]);
     assert!(super::form_class_328_envelope(&bytes, &records, &scope));
 
     let mut wrong_pair = bytes;
@@ -426,7 +426,7 @@ fn reads_class_325_cage_table_entries() {
             &bytes,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
             scope_record,
-            &[owner_record],
+            [owner_record].into_iter(),
         ),
         Some((0..32u32).map(|ordinal| 1_000 + ordinal * 2).collect())
     );
@@ -437,7 +437,7 @@ fn reads_class_325_cage_table_entries() {
             &duplicate_discriminator,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&duplicate_discriminator),
             scope_record,
-            &[owner_record],
+            [owner_record].into_iter(),
         ),
         None
     );

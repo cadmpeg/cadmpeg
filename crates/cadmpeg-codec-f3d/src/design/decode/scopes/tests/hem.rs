@@ -48,7 +48,7 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
             &frame.bytes,
             0,
             frame.paired_at,
-            &references,
+            references.iter().copied(),
             &[(301, "HemGap"), (304, "HemLength")],
         )
         .expect("fixed Hem operation");
@@ -93,7 +93,7 @@ fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
             &frame.bytes,
             0,
             frame.paired_at,
-            &references,
+            references.iter().copied(),
             &[(301, "HemGap"), (304, "HemLength")],
         )
         .is_none()
@@ -103,7 +103,7 @@ fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
             &frame.bytes,
             0,
             frame.paired_at,
-            &references,
+            references.iter().copied(),
             &[(301, "HemGap"), (301, "HemGap"), (304, "HemLength")],
         )
         .is_none()
@@ -118,7 +118,7 @@ fn hem_scope_reads_the_rolled_owner_layout() {
         &frame.bytes,
         0,
         frame.paired_at,
-        &references,
+        references.iter().copied(),
         &[(775, "HemRadius"), (788, "HemAngle")],
     )
     .expect("rolled Hem operation");
@@ -141,7 +141,7 @@ fn hem_scope_reads_the_teardrop_owner_layout() {
         &frame.bytes,
         0,
         frame.paired_at,
-        &references,
+        references.iter().copied(),
         &[(703, "HemGap"), (706, "HemLength"), (775, "HemRadius")],
     )
     .expect("teardrop Hem operation");
@@ -176,7 +176,7 @@ fn hem_scope_refuses_an_owner_layout_whose_parameter_kinds_name_another_form() {
             &frame.bytes,
             0,
             frame.paired_at,
-            &references,
+            references.iter().copied(),
             &[(301, "HemRadius"), (304, "HemAngle")],
         )
         .is_none()

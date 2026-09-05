@@ -87,7 +87,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         10,
     );
     // The feature's owning entity reference is distinct from its scope index.
-    scope.reference_members = vec![221];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![221]);
     let mut features = vec![Feature {
         id: FeatureId("feature:mesh-import".into()),
         ordinal: 0,
@@ -1357,8 +1357,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 0,
-        reference_members: Vec::new(),
-        reference_member_offsets: Vec::new(),
+        reference_members: crate::records::ReferenceRun::from_columns(Vec::new(), Vec::new(), "reference_members").unwrap(),
         payload: crate::records::DesignFeatureKind::Native("Unsupported".into()).into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "001".into(),
@@ -1517,8 +1516,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         previous_history_state_id: previous,
         previous_history_state_id_offset: None,
         reference_count_offset: 0,
-        reference_members: Vec::new(),
-        reference_member_offsets: Vec::new(),
+        reference_members: crate::records::ReferenceRun::from_columns(Vec::new(), Vec::new(), "reference_members").unwrap(),
         payload: crate::records::DesignFeatureKind::Native("Unsupported".into()).into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "001".into(),

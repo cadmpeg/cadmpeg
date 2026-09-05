@@ -62,11 +62,11 @@ fn parameter_scope_parses_named_variable_tail() {
     assert_eq!(scope.history_state_id, Some(7));
     assert_eq!(scope.previous_history_state_id, None);
     assert_eq!(scope.previous_history_state_id_offset, None);
-    assert_eq!(scope.reference_members, [55]);
+    assert_eq!(scope.reference_members.values().copied().collect::<Vec<_>>(), [55]);
     assert_eq!(scope.frame_length, paired_at as u64);
 
     let mut owner_scope = scope.clone();
-    owner_scope.reference_members = vec![327, 330, 55, 56, 57, 58];
+    owner_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![327, 330, 55, 56, 57, 58]);
     let owners = vec![
         DesignParameterOwner {
             id: "f3d:test:owner#327".into(),

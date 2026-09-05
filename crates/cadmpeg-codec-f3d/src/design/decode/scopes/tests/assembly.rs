@@ -21,7 +21,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     );
     scope.class_tag = "273".into();
     scope.frame_length = 637;
-    scope.reference_members = vec![50, 51, 52, 53];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53]);
     scope.paired_class_tag = "259".into();
     scope.paired_byte_offset = 637;
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
@@ -418,7 +418,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     )
     .is_some_and(|alignment| alignment.operand_frames().is_none()));
 
-    scope.reference_members.push(99);
+    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.push(99); crate::records::ReferenceRun::Unlocated(values) };
     assert_eq!(
         exact_assembly_alignment(
             &assembly_bytes,
@@ -442,11 +442,11 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
     scope.frame_length = crate::layout::assembly_class_383_258_scope_1011::LEN as u64;
     scope.paired_class_tag = "258".into();
     scope.paired_byte_offset = scope.frame_length;
-    scope.reference_members = vec![
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
         100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 200, 201, 202, 203, 204, 205,
         206, 207, 112, 113, 114, 115, 300, 210, 211, 212, 213, 214, 215, 216, 217, 116, 117, 118,
         119, 400,
-    ];
+    ]);
     let owners = (0_usize..20)
         .map(|ordinal| DesignParameterOwner {
             id: format!(
@@ -473,7 +473,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
             companion_record_index: 1_100 + ordinal as u32,
         })
         .collect::<Vec<_>>();
-    let bytes = legacy_class_383_258_fixture(scope_record_index, &scope.reference_members);
+    let bytes = legacy_class_383_258_fixture(scope_record_index, &scope.reference_members.values().copied().collect::<Vec<_>>());
     let alignment = exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -545,12 +545,12 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     scope.frame_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
     scope.paired_byte_offset = scope.frame_length;
     scope.feature_ordinal = 4;
-    scope.reference_members = (0..24)
+    scope.reference_members = crate::records::ReferenceRun::Unlocated((0..24)
         .map(|ordinal| 1_000 + ordinal)
         .chain([1_200, 1_201, 1_202, 1_203, 1_204, 1_205])
         .chain((24..28).map(|ordinal| 1_000 + ordinal))
         .chain([1_034])
-        .collect();
+        .collect());
     let owners = (0..28)
         .map(|ordinal| DesignParameterOwner {
             id: format!(
@@ -616,7 +616,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
         bytes[403 + ordinal * 2..405 + ordinal * 2].copy_from_slice(&code_unit.to_le_bytes());
     }
     bytes[478..482].copy_from_slice(&35_u32.to_le_bytes());
-    for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
+    for (ordinal, record_index) in scope.reference_members.values().copied().enumerate() {
         write_reference(&mut bytes, 482 + ordinal * 11, record_index);
     }
     bytes[867..871].copy_from_slice(&[0xff; 4]);
@@ -810,7 +810,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     );
     scope.class_tag = "439".into();
     scope.frame_length = 399;
-    scope.reference_members = vec![50, 51, 52, 53];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53]);
     scope.paired_class_tag = "262".into();
     scope.paired_byte_offset = 399;
 
@@ -1000,10 +1000,9 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         scope.frame_length = 421;
         scope.paired_byte_offset = 421;
         scope.reference_count_offset = 185;
-        scope.reference_members = reference_members.to_vec();
-        scope.reference_member_offsets = (0..11)
+        scope.reference_members = crate::records::ReferenceRun::from_columns(reference_members.to_vec(), (0..11)
             .map(|ordinal| u64::try_from(190 + ordinal * 11).expect("offset fits u64"))
-            .collect();
+            .collect(), "reference_members").unwrap();
         scope.feature_ordinal_offset = 334;
 
         let mut bytes = vec![0_u8; 421];
@@ -1158,11 +1157,11 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         500,
     );
     assembly.frame_length = 772;
-    assembly.reference_members = first_members
+    assembly.reference_members = crate::records::ReferenceRun::Unlocated(first_members
         .into_iter()
         .chain(second_members)
         .chain([90, 91])
-        .collect();
+        .collect());
     if let crate::records::DesignScopePayload::Assemble(slot)
     | crate::records::DesignScopePayload::AsBuilt(slot) = &mut assembly.payload
     {
@@ -1258,7 +1257,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
         500,
     );
     assembly.frame_length = 705;
-    assembly.reference_members = members.into_iter().chain([90, 91]).collect();
+    assembly.reference_members = crate::records::ReferenceRun::Unlocated(members.into_iter().chain([90, 91]).collect());
     if let crate::records::DesignScopePayload::Assemble(slot)
     | crate::records::DesignScopePayload::AsBuilt(slot) = &mut assembly.payload
     {

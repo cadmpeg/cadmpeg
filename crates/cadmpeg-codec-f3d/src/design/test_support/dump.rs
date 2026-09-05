@@ -52,7 +52,7 @@ pub(crate) use crate::design::decode::scopes::{
     select_circular_pattern_axis,
 };
 pub(crate) use crate::design::decode::sketch::{
-    bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
+    bind_sketch_graph, decode_pattern_definition, identity_matrix,
     next_indexed_record_offset, next_indexed_record_offset_with_index,
     parse_classed_sketch_relation, parse_genesis_entity_header, parse_settled_entity_header,
     parse_sketch_placement_candidates, parse_sketch_surface, IndexedRecordOffsets,

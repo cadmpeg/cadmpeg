@@ -1064,13 +1064,12 @@ pub fn project_parameter_design_with_edge_identities(
                                 .all(|(group_ordinal, group_record_index)| {
                                     let pair_at = group_ordinal.saturating_mul(2);
                                     let Some(member_record_index) = scope
-                                        .reference_members
-                                        .get(pair_at.saturating_add(1))
+                                        .reference_members.values().nth(pair_at.saturating_add(1))
                                         .copied()
                                     else {
                                         return false;
                                     };
-                                    scope.reference_members.get(pair_at) == Some(group_record_index)
+                                    scope.reference_members.values().nth(pair_at) == Some(group_record_index)
                                         && construction_groups.iter().any(|group| {
                                             native_stream(&group.id) == Some(native_scope)
                                                 && group.scope_record_index == scope.record_index
@@ -2024,7 +2023,7 @@ fn scope_properties(
 ) -> std::collections::BTreeMap<String, String> {
     use std::collections::BTreeMap;
     let mut properties = BTreeMap::new();
-    for (ordinal, record_index) in scope.reference_members.iter().enumerate() {
+    for (ordinal, record_index) in scope.reference_members.values().enumerate() {
         properties.insert(format!("reference:{ordinal}"), record_index.to_string());
     }
     if let Some(profile) = scope.extrude_profile().or(scope.base_flange_profile()) {
@@ -2851,9 +2850,9 @@ fn project_draft(
         group
             .members
             .iter().map(|member| &member.value)
-            .all(|member| scope.reference_members.contains(member))
+            .all(|member| scope.reference_members.values().any(|value| value == member))
     };
-    if !scope.reference_members.contains(&faces.record_index) || !member_of_scope(faces) {
+    if !scope.reference_members.values().any(|value| value == &faces.record_index) || !member_of_scope(faces) {
         return None;
     }
     match role_groups.as_slice() {
@@ -3778,9 +3777,7 @@ pub(crate) fn project_surface_stitch(
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
 
     let operation = scope.surface_stitch_operation()?;
-    let input_references = scope
-        .reference_members
-        .get(..scope.reference_members.len() - 2)?;
+    let input_end = scope.reference_members.len().checked_sub(2)?;
     let mut matching = groups
         .iter()
         .filter(|group| {
@@ -3789,11 +3786,14 @@ pub(crate) fn project_surface_stitch(
         })
         .collect::<Vec<_>>();
     matching.sort_by_key(|group| group.scope_reference_ordinal);
-    if matching.len().checked_mul(2)? != input_references.len()
-        || matching.iter().enumerate().any(|(ordinal, group)| {
+    if matching.len().checked_mul(2)? != input_end
+        || matching.iter().enumerate().zip(
+            scope.reference_members.values().step_by(2)
+                .zip(scope.reference_members.values().skip(1).step_by(2))
+        ).any(|((ordinal, group), (group_reference, member_reference))| {
             u32::try_from(ordinal * 2) != Ok(group.scope_reference_ordinal)
-                || group.record_index != input_references[ordinal * 2]
-                || !group.members.iter().map(|member| member.value).eq([input_references[ordinal * 2 + 1]])
+                || group.record_index != *group_reference
+                || !group.members.iter().map(|member| member.value).eq([*member_reference])
                 || group.role != ROLE_0X5
         })
     {
@@ -3866,8 +3866,8 @@ pub(crate) fn project_ruled_surface(
             return None;
         }
         let reference_ordinal = usize::try_from(group.scope_reference_ordinal).ok()?;
-        if scope.reference_members.get(reference_ordinal) != Some(record_index)
-            || scope.reference_members.get(reference_ordinal + 1) != group.members.first().map(|member| &member.value)
+        if scope.reference_members.values().nth(reference_ordinal) != Some(record_index)
+            || scope.reference_members.values().nth(reference_ordinal + 1) != group.members.first().map(|member| &member.value)
         {
             return None;
         }
@@ -4092,14 +4092,14 @@ pub(crate) fn bind_form_cages(
         let records = IndexedRecordOffsets::build(bytes);
         let cage_lists = scope
             .reference_members
-            .iter()
+            .values()
             .filter_map(|record_index| {
                 form_cage_objects(bytes, &records, *record_index, scope.record_index)
             })
             .collect::<Vec<_>>();
         let cage_counts = scope
             .reference_members
-            .iter()
+            .values()
             .filter_map(|record_index| {
                 form_cage_objects(bytes, &records, *record_index, scope.record_index)
                     .map(|objects| objects.len())
@@ -4113,7 +4113,7 @@ pub(crate) fn bind_form_cages(
                 bytes,
                 &records,
                 scope.record_index,
-                &scope.reference_members,
+                scope.reference_members.values().copied(),
             ) {
                 let serializers = form_cage_serializers(bytes, &records);
                 let mut resolved = Vec::new();
@@ -4404,7 +4404,7 @@ fn form_class_328_envelope(
     }
     let Some(group_record) = scope
         .reference_members
-        .iter()
+        .values()
         .copied()
         .find(|record_index| {
             records.frames(*record_index).any(|(start, paired)| {
@@ -4417,7 +4417,7 @@ fn form_class_328_envelope(
     };
     let Some(metadata_record) = scope
         .reference_members
-        .iter()
+        .values()
         .copied()
         .find(|record_index| {
             *record_index != group_record
@@ -4660,7 +4660,7 @@ fn form_class_325_cage_objects(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope_record_index: u32,
-    owner_record_indices: &[u32],
+    mut owner_record_indices: impl Iterator<Item = u32>,
 ) -> Option<Vec<u32>> {
     const CAGE_COUNT: usize = 32;
     const TYPE_DISCRIMINATOR_FIRST: u32 = 307;
@@ -4689,7 +4689,7 @@ fn form_class_325_cage_objects(
     let [owner_at, ..] = records.offsets(owner_record) else {
         return None;
     };
-    if !owner_record_indices.contains(&owner_record)
+    if !owner_record_indices.any(|index| index == owner_record)
         || bytes.get(*owner_at + 4..*owner_at + 7) != Some(b"407")
     {
         return None;
@@ -6732,11 +6732,11 @@ fn project_fixed_pipe(
                 .iter().map(|member| &member.value)
                 .any(|record_index| !claimed.insert(*record_index))
             || scope.reference_members.len() != path_group.members.len() + 6
-            || scope.reference_members.iter().collect::<HashSet<_>>().len()
+            || scope.reference_members.values().collect::<HashSet<_>>().len()
                 != scope.reference_members.len()
             || claimed
                 .iter()
-                .any(|record_index| !scope.reference_members.contains(record_index))
+                .any(|record_index| !scope.reference_members.values().any(|value| value == record_index))
         {
             return None;
         }
@@ -6747,10 +6747,10 @@ fn project_fixed_pipe(
         };
         if path_group.role != ROLE_0X5
             || path_group.scope_reference_ordinal != 5
-            || scope.reference_members.get(5) != Some(&path_group.record_index)
+            || scope.reference_members.values().nth(5) != Some(&path_group.record_index)
             || path_group.members.is_empty()
             || scope.reference_members.len() != path_group.members.len() + 8
-            || !path_group.members.iter().map(|member| member.value).eq(scope.reference_members[6..scope.reference_members.len() - 2].iter().copied())
+            || !path_group.members.iter().map(|member| member.value).eq(scope.reference_members.values_in(6..scope.reference_members.len() - 2)?.copied())
         {
             return None;
         }
@@ -6846,10 +6846,10 @@ pub(crate) fn project_surface_patch(
         };
         if scope.reference_members.len() < 3
             || group.scope_reference_ordinal != 0
-            || group.record_index != scope.reference_members[0]
+            || group.record_index != *scope.reference_members.values().next()?
             || group.role != ROLE_0X4
             || group.members.is_empty()
-            || !group.members.iter().map(|member| member.value).eq(scope.reference_members[1..scope.reference_members.len() - 1].iter().copied())
+            || !group.members.iter().map(|member| member.value).eq(scope.reference_members.values_in(1..scope.reference_members.len() - 1)?.copied())
         {
             return None;
         }
@@ -6897,9 +6897,9 @@ pub(crate) fn project_surface_patch(
         let member_ordinal = group_ordinal.checked_add(1)?;
         let settings_ordinal = group_ordinal.checked_add(2)?;
         if settings_ordinal >= scope.reference_members.len()
-            || boundary.record_index != scope.reference_members[group_ordinal]
+            || boundary.record_index != *scope.reference_members.values().nth(group_ordinal)?
             || boundary.role != boundary_role
-            || !boundary.members.iter().map(|member| member.value).eq(scope.reference_members[member_ordinal..=member_ordinal].iter().copied())
+            || !boundary.members.iter().map(|member| member.value).eq(scope.reference_members.values().nth(member_ordinal).into_iter().copied())
             || occupied[group_ordinal]
             || occupied[member_ordinal]
             || occupied[settings_ordinal]
@@ -6909,7 +6909,7 @@ pub(crate) fn project_surface_patch(
         let settings = scope.surface_patch_boundaries().iter().find(|settings| {
             usize::try_from(settings.scope_reference_ordinal).ok() == Some(settings_ordinal)
         })?;
-        if settings.record_index != scope.reference_members[settings_ordinal]
+        if settings.record_index != *scope.reference_members.values().nth(settings_ordinal)?
             || settings.model_reference != boundary.record_index
         {
             return None;
@@ -6980,7 +6980,7 @@ pub(crate) fn project_boundary_fill(
     groups.sort_by_key(|group| group.scope_reference_ordinal);
     let (tools, cells) = groups.split_first()?;
     if tools.scope_reference_ordinal != 0
-        || tools.record_index != scope.reference_members[0]
+        || tools.record_index != *scope.reference_members.values().next()?
         || tools.role != ROLE_0X4
         || cells.is_empty()
     {
@@ -6993,8 +6993,8 @@ pub(crate) fn project_boundary_fill(
             .and_then(|next| usize::try_from(next.scope_reference_ordinal).ok())
             .unwrap_or(scope.reference_members.len() - 1);
         if start >= end
-            || group.record_index != scope.reference_members[start]
-            || !group.members.iter().map(|member| member.value).eq(scope.reference_members[start + 1..end].iter().copied())
+            || group.record_index != *scope.reference_members.values().nth(start)?
+            || !group.members.iter().map(|member| member.value).eq(scope.reference_members.values_in(start + 1..end)?.copied())
             || (index > 0 && group.role != ROLE_0X5)
         {
             return None;
@@ -7141,7 +7141,7 @@ fn project_replace_face(
     let [replacement_group, target_group] = groups.as_slice() else {
         return None;
     };
-    let references = scope.reference_members.as_slice();
+    let references = scope.reference_members.values_array::<4>()?.map(|value| *value);
     if replacement_group.scope_reference_ordinal != 0
         || replacement_group.record_index != references[0]
         || replacement_group.role != ROLE_0X9
@@ -7181,7 +7181,7 @@ pub(crate) fn project_surface_trim(
         return None;
     }
     let stream = native_stream(&scope.id)?;
-    let references = scope.reference_members.as_slice();
+    let references = scope.reference_members.values_array::<4>()?.map(|value| *value);
     let mut groups = construction_groups
         .iter()
         .filter(|group| {
@@ -7278,20 +7278,20 @@ pub(crate) fn project_split(
         return None;
     };
     let target_ordinal = tool_group.members.len().checked_add(1)?;
-    let tool_members = scope.reference_members.get(1..target_ordinal)?;
-    let target_record_index = *scope.reference_members.get(target_ordinal)?;
+    let tool_members = scope.reference_members.values_in(1..target_ordinal)?;
+    let target_record_index = *scope.reference_members.values().nth(target_ordinal)?;
     let target_members = scope
         .reference_members
-        .get(target_ordinal.checked_add(1)?..)?;
+        .values_in(target_ordinal.checked_add(1)?..scope.reference_members.len())?;
     if tool_group.scope_reference_ordinal != 0
-        || tool_group.record_index != scope.reference_members[0]
+        || tool_group.record_index != *scope.reference_members.values().next()?
         || tool_group.members.is_empty()
-        || !tool_group.members.iter().map(|member| member.value).eq(tool_members.iter().copied())
+        || !tool_group.members.iter().map(|member| member.value).eq(tool_members.copied())
         || usize::try_from(targets.scope_reference_ordinal).ok()? != target_ordinal
         || targets.record_index != target_record_index
         || targets.role != ROLE_0X4
         || targets.members.is_empty()
-        || !targets.members.iter().map(|member| member.value).eq(target_members.iter().copied())
+        || !targets.members.iter().map(|member| member.value).eq(target_members.copied())
     {
         return None;
     }
@@ -7374,15 +7374,15 @@ fn project_split_face(
     };
     let target_ordinal = tool.members.len().checked_add(1)?;
     if tool.scope_reference_ordinal != 0
-        || tool.record_index != scope.reference_members[0]
+        || tool.record_index != *scope.reference_members.values().next()?
         || tool.role != ROLE_0X21
         || tool.members.is_empty()
-        || !tool.members.iter().map(|member| member.value).eq(scope.reference_members[1..target_ordinal].iter().copied())
+        || !tool.members.iter().map(|member| member.value).eq(scope.reference_members.values_in(1..target_ordinal)?.copied())
         || usize::try_from(targets.scope_reference_ordinal).ok()? != target_ordinal
-        || targets.record_index != scope.reference_members[target_ordinal]
+        || targets.record_index != *scope.reference_members.values().nth(target_ordinal)?
         || targets.role != 0x0000_0010_0000_0000
         || targets.members.is_empty()
-        || !targets.members.iter().map(|member| member.value).eq(scope.reference_members[target_ordinal + 1..].iter().copied())
+        || !targets.members.iter().map(|member| member.value).eq(scope.reference_members.values().skip(target_ordinal + 1).copied())
     {
         return None;
     }
@@ -7488,9 +7488,9 @@ fn project_delete_face(
         return None;
     };
     if group.scope_reference_ordinal != 0
-        || group.record_index != scope.reference_members[0]
+        || group.record_index != *scope.reference_members.values().next()?
         || group.role != ROLE_0X10
-        || !group.members.iter().map(|member| member.value).eq(scope.reference_members[1..].iter().copied())
+        || !group.members.iter().map(|member| member.value).eq(scope.reference_members.values().skip(1).copied())
     {
         return None;
     }

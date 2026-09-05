@@ -114,7 +114,7 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
     scope.byte_offset = SCOPE_AT as u64;
     scope.class_tag = "279".into();
     scope.frame_length = scope_279::LEN as u64;
-    scope.reference_members = vec![383];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![383]);
     scope.paired_class_tag = "261".into();
 
     let occurrence = DesignComponentOccurrence {

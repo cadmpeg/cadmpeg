@@ -23,7 +23,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     );
     scope.class_tag = "405".into();
     scope.paired_class_tag = "259".into();
-    scope.reference_members = vec![10, 11, 12, 13, 20, 21, 22];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
     {
         let value = Some(DesignPathFeatureConstruction::Pipe(crate::records::DesignPipeConstruction {
             operation: DesignExtrudeOperation::NewBody,
@@ -202,7 +202,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
     }
 
-    scope.reference_members.push(23);
+    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.push(23); crate::records::ReferenceRun::Unlocated(values) };
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,
         &parameter_refs,
@@ -212,7 +212,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .is_none());
 
-    scope.reference_members.pop();
+    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.pop(); crate::records::ReferenceRun::Unlocated(values) };
     scope.class_tag = "475".into();
     scope.paired_class_tag = "260".into();
     assert!(crate::design::feature_project::project_fixed_pipe(

@@ -2219,8 +2219,7 @@ fn bind_surface_stitch_face_selection(
     let Some(input_end) = scope.reference_members.len().checked_sub(2) else {
         return;
     };
-    let input_references = &scope.reference_members[..input_end];
-    if input_references.is_empty() || !input_references.len().is_multiple_of(2) {
+    if input_end == 0 || !input_end.is_multiple_of(2) {
         return;
     }
     let stream = crate::ids::native_stream(&scope.id);
@@ -2235,11 +2234,14 @@ fn bind_surface_stitch_face_selection(
         })
         .collect::<Vec<_>>();
     matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
-    if matching_groups.len().checked_mul(2) != Some(input_references.len())
-        || matching_groups.iter().enumerate().any(|(ordinal, group)| {
+    if matching_groups.len().checked_mul(2) != Some(input_end)
+        || matching_groups.iter().enumerate().zip(
+            scope.reference_members.values().step_by(2)
+                .zip(scope.reference_members.values().skip(1).step_by(2))
+        ).any(|((ordinal, group), (group_reference, member_reference))| {
             u32::try_from(ordinal * 2) != Ok(group.scope_reference_ordinal)
-                || group.record_index != input_references[ordinal * 2]
-                || !group.members.iter().map(|member| member.value).eq([input_references[ordinal * 2 + 1]])
+                || group.record_index != *group_reference
+                || !group.members.iter().map(|member| member.value).eq([*member_reference])
         })
     {
         return;

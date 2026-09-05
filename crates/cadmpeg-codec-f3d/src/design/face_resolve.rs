@@ -134,7 +134,7 @@ pub(crate) fn resolved_direct_face_selection(
                 && operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
                 && usize::try_from(operand.scope_reference_ordinal)
                     .ok()
-                    .and_then(|ordinal| scope.reference_members.get(ordinal))
+                    .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
                     == Some(&operand.record_index)
         })
         .collect::<Vec<_>>();
@@ -613,7 +613,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
     {
         return None;
     }
-    if scope.reference_members.get(group_ordinal) != Some(&group.record_index) {
+    if scope.reference_members.values().nth(group_ordinal) != Some(&group.record_index) {
         return None;
     }
     let member_operands = group
@@ -626,8 +626,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
                 .checked_add(1)?
                 .checked_add(u32::try_from(ordinal).ok()?)?;
             if scope
-                .reference_members
-                .get(group_ordinal.checked_add(ordinal.checked_add(1)?)?)
+                .reference_members.values().nth(group_ordinal.checked_add(ordinal.checked_add(1)?)?)
                 != Some(record_index)
             {
                 return None;

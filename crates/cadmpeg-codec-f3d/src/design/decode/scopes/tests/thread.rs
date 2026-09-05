@@ -70,7 +70,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
     scope.class_tag = "901".into();
     scope.paired_class_tag = "902".into();
     scope.frame_length = 17;
-    scope.reference_members = vec![988, 989];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![988, 989]);
     assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
 
     let mut owner_marked = bytes;
@@ -141,7 +141,7 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
     );
     scope.class_tag = "334".into();
     scope.paired_class_tag = "262".into();
-    scope.reference_members = vec![988, 991];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![988, 991]);
     assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
 
     scope.class_tag = "335".into();
@@ -230,7 +230,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     );
     scope.class_tag = "903".into();
     scope.frame_length = 19;
-    scope.reference_members = vec![988, 989, 992, 993];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![988, 989, 992, 993]);
     scope.paired_class_tag = "904".into();
     let mut plural_expected = expected.clone();
     plural_expected.face_group_record_indices.push(992);
@@ -251,7 +251,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         None
     );
 
-    scope.reference_members.push(994);
+    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.push(994); crate::records::ReferenceRun::Unlocated(values) };
     assert_eq!(exact_thread_construction(&owner_marked, &scope), None);
 }
 
@@ -301,7 +301,7 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
     scope.class_tag = "414".into();
     scope.paired_class_tag = "263".into();
     scope.frame_length = 19;
-    scope.reference_members = vec![988, 989];
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![988, 989]);
     assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
 
     scope.class_tag = "334".into();
@@ -341,6 +341,6 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("localized Sketch scope");
     assert_eq!(scope.kind(), crate::records::DesignFeatureKind::Esquisse);
-    assert_eq!(scope.reference_members, [55, 56]);
+    assert_eq!(scope.reference_members.values().copied().collect::<Vec<_>>(), [55, 56]);
     assert!(scope.sketch_entity().is_none());
 }

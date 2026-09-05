@@ -4275,7 +4275,7 @@ fn extend_related_design_records(
                 .to_owned();
             scope
                 .reference_members
-                .iter()
+                .values()
                 .map(move |record_index| (stream.clone(), *record_index))
         })
         .collect::<Vec<_>>();

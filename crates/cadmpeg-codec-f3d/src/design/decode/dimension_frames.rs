@@ -1754,7 +1754,7 @@ pub(crate) fn companion_owned_interval<'a>(
             native_stream(&scope.id) == Some(native_scope)
                 && Some(scope.record_index) != owning_scope_record_index
         })
-        .flat_map(|scope| scope.reference_members.iter().copied())
+        .flat_map(|scope| scope.reference_members.values().copied())
         .collect::<HashSet<_>>();
     let start = usize::try_from(companion.byte_offset)
         .ok()?
