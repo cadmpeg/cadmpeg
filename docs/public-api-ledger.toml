@@ -4817,3 +4817,17 @@ crate = "cadmpeg-asm"
 kind = "signature"
 item = "cadmpeg_asm::sab::payload_token_offsets"
 reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "705867e69b49527f7286468b96d837ab3352e6d1"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::sab::Record::head"
+reason = "ASM-10: replace the stored dispatch label with a method derived from the record name; record indices remain independent history identities"
+
+[[change]]
+commit = "705867e69b49527f7286468b96d837ab3352e6d1"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::sab::Record::head"
+reason = "ASM-10: replace the stored dispatch label with a method derived from the record name; record indices remain independent history identities"

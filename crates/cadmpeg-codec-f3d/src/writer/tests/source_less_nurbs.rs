@@ -638,7 +638,7 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
         .unwrap();
         let tolerant = records
             .iter()
-            .find(|record| record.head == "tcoedge")
+            .find(|record| record.head() == "tcoedge")
             .expect("canonical tolerant coedge record");
         assert!(matches!(
             tolerant.chunk(13),

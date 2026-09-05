@@ -27,7 +27,7 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
     let record = Record {
         index: 0,
         name: "transform".into(),
-        head: "transform".into(),
+
         tokens: vec![
             Token::Vector3([1.0, 0.0, 0.0]),
             Token::Vector3([0.0, 1.0, 0.0]),
@@ -690,7 +690,7 @@ fn generated_spline_carriers_write_explicit_forward_sense() {
         .expect("generated ASM records must frame");
         let record = records
             .iter()
-            .find(|record| record.head == head)
+            .find(|record| record.head() == head)
             .expect("generated spline carrier record");
         let subtype = record
             .tokens

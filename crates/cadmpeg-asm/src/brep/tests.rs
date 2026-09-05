@@ -323,19 +323,18 @@ fn asm_stream_delimiters_are_not_application_records() {
 
 #[test]
 fn saved_top_level_edge_projects_as_a_wire_body() {
-    let record = |index, name: &str, head: &str, tokens: Vec<Token>| Record {
+    let record = |index, name: &str, tokens: Vec<Token>| Record {
         index,
         name: name.into(),
-        head: head.into(),
+
         tokens: tokens.into(),
         offset: 0,
         len: 0,
     };
     let records = vec![
-        record(0, "asmheader", "asmheader", Vec::new()),
+        record(0, "asmheader", Vec::new()),
         record(
             1,
-            "edge",
             "edge",
             vec![
                 Token::Ref(-1),
@@ -353,7 +352,6 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         record(
             2,
             "vertex",
-            "vertex",
             vec![
                 Token::Ref(-1),
                 Token::Long(-1),
@@ -365,7 +363,6 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         ),
         record(
             3,
-            "vertex",
             "vertex",
             vec![
                 Token::Ref(-1),
@@ -379,7 +376,6 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         record(
             4,
             "point",
-            "point",
             vec![
                 Token::Ref(-1),
                 Token::Long(-1),
@@ -389,7 +385,6 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         ),
         record(
             5,
-            "point",
             "point",
             vec![
                 Token::Ref(-1),
@@ -401,7 +396,6 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         record(
             6,
             "straight-curve",
-            "straight",
             vec![
                 Token::Ref(-1),
                 Token::Long(-1),
@@ -447,7 +441,7 @@ fn nested_attributes_inherit_their_topology_owner() {
     let current_attribute = |index, owner| Record {
         index,
         name: "ATTRIB_CUSTOM-attrib".into(),
-        head: "ATTRIB_CUSTOM".into(),
+
         tokens: vec![
             Token::Ref(-1),
             Token::Long(-1),
@@ -462,7 +456,7 @@ fn nested_attributes_inherit_their_topology_owner() {
     let legacy_attribute = |index, owner| Record {
         index,
         name: "ATTRIB_CUSTOM-attrib".into(),
-        head: "ATTRIB_CUSTOM".into(),
+
         tokens: vec![
             Token::Ref(-1),
             Token::Ref(-1),
@@ -513,7 +507,7 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
         Record {
             index,
             name: name.into(),
-            head: name.split('-').next().unwrap().into(),
+
             tokens: tokens.into(),
             offset: 0,
             len: 0,
@@ -522,7 +516,7 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     let entity = Record {
         index: 0,
         name: "face".into(),
-        head: "face".into(),
+
         tokens: vec![Token::Ref(1)].into(),
         offset: 0,
         len: 0,
@@ -624,7 +618,7 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     let entity = Record {
         index: 0,
         name: "face".into(),
-        head: "face".into(),
+
         tokens: vec![Token::Ref(1)].into(),
         offset: 0,
         len: 0,
@@ -632,7 +626,7 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     let color = Record {
         index: 1,
         name: "rgb_color-st-attrib".into(),
-        head: "rgb_color".into(),
+
         tokens: vec![
             Token::Ref(-1),
             Token::Ref(2),
@@ -649,7 +643,7 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     let name = Record {
         index: 2,
         name: "string_attrib-name_attrib-gen-attrib".into(),
-        head: "string_attrib".into(),
+
         tokens: vec![
             Token::Ref(-1),
             Token::Ref(-1),
@@ -702,30 +696,20 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
 fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    let record = |index, name: &str, head: &str, tokens: Vec<Token>| Record {
+    let record = |index, name: &str, tokens: Vec<Token>| Record {
         index,
         name: name.into(),
-        head: head.into(),
+
         tokens: tokens.into(),
         offset: 0,
         len: 0,
     };
     let records = vec![
-        record(0, "asmheader", "asmheader", vec![]),
-        record(
-            1,
-            "ATTRIB_CUSTOM-attrib",
-            "ATTRIB_CUSTOM",
-            vec![Token::Ref(-1)],
-        ),
-        record(
-            2,
-            "ATTRIB_CUSTOM-attrib",
-            "ATTRIB_CUSTOM",
-            vec![Token::Ref(-1)],
-        ),
-        record(3, "shell", "shell", vec![Token::Ref(1)]),
-        record(4, "loop", "loop", vec![Token::Ref(2)]),
+        record(0, "asmheader", vec![]),
+        record(1, "ATTRIB_CUSTOM-attrib", vec![Token::Ref(-1)]),
+        record(2, "ATTRIB_CUSTOM-attrib", vec![Token::Ref(-1)]),
+        record(3, "shell", vec![Token::Ref(1)]),
+        record(4, "loop", vec![Token::Ref(2)]),
     ];
     let mut brep = AsmBrep {
         shells: vec![Shell {
@@ -770,19 +754,18 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
 
-    let record = |index, name: &str, head: &str, tokens: Vec<Token>| Record {
+    let record = |index, name: &str, tokens: Vec<Token>| Record {
         index,
         name: name.into(),
-        head: head.into(),
+
         tokens: tokens.into(),
         offset: 0,
         len: 0,
     };
     let records = vec![
-        record(1, "body", "body", vec![Token::Ref(-1)]),
+        record(1, "body", vec![Token::Ref(-1)]),
         record(
             2,
-            "lump",
             "lump",
             vec![
                 Token::Ref(-1),
@@ -796,7 +779,6 @@ fn lump_named_attributes_bind_to_their_owning_body() {
         record(
             3,
             "name_attrib-gen-attrib",
-            "name",
             vec![
                 Token::Ref(-1),
                 Token::Long(-1),
@@ -941,7 +923,7 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
     let edge = Record {
         index: 1,
         name: "edge".into(),
-        head: "edge".into(),
+
         tokens: vec![
             Token::Ref(-1),
             Token::Long(-1),
@@ -985,7 +967,7 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
     let edge = Record {
         index: 1,
         name: "edge".into(),
-        head: "edge".into(),
+
         tokens: vec![
             Token::Ref(-1),
             Token::Long(-1),

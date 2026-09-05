@@ -178,7 +178,7 @@ fn patch_asm_geometry(
         .collect::<BTreeMap<_, _>>();
     let transform_records = records
         .iter()
-        .filter(|record| record.head == "body")
+        .filter(|record| record.head() == "body")
         .filter_map(|body| {
             body_transforms
                 .get(&crate::ids::brep_entity_id(body.index))
@@ -190,7 +190,7 @@ fn patch_asm_geometry(
         .collect::<BTreeMap<_, _>>();
     let ref_pcurve_geometry = records
         .iter()
-        .filter(|record| record.head == "pcurve")
+        .filter(|record| record.head() == "pcurve")
         .filter_map(|record| {
             let edit = pcurves.get(&crate::ids::brep_entity_id(record.index))?;
             let target = usize::try_from(record.ref_at(4)?).ok()?;
@@ -205,7 +205,7 @@ fn patch_asm_geometry(
     let mut color_records = BTreeMap::new();
     for entity in records
         .iter()
-        .filter(|record| record.head == "body" || record.head == "face")
+        .filter(|record| record.head() == "body" || record.head() == "face")
     {
         let id = crate::ids::brep_entity_id(entity.index);
         let Some(color) = entity_colors.get(&id) else {
@@ -234,7 +234,7 @@ fn patch_asm_geometry(
     }
     for record in records {
         if let Some(timestamp) = creation_timestamps.get(&record.index) {
-            if !record.head.contains("ATTRIB_CUSTOM")
+            if !record.head().contains("ATTRIB_CUSTOM")
                 || !record.tokens.iter().any(
                     |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
                 )
@@ -263,7 +263,7 @@ fn patch_asm_geometry(
             continue;
         }
         if let Some((sense, continuity)) = edge_continuities.get(&record.index) {
-            if !matches!(record.head.as_str(), "edge" | "tedge") {
+            if !matches!(record.head(), "edge" | "tedge") {
                 return Err(CodecError::malformed(format_args!(
                     "F3D edge-continuity record {} is not an edge",
                     record.index
@@ -273,7 +273,7 @@ fn patch_asm_geometry(
             asm_edits.patch_ascii_field(bytes, record, 10, continuity)?;
         }
         if let Some((owning_edge, endpoint_index)) = vertex_ownerships.get(&record.index) {
-            if !matches!(record.head.as_str(), "vertex" | "tvertex") {
+            if !matches!(record.head(), "vertex" | "tvertex") {
                 return Err(CodecError::malformed(format_args!(
                     "F3D vertex-ownership record {} is not a vertex",
                     record.index
@@ -287,7 +287,7 @@ fn patch_asm_geometry(
             }
         }
         if let Some(containment) = face_sidedness.get(&record.index) {
-            if record.head != "face" || !matches!(record.chunk(9), Some(sab::Token::True)) {
+            if record.head() != "face" || !matches!(record.chunk(9), Some(sab::Token::True)) {
                 return Err(CodecError::malformed(format_args!(
                     "F3D face-sidedness record {} is not double-sided",
                     record.index
@@ -300,7 +300,7 @@ fn patch_asm_geometry(
             asm_edits.patch_sense_field(bytes, record, 10, sense)?;
         }
         if let Some((tolerance, leading)) = tolerant_vertices.get(&record.index) {
-            if record.head != "tvertex" {
+            if record.head() != "tvertex" {
                 return Err(CodecError::malformed(format_args!(
                     "F3D tolerant-vertex record {} is not a tvertex",
                     record.index
@@ -314,7 +314,7 @@ fn patch_asm_geometry(
             }
         }
         if let Some(tolerance) = tolerant_edges.get(&record.index) {
-            if record.head != "tedge"
+            if record.head() != "tedge"
                 || !matches!(record.chunk(12), Some(sab::Token::Long(_)))
                 || !matches!(record.chunk(13), Some(sab::Token::Long(_)))
             {
@@ -372,7 +372,7 @@ fn patch_asm_geometry(
         }
         let tolerant_curve_id = format!("f3d:brep:tolerant-coedge-curve#{}", record.index);
         if let Some(edit) = nurbs_curves.get(&tolerant_curve_id) {
-            if record.head != "tcoedge" {
+            if record.head() != "tcoedge" {
                 return Err(CodecError::malformed(format_args!(
                     "F3D tolerant use-curve carrier {tolerant_curve_id} is not a tcoedge record"
                 )));
@@ -429,7 +429,7 @@ fn patch_asm_geometry(
             asm_edits.patch_procedural_surface_fit(bytes, record, *tolerance)?;
         }
         if let Some(edit) = procedural_surface_edits.get(&procedural_id) {
-            if record.head != "spline" {
+            if record.head() != "spline" {
                 return Err(CodecError::malformed(format_args!(
                     "F3D extrusion carrier {procedural_id} is not a spline record"
                 )));
@@ -453,22 +453,22 @@ fn patch_asm_geometry(
                 }
             }
         }
-        if record.head == "face" {
+        if record.head() == "face" {
             if let Some(sense) = face_senses.get(&id) {
                 asm_edits.patch_sense_field(bytes, record, 8, *sense)?;
             }
-        } else if matches!(record.head.as_str(), "coedge" | "tcoedge") {
+        } else if matches!(record.head(), "coedge" | "tcoedge") {
             if let Some(sense) = coedge_senses.get(&id) {
                 asm_edits.patch_sense_field(bytes, record, 7, *sense)?;
             }
-        } else if matches!(record.head.as_str(), "edge" | "tedge") {
+        } else if matches!(record.head(), "edge" | "tedge") {
             if let Some(range) = edge_ranges.get(&id) {
                 for (index, value) in [(4usize, range[0]), (6, range[1])] {
                     let offset = asm_edits.required_payload_field(bytes, record, index, 0x06)?;
                     AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;
                 }
             }
-        } else if record.head == "point" {
+        } else if record.head() == "point" {
             if let Some(position) = positions.get(&id) {
                 let offset = asm_edits.required_payload_field(bytes, record, 3, 0x13)?;
                 for (component, value) in [
@@ -483,7 +483,7 @@ fn patch_asm_geometry(
                     AsmEditSet::patch_f64_payload(bytes, at, value)?;
                 }
             }
-        } else if record.head == "straight" {
+        } else if record.head() == "straight" {
             if let Some((origin, direction)) = lines.get(&id) {
                 let field_indices = match record.name.as_str() {
                     "straight" => [0, 1],
@@ -513,7 +513,7 @@ fn patch_asm_geometry(
                     }
                 }
             }
-        } else if record.head == "degenerate_curve" {
+        } else if record.head() == "degenerate_curve" {
             if let Some(point) = degenerate_curves.get(&id) {
                 let field_index = match record.name.as_str() {
                     "degenerate_curve" => 0,
@@ -538,7 +538,7 @@ fn patch_asm_geometry(
                     AsmEditSet::patch_f64_payload(bytes, at, value)?;
                 }
             }
-        } else if record.head == "ellipse" {
+        } else if record.head() == "ellipse" {
             if let Some((center, axis, direction, major_radius, minor_radius)) = conics.get(&id) {
                 let field_indices = match record.name.as_str() {
                     "ellipse" => [0, 1, 2, 3],
@@ -585,7 +585,7 @@ fn patch_asm_geometry(
                 };
                 AsmEditSet::patch_f64_payload(bytes, fields[3] + 1, signed_ratio)?;
             }
-        } else if record.head == "plane" {
+        } else if record.head() == "plane" {
             if let Some((origin, normal, u_axis)) = planes.get(&id) {
                 let field_indices = match record.name.as_str() {
                     "plane" => [0, 1, 2],
@@ -617,7 +617,7 @@ fn patch_asm_geometry(
                     }
                 }
             }
-        } else if record.head == "sphere" {
+        } else if record.head() == "sphere" {
             if let Some((center, axis, ref_direction, radius)) = spheres.get(&id) {
                 let field_indices = match record.name.as_str() {
                     "sphere" => [0, 1, 2, 3],
@@ -651,7 +651,7 @@ fn patch_asm_geometry(
                 }
                 AsmEditSet::patch_f64_payload(bytes, fields[1] + 1, radius / LEN_TO_MM)?;
             }
-        } else if record.head == "torus" {
+        } else if record.head() == "torus" {
             if let Some((center, axis, ref_direction, major_radius, minor_radius)) = tori.get(&id) {
                 let field_indices = match record.name.as_str() {
                     "torus" => [0, 1, 2, 3, 4],
@@ -691,7 +691,7 @@ fn patch_asm_geometry(
                     AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;
                 }
             }
-        } else if record.head == "cone" {
+        } else if record.head() == "cone" {
             if let Some((origin, axis, ref_direction, radius, ratio, half_angle)) = cones.get(&id) {
                 let field_indices = match record.name.as_str() {
                     "cone" => [0, 1, 2, 3, 4, 5, 6],
@@ -764,7 +764,8 @@ fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecE
     {
         return Err(CodecError::malformed(format_args!(
             "{} record {} has an invalid edited color",
-            record.head, record.index
+            record.head(),
+            record.index
         )));
     }
     let encoded = channels.map(|channel| (channel * 255.0).round() as u8);
@@ -772,7 +773,8 @@ fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecE
     if decoded != channels {
         return Err(CodecError::NotImplemented(format!(
             "{} record {} requires exactly representable 8-bit RGB channels",
-            record.head, record.index
+            record.head(),
+            record.index
         )));
     }
     Ok(encoded)

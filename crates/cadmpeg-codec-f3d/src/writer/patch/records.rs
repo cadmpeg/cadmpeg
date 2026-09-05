@@ -335,7 +335,7 @@ pub(crate) fn patch_body_native_keys(
                     "F3D body-key record {record_index} is missing"
                 ))
             })?;
-            if record.head != "body" {
+            if record.head() != "body" {
                 return Err(CodecError::malformed(format_args!(
                     "F3D body-key record {record_index} is not a body"
                 )));
@@ -363,7 +363,7 @@ pub(crate) fn patch_transform_hints(
             if !record.name.ends_with("transform") {
                 return Err(CodecError::malformed(format_args!(
                     "F3D transform-hint record {record_index} is {}, not a transform",
-                    record.head
+                    record.head()
                 )));
             }
             for (index, flag) in (5usize..=7).zip(flags) {
@@ -388,10 +388,10 @@ pub(crate) fn patch_tolerant_coedge_parameters(
                     "F3D tolerant-coedge record {record_index} is missing"
                 ))
             })?;
-            if record.head != "tcoedge" {
+            if record.head() != "tcoedge" {
                 return Err(CodecError::malformed(format_args!(
                     "F3D tolerant-coedge record {record_index} is {}",
-                    record.head
+                    record.head()
                 )));
             }
             for (index, value) in [(11usize, range[0]), (12, range[1])] {
@@ -415,10 +415,10 @@ pub(crate) fn patch_wire_topologies(
             let record = asm_edits.record(*record_index).ok_or_else(|| {
                 CodecError::malformed(format_args!("F3D wire record {record_index} is missing"))
             })?;
-            if record.head != "wire" {
+            if record.head() != "wire" {
                 return Err(CodecError::malformed(format_args!(
                     "F3D wire record {record_index} is {}",
-                    record.head
+                    record.head()
                 )));
             }
             let is_in = matches!(side, cadmpeg_asm::brep::records::WireSide::In);
@@ -442,10 +442,10 @@ pub(crate) fn patch_edge_ownerships(
                     "F3D edge-ownership record {record_index} is missing"
                 ))
             })?;
-            if !matches!(record.head.as_str(), "edge" | "tedge") {
+            if !matches!(record.head(), "edge" | "tedge") {
                 return Err(CodecError::malformed(format_args!(
                     "F3D edge-ownership record {record_index} is {}",
-                    record.head
+                    record.head()
                 )));
             }
             asm_edits.patch_integer_field(bytes, record, 7, 0x0c, *owner)?;

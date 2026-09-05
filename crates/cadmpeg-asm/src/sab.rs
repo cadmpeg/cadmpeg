@@ -113,8 +113,7 @@ pub struct Record {
     pub index: usize,
     /// Full `-`-joined record name, e.g. `cone-surface`, `body`.
     pub name: String,
-    /// Leading name component used for dispatch, e.g. `cone`, `body`.
-    pub head: String,
+
     /// Payload tokens following the name chain (subtype delimiters included).
     pub tokens: Arc<[Token]>,
     /// Byte offset of the record's first name-chain tag in the stream.
@@ -124,6 +123,14 @@ pub struct Record {
 }
 
 impl Record {
+    /// Leading name component used for dispatch, such as `cone` or `body`.
+    #[must_use]
+    pub fn head(&self) -> &str {
+        self.name
+            .split_once('-')
+            .map_or(self.name.as_str(), |(head, _)| head)
+    }
+
     /// Returns the `i`th payload value token. Payload identifiers leave field
     /// positions unchanged, so `chunk[i]` has the same meaning in records with
     /// and without named subtypes.
@@ -531,12 +538,11 @@ fn frame_impl(
         if let Some(embedded) = embedded_history_entity {
             name = embedded;
         }
-        let head = name.split('-').next().unwrap_or_default().to_owned();
 
         records.push(Record {
             index,
             name,
-            head,
+
             tokens: tokens.into(),
             offset: rec_start,
             len: pos - rec_start,
@@ -597,7 +603,7 @@ mod tests {
         let records = frame_history(&bytes, 0, bytes.len(), RefWidth::Eight).expect("wrapped edge");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].name, "edge");
-        assert_eq!(records[0].head, "edge");
+        assert_eq!(records[0].head(), "edge");
         assert_eq!(records[0].ref_at(0), Some(4));
         assert_eq!(records[0].ref_at(5), Some(8));
 

@@ -560,7 +560,7 @@ pub fn test_table(bytes: &[u8], ref_width: RefWidth) -> SubtypeTable {
     let record = crate::sab::Record {
         index: 0,
         name: String::new(),
-        head: String::new(),
+
         tokens: lex_test_span(bytes, ref_width),
         offset: 0,
         len: 0,

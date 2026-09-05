@@ -78,7 +78,7 @@ pub(crate) fn is_analytic_curve(head: &str) -> bool {
 pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
     let c = collect_carrier(rec);
     let origin = *c.positions.first()?;
-    match rec.head.as_str() {
+    match rec.head() {
         "plane" => {
             let normal = *c.vectors.first()?;
             let normal = unit(normal);
@@ -204,15 +204,15 @@ pub(crate) fn coedge_pcurve_ref(record: &Record) -> Option<i64> {
 }
 
 pub(crate) fn is_vertex_record(record: &Record) -> bool {
-    matches!(record.head.as_str(), "vertex" | "tvertex")
+    matches!(record.head(), "vertex" | "tvertex")
 }
 
 pub(crate) fn is_edge_record(record: &Record) -> bool {
-    matches!(record.head.as_str(), "edge" | "tedge")
+    matches!(record.head(), "edge" | "tedge")
 }
 
 pub(crate) fn is_coedge_record(record: &Record) -> bool {
-    matches!(record.head.as_str(), "coedge" | "tcoedge")
+    matches!(record.head(), "coedge" | "tcoedge")
 }
 
 pub(crate) fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedgeExtension> {
@@ -379,7 +379,7 @@ pub(crate) fn pcurve_ranges_on_domain(
 pub fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
     let carrier = collect_carrier(rec);
     let base = *carrier.positions.first()?;
-    match rec.head.as_str() {
+    match rec.head() {
         "straight" => Some(CurveGeometry::Line {
             origin: scale_point(base),
             direction: unit(*carrier.vectors.first()?),
@@ -442,7 +442,7 @@ pub(crate) fn record_reversed(rec: &Record) -> bool {
         .or_else(|| {
             // A plain `intcurve` companion has no subtype scope after its
             // base header; its sense remains the fourth payload value.
-            (rec.head == "intcurve").then(|| matches!(rec.chunk(3), Some(Token::True)))
+            (rec.head() == "intcurve").then(|| matches!(rec.chunk(3), Some(Token::True)))
         })
         .unwrap_or(false)
 }
@@ -1100,7 +1100,7 @@ mod analytic_surface_tests {
         Record {
             index: 1,
             name: format!("{head}-surface"),
-            head: head.into(),
+
             tokens: Arc::from(tokens),
             offset: 0,
             len: 0,

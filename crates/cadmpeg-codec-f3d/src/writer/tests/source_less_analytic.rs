@@ -406,7 +406,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     .expect("generated ASM records must frame");
     let point_records = records
         .iter()
-        .filter(|record| record.head == "point")
+        .filter(|record| record.head() == "point")
         .collect::<Vec<_>>();
     assert_eq!(point_records.len(), 3);
     assert!(point_records
@@ -415,14 +415,14 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(
         records
             .iter()
-            .filter(|record| record.head == "tcoedge")
+            .filter(|record| record.head() == "tcoedge")
             .count(),
         1
     );
     assert_eq!(
         records
             .iter()
-            .filter(|record| record.head == "tedge")
+            .filter(|record| record.head() == "tedge")
             .count(),
         1
     );

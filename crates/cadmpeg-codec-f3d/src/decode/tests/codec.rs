@@ -718,12 +718,12 @@ fn sab_framer_indexes_records_from_asmheader() {
 
     // asmheader occupies index 0; the topology records follow in order.
     assert_eq!(records[0].index, 0);
-    assert_eq!(records[0].head, "asmheader");
-    assert_eq!(records[1].head, "body");
-    assert_eq!(records[4].head, "face");
+    assert_eq!(records[0].head(), "asmheader");
+    assert_eq!(records[1].head(), "body");
+    assert_eq!(records[4].head(), "face");
     assert_eq!(records[4].name, "face");
     assert_eq!(records[6].name, "plane-surface");
     // The face's surface reference (chunk[7]) resolves to the plane at index 6.
     assert_eq!(records[4].ref_at(7), Some(6));
-    assert!(records.iter().all(|r| r.head != "delta_state"));
+    assert!(records.iter().all(|r| r.head() != "delta_state"));
 }
