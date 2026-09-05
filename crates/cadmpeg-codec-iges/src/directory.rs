@@ -223,11 +223,11 @@ fn status(field: [u8; 8], global_table: GlobalTable) -> Result<Status, Directory
 }
 
 fn parse_pair(
+    sequence: u32,
     first: &PhysicalLine,
     second: &PhysicalLine,
     global_table: GlobalTable,
 ) -> Result<DirectoryEntry, DirectoryDefect> {
-    let sequence = first.sequence.unwrap_or_default();
     let first_fields = fields(first);
     let second_fields = fields(second);
     let entity_type = directory_integer(first_fields[0], "entity type", 1, global_table)?;
@@ -271,16 +271,17 @@ fn parse_pair(
     })
 }
 
-fn quarantine(cards: &[&PhysicalLine], defect: DirectoryDefect) -> QuarantinedDirectoryRecord {
+fn quarantine(
+    first: (u32, &PhysicalLine),
+    rest: &[(u32, &PhysicalLine)],
+    defect: DirectoryDefect,
+) -> QuarantinedDirectoryRecord {
     QuarantinedDirectoryRecord {
-        sequence: cards
-            .first()
-            .and_then(|line| line.sequence)
-            .unwrap_or_default(),
-        source_offset: cards.first().map_or(0, |line| line.offset),
-        cards: cards.len(),
-        bytes: cards
-            .iter()
+        sequence: first.0,
+        source_offset: first.1.offset,
+        cards: rest.len() + 1,
+        bytes: std::iter::once(first.1)
+            .chain(rest.iter().map(|(_, line)| *line))
             .flat_map(|line| line.payload.iter().copied())
             .collect(),
         defect,
@@ -292,22 +293,18 @@ pub(crate) fn parse(
     scan: &CardScan,
     global_table: GlobalTable,
 ) -> (Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>) {
-    let lines = scan
-        .lines
-        .iter()
-        .filter(|line| line.section == Some(Section::Directory))
-        .collect::<Vec<_>>();
+    let lines = scan.section(Section::Directory).collect::<Vec<_>>();
     let mut entries = Vec::new();
     let mut quarantined = Vec::new();
     let mut pairs = lines.chunks_exact(2);
     for pair in pairs.by_ref() {
-        match parse_pair(pair[0], pair[1], global_table) {
+        match parse_pair(pair[0].0, pair[0].1, pair[1].1, global_table) {
             Ok(entry) => entries.push(entry),
-            Err(defect) => quarantined.push(quarantine(pair, defect)),
+            Err(defect) => quarantined.push(quarantine(pair[0], &pair[1..], defect)),
         }
     }
     if let Some(unpaired) = pairs.remainder().first() {
-        quarantined.push(quarantine(&[unpaired], DirectoryDefect::UnpairedCard));
+        quarantined.push(quarantine(*unpaired, &[], DirectoryDefect::UnpairedCard));
     }
     (entries, quarantined)
 }

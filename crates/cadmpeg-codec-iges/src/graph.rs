@@ -459,16 +459,12 @@ pub(crate) fn losses(
     parameters: &[ParameterRecord],
 ) -> Vec<LossNote> {
     let directory_offsets = scan
-        .lines
-        .iter()
-        .filter(|line| line.section == Some(Section::Directory))
-        .filter_map(|line| line.sequence.map(|sequence| (sequence, line.offset)))
+        .section(Section::Directory)
+        .map(|(sequence, line)| (sequence, line.offset))
         .collect::<BTreeMap<_, _>>();
     let parameter_lines = scan
-        .lines
-        .iter()
-        .filter(|line| line.section == Some(Section::Parameter))
-        .filter_map(|line| line.sequence.map(|sequence| (sequence, line.offset)))
+        .section(Section::Parameter)
+        .map(|(sequence, line)| (sequence, line.offset))
         .collect::<BTreeMap<_, _>>();
     let records = parameters
         .iter()

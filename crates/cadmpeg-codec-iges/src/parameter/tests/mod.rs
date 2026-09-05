@@ -50,9 +50,9 @@ fn parameter_owner(field: [u8; 8]) -> Option<u32> {
     bytes[card_start + 64..card_start + 72].copy_from_slice(&field);
     let scan = scan(&bytes).unwrap();
     let line = scan
-        .lines
-        .iter()
-        .find(|line| line.section == Some(Section::Parameter))
+        .section(Section::Parameter)
+        .map(|(_, line)| line)
+        .next()
         .expect("Parameter Data line");
     super::back_pointer(line)
 }

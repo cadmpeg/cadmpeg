@@ -3602,12 +3602,7 @@ pub(crate) fn assemble_with_context(
     global: &ResolvedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<ParameterAssembly, CodecError> {
-    let lines = scan
-        .lines
-        .iter()
-        .filter(|line| line.section == Some(Section::Parameter))
-        .map(|line| (line.sequence.unwrap_or_default(), line))
-        .collect::<BTreeMap<_, _>>();
+    let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
     let back_pointers = lines
         .iter()
         .map(|(sequence, line)| (*sequence, back_pointer(line)))
