@@ -18,11 +18,7 @@ fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
 }
 
 fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
-    crate::curves::DecodedCurve {
-        geometry: CurveGeometry::Nurbs(curve),
-        compound: None,
-        warnings: Vec::new(),
-    }
+    crate::curves::DecodedCurve::leaf(CurveGeometry::Nurbs(curve), Vec::new())
 }
 
 #[test]
@@ -65,7 +61,7 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
     let mut curve = decoded_nurbs(line_nurbs(0.0, 2.0, false));
     transform_decoded_curve(&mut curve, hatch_plane_transform(&plane, 10.0))
         .expect("required invariant");
-    let CurveGeometry::Nurbs(curve) = curve.geometry else {
+    let CurveGeometry::Nurbs(curve) = curve.reported_geometry() else {
         panic!("hatch loop must remain NURBS");
     };
     assert_eq!(curve.control_points()[0], Point3::new(100.0, 200.0, 300.0));
@@ -784,17 +780,14 @@ fn two_bounded_regions_sharing_one_face_use_deterministic_incidence_fallback() {
 
 #[test]
 fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
-    let compound = crate::curves::DecodedCurve {
-        geometry: CurveGeometry::Unknown { record: None },
-        compound: Some(crate::curves::Compound {
-            children: vec![
-                decoded_nurbs(line_nurbs(0.0, 1.0, true)),
-                decoded_nurbs(line_nurbs(-2.0, 2.0, false)),
-            ],
-            parameters: vec![10.0, 20.0, 40.0],
-        }),
-        warnings: Vec::new(),
-    };
+    let compound = crate::curves::DecodedCurve::from_polycurve_parts(
+        vec![
+            decoded_nurbs(line_nurbs(0.0, 1.0, true)),
+            decoded_nurbs(line_nurbs(-2.0, 2.0, false)),
+        ],
+        vec![10.0, 20.0, 40.0],
+        Vec::new(),
+    );
     let merged = c2_curve_to_nurbs_join(compound, 0).expect("merge").curve;
     assert_eq!(merged.knots(), vec![10.0, 10.0, 20.0, 40.0, 40.0]);
     assert_eq!(merged.control_points().len(), 3);
@@ -804,25 +797,16 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
 
 #[test]
 fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
-    let nested = crate::curves::DecodedCurve {
-        geometry: CurveGeometry::Unknown { record: None },
-        compound: Some(crate::curves::Compound {
-            children: vec![
-                decoded_nurbs(line_nurbs(0.0, 1.0, false)),
-                decoded_nurbs(line_nurbs(0.0, 1.0, false)),
-            ],
-            parameters: vec![0.0, 1.0, 2.0],
-        }),
-        warnings: Vec::new(),
-    };
-    let outer = crate::curves::DecodedCurve {
-        geometry: CurveGeometry::Unknown { record: None },
-        compound: Some(crate::curves::Compound {
-            children: vec![nested],
-            parameters: vec![5.0, 9.0],
-        }),
-        warnings: Vec::new(),
-    };
+    let nested = crate::curves::DecodedCurve::from_polycurve_parts(
+        vec![
+            decoded_nurbs(line_nurbs(0.0, 1.0, false)),
+            decoded_nurbs(line_nurbs(0.0, 1.0, false)),
+        ],
+        vec![0.0, 1.0, 2.0],
+        Vec::new(),
+    );
+    let outer =
+        crate::curves::DecodedCurve::from_polycurve_parts(vec![nested], vec![5.0, 9.0], Vec::new());
     let merged = c2_curve_to_nurbs_join(outer, 0)
         .expect("nested merge")
         .curve;
@@ -843,17 +827,14 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
         false,
     )
     .expect("valid quadratic");
-    let compound = crate::curves::DecodedCurve {
-        geometry: CurveGeometry::Unknown { record: None },
-        compound: Some(crate::curves::Compound {
-            children: vec![
-                decoded_nurbs(line_nurbs(0.0, 1.0, false)),
-                decoded_nurbs(quadratic),
-            ],
-            parameters: vec![0.0, 1.0, 2.0],
-        }),
-        warnings: Vec::new(),
-    };
+    let compound = crate::curves::DecodedCurve::from_polycurve_parts(
+        vec![
+            decoded_nurbs(line_nurbs(0.0, 1.0, false)),
+            decoded_nurbs(quadratic),
+        ],
+        vec![0.0, 1.0, 2.0],
+        Vec::new(),
+    );
     let merged = c2_curve_to_nurbs_join(compound, 0)
         .expect("degree elevation")
         .curve;

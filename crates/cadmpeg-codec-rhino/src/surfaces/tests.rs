@@ -810,7 +810,7 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
                 [4.0, 9.0]
             }
         );
-        let CurveGeometry::Nurbs(child) = &children[0].geometry else {
+        let CurveGeometry::Nurbs(child) = children[0].reported_geometry() else {
             panic!("expected NURBS child");
         };
         assert_eq!(child.control_points()[0].x, 2.0 * 25.4);
@@ -843,10 +843,10 @@ fn sum_surface_decodes_ordered_children_and_scales_once() {
     assert!((geometry.control_points()[0].x - 177.8).abs() < EPS_EXACT_GEOMETRY);
     assert!((geometry.control_points()[0].y - 50.8).abs() < EPS_EXACT_GEOMETRY);
     assert!((geometry.control_points()[0].z - 76.2).abs() < EPS_EXACT_GEOMETRY);
-    let CurveGeometry::Nurbs(first) = &children[0].geometry else {
+    let CurveGeometry::Nurbs(first) = children[0].reported_geometry() else {
         panic!("expected first NURBS child");
     };
-    let CurveGeometry::Nurbs(second) = &children[1].geometry else {
+    let CurveGeometry::Nurbs(second) = children[1].reported_geometry() else {
         panic!("expected second NURBS child");
     };
     assert_eq!(first.control_points()[0].x, 2.0 * 25.4);

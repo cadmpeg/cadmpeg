@@ -267,11 +267,10 @@ pub(crate) fn decode(
             active_miters[1],
             version_offset,
         )?;
-        let start_curve = DecodedCurve {
-            geometry: CurveGeometry::Nurbs(start_nurbs.clone()),
-            compound: None,
-            warnings: source.warnings,
-        };
+        let start_curve = DecodedCurve::leaf(
+            CurveGeometry::Nurbs(start_nurbs.clone()),
+            source.warnings().to_vec(),
+        );
         let start_frame = cap_frame(xaxis, up, tangent, active_miters[0], version_offset)?;
         let end_frame = cap_frame(xaxis, up, tangent, active_miters[1], version_offset)?;
         let start_pcurve = cap_pcurve(&start_nurbs, cap_origins[0], start_frame, version_offset)?;
@@ -340,16 +339,16 @@ fn split_profiles(
     if profile_count == 1 {
         return Ok(vec![profile]);
     }
-    let Some(compound) = profile.compound else {
+    let DecodedCurve::Compound { children, .. } = profile else {
         return Err(error(
             offset,
             "multiple extrusion profiles require an exact polycurve",
         ));
     };
-    if compound.children.len() != profile_count {
+    if children.len() != profile_count {
         return Err(error(offset, "extrusion profile count mismatch"));
     }
-    Ok(compound.children)
+    Ok(children.into_iter().map(|(_, child)| child).collect())
 }
 
 fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, GeometryError> {
@@ -895,7 +894,7 @@ fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
 pub(crate) mod tests {
     use super::*;
     use crate::chunks::ArchiveVersion;
-    use crate::curves::Compound;
+    use crate::curves::DecodedCurve;
     use crate::layout::anonymous_version_prefix as anon_ver;
     use crate::layout::long_chunk_header_wide as long_wide;
     use crate::layout::uuid_wire_form as uuid_wire;
@@ -1209,8 +1208,8 @@ pub(crate) mod tests {
             points.reverse();
         }
         let count = points.len();
-        DecodedCurve {
-            geometry: CurveGeometry::Nurbs(
+        DecodedCurve::leaf(
+            CurveGeometry::Nurbs(
                 NurbsCurve::new(
                     1,
                     (0..count + 2).map(|value| value as f64).collect(),
@@ -1220,9 +1219,8 @@ pub(crate) mod tests {
                 )
                 .expect("valid polygon curve"),
             ),
-            compound: None,
-            warnings: Vec::new(),
-        }
+            Vec::new(),
+        )
     }
 
     fn decoded_quadratic_circle(clockwise: bool) -> DecodedCurve {
@@ -1253,8 +1251,8 @@ pub(crate) mod tests {
             points.reverse();
             weights.reverse();
         }
-        DecodedCurve {
-            geometry: CurveGeometry::Nurbs(
+        DecodedCurve::leaf(
+            CurveGeometry::Nurbs(
                 NurbsCurve::new(
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
@@ -1264,9 +1262,8 @@ pub(crate) mod tests {
                 )
                 .expect("valid circle curve"),
             ),
-            compound: None,
-            warnings: Vec::new(),
-        }
+            Vec::new(),
+        )
     }
 
     #[test]
@@ -1380,7 +1377,11 @@ pub(crate) mod tests {
             -1
         );
         let mut off_plane = decoded_polygon(false, true);
-        let CurveGeometry::Nurbs(curve) = &mut off_plane.geometry else {
+        let crate::curves::DecodedCurve::Leaf {
+            geometry: CurveGeometry::Nurbs(curve),
+            ..
+        } = &mut off_plane
+        else {
             unreachable!()
         };
         curve.control_points_mut()[1].z = 1.0;
@@ -1391,14 +1392,8 @@ pub(crate) mod tests {
     fn multiple_profiles_require_exact_polycurve_count_and_outer_hole_orientation() {
         let outer = decoded_polygon(false, true);
         let inner = decoded_polygon(true, true);
-        let profile = DecodedCurve {
-            geometry: CurveGeometry::Unknown { record: None },
-            compound: Some(Compound {
-                children: vec![outer, inner],
-                parameters: vec![0.0, 1.0, 2.0],
-            }),
-            warnings: Vec::new(),
-        };
+        let profile =
+            DecodedCurve::from_polycurve_parts(vec![outer, inner], vec![0.0, 1.0, 2.0], Vec::new());
         assert_eq!(
             split_profiles(profile.clone(), 2, 0)
                 .expect("required invariant")
