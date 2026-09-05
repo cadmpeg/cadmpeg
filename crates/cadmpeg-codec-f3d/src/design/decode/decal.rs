@@ -17,7 +17,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{DecalMapping, FaceSelection, Feature, FeatureDefinition};
 
-const FIT_TO_FACES_MODE: u8 = 0x60;
 const DECAL_TARGET_ROLE: u64 = 0x0000_0004_0000_0000;
 
 struct DecalAssetRecord {
@@ -70,7 +69,7 @@ pub fn project_decal_images(
 ) -> Result<Vec<Asset>, CodecError> {
     let mut assets = Vec::new();
     for image in images {
-        if image.mapping_mode != FIT_TO_FACES_MODE {
+        if image.mapping_mode != crate::records::DesignDecalMappingMode::FitToFaces {
             continue;
         }
         let native_stream = ids::native_stream(&image.id);
@@ -204,7 +203,7 @@ fn parse_decal_image_frame(
         id: ids::native_design_decal_image_id(stream, scope_at),
         scope_record_index,
         asset_reference_offset: u64::try_from(asset_reference_at + 1).ok()?,
-        mapping_mode,
+        mapping_mode: crate::records::DesignDecalMappingMode::from_code(mapping_mode),
         mapping_mode_offset: u64::try_from(mapping_mode_at).ok()?,
         target_group_record_index,
         target_group_reference_offset: u64::try_from(target_group_reference_at + 1).ok()?,
@@ -286,7 +285,8 @@ fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_decal_image_frame, FIT_TO_FACES_MODE};
+    use super::parse_decal_image_frame;
+    use crate::records::DesignDecalMappingMode;
 
     fn header(bytes: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
         bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
@@ -317,7 +317,7 @@ mod tests {
         }
         header(&mut bytes, scope_at, *b"301", 23);
         marked(&mut bytes, scope_at + 21, 17);
-        bytes[scope_at + 32] = FIT_TO_FACES_MODE;
+        bytes[scope_at + 32] = DesignDecalMappingMode::FitToFaces.code();
         marked(&mut bytes, scope_at + 33, 24);
         header(&mut bytes, 150, *b"440", 17);
         header(&mut bytes, end_at, *b"302", 23);
@@ -332,7 +332,10 @@ mod tests {
         assert_eq!(image.asset_record_index, 17);
         assert_eq!(image.asset_entity_suffix, 50);
         assert_eq!(image.asset_name, "mark.png");
-        assert_eq!(image.mapping_mode, FIT_TO_FACES_MODE);
+        assert_eq!(
+            image.mapping_mode,
+            crate::records::DesignDecalMappingMode::FitToFaces
+        );
         assert_eq!(image.target_group_record_index, 24);
         assert_eq!(image.asset_frame_length, 30);
         assert_eq!(image.name_frame_length, 41);

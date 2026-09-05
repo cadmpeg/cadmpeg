@@ -1350,7 +1350,10 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     assert_eq!(absent.primary_identity, 268);
     assert_eq!(absent.primary_identity_offset, 70);
     assert_eq!(absent.selector, -1);
-    assert_eq!(absent.kind, 3);
+    assert_eq!(
+        absent.kind,
+        crate::records::DesignConstructionTrackingPathKind::from_code(3)
+    );
     assert_eq!(absent.first_related_identity, None);
     assert_eq!(absent.second_related_identity, None);
     assert_eq!(absent.following_record_index, 302);

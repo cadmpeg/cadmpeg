@@ -23,7 +23,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 26,
-            section_shape: 1,
+            section_shape: crate::records::DesignPipeSectionShape::Circular,
             section_shape_offset: 30,
             filled: true,
             filled_offset: 31,
@@ -126,7 +126,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 26,
-            section_shape: 1,
+            section_shape: crate::records::DesignPipeSectionShape::Circular,
             section_shape_offset: 30,
             filled: false,
             filled_offset: 31,
@@ -164,7 +164,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 26,
-            section_shape: 1,
+            section_shape: crate::records::DesignPipeSectionShape::Circular,
             section_shape_offset: 30,
             filled: false,
             filled_offset: 31,
@@ -185,7 +185,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 26,
-            section_shape: 1,
+            section_shape: crate::records::DesignPipeSectionShape::Circular,
             section_shape_offset: 30,
             filled: true,
             filled_offset: 31,
@@ -222,7 +222,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 25,
-            section_shape: 1,
+            section_shape: crate::records::DesignPipeSectionShape::Circular,
             section_shape_offset: 29,
             filled: true,
             filled_offset: 30,

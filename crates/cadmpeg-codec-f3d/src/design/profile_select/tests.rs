@@ -157,7 +157,7 @@ fn planar_resolution<'a>(
 
 fn profile_region_member(curve_primary_id: u64) -> DesignSketchProfileRegionMember {
     DesignSketchProfileRegionMember {
-        kind: 3,
+        kind: crate::records::DesignSketchProfileRegionMemberKind::Curve,
         kind_offset: 0,
         curve_primary_id,
         curve_primary_id_offset: 0,

@@ -292,7 +292,7 @@ fn valid_sketch_profile_region_selection(
             ) else {
                 return false;
             };
-            if member.kind != 3
+            if member.kind != crate::records::DesignSketchProfileRegionMemberKind::Curve
                 || member.kind_offset != cursor
                 || member.curve_primary_id == 0
                 || member.curve_primary_id > u64::from(u32::MAX)
@@ -1131,7 +1131,10 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && valid_dynamic_class_tag(&root.class_tag)
             && crate::act::is_entity_key(&root.entity_id)
             && root.tracked_entity_record == 3
-            && root.registry_flag <= 1
+            && !matches!(
+                root.registry_flag,
+                crate::records::ActRegistryFlag::Unknown(_)
+            )
             && root.byte_offset.checked_add(7) == Some(root.record_index_offset)
             && root.byte_offset.checked_add(22) == Some(root.instance_root_record_offset)
             && root.byte_offset.checked_add(36) == Some(root.entity_id_offset)
@@ -1982,7 +1985,8 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && operand.owner.group() == Some((group.record_index, 0))
                 })
         });
-        let projected = if image.mapping_mode == 0x60 {
+        let projected = if image.mapping_mode == crate::records::DesignDecalMappingMode::FitToFaces
+        {
             operand.and_then(|operand| {
                 let mut faces = operand
                     .references
