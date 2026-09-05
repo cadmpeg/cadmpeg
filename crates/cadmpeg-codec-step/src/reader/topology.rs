@@ -2,6 +2,7 @@
 //! STEP boundary-representation ownership and orientation decoding.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_ir::document::CadIr;
@@ -296,8 +297,9 @@ pub(super) fn decode(
             point_positions,
             &mut result.warnings,
         );
+        let (built, failures) = outcome.into_parts();
         let mut committed = 0;
-        for mut built in outcome.built {
+        for mut built in built {
             if let Err(error) = commit_session.commit_model(built.draft, ir) {
                 result.warnings.push(topology_commit_error(
                     &format!("EDGE_BASED_WIREFRAME_MODEL #{model}"),
@@ -319,10 +321,10 @@ pub(super) fn decode(
             result.warnings.push(format!(
                 "EDGE_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
             ));
-        } else if outcome.failed != 0 {
+        } else if let Some(failures) = failures {
             result.warnings.push(format!(
                 "EDGE_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved connected edge set(s)",
-                outcome.failed
+                failures.count
             ));
         }
     }
@@ -340,8 +342,9 @@ pub(super) fn decode(
             scope_root,
             &mut result.warnings,
         );
+        let (built, failures) = outcome.into_parts();
         let mut committed = 0;
-        for mut built in outcome.built {
+        for mut built in built {
             if let Err(error) = commit_session.commit_model(built.draft, ir) {
                 result.warnings.push(topology_commit_error(
                     &format!("SHELL_BASED_WIREFRAME_MODEL #{model}"),
@@ -368,10 +371,10 @@ pub(super) fn decode(
             result.warnings.push(format!(
                 "SHELL_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
             ));
-        } else if outcome.failed != 0 {
+        } else if let Some(failures) = failures {
             result.warnings.push(format!(
                 "SHELL_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved wire shell(s)",
-                outcome.failed
+                failures.count
             ));
         }
     }
@@ -437,10 +440,14 @@ pub(super) fn decode(
             &mut result.warnings,
             &mut result.losses,
         );
-        let failure_message = outcome.failure.as_ref().map(BuildFailure::message);
+        let (built, failures) = outcome.into_parts();
+        let failure_message = failures
+            .as_ref()
+            .and_then(|failures| failures.first.as_ref())
+            .map(BuildFailure::message);
         let mut body_ids = Vec::new();
         let mut body_by_shell = BTreeMap::<u64, BTreeSet<BodyId>>::new();
-        for mut built in outcome.built {
+        for mut built in built {
             drop_committed_surfaces(&mut built.draft, &commit_session, ir);
             if let Err(error) = commit_session.commit_model(built.draft, ir) {
                 result.warnings.push(topology_commit_error(
@@ -486,13 +493,13 @@ pub(super) fn decode(
                     body_by_shell,
                 },
             );
-            if outcome.failed != 0 {
+            if let Some(failures) = failures {
                 let detail = failure_message
                     .as_deref()
                     .map_or_else(String::new, |message| format!(": {message}"));
                 result.warnings.push(format!(
                     "STEP topology root #{id} omitted {} unresolved shell(s){detail}",
-                    outcome.failed,
+                    failures.count,
                 ));
             }
         }
@@ -661,16 +668,137 @@ fn geometric_set_omissions(
         .collect()
 }
 
-struct BuildOutcome {
-    built: Vec<Built>,
-    failed: usize,
-    failure: Option<BuildFailure>,
+enum BuildOutcome {
+    Built(Vec<Built>),
+    Partial {
+        built: Vec<Built>,
+        failures: BuildFailures,
+    },
+}
+
+struct BuildFailures {
+    count: NonZeroUsize,
+    first: Option<BuildFailure>,
+}
+
+impl BuildOutcome {
+    fn push(&mut self, value: Built) {
+        match self {
+            Self::Built(built) | Self::Partial { built, .. } => built.push(value),
+        }
+    }
+
+    fn fail(&mut self, failure: Option<BuildFailure>) {
+        match self {
+            Self::Built(built) => {
+                *self = Self::Partial {
+                    built: std::mem::take(built),
+                    failures: BuildFailures {
+                        count: NonZeroUsize::MIN,
+                        first: failure,
+                    },
+                };
+            }
+            Self::Partial { failures, .. } => {
+                failures.count = failures.count.saturating_add(1);
+                if failures.first.is_none() {
+                    failures.first = failure;
+                }
+            }
+        }
+    }
+
+    fn into_parts(self) -> (Vec<Built>, Option<BuildFailures>) {
+        match self {
+            Self::Built(built) => (built, None),
+            Self::Partial { built, failures } => (built, Some(failures)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CarrierKind {
+    BoundLoopReference,
+    BoundOrientation,
+    Coedge,
+    CoedgeEdge,
+    ConnectedFaceSet,
+    ConnectedFaceSetMemberList,
+    ConnectedOuterShell,
+    EdgeDefinition,
+    EdgeLoopCarrier,
+    EdgeLoopContinuity,
+    EdgeLoopMember,
+    EdgeLoopMemberList,
+    FaceAttributes,
+    FaceBound,
+    FaceBoundAttributes,
+    FaceBoundCarrier,
+    FaceCarrier,
+    FaceRecord,
+    FaceWithMultipleOuterBounds,
+    ImplicitFacePlane,
+    LoopRecord,
+    OrientedEdgeDefinition,
+    PolyLoopPointCarrier,
+    PolyLoopPointList,
+    PolyVertexPoint,
+    ShellCarrier,
+    ShellFaceList,
+    ShellRecord,
+    ShellType,
+    TopologyDraft,
+    TopologyRootCarrier,
+    VertexDefinition,
+    VertexLoopReference,
+    VertexPoint,
+}
+
+impl std::fmt::Display for CarrierKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::BoundLoopReference => "bound loop reference",
+            Self::BoundOrientation => "bound orientation",
+            Self::Coedge => "coedge",
+            Self::CoedgeEdge => "coedge edge",
+            Self::ConnectedFaceSet => "connected face set",
+            Self::ConnectedFaceSetMemberList => "connected face set member list",
+            Self::ConnectedOuterShell => "connected outer shell",
+            Self::EdgeDefinition => "edge definition",
+            Self::EdgeLoopCarrier => "edge loop carrier",
+            Self::EdgeLoopContinuity => "edge loop continuity",
+            Self::EdgeLoopMember => "edge loop member",
+            Self::EdgeLoopMemberList => "edge loop member list",
+            Self::FaceAttributes => "face attributes",
+            Self::FaceBound => "face bound",
+            Self::FaceBoundAttributes => "face bound attributes",
+            Self::FaceBoundCarrier => "face bound carrier",
+            Self::FaceCarrier => "face carrier",
+            Self::FaceRecord => "face record",
+            Self::FaceWithMultipleOuterBounds => "face with multiple outer bounds",
+            Self::ImplicitFacePlane => "implicit face plane",
+            Self::LoopRecord => "loop record",
+            Self::OrientedEdgeDefinition => "oriented edge definition",
+            Self::PolyLoopPointCarrier => "poly loop point carrier",
+            Self::PolyLoopPointList => "poly loop point list",
+            Self::PolyVertexPoint => "poly vertex point",
+            Self::ShellCarrier => "shell carrier",
+            Self::ShellFaceList => "shell face list",
+            Self::ShellRecord => "shell record",
+            Self::ShellType => "shell type",
+            Self::TopologyDraft => "topology draft",
+            Self::TopologyRootCarrier => "topology root carrier",
+            Self::VertexDefinition => "vertex definition",
+            Self::VertexLoopReference => "vertex loop reference",
+            Self::VertexPoint => "vertex point",
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
 struct BuildFailure {
     record_id: u64,
-    carrier_kind: &'static str,
+    carrier_kind: CarrierKind,
 }
 
 impl BuildFailure {
@@ -686,7 +814,7 @@ fn require_carrier<T>(
     value: Option<T>,
     failure: &mut Option<BuildFailure>,
     record_id: u64,
-    carrier_kind: &'static str,
+    carrier_kind: CarrierKind,
 ) -> Option<T> {
     if value.is_none() {
         failure.get_or_insert(BuildFailure {
@@ -697,7 +825,7 @@ fn require_carrier<T>(
     value
 }
 
-fn note_failure(failure: &mut Option<BuildFailure>, record_id: u64, carrier_kind: &'static str) {
+fn note_failure(failure: &mut Option<BuildFailure>, record_id: u64, carrier_kind: CarrierKind) {
     failure.get_or_insert(BuildFailure {
         record_id,
         carrier_kind,
@@ -713,22 +841,25 @@ fn build_wire(
     warnings: &mut Vec<String>,
 ) -> BuildOutcome {
     let Some(model) = exchange.records.get(&id) else {
-        return BuildOutcome {
+        return BuildOutcome::Partial {
             built: Vec::new(),
-            failed: 1,
-            failure: None,
+            failures: BuildFailures {
+                count: NonZeroUsize::MIN,
+                first: None,
+            },
         };
     };
     let Some(sets) = named_refs(model, "EDGE_BASED_WIREFRAME_MODEL", 1) else {
-        return BuildOutcome {
+        return BuildOutcome::Partial {
             built: Vec::new(),
-            failed: 1,
-            failure: None,
+            failures: BuildFailures {
+                count: NonZeroUsize::MIN,
+                first: None,
+            },
         };
     };
     let scoped = sets.len() > 1;
-    let mut built = Vec::new();
-    let mut failed = 0;
+    let mut outcome = BuildOutcome::Built(Vec::new());
     for set_id in sets {
         match build_wire_set(
             id,
@@ -740,15 +871,11 @@ fn build_wire(
             scoped,
             warnings,
         ) {
-            Some(value) => built.push(value),
-            None => failed += 1,
+            Some(value) => outcome.push(value),
+            None => outcome.fail(None),
         }
     }
-    BuildOutcome {
-        built,
-        failed,
-        failure: None,
-    }
+    outcome
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -886,22 +1013,25 @@ fn build_shell_wire(
     warnings: &mut Vec<String>,
 ) -> BuildOutcome {
     let Some(model) = exchange.records.get(&id) else {
-        return BuildOutcome {
+        return BuildOutcome::Partial {
             built: Vec::new(),
-            failed: 1,
-            failure: None,
+            failures: BuildFailures {
+                count: NonZeroUsize::MIN,
+                first: None,
+            },
         };
     };
     let Some(shell_ids) = named_refs(model, "SHELL_BASED_WIREFRAME_MODEL", 1) else {
-        return BuildOutcome {
+        return BuildOutcome::Partial {
             built: Vec::new(),
-            failed: 1,
-            failure: None,
+            failures: BuildFailures {
+                count: NonZeroUsize::MIN,
+                first: None,
+            },
         };
     };
     let scoped = shell_ids.len() > 1;
-    let mut built = Vec::new();
-    let mut failed = 0;
+    let mut outcome = BuildOutcome::Built(Vec::new());
     for shell_id in shell_ids {
         match build_shell_wire_set(
             id,
@@ -914,15 +1044,11 @@ fn build_shell_wire(
             scope_root,
             warnings,
         ) {
-            Some(value) => built.push(value),
-            None => failed += 1,
+            Some(value) => outcome.push(value),
+            None => outcome.fail(None),
         }
     }
-    BuildOutcome {
-        built,
-        failed,
-        failure: None,
-    }
+    outcome
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1780,13 +1906,15 @@ fn build(
     losses: &mut Vec<LossNote>,
 ) -> BuildOutcome {
     let Some(shell_steps) = root_shell_steps(root, exchange, shell_definitions) else {
-        return BuildOutcome {
+        return BuildOutcome::Partial {
             built: Vec::new(),
-            failed: 1,
-            failure: Some(BuildFailure {
-                record_id: id,
-                carrier_kind: "topology root carrier",
-            }),
+            failures: BuildFailures {
+                count: NonZeroUsize::MIN,
+                first: Some(BuildFailure {
+                    record_id: id,
+                    carrier_kind: CarrierKind::TopologyRootCarrier,
+                }),
+            },
         };
     };
     let solid = has_type(root, "MANIFOLD_SOLID_BREP")
@@ -1818,30 +1946,32 @@ fn build(
             losses,
             &mut failure,
         );
-        let failed = usize::from(built.is_none());
-        return BuildOutcome {
-            built: built.into_iter().collect(),
-            failed,
-            failure,
+        return match built {
+            Some(built) => BuildOutcome::Built(vec![built]),
+            None => BuildOutcome::Partial {
+                built: Vec::new(),
+                failures: BuildFailures {
+                    count: NonZeroUsize::MIN,
+                    first: failure,
+                },
+            },
         };
     }
 
     let scoped = shell_steps.len() > 1;
-    let mut built = Vec::new();
-    let mut failed = 0;
-    let mut failure = None;
+    let mut outcome = BuildOutcome::Built(Vec::new());
     for shell_reference in shell_steps {
+        let mut failure = None;
         let shell_step = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
             shell_reference
         } else {
             match shell_definitions.get(&shell_reference) {
                 Some(definition) => definition.base,
                 None => {
-                    failure.get_or_insert(BuildFailure {
+                    outcome.fail(Some(BuildFailure {
                         record_id: shell_reference,
-                        carrier_kind: "shell carrier",
-                    });
-                    failed += 1;
+                        carrier_kind: CarrierKind::ShellCarrier,
+                    }));
                     continue;
                 }
             }
@@ -1882,16 +2012,12 @@ fn build(
             losses,
             &mut failure,
         ) {
-            built.push(value);
+            outcome.push(value);
         } else {
-            failed += 1;
+            outcome.fail(failure);
         }
     }
-    BuildOutcome {
-        built,
-        failed,
-        failure,
-    }
+    outcome
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1963,7 +2089,7 @@ fn build_one(
                 shell_def_for(shell_reference, shell_definitions, &mut typed),
                 failure,
                 shell_reference,
-                "shell carrier",
+                CarrierKind::ShellCarrier,
             )?
         };
         if !used_shells.insert(shell_step) {
@@ -1973,14 +2099,14 @@ fn build_one(
             exchange.records.get(&shell_step),
             failure,
             shell_step,
-            "shell record",
+            CarrierKind::ShellRecord,
         )?;
         let (shell_type, face_steps) = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
             let set_type = require_carrier(
                 connected_face_set_type(sr),
                 failure,
                 shell_step,
-                "connected face set",
+                CarrierKind::ConnectedFaceSet,
             )?;
             if set_type == "CONNECTED_FACE_SUB_SET"
                 && !validate_subset_parent(sr, set_type, exchange, warnings)
@@ -1991,7 +2117,7 @@ fn build_one(
                 connected_set_members(sr, set_type),
                 failure,
                 shell_step,
-                "connected face set member list",
+                CarrierKind::ConnectedFaceSetMemberList,
             )?;
             (set_type, members)
         } else {
@@ -1999,18 +2125,18 @@ fn build_one(
                 most_specific(sr, &["OPEN_SHELL", "CLOSED_SHELL"]),
                 failure,
                 shell_step,
-                "shell type",
+                CarrierKind::ShellType,
             )?;
             let members = require_carrier(
                 named_refs(sr, shell_type, 1),
                 failure,
                 shell_step,
-                "shell face list",
+                CarrierKind::ShellFaceList,
             )?;
             (shell_type, members)
         };
         if face_steps.is_empty() {
-            note_failure(failure, shell_step, "shell face list");
+            note_failure(failure, shell_step, CarrierKind::ShellFaceList);
             return None;
         }
         let sid = shell_identity(id, shell_step, scope_root);
@@ -2023,17 +2149,17 @@ fn build_one(
                 exchange.records.get(&face_step),
                 failure,
                 face_step,
-                "face record",
+                CarrierKind::FaceRecord,
             )?;
             if !is_face_record(fr) {
-                note_failure(failure, face_step, "face carrier");
+                note_failure(failure, face_step, CarrierKind::FaceCarrier);
                 return None;
             }
             let face_info = require_carrier(
                 face_attributes(fr, exchange, &mut BTreeSet::new()),
                 failure,
                 face_step,
-                "face attributes",
+                CarrierKind::FaceAttributes,
             )?;
             let outer_bound_count = face_info
                 .bounds
@@ -2058,7 +2184,7 @@ fn build_one(
                         .with_tag("face"),
                     ),
                 );
-                note_failure(failure, face_step, "face with multiple outer bounds");
+                note_failure(failure, face_step, CarrierKind::FaceWithMultipleOuterBounds);
                 return None;
             }
             typed.extend(face_info.typed);
@@ -2092,7 +2218,7 @@ fn build_one(
                             ),
                             failure,
                             face_step,
-                            "implicit face plane",
+                            CarrierKind::ImplicitFacePlane,
                         )?,
                         source_object: None,
                     });
@@ -2122,28 +2248,28 @@ fn build_one(
                     exchange.records.get(&bound_step),
                     failure,
                     bound_step,
-                    "face bound",
+                    CarrierKind::FaceBound,
                 )?;
                 if !has_type(br, "FACE_BOUND") && !has_type(br, "FACE_OUTER_BOUND") {
-                    note_failure(failure, bound_step, "face bound carrier");
+                    note_failure(failure, bound_step, CarrierKind::FaceBoundCarrier);
                     return None;
                 }
                 let is_outer_bound = has_type(br, "FACE_OUTER_BOUND");
                 let Some(bound_type) = face_bound_attribute_type(br) else {
-                    note_failure(failure, bound_step, "face bound attributes");
+                    note_failure(failure, bound_step, CarrierKind::FaceBoundAttributes);
                     return None;
                 };
                 let loop_step = require_carrier(
                     named_reference(br, bound_type, 1, 0),
                     failure,
                     bound_step,
-                    "bound loop reference",
+                    CarrierKind::BoundLoopReference,
                 )?;
                 let lr = require_carrier(
                     exchange.records.get(&loop_step),
                     failure,
                     loop_step,
-                    "loop record",
+                    CarrierKind::LoopRecord,
                 )?;
                 let lid = LoopId::mint(StepIdentity::data(
                     "loop",
@@ -2155,13 +2281,13 @@ fn build_one(
                         named_reference(lr, "VERTEX_LOOP", 1, 0),
                         failure,
                         loop_step,
-                        "vertex loop reference",
+                        CarrierKind::VertexLoopReference,
                     )?;
                     if !vdefs
                         .get(&vertex_step)
                         .is_some_and(|vertex| point_positions.contains_key(vertex.point))
                     {
-                        note_failure(failure, vertex_step, "vertex point");
+                        note_failure(failure, vertex_step, CarrierKind::VertexPoint);
                         return None;
                     }
                     loops.push(Loop {
@@ -2188,7 +2314,7 @@ fn build_one(
                         named_logical(br, bound_type, 2, 0),
                         failure,
                         bound_step,
-                        "bound orientation",
+                        CarrierKind::BoundOrientation,
                     )?;
                     let bound_forward = if face_info.reverse_bound_orientation {
                         !bound_forward
@@ -2199,7 +2325,7 @@ fn build_one(
                         named_refs(lr, "POLY_LOOP", 1),
                         failure,
                         loop_step,
-                        "poly loop point list",
+                        CarrierKind::PolyLoopPointList,
                     )?;
                     if points.first() == points.last() {
                         points.pop();
@@ -2211,7 +2337,7 @@ fn build_one(
                             .iter()
                             .any(|point| !point_positions.contains_key(*point))
                     {
-                        note_failure(failure, loop_step, "poly loop point carrier");
+                        note_failure(failure, loop_step, CarrierKind::PolyLoopPointCarrier);
                         return None;
                     }
                     if !bound_forward {
@@ -2269,14 +2395,14 @@ fn build_one(
                     continue;
                 }
                 if !has_type(lr, "EDGE_LOOP") {
-                    note_failure(failure, loop_step, "edge loop carrier");
+                    note_failure(failure, loop_step, CarrierKind::EdgeLoopCarrier);
                     return None;
                 }
                 let bound_forward = require_carrier(
                     named_logical(br, bound_type, 2, 0),
                     failure,
                     bound_step,
-                    "bound orientation",
+                    CarrierKind::BoundOrientation,
                 )?;
                 let bound_forward = if face_info.reverse_bound_orientation {
                     !bound_forward
@@ -2287,13 +2413,13 @@ fn build_one(
                     named_refs(lr, "EDGE_LOOP", 1),
                     failure,
                     loop_step,
-                    "edge loop member list",
+                    CarrierKind::EdgeLoopMemberList,
                 )?;
                 if !bound_forward {
                     uses.reverse();
                 }
                 if uses.is_empty() {
-                    note_failure(failure, loop_step, "edge loop member");
+                    note_failure(failure, loop_step, CarrierKind::EdgeLoopMember);
                     return None;
                 }
                 let mut coedge_ids = vec![];
@@ -2302,10 +2428,14 @@ fn build_one(
                         odefs.get(&use_step),
                         failure,
                         use_step,
-                        "oriented edge definition",
+                        CarrierKind::OrientedEdgeDefinition,
                     )?;
-                    let edge =
-                        require_carrier(edefs.get(&o.edge), failure, o.edge, "edge definition")?;
+                    let edge = require_carrier(
+                        edefs.get(&o.edge),
+                        failure,
+                        o.edge,
+                        CarrierKind::EdgeDefinition,
+                    )?;
                     let cid = CoedgeId::mint(StepIdentity::data(
                         "coedge",
                         format!("{use_step}-face-{face_step}{face_suffix}"),
@@ -2556,7 +2686,7 @@ fn build_one(
                 && shell_steps.first().copied() == Some(shell_reference)
                 && component_index > 0
             {
-                note_failure(failure, shell_step, "connected outer shell");
+                note_failure(failure, shell_step, CarrierKind::ConnectedOuterShell);
                 return None;
             }
             let component_shell = if component_index == 0 {
@@ -2585,7 +2715,12 @@ fn build_one(
         typed.insert(shell_step);
     }
     for (shell_step, edge_id) in used_e {
-        let e = require_carrier(edefs.get(&edge_id), failure, edge_id, "edge definition")?;
+        let e = require_carrier(
+            edefs.get(&edge_id),
+            failure,
+            edge_id,
+            CarrierKind::EdgeDefinition,
+        )?;
         let (start, end) = if e.same {
             (e.start, e.end)
         } else {
@@ -2615,13 +2750,13 @@ fn build_one(
             vdefs.get(&vertex_id),
             failure,
             vertex_id,
-            "vertex definition",
+            CarrierKind::VertexDefinition,
         )?;
         require_carrier(
             point_positions.get(v.point),
             failure,
             v.point,
-            "vertex point",
+            CarrierKind::VertexPoint,
         )?;
         vertices.push(Vertex {
             id: scoped_vertex_id(vertex_id, id, shell_step, scope_edges, scope_root),
@@ -2635,7 +2770,7 @@ fn build_one(
             point_positions.get(point_id),
             failure,
             point_id,
-            "poly vertex point",
+            CarrierKind::PolyVertexPoint,
         )?;
         vertices.push(Vertex {
             id: scoped_poly_vertex_id(point_id, id, shell_step, scope_edges, scope_root),
@@ -2665,20 +2800,29 @@ fn build_one(
         let loop_source = source_numeric_id(loop_.id.as_str(), "loop").unwrap_or(0);
         for (index, current_id) in loop_.coedges().iter().enumerate() {
             let next_id = &loop_.coedges()[(index + 1) % loop_.coedges().len()];
-            let current =
-                require_carrier(coedge_by_id.get(current_id), failure, loop_source, "coedge")?;
-            let next = require_carrier(coedge_by_id.get(next_id), failure, loop_source, "coedge")?;
+            let current = require_carrier(
+                coedge_by_id.get(current_id),
+                failure,
+                loop_source,
+                CarrierKind::Coedge,
+            )?;
+            let next = require_carrier(
+                coedge_by_id.get(next_id),
+                failure,
+                loop_source,
+                CarrierKind::Coedge,
+            )?;
             let current_edge = require_carrier(
                 edge_by_id.get(&current.edge),
                 failure,
                 loop_source,
-                "coedge edge",
+                CarrierKind::CoedgeEdge,
             )?;
             let next_edge = require_carrier(
                 edge_by_id.get(&next.edge),
                 failure,
                 loop_source,
-                "coedge edge",
+                CarrierKind::CoedgeEdge,
             )?;
             let current_end = match current.sense {
                 Sense::Forward => &current_edge.end,
@@ -2689,7 +2833,7 @@ fn build_one(
                 Sense::Reversed => &next_edge.end,
             };
             if current_end != next_start {
-                note_failure(failure, loop_source, "edge loop continuity");
+                note_failure(failure, loop_source, CarrierKind::EdgeLoopContinuity);
                 return None;
             }
         }
@@ -2700,7 +2844,7 @@ fn build_one(
         ),
         failure,
         id,
-        "topology draft",
+        CarrierKind::TopologyDraft,
     )?;
     built.pcurve_admissions = admissions;
     for &shell_reference in shell_steps {
@@ -2713,7 +2857,7 @@ fn build_one(
                     .map(|definition| (definition.base, definition.forward)),
                 failure,
                 shell_reference,
-                "shell carrier",
+                CarrierKind::ShellCarrier,
             )?
             .0
         };
