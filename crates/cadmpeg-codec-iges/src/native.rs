@@ -2,7 +2,7 @@
 //! Versioned `native.iges` physical cards and entity records.
 
 use crate::card::CardScan;
-use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
+use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, Status};
 use crate::entities::drawing::drawing_property_value;
 use crate::entities::geometry::{
     resolve_transform, Affine, BoundaryEndpoint, BoundaryVertexDerivation,
@@ -1222,6 +1222,22 @@ struct OccurrenceDefinition {
     transform: Affine,
 }
 
+fn serialize_parameter_lines<S: Serializer>(
+    lines: &Option<std::ops::Range<u32>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    #[derive(Serialize)]
+    struct Wire {
+        parameter_line_start: Option<u32>,
+        parameter_line_end: Option<u32>,
+    }
+    Wire {
+        parameter_line_start: lines.as_ref().map(|range| range.start),
+        parameter_line_end: lines.as_ref().map(|range| range.end),
+    }
+    .serialize(serializer)
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
@@ -1236,17 +1252,15 @@ pub(crate) struct NativeEntity {
     view: i64,
     transform: i64,
     label_display: i64,
-    blank_status: u8,
-    subordinate_status: u8,
-    use_flag: u8,
-    hierarchy_status: u8,
+    #[serde(flatten)]
+    status: Status,
     line_weight: i64,
     color: i64,
     reserved: Vec<Vec<u8>>,
     label: Vec<u8>,
     subscript: i64,
-    parameter_line_start: Option<u32>,
-    parameter_line_end: Option<u32>,
+    #[serde(flatten, serialize_with = "serialize_parameter_lines")]
+    parameter_lines: Option<std::ops::Range<u32>>,
     parameter_bytes: Vec<u8>,
     parameters: Vec<Token>,
     association_links: Vec<String>,
@@ -1797,17 +1811,13 @@ pub(crate) fn store(
                 view: entry.view,
                 transform: entry.transform,
                 label_display: entry.label_display,
-                blank_status: entry.status.blank,
-                subordinate_status: entry.status.subordinate,
-                use_flag: entry.status.use_flag,
-                hierarchy_status: entry.status.hierarchy,
+                status: entry.status,
                 line_weight: entry.line_weight,
                 color: entry.color,
                 reserved: entry.reserved.iter().map(|value| value.to_vec()).collect(),
                 label: entry.label.to_vec(),
                 subscript: entry.subscript,
-                parameter_line_start: parameters.map(|record| record.line_range.start),
-                parameter_line_end: parameters.map(|record| record.line_range.end),
+                parameter_lines: parameters.map(|record| record.line_range.clone()),
                 parameter_bytes: parameters
                     .map(|record| record.bytes.clone())
                     .unwrap_or_default(),
