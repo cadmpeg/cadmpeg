@@ -1627,14 +1627,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 && node_records.insert((stream, body.scene_node_record.record_index()))
                 && auxiliary_records.insert((stream, body.scene_auxiliary_record.record_index()))
                 && owner_consistent
-                && body.wrapper_record.frame_length() == 40
-                && body.scene_state_record.frame_length() == 95
                 && body.scene_node_record.frame_length() == 133
-                && mesh_record_offset_is(
-                    &body.wrapper_record,
-                    21,
-                    body.wrapper_body_reference_offset,
-                )
                 && mesh_record_offset_is(
                     &body.scene_node_record,
                     33,

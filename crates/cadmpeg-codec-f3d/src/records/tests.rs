@@ -866,7 +866,8 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
     let body = serde_json::json!({
         "body_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 575},
         "entry_name_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 62}, "guid_record": identity,
-        "wrapper_record": identity, "scene_state_record": identity, "scene_node_record": identity,
+        "wrapper_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 40},
+        "scene_state_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 95}, "scene_node_record": identity,
         "scene_auxiliary_record": identity, "owner_record": identity,
         "entry_name": "mesh.paramesh", "entry_name_offset": 136,
         "fusion_uuid": "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", "fusion_uuid_offset": 136,
@@ -874,7 +875,7 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         "transform_offsets": [142, 271], "scope_reference_offset": 608,
         "wrapper_reference_offset": 619, "owner_reference_offset": 630,
         "guid_reference_offset": 641, "scene_node_reference_offset": 653,
-        "collection_reference_offset": 664, "wrapper_body_reference_offset": 230,
+        "collection_reference_offset": 664, "wrapper_body_reference_offset": 121,
         "entry_guid_reference_offset": 121, "guid_entry_reference_offset": 172,
         "scene_state_reference_offset": 260, "scene_auxiliary_reference_offset": 270
     });
@@ -2702,4 +2703,17 @@ fn mesh_placement_layout_requires_prefix_and_terminal_reference() {
         assert_eq!(placement.collection_reference_offset(), 100 + length - 11);
     }
     assert!(super::DesignMeshPlacement::new(identity(574), transform).is_err());
+}
+
+#[test]
+fn mesh_fixed_record_derives_length_and_rejects_another_layout() {
+    let identity = |length| super::DesignMeshRecordIdentity::new(
+        super::DesignClassTag::try_from("256".to_owned()).unwrap(), 4, 100, length).unwrap();
+    let wrapper = super::DesignMeshFixedRecord::<40>::try_from(identity(40)).unwrap();
+    assert_eq!(wrapper.byte_offset(), 100);
+    assert_eq!(wrapper.record_index(), 4);
+    let roundtrip: super::DesignMeshRecordIdentity = wrapper.into();
+    assert_eq!(roundtrip, identity(40));
+    assert!(super::DesignMeshFixedRecord::<40>::try_from(identity(95)).is_err());
+    assert!(super::DesignMeshFixedRecord::<95>::try_from(identity(40)).is_err());
 }

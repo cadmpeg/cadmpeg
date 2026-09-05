@@ -32,7 +32,7 @@ use crate::layout::paramesh_scene_state as scene_state;
 use crate::layout::paramesh_texture_filename_prefix as texture_filename;
 use crate::layout::paramesh_texture_table_prefix as texture_table;
 use crate::paramesh::{decode_mesh_container, MeshContainer};
-use crate::records::{DesignMeshEntryName, DesignMeshPlacement, DesignMeshGuid, DesignGuidText, DesignMeshTextureMapLocation, MeshAffineTransform};
+use crate::records::{DesignMeshFixedRecord, DesignMeshEntryName, DesignMeshPlacement, DesignMeshGuid, DesignGuidText, DesignMeshTextureMapLocation, MeshAffineTransform};
 use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshSceneBounds,
     DesignMeshTextureResource, DesignRecordHeader,
@@ -285,9 +285,8 @@ struct MeshTextureTableRecord {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshWrapperRecord {
-    identity: DesignMeshRecordIdentity,
+    identity: DesignMeshFixedRecord<{body_wrapper::LEN as u64}>,
     body_record_index: u32,
-    body_reference_offset: u64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -768,10 +767,10 @@ fn parse_mesh_wrapper_record(
         "mesh-wrapper",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-wrapper")?;
+    let identity = DesignMeshFixedRecord::try_from(record_identity(record, frame, "mesh-wrapper")?)
+        .map_err(|_| malformed_frame("mesh-wrapper", frame.entity_id))?;
     let parsed = (|| {
-        (record.len() == body_wrapper::LEN
-            && record.get(body_wrapper::ZERO_RUN_10..body_wrapper::BODY_REFERENCE)
+        (record.get(body_wrapper::ZERO_RUN_10..body_wrapper::BODY_REFERENCE)
                 == Some(&[0; 10]))
         .then_some(())?;
         let body_record_index = exact_local_record_index(record, body_wrapper::BODY_REFERENCE)?;
@@ -779,7 +778,6 @@ fn parse_mesh_wrapper_record(
         Some(MeshWrapperRecord {
             identity,
             body_record_index,
-            body_reference_offset: source_offset(frame.start, body_wrapper::BODY_REFERENCE)?,
         })
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-wrapper", frame.entity_id))
@@ -834,7 +832,7 @@ fn parse_scene_bounds_payload(
 fn parse_mesh_scene_state_record(
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
-) -> Result<(DesignMeshRecordIdentity, Option<DesignMeshSceneBounds>), CodecError> {
+) -> Result<(DesignMeshFixedRecord<{scene_state::LEN as u64}>, Option<DesignMeshSceneBounds>), CodecError> {
     validate_mesh_registration(
         frame,
         MESH_SCENE_STATE_TYPE_VERSION,
@@ -843,9 +841,9 @@ fn parse_mesh_scene_state_record(
         "mesh-scene-state",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-scene-state")?;
-    let bounds = (record.len() == scene_state::LEN
-        && record.get(scene_state::ZERO_RUN_34..scene_state::FOOTER_MARKER) == Some(&[0; 34]))
+    let identity = DesignMeshFixedRecord::try_from(record_identity(record, frame, "mesh-scene-state")?)
+        .map_err(|_| malformed_frame("mesh-scene-state", frame.entity_id))?;
+    let bounds = (record.get(scene_state::ZERO_RUN_34..scene_state::FOOTER_MARKER) == Some(&[0; 34]))
     .then(|| parse_scene_footer(record, scene_state::FOOTER_MARKER, frame.start))
     .flatten()
     .ok_or_else(|| malformed_frame("mesh-scene-state", frame.entity_id))?;
@@ -1422,7 +1420,6 @@ where
                 scene_auxiliary_record: scene_auxiliary,
                 owner_record: body_owner,
                 container_mesh_uuid: None,
-                wrapper_body_reference_offset: wrapper.body_reference_offset,
                 scene_state_reference_offset: scene_node.state_reference_offset,
                 scene_auxiliary_reference_offset: scene_node.auxiliary_reference_offset,
                 tessellation_id: None,
