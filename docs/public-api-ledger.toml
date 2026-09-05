@@ -4831,3 +4831,45 @@ crate = "cadmpeg-asm"
 kind = "signature"
 item = "cadmpeg_asm::sab::Record::head"
 reason = "ASM-10: replace the stored dispatch label with a method derived from the record name; record indices remain independent history identities"
+
+[[change]]
+commit = "ee9892c904b1c9521a74f6e84b8cde5b41028962"
+crate = "cadmpeg-asm"
+kind = "move"
+item = "cadmpeg_asm::brep::Stats"
+reason = "ASM-16: move loss counts to the owning brep::stats module; remove stored totals and derive them from kind maps"
+
+[[change]]
+commit = "ee9892c904b1c9521a74f6e84b8cde5b41028962"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::stats::Stats::missing_face_surfaces"
+reason = "ASM-16: replace the stored total with a method; preserve its JSON field through serialization"
+
+[[change]]
+commit = "ee9892c904b1c9521a74f6e84b8cde5b41028962"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::stats::Stats::unknown_surface_faces"
+reason = "ASM-16: replace the stored total with a method; preserve its JSON field through serialization"
+
+[[change]]
+commit = "ee9892c904b1c9521a74f6e84b8cde5b41028962"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::stats::Stats::procedural_curve_edges"
+reason = "ASM-16: replace the stored total with a method; preserve its JSON field through serialization"
+
+[[change]]
+commit = "ee9892c904b1c9521a74f6e84b8cde5b41028962"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::stats::Stats::undecoded_pcurve_refs"
+reason = "ASM-16: replace the stored total with a method; preserve its JSON field through serialization"
+
+[[change]]
+commit = "ee9892c904b1c9521a74f6e84b8cde5b41028962"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::stats::Stats::other_records"
+reason = "ASM-16: replace the stored total with a method; preserve its JSON field through serialization"

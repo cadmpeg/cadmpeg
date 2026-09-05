@@ -4334,7 +4334,6 @@ pub(crate) fn count_other_records(
             && !undecoded_carriers.contains(&i)
             && !transferred
         {
-            out.stats.other_records += 1;
             *out.stats
                 .other_record_kinds
                 .entry(r.name.clone())

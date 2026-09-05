@@ -224,17 +224,17 @@ fn build_result(
              version or branch is outside the ASM decoders' coverage.{branch}"
         )));
     }
-    if stats.unknown_surface_faces > 0 {
+    if stats.unknown_surface_faces() > 0 {
         losses.push(SatLossCode::GeometryProceduralSurfaceUntyped.note(format!(
             "{} face(s) rest on procedural surface constructions without a decoded carrier",
-            stats.unknown_surface_faces
+            stats.unknown_surface_faces()
         )));
     }
     let mut coverage = cadmpeg_ir::Coverage::default();
     coverage.record(crate::coverage::UNKNOWN_RECORDS, unknowns.len());
     coverage.record(
         crate::coverage::UNKNOWN_SURFACE_FACES,
-        stats.unknown_surface_faces,
+        stats.unknown_surface_faces(),
     );
     let body = DecodeBody {
         coverage,

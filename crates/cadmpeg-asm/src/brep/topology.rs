@@ -85,14 +85,13 @@ pub(crate) fn keep_faces_and_carriers(
             continue;
         }
         let Some(surf_ref) = r.ref_at(7) else {
-            out.stats.missing_face_surfaces += 1;
             count_kind(&mut out.stats.missing_face_surface_kinds, "null-reference");
             continue;
         };
         let Some(surf_rec) = by_index.get(&surf_ref) else {
             // Dangling surface reference: a face without a resolvable surface
             // cannot be emitted (the IR requires one), so it is dropped.
-            out.stats.missing_face_surfaces += 1;
+
             count_kind(
                 &mut out.stats.missing_face_surface_kinds,
                 "dangling-reference",
@@ -214,7 +213,6 @@ pub(crate) fn keep_faces_and_carriers(
                 }
                 out.stats.mesh_surface_faces += 1;
             } else {
-                out.stats.unknown_surface_faces += 1;
                 let native_kind = if surf_rec.head() == "spline" {
                     nurbs::toks::owned_construction_subtype(&surf_rec.tokens)
                         .unwrap_or_else(|| surf_rec.head().to_owned())
@@ -376,12 +374,10 @@ pub(crate) fn walk_reachable_topology(
                                     pcurve_parameter_ranges.insert(ci, parameter_range);
                                     kept_pcurves.insert(pc);
                                 } else {
-                                    out.stats.undecoded_pcurve_refs += 1;
                                     count_kind(&mut out.stats.undecoded_pcurve_kinds, prec.head());
                                 }
                             }
                         } else {
-                            out.stats.undecoded_pcurve_refs += 1;
                             count_kind(&mut out.stats.undecoded_pcurve_kinds, "dangling-reference");
                         }
                     }
@@ -481,14 +477,13 @@ pub(crate) fn walk_reachable_topology(
                                                 kept_curves.insert(cv);
                                             } else {
                                                 undecoded_carriers.insert(cv);
-                                                out.stats.procedural_curve_edges += 1;
+
                                                 count_kind(
                                                     &mut out.stats.procedural_curve_kinds,
                                                     crec.head(),
                                                 );
                                             }
                                         } else {
-                                            out.stats.procedural_curve_edges += 1;
                                             count_kind(
                                                 &mut out.stats.procedural_curve_kinds,
                                                 "dangling-reference",
@@ -709,7 +704,6 @@ fn keep_wire_edge(
         }
         std::collections::hash_map::Entry::Vacant(entry) => {
             let Some(curve_record) = by_index.get(&curve_index) else {
-                out.stats.procedural_curve_edges += 1;
                 count_kind(&mut out.stats.procedural_curve_kinds, "dangling-reference");
                 return;
             };
@@ -767,7 +761,7 @@ fn keep_wire_edge(
                 kept_curves.insert(curve_index);
             } else {
                 undecoded_carriers.insert(curve_index);
-                out.stats.procedural_curve_edges += 1;
+
                 count_kind(&mut out.stats.procedural_curve_kinds, curve_record.head());
             }
         }

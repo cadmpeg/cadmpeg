@@ -1311,11 +1311,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         losses.push(InventorLossCode::GeometryKernelCarrierNotTransferred.note(detail));
     }
     if !ctx.container_only() {
-        if kernel_stats.unknown_surface_faces != 0 {
+        if kernel_stats.unknown_surface_faces() != 0 {
             losses.push(
                 InventorLossCode::GeometryProceduralSurfaceNotTransferred.note(format!(
                     "{} face(s) use procedural surfaces without a decoded carrier.",
-                    kernel_stats.unknown_surface_faces
+                    kernel_stats.unknown_surface_faces()
                 )),
             );
         }
@@ -1740,7 +1740,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             ),
             (
                 crate::coverage::KERNEL_UNKNOWN_SURFACE_FACES,
-                kernel_stats.unknown_surface_faces,
+                kernel_stats.unknown_surface_faces(),
             ),
         ]
         .into_iter()
