@@ -201,7 +201,6 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 22,
             transform: None,
-            transform_offset: None,
             ..
         }))
     ));
@@ -248,8 +247,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
                 diameter: 3.0,
                 operation: DesignExtrudeOperation::Join,
                 operation_offset: 22,
-                transform: Some(_),
-                transform_offset: Some(72),
+                transform: Some(crate::records::Located { offset: 72, .. }),
                 ..
             }))
         ));

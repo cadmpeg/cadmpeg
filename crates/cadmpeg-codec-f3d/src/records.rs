@@ -1347,6 +1347,7 @@ pub struct DesignBoxPrimitive {
 /// Exact `Cylinder` primitive construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignCylinderPrimitiveWire", into = "DesignCylinderPrimitiveWire")]
 pub struct DesignCylinderPrimitive {
     /// Axial height in source centimetres.
     pub height: f64,
@@ -1362,15 +1363,74 @@ pub struct DesignCylinderPrimitive {
     pub diameter_offset: u64,
     /// Source frame carried by the shifted cylinder form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<[[f64; 4]; 4]>,
-    /// Byte offset of the shifted-form source frame.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform_offset: Option<u64>,
+    pub transform: Option<Located<[[f64; 4]; 4]>>,
     /// Result Boolean operation.
     pub operation: DesignExtrudeOperation,
     /// Byte offset of the operation enum.
     pub operation_offset: u64,
 }
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignCylinderPrimitiveWire {
+    /// Axial height in source centimetres.
+    height: f64,
+    /// Referenced height owner.
+    height_record_index: u32,
+    /// Byte offset of the evaluated height.
+    height_offset: u64,
+    /// Circular diameter in source centimetres.
+    diameter: f64,
+    /// Referenced diameter owner.
+    diameter_record_index: u32,
+    /// Byte offset of the evaluated diameter.
+    diameter_offset: u64,
+    /// Source frame carried by the shifted cylinder form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    transform: Option<[[f64; 4]; 4]>,
+    /// Byte offset of the shifted-form source frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    transform_offset: Option<u64>,
+    /// Result Boolean operation.
+    operation: DesignExtrudeOperation,
+    /// Byte offset of the operation enum.
+    operation_offset: u64,
+}
+
+impl From<DesignCylinderPrimitive> for DesignCylinderPrimitiveWire {
+    fn from(value: DesignCylinderPrimitive) -> Self {
+        Self {
+            height: value.height,
+            height_record_index: value.height_record_index,
+            height_offset: value.height_offset,
+            diameter: value.diameter,
+            diameter_record_index: value.diameter_record_index,
+            diameter_offset: value.diameter_offset,
+            transform: value.transform.map(|located| located.value),
+            transform_offset: value.transform.map(|located| located.offset),
+            operation: value.operation,
+            operation_offset: value.operation_offset,
+        }
+    }
+}
+
+impl TryFrom<DesignCylinderPrimitiveWire> for DesignCylinderPrimitive {
+    type Error = String;
+    fn try_from(value: DesignCylinderPrimitiveWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            height: value.height,
+            height_record_index: value.height_record_index,
+            height_offset: value.height_offset,
+            diameter: value.diameter,
+            diameter_record_index: value.diameter_record_index,
+            diameter_offset: value.diameter_offset,
+            transform: Located::from_wire(value.transform, value.transform_offset, "transform")?,
+            operation: value.operation,
+            operation_offset: value.operation_offset,
+        })
+    }
+}
+
 
 /// Exact `Sphere` primitive construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2612,6 +2672,7 @@ pub enum DesignPathFeatureConstruction {
 /// Fixed construction of a `Revolve` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignRevolveConstructionWire", into = "DesignRevolveConstructionWire")]
 pub struct DesignRevolveConstruction {
     /// Boolean result operation.
     pub operation: DesignExtrudeOperation,
@@ -2625,11 +2686,62 @@ pub struct DesignRevolveConstruction {
     pub angle_offset: u64,
     /// Zero-valued opposite-side angle scalar record, when serialized.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opposite_angle_record_index: Option<u32>,
+    pub opposite_angle: Option<Located<u32>>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignRevolveConstructionWire {
+    /// Boolean result operation.
+    operation: DesignExtrudeOperation,
+    /// Byte offset of the operation u32.
+    operation_offset: u64,
+    /// Positive angular travel in radians.
+    angle: f64,
+    /// Referenced angular-travel scalar record.
+    angle_record_index: u32,
+    /// Byte offset of the angular-travel scalar.
+    angle_offset: u64,
+    /// Zero-valued opposite-side angle scalar record, when serialized.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    opposite_angle_record_index: Option<u32>,
     /// Byte offset of the opposite-side angle scalar, when serialized.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opposite_angle_offset: Option<u64>,
+    opposite_angle_offset: Option<u64>,
 }
+
+impl From<DesignRevolveConstruction> for DesignRevolveConstructionWire {
+    fn from(value: DesignRevolveConstruction) -> Self {
+        Self {
+            operation: value.operation,
+            operation_offset: value.operation_offset,
+            angle: value.angle,
+            angle_record_index: value.angle_record_index,
+            angle_offset: value.angle_offset,
+            opposite_angle_record_index: value.opposite_angle.map(|located| located.value),
+            opposite_angle_offset: value.opposite_angle.map(|located| located.offset),
+        }
+    }
+}
+
+impl TryFrom<DesignRevolveConstructionWire> for DesignRevolveConstruction {
+    type Error = String;
+    fn try_from(value: DesignRevolveConstructionWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            operation: value.operation,
+            operation_offset: value.operation_offset,
+            angle: value.angle,
+            angle_record_index: value.angle_record_index,
+            angle_offset: value.angle_offset,
+            opposite_angle: match (value.opposite_angle_record_index, value.opposite_angle_offset) {
+                (None, None) => None,
+                (Some(value), Some(offset)) => Some(Located { value, offset }),
+                _ => return Err("opposite_angle_record_index and opposite_angle_offset must occur together".into()),
+            },
+        })
+    }
+}
+
 
 /// Fixed construction of a `Loft` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

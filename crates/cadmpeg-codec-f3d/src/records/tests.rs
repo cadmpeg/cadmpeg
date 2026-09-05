@@ -88,3 +88,19 @@ fn absent_flattened_scope_payloads_preserve_the_wire() {
         assert_eq!(serde_json::to_string(&decoded).expect("serialize scope"), wire);
     }
 }
+
+#[test]
+fn revolve_opposite_angle_preserves_wire_and_rejects_partial_source_location() {
+    let base = r#"{"operation":"join","operation_offset":12,"angle":1.5,"angle_record_index":3,"angle_offset":40"#;
+    for tail in ["}", ",\"opposite_angle_record_index\":4,\"opposite_angle_offset\":80}"] {
+        let wire = format!("{base}{tail}");
+        let value: super::DesignRevolveConstruction = serde_json::from_str(&wire).expect("revolve construction");
+        assert_eq!(serde_json::to_string(&value).expect("revolve wire"), wire);
+    }
+    for tail in [",\"opposite_angle_record_index\":4}", ",\"opposite_angle_offset\":80}"] {
+        let error = serde_json::from_str::<super::DesignRevolveConstruction>(&format!("{base}{tail}"))
+            .expect_err("partial opposite angle location");
+        assert!(error.to_string().contains("opposite_angle_record_index"));
+        assert!(error.to_string().contains("opposite_angle_offset"));
+    }
+}

@@ -6034,7 +6034,7 @@ pub(crate) fn exact_solid_primitive(
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignSolidPrimitive> {
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let (operation, operation_offset, cylinder_transform, cylinder_transform_offset) = match scope
+    let (operation, operation_offset, cylinder_transform) = match scope
         .kind_name()
     {
         "SpherePrimitive" | "TorusPrimitive" => {
@@ -6042,7 +6042,6 @@ pub(crate) fn exact_solid_primitive(
             (
                 primitive_operation(bytes, operation_offset)?,
                 operation_offset,
-                None,
                 None,
             )
         }
@@ -6052,7 +6051,6 @@ pub(crate) fn exact_solid_primitive(
                 primitive_operation(bytes, operation_offset)?,
                 operation_offset,
                 None,
-                None,
             )
         }
         "CylinderPrimitive" => {
@@ -6061,7 +6059,6 @@ pub(crate) fn exact_solid_primitive(
                     primitive_operation(bytes, operation_offset)?,
                     operation_offset,
                     None,
-                    None,
                 )
             } else {
                 let prologue = exact_shifted_cylinder_primitive_prologue(bytes, scope, start)?;
@@ -6069,7 +6066,6 @@ pub(crate) fn exact_solid_primitive(
                     prologue.operation,
                     prologue.operation_offset,
                     prologue.transform,
-                    prologue.transform_offset,
                 )
             }
         }
@@ -6185,7 +6181,6 @@ pub(crate) fn exact_solid_primitive(
                     diameter_record_index: diameter.record_index,
                     diameter_offset: diameter.evaluated_value_offset,
                     transform: cylinder_transform,
-                    transform_offset: cylinder_transform_offset,
                     operation,
                     operation_offset: operation_offset as u64,
                 }),
@@ -6199,8 +6194,7 @@ pub(crate) fn exact_solid_primitive(
 struct ExactShiftedCylinderPrimitivePrologue {
     operation: DesignExtrudeOperation,
     operation_offset: usize,
-    transform: Option<[[f64; 4]; 4]>,
-    transform_offset: Option<u64>,
+    transform: Option<crate::records::Located<[[f64; 4]; 4]>>,
 }
 
 fn exact_named_solid_primitive_operation(bytes: &[u8], start: usize) -> Option<usize> {
@@ -6335,7 +6329,7 @@ fn exact_shifted_cylinder_primitive_prologue(
     {
         return None;
     }
-    let (transform, transform_offset) = match scope.frame_length {
+    let transform = match scope.frame_length {
         352 => {
             if bytes.get(start + shifted_cylinder_352::COMPACT_TAIL_MARKER) != Some(&1)
                 || View::u32_le_at(bytes, start + shifted_cylinder_352::COMPACT_TAIL_COUNT)? != 1
@@ -6366,7 +6360,7 @@ fn exact_shifted_cylinder_primitive_prologue(
             {
                 return None;
             }
-            (None, None)
+            None
         }
         502 => {
             if bytes.get(start + shifted_cylinder_502::ZERO_BEFORE_MATRIX) != Some(&0)
@@ -6412,10 +6406,10 @@ fn exact_shifted_cylinder_primitive_prologue(
             {
                 return None;
             }
-            (
-                Some(transform),
-                Some(u64::try_from(start + shifted_cylinder_502::MATRIX).ok()?),
-            )
+            Some(crate::records::Located {
+                value: transform,
+                offset: u64::try_from(start + shifted_cylinder_502::MATRIX).ok()?,
+            })
         }
         _ => return None,
     };
@@ -6423,7 +6417,6 @@ fn exact_shifted_cylinder_primitive_prologue(
         operation,
         operation_offset,
         transform,
-        transform_offset,
     })
 }
 
@@ -7448,8 +7441,7 @@ pub(crate) fn exact_path_feature_construction(
                 angle: angle.evaluated_value,
                 angle_record_index: angle.record_index,
                 angle_offset: angle.evaluated_value_offset,
-                opposite_angle_record_index: None,
-                opposite_angle_offset: None,
+                opposite_angle: None,
             }))
         }
         DesignFeatureFamily::Revolve
@@ -7485,8 +7477,7 @@ pub(crate) fn exact_path_feature_construction(
                 angle: angle.value,
                 angle_record_index: *angle_record_index,
                 angle_offset: angle.value_offset,
-                opposite_angle_record_index: Some(*opposite_angle_record_index),
-                opposite_angle_offset: Some(opposite.value_offset),
+                opposite_angle: Some(crate::records::Located { value: *opposite_angle_record_index, offset: opposite.value_offset }),
             }))
         }
         DesignFeatureFamily::Revolve
@@ -7512,8 +7503,7 @@ pub(crate) fn exact_path_feature_construction(
                 angle: angle.evaluated_value,
                 angle_record_index,
                 angle_offset: angle.evaluated_value_offset,
-                opposite_angle_record_index: None,
-                opposite_angle_offset: None,
+                opposite_angle: None,
             }))
         }
         DesignFeatureFamily::Revolve
@@ -7535,8 +7525,7 @@ pub(crate) fn exact_path_feature_construction(
                 angle: angle.evaluated_value,
                 angle_record_index,
                 angle_offset: angle.evaluated_value_offset,
-                opposite_angle_record_index: None,
-                opposite_angle_offset: None,
+                opposite_angle: None,
             }))
         }
         DesignFeatureFamily::Loft
