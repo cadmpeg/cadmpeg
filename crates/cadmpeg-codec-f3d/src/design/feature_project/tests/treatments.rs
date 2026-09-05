@@ -962,17 +962,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     {
         *slot = Some(crate::records::DesignFixedFilletParameters {
             groups: vec![crate::records::DesignFixedFilletGroup {
-                tangency_weight: Some(crate::records::DesignFixedFilletTangencyWeight {
+                tangency_weight: Some(crate::records::DesignFixedFilletScalar {
                     value: 1.0,
                     record_index: 10,
                     value_offset: 100,
                 }),
-                radii: vec![0.5],
-                radius_record_indexes: vec![20],
-                radius_offsets: vec![200],
-                intermediate_parameters: Vec::new(),
-                intermediate_parameter_record_indexes: Vec::new(),
-                intermediate_parameter_offsets: Vec::new(),
+                law: crate::records::DesignFixedFilletLaw::Constant(crate::records::DesignFixedFilletScalar { value: 0.5, record_index: 20, value_offset: 200 }),
             }],
         });
     }

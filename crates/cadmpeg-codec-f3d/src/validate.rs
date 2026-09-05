@@ -5948,32 +5948,11 @@ fn validate_fillet_operand_groups<'a>(
             .and_then(|scope| scope.fixed_fillet_parameters().map(|fixed| (scope, fixed)))
             .is_some_and(|(scope, fixed)| {
                 fixed.groups.iter().all(|group| {
-                    let radius_count = group.radii.len();
-                    let intermediate_count = group.intermediate_parameters.len();
-                    let valid_law_shape = (radius_count == 1 && intermediate_count == 0)
-                        || (radius_count >= 2
-                            && radius_count == intermediate_count.saturating_add(2));
-                    group
-                        .tangency_weight
-                        .as_ref()
-                        .is_none_or(|tangency| tangency.value.is_finite() && tangency.value > 0.0)
-                        && valid_law_shape
-                        && group
-                            .radii
-                            .iter()
-                            .all(|radius| radius.is_finite() && *radius >= 0.0)
-                        && group.radii.iter().any(|radius| *radius > 0.0)
-                        && group.radius_record_indexes.len() == radius_count
-                        && group.radius_offsets.len() == radius_count
-                        && group.intermediate_parameter_record_indexes.len() == intermediate_count
-                        && group.intermediate_parameter_offsets.len() == intermediate_count
-                        && group.intermediate_parameters.iter().all(|parameter| {
-                            parameter.is_finite() && (0.0..1.0).contains(parameter)
-                        })
-                        && group
-                            .intermediate_parameters
-                            .windows(2)
-                            .all(|parameters| parameters[0] < parameters[1])
+                    group.tangency_weight.as_ref().is_none_or(|tangency| tangency.value.is_finite() && tangency.value > 0.0)
+                        && group.law.radii().all(|radius| radius.value.is_finite() && radius.value >= 0.0)
+                        && group.law.radii().any(|radius| radius.value > 0.0)
+                        && group.law.intermediate().iter().all(|row| row.parameter.value.is_finite() && (0.0..1.0).contains(&row.parameter.value))
+                        && group.law.intermediate().windows(2).all(|rows| rows[0].parameter.value < rows[1].parameter.value)
                 }) && native.design_parameter_owners.iter().all(|owner| {
                     design_stream(&owner.id) != native_stream
                         || owner.scope_record_index != scope.record_index
@@ -5985,8 +5964,8 @@ fn validate_fillet_operand_groups<'a>(
                             .tangency_weight
                             .iter()
                             .map(|tangency| tangency.record_index)
-                            .chain(group.radius_record_indexes.iter().copied())
-                            .chain(group.intermediate_parameter_record_indexes.iter().copied())
+                            .chain(group.law.radii().map(|scalar| scalar.record_index))
+                            .chain(group.law.intermediate().iter().map(|row| row.parameter.record_index))
                     })
                     .all(|record_index| {
                         scope

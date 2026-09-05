@@ -2306,32 +2306,19 @@ pub(crate) fn project_fixed_fillet_with_corners(
 
     let fixed = scope.fixed_fillet_parameters()?;
     let stream = native_stream(&scope.id)?;
-    let radius_spec = |group: &crate::records::DesignFixedFilletGroup| match group.radii.as_slice()
-    {
-        [radius] if *radius > 0.0 => Some(RadiusSpec::Constant {
-            radius: Length(*radius * 10.0),
+    let radius_spec = |group: &crate::records::DesignFixedFilletGroup| match &group.law {
+        crate::records::DesignFixedFilletLaw::Constant(radius) => (radius.value > 0.0).then_some(RadiusSpec::Constant {
+            radius: Length(radius.value * 10.0),
         }),
-        [first, second, intermediate @ ..]
-            if intermediate.len() == group.intermediate_parameters.len() =>
-        {
+        crate::records::DesignFixedFilletLaw::Variable { start, end, intermediate } => {
             let mut points = Vec::with_capacity(intermediate.len() + 2);
-            points.push(VariableRadius {
-                parameter: 0.0,
-                radius: Length(*first * 10.0),
-            });
-            points.extend(intermediate.iter().zip(&group.intermediate_parameters).map(
-                |(radius, parameter)| VariableRadius {
-                    parameter: *parameter,
-                    radius: Length(*radius * 10.0),
-                },
-            ));
-            points.push(VariableRadius {
-                parameter: 1.0,
-                radius: Length(*second * 10.0),
-            });
+            points.push(VariableRadius { parameter: 0.0, radius: Length(start.value * 10.0) });
+            points.extend(intermediate.iter().map(|row| VariableRadius {
+                parameter: row.parameter.value, radius: Length(row.radius.value * 10.0),
+            }));
+            points.push(VariableRadius { parameter: 1.0, radius: Length(end.value * 10.0) });
             Some(RadiusSpec::Variable { points })
         }
-        _ => None,
     };
     let mut scope_groups = construction_groups
         .iter()

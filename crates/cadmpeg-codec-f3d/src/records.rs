@@ -2237,40 +2237,128 @@ pub struct DesignFixedFilletParameters {
     pub groups: Vec<DesignFixedFilletGroup>,
 }
 
+/// One fillet radius law and its optional tangency weight.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignFixedFilletGroupWire"))]
+#[serde(try_from = "DesignFixedFilletGroupWire", into = "DesignFixedFilletGroupWire")]
+pub struct DesignFixedFilletGroup {
+    pub tangency_weight: Option<DesignFixedFilletScalar>,
+    pub law: DesignFixedFilletLaw,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DesignFixedFilletLaw {
+    Constant(DesignFixedFilletScalar),
+    Variable {
+        start: DesignFixedFilletScalar,
+        end: DesignFixedFilletScalar,
+        intermediate: Vec<DesignFixedFilletIntermediate>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignFixedFilletIntermediate {
+    pub radius: DesignFixedFilletScalar,
+    pub parameter: DesignFixedFilletScalar,
+}
+
+impl DesignFixedFilletLaw {
+    pub(crate) fn radii(&self) -> impl Iterator<Item = &DesignFixedFilletScalar> {
+        let (first, second, intermediate) = match self {
+            Self::Constant(radius) => (radius, None, &[][..]),
+            Self::Variable { start, end, intermediate } => (start, Some(end), intermediate.as_slice()),
+        };
+        std::iter::once(first).chain(second).chain(intermediate.iter().map(|row| &row.radius))
+    }
+
+    pub(crate) fn intermediate(&self) -> &[DesignFixedFilletIntermediate] {
+        match self {
+            Self::Constant(_) => &[],
+            Self::Variable { intermediate, .. } => intermediate,
+        }
+    }
+}
+
 /// One Fillet radius law carried by fixed scalar lanes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DesignFixedFilletGroup {
+struct DesignFixedFilletGroupWire {
     /// Optional explicit dimensionless tangency-weight lane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tangency_weight: Option<DesignFixedFilletTangencyWeight>,
+    tangency_weight: Option<DesignFixedFilletScalar>,
     /// One constant radius, or endpoint radii followed by intermediate radii,
     /// in source centimetres.
-    pub radii: Vec<f64>,
+    radii: Vec<f64>,
     /// Referenced radius scalar records in semantic radius order.
-    pub radius_record_indexes: Vec<u32>,
+    radius_record_indexes: Vec<u32>,
     /// Byte offsets of the radius scalars in semantic radius order.
-    pub radius_offsets: Vec<u64>,
+    radius_offsets: Vec<u64>,
     /// Normalized edge-chain positions paired with the intermediate radii.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub intermediate_parameters: Vec<f64>,
+    intermediate_parameters: Vec<f64>,
     /// Referenced intermediate-position scalar records in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub intermediate_parameter_record_indexes: Vec<u32>,
+    intermediate_parameter_record_indexes: Vec<u32>,
     /// Byte offsets of intermediate-position scalars in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub intermediate_parameter_offsets: Vec<u64>,
+    intermediate_parameter_offsets: Vec<u64>,
 }
 
-/// One explicit fixed Fillet tangency-weight lane and its source provenance.
+impl TryFrom<DesignFixedFilletGroupWire> for DesignFixedFilletGroup {
+    type Error = String;
+
+    fn try_from(wire: DesignFixedFilletGroupWire) -> Result<Self, Self::Error> {
+        if wire.radii.len() != wire.radius_record_indexes.len() || wire.radii.len() != wire.radius_offsets.len() {
+            return Err("radii, radius_record_indexes, and radius_offsets must have equal lengths".into());
+        }
+        if wire.intermediate_parameters.len() != wire.intermediate_parameter_record_indexes.len()
+            || wire.intermediate_parameters.len() != wire.intermediate_parameter_offsets.len() {
+            return Err("intermediate_parameters, intermediate_parameter_record_indexes, and intermediate_parameter_offsets must have equal lengths".into());
+        }
+        let mut radii = wire.radii.into_iter().zip(wire.radius_record_indexes).zip(wire.radius_offsets)
+            .map(|((value, record_index), value_offset)| DesignFixedFilletScalar { value, record_index, value_offset });
+        let start = radii.next().ok_or("radii requires a constant radius or two endpoints")?;
+        let law = match radii.next() {
+            None if wire.intermediate_parameters.is_empty() => DesignFixedFilletLaw::Constant(start),
+            None => return Err("intermediate_parameters requires two endpoint radii".into()),
+            Some(end) => {
+                if radii.len() != wire.intermediate_parameters.len() {
+                    return Err("radii must contain two endpoints and one radius per intermediate_parameters entry".into());
+                }
+                let parameters = wire.intermediate_parameters.into_iter().zip(wire.intermediate_parameter_record_indexes).zip(wire.intermediate_parameter_offsets)
+                    .map(|((value, record_index), value_offset)| DesignFixedFilletScalar { value, record_index, value_offset });
+                DesignFixedFilletLaw::Variable { start, end, intermediate: radii.zip(parameters)
+                    .map(|(radius, parameter)| DesignFixedFilletIntermediate { radius, parameter }).collect() }
+            }
+        };
+        Ok(Self { tangency_weight: wire.tangency_weight, law })
+    }
+}
+
+impl From<DesignFixedFilletGroup> for DesignFixedFilletGroupWire {
+    fn from(group: DesignFixedFilletGroup) -> Self {
+        Self {
+            tangency_weight: group.tangency_weight,
+            radii: group.law.radii().map(|scalar| scalar.value).collect(),
+            radius_record_indexes: group.law.radii().map(|scalar| scalar.record_index).collect(),
+            radius_offsets: group.law.radii().map(|scalar| scalar.value_offset).collect(),
+            intermediate_parameters: group.law.intermediate().iter().map(|row| row.parameter.value).collect(),
+            intermediate_parameter_record_indexes: group.law.intermediate().iter().map(|row| row.parameter.record_index).collect(),
+            intermediate_parameter_offsets: group.law.intermediate().iter().map(|row| row.parameter.value_offset).collect(),
+        }
+    }
+}
+
+/// One fixed fillet scalar and its source record and value location.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DesignFixedFilletTangencyWeight {
-    /// Positive dimensionless tangency weight.
+pub struct DesignFixedFilletScalar {
+    /// Radius, normalized position, or tangency weight.
     pub value: f64,
-    /// Referenced tangency-weight scalar record.
+    /// Referenced scalar record.
     pub record_index: u32,
-    /// Byte offset of the tangency-weight scalar.
+    /// Byte offset of the scalar.
     pub value_offset: u64,
 }
 
