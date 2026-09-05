@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned `native.iges` physical cards and entity records.
 
-use crate::card::CardScan;
+use crate::card::{CardScan, ScannedLine, Section};
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, Status};
 use crate::entities::drawing::drawing_property_value;
 use crate::entities::geometry::{
@@ -45,14 +45,39 @@ impl ProductOccurrenceLimits {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(crate) struct NativeCard {
-    id: String,
-    offset: u64,
-    payload: Vec<u8>,
-    line_ending: Vec<u8>,
-    section: Option<String>,
-    sequence: Option<u32>,
+struct NativeCard<'a> {
+    index: usize,
+    line: &'a ScannedLine,
+}
+
+impl Serialize for NativeCard<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            id: String,
+            offset: u64,
+            payload: &'a [u8],
+            line_ending: &'a [u8],
+            section: Option<Section>,
+            sequence: Option<u32>,
+        }
+        let (section, sequence) = match self.line {
+            ScannedLine::Card {
+                section, sequence, ..
+            } => (Some(*section), Some(*sequence)),
+            ScannedLine::Trailing(_) => (None, None),
+        };
+        let line = self.line.physical();
+        Wire {
+            id: format!("iges:physical:card#{}", self.index + 1),
+            offset: line.offset,
+            payload: &line.payload,
+            line_ending: line.line_ending(),
+            section,
+            sequence,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1592,16 +1617,7 @@ pub(crate) fn store(
         .lines
         .iter()
         .enumerate()
-        .map(|(index, line)| NativeCard {
-            id: format!("iges:physical:card#{}", index + 1),
-            offset: line.offset,
-            payload: line.payload.clone(),
-            line_ending: line.line_ending().to_vec(),
-            section: line
-                .section
-                .map(|section| format!("{section:?}").to_lowercase()),
-            sequence: line.sequence,
-        })
+        .map(|(index, line)| NativeCard { index, line })
         .collect::<Vec<_>>();
     let by_directory = parameters
         .iter()

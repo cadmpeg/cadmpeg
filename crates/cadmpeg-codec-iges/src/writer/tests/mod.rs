@@ -275,9 +275,8 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     );
 
     let global_text = scan
-        .lines
-        .iter()
-        .filter(|line| line.section == Some(crate::card::Section::Global))
+        .section(crate::card::Section::Global)
+        .map(|(_, line)| line)
         .flat_map(|line| line.payload.iter().take(72).copied())
         .collect::<Vec<_>>();
     let global_text = String::from_utf8(global_text)
@@ -310,9 +309,8 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
         assert!(losses.is_empty(), "{name}: {losses:#?}");
 
         let global_text = scan
-            .lines
-            .iter()
-            .filter(|line| line.section == Some(crate::card::Section::Global))
+            .section(crate::card::Section::Global)
+            .map(|(_, line)| line)
             .flat_map(|line| line.payload.iter().take(72).copied())
             .collect::<Vec<_>>();
         let global_text = String::from_utf8(global_text)

@@ -657,9 +657,8 @@ fn global_bytes(scan: &CardScan<'_>) -> GlobalStream {
     let mut source_cards = Vec::new();
 
     for (card, line) in scan
-        .lines
-        .iter()
-        .filter(|line| line.section == Some(Section::Global))
+        .section(Section::Global)
+        .map(|(_, line)| line)
         .enumerate()
     {
         for byte in line.payload.iter().take(72).copied() {
