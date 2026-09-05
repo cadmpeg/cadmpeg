@@ -60,8 +60,8 @@ fn type230_form1_entity_table_boundary_follows_island_count() {
 
     assert_eq!(entity_primary_end(&record, &directory), Some(10));
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    let groups = analysis.groups.expect("Type 230 Form 1 table boundary");
+    let groups = analysis.groups().expect("Type 230 Form 1 table boundary");
     assert_eq!(groups.token_start, 10);
-    assert_eq!(groups.associations, vec![1]);
-    assert!(groups.properties.is_empty());
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+    assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
 }

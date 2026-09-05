@@ -66,24 +66,78 @@ pub(crate) struct ParameterRecord {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TrailingPointerGroups {
     pub(crate) token_start: usize,
-    pub(crate) associations: Vec<u32>,
-    pub(crate) properties: Vec<u32>,
     pub(crate) association_pointers: Vec<TrailingPointer>,
     pub(crate) property_pointers: Vec<TrailingPointer>,
-    pub(crate) fully_valid: bool,
+}
+
+impl TrailingPointerGroups {
+    pub(crate) fn fully_valid(&self) -> bool {
+        self.association_pointers
+            .iter()
+            .chain(&self.property_pointers)
+            .all(|pointer| pointer.resolved.is_some())
+    }
+
+    pub(crate) fn associations(&self) -> impl Iterator<Item = &u32> {
+        self.association_pointers
+            .iter()
+            .filter_map(|pointer| pointer.resolved.as_ref())
+    }
+
+    pub(crate) fn properties(&self) -> impl Iterator<Item = &u32> {
+        self.property_pointers
+            .iter()
+            .filter_map(|pointer| pointer.resolved.as_ref())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TrailingPointerAnalysis {
-    pub(crate) candidate_count: usize,
-    pub(crate) valid_candidate_count: usize,
-    pub(crate) groups: Option<TrailingPointerGroups>,
+pub(crate) enum TrailingPointerAnalysis {
+    Macro,
+    Unambiguous {
+        groups: TrailingPointerGroups,
+        candidates: usize,
+    },
+    SingleInvalid(TrailingPointerGroups),
+    Ambiguous {
+        candidates: usize,
+        valid: usize,
+    },
+}
+
+#[cfg(test)]
+impl TrailingPointerAnalysis {
+    fn candidate_count(&self) -> usize {
+        match self {
+            Self::Macro => 0,
+            Self::Unambiguous { candidates, .. } | Self::Ambiguous { candidates, .. } => {
+                *candidates
+            }
+            Self::SingleInvalid(_) => 1,
+        }
+    }
+
+    fn valid_candidate_count(&self) -> usize {
+        match self {
+            Self::Macro | Self::SingleInvalid(_) => 0,
+            Self::Unambiguous { .. } => 1,
+            Self::Ambiguous { valid, .. } => *valid,
+        }
+    }
+
+    fn groups(&self) -> Option<TrailingPointerGroups> {
+        match self {
+            Self::Unambiguous { groups, .. } | Self::SingleInvalid(groups) => Some(groups.clone()),
+            Self::Macro | Self::Ambiguous { .. } => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TrailingPointer {
     pub(crate) token_index: usize,
     pub(crate) raw_pointer: i64,
+    pub(crate) resolved: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -382,11 +436,7 @@ fn analyze_trailing_pointer_groups_for_global_table(
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 306)
     {
-        return TrailingPointerAnalysis {
-            candidate_count: 0,
-            valid_candidate_count: 0,
-            groups: None,
-        };
+        return TrailingPointerAnalysis::Macro;
     }
     analyze_trailing_pointer_groups_from_end(
         record,
@@ -415,11 +465,7 @@ fn analyze_trailing_pointer_groups_with_records_for_global_table(
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 306)
     {
-        return TrailingPointerAnalysis {
-            candidate_count: 0,
-            valid_candidate_count: 0,
-            groups: None,
-        };
+        return TrailingPointerAnalysis::Macro;
     }
     let is_attribute_table_instance = directory
         .get(&record.directory_sequence)
@@ -467,17 +513,27 @@ fn analyze_trailing_pointer_groups_from_end(
     let valid_groups = candidates
         .iter()
         .filter_map(|candidate| groups_for_candidate(record, directory, *candidate))
-        .filter(|groups| groups.fully_valid);
+        .filter(TrailingPointerGroups::fully_valid);
     let valid_groups = valid_groups.collect::<Vec<_>>();
-    let groups = match valid_groups.as_slice() {
-        [groups] => Some(groups.clone()),
-        [] if candidates.len() == 1 => groups_for_candidate(record, directory, candidates[0]),
-        _ => None,
-    };
-    TrailingPointerAnalysis {
-        candidate_count: candidates.len(),
-        valid_candidate_count: valid_groups.len(),
-        groups,
+    let valid = valid_groups.len();
+    match valid_groups.into_iter().next() {
+        Some(groups) if valid == 1 => TrailingPointerAnalysis::Unambiguous {
+            groups,
+            candidates: candidates.len(),
+        },
+        None if candidates.len() == 1 => {
+            match groups_for_candidate(record, directory, candidates[0]) {
+                Some(groups) => TrailingPointerAnalysis::SingleInvalid(groups),
+                None => TrailingPointerAnalysis::Ambiguous {
+                    candidates: 1,
+                    valid: 0,
+                },
+            }
+        }
+        Some(_) | None => TrailingPointerAnalysis::Ambiguous {
+            candidates: candidates.len(),
+            valid,
+        },
     }
 }
 
@@ -2361,59 +2417,39 @@ fn groups_for_candidate(
     directory: &BTreeMap<u32, &DirectoryEntry>,
     candidate: PointerGroupCandidate,
 ) -> Option<TrailingPointerGroups> {
-    let association_pointers = (candidate.association_start..candidate.property_count_index)
-        .map(|token_index| {
-            Some(TrailingPointer {
-                token_index,
-                raw_pointer: record.raw_integer(token_index)?,
+    let pointers = |range: Range<usize>, admitted: fn(i64) -> bool| {
+        range
+            .map(|token_index| {
+                let raw_pointer = record.raw_integer(token_index)?;
+                let resolved = u32::try_from(raw_pointer)
+                    .ok()
+                    .filter(|sequence| sequence % 2 == 1)
+                    .filter(|sequence| {
+                        directory
+                            .get(sequence)
+                            .is_some_and(|entry| admitted(entry.entity_type))
+                    });
+                Some(TrailingPointer {
+                    token_index,
+                    raw_pointer,
+                    resolved,
+                })
             })
-        })
-        .collect::<Option<Vec<_>>>()?;
+            .collect::<Option<Vec<_>>>()
+    };
+    let association_pointers = pointers(
+        candidate.association_start..candidate.property_count_index,
+        |kind| matches!(kind, 212 | 312 | 402),
+    )?;
     let property_start = candidate.property_count_index.checked_add(1)?;
     let property_end = property_start.checked_add(candidate.property_count)?;
-    let property_pointers = (property_start..property_end)
-        .map(|token_index| {
-            Some(TrailingPointer {
-                token_index,
-                raw_pointer: record.raw_integer(token_index)?,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let associations: Vec<u32> = association_pointers
-        .iter()
-        .filter_map(|pointer| {
-            u32::try_from(pointer.raw_pointer)
-                .ok()
-                .filter(|sequence| sequence % 2 == 1)
-                .filter(|sequence| {
-                    directory
-                        .get(sequence)
-                        .is_some_and(|entry| matches!(entry.entity_type, 212 | 312 | 402))
-                })
-        })
-        .collect();
-    let properties: Vec<u32> = property_pointers
-        .iter()
-        .filter_map(|pointer| {
-            u32::try_from(pointer.raw_pointer)
-                .ok()
-                .filter(|sequence| sequence % 2 == 1)
-                .filter(|sequence| {
-                    directory
-                        .get(sequence)
-                        .is_some_and(|entry| matches!(entry.entity_type, 316 | 322 | 406 | 422))
-                })
-        })
-        .collect();
-    let fully_valid = associations.len() == association_pointers.len()
-        && properties.len() == property_pointers.len();
+    let property_pointers = pointers(property_start..property_end, |kind| {
+        matches!(kind, 316 | 322 | 406 | 422)
+    })?;
     Some(TrailingPointerGroups {
         token_start: candidate.token_start,
-        associations,
-        properties,
         association_pointers,
         property_pointers,
-        fully_valid,
     })
 }
 
@@ -3647,8 +3683,10 @@ pub(crate) fn assemble_with_context(
     for record in &mut records {
         record.parameter_end = trailing_pointer_analysis
             .get(&record.directory_sequence)
-            .and_then(|analysis| analysis.groups.as_ref())
-            .filter(|groups| groups.fully_valid)
+            .and_then(|analysis| match analysis {
+                TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                _ => None,
+            })
             .map_or(record.tokens.len(), |groups| groups.token_start);
     }
     let accounted = ownership

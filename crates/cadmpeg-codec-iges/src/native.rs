@@ -1012,8 +1012,12 @@ pub(crate) struct QuarantinedRecords<'a> {
 
 pub(crate) struct AmbiguousParameterBoundary {
     pub(crate) sequence: u32,
-    pub(crate) candidate_count: usize,
-    pub(crate) equally_valid: bool,
+    pub(crate) ambiguity: ParameterBoundaryAmbiguity,
+}
+
+pub(crate) enum ParameterBoundaryAmbiguity {
+    EquallyValid(usize),
+    Structural(usize),
 }
 
 /// Collects at most one overdeclared-count verdict per Directory Entry. The
@@ -1180,7 +1184,7 @@ fn drawing_property_candidates(
 ) -> Vec<u32> {
     trailing
         .into_iter()
-        .flat_map(|groups| groups.properties.iter().copied())
+        .flat_map(|groups| groups.properties().copied())
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .filter(|sequence| {
@@ -1660,8 +1664,10 @@ pub(crate) fn store(
     let clamped_primary_end = |sequence: u32, record: &ParameterRecord| {
         trailing_pointer_analysis
             .get(&sequence)
-            .and_then(|analysis| analysis.groups.as_ref())
-            .filter(|groups| groups.fully_valid)
+            .and_then(|analysis| match analysis {
+                TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                _ => None,
+            })
             .map_or(record.parameter_end(), |groups| groups.token_start)
             .min(
                 crate::parameter::entity_primary_end_for_global_table(
@@ -1699,21 +1705,20 @@ pub(crate) fn store(
         .keys()
         .filter_map(|sequence| {
             let analysis = trailing_pointer_analysis.get(sequence)?;
-            let equally_valid = analysis.valid_candidate_count > 1;
-            let required_back_pointer_ambiguity = required_back_pointer_members.contains(sequence)
-                && analysis.candidate_count > 1
-                && analysis.groups.is_none();
-            (equally_valid || required_back_pointer_ambiguity).then_some(
-                AmbiguousParameterBoundary {
-                    sequence: *sequence,
-                    candidate_count: if equally_valid {
-                        analysis.valid_candidate_count
-                    } else {
-                        analysis.candidate_count
-                    },
-                    equally_valid,
-                },
-            )
+            let TrailingPointerAnalysis::Ambiguous { candidates, valid } = analysis else {
+                return None;
+            };
+            let ambiguity = if *valid > 1 {
+                ParameterBoundaryAmbiguity::EquallyValid(*valid)
+            } else if required_back_pointer_members.contains(sequence) && *candidates > 1 {
+                ParameterBoundaryAmbiguity::Structural(*candidates)
+            } else {
+                return None;
+            };
+            Some(AmbiguousParameterBoundary {
+                sequence: *sequence,
+                ambiguity,
+            })
         })
         .collect::<Vec<_>>();
     charge_native_entities(ctx, directory.len() as u64)?;
@@ -1723,15 +1728,19 @@ pub(crate) fn store(
             let parameters = by_directory.get(&entry.sequence).copied();
             let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
-                .and_then(|analysis| analysis.groups.as_ref())
-                .filter(|groups| groups.fully_valid);
+                .and_then(|analysis| match analysis {
+                    TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                    _ => None,
+                });
             let invalid_trailing = (trailing.is_none()
                 && required_back_pointer_members.contains(&entry.sequence))
             .then(|| {
                 trailing_pointer_analysis
                     .get(&entry.sequence)
-                    .and_then(|analysis| analysis.groups.as_ref())
-                    .filter(|groups| !groups.fully_valid)
+                    .and_then(|analysis| match analysis {
+                        TrailingPointerAnalysis::SingleInvalid(groups) => Some(groups),
+                        _ => None,
+                    })
             })
             .flatten();
             let edge_trailing = trailing.or(invalid_trailing);
@@ -3890,9 +3899,17 @@ pub(crate) fn store(
                         **sequence != entry.sequence
                             && trailing_pointer_analysis
                                 .get(sequence)
-                                .and_then(|analysis| analysis.groups.as_ref())
-                                .filter(|groups| groups.fully_valid)
-                                .is_some_and(|groups| groups.properties.contains(&entry.sequence))
+                                .and_then(|analysis| match analysis {
+                                    TrailingPointerAnalysis::Unambiguous { groups, .. } => {
+                                        Some(groups)
+                                    }
+                                    _ => None,
+                                })
+                                .is_some_and(|groups| {
+                                    groups
+                                        .properties()
+                                        .any(|sequence| sequence == &entry.sequence)
+                                })
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
                     .collect(),
@@ -4233,9 +4250,17 @@ pub(crate) fn store(
                         **sequence != entry.sequence
                             && trailing_pointer_analysis
                                 .get(sequence)
-                                .and_then(|analysis| analysis.groups.as_ref())
-                                .filter(|groups| groups.fully_valid)
-                                .is_some_and(|groups| groups.properties.contains(&entry.sequence))
+                                .and_then(|analysis| match analysis {
+                                    TrailingPointerAnalysis::Unambiguous { groups, .. } => {
+                                        Some(groups)
+                                    }
+                                    _ => None,
+                                })
+                                .is_some_and(|groups| {
+                                    groups
+                                        .properties()
+                                        .any(|sequence| sequence == &entry.sequence)
+                                })
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
                     .collect(),
@@ -4255,9 +4280,15 @@ pub(crate) fn store(
                 .filter(|(sequence, _owner)| {
                     trailing_pointer_analysis
                         .get(sequence)
-                        .and_then(|analysis| analysis.groups.as_ref())
-                        .filter(|groups| groups.fully_valid)
-                        .is_some_and(|groups| groups.properties.contains(&entry.sequence))
+                        .and_then(|analysis| match analysis {
+                            TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                            _ => None,
+                        })
+                        .is_some_and(|groups| {
+                            groups
+                                .properties()
+                                .any(|sequence| sequence == &entry.sequence)
+                        })
                 })
                 .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
                 .collect();
@@ -4564,8 +4595,10 @@ pub(crate) fn store(
                 .and_then(|(index, record)| record.integer(index));
             let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
-                .and_then(|analysis| analysis.groups.as_ref())
-                .filter(|groups| groups.fully_valid);
+                .and_then(|analysis| match analysis {
+                    TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                    _ => None,
+                });
             let candidates = |form| drawing_property_candidates(trailing, form, &entries);
             let (name_property, name_ambiguous) =
                 choose_drawing_property(&candidates(15), 15, &by_directory);

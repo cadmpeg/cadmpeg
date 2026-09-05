@@ -402,19 +402,18 @@ fn decode_with_occurrence_limits(
     }
     for native::AmbiguousParameterBoundary {
         sequence: source_sequence,
-        candidate_count,
-        equally_valid,
+        ambiguity,
     } in ambiguous_parameter_boundaries
     {
+        let (candidate_count, kind) = match ambiguity {
+            native::ParameterBoundaryAmbiguity::EquallyValid(count) => (count, "equally valid"),
+            native::ParameterBoundaryAmbiguity::Structural(count) => (count, "structural"),
+        };
         losses.push(occurrence_loss(
             IgesLossCode::ParameterBoundaryAmbiguous,
             format!(
                 "IGES Parameter Data has {candidate_count} {} trailing pointer-group boundaries; primary parameters and pointer ownership were not guessed",
-                if equally_valid {
-                    "equally valid"
-                } else {
-                    "structural"
-                }
+                kind
             ),
             source_sequence,
             &parse.directory,

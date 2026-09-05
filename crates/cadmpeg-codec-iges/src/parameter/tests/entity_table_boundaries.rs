@@ -26,12 +26,12 @@ fn type406_form29_table_boundary_precedes_generic_candidate() {
     assert!(generic.iter().any(|candidate| candidate.token_start == 8));
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 406 Form 29 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 406 Form 29 table boundary");
     assert_eq!(groups.token_start, 10);
-    assert_eq!(groups.associations, vec![3]);
-    assert!(groups.properties.is_empty());
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![3]);
+    assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
 }
 
 #[test]
@@ -96,9 +96,13 @@ fn type406_form29_malformed_np_or_span_does_not_enable_generic_recovery() {
         let record = token_parameter_record(1, values);
         let generic_count = structural_pointer_group_candidates(&record).len();
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0, "generic_count={generic_count}");
-        assert_eq!(analysis.valid_candidate_count, 0);
-        assert!(analysis.groups.is_none());
+        assert_eq!(
+            analysis.candidate_count(),
+            0,
+            "generic_count={generic_count}"
+        );
+        assert_eq!(analysis.valid_candidate_count(), 0);
+        assert!(analysis.groups().is_none());
     }
 }
 
@@ -142,12 +146,12 @@ fn type406_form31_entity_table_boundary_follows_fixed_corners() {
     ] {
         let analysis =
             analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("Type 406 Form 31 table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("Type 406 Form 31 table boundary");
         assert_eq!(groups.token_start, 10);
-        assert_eq!(groups.associations, vec![3]);
-        assert!(groups.properties.is_empty());
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![3]);
+        assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
     }
 }
 
@@ -177,12 +181,12 @@ fn type406_form31_table_boundary_precedes_generic_candidate() {
     assert!(generic.iter().any(|candidate| candidate.token_start == 8));
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 406 Form 31 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 406 Form 31 table boundary");
     assert_eq!(groups.token_start, 10);
-    assert_eq!(groups.associations, vec![3]);
-    assert!(groups.properties.is_empty());
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![3]);
+    assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
 }
 
 #[test]
@@ -247,9 +251,13 @@ fn type406_form31_malformed_np_or_span_does_not_enable_generic_recovery() {
         let record = token_parameter_record(1, values);
         let generic_count = structural_pointer_group_candidates(&record).len();
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0, "generic_count={generic_count}");
-        assert_eq!(analysis.valid_candidate_count, 0);
-        assert!(analysis.groups.is_none());
+        assert_eq!(
+            analysis.candidate_count(),
+            0,
+            "generic_count={generic_count}"
+        );
+        assert_eq!(analysis.valid_candidate_count(), 0);
+        assert!(analysis.groups().is_none());
     }
 }
 
@@ -302,12 +310,12 @@ fn type406_form36_entity_table_boundary_follows_np_arity() {
     ] {
         let analysis =
             analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("Type 406 Form 36 table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("Type 406 Form 36 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![3]);
-        assert_eq!(groups.properties, vec![5]);
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![3]);
+        assert_eq!(groups.properties().copied().collect::<Vec<_>>(), vec![5]);
     }
 }
 
@@ -333,12 +341,15 @@ fn type406_form36_table_boundary_precedes_generic_candidate() {
     assert!(generic.iter().any(|candidate| candidate.token_start == 2));
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 406 Form 36 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 406 Form 36 table boundary");
     assert_eq!(groups.token_start, 3);
-    assert_eq!(groups.associations, vec![3, 3]);
-    assert_eq!(groups.properties, vec![5]);
+    assert_eq!(
+        groups.associations().copied().collect::<Vec<_>>(),
+        vec![3, 3]
+    );
+    assert_eq!(groups.properties().copied().collect::<Vec<_>>(), vec![5]);
 }
 
 #[test]
@@ -391,9 +402,13 @@ fn type406_form36_malformed_np_or_span_does_not_enable_generic_recovery() {
         let record = token_parameter_record(1, values);
         let generic_count = structural_pointer_group_candidates(&record).len();
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0, "generic_count={generic_count}");
-        assert_eq!(analysis.valid_candidate_count, 0);
-        assert!(analysis.groups.is_none());
+        assert_eq!(
+            analysis.candidate_count(),
+            0,
+            "generic_count={generic_count}"
+        );
+        assert_eq!(analysis.valid_candidate_count(), 0);
+        assert!(analysis.groups().is_none());
     }
 }
 
@@ -432,15 +447,16 @@ fn type184_entity_table_boundary_follows_item_and_transform_lists() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1, "form={form}, N={item_count}");
+        assert_eq!(analysis.candidate_count(), 1, "form={form}, N={item_count}");
         assert_eq!(
-            analysis.valid_candidate_count, 1,
+            analysis.valid_candidate_count(),
+            1,
             "form={form}, N={item_count}"
         );
-        let groups = analysis.groups.expect("Type 184 table boundary");
+        let groups = analysis.groups().expect("Type 184 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![1]);
-        assert!(groups.properties.is_empty());
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
     }
 }
 
@@ -468,12 +484,12 @@ fn type184_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 184 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 184 table boundary");
     assert_eq!(groups.token_start, 6);
-    assert_eq!(groups.associations, vec![7]);
-    assert!(groups.properties.is_empty());
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![7]);
+    assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
 }
 
 #[test]
@@ -508,9 +524,9 @@ fn type184_malformed_counts_do_not_enable_generic_recovery() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0);
-        assert_eq!(analysis.valid_candidate_count, 0);
-        assert!(analysis.groups.is_none());
+        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(analysis.valid_candidate_count(), 0);
+        assert!(analysis.groups().is_none());
     }
 }
 
@@ -554,12 +570,12 @@ fn type412_entity_table_boundary_follows_do_dont_list() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1, "LC={list_count}");
-        assert_eq!(analysis.valid_candidate_count, 1, "LC={list_count}");
-        let groups = analysis.groups.expect("Type 412 table boundary");
+        assert_eq!(analysis.candidate_count(), 1, "LC={list_count}");
+        assert_eq!(analysis.valid_candidate_count(), 1, "LC={list_count}");
+        let groups = analysis.groups().expect("Type 412 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![1]);
-        assert!(groups.properties.is_empty());
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
     }
 }
 
@@ -585,12 +601,12 @@ fn type412_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 412 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 412 table boundary");
     assert_eq!(groups.token_start, 14);
-    assert_eq!(groups.associations, vec![1]);
-    assert!(groups.properties.is_empty());
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+    assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
 }
 
 #[test]
@@ -624,9 +640,9 @@ fn type412_malformed_counts_do_not_enable_generic_recovery() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0);
-        assert_eq!(analysis.valid_candidate_count, 0);
-        assert!(analysis.groups.is_none());
+        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(analysis.valid_candidate_count(), 0);
+        assert!(analysis.groups().is_none());
     }
 
     let mut values = (0..16)
@@ -655,9 +671,9 @@ fn type412_malformed_counts_do_not_enable_generic_recovery() {
         comment: Vec::new(),
     };
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 0);
-    assert_eq!(analysis.valid_candidate_count, 0);
-    assert!(analysis.groups.is_none());
+    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(analysis.valid_candidate_count(), 0);
+    assert!(analysis.groups().is_none());
 }
 
 #[test]
@@ -699,12 +715,12 @@ fn type414_entity_table_boundary_follows_do_dont_list() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1, "LC={list_count}");
-        assert_eq!(analysis.valid_candidate_count, 1, "LC={list_count}");
-        let groups = analysis.groups.expect("Type 414 table boundary");
+        assert_eq!(analysis.candidate_count(), 1, "LC={list_count}");
+        assert_eq!(analysis.valid_candidate_count(), 1, "LC={list_count}");
+        let groups = analysis.groups().expect("Type 414 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![1]);
-        assert!(groups.properties.is_empty());
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
     }
 }
 
@@ -730,12 +746,12 @@ fn type414_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 414 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 414 table boundary");
     assert_eq!(groups.token_start, 12);
-    assert_eq!(groups.associations, vec![1]);
-    assert!(groups.properties.is_empty());
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+    assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
 }
 
 #[test]
@@ -769,9 +785,9 @@ fn type414_malformed_counts_do_not_enable_generic_recovery() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0);
-        assert_eq!(analysis.valid_candidate_count, 0);
-        assert!(analysis.groups.is_none());
+        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(analysis.valid_candidate_count(), 0);
+        assert!(analysis.groups().is_none());
     }
 
     let mut values = (0..14)
@@ -799,9 +815,9 @@ fn type414_malformed_counts_do_not_enable_generic_recovery() {
         comment: Vec::new(),
     };
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 0);
-    assert_eq!(analysis.valid_candidate_count, 0);
-    assert!(analysis.groups.is_none());
+    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(analysis.valid_candidate_count(), 0);
+    assert!(analysis.groups().is_none());
 }
 
 #[test]
@@ -841,12 +857,12 @@ fn type402_form5_entity_table_boundary_follows_label_placements() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1, "N={placement_count}");
-        assert_eq!(analysis.valid_candidate_count, 1, "N={placement_count}");
-        let groups = analysis.groups.expect("Type 402 Form 5 table boundary");
+        assert_eq!(analysis.candidate_count(), 1, "N={placement_count}");
+        assert_eq!(analysis.valid_candidate_count(), 1, "N={placement_count}");
+        let groups = analysis.groups().expect("Type 402 Form 5 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![1]);
-        assert!(groups.properties.is_empty());
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
     }
 }
 
@@ -875,12 +891,12 @@ fn type402_form5_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 402 Form 5 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 402 Form 5 table boundary");
     assert_eq!(groups.token_start, 9);
-    assert_eq!(groups.associations, vec![9]);
-    assert!(groups.properties.is_empty());
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![9]);
+    assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
 }
 
 #[test]
@@ -915,9 +931,9 @@ fn type402_form5_malformed_counts_do_not_enable_generic_recovery() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0);
-        assert_eq!(analysis.valid_candidate_count, 0);
-        assert!(analysis.groups.is_none());
+        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(analysis.valid_candidate_count(), 0);
+        assert!(analysis.groups().is_none());
     }
 
     let mut values = (0..13)
@@ -942,9 +958,9 @@ fn type402_form5_malformed_counts_do_not_enable_generic_recovery() {
         comment: Vec::new(),
     };
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 0);
-    assert_eq!(analysis.valid_candidate_count, 0);
-    assert!(analysis.groups.is_none());
+    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(analysis.valid_candidate_count(), 0);
+    assert!(analysis.groups().is_none());
 }
 
 #[test]
@@ -976,12 +992,19 @@ fn type406_form34_and_form35_entity_table_boundary_follows_text_score_ranges() {
             comment: Vec::new(),
         };
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1, "Form {form}");
-        assert_eq!(analysis.valid_candidate_count, 1, "Form {form}");
-        let groups = analysis.groups.expect("text-score table boundary");
+        assert_eq!(analysis.candidate_count(), 1, "Form {form}");
+        assert_eq!(analysis.valid_candidate_count(), 1, "Form {form}");
+        let groups = analysis.groups().expect("text-score table boundary");
         assert_eq!(groups.token_start, expected_start, "Form {form}");
-        assert_eq!(groups.associations, vec![1], "Form {form}");
-        assert!(groups.properties.is_empty(), "Form {form}");
+        assert_eq!(
+            groups.associations().copied().collect::<Vec<_>>(),
+            vec![1],
+            "Form {form}"
+        );
+        assert!(
+            groups.properties().copied().collect::<Vec<_>>().is_empty(),
+            "Form {form}"
+        );
     }
 
     let mut source = directory_target(3, 406);
@@ -1003,11 +1026,11 @@ fn type406_form34_and_form35_entity_table_boundary_follows_text_score_ranges() {
         comment: Vec::new(),
     };
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Form 34 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Form 34 table boundary");
     assert_eq!(groups.token_start, 6);
-    assert_eq!(groups.associations, vec![1]);
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
 }
 
 #[test]
@@ -1040,9 +1063,9 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
             comment: Vec::new(),
         };
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0);
-        assert_eq!(analysis.valid_candidate_count, 0);
-        assert!(analysis.groups.is_none());
+        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(analysis.valid_candidate_count(), 0);
+        assert!(analysis.groups().is_none());
     }
 
     let record = ParameterRecord {
@@ -1079,9 +1102,9 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
         comment: Vec::new(),
     };
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 0);
-    assert_eq!(analysis.valid_candidate_count, 0);
-    assert!(analysis.groups.is_none());
+    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(analysis.valid_candidate_count(), 0);
+    assert!(analysis.groups().is_none());
 
     let mut source = directory_target(3, 406);
     source.form = 35;
@@ -1133,10 +1156,13 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
         comment: Vec::new(),
     };
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
     assert_eq!(
-        analysis.groups.expect("Form 35 table boundary").token_start,
+        analysis
+            .groups()
+            .expect("Form 35 table boundary")
+            .token_start,
         6
     );
 }
@@ -1187,12 +1213,15 @@ fn type406_form30_entity_table_boundary_follows_fixed_np_and_note_count() {
                 .collect::<Vec<_>>(),
         );
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("Form 30 table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("Form 30 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, associations);
-        assert_eq!(groups.properties, properties);
+        assert_eq!(
+            groups.associations().copied().collect::<Vec<_>>(),
+            associations
+        );
+        assert_eq!(groups.properties().copied().collect::<Vec<_>>(), properties);
     }
 }
 
@@ -1240,10 +1269,13 @@ fn type406_form30_complete_counted_span_keeps_boundary_with_wrong_note_type() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
     assert_eq!(
-        analysis.groups.expect("Form 30 table boundary").token_start,
+        analysis
+            .groups()
+            .expect("Form 30 table boundary")
+            .token_start,
         17
     );
 }
@@ -1293,9 +1325,9 @@ fn type406_form30_malformed_np_or_note_count_does_not_enable_generic_recovery() 
             comment: Vec::new(),
         };
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0);
-        assert_eq!(analysis.valid_candidate_count, 0);
-        assert!(analysis.groups.is_none());
+        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(analysis.valid_candidate_count(), 0);
+        assert!(analysis.groups().is_none());
     }
 }
 
@@ -1370,17 +1402,17 @@ fn type406_form11_entity_table_boundary_follows_nested_value_counts() {
             let generic_valid_candidate_count = structural_pointer_group_candidates(&record)
                 .iter()
                 .filter_map(|candidate| groups_for_candidate(&record, &directory, *candidate))
-                .filter(|groups| groups.fully_valid)
+                .filter(|groups| groups.fully_valid())
                 .count();
             assert_eq!(generic_valid_candidate_count, 2);
         }
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("Form 11 table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("Form 11 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![1]);
-        assert_eq!(groups.properties, vec![3]);
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert_eq!(groups.properties().copied().collect::<Vec<_>>(), vec![3]);
     }
 }
 
@@ -1417,10 +1449,13 @@ fn type406_form11_complete_nested_span_keeps_boundary_with_invalid_value() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
     assert_eq!(
-        analysis.groups.expect("Form 11 table boundary").token_start,
+        analysis
+            .groups()
+            .expect("Form 11 table boundary")
+            .token_start,
         6
     );
 }
@@ -1564,9 +1599,9 @@ fn type406_form11_malformed_nested_counts_do_not_enable_generic_recovery() {
             comment: Vec::new(),
         };
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0);
-        assert_eq!(analysis.valid_candidate_count, 0);
-        assert!(analysis.groups.is_none());
+        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(analysis.valid_candidate_count(), 0);
+        assert!(analysis.groups().is_none());
     }
 }
 
@@ -1618,12 +1653,12 @@ fn type406_form12_entity_table_boundary_follows_name_count() {
             comment: Vec::new(),
         };
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("Form 12 table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("Form 12 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![1]);
-        assert_eq!(groups.properties, vec![3]);
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert_eq!(groups.properties().copied().collect::<Vec<_>>(), vec![3]);
     }
 }
 
@@ -1657,17 +1692,17 @@ fn type406_form12_table_boundary_beats_generic_alternatives() {
     let generic_valid_candidate_count = structural_pointer_group_candidates(&record)
         .iter()
         .filter_map(|candidate| groups_for_candidate(&record, &directory, *candidate))
-        .filter(|groups| groups.fully_valid)
+        .filter(|groups| groups.fully_valid())
         .count();
     assert_eq!(generic_valid_candidate_count, 2);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Form 12 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Form 12 table boundary");
     assert_eq!(groups.token_start, 4);
-    assert_eq!(groups.associations, vec![1]);
-    assert!(groups.properties.is_empty());
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+    assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
 }
 
 #[test]
@@ -1736,9 +1771,9 @@ fn type406_form12_malformed_count_or_name_list_do_not_enable_generic_recovery() 
             comment: Vec::new(),
         };
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0);
-        assert_eq!(analysis.valid_candidate_count, 0);
-        assert!(analysis.groups.is_none());
+        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(analysis.valid_candidate_count(), 0);
+        assert!(analysis.groups().is_none());
     }
 }
 
@@ -1797,11 +1832,11 @@ fn type406_form27_entity_table_boundary_follows_np_and_value_pair_count() {
             comment: Vec::new(),
         };
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("Form 27 table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("Form 27 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![1]);
-        assert_eq!(groups.properties, vec![3]);
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert_eq!(groups.properties().copied().collect::<Vec<_>>(), vec![3]);
     }
 }
