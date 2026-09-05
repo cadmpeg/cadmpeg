@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use cadmpeg_core::decode::{ByteRange, DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 
-use crate::SpanRole;
+use crate::archive::{PhysicalSpan, SpanRole};
 
 const MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const FREE_SECTOR: u32 = 0xffff_ffff;
@@ -25,41 +25,30 @@ const MINI_STREAM_CUTOFF: u64 = 4096;
 
 static NEXT_COMPOUND_SNAPSHOT_ID: AtomicU64 = AtomicU64::new(1);
 
-/// Stable directory identity for a CFB entry.
+/// Stable identity for a CFB storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CompoundEntryId(u32);
+pub struct CompoundStorageId(u32);
 
-impl CompoundEntryId {
+impl CompoundStorageId {
     /// Returns the CFB directory-entry index.
     pub const fn directory_id(self) -> u32 {
         self.0
     }
 }
 
-/// Stable identity for a CFB storage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CompoundStorageId(CompoundEntryId);
-
-impl CompoundStorageId {
-    /// Returns the CFB directory-entry index.
-    pub const fn directory_id(self) -> u32 {
-        self.0.directory_id()
-    }
-}
-
 /// Stable identity for a CFB stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CompoundStreamId(CompoundEntryId);
+pub struct CompoundStreamId(u32);
 
 impl CompoundStreamId {
     /// Returns the CFB directory-entry index.
     pub const fn directory_id(self) -> u32 {
-        self.0.directory_id()
+        self.0
     }
 
     /// Reconstruct a stream identity from a CFB directory-entry index.
     pub const fn from_directory_id(id: u32) -> Self {
-        Self(CompoundEntryId(id))
+        Self(id)
     }
 }
 
@@ -165,17 +154,6 @@ impl CompoundEntry {
             Self::Stream(entry) => entry.id().directory_id(),
         }
     }
-}
-
-/// One exact physical range in a CFB file.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CompoundPhysicalSpan {
-    /// Inclusive byte offset.
-    pub start: u64,
-    /// Exclusive byte offset.
-    pub end: u64,
-    /// CFB structural role, including an owning entry where applicable.
-    pub role: SpanRole,
 }
 
 #[derive(Debug, Clone)]
@@ -399,7 +377,7 @@ impl<'a> CompoundSnapshot<'a> {
     }
 
     /// Partitions every physical input byte by CFB structural role.
-    pub fn physical_ledger(&self) -> Result<Vec<CompoundPhysicalSpan>, CodecError> {
+    pub fn physical_ledger(&self) -> Result<Vec<PhysicalSpan>, CodecError> {
         let mut structural = BTreeMap::new();
         for &sector in &self.parsed.fat_sectors {
             structural.insert(sector, SpanRole::CfbFat);
@@ -437,7 +415,7 @@ impl<'a> CompoundSnapshot<'a> {
                 }
             }
         }
-        let mut spans = vec![CompoundPhysicalSpan {
+        let mut spans = vec![PhysicalSpan {
             start: 0,
             end: self.parsed.sector_size as u64,
             role: SpanRole::CfbHeader,
@@ -490,7 +468,9 @@ impl<'a> CompoundSnapshot<'a> {
                     &mut spans,
                     start + *payload as u64,
                     sector_length - *payload,
-                    SpanRole::CfbEntryPadding(entry.clone()),
+                    SpanRole::CfbPadding {
+                        entry: Some(entry.clone()),
+                    },
                 );
             } else if let Some(root_ordinal) = root_sectors.get(&sector) {
                 for mini_ordinal in 0..sector_length.div_ceil(MINI_SECTOR_SIZE) {
@@ -526,7 +506,9 @@ impl<'a> CompoundSnapshot<'a> {
                             &mut spans,
                             mini_start + *payload as u64,
                             mini_length - *payload,
-                            SpanRole::CfbEntryPadding(entry.clone()),
+                            SpanRole::CfbPadding {
+                                entry: Some(entry.clone()),
+                            },
                         );
                     } else {
                         push_span(
@@ -539,7 +521,7 @@ impl<'a> CompoundSnapshot<'a> {
                             &mut spans,
                             mini_start + mapped as u64,
                             mini_length - mapped,
-                            SpanRole::CfbPadding,
+                            SpanRole::CfbPadding { entry: None },
                         );
                     }
                 }
@@ -955,7 +937,7 @@ impl CompoundState {
             match entry.object_type {
                 1 => {
                     output.push(CompoundEntry::Storage(CompoundStorageEntry {
-                        id: CompoundStorageId(CompoundEntryId(id)),
+                        id: CompoundStorageId(id),
                         path: path.clone(),
                     }));
                     self.walk_tree(ctx, entry.child, &path, reached, output)?;
@@ -1003,7 +985,7 @@ impl CompoundState {
                         }
                     };
                     output.push(CompoundEntry::Stream(CompoundStreamEntry {
-                        id: CompoundStreamId(CompoundEntryId(id)),
+                        id: CompoundStreamId(id),
                         snapshot_id: 0,
                         path,
                         logical_size: entry.size,
@@ -1678,11 +1660,11 @@ fn physically_contiguous(views: &[View<'_>]) -> bool {
         .all(|pair| pair[0].end() == pair[1].start())
 }
 
-fn push_span(spans: &mut Vec<CompoundPhysicalSpan>, start: u64, length: usize, role: SpanRole) {
+fn push_span(spans: &mut Vec<PhysicalSpan>, start: u64, length: usize, role: SpanRole) {
     if length == 0 {
         return;
     }
-    spans.push(CompoundPhysicalSpan {
+    spans.push(PhysicalSpan {
         start,
         end: start + length as u64,
         role,

@@ -367,8 +367,11 @@ pub enum SpanRole {
     CompressedPayload(String),
     /// ZIP data descriptor for the named entry.
     DataDescriptor(String),
-    /// ZIP padding following the named entry.
-    EntryArchivePadding(String),
+    /// ZIP padding, optionally owned by an entry.
+    Padding {
+        /// Owning entry, when the padding belongs to one.
+        entry: Option<String>,
+    },
     /// ZIP central-header signature for the named entry.
     CentralSignature(String),
     /// ZIP central-header fields for the named entry.
@@ -385,8 +388,6 @@ pub enum SpanRole {
     Zip64EndLocator,
     /// ZIP end-of-central-directory record.
     EndRecord,
-    /// ZIP padding not owned by an entry.
-    ArchivePadding,
     /// CFB file header.
     CfbHeader,
     /// CFB version-4 range-lock sector.
@@ -401,14 +402,15 @@ pub enum SpanRole {
     CfbMiniFat,
     /// CFB regular-sector payload for the named stream.
     CfbRegularStreamPayload(String),
-    /// CFB allocation padding owned by the named stream.
-    CfbEntryPadding(String),
+    /// CFB allocation padding, optionally owned by a stream.
+    CfbPadding {
+        /// Owning entry, when the padding belongs to one.
+        entry: Option<String>,
+    },
     /// CFB mini-sector payload for the named stream.
     CfbMiniStreamPayload(String),
     /// Unallocated bytes inside the CFB root mini stream.
     CfbMiniStreamPadding,
-    /// CFB allocation padding not owned by a stream.
-    CfbPadding,
     /// Unallocated CFB sector.
     CfbUnallocatedSector,
 }
@@ -423,7 +425,7 @@ impl SpanRole {
             Self::LocalExtra(_) => "local-extra",
             Self::CompressedPayload(_) => "compressed-payload",
             Self::DataDescriptor(_) => "data-descriptor",
-            Self::EntryArchivePadding(_) | Self::ArchivePadding => "archive-padding",
+            Self::Padding { .. } => "archive-padding",
             Self::CentralSignature(_) => "central-signature",
             Self::CentralFields(_) => "central-fields",
             Self::CentralName(_) => "central-name",
@@ -439,7 +441,7 @@ impl SpanRole {
             Self::CfbDirectory => "directory",
             Self::CfbMiniFat => "mini FAT",
             Self::CfbRegularStreamPayload(_) => "regular stream payload",
-            Self::CfbEntryPadding(_) | Self::CfbPadding => "padding",
+            Self::CfbPadding { .. } => "padding",
             Self::CfbMiniStreamPayload(_) => "mini stream payload",
             Self::CfbMiniStreamPadding => "mini-stream padding",
             Self::CfbUnallocatedSector => "unallocated sector",
@@ -455,28 +457,27 @@ impl SpanRole {
             | Self::LocalExtra(entry)
             | Self::CompressedPayload(entry)
             | Self::DataDescriptor(entry)
-            | Self::EntryArchivePadding(entry)
             | Self::CentralSignature(entry)
             | Self::CentralFields(entry)
             | Self::CentralName(entry)
             | Self::CentralExtra(entry)
             | Self::CentralComment(entry)
             | Self::CfbRegularStreamPayload(entry)
-            | Self::CfbEntryPadding(entry)
             | Self::CfbMiniStreamPayload(entry) => Some(entry),
+            Self::Padding { entry } | Self::CfbPadding { entry } => entry.as_deref(),
             _ => None,
         }
     }
 }
 
-/// One exact physical range in a ZIP archive.
+/// One exact physical range in an archive or compound file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PhysicalSpan {
     /// Inclusive byte offset.
     pub start: u64,
     /// Exclusive byte offset.
     pub end: u64,
-    /// ZIP structural role, including an owning entry where applicable.
+    /// Structural role, including an owning entry where applicable.
     pub role: SpanRole,
 }
 
@@ -610,14 +611,18 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
                     &mut regions,
                     descriptor_end,
                     next,
-                    SpanRole::EntryArchivePadding(entry.name.clone()),
+                    SpanRole::Padding {
+                        entry: Some(entry.name.clone()),
+                    },
                 );
             } else {
                 push_region(
                     &mut regions,
                     entry.data_end()?,
                     next,
-                    SpanRole::EntryArchivePadding(entry.name.clone()),
+                    SpanRole::Padding {
+                        entry: Some(entry.name.clone()),
+                    },
                 );
             }
         }
@@ -752,7 +757,7 @@ fn classify_end_records(
                 let comment = u64::from(u16_at(bytes, offset + 20)?);
                 (SpanRole::EndRecord, 22_u64 + comment)
             }
-            _ => (SpanRole::ArchivePadding, len - offset),
+            _ => (SpanRole::Padding { entry: None }, len - offset),
         };
         let end = offset
             .checked_add(size)

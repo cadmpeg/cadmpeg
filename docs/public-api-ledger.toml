@@ -4334,3 +4334,31 @@ crate = "cadmpeg-codec-step"
 kind = "field"
 item = "cadmpeg_codec_step::StepWriteOptions::timestamp"
 reason = "STEP-06: Option<String> expresses absent timestamp; None emits the deterministic epoch"
+
+[[change]]
+commit = "deadd3a999e4e64cefe1a78c10b9f6ba11c12543"
+crate = "cadmpeg-container"
+kind = "deletion"
+item = "cadmpeg_container::compound::CompoundEntryId"
+reason = "CTR-06: storage and stream identities wrap their u32 directory indices directly"
+
+[[change]]
+commit = "deadd3a999e4e64cefe1a78c10b9f6ba11c12543"
+crate = "cadmpeg-container"
+kind = "deletion"
+item = "cadmpeg_container::compound::CompoundPhysicalSpan"
+reason = "CTR-02: use the shared PhysicalSpan type"
+
+[[change]]
+commit = "deadd3a999e4e64cefe1a78c10b9f6ba11c12543"
+crate = "cadmpeg-container"
+kind = "signature"
+item = "cadmpeg_container::compound::CompoundSnapshot::physical_ledger"
+reason = "CTR-02: return Vec<PhysicalSpan>"
+
+[[change]]
+commit = "deadd3a999e4e64cefe1a78c10b9f6ba11c12543"
+crate = "cadmpeg-container"
+kind = "variant"
+item = "cadmpeg_container::SpanRole"
+reason = "CTR-05: replace duplicate entry-owned and unowned padding variants with optional owners"
