@@ -868,13 +868,13 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         "wrapper_record": identity, "scene_state_record": identity, "scene_node_record": identity,
         "scene_auxiliary_record": identity, "owner_record": identity,
         "entry_name": "mesh.paramesh", "entry_name_offset": 120,
-        "fusion_uuid": "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", "fusion_uuid_offset": 130,
+        "fusion_uuid": "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", "fusion_uuid_offset": 136,
         "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
         "transform_offsets": [140, 160], "scope_reference_offset": 170,
         "wrapper_reference_offset": 180, "owner_reference_offset": 190,
         "guid_reference_offset": 200, "scene_node_reference_offset": 210,
         "collection_reference_offset": 220, "wrapper_body_reference_offset": 230,
-        "entry_guid_reference_offset": 240, "guid_entry_reference_offset": 250,
+        "entry_guid_reference_offset": 240, "guid_entry_reference_offset": 172,
         "scene_state_reference_offset": 260, "scene_auxiliary_reference_offset": 270
     });
     let base = serde_json::json!({
@@ -2641,5 +2641,31 @@ fn design_guid_text_preserves_case_and_rejects_non_guids() {
     assert_eq!(serde_json::to_string(&value).unwrap(), wire);
     for invalid in ["", "AAAAAAAA_BBBB-4CCC-8DDD-EEEEEEEEEEEE", "GAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"] {
         assert!(super::DesignGuidText::try_from(invalid.to_owned()).is_err());
+    }
+}
+
+#[test]
+fn mesh_guid_record_requires_prefix_and_derives_join_offsets() {
+    let guid = super::DesignGuidText::try_from("AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".to_owned()).unwrap();
+    for frame_length in [83, 100] {
+        let identity = super::DesignMeshRecordIdentity::new(super::DesignClassTag::try_from("256".to_owned()).unwrap(), 4, 200, frame_length).unwrap();
+        let record = super::DesignMeshGuid::new(identity, guid.clone()).unwrap();
+        assert_eq!(record.value_offset(), 236);
+        assert_eq!(record.entry_reference_offset(), 272);
+        assert_eq!(record.record().frame_length(), frame_length);
+    }
+    let short = super::DesignMeshRecordIdentity::new(super::DesignClassTag::try_from("256".to_owned()).unwrap(), 4, 200, 82).unwrap();
+    assert!(super::DesignMeshGuid::new(short, guid).is_err());
+}
+
+#[test]
+fn mesh_uuid_preserves_wire_and_requires_lowercase_version_four() {
+    let text = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    let value = super::DesignMeshUuid::try_from(text.to_owned()).unwrap();
+    assert_eq!(value.as_str(), text);
+    assert_eq!(serde_json::to_value(&value).unwrap(), serde_json::json!(text));
+    assert_eq!(serde_json::from_value::<super::DesignMeshUuid>(serde_json::json!(text)).unwrap(), value);
+    for invalid in ["AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", "aaaaaaaa-bbbb-3ccc-8ddd-eeeeeeeeeeee", "aaaaaaaa-bbbb-4ccc-7ddd-eeeeeeeeeeee", ""] {
+        assert!(serde_json::from_value::<super::DesignMeshUuid>(serde_json::json!(invalid)).is_err());
     }
 }

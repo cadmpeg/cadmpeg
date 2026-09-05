@@ -7,7 +7,7 @@
 
 use cadmpeg_core::container::ContainerRole;
 
-use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded, take_reference};
+use crate::bytes::{lp_ascii_strict, lp_utf16_bounded, take_reference};
 use crate::container::ContainerScan;
 use crate::design::decode::meta::{
     metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
@@ -32,7 +32,7 @@ use crate::layout::paramesh_scene_state as scene_state;
 use crate::layout::paramesh_texture_filename_prefix as texture_filename;
 use crate::layout::paramesh_texture_table_prefix as texture_table;
 use crate::paramesh::{decode_mesh_container, MeshContainer};
-use crate::records::{DesignGuidText, DesignMeshTextureMapLocation, MeshAffineTransform};
+use crate::records::{DesignMeshGuid, DesignGuidText, DesignMeshTextureMapLocation, MeshAffineTransform};
 use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshSceneBounds,
     DesignMeshTextureResource, DesignRecordHeader,
@@ -234,11 +234,8 @@ struct MeshEntryNameRecord {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshGuidRecord {
-    identity: DesignMeshRecordIdentity,
+    guid: DesignMeshGuid,
     entry_name_record_index: u32,
-    fusion_uuid: String,
-    fusion_uuid_offset: u64,
-    entry_reference_offset: u64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -582,15 +579,13 @@ fn parse_mesh_guid_record(
         (record.get(guid_join::ZERO_RUN_21..guid_join::FUSION_UUID) == Some(&[0; 21]))
             .then_some(())?;
         let (fusion_uuid, end) = lp_ascii_strict(record, guid_join::FUSION_UUID, 36..=36)?;
-        (end == guid_join::ENTRY_NAME_BACKLINK && is_guid_hyphenated(&fusion_uuid)).then_some(())?;
+        (end == guid_join::ENTRY_NAME_BACKLINK).then_some(())?;
+        let fusion_uuid = DesignGuidText::try_from(fusion_uuid).ok()?;
         let entry_name_record_index =
             exact_local_record_index(record, guid_join::ENTRY_NAME_BACKLINK)?;
         Some(MeshGuidRecord {
-            identity,
+            guid: DesignMeshGuid::new(identity, fusion_uuid).ok()?,
             entry_name_record_index,
-            fusion_uuid,
-            fusion_uuid_offset: source_offset(frame.start, guid_join::FUSION_UUID.checked_add(4)?)?,
-            entry_reference_offset: source_offset(frame.start, guid_join::ENTRY_NAME_BACKLINK)?,
         })
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-GUID", frame.entity_id))
@@ -1182,7 +1177,7 @@ where
             .into_iter()
             .map(|frame| parse_mesh_guid_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
-        |record| record.identity.record_index(),
+        |record| record.guid.record().record_index(),
         "mesh-GUID",
     )?;
     let mut bodies = unique_record_map(
@@ -1403,7 +1398,7 @@ where
                 .ok_or_else(|| stream_error("each mesh body has one unused GUID record"))?;
             let entry_name = entry_names
                 .remove(&guid.entry_name_record_index)
-                .filter(|entry| entry.guid_record_index == guid.identity.record_index())
+                .filter(|entry| entry.guid_record_index == guid.guid.record().record_index())
                 .ok_or_else(|| {
                     stream_error("each mesh GUID has one unused reciprocal entry-name record")
                 })?;
@@ -1448,7 +1443,7 @@ where
                 collection_body_reference_offset: collection_reference.offset,
                 body_record: body.identity,
                 entry_name_record: entry_name.identity,
-                guid_record: guid.identity,
+                guid: guid.guid,
                 wrapper_record: wrapper.identity,
                 scene_state_record: scene_state.0,
                 scene_state_bounds: scene_state.1,
@@ -1459,9 +1454,7 @@ where
                 owner_record: body_owner,
                 entry_name: entry_name.entry_name,
                 entry_name_offset: entry_name.entry_name_offset,
-                fusion_uuid: guid.fusion_uuid,
                 container_mesh_uuid: None,
-                fusion_uuid_offset: guid.fusion_uuid_offset,
                 transform: body.transform,
                 transform_offsets: [
                     source_offset(body_byte_offset, mesh_body::FIRST_TRANSFORM).ok_or_else(
@@ -1479,7 +1472,6 @@ where
                 collection_reference_offset: body.collection_reference_offset,
                 wrapper_body_reference_offset: wrapper.body_reference_offset,
                 entry_guid_reference_offset: entry_name.guid_reference_offset,
-                guid_entry_reference_offset: guid.entry_reference_offset,
                 scene_state_reference_offset: scene_node.state_reference_offset,
                 scene_auxiliary_reference_offset: scene_node.auxiliary_reference_offset,
                 tessellation_id: None,
@@ -1576,7 +1568,7 @@ fn resolve_mesh_body(
             for (body_ordinal, body) in feature.bodies.iter().enumerate() {
                 if body.tessellation_id.is_none()
                     && body.entry_name == entry_name
-                    && body.fusion_uuid.eq_ignore_ascii_case(fusion_uuid)
+                    && body.guid.value().eq_ignore_ascii_case(fusion_uuid)
                 {
                     matches.push((design_ordinal, feature_ordinal, body_ordinal));
                 }
@@ -2398,7 +2390,7 @@ mod tests {
             panic!("one mesh body");
         };
         assert_eq!(body.entry_name, ENTRY_NAME);
-        assert_eq!(body.fusion_uuid, FUSION_UUID);
+        assert_eq!(body.guid.value(), FUSION_UUID);
         assert_eq!(body.wrapper_record.record_index(), 108);
         assert_eq!(body.scene_state_record.record_index(), 105);
         assert_eq!(body.scene_node_record.record_index(), 107);
@@ -2889,7 +2881,7 @@ mod tests {
         let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("reflected map");
         let container = MeshContainer {
             fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
-            mesh_uuid: "11111111-2222-4333-8444-555555555555".into(),
+            mesh_uuid: crate::records::DesignMeshUuid::try_from("11111111-2222-4333-8444-555555555555".to_owned()).unwrap(),
             vertices: vec![[2.0, 8.0, 3.0], [0.0, 0.0, 0.0], [4.0, 4.0, -1.0]],
             triangles: vec![[2, 0, 1]],
             feature_edges: vec![[0, 2]],
@@ -2933,7 +2925,7 @@ mod tests {
         let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("affine map");
         let container = MeshContainer {
             fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
-            mesh_uuid: "11111111-2222-4333-8444-555555555555".into(),
+            mesh_uuid: crate::records::DesignMeshUuid::try_from("11111111-2222-4333-8444-555555555555".to_owned()).unwrap(),
             vertices: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
             triangles: vec![[0, 1, 2]],
             feature_edges: vec![[0, 1]],

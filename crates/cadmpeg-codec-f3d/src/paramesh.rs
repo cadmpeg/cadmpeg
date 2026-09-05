@@ -17,6 +17,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::error::malformed;
+use crate::records::DesignMeshUuid;
 
 /// Container magic.
 const MAGIC: [u8; 12] = [
@@ -99,7 +100,7 @@ pub(crate) struct MeshContainer {
     /// container's Design-segment GUID record repeats.
     pub(crate) fusion_uuid: String,
     /// Container-local version-4 UUID stored in registry field 12.
-    pub(crate) mesh_uuid: String,
+    pub(crate) mesh_uuid: DesignMeshUuid,
     /// One coordinate triple per vertex, in container coordinates.
     pub(crate) vertices: Vec<[f64; 3]>,
     /// Triangle corner indices into `vertices`.
@@ -329,7 +330,7 @@ struct RegisteredAttributeName {
 /// Singleton metadata and properties carried by the top-level registry.
 struct MeshRegistry {
     fusion_uuid: String,
-    mesh_uuid: String,
+    mesh_uuid: DesignMeshUuid,
     face_group_count: u32,
     vertex_stream: String,
     triangle_stream: String,
@@ -507,17 +508,6 @@ fn element_bytes(element_code: u64) -> Option<u32> {
     }
 }
 
-/// Whether a registry field-12 value is a lowercase RFC 4122 version-4 UUID.
-pub(crate) fn valid_mesh_uuid(value: &str) -> bool {
-    if !crate::bytes::is_guid_hyphenated(value) {
-        return false;
-    }
-    let bytes = value.as_bytes();
-    !bytes.iter().any(u8::is_ascii_uppercase)
-        && bytes[14] == b'4'
-        && matches!(bytes[19], b'8' | b'9' | b'a' | b'b')
-}
-
 fn registry_property(entry: &[u8]) -> Result<(String, RegistryProperty), CodecError> {
     let mut key = None;
     let mut value = None;
@@ -578,11 +568,9 @@ fn mesh_registry(message: &[u8]) -> Result<MeshRegistry, CodecError> {
             }
             (REGISTRY_MESH_UUID, ProtobufValue::Bytes(value)) => {
                 let value = guid(value, "mesh UUID")?;
-                if !valid_mesh_uuid(&value) {
-                    return Err(malformed(
-                        "paramesh mesh UUID is not a lowercase version-4 UUID",
-                    ));
-                }
+                let value = DesignMeshUuid::try_from(value).map_err(|_| malformed(
+                    "paramesh mesh UUID is not a lowercase version-4 UUID",
+                ))?;
                 if mesh_uuid.replace(value).is_some() {
                     return Err(malformed("paramesh registry repeats its mesh UUID"));
                 }
@@ -2495,7 +2483,7 @@ mod tests {
             2,
         );
         let mesh = decode_mesh_container(&valid).expect("two face groups");
-        assert_eq!(mesh.mesh_uuid, MESH_GUID);
+        assert_eq!(mesh.mesh_uuid.as_str(), MESH_GUID);
         assert_eq!(mesh.triangle_groups.len(), 2);
         assert_eq!(mesh.triangle_groups[0].triangles, [0]);
         assert_eq!(mesh.triangle_groups[1].triangles, [1]);
@@ -2703,7 +2691,7 @@ mod tests {
 
         let mesh = decode_mesh_container(&bytes).expect("renamed core streams");
         assert_eq!(mesh.fusion_uuid, GUID);
-        assert_eq!(mesh.mesh_uuid, MESH_GUID);
+        assert_eq!(mesh.mesh_uuid.as_str(), MESH_GUID);
         assert_eq!(mesh.triangles, [[0, 1, 2]]);
     }
 

@@ -1624,7 +1624,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .checked_add(body.body_record.frame_length());
             valid &= body_records.insert((stream, body.body_record.record_index()))
                 && entry_records.insert((stream, body.entry_name_record.record_index()))
-                && guid_records.insert((stream, body.guid_record.record_index()))
+                && guid_records.insert((stream, body.guid.record().record_index()))
                 && wrapper_records.insert((stream, body.wrapper_record.record_index()))
                 && state_records.insert((stream, body.scene_state_record.record_index()))
                 && node_records.insert((stream, body.scene_node_record.record_index()))
@@ -1651,7 +1651,6 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     21,
                     body.entry_guid_reference_offset,
                 )
-                && mesh_record_offset_is(&body.guid_record, 72, body.guid_entry_reference_offset)
                 && mesh_record_offset_is(
                     &body.scene_node_record,
                     33,
@@ -1670,13 +1669,6 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .and_then(|units| units.checked_mul(2))
                     .and_then(|bytes| bytes.checked_add(36))
                     == Some(body.entry_name_record.frame_length())
-                && valid_design_guid(&body.fusion_uuid)
-                && body
-                    .container_mesh_uuid
-                    .as_deref()
-                    .is_none_or(crate::paramesh::valid_mesh_uuid)
-                && mesh_record_offset_is(&body.guid_record, 36, body.fusion_uuid_offset)
-                && body.guid_record.frame_length() >= 83
                 && body.tessellation_id.as_deref().is_none_or(|id| {
                     tessellation_ids.contains(id) && projected_tessellations.insert(id)
                 });

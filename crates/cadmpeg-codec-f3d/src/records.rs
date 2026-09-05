@@ -13915,6 +13915,54 @@ impl From<DesignMeshSceneBounds> for DesignMeshSceneBoundsWire {
     }
 }
 
+/// A lowercase RFC 4122 version-4 UUID from the mesh registry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "String"))]
+#[serde(try_from = "String", into = "String")]
+pub struct DesignMeshUuid(DesignGuidText);
+
+impl DesignMeshUuid {
+    pub fn as_str(&self) -> &str { self.0.as_str() }
+}
+impl TryFrom<String> for DesignMeshUuid {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let value = Self(DesignGuidText::try_from(value)?);
+        let bytes = value.as_str().as_bytes();
+        if bytes.iter().any(u8::is_ascii_uppercase) || bytes[14] != b'4' || !matches!(bytes[19], b'8' | b'9' | b'a' | b'b') {
+            return Err("mesh UUID must be a lowercase version-4 UUID".into());
+        }
+        Ok(value)
+    }
+}
+impl From<DesignMeshUuid> for String {
+    fn from(value: DesignMeshUuid) -> Self { value.0.into() }
+}
+
+/// A container GUID in a record with the complete fixed join prefix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignMeshGuid {
+    record: DesignMeshRecordIdentity,
+    value: DesignGuidText,
+}
+impl DesignMeshGuid {
+    pub fn new(record: DesignMeshRecordIdentity, value: DesignGuidText) -> Result<Self, String> {
+        if record.frame_length() < crate::layout::paramesh_guid_join_prefix::LEN as u64 {
+            return Err("guid_record.frame_length must contain the complete GUID join prefix".into());
+        }
+        Ok(Self { record, value })
+    }
+    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
+    pub fn value(&self) -> &str { self.value.as_str() }
+    pub fn value_offset(&self) -> u64 {
+        self.record.byte_offset() + crate::layout::paramesh_guid_join_prefix::FUSION_UUID as u64 + 4
+    }
+    pub fn entry_reference_offset(&self) -> u64 {
+        self.record.byte_offset() + crate::layout::paramesh_guid_join_prefix::ENTRY_NAME_BACKLINK as u64
+    }
+}
+
 /// One mesh body and its complete Design identity graph.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesignMeshBody {
@@ -13927,7 +13975,7 @@ pub struct DesignMeshBody {
     /// Entry-name record joining the body to one `.paramesh` archive entry.
     pub entry_name_record: DesignMeshRecordIdentity,
     /// GUID record joining the body to the container's `fusion_uuid`.
-    pub guid_record: DesignMeshRecordIdentity,
+    pub guid: DesignMeshGuid,
     /// One-to-one `ParaMesh` wrapper around `body_record`.
     pub wrapper_record: DesignMeshRecordIdentity,
     /// Fixed Scene-state record owned by this mesh body.
@@ -13949,13 +13997,9 @@ pub struct DesignMeshBody {
     pub entry_name: String,
     /// Byte offset of the UTF-16LE entry-name code units.
     pub entry_name_offset: u64,
-    /// Container identity stored by both Design and `.paramesh` payloads.
-    pub fusion_uuid: String,
     /// Container-local version-4 mesh UUID from protobuf registry field 12,
     /// when the geometry container joined this Design body.
-    pub container_mesh_uuid: Option<String>,
-    /// Byte offset of the ASCII `fusion_uuid` payload.
-    pub fusion_uuid_offset: u64,
+    pub container_mesh_uuid: Option<DesignMeshUuid>,
     /// Equal row-major container-to-model-centimetre affine transform.
     pub transform: MeshAffineTransform,
     /// Byte offsets of the two equal serialized transform blocks.
@@ -13976,8 +14020,6 @@ pub struct DesignMeshBody {
     pub wrapper_body_reference_offset: u64,
     /// Byte offset of the entry-name record's GUID reference.
     pub entry_guid_reference_offset: u64,
-    /// Byte offset of the GUID record's entry-name backlink.
-    pub guid_entry_reference_offset: u64,
     /// Byte offset of the Scene node's state-record reference.
     pub scene_state_reference_offset: u64,
     /// Byte offset of the Scene node's auxiliary-record reference.
@@ -14023,11 +14065,11 @@ struct DesignMeshBodyWire {
     /// Byte offset of the UTF-16LE entry-name code units.
     entry_name_offset: u64,
     /// Container identity stored by both Design and `.paramesh` payloads.
-    fusion_uuid: String,
+    fusion_uuid: DesignGuidText,
     /// Container-local version-4 mesh UUID from protobuf registry field 12,
     /// when the geometry container joined this Design body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    container_mesh_uuid: Option<String>,
+    container_mesh_uuid: Option<DesignMeshUuid>,
     /// Byte offset of the ASCII `fusion_uuid` payload.
     fusion_uuid_offset: u64,
     /// Equal row-major container-to-model-centimetre affine transform.
@@ -14063,10 +14105,12 @@ struct DesignMeshBodyWire {
 
 impl From<DesignMeshBody> for DesignMeshBodyWire {
     fn from(value: DesignMeshBody) -> Self {
+        let fusion_uuid_offset = value.guid.value_offset();
+        let guid_entry_reference_offset = value.guid.entry_reference_offset();
         Self {
             body_record: value.body_record,
             entry_name_record: value.entry_name_record,
-            guid_record: value.guid_record,
+            guid_record: value.guid.record,
             wrapper_record: value.wrapper_record,
             scene_state_record: value.scene_state_record,
             scene_state_bounds: value.scene_state_bounds,
@@ -14078,9 +14122,9 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
             owner_record: value.owner_record,
             entry_name: value.entry_name,
             entry_name_offset: value.entry_name_offset,
-            fusion_uuid: value.fusion_uuid,
+            fusion_uuid: value.guid.value,
             container_mesh_uuid: value.container_mesh_uuid,
-            fusion_uuid_offset: value.fusion_uuid_offset,
+            fusion_uuid_offset,
             transform: value.transform,
             transform_offsets: value.transform_offsets,
             scope_reference_offset: value.scope_reference_offset,
@@ -14091,7 +14135,7 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
             collection_reference_offset: value.collection_reference_offset,
             wrapper_body_reference_offset: value.wrapper_body_reference_offset,
             entry_guid_reference_offset: value.entry_guid_reference_offset,
-            guid_entry_reference_offset: value.guid_entry_reference_offset,
+            guid_entry_reference_offset,
             scene_state_reference_offset: value.scene_state_reference_offset,
             scene_auxiliary_reference_offset: value.scene_auxiliary_reference_offset,
             tessellation_id: value.tessellation_id,
@@ -14101,12 +14145,16 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
 
 impl DesignMeshBody {
     fn from_wire(value: DesignMeshBodyWire, scope_body_reference_offset: u64, collection_body_reference_offset: u64) -> Result<Self, String> {
+        let guid = DesignMeshGuid::new(value.guid_record, value.fusion_uuid)?;
+        if value.fusion_uuid_offset != guid.value_offset() || value.guid_entry_reference_offset != guid.entry_reference_offset() {
+            return Err("fusion_uuid_offset/guid_entry_reference_offset must match guid_record layout".into());
+        }
         Ok(Self {
             scope_body_reference_offset,
             collection_body_reference_offset,
             body_record: value.body_record,
             entry_name_record: value.entry_name_record,
-            guid_record: value.guid_record,
+            guid,
             wrapper_record: value.wrapper_record,
             scene_state_record: value.scene_state_record,
             scene_state_bounds: value.scene_state_bounds,
@@ -14117,9 +14165,7 @@ impl DesignMeshBody {
             owner_record: value.owner_record,
             entry_name: value.entry_name,
             entry_name_offset: value.entry_name_offset,
-            fusion_uuid: value.fusion_uuid,
             container_mesh_uuid: value.container_mesh_uuid,
-            fusion_uuid_offset: value.fusion_uuid_offset,
             transform: value.transform,
             transform_offsets: value.transform_offsets,
             scope_reference_offset: value.scope_reference_offset,
@@ -14130,7 +14176,6 @@ impl DesignMeshBody {
             collection_reference_offset: value.collection_reference_offset,
             wrapper_body_reference_offset: value.wrapper_body_reference_offset,
             entry_guid_reference_offset: value.entry_guid_reference_offset,
-            guid_entry_reference_offset: value.guid_entry_reference_offset,
             scene_state_reference_offset: value.scene_state_reference_offset,
             scene_auxiliary_reference_offset: value.scene_auxiliary_reference_offset,
             tessellation_id: value.tessellation_id,
