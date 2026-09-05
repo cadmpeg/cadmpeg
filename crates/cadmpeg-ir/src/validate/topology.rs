@@ -588,10 +588,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                     for member in &scale.members {
                         check_curve(&member.curve, findings);
-                        if let Some(surface) = &member.data.surface {
-                            if ids.surfaces(&surface.0).is_none() {
-                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
-                            }
+                        let surface = &member.data.surface;
+                        if ids.surfaces(&surface.0).is_none() {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
                     }
                 }
@@ -636,10 +635,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                     for member in &scale.members {
                         check_curve(&member.curve, findings);
-                        if let Some(surface) = &member.data.surface {
-                            if ids.surfaces(&surface.0).is_none() {
-                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
-                            }
+                        let surface = &member.data.surface;
+                        if ids.surfaces(&surface.0).is_none() {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
                     }
                 }
@@ -675,10 +673,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         check_curve(path, findings);
                         for profile in profiles {
                             check_curve(&profile.curve, findings);
-                            if let Some(surface) = &profile.data.surface {
-                                if ids.surfaces(&surface.0).is_none() {
-                                    ref_error(findings, &procedural.id.0, "surface", &surface.0);
-                                }
+                            let surface = &profile.data.surface;
+                            if ids.surfaces(&surface.0).is_none() {
+                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
                             }
                         }
                     }

@@ -708,36 +708,70 @@ fn g2_blend_spl_sur(
     })
 }
 
-/// The support data serialized after a loft profile member's curve.
-pub struct EmbeddedLoftProfileData {
-    /// The embedded support surface, when serialized.
-    pub surface: Option<SurfaceGeometry>,
-    /// Optional UV bounds of the support surface.
-    pub support_bounds: [Option<f64>; 4],
-    /// The embedded NURBS parameter curve on the support surface.
+/// Constraint fields carried by a classic loft profile.
+pub struct ClassicLoftProfileData {
+    /// Native member type code.
+    pub type_code: i64,
+    /// The embedded support surface.
+    pub surface: SurfaceGeometry,
+    /// The nullable support pcurve.
     pub pcurve: Option<NurbsPcurve>,
-    /// A second embedded parameter curve, when serialized.
-    pub secondary_pcurve: Option<NurbsPcurve>,
-    /// The boolean serialized before the subdata, when present.
-    pub first_flag: Option<bool>,
-    /// The ASM extension integer, when serialized.
-    pub asm_extension: Option<i64>,
-    /// Neutral subdata fields of the member.
+    /// The boolean preceding the subdata.
+    pub first_flag: bool,
+    /// The ASM extension integer.
+    pub asm_extension: i64,
+    /// Constraint subdata.
     pub subdata: cadmpeg_ir::geometry::LoftSubdata,
-    /// The member direction vector, when serialized.
+    /// The optional direction vector.
     pub direction: Option<Vector3>,
 }
 
-/// One profile member of an embedded loft section.
-pub struct EmbeddedLoftProfileMember {
-    /// The member type code.
-    pub type_code: i64,
+/// The layout-selected data following a loft profile curve.
+pub enum LoftProfileData {
+    /// Classic layout with a required support, first flag, and ASM extension.
+    Classic(ClassicLoftProfileData),
+    /// Revision-gated nonzero member with a nullable bounded support.
+    RevisionSupport {
+        /// The nonzero native member code.
+        type_code: std::num::NonZeroI64,
+        /// The nullable support surface.
+        surface: Option<SurfaceGeometry>,
+        /// Optional support bounds.
+        support_bounds: [Option<f64>; 4],
+        /// The nullable support pcurve.
+        pcurve: Option<NurbsPcurve>,
+        /// The boolean preceding the subdata.
+        first_flag: bool,
+        /// The stream-version-gated ASM extension.
+        asm_extension: Option<i64>,
+        /// Constraint subdata.
+        subdata: cadmpeg_ir::geometry::LoftSubdata,
+        /// The optional direction vector.
+        direction: Option<Vector3>,
+    },
+    /// Revision-gated zero member with two nullable pcurve slots.
+    RevisionPcurvePair {
+        /// The first pcurve slot.
+        pcurve: Option<NurbsPcurve>,
+        /// The second pcurve slot.
+        secondary_pcurve: Option<NurbsPcurve>,
+        /// The stream-version-gated ASM extension.
+        asm_extension: Option<i64>,
+        /// Constraint subdata.
+        subdata: cadmpeg_ir::geometry::LoftSubdata,
+        /// The optional direction vector.
+        direction: Option<Vector3>,
+    },
+}
+
+/// One profile curve with its layout-specific constraint data.
+pub struct EmbeddedLoftProfileMember<D = LoftProfileData> {
     /// The embedded profile curve.
     pub curve: NurbsCurve,
     /// Optional endpoint bounds of the profile curve.
     pub endpoints: Option<[Option<f64>; 2]>,
-    /// The support data of the member.
-    pub data: EmbeddedLoftProfileData,
+    /// The support data selected by the parent layout.
+    pub data: D,
 }
 
 /// The path block of an embedded loft section.
@@ -813,7 +847,7 @@ pub struct EmbeddedLoft {
 /// One scale block of an embedded compound loft.
 pub struct EmbeddedCompoundLoftScale {
     /// The profile members of the block, in stream order.
-    pub members: Vec<EmbeddedLoftProfileMember>,
+    pub members: Vec<EmbeddedLoftProfileMember<ClassicLoftProfileData>>,
     /// The embedded path curve.
     pub path: NurbsCurve,
     /// Auxiliary embedded curves, in stream order.
@@ -1083,7 +1117,7 @@ pub enum EmbeddedSkinSurfaceLayout {
     /// The profile-list form.
     Profiles {
         /// The profile members, in stream order.
-        profiles: Vec<EmbeddedLoftProfileMember>,
+        profiles: Vec<EmbeddedLoftProfileMember<ClassicLoftProfileData>>,
         /// The embedded path curve.
         path: NurbsCurve,
         /// Two integers closing the form.
@@ -1375,9 +1409,8 @@ fn compound_loft_scale(cur: &mut Cur<'_>) -> Option<Nullable<EmbeddedCompoundLof
         let type_code = cur.take_long()?;
         let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
         cur.set_pos(curve_end);
-        let data = loft_profile_data(cur)?;
+        let data = loft_profile_data(cur, type_code)?;
         members.push(EmbeddedLoftProfileMember {
-            type_code,
             curve,
             endpoints: None,
             data,
@@ -1459,28 +1492,6 @@ pub(crate) fn ellipse_to_nurbs(
     .ok()
 }
 
-/// Payload form of a revision-gated loft profile member, selected by the
-/// member's type integer.
-#[derive(Clone, Copy)]
-enum RevisionLoftMemberForm {
-    /// Nonzero type: bounded support surface, one nullable BS2 pcurve, and the
-    /// first flag.
-    Support,
-    /// Zero type: two nullable BS2 pcurve slots and no first flag.
-    PcurvePair,
-}
-
-impl RevisionLoftMemberForm {
-    /// The form the member's type integer selects.
-    fn of(type_code: i64) -> Self {
-        if type_code == 0 {
-            Self::PcurvePair
-        } else {
-            Self::Support
-        }
-    }
-}
-
 /// The highest stream save format version whose revision-gated loft profile
 /// members omit the ASM integer between the member payload and its constraint
 /// subdata. Save format 22300 through 22600 streams omit it; save format 23200
@@ -1502,44 +1513,54 @@ fn revision_loft_carries_asm_extension(table: &SubtypeTable) -> bool {
 fn revision_loft_profile_data(
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
-    form: RevisionLoftMemberForm,
+    type_code: i64,
     asm_extension_present: bool,
-) -> Option<EmbeddedLoftProfileData> {
-    let (surface, support_bounds, pcurve, secondary_pcurve, first_flag) = match form {
-        RevisionLoftMemberForm::Support => {
+) -> Option<LoftProfileData> {
+    let tail = |cur: &mut Cur<'_>| {
+        let asm_extension = if asm_extension_present {
+            Some(cur.take_long()?)
+        } else {
+            None
+        };
+        let subdata = loft_subdata_form(cur, true)?;
+        let direction = if cur.take_bool()? {
+            let value = cur.take_vector3()?;
+            Some(Vector3::new(value[0], value[1], value[2]))
+        } else {
+            None
+        };
+        Some((asm_extension, subdata, direction))
+    };
+    match std::num::NonZeroI64::new(type_code) {
+        Some(type_code) => {
             let (surface, support_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
             let pcurve = nullable_embedded_pcurve(cur)?.value();
             let first_flag = cur.take_bool()?;
-            (surface, support_bounds, pcurve, None, Some(first_flag))
+            let (asm_extension, subdata, direction) = tail(cur)?;
+            Some(LoftProfileData::RevisionSupport {
+                type_code,
+                surface,
+                support_bounds,
+                pcurve,
+                first_flag,
+                asm_extension,
+                subdata,
+                direction,
+            })
         }
-        RevisionLoftMemberForm::PcurvePair => {
+        None => {
             let pcurve = nullable_embedded_pcurve(cur)?.value();
             let secondary_pcurve = nullable_embedded_pcurve(cur)?.value();
-            (None, [None; 4], pcurve, secondary_pcurve, None)
+            let (asm_extension, subdata, direction) = tail(cur)?;
+            Some(LoftProfileData::RevisionPcurvePair {
+                pcurve,
+                secondary_pcurve,
+                asm_extension,
+                subdata,
+                direction,
+            })
         }
-    };
-    let asm_extension = if asm_extension_present {
-        Some(cur.take_long()?)
-    } else {
-        None
-    };
-    let subdata = loft_subdata_form(cur, true)?;
-    let direction = if cur.take_bool()? {
-        let value = cur.take_vector3()?;
-        Some(Vector3::new(value[0], value[1], value[2]))
-    } else {
-        None
-    };
-    Some(EmbeddedLoftProfileData {
-        surface,
-        support_bounds,
-        pcurve,
-        secondary_pcurve,
-        first_flag,
-        asm_extension,
-        subdata,
-        direction,
-    })
+    }
 }
 
 fn revision_loft_section(
@@ -1564,14 +1585,8 @@ fn revision_loft_section(
                 cur.take_optional_range_value()?.value(),
                 cur.take_optional_range_value()?.value(),
             ];
-            let data = revision_loft_profile_data(
-                cur,
-                table,
-                RevisionLoftMemberForm::of(type_code),
-                asm_extension_present,
-            )?;
+            let data = revision_loft_profile_data(cur, table, type_code, asm_extension_present)?;
             profile.push(EmbeddedLoftProfileMember {
-                type_code,
                 curve,
                 endpoints: Some(endpoints),
                 data,
@@ -1667,7 +1682,7 @@ fn loft_subdata_form(
     }
 }
 
-fn loft_profile_data(cur: &mut Cur<'_>) -> Option<EmbeddedLoftProfileData> {
+fn loft_profile_data(cur: &mut Cur<'_>, type_code: i64) -> Option<ClassicLoftProfileData> {
     let surface = embedded_surface(cur)?;
     let saved = cur.pos();
     let pcurve = if cur.take_ident() == Some("nullbs") {
@@ -1687,13 +1702,12 @@ fn loft_profile_data(cur: &mut Cur<'_>) -> Option<EmbeddedLoftProfileData> {
     } else {
         None
     };
-    Some(EmbeddedLoftProfileData {
-        surface: Some(surface),
-        support_bounds: [None; 4],
+    Some(ClassicLoftProfileData {
+        type_code,
+        surface,
         pcurve,
-        secondary_pcurve: None,
-        first_flag: Some(first_flag),
-        asm_extension: Some(asm_extension),
+        first_flag,
+        asm_extension,
         subdata,
         direction,
     })
@@ -1714,12 +1728,11 @@ fn loft_section(cur: &mut Cur<'_>) -> Option<Vec<EmbeddedLoftSectionEntry>> {
             let type_code = cur.take_long()?;
             let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
             cur.set_pos(curve_end);
-            let data = loft_profile_data(cur)?;
+            let data = loft_profile_data(cur, type_code)?;
             profile.push(EmbeddedLoftProfileMember {
-                type_code,
                 curve,
                 endpoints: None,
-                data,
+                data: LoftProfileData::Classic(data),
             });
         }
         let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
@@ -1881,14 +1894,8 @@ fn revision_cl_scale(
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
         ];
-        let data = revision_loft_profile_data(
-            cur,
-            table,
-            RevisionLoftMemberForm::of(type_code),
-            asm_extension_present,
-        )?;
+        let data = revision_loft_profile_data(cur, table, type_code, asm_extension_present)?;
         profile.push(EmbeddedLoftProfileMember {
-            type_code,
             curve,
             endpoints: Some(endpoints),
             data,
@@ -2424,9 +2431,8 @@ fn skin_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             let type_code = cur.take_long()?;
             let (curve, curve_end) = curve_block(span, cur.pos())?;
             cur.set_pos(curve_end);
-            let data = loft_profile_data(&mut cur)?;
+            let data = loft_profile_data(&mut cur, type_code)?;
             profiles.push(EmbeddedLoftProfileMember {
-                type_code,
                 curve,
                 endpoints: None,
                 data,

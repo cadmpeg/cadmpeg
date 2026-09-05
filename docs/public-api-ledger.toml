@@ -5111,3 +5111,87 @@ crate = "cadmpeg-asm"
 kind = "signature"
 item = "cadmpeg_asm::edit::AsmEditSet::patch_pcurve"
 reason = "ASM-18: select inline-cache and reference-wrapper edits by payload and remove the incompatible reference metadata guard"
+
+[[change]]
+commit = "fde9ee67fb99d0dd30ad3fa18d6dbb506303a720"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData"
+reason = "ASM-06 and IR-21 audit: construct layout-specific loft payloads and remove optional classic support, flag, and extension states"
+
+[[change]]
+commit = "fde9ee67fb99d0dd30ad3fa18d6dbb506303a720"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember::type_code"
+reason = "ASM-06 and IR-21 audit: construct layout-specific loft payloads and remove optional classic support, flag, and extension states"
+
+[[change]]
+commit = "fde9ee67fb99d0dd30ad3fa18d6dbb506303a720"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember"
+reason = "ASM-06 and IR-21 audit: construct layout-specific loft payloads and remove optional classic support, flag, and extension states"
+
+[[change]]
+commit = "fde9ee67fb99d0dd30ad3fa18d6dbb506303a720"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember::data"
+reason = "ASM-06 and IR-21 audit: construct layout-specific loft payloads and remove optional classic support, flag, and extension states"
+
+[[change]]
+commit = "fde9ee67fb99d0dd30ad3fa18d6dbb506303a720"
+crate = "cadmpeg-asm"
+kind = "variant"
+item = "cadmpeg_asm::nurbs::proc_surface::LoftProfileData"
+reason = "ASM-06 and IR-21 audit: construct layout-specific loft payloads and remove optional classic support, flag, and extension states"
+
+[[change]]
+commit = "fde9ee67fb99d0dd30ad3fa18d6dbb506303a720"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_surface::ClassicLoftProfileData"
+reason = "ASM-06 and IR-21 audit: construct layout-specific loft payloads and remove optional classic support, flag, and extension states"
+
+[[change]]
+commit = "fde9ee67fb99d0dd30ad3fa18d6dbb506303a720"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale::members"
+reason = "ASM-06 and IR-21 audit: construct layout-specific loft payloads and remove optional classic support, flag, and extension states"
+
+[[change]]
+commit = "fde9ee67fb99d0dd30ad3fa18d6dbb506303a720"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Profiles"
+reason = "ASM-06 and IR-21 audit: construct layout-specific loft payloads and remove optional classic support, flag, and extension states"
+
+[[change]]
+commit = "fde9ee67fb99d0dd30ad3fa18d6dbb506303a720"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::geometry::LoftProfileData"
+reason = "ASM-06 and IR-21 audit: construct layout-specific loft payloads and remove optional classic support, flag, and extension states"
+
+[[change]]
+commit = "fde9ee67fb99d0dd30ad3fa18d6dbb506303a720"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::ClassicLoftProfileData"
+reason = "ASM-06 and IR-21 audit: construct layout-specific loft payloads and remove optional classic support, flag, and extension states"
+
+[[change]]
+commit = "fde9ee67fb99d0dd30ad3fa18d6dbb506303a720"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::CompoundLoftScaleMember::data"
+reason = "ASM-06 and IR-21 audit: construct layout-specific loft payloads and remove optional classic support, flag, and extension states"
+
+[[change]]
+commit = "fde9ee67fb99d0dd30ad3fa18d6dbb506303a720"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::SkinSurfaceProfile::data"
+reason = "ASM-06 and IR-21 audit: construct layout-specific loft payloads and remove optional classic support, flag, and extension states"

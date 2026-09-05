@@ -1396,16 +1396,13 @@ fn native_loft_subdata(
     Ok(())
 }
 
-/// Emit the fields every loft profile member shares after its type-selected
-/// payload: the optional ASM integer, the constraint subdata, and the optional
-/// direction selected by the second native flag.
+/// Emit the classic profile tail: the ASM integer, constraint subdata, and
+/// optional direction selected by the second native flag.
 fn native_loft_profile_tail(
     bytes: &mut Vec<u8>,
-    data: &cadmpeg_ir::geometry::LoftProfileData,
+    data: &cadmpeg_ir::geometry::ClassicLoftProfileData,
 ) -> Result<(), CodecError> {
-    if let Some(asm_extension) = data.asm_extension {
-        native_i64(bytes, asm_extension);
-    }
+    native_i64(bytes, data.asm_extension);
     native_loft_subdata(bytes, &data.subdata)?;
     bytes.push(native_bool(data.direction.is_some()));
     if let Some(direction) = data.direction {
@@ -1441,19 +1438,6 @@ fn native_loft_member_tail(
         native_vector(bytes, [direction.x, direction.y, direction.z]);
     }
     Ok(())
-}
-
-/// The first native constraint flag, required by every member form that stores
-/// a support surface.
-fn required_first_flag(
-    data: &cadmpeg_ir::geometry::LoftProfileData,
-    context: &str,
-) -> Result<u8, CodecError> {
-    data.first_flag.map(native_bool).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "{context} profile members require the first constraint flag"
-        ))
-    })
 }
 
 fn native_loft_section(
@@ -1601,9 +1585,7 @@ fn native_compound_loft_scale(
             native_pcurve_knot_domain(member.data.pcurve.as_ref())?,
         )?;
         native_nurbs_curve(bytes, &curve)?;
-        let surface_id = member.data.surface.as_ref().ok_or_else(|| {
-            CodecError::Malformed("compound loft members require a support surface".into())
-        })?;
+        let surface_id = &member.data.surface;
         let surface = target
             .model
             .surfaces
@@ -1616,7 +1598,7 @@ fn native_compound_loft_scale(
             })?;
         native_embedded_surface(bytes, &surface.geometry)?;
         native_optional_pcurve(bytes, member.data.pcurve.as_ref())?;
-        bytes.push(required_first_flag(&member.data, "compound loft")?);
+        bytes.push(native_bool(member.data.first_flag));
         native_loft_profile_tail(bytes, &member.data)?;
     }
     native_nurbs_curve(bytes, &native_loft_curve(target, &scale.path)?)?;
@@ -2438,12 +2420,9 @@ fn encode_native_law_surface(
 fn native_skin_profile_data(
     bytes: &mut Vec<u8>,
     target: &CadIr,
-    data: &cadmpeg_ir::geometry::LoftProfileData,
+    data: &cadmpeg_ir::geometry::ClassicLoftProfileData,
 ) -> Result<(), CodecError> {
-    let surface_id = data
-        .surface
-        .as_ref()
-        .ok_or_else(|| CodecError::Malformed("skin profiles require a support surface".into()))?;
+    let surface_id = &data.surface;
     let surface = target
         .model
         .surfaces
@@ -2454,7 +2433,7 @@ fn native_skin_profile_data(
         })?;
     native_embedded_surface(bytes, &surface.geometry)?;
     native_optional_pcurve(bytes, data.pcurve.as_ref())?;
-    bytes.push(required_first_flag(data, "skin")?);
+    bytes.push(native_bool(data.first_flag));
     native_loft_profile_tail(bytes, data)?;
     Ok(())
 }

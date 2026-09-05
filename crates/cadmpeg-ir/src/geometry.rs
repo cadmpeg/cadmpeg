@@ -3267,34 +3267,115 @@ impl JsonSchema for LoftSubdata {
 /// Surface-side constraint attached to one loft profile curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct LoftProfileData {
+#[cfg_attr(feature = "schema", schemars(rename = "LoftProfileData"))]
+struct LoftProfileDataWire {
     /// Constraint support surface, absent for the native `null_surface`
     /// sentinel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub surface: Option<SurfaceId>,
+    surface: Option<SurfaceId>,
     /// Optional U/V bound fields following the support surface in the
     /// revision-gated encoding.
     #[serde(default)]
-    pub support_bounds: [Option<f64>; 4],
+    support_bounds: [Option<f64>; 4],
     /// UV curve on the support, absent for `nullbs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pcurve: Option<PcurveGeometry>,
+    pcurve: Option<PcurveGeometry>,
     /// Second UV curve slot, carried only by the type-zero member form and
     /// absent for `nullbs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary_pcurve: Option<PcurveGeometry>,
+    secondary_pcurve: Option<PcurveGeometry>,
     /// First native constraint flag, absent from the type-zero member form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub first_flag: Option<bool>,
+    first_flag: Option<bool>,
     /// ASM extension integer following the first flag, absent from member
     /// forms that omit it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub asm_extension: Option<i64>,
+    asm_extension: Option<i64>,
+    /// Native constraint table.
+    subdata: LoftSubdata,
+    /// Optional direction selected by the second native flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    direction: Option<Vector3>,
+}
+
+/// The complete constraint payload of a classic loft or skin profile.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "LoftProfileDataWire")]
+pub struct ClassicLoftProfileData {
+    /// Required support surface.
+    pub surface: SurfaceId,
+    /// Nullable parameter curve on the support.
+    pub pcurve: Option<PcurveGeometry>,
+    /// First native constraint flag.
+    pub first_flag: bool,
+    /// ASM extension integer preceding the subdata.
+    pub asm_extension: i64,
     /// Native constraint table.
     pub subdata: LoftSubdata,
     /// Optional direction selected by the second native flag.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direction: Option<Vector3>,
+}
+
+impl TryFrom<LoftProfileDataWire> for ClassicLoftProfileData {
+    type Error = String;
+
+    fn try_from(wire: LoftProfileDataWire) -> Result<Self, Self::Error> {
+        if wire.support_bounds.iter().any(Option::is_some) {
+            return Err("classic loft data.support_bounds must be unbounded".into());
+        }
+        if wire.secondary_pcurve.is_some() {
+            return Err("classic loft data.secondary_pcurve must be absent".into());
+        }
+        Ok(Self {
+            surface: wire
+                .surface
+                .ok_or("classic loft data.surface is required")?,
+            pcurve: wire.pcurve,
+            first_flag: wire
+                .first_flag
+                .ok_or("classic loft data.first_flag is required")?,
+            asm_extension: wire
+                .asm_extension
+                .ok_or("classic loft data.asm_extension is required")?,
+            subdata: wire.subdata,
+            direction: wire.direction,
+        })
+    }
+}
+
+impl Serialize for ClassicLoftProfileData {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let field_count =
+            5 + usize::from(self.pcurve.is_some()) + usize::from(self.direction.is_some());
+        let mut wire = serializer.serialize_struct("LoftProfileData", field_count)?;
+        wire.serialize_field("surface", &self.surface)?;
+        wire.serialize_field("support_bounds", &[None::<f64>; 4])?;
+        if let Some(pcurve) = &self.pcurve {
+            wire.serialize_field("pcurve", pcurve)?;
+        }
+        wire.serialize_field("first_flag", &self.first_flag)?;
+        wire.serialize_field("asm_extension", &self.asm_extension)?;
+        wire.serialize_field("subdata", &self.subdata)?;
+        if let Some(direction) = &self.direction {
+            wire.serialize_field("direction", direction)?;
+        }
+        wire.end()
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for ClassicLoftProfileData {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "LoftProfileData".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        LoftProfileDataWire::schema_id()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        LoftProfileDataWire::json_schema(generator)
+    }
 }
 
 /// Type-selected fields of one loft profile member.
@@ -3412,7 +3493,7 @@ struct LoftProfileMemberWire {
     curve: CurveId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     endpoints: Option<[Option<f64>; 2]>,
-    data: LoftProfileData,
+    data: LoftProfileDataWire,
 }
 
 impl Serialize for LoftProfileMember {
@@ -3427,7 +3508,7 @@ impl Serialize for LoftProfileMember {
                 subdata,
                 direction,
                 ..
-            } => LoftProfileData {
+            } => LoftProfileDataWire {
                 surface: surface.clone(),
                 support_bounds: *support_bounds,
                 pcurve: pcurve.clone(),
@@ -3443,7 +3524,7 @@ impl Serialize for LoftProfileMember {
                 asm_extension,
                 subdata,
                 direction,
-            } => LoftProfileData {
+            } => LoftProfileDataWire {
                 surface: None,
                 support_bounds: [None; 4],
                 pcurve: pcurve.clone(),
@@ -3467,7 +3548,7 @@ impl Serialize for LoftProfileMember {
 impl<'de> Deserialize<'de> for LoftProfileMember {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = LoftProfileMemberWire::deserialize(deserializer)?;
-        let LoftProfileData {
+        let LoftProfileDataWire {
             surface,
             support_bounds,
             pcurve,
@@ -4705,7 +4786,7 @@ pub struct CompoundLoftScaleMember {
     /// Member curve.
     pub curve: CurveId,
     /// Native loft constraint data.
-    pub data: LoftProfileData,
+    pub data: ClassicLoftProfileData,
 }
 
 /// Complete `_readScaleClLoft` payload.
@@ -5235,7 +5316,7 @@ pub struct SkinSurfaceProfile {
     /// Profile curve.
     pub curve: CurveId,
     /// Native loft constraint data.
-    pub data: LoftProfileData,
+    pub data: ClassicLoftProfileData,
 }
 
 /// Structurally selected native skin payload.

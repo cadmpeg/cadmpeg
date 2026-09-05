@@ -955,7 +955,7 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
     };
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].type_code, 9);
-    assert_eq!(profiles[0].data.asm_extension, Some(-1));
+    assert_eq!(profiles[0].data.asm_extension, -1);
     assert!(profiles[0].data.pcurve.is_some());
     assert!(profiles[0].data.direction.is_some());
     assert_eq!(*tail, [-1, 7]);
