@@ -4936,3 +4936,24 @@ crate = "cadmpeg-asm"
 kind = "deletion"
 item = "cadmpeg_asm::nurbs::core::CurvePatchLayout::rational"
 reason = "ASM-02: derive rational component presence from the owned geometry weights"
+
+[[change]]
+commit = "b1e36e50341ac6bb39ffd4b5b223ca70044cb35b"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallRadiusSelector"
+reason = "ASM-09: use Option<f64> for the optional parsed radius"
+
+[[change]]
+commit = "b1e36e50341ac6bb39ffd4b5b223ca70044cb35b"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::radius_selector"
+reason = "ASM-09: use Option<f64> for the optional parsed radius"
+
+[[change]]
+commit = "b1e36e50341ac6bb39ffd4b5b223ca70044cb35b"
+crate = "cadmpeg-asm"
+kind = "variant"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::Full"
+reason = "ASM-05: pair the optional surface and tolerance and delete lossy zip conversion"

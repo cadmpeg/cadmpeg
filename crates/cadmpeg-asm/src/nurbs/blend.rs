@@ -8,24 +8,24 @@ use crate::nurbs::core::{
     decode_owned_curve_cache_resolving_refs_at, decode_owned_surface_cache_at,
     decode_owned_surface_cache_resolving_refs_at, decode_surface_block, surface_block,
 };
-use crate::nurbs::pcurve::{pcurve_block_with_end, NurbsPcurve};
+use crate::nurbs::pcurve::{NurbsPcurve, pcurve_block_with_end};
 use crate::nurbs::proc_curve::{
     decode_embedded_surface_with_ranges, decode_par_int_cur_isoline,
     embedded_base_curve_resolving_refs, embedded_surface, embedded_surface_with_ranges,
     optional_embedded_surface_with_bounds, par_int_cur_isoline,
 };
 use crate::nurbs::proc_surface::{
-    decode_nullable_embedded_pcurve, nullable_embedded_pcurve, revision_surface_tail,
     DecodedProceduralSurface, DecodedProceduralSurfaceDefinition, EmbeddedRollingBall,
-    EmbeddedRollingBallRadiusSelector, EmbeddedRollingBallSide, EmbeddedRollingBallThirdSide,
-    EmbeddedVariableBlend, EmbeddedVertexBlend, EmbeddedVertexBlendBoundary,
-    EmbeddedVertexBlendBoundaryGeometry, RevisionSurfaceTail,
+    EmbeddedRollingBallSide, EmbeddedRollingBallThirdSide, EmbeddedVariableBlend,
+    EmbeddedVertexBlend, EmbeddedVertexBlendBoundary, EmbeddedVertexBlendBoundaryGeometry,
+    RevisionSurfaceTail, decode_nullable_embedded_pcurve, nullable_embedded_pcurve,
+    revision_surface_tail,
 };
 use crate::nurbs::reader::{
-    marker_at, take_bool, take_f64, take_native_ident, take_native_string, take_native_vec3,
-    take_optional_range_value, take_tagged_int, unit_vector, LEN_TO_MM,
+    LEN_TO_MM, marker_at, take_bool, take_f64, take_native_ident, take_native_string,
+    take_native_vec3, take_optional_range_value, take_tagged_int, unit_vector,
 };
-use crate::nurbs::subtypes::{subtype_span, SubtypeTables};
+use crate::nurbs::subtypes::{SubtypeTables, subtype_span};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::geometry::{
@@ -1472,9 +1472,9 @@ pub(crate) fn full_rb_blend_spl_sur(
             if cur.take_enum()? != -1 {
                 return None;
             }
-            EmbeddedRollingBallRadiusSelector::None
+            None
         }
-        Token::Double(_) => EmbeddedRollingBallRadiusSelector::Value(cur.take_f64()?),
+        Token::Double(_) => Some(cur.take_f64()?),
         _ => return None,
     };
     let u_range = [

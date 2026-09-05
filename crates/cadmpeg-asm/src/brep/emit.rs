@@ -22,10 +22,10 @@ use crate::nurbs::proc_surface::{
     EmbeddedLawExpression, EmbeddedLawFormula, EmbeddedLawSurface, EmbeddedLoft, EmbeddedLoftPath,
     EmbeddedLoftProfileData, EmbeddedLoftProfileMember, EmbeddedNetSurface,
     EmbeddedRevisionCompoundLoft, EmbeddedRevisionG2Blend, EmbeddedRollingBall,
-    EmbeddedRollingBallRadiusSelector, EmbeddedScaledCompoundLoft,
-    EmbeddedScaledCompoundLoftBranch, EmbeddedScaledCompoundLoftShape, EmbeddedSkinSurface,
-    EmbeddedSkinSurfaceLayout, EmbeddedSweepSurface, EmbeddedSweepSurfaceLayout,
-    EmbeddedVariableBlend, EmbeddedVertexBlend, EmbeddedVertexBlendBoundaryGeometry,
+    EmbeddedScaledCompoundLoft, EmbeddedScaledCompoundLoftBranch, EmbeddedScaledCompoundLoftShape,
+    EmbeddedSkinSurface, EmbeddedSkinSurfaceLayout, EmbeddedSweepSurface,
+    EmbeddedSweepSurfaceLayout, EmbeddedVariableBlend, EmbeddedVertexBlend,
+    EmbeddedVertexBlendBoundaryGeometry,
 };
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
@@ -76,8 +76,8 @@ use super::topology::{
     loop_chain, region_chain, ring_coedges, shell_chain, shell_faces, subshell_ancestor_shells,
 };
 use super::{
-    embedded_pcurve_geometry, id, inherited_attribute_target, AsmBrep, Carriers, Reachable,
-    WireShellTopology,
+    AsmBrep, Carriers, Reachable, WireShellTopology, embedded_pcurve_geometry, id,
+    inherited_attribute_target,
 };
 const EPS_EMIT_EMIT_EDGES_E9: f64 = 1.0e-9;
 
@@ -1994,8 +1994,8 @@ fn emit_g2_blend_surface(
     let first = add_side("first", embedded.first);
     let second = add_side("second", embedded.second);
     let first_shape = match embedded.first_shape {
-        EmbeddedG2FirstShape::Full { surface, tolerance } => {
-            let support = surface.zip(tolerance).map(|(geometry, tolerance)| {
+        EmbeddedG2FirstShape::Full(support) => {
+            let support = support.map(|(geometry, tolerance)| {
                 let id = SurfaceId::mint(format!(
                     "{format}:brep:procedural_surface#{i}:g2:first_exact"
                 ))
@@ -2583,10 +2583,8 @@ fn emit_blend_surface(
             slice_range: native.slice_range,
             offsets: native.offsets,
             radius_selector: match native.radius_selector {
-                EmbeddedRollingBallRadiusSelector::None => RollingBallRadiusSelector::None,
-                EmbeddedRollingBallRadiusSelector::Value(value) => {
-                    RollingBallRadiusSelector::Value { value }
-                }
+                None => RollingBallRadiusSelector::None,
+                Some(value) => RollingBallRadiusSelector::Value { value },
             },
             u_range: native.u_range,
             v_range: native.v_range,
