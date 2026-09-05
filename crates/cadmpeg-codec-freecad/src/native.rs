@@ -2118,6 +2118,7 @@ pub struct ByteCoverageRecord {
 
 /// One document-wide persistent string table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "StringTableRecordWire", into = "StringTableRecordWire")]
 pub struct StringTableRecord {
     /// Stable table identity; the suffix is the zero-based `HasherIndex`.
     pub id: String,
@@ -2129,12 +2130,64 @@ pub struct StringTableRecord {
     pub save_all: bool,
     /// Native hashing threshold.
     pub threshold: i64,
-    /// Declared number of serialized entries.
-    pub declared_count: usize,
     /// Referenced side entry, or `None` for inline data.
     pub source_entry: Option<String>,
     /// Parsed records in serialized order.
     pub entries: Vec<StringTableEntry>,
+}
+
+impl StringTableRecord {
+    /// Declared number of serialized entries, equal to `entries.len()`.
+    pub fn declared_count(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct StringTableRecordWire {
+    id: String,
+    index: usize,
+    owner_property: Option<String>,
+    save_all: bool,
+    threshold: i64,
+    declared_count: usize,
+    source_entry: Option<String>,
+    entries: Vec<StringTableEntry>,
+}
+
+impl From<StringTableRecord> for StringTableRecordWire {
+    fn from(value: StringTableRecord) -> Self {
+        let declared_count = value.declared_count();
+        Self {
+            id: value.id,
+            index: value.index,
+            owner_property: value.owner_property,
+            save_all: value.save_all,
+            threshold: value.threshold,
+            declared_count,
+            source_entry: value.source_entry,
+            entries: value.entries,
+        }
+    }
+}
+
+impl TryFrom<StringTableRecordWire> for StringTableRecord {
+    type Error = String;
+
+    fn try_from(wire: StringTableRecordWire) -> Result<Self, Self::Error> {
+        if wire.declared_count != wire.entries.len() {
+            return Err("string table declared_count must equal entries.len()".to_owned());
+        }
+        Ok(Self {
+            id: wire.id,
+            index: wire.index,
+            owner_property: wire.owner_property,
+            save_all: wire.save_all,
+            threshold: wire.threshold,
+            source_entry: wire.source_entry,
+            entries: wire.entries,
+        })
+    }
 }
 
 /// One relative-coded record in a persistent string table.
