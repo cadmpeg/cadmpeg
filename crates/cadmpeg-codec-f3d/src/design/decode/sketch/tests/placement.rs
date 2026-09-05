@@ -615,8 +615,7 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
         degree,
         fit_tolerance,
         knots,
-        weights,
-        control_points,
+        poles,
         ..
     } = geometry
     else {
@@ -625,8 +624,8 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
     assert_eq!(end, bytes.len());
     assert_eq!(degree, 2);
     assert_eq!(knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(weights, [1.0; 3]);
-    assert_eq!(control_points[1], Point3::new(5.0, 7.5, 0.0));
+    assert_eq!(poles.weights().copied().collect::<Vec<_>>(), [1.0; 3]);
+    assert_eq!(poles.points().nth(1).copied().unwrap(), Point3::new(5.0, 7.5, 0.0));
     assert!((fit_tolerance - 0.000_1).abs() <= f64::EPSILON);
 
     marked_reference(&mut bytes, 201);

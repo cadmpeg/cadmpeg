@@ -2415,8 +2415,7 @@ fn same_sketch_layout(before: Option<&SketchCurveGeometry>, after: &SketchCurveG
                 degree: old_degree,
                 scalar_width: old_width,
                 knots: old_knots,
-                weights: old_weights,
-                control_points: old_points,
+                poles: old_poles,
                 ..
             }),
             SketchCurveGeometry::Nurbs {
@@ -2426,8 +2425,7 @@ fn same_sketch_layout(before: Option<&SketchCurveGeometry>, after: &SketchCurveG
                 degree,
                 scalar_width,
                 knots,
-                weights,
-                control_points,
+                poles,
                 ..
             },
         ) => {
@@ -2437,8 +2435,8 @@ fn same_sketch_layout(before: Option<&SketchCurveGeometry>, after: &SketchCurveG
                 && old_degree == degree
                 && old_width == scalar_width
                 && old_knots.len() == knots.len()
-                && old_weights.len() == weights.len()
-                && old_points.len() == control_points.len()
+                && old_poles.weights().len() == poles.weights().len()
+                && old_poles.point_count() == poles.point_count()
         }
         _ => false,
     }
@@ -2472,21 +2470,18 @@ fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
             fit_tolerance,
             scalar_width,
             knots,
-            weights,
-            control_points,
+            poles,
             ..
         } => {
             *scalar_width == 8
                 && fit_tolerance.is_finite()
                 && *fit_tolerance >= 0.0
-                && knots.len() == control_points.len() + *degree as usize + 1
+                && knots.len() == poles.point_count() + *degree as usize + 1
                 && knots.iter().all(|knot| knot.is_finite())
                 && knots_nondecreasing(knots)
-                && (weights.is_empty() || weights.len() == control_points.len())
-                && weights
-                    .iter()
+                && poles.weights()
                     .all(|weight| weight.is_finite() && *weight > 0.0)
-                && control_points.iter().all(|point| finite_point(*point))
+                && poles.points().all(|point| finite_point(*point))
         }
     }
 }

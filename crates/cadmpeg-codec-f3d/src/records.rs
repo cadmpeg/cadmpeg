@@ -13701,8 +13701,63 @@ pub struct SketchSurface {
 /// Exact analytic geometry carried by a source sketch-curve record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(try_from = "SketchCurveGeometryWire", into = "SketchCurveGeometryWire")]
+#[cfg_attr(feature = "schema", schemars(with = "SketchCurveGeometryWire"))]
 pub enum SketchCurveGeometry {
+    /// A straight line segment.
+    Line {
+        /// Start point in sketch space, millimetres.
+        start: Point3,
+        /// End point in sketch space, millimetres.
+        end: Point3,
+        /// Unit direction vector from `start` to `end`.
+        direction: Vector3,
+        /// Unit normal of the sketch plane the line lies in.
+        normal: Vector3,
+    },
+    /// A circular arc.
+    Arc {
+        /// Arc center in sketch space, millimetres.
+        center: Point3,
+        /// Unit normal of the sketch plane the arc lies in.
+        normal: Vector3,
+        /// Unit vector marking the zero-angle direction for `start_angle`/`end_angle`.
+        reference_direction: Vector3,
+        /// Arc radius in millimetres.
+        radius: f64,
+        /// Start angle in radians, measured from `reference_direction`.
+        start_angle: f64,
+        /// End angle in radians, measured from `reference_direction`.
+        end_angle: f64,
+    },
+    /// A NURBS (procedural spline) curve.
+    Nurbs {
+        /// Record index of the underlying carrier geometry, when the NURBS record
+        /// references one; `None` when the control data is self-contained.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        carrier_reference: Option<u64>,
+        /// Source per-file dynamic three-digit ASCII class tag naming the NURBS subtype.
+        subtype_class_tag: String,
+        /// Record index of the NURBS subtype record.
+        subtype_record_index: u32,
+        /// Polynomial degree of the curve.
+        degree: u32,
+        /// Source fit tolerance used when the curve was fitted, in millimetres.
+        fit_tolerance: f64,
+        /// Width in scalars of each control-point record as stored in the source
+        /// (control point components plus weight, before decoding into `poles`).
+        scalar_width: u32,
+        /// Knot vector, non-decreasing, length `poles.point_count() + degree + 1`.
+        knots: Vec<f64>,
+        /// Polynomial control points or rational point/weight pairs.
+        poles: SketchNurbsPoles,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SketchCurveGeometryWire {
     /// A straight line segment.
     Line {
         /// Start point in sketch space, millimetres.
@@ -13753,6 +13808,96 @@ pub enum SketchCurveGeometry {
         /// Control points in sketch space, millimetres, parallel to `weights`.
         control_points: Vec<Point3>,
     },
+}
+
+impl TryFrom<SketchCurveGeometryWire> for SketchCurveGeometry {
+    type Error = String;
+    fn try_from(wire: SketchCurveGeometryWire) -> Result<Self, Self::Error> {
+        Ok(match wire {
+            SketchCurveGeometryWire::Line { start, end, direction, normal } => Self::Line { start, end, direction, normal },
+            SketchCurveGeometryWire::Arc { center, normal, reference_direction, radius, start_angle, end_angle } => Self::Arc { center, normal, reference_direction, radius, start_angle, end_angle },
+            SketchCurveGeometryWire::Nurbs { carrier_reference, subtype_class_tag, subtype_record_index, degree, fit_tolerance, scalar_width, knots, weights, control_points } => Self::Nurbs { carrier_reference, subtype_class_tag, subtype_record_index, degree, fit_tolerance, scalar_width, knots, poles: SketchNurbsPoles::from_wire(control_points, weights)? },
+        })
+    }
+}
+
+impl From<SketchCurveGeometry> for SketchCurveGeometryWire {
+    fn from(geometry: SketchCurveGeometry) -> Self {
+        match geometry {
+            SketchCurveGeometry::Line { start, end, direction, normal } => Self::Line { start, end, direction, normal },
+            SketchCurveGeometry::Arc { center, normal, reference_direction, radius, start_angle, end_angle } => Self::Arc { center, normal, reference_direction, radius, start_angle, end_angle },
+            SketchCurveGeometry::Nurbs { carrier_reference, subtype_class_tag, subtype_record_index, degree, fit_tolerance, scalar_width, knots, poles } => {
+                let (control_points, weights) = match poles {
+                    SketchNurbsPoles::Polynomial(points) => (points, Vec::new()),
+                    SketchNurbsPoles::Rational(poles) => poles.into_iter().map(|pole| (pole.point, pole.weight)).unzip(),
+                };
+                Self::Nurbs { carrier_reference, subtype_class_tag, subtype_record_index, degree, fit_tolerance, scalar_width, knots, weights, control_points }
+            }
+        }
+    }
+}
+
+/// Control data for a polynomial or rational sketch spline.
+#[derive(Debug, Clone)]
+pub enum SketchNurbsPoles {
+    Polynomial(Vec<Point3>),
+    Rational(Vec<SketchNurbsPole>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SketchNurbsPole {
+    pub point: Point3,
+    pub weight: f64,
+}
+
+impl PartialEq for SketchNurbsPoles {
+    fn eq(&self, other: &Self) -> bool {
+        self.points().eq(other.points()) && self.weights().eq(other.weights())
+    }
+}
+
+impl SketchNurbsPoles {
+    pub(crate) fn from_wire(points: Vec<Point3>, weights: Vec<f64>) -> Result<Self, String> {
+        if weights.is_empty() {
+            return Ok(Self::Polynomial(points));
+        }
+        if points.len() != weights.len() {
+            return Err("weights must be absent or match every control_points entry".into());
+        }
+        Ok(Self::Rational(points.into_iter().zip(weights).map(|(point, weight)| SketchNurbsPole { point, weight }).collect()))
+    }
+
+    pub fn point_count(&self) -> usize {
+        match self {
+            Self::Polynomial(points) => points.len(),
+            Self::Rational(poles) => poles.len(),
+        }
+    }
+
+    pub fn points(&self) -> impl DoubleEndedIterator<Item = &Point3> {
+        let (points, poles): (&[Point3], &[SketchNurbsPole]) = match self {
+            Self::Polynomial(points) => (points, &[]),
+            Self::Rational(poles) => (&[], poles),
+        };
+        points.iter().chain(poles.iter().map(|pole| &pole.point))
+    }
+
+    pub fn weights(&self) -> impl ExactSizeIterator<Item = &f64> {
+        let poles: &[SketchNurbsPole] = match self {
+            Self::Polynomial(_) => &[],
+            Self::Rational(poles) => poles,
+        };
+        poles.iter().map(|pole| &pole.weight)
+    }
+
+    #[cfg(test)]
+    pub fn points_mut(&mut self) -> impl Iterator<Item = &mut Point3> {
+        let (points, poles): (&mut [Point3], &mut [SketchNurbsPole]) = match self {
+            Self::Polynomial(points) => (points, &mut []),
+            Self::Rational(poles) => (&mut [], poles),
+        };
+        points.iter_mut().chain(poles.iter_mut().map(|pole| &mut pole.point))
+    }
 }
 
 /// One member of the Design `BulkStream` `BodiesRoot` list.

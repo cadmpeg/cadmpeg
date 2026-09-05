@@ -3271,8 +3271,7 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
     let weights = f64s_at(payload, weights_at + 12, weight_count)?;
     let points_at = weights_at + 12 + weight_count * 8;
     let point_count = usize::try_from(View::u32_le_at(payload, points_at)?).ok()?;
-    if (weight_count != 0 && point_count != weight_count)
-        || View::u32_le_at(payload, points_at + 4)? as usize != point_count
+    if View::u32_le_at(payload, points_at + 4)? as usize != point_count
         || View::u32_le_at(payload, points_at + 8)? != 8
         || knot_count != point_count.checked_add(degree as usize + 1)?
     {
@@ -3301,8 +3300,7 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
             fit_tolerance: fit_tolerance * 10.0,
             scalar_width: 8,
             knots,
-            weights,
-            control_points,
+            poles: crate::records::SketchNurbsPoles::from_wire(control_points, weights).ok()?,
         },
         points_at + 12 + point_count * 24,
     ))
@@ -3361,8 +3359,7 @@ pub(crate) fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveG
     let points_at = weights_at + 12 + weight_count * 8;
     let point_count = usize::try_from(View::u32_le_at(payload, points_at)?).ok()?;
     let point_capacity = usize::try_from(View::u32_le_at(payload, points_at + 4)?).ok()?;
-    if (weight_count != 0 && point_count != weight_count)
-        || point_capacity < point_count
+    if point_capacity < point_count
         || point_capacity > 100_000
         || View::u32_le_at(payload, points_at + 8)? != 8
         || knot_count != point_count.checked_add(degree as usize + 1)?
@@ -3392,8 +3389,7 @@ pub(crate) fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveG
             fit_tolerance: fit_tolerance * 10.0,
             scalar_width: 8,
             knots,
-            weights,
-            control_points,
+            poles: crate::records::SketchNurbsPoles::from_wire(control_points, weights).ok()?,
         },
         points_at + 12 + point_count * 24,
     ))
