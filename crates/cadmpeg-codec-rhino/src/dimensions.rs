@@ -92,6 +92,27 @@ pub(crate) enum Definition {
     },
 }
 
+/// Style and V2 payload exclusive to one dimension family.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum DimensionFamily {
+    /// Pre-V5 dimension with a table index and inline text style.
+    Legacy {
+        dimstyle_index: i32,
+        text_display_mode: i32,
+        text_height: f64,
+        justification: i32,
+    },
+    /// V2 dimension with default text and definition points.
+    V2 {
+        default_text: String,
+        points: Vec<[f64; 2]>,
+        angle: Option<f64>,
+        radius: Option<f64>,
+    },
+    /// Modern dimension referencing a dimstyle UUID.
+    Modern { dimstyle_id: Uuid },
+}
+
 /// Complete common and family-specific dimension semantics.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Dimension {
@@ -99,18 +120,10 @@ pub(crate) struct Dimension {
     pub(crate) annotation_type: i32,
     pub(crate) rich_text: String,
     pub(crate) user_text: String,
-    pub(crate) dimstyle_id: Option<Uuid>,
-    pub(crate) dimstyle_index: Option<i32>,
+    pub(crate) family: DimensionFamily,
     pub(crate) plane: Plane,
     pub(crate) horizontal_direction: [f64; 2],
     pub(crate) allow_text_scaling: bool,
-    pub(crate) text_display_mode: Option<i32>,
-    pub(crate) text_height: Option<f64>,
-    pub(crate) justification: Option<i32>,
-    pub(crate) v2_default_text: Option<String>,
-    pub(crate) v2_points: Option<Vec<[f64; 2]>>,
-    pub(crate) v2_angle: Option<f64>,
-    pub(crate) v2_radius: Option<f64>,
     pub(crate) use_default_text_point: bool,
     pub(crate) user_text_point: [f64; 2],
     pub(crate) flip_arrows: [bool; 2],
@@ -807,18 +820,15 @@ fn decode_legacy(
         annotation_type: modern_annotation_type(annotation.kind),
         rich_text: annotation.rich_text,
         user_text: annotation.user_text,
-        dimstyle_id: None,
-        dimstyle_index: Some(annotation.dimstyle_index),
+        family: DimensionFamily::Legacy {
+            dimstyle_index: annotation.dimstyle_index,
+            text_display_mode: annotation.text_display_mode,
+            text_height: annotation.text_height,
+            justification: annotation.justification,
+        },
         plane,
         horizontal_direction,
         allow_text_scaling: annotation.allow_text_scaling,
-        text_display_mode: Some(annotation.text_display_mode),
-        text_height: Some(annotation.text_height),
-        justification: Some(annotation.justification),
-        v2_default_text: None,
-        v2_points: None,
-        v2_angle: None,
-        v2_radius: None,
         use_default_text_point: !annotation.user_positioned_text,
         user_text_point,
         flip_arrows: [false, false],
@@ -962,18 +972,15 @@ fn decode_v2(
         annotation_type: modern_annotation_type(kind),
         rich_text: v2_effective_text(&annotation),
         user_text: annotation.user_text,
-        dimstyle_id: None,
-        dimstyle_index: None,
+        family: DimensionFamily::V2 {
+            default_text: annotation.default_text,
+            points: annotation.points,
+            angle: v2_angle,
+            radius: v2_radius,
+        },
         plane,
         horizontal_direction: world_horizontal_in_plane(&plane),
         allow_text_scaling: false,
-        text_display_mode: None,
-        text_height: None,
-        justification: None,
-        v2_default_text: Some(annotation.default_text),
-        v2_points: Some(annotation.points),
-        v2_angle,
-        v2_radius,
         use_default_text_point,
         user_text_point,
         flip_arrows: [false, false],
@@ -1193,18 +1200,12 @@ pub(crate) fn decode(
         annotation_type: annotation.kind,
         rich_text: annotation.rich_text,
         user_text,
-        dimstyle_id: Some(annotation.dimstyle_id),
-        dimstyle_index: None,
+        family: DimensionFamily::Modern {
+            dimstyle_id: annotation.dimstyle_id,
+        },
         plane: annotation.plane,
         horizontal_direction: annotation.horizontal_direction,
         allow_text_scaling: annotation.allow_text_scaling,
-        text_display_mode: None,
-        text_height: None,
-        justification: None,
-        v2_default_text: None,
-        v2_points: None,
-        v2_angle: None,
-        v2_radius: None,
         use_default_text_point,
         user_text_point,
         flip_arrows,
@@ -1305,11 +1306,11 @@ pub(crate) fn apply_userdata(
     };
     reader.skip_remaining()?;
     dimension.arrow_position = arrow_position;
-    if dimension.dimstyle_index.is_some() {
+    if matches!(dimension.family, DimensionFamily::Legacy { .. }) {
         dimension.distance_scale = distance_scale;
     }
     dimension.detail_measured = detail_measured;
-    if dimension.dimstyle_index.is_some()
+    if matches!(dimension.family, DimensionFamily::Legacy { .. })
         && !matches!(dimension.definition, Definition::Angular { .. })
     {
         dimension.measurement *= distance_scale;
@@ -1461,43 +1462,50 @@ pub(crate) fn project(
                 .join(","),
         ),
     ]);
-    if let Some(id) = dimension.dimstyle_id {
-        properties.insert("dimstyle_id".to_string(), id.to_string());
-    }
-    if let Some(index) = dimension.dimstyle_index {
-        properties.insert("dimstyle_index".to_string(), index.to_string());
-    }
-    if let Some(mode) = dimension.text_display_mode {
-        properties.insert("text_display_mode".to_string(), mode.to_string());
-    }
-    if let Some(height) = dimension.text_height {
-        properties.insert("text_height".to_string(), height.to_string());
-    }
-    if let Some(justification) = dimension.justification {
-        properties.insert("justification".to_string(), justification.to_string());
-    }
-    if let Some(default_text) = &dimension.v2_default_text {
-        properties.insert("v2_default_text".to_string(), default_text.clone());
-    }
-    if let Some(points) = &dimension.v2_points {
-        properties.insert(
-            "v2_points".to_string(),
-            points
-                .iter()
-                .map(|point| format!("{},{}", point[0], point[1]))
-                .collect::<Vec<_>>()
-                .join(";"),
-        );
-    }
-    if let Some(angle) = dimension.v2_angle {
-        properties.insert("v2_angle_radians".to_string(), angle.to_string());
-        properties.insert(
-            "v2_numeric_value_degrees".to_string(),
-            (angle * 180.0 / std::f64::consts::PI).to_string(),
-        );
-    }
-    if let Some(radius) = dimension.v2_radius {
-        properties.insert("v2_radius".to_string(), radius.to_string());
+    match &dimension.family {
+        DimensionFamily::Modern { dimstyle_id } => {
+            properties.insert("dimstyle_id".to_string(), dimstyle_id.to_string());
+        }
+        DimensionFamily::Legacy {
+            dimstyle_index,
+            text_display_mode,
+            text_height,
+            justification,
+        } => {
+            properties.insert("dimstyle_index".to_string(), dimstyle_index.to_string());
+            properties.insert(
+                "text_display_mode".to_string(),
+                text_display_mode.to_string(),
+            );
+            properties.insert("text_height".to_string(), text_height.to_string());
+            properties.insert("justification".to_string(), justification.to_string());
+        }
+        DimensionFamily::V2 {
+            default_text,
+            points,
+            angle,
+            radius,
+        } => {
+            properties.insert("v2_default_text".to_string(), default_text.clone());
+            properties.insert(
+                "v2_points".to_string(),
+                points
+                    .iter()
+                    .map(|point| format!("{},{}", point[0], point[1]))
+                    .collect::<Vec<_>>()
+                    .join(";"),
+            );
+            if let Some(angle) = *angle {
+                properties.insert("v2_angle_radians".to_string(), angle.to_string());
+                properties.insert(
+                    "v2_numeric_value_degrees".to_string(),
+                    (angle * 180.0 / std::f64::consts::PI).to_string(),
+                );
+            }
+            if let Some(radius) = *radius {
+                properties.insert("v2_radius".to_string(), radius.to_string());
+            }
+        }
     }
     match &dimension.definition {
         Definition::Linear {
@@ -1614,7 +1622,10 @@ pub(crate) fn project(
     };
     reference(
         "dimstyle_id",
-        dimension.dimstyle_id,
+        match &dimension.family {
+            DimensionFamily::Modern { dimstyle_id } => Some(*dimstyle_id),
+            DimensionFamily::Legacy { .. } | DimensionFamily::V2 { .. } => None,
+        },
         RhinoLossCode::DimensionStyleUnresolved,
     );
     reference(
@@ -1812,8 +1823,16 @@ pub(crate) mod tests {
         assert_eq!(linear.measurement, 6.0);
         assert_eq!(linear.user_text, "user");
         assert_eq!(linear.rich_text, "user");
-        assert_eq!(linear.v2_default_text.as_deref(), Some("default"));
-        assert_eq!(linear.v2_points.as_ref().expect("V2 points").len(), 5);
+        let DimensionFamily::V2 {
+            default_text,
+            points,
+            ..
+        } = &linear.family
+        else {
+            panic!("V2 linear dimension");
+        };
+        assert_eq!(default_text.as_str(), "default");
+        assert_eq!(points.len(), 5);
         assert!(linear.use_default_text_point);
 
         let radial_bytes = v2_payload(
@@ -1854,8 +1873,11 @@ pub(crate) mod tests {
         )
         .expect("V2 angular dimension");
         assert_eq!(angular.measurement, 1.25);
-        assert_eq!(angular.v2_angle, Some(1.25));
-        assert_eq!(angular.v2_radius, Some(19.0));
+        let DimensionFamily::V2 { angle, radius, .. } = angular.family else {
+            panic!("V2 angular dimension");
+        };
+        assert_eq!(angle, Some(1.25));
+        assert_eq!(radius, Some(19.0));
         assert!(!angular.use_default_text_point);
         assert_eq!(angular.user_text_point, [4.0, 6.0]);
     }
@@ -2151,7 +2173,10 @@ pub(crate) mod tests {
         assert_eq!(linear.measurement, 30.0);
         assert_eq!(linear.annotation_type, 5);
         assert!(linear.allow_text_scaling);
-        assert_eq!(linear.dimstyle_index, Some(17));
+        let DimensionFamily::Legacy { dimstyle_index, .. } = linear.family else {
+            panic!("legacy linear dimension");
+        };
+        assert_eq!(dimstyle_index, 17);
         assert_eq!(linear.user_text, "formula");
         assert!(matches!(
             linear.definition,
