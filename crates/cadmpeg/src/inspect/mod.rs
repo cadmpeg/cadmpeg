@@ -110,6 +110,18 @@ impl FileArg {
     }
 }
 
+/// Rejects `--json` on inspect tools that have no JSON form.
+///
+/// The teaching text is pinned by `json_on_a_tool_without_a_json_form_teaches_where_json_lives`.
+fn reject_inspect_json(_: &str) -> Result<bool, String> {
+    Err(
+        "this inspect tool has no JSON form; JSON lives on `inspect FILE --json` \
+         (the container summary), `inspect container --json`, and `inspect \
+         find --json`"
+            .into(),
+    )
+}
+
 /// Arguments for `cadmpeg inspect hex`.
 #[derive(Debug, Args)]
 pub struct HexArgs {
@@ -125,7 +137,13 @@ pub struct HexArgs {
     #[arg(long, default_value_t = 16)]
     pub width: usize,
     /// Rejected placeholder: this tool has no JSON form.
-    #[arg(long, hide = true)]
+    #[arg(
+        long,
+        hide = true,
+        num_args = 0,
+        default_missing_value = "true",
+        value_parser = reject_inspect_json
+    )]
     pub json: bool,
 }
 
@@ -149,7 +167,13 @@ pub struct ReadArgs {
     #[command(flatten)]
     pub endian: EndianArgs,
     /// Rejected placeholder: this tool has no JSON form.
-    #[arg(long, hide = true)]
+    #[arg(
+        long,
+        hide = true,
+        num_args = 0,
+        default_missing_value = "true",
+        value_parser = reject_inspect_json
+    )]
     pub json: bool,
 }
 
@@ -254,7 +278,13 @@ pub struct StringsArgs {
     #[arg(long, value_enum, default_value_t = search::StringScan::Ascii)]
     pub encoding: search::StringScan,
     /// Rejected placeholder: this tool has no JSON form.
-    #[arg(long, hide = true)]
+    #[arg(
+        long,
+        hide = true,
+        num_args = 0,
+        default_missing_value = "true",
+        value_parser = reject_inspect_json
+    )]
     pub json: bool,
 }
 
@@ -273,7 +303,13 @@ pub struct StructArgs {
     #[arg(short = 'n', long, default_value_t = 1)]
     pub count: u64,
     /// Rejected placeholder: this tool has no JSON form.
-    #[arg(long, hide = true)]
+    #[arg(
+        long,
+        hide = true,
+        num_args = 0,
+        default_missing_value = "true",
+        value_parser = reject_inspect_json
+    )]
     pub json: bool,
 }
 
@@ -308,7 +344,13 @@ pub struct ExtractArgs {
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
     pub limits: LimitProfile,
     /// Rejected placeholder: this tool has no JSON form.
-    #[arg(long, hide = true)]
+    #[arg(
+        long,
+        hide = true,
+        num_args = 0,
+        default_missing_value = "true",
+        value_parser = reject_inspect_json
+    )]
     pub json: bool,
 }
 
@@ -329,7 +371,13 @@ pub struct CmpArgs {
     #[arg(long, default_value = "32", value_parser = parse_offset)]
     pub context: u64,
     /// Rejected placeholder: this tool has no JSON form.
-    #[arg(long, hide = true)]
+    #[arg(
+        long,
+        hide = true,
+        num_args = 0,
+        default_missing_value = "true",
+        value_parser = reject_inspect_json
+    )]
     pub json: bool,
 }
 
@@ -402,14 +450,6 @@ fn read_whole(path: &Path) -> Result<Vec<u8>> {
 }
 
 fn hex(args: &HexArgs) -> Result<()> {
-    if args.json {
-        bail!(
-            "`inspect hex` has no JSON form; JSON lives on `inspect FILE --json` \
-             (the container summary), `inspect container --json`, and `inspect \
-             find --json`"
-        );
-    }
-
     if args.width == 0 {
         bail!("--width must be at least 1");
     }
@@ -424,14 +464,6 @@ fn hex(args: &HexArgs) -> Result<()> {
 }
 
 fn read(args: &ReadArgs, endian: numeric::Endian) -> Result<()> {
-    if args.json {
-        bail!(
-            "`inspect read` has no JSON form; JSON lives on `inspect FILE --json` \
-             (the container summary), `inspect container --json`, and `inspect \
-             find --json`"
-        );
-    }
-
     let width = args.ty.width() as u64;
     let stride = args.stride.unwrap_or(width);
     if args.count == 0 {
@@ -533,14 +565,6 @@ fn find(args: &FindArgs, needle: Needle<'_>) -> Result<()> {
 }
 
 fn strings(args: &StringsArgs) -> Result<()> {
-    if args.json {
-        bail!(
-            "`inspect strings` has no JSON form; JSON lives on `inspect FILE --json` \
-             (the container summary), `inspect container --json`, and `inspect \
-             find --json`"
-        );
-    }
-
     if args.min == 0 {
         bail!("--min must be at least 1");
     }
@@ -557,14 +581,6 @@ fn strings(args: &StringsArgs) -> Result<()> {
 }
 
 fn structure(args: &StructArgs) -> Result<()> {
-    if args.json {
-        bail!(
-            "`inspect struct` has no JSON form; JSON lives on `inspect FILE --json` \
-             (the container summary), `inspect container --json`, and `inspect \
-             find --json`"
-        );
-    }
-
     let layout = layout::Layout::parse(&args.layout)?;
     if args.count == 0 {
         return Ok(());
@@ -628,14 +644,6 @@ fn container_list(args: &ContainerArgs) -> Result<()> {
 }
 
 fn extract_entry(args: &ExtractArgs) -> Result<()> {
-    if args.json {
-        bail!(
-            "`inspect extract` has no JSON form; JSON lives on `inspect FILE --json` \
-             (the container summary), `inspect container --json`, and `inspect \
-             find --json`"
-        );
-    }
-
     let bytes = read_whole(&args.file)?;
     let payload = container::extract(&bytes, args.limits.limits(), &args.member)
         .with_context(|| format!("extracting from {}", args.file.display()))?;
@@ -663,14 +671,6 @@ fn write_payload_to_stdout(payload: &[u8]) -> Result<()> {
 }
 
 fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
-    if args.json {
-        bail!(
-            "`inspect cmp` has no JSON form; JSON lives on `inspect FILE --json` \
-             (the container summary), `inspect container --json`, and `inspect \
-             find --json`"
-        );
-    }
-
     let a = read_whole(&args.a)?;
     let b = read_whole(&args.b)?;
     let summary = diff::compare(&a, &b, args.gap);

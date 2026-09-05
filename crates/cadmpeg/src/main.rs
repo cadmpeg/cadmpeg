@@ -140,7 +140,13 @@ enum Command {
         input_flag: Option<PathBuf>,
         /// Rejected placeholder: the artifact format comes from --format/-o and
         /// the machine-readable report from --report.
-        #[arg(long, hide = true)]
+        #[arg(
+            long,
+            hide = true,
+            num_args = 0,
+            default_missing_value = "true",
+            value_parser = reject_convert_json
+        )]
         json: bool,
         /// Stream a binary output format to standard output anyway.
         #[arg(long, hide = true)]
@@ -264,7 +270,13 @@ enum Command {
         )]
         input_flag: Option<PathBuf>,
         /// Rejected placeholder: dump's stdout is already CADIR JSON; dump report goes to --report.
-        #[arg(long, hide = true)]
+        #[arg(
+            long,
+            hide = true,
+            num_args = 0,
+            default_missing_value = "true",
+            value_parser = reject_dump_json
+        )]
         json: bool,
         /// Output file; omit to write CADIR to standard output.
         #[arg(short, long)]
@@ -377,12 +389,23 @@ fn resolve_input(positional: Option<PathBuf>, flag: Option<PathBuf>) -> PathBuf 
         .expect("clap requires one input spelling")
 }
 
-/// Error for `--json` on a command whose output is an artifact.
-fn misdirected_json(command: &str) -> anyhow::Error {
-    anyhow::anyhow!(
-        "--json is not an output selector on {command}; the artifact format comes from \
+/// Rejects `--json` on convert. Pinned by `json_on_artifact_commands_is_a_teaching_error`.
+fn reject_convert_json(_: &str) -> Result<bool, String> {
+    Err(
+        "--json is not an output selector on convert; the artifact format comes from \
          --format/-o, and the machine-readable report from --report FILE, projected \
          with `cadmpeg query`"
+            .into(),
+    )
+}
+
+/// Rejects `--json` on dump. Pinned by `json_on_artifact_commands_is_a_teaching_error`.
+fn reject_dump_json(_: &str) -> Result<bool, String> {
+    Err(
+        "dump writes the CADIR JSON artifact itself; its standard output is \
+         already JSON when -o is omitted; the dump report goes to --report FILE, \
+         projected with `cadmpeg query`"
+            .into(),
     )
 }
 
@@ -442,32 +465,21 @@ fn main() -> ExitCode {
         Command::Dump {
             input,
             input_flag,
-            json,
+            json: _,
             output,
             force,
             report,
             input_args,
             decode,
-        } => {
-            if json {
-                Err(anyhow::anyhow!(
-                    "dump writes the CADIR JSON artifact itself; its standard output is \
-                     already JSON when -o is omitted; the dump report goes to --report FILE, \
-                     projected with `cadmpeg query`"
-                )
-                .into())
-            } else {
-                commands::dump(
-                    &catalogs,
-                    &resolve_input(input, input_flag),
-                    output.as_deref(),
-                    force,
-                    report.as_deref(),
-                    input_args.forced(),
-                    &decode,
-                )
-            }
-        }
+        } => commands::dump(
+            &catalogs,
+            &resolve_input(input, input_flag),
+            output.as_deref(),
+            force,
+            report.as_deref(),
+            input_args.forced(),
+            &decode,
+        )
         .map(|()| ExitCode::SUCCESS),
         Command::Query { view } => query::run(&view)
             .map(|()| ExitCode::SUCCESS)
@@ -517,7 +529,7 @@ fn main() -> ExitCode {
         Command::Convert {
             input,
             input_flag,
-            json,
+            json: _,
             binary_stdout,
             format,
             output,
@@ -529,27 +541,23 @@ fn main() -> ExitCode {
             input_args,
             decode,
         } => {
-            if json {
-                Err(misdirected_json("convert").into())
-            } else {
-                let conversion_args = commands::ConversionArgs {
-                    losses: reject_lossy.unwrap_or_default(),
-                    allow_errors,
-                    allow_empty,
-                    output,
-                    binary_stdout,
-                    force,
-                    report,
-                    forced_input: input_args.forced(),
-                };
-                commands::convert(
-                    &catalogs,
-                    &resolve_input(input, input_flag),
-                    format.as_deref(),
-                    &conversion_args,
-                    &decode,
-                )
-            }
+            let conversion_args = commands::ConversionArgs {
+                losses: reject_lossy.unwrap_or_default(),
+                allow_errors,
+                allow_empty,
+                output,
+                binary_stdout,
+                force,
+                report,
+                forced_input: input_args.forced(),
+            };
+            commands::convert(
+                &catalogs,
+                &resolve_input(input, input_flag),
+                format.as_deref(),
+                &conversion_args,
+                &decode,
+            )
         }
         .map(|()| ExitCode::SUCCESS),
         Command::Formats => {
