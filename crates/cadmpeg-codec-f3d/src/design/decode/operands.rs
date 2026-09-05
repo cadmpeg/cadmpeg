@@ -424,7 +424,9 @@ pub fn bind_work_plane_constructions(
     let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
 
     for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPlane") {
-        scope.work_plane_construction = None;
+        if let Some(frame) = &mut scope.work_plane_frame {
+            frame.work_plane_construction = None;
+        }
         let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
             continue;
         };
@@ -480,10 +482,12 @@ pub fn bind_work_plane_constructions(
         let Ok(inputs) = inputs.try_into() else {
             continue;
         };
-        scope.work_plane_construction = Some(DesignWorkPlaneConstruction::ThreePoint {
-            placement_record_index: *placement_record_index,
-            inputs: Box::new(inputs),
-        });
+        if let Some(frame) = &mut scope.work_plane_frame {
+            frame.work_plane_construction = Some(DesignWorkPlaneConstruction::ThreePoint {
+                placement_record_index: *placement_record_index,
+                inputs: Box::new(inputs),
+            });
+        }
     }
     Ok(())
 }
@@ -494,12 +498,13 @@ pub fn bind_vertex_recipe_candidates(
     tags: &[PersistentSubentityTag],
 ) {
     for scope in scopes {
+        let scope_id = scope.id.clone();
         if let Some(DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
-            &mut scope.work_plane_construction
+            scope.work_plane_construction_mut()
         {
             for recipe in inputs.iter_mut() {
                 for reference in &mut recipe.recipe_references {
-                    bind_recipe_reference_candidates(reference, tags, Some(&scope.id));
+                    bind_recipe_reference_candidates(reference, tags, Some(&scope_id));
                 }
             }
         }

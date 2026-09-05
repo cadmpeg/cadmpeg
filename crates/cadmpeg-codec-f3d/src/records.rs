@@ -3071,10 +3071,6 @@ pub struct DesignParameterScope {
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_frame: Option<DesignWorkPlaneTransform>,
-
-    /// Exact construction rule carried by a `WorkPlane` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work_plane_construction: Option<DesignWorkPlaneConstruction>,
     /// Exact two-point construction carried by a `WorkAxis` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_axis_construction: Option<DesignWorkAxisConstruction>,
@@ -3136,6 +3132,9 @@ pub struct DesignWorkPlaneTransform {
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference: Option<DesignWorkPlaneReference>,
+    /// Exact construction rule carried by this WorkPlane frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_plane_construction: Option<DesignWorkPlaneConstruction>,
 }
 
 /// Construction record named by a `WorkPlane` frame.
@@ -3609,6 +3608,20 @@ impl DesignParameterScope {
             .and_then(|frame| frame.reference.as_ref().map(|r| r.work_plane_reference))
     }
 
+    pub(crate) fn work_plane_construction(&self) -> Option<&DesignWorkPlaneConstruction> {
+        self.work_plane_frame
+            .as_ref()
+            .and_then(|frame| frame.work_plane_construction.as_ref())
+    }
+
+    pub(crate) fn work_plane_construction_mut(
+        &mut self,
+    ) -> Option<&mut DesignWorkPlaneConstruction> {
+        self.work_plane_frame
+            .as_mut()
+            .and_then(|frame| frame.work_plane_construction.as_mut())
+    }
+
     /// The JointOrigin frame matrix, when the scope carries one.
     pub(crate) fn joint_origin_transform(&self) -> Option<[[f64; 4]; 4]> {
         self.joint_origin_frame
@@ -3650,6 +3663,7 @@ impl DesignParameterScope {
             work_plane_transform: transform,
             work_plane_transform_offset: 0,
             reference: None,
+            work_plane_construction: None,
         });
     }
 
@@ -3730,7 +3744,6 @@ impl DesignParameterScope {
             copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_frame: None,
-            work_plane_construction: None,
             work_axis_construction: None,
             joint_origin_frame: None,
             work_point_construction: None,

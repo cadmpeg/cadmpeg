@@ -419,7 +419,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_frame: None,
-        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_frame: None,
         work_point_construction: None,

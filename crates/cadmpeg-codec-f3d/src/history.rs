@@ -2692,8 +2692,9 @@ pub(crate) fn bind_vertex_recipe_history(
 
     for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPlane") {
         let transform = scope.work_plane_transform();
+        let scope_id = scope.id.clone();
         let Some(crate::records::DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
-            &mut scope.work_plane_construction
+            scope.work_plane_construction_mut()
         else {
             continue;
         };
@@ -2701,7 +2702,7 @@ pub(crate) fn bind_vertex_recipe_history(
             recipe.recipe_state_id = None;
             recipe.resolved_vertex_slot = None;
         }
-        let Some(state_id) = input_states.get(&scope.id).copied() else {
+        let Some(state_id) = input_states.get(&scope_id).copied() else {
             continue;
         };
         let Some((_, state)) = unique_history_state(histories, state_id) else {
