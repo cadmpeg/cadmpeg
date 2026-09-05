@@ -4854,13 +4854,12 @@ fn validate_extrude_selection_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
             })
             && group.member_count_offset == group.byte_offset.saturating_add(32)
             && !group.members.is_empty()
-            && group.members.len() == group.member_offsets.len()
-            && group.members.iter().copied().collect::<HashSet<_>>().len() == group.members.len()
-            && group.member_offsets.first() == Some(&group.member_count_offset.saturating_add(5))
+            && group.members.iter().map(|member| member.value).collect::<HashSet<_>>().len() == group.members.len()
+            && group.members.first().map(|member| member.offset) == Some(group.member_count_offset.saturating_add(5))
             && group
-                .member_offsets
+                .members
                 .windows(2)
-                .all(|offsets| offsets[1] == offsets[0].saturating_add(11))
+                .all(|members| members[1].offset == members[0].offset.saturating_add(11))
             && group.opaque_index != 0
             && group.opaque_index_offset
                 == group.member_count_offset.saturating_add(4).saturating_add(
@@ -4874,7 +4873,7 @@ fn validate_extrude_selection_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && group
                 .members
                 .iter()
-                .all(|member| record_indices.contains(&(native_stream, *member)))
+                .all(|member| record_indices.contains(&(native_stream, member.value)))
             && group_slots.insert((
                 native_stream,
                 group.scope_record_index,
@@ -6985,7 +6984,8 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 usize::try_from(member.group_member_ordinal)
                     .ok()
                     .and_then(|ordinal| group.members.get(ordinal))
-                    == Some(&member.record_index)
+                    .map(|reference| reference.value)
+                    == Some(member.record_index)
             })
             && header.is_some_and(|header| {
                 header.byte_offset == member.byte_offset && header.class_tag == member.class_tag
@@ -7132,7 +7132,7 @@ fn validate_extrude_selection_group_members(ctx: &Ctx, findings: &mut Vec<Findin
                     group.record_index,
                     ordinal.saturating_add(1),
                 ));
-                member.next_record_index == *next_record_index
+                member.next_record_index == next_record_index.value
                     && next_member.is_some_and(|next_member| {
                         member.next_byte_offset == next_member.byte_offset
                     })

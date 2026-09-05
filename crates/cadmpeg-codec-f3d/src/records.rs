@@ -7890,6 +7890,7 @@ pub struct DesignSketchProfileRegionMember {
 /// Counted selection group owned by an Extrude parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignExtrudeSelectionGroupWire", into = "DesignExtrudeSelectionGroupWire")]
 pub struct DesignExtrudeSelectionGroup {
     /// Globally unique deterministic identifier for this native group.
     pub id: String,
@@ -7906,9 +7907,7 @@ pub struct DesignExtrudeSelectionGroup {
     /// Byte offset of the counted member-run length.
     pub member_count_offset: u64,
     /// Ordered indexed selection-member records.
-    pub members: Vec<u32>,
-    /// Byte offsets parallel to `members`.
-    pub member_offsets: Vec<u64>,
+    pub members: Vec<Located<u32>>,
     /// Opaque nonzero u32 repeated around the f64 scalar.
     pub opaque_index: u32,
     /// Byte offset of the first `opaque_index` copy.
@@ -7923,6 +7922,94 @@ pub struct DesignExtrudeSelectionGroup {
     pub paired_class_tag: String,
     /// Byte offset of the same-index paired header.
     pub paired_byte_offset: u64,
+}
+
+/// Counted selection group owned by an Extrude parameter scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignExtrudeSelectionGroupWire {
+    /// Globally unique deterministic identifier for this native group.
+    id: String,
+    /// Owning Extrude parameter-scope record.
+    scope_record_index: u32,
+    /// Zero-based position in the scope's ordered reference table.
+    scope_reference_ordinal: u32,
+    /// Primary indexed-record identity named by the scope table.
+    record_index: u32,
+    /// Byte offset of the primary indexed-record header.
+    byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    class_tag: String,
+    /// Byte offset of the counted member-run length.
+    member_count_offset: u64,
+    /// Ordered indexed selection-member records.
+    members: Vec<u32>,
+    /// Byte offsets parallel to `members`.
+    member_offsets: Vec<u64>,
+    /// Opaque nonzero u32 repeated around the f64 scalar.
+    opaque_index: u32,
+    /// Byte offset of the first `opaque_index` copy.
+    opaque_index_offset: u64,
+    /// Opaque finite f64 between the repeated u32 copies.
+    opaque_scalar: f64,
+    /// Byte offset of `opaque_scalar`.
+    opaque_scalar_offset: u64,
+    /// Boolean byte between the two nested-record references.
+    variant: bool,
+    /// Source per-file dynamic three-digit ASCII paired class tag.
+    paired_class_tag: String,
+    /// Byte offset of the same-index paired header.
+    paired_byte_offset: u64,
+}
+
+impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
+    type Error = String;
+    fn try_from(wire: DesignExtrudeSelectionGroupWire) -> Result<Self, Self::Error> {
+        if wire.members.len() != wire.member_offsets.len() {
+            return Err("members and member_offsets must have equal lengths".into());
+        }
+        Ok(Self {
+            members: wire.members.into_iter().zip(wire.member_offsets).map(|(value, offset)| Located { value, offset }).collect(),
+            id: wire.id,
+            scope_record_index: wire.scope_record_index,
+            scope_reference_ordinal: wire.scope_reference_ordinal,
+            record_index: wire.record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            member_count_offset: wire.member_count_offset,
+            opaque_index: wire.opaque_index,
+            opaque_index_offset: wire.opaque_index_offset,
+            opaque_scalar: wire.opaque_scalar,
+            opaque_scalar_offset: wire.opaque_scalar_offset,
+            variant: wire.variant,
+            paired_class_tag: wire.paired_class_tag,
+            paired_byte_offset: wire.paired_byte_offset,
+        })
+    }
+}
+
+impl From<DesignExtrudeSelectionGroup> for DesignExtrudeSelectionGroupWire {
+    fn from(group: DesignExtrudeSelectionGroup) -> Self {
+        let (members, member_offsets) = group.members.into_iter().map(|member| (member.value, member.offset)).unzip();
+        Self {
+            members,
+            member_offsets,
+            id: group.id,
+            scope_record_index: group.scope_record_index,
+            scope_reference_ordinal: group.scope_reference_ordinal,
+            record_index: group.record_index,
+            byte_offset: group.byte_offset,
+            class_tag: group.class_tag,
+            member_count_offset: group.member_count_offset,
+            opaque_index: group.opaque_index,
+            opaque_index_offset: group.opaque_index_offset,
+            opaque_scalar: group.opaque_scalar,
+            opaque_scalar_offset: group.opaque_scalar_offset,
+            variant: group.variant,
+            paired_class_tag: group.paired_class_tag,
+            paired_byte_offset: group.paired_byte_offset,
+        }
+    }
 }
 
 /// Semantic role of a counted Extrude operand group.

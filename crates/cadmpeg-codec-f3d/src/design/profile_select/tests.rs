@@ -218,8 +218,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         byte_offset: 0,
         class_tag: "277".into(),
         member_count_offset: 0,
-        members: vec![10],
-        member_offsets: vec![0],
+        members: vec![crate::records::Located { value: 10, offset: 0 }],
         opaque_index: 1,
         opaque_index_offset: 0,
         opaque_scalar: 0.0,
@@ -281,8 +280,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
     );
 
     let mut conflicting_group = group.clone();
-    conflicting_group.members.push(11);
-    conflicting_group.member_offsets.push(0);
+    conflicting_group.members.push(crate::records::Located { value: 11, offset: 0 });
     let mut conflicting_member = member.clone();
     conflicting_member.id = "f3d:Design/BulkStream.dat:selection-member#11".into();
     conflicting_member.group_member_ordinal = 1;

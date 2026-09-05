@@ -4341,7 +4341,7 @@ fn extend_related_design_records(
             group
                 .members
                 .iter()
-                .map(move |record_index| (stream.clone(), *record_index))
+                .map(move |record_index| (stream.clone(), record_index.value))
         })
         .collect::<Vec<_>>();
     indices.extend(
