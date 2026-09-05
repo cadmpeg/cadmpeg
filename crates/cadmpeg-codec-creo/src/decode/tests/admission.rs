@@ -378,14 +378,17 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     let scan = container::scan_bytes(data.clone());
     assert_eq!(scan.features.operation_states.len(), 7);
     assert_eq!(scan.features.operation_states[0].feature_id, 40);
-    assert_eq!(scan.features.operation_states[0].kind, "Protrusion");
     assert_eq!(
-        scan.features.operation_states[0].stored_name.as_deref(),
+        scan.features.operation_states[0].kind.as_str(),
+        "Protrusion"
+    );
+    assert_eq!(
+        scan.features.operation_states[0].stored_name().as_deref(),
         Some("xProtrusion id 40")
     );
     assert_eq!(
         scan.features.operation_states[0]
-            .identifier_keyword
+            .identifier_keyword()
             .as_deref(),
         Some("id")
     );
@@ -394,22 +397,22 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         scan.features.operation_states[0].offset
     );
     assert_eq!(scan.features.operation_states[5].feature_id, 40);
-    assert_eq!(scan.features.operation_states[5].kind, "Hole");
+    assert_eq!(scan.features.operation_states[5].kind.as_str(), "Hole");
     assert!(scan.features.operation_states[0].display_state_conflict);
     assert!(scan.features.operation_states[5].display_state_conflict);
     assert_eq!(scan.features.operations.len(), 6);
     assert_eq!(scan.features.operations[0].feature_id, 40);
-    assert_eq!(scan.features.operations[0].kind, "Native Feature");
-    assert!(!scan.features.operations[0].display_name_stored);
+    assert_eq!(scan.features.operations[0].kind.as_str(), "Native Feature");
+    assert!(!scan.features.operations[0].display_name_stored());
     assert!(scan.features.operations[0].display_state_conflict);
-    assert_eq!(scan.features.operations[0].stored_name_prefix, None);
+    assert_eq!(scan.features.operations[0].stored_name_prefix(), None);
     assert_eq!(scan.features.operations[1].feature_id, 41);
-    assert_eq!(scan.features.operations[1].kind, "Round");
-    assert_eq!(scan.features.operations[2].kind, "Future Feature");
-    assert_eq!(scan.features.operations[3].kind, "Datum Plane");
-    assert_eq!(scan.features.operations[4].kind, "Draft");
-    assert_eq!(scan.features.operations[5].kind, "Surface");
-    assert_eq!(scan.features.operations[5].stored_name_prefix, Some(b'y'));
+    assert_eq!(scan.features.operations[1].kind.as_str(), "Round");
+    assert_eq!(scan.features.operations[2].kind.as_str(), "Future Feature");
+    assert_eq!(scan.features.operations[3].kind.as_str(), "Datum Plane");
+    assert_eq!(scan.features.operations[4].kind.as_str(), "Draft");
+    assert_eq!(scan.features.operations[5].kind.as_str(), "Surface");
+    assert_eq!(scan.features.operations[5].stored_name_prefix(), Some(b'y'));
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())

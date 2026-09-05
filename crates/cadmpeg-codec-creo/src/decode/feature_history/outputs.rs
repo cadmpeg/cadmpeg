@@ -283,7 +283,7 @@ pub(in super::super) fn sweep_output_kind(
         .map(|_| BodyKind::Sheet)
         .or_else(|| {
             current_feature_operation(&scan.features.operations, feature_id)
-                .filter(|operation| operation.kind == "Surface")
+                .filter(|operation| operation.kind.as_str() == "Surface")
                 .map(|_| BodyKind::Sheet)
         })
     })

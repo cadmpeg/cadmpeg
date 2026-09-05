@@ -1738,7 +1738,7 @@ fn structural_feature_ids(
 
 fn stored_operation_schema_class(operation: &FeatureOperation) -> Option<u32> {
     operation
-        .root_schema_class
+        .root_schema_class()
         .or_else(|| match operation.kind.as_str() {
             "Hole" => Some(911),
             "Round" | "Rundung" => Some(913),
@@ -2187,7 +2187,7 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
             rows.push(FeatureRow {
                 feature_id: operation.feature_id,
                 header: [0; 2],
-                root_schema_class: operation.root_schema_class,
+                root_schema_class: operation.root_schema_class(),
                 stream_offset: section.offset,
                 body: payload[body_start..body_end].to_vec(),
                 body_offset: section.offset + body_start,
@@ -2950,17 +2950,16 @@ mod feature_row_definition_tests {
     fn stored_feature_identities_require_compatible_allfeatur_rows() {
         let operation = FeatureOperation {
             feature_id: 42,
-            kind: "Round".to_string(),
-            display_name_stored: true,
-            stored_name: Some("Round id 42".to_string()),
-            stored_name_bytes: Some(b"Round id 42".to_vec()),
-            identifier_keyword: Some("id".to_string()),
-            stored_name_prefix: None,
+            kind: crate::feature::OperationKind::Stored("Round".to_string()),
+            name: crate::feature::OperationName::Stored {
+                bytes: b"Round id 42".to_vec(),
+                keyword: crate::feature::IdKeyword::Id,
+                prefix: None,
+            },
             recipe: None,
             recipe_conflict: false,
             display_state_conflict: false,
-            root_schema_class: None,
-            parent_feature_id: None,
+            depdb: None,
             offset: 0,
             state_offset: 0,
         };
@@ -3062,17 +3061,12 @@ mod feature_row_definition_tests {
         let mut definitions = feature_row_definitions(std::slice::from_ref(&row));
         let operation = |feature_id, recipe, offset| FeatureOperation {
             feature_id,
-            kind: String::new(),
-            display_name_stored: false,
-            stored_name: None,
-            stored_name_bytes: None,
-            identifier_keyword: None,
-            stored_name_prefix: None,
+            kind: crate::feature::OperationKind::Stored(String::new()),
+            name: crate::feature::OperationName::Recipe,
             recipe,
             recipe_conflict: false,
             display_state_conflict: false,
-            root_schema_class: None,
-            parent_feature_id: None,
+            depdb: None,
             offset,
             state_offset: offset,
         };

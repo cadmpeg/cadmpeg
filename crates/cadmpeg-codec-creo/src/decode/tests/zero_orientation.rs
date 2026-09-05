@@ -707,17 +707,16 @@ fn conflicting_section_sweep_names_remain_unresolved() {
         .operations
         .push(crate::feature::FeatureOperation {
             feature_id: 822,
-            kind: "Extrude".to_string(),
-            display_name_stored: true,
-            stored_name: Some("Extrude id 822".to_string()),
-            stored_name_bytes: Some(b"Extrude id 822".to_vec()),
-            identifier_keyword: Some("id".to_string()),
-            stored_name_prefix: None,
+            kind: crate::feature::OperationKind::Extrude,
+            name: crate::feature::OperationName::Stored {
+                bytes: b"Extrude id 822".to_vec(),
+                keyword: crate::feature::IdKeyword::Id,
+                prefix: None,
+            },
             recipe: None,
             recipe_conflict: true,
             display_state_conflict: false,
-            root_schema_class: None,
-            parent_feature_id: None,
+            depdb: None,
             offset: 0,
             state_offset: 0,
         });
@@ -756,17 +755,12 @@ fn conflicting_display_states_do_not_select_reference_family() {
         .operations
         .push(crate::feature::FeatureOperation {
             feature_id: 822,
-            kind: "Native Feature".to_string(),
-            display_name_stored: false,
-            stored_name: None,
-            stored_name_bytes: None,
-            identifier_keyword: None,
-            stored_name_prefix: None,
+            kind: crate::feature::OperationKind::Native,
+            name: crate::feature::OperationName::Recipe,
             recipe: None,
             recipe_conflict: false,
             display_state_conflict: true,
-            root_schema_class: None,
-            parent_feature_id: None,
+            depdb: None,
             offset: 0,
             state_offset: 0,
         });
