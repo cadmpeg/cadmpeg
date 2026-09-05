@@ -851,7 +851,7 @@ pub struct Coedge {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcurves: Vec<PcurveUse>,
     /// Optional coedge-local 3D carrier used instead of the shared edge curve.
-    #[serde(flatten, with = "coedge_use_curve_wire")]
+    #[serde(flatten, deserialize_with = "coedge_use_curve_wire::deserialize")]
     #[cfg_attr(feature = "schema", schemars(with = "CoedgeUseCurveSchemaWire"))]
     pub use_curve: Option<CoedgeUseCurve>,
 }
@@ -864,28 +864,23 @@ thread_local! {
 pub(crate) fn install_coedge_ring_neighbors(loops: &[Loop], coedges: &[Coedge]) {
     let mut neighbors = HashMap::with_capacity(coedges.len());
     for coedge in coedges {
-        let pair = loops
+        if let Some(pair) = loops
             .iter()
             .find(|loop_| loop_.id == coedge.owner_loop)
-            .and_then(|loop_| {
-                Some((
-                    loop_.next_coedge(&coedge.id)?.clone(),
-                    loop_.previous_coedge(&coedge.id)?.clone(),
-                ))
-            })
-            .unwrap_or_else(|| (coedge.id.clone(), coedge.id.clone()));
-        neighbors.insert(coedge.id.clone(), pair);
+            .and_then(|loop_| loop_.ring_neighbors_of(coedge))
+        {
+            neighbors.insert(coedge.id.clone(), pair);
+        }
     }
     COEDGE_RING_NEIGHBORS.with(|slot| *slot.borrow_mut() = neighbors);
 }
 
 /// Next and previous coedge ids from the owning loop ring.
 #[must_use]
-pub fn coedge_ring_neighbors(loops: &[Loop], coedge: &Coedge) -> (CoedgeId, CoedgeId) {
+pub fn coedge_ring_neighbors(loops: &[Loop], coedge: &Coedge) -> Option<(CoedgeId, CoedgeId)> {
     loops
         .iter()
         .find_map(|loop_| loop_.ring_neighbors_of(coedge))
-        .unwrap_or_else(|| (coedge.id.clone(), coedge.id.clone()))
 }
 
 pub(crate) fn clear_coedge_ring_neighbors() {
@@ -911,12 +906,14 @@ struct CoedgeWriteWire<'a> {
 
 impl Serialize for Coedge {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let (next, previous) = COEDGE_RING_NEIGHBORS.with(|slot| {
-            slot.borrow()
-                .get(&self.id)
-                .cloned()
-                .unwrap_or_else(|| (self.id.clone(), self.id.clone()))
-        });
+        let (next, previous) = COEDGE_RING_NEIGHBORS
+            .with(|slot| slot.borrow().get(&self.id).cloned())
+            .ok_or_else(|| {
+                serde::ser::Error::custom(format!(
+                    "coedge {} is absent from its owning loop ring",
+                    self.id.0
+                ))
+            })?;
         CoedgeWriteWire {
             id: &self.id,
             owner_loop: &self.owner_loop,
@@ -955,35 +952,14 @@ struct CoedgeUseCurveSchemaWire {
 
 mod coedge_use_curve_wire {
     use super::{CoedgeUseCurve, CurveId};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Deserialize, Deserializer};
 
-    #[derive(Serialize, Deserialize)]
+    #[derive(Deserialize)]
     struct Wire {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         use_curve: Option<CurveId>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         use_curve_parameter_range: Option<[f64; 2]>,
-    }
-
-    #[allow(
-        dead_code,
-        reason = "Coedge serializes use-curve fields on CoedgeWriteWire"
-    )]
-    pub fn serialize<S>(value: &Option<CoedgeUseCurve>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = match value {
-            Some(value) => Wire {
-                use_curve: Some(value.curve.clone()),
-                use_curve_parameter_range: Some(value.parameter_range),
-            },
-            None => Wire {
-                use_curve: None,
-                use_curve_parameter_range: None,
-            },
-        };
-        wire.serialize(serializer)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<CoedgeUseCurve>, D::Error>
@@ -1060,7 +1036,10 @@ pub struct Point {
 
 #[cfg(test)]
 mod tests {
-    use super::{Coedge, CoedgeUseCurve, Loop, LoopBoundary};
+    use super::{
+        clear_coedge_ring_neighbors, install_coedge_ring_neighbors, Coedge, CoedgeUseCurve, Loop,
+        LoopBoundary,
+    };
 
     fn coedge_json() -> serde_json::Value {
         serde_json::json!({
@@ -1086,7 +1065,17 @@ mod tests {
                 parameter_range: [0.25, 0.75],
             })
         );
-        let encoded = serde_json::to_value(coedge).unwrap();
+        let loop_ = Loop {
+            id: coedge.owner_loop.clone(),
+            face: "test:model:face#0".into(),
+            boundary: LoopBoundary::Ring {
+                coedges: vec![coedge.id.clone()],
+                vertex_uses: Vec::new(),
+            },
+        };
+        install_coedge_ring_neighbors(std::slice::from_ref(&loop_), std::slice::from_ref(&coedge));
+        let encoded = serde_json::to_value(&coedge).unwrap();
+        clear_coedge_ring_neighbors();
         assert_eq!(encoded["use_curve"], "test:model:curve#0");
         assert_eq!(
             encoded["use_curve_parameter_range"],

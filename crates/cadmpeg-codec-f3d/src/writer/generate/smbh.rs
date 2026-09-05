@@ -1289,8 +1289,14 @@ fn encode_face_topology_smbh(
                 coedge.id
             )));
         }
-        let (next_id, previous_id) =
-            cadmpeg_ir::topology::coedge_ring_neighbors(&model.loops, coedge);
+        let Some((next_id, previous_id)) =
+            cadmpeg_ir::topology::coedge_ring_neighbors(&model.loops, coedge)
+        else {
+            return Err(CodecError::malformed(format_args!(
+                "coedge {} is absent from its owning loop ring",
+                coedge.id
+            )));
+        };
         let next = coedge_ordinals.get(&next_id).copied();
         let previous = coedge_ordinals.get(&previous_id).copied();
         let radial = coedge_ordinals.get(&coedge.radial_next).copied();
