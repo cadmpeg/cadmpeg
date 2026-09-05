@@ -226,6 +226,17 @@ enum Needle<'a> {
 }
 
 impl FindArgs {
+    /// File under whichever spelling was given.
+    ///
+    /// `mode` rejects the both-present case first: `--input FILE` plus a
+    /// leftover positional is a misplaced search pattern, not a clap conflict.
+    fn path(&self) -> &Path {
+        self.file
+            .as_deref()
+            .or(self.input_flag.as_deref())
+            .expect("clap requires one file spelling")
+    }
+
     /// Resolves the flat clap fields into one search mode.
     fn mode(&self) -> Result<Needle<'_>> {
         let misplaced = match (&self.input_flag, &self.file) {
@@ -506,11 +517,7 @@ fn read(args: &ReadArgs, endian: numeric::Endian) -> Result<()> {
 }
 
 fn find(args: &FindArgs, needle: Needle<'_>) -> Result<()> {
-    let file = match (&args.input_flag, &args.file) {
-        (Some(input), _) => input,
-        (None, Some(file)) => file,
-        (None, None) => unreachable!("clap requires one file spelling"),
-    };
+    let file = args.path();
     let (pattern, described) = match needle {
         Needle::Hex(text) => (search::parse_pattern(text), format!("hex {text}")),
         Needle::Ascii(text) => (search::ascii_pattern(text), format!("ascii {text:?}")),

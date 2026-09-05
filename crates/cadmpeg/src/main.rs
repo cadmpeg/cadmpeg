@@ -127,17 +127,8 @@ enum Command {
         after_help = "Examples:\n  cadmpeg convert part.sldprt -o part.step\n  cadmpeg convert part.sldprt -o out.3dm --to rhino:archive-80\n  cadmpeg convert part.f3d -o out.igs --to 5.1\n  cadmpeg convert part.f3d --to step"
     )]
     Convert {
-        /// CAD file to convert.
-        #[arg(required_unless_present = "input_flag")]
-        input: Option<PathBuf>,
-        /// Tolerated spelling of the positional input.
-        #[arg(
-            long = "input",
-            value_name = "FILE",
-            hide = true,
-            conflicts_with = "input"
-        )]
-        input_flag: Option<PathBuf>,
+        #[command(flatten)]
+        file: inspect::FileArg,
         /// Rejected placeholder: the artifact format comes from --format/-o and
         /// the machine-readable report from --report.
         #[arg(
@@ -219,17 +210,8 @@ enum Command {
         after_help = "Examples:\n  cadmpeg inspect part.sldprt"
     )]
     Inspect {
-        /// CAD file to inspect.
-        #[arg(required_unless_present = "input_flag")]
-        input: Option<PathBuf>,
-        /// Tolerated spelling of the positional input.
-        #[arg(
-            long = "input",
-            value_name = "FILE",
-            hide = true,
-            conflicts_with = "input"
-        )]
-        input_flag: Option<PathBuf>,
+        #[command(flatten)]
+        file: inspect::FileArg,
         /// Write JSON to standard output.
         #[arg(long)]
         json: bool,
@@ -258,17 +240,8 @@ enum Command {
         after_help = "Examples:\n  cadmpeg dump part.sldprt -o part.cadir.json"
     )]
     Dump {
-        /// CAD file to dump.
-        #[arg(required_unless_present = "input_flag")]
-        input: Option<PathBuf>,
-        /// Tolerated spelling of the positional input.
-        #[arg(
-            long = "input",
-            value_name = "FILE",
-            hide = true,
-            conflicts_with = "input"
-        )]
-        input_flag: Option<PathBuf>,
+        #[command(flatten)]
+        file: inspect::FileArg,
         /// Rejected placeholder: dump's stdout is already CADIR JSON; dump report goes to --report.
         #[arg(
             long,
@@ -313,17 +286,8 @@ enum Command {
         after_help = "Examples:\n  cadmpeg check part.sldprt"
     )]
     Check {
-        /// CAD file to check.
-        #[arg(required_unless_present = "input_flag")]
-        input: Option<PathBuf>,
-        /// Tolerated spelling of the positional input.
-        #[arg(
-            long = "input",
-            value_name = "FILE",
-            hide = true,
-            conflicts_with = "input"
-        )]
-        input_flag: Option<PathBuf>,
+        #[command(flatten)]
+        file: inspect::FileArg,
         /// Write JSON to standard output.
         #[arg(long)]
         json: bool,
@@ -379,16 +343,6 @@ enum Command {
     },
 }
 
-/// Collapses the positional input and the tolerated `--input` spelling.
-///
-/// Clap guarantees exactly one of the pair is present: the positional is
-/// required unless the flag is given, and the two conflict.
-fn resolve_input(positional: Option<PathBuf>, flag: Option<PathBuf>) -> PathBuf {
-    positional
-        .or(flag)
-        .expect("clap requires one input spelling")
-}
-
 /// Rejects `--json` on convert. Pinned by `json_on_artifact_commands_is_a_teaching_error`.
 fn reject_convert_json(_: &str) -> Result<bool, String> {
     Err(
@@ -436,8 +390,7 @@ fn main() -> ExitCode {
     };
     let result: Result<ExitCode, application::refusal::ApplicationError> = match command {
         Command::Inspect {
-            input,
-            input_flag,
+            file,
             json,
             report,
             force,
@@ -448,23 +401,19 @@ fn main() -> ExitCode {
             Some(byte_command) => {
                 inspect::run(byte_command).map_err(application::refusal::ApplicationError::from)
             }
-            None => {
-                let input = resolve_input(input, input_flag);
-                commands::inspect(
-                    &catalogs,
-                    &input,
-                    input_args.forced(),
-                    json,
-                    report.as_deref(),
-                    force,
-                    limits.limits(),
-                )
-                .map(|()| ExitCode::SUCCESS)
-            }
+            None => commands::inspect(
+                &catalogs,
+                file.path(),
+                input_args.forced(),
+                json,
+                report.as_deref(),
+                force,
+                limits.limits(),
+            )
+            .map(|()| ExitCode::SUCCESS),
         },
         Command::Dump {
-            input,
-            input_flag,
+            file,
             json: _,
             output,
             force,
@@ -473,7 +422,7 @@ fn main() -> ExitCode {
             decode,
         } => commands::dump(
             &catalogs,
-            &resolve_input(input, input_flag),
+            file.path(),
             output.as_deref(),
             force,
             report.as_deref(),
@@ -485,8 +434,7 @@ fn main() -> ExitCode {
             .map(|()| ExitCode::SUCCESS)
             .map_err(application::refusal::ApplicationError::from),
         Command::Check {
-            input,
-            input_flag,
+            file,
             json,
             report,
             force,
@@ -494,7 +442,7 @@ fn main() -> ExitCode {
             decode,
         } => commands::check_cmd(
             &catalogs,
-            &resolve_input(input, input_flag),
+            file.path(),
             input_args.forced(),
             &decode,
             json,
@@ -527,8 +475,7 @@ fn main() -> ExitCode {
             force,
         ),
         Command::Convert {
-            input,
-            input_flag,
+            file,
             json: _,
             binary_stdout,
             format,
@@ -553,7 +500,7 @@ fn main() -> ExitCode {
             };
             commands::convert(
                 &catalogs,
-                &resolve_input(input, input_flag),
+                file.path(),
                 format.as_deref(),
                 &conversion_args,
                 &decode,
