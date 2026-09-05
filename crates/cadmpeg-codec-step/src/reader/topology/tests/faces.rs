@@ -591,7 +591,7 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         .records
         .iter()
         .find_map(|(&face_step, record)| {
-            let partial = record.partials.first()?;
+            let partial = record.partials.first();
             if partial.name != "ADVANCED_FACE" {
                 return None;
             }
@@ -607,8 +607,8 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
             let crate::parse::Value::Reference(second) = bounds[1] else {
                 return None;
             };
-            let first_record = exchange.records.get(&first)?.partials.first()?;
-            let second_record = exchange.records.get(&second)?.partials.first()?;
+            let first_record = exchange.records.get(&first)?.partials.first();
+            let second_record = exchange.records.get(&second)?.partials.first();
             let (outer, inner) = if first_record.name == "FACE_OUTER_BOUND" {
                 (first, second)
             } else if second_record.name == "FACE_OUTER_BOUND" {

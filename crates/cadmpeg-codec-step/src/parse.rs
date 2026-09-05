@@ -67,13 +67,59 @@ pub struct PartialRecord {
     pub parameters: Vec<Value>,
 }
 
+/// The nonempty partial population of one entity instance.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecordPartials(Vec<PartialRecord>);
+
+impl RecordPartials {
+    pub fn single(first: PartialRecord) -> Self {
+        Self(vec![first])
+    }
+
+    pub fn first(&self) -> &PartialRecord {
+        &self.0[0]
+    }
+}
+
+impl std::ops::Deref for RecordPartials {
+    type Target = [PartialRecord];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for RecordPartials {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a RecordPartials {
+    type Item = &'a PartialRecord;
+    type IntoIter = std::slice::Iter<'a, PartialRecord>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut RecordPartials {
+    type Item = &'a mut PartialRecord;
+    type IntoIter = std::slice::IterMut<'a, PartialRecord>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
 /// One DATA entity instance with its exact source extent.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RawRecord {
     /// Numeric entity-instance name without `#`.
     pub id: u64,
     /// One leaf for a simple instance or all leaves for a complex instance.
-    pub partials: Vec<PartialRecord>,
+    pub partials: RecordPartials,
     /// Half-open byte range from instance name through semicolon.
     pub span: Range<usize>,
 }
@@ -1100,7 +1146,7 @@ impl Parser<'_, '_, '_> {
         self.charge_entities(1, "step_parse_record")?;
         let partials = if self.peek(&TokenKind::LParen) {
             self.next_kind()?;
-            let mut parts = Vec::new();
+            let mut parts = vec![self.partial()?];
             while !self.peek(&TokenKind::RParen) {
                 parts.push(self.partial()?);
             }
@@ -1135,11 +1181,11 @@ impl Parser<'_, '_, '_> {
                     ),
                 });
             }
-            parts
+            RecordPartials(parts)
         } else {
-            vec![self.partial()?]
+            RecordPartials::single(self.partial()?)
         };
-        self.charge_vec_storage(&partials, "step_parse_record_storage")?;
+        self.charge_vec_storage(&partials.0, "step_parse_record_storage")?;
         self.punct(&TokenKind::Semicolon)?;
         Ok(RawRecord {
             id,
