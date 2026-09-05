@@ -4676,9 +4676,10 @@ fn stage_curve_tree(
     association: &SourceObjectAssociation,
     unknown: &UnknownId,
 ) -> cadmpeg_ir::ids::CurveId {
+    let parameters = curve.compound_parameters();
     let mut component_ids = Vec::new();
-    if let Some(compound) = &curve.compound {
-        for (index, child) in compound.children.iter().cloned().enumerate() {
+    if let crate::curves::DecodedCurve::Compound { children, .. } = &curve {
+        for (index, (_, child)) in children.iter().cloned().enumerate() {
             component_ids.push(stage_curve_tree(
                 staged,
                 child,
@@ -4690,12 +4691,12 @@ fn stage_curve_tree(
         }
     }
     let id: cadmpeg_ir::ids::CurveId = format!("rhino:object:curve#{key}.{path}").into();
-    let geometry = if curve.compound.is_some() {
+    let geometry = if curve.is_compound() {
         CurveGeometry::Unknown {
             record: Some(unknown.clone()),
         }
     } else {
-        curve.geometry
+        curve.into_leaf_geometry().expect("leaf curve")
     };
     staged.draft.model_mut().curves.push(Curve {
         id: id.clone(),
@@ -4704,7 +4705,7 @@ fn stage_curve_tree(
     });
     staged.draft.exactness(id.to_string(), Exactness::Derived);
     staged.links.push(id.to_string());
-    if let Some(compound) = curve.compound {
+    if let Some(parameters) = parameters {
         let procedure_id: cadmpeg_ir::ids::ProceduralCurveId =
             format!("rhino:object:procedural-curve#{key}.{path}").into();
         staged
@@ -4716,9 +4717,8 @@ fn stage_curve_tree(
             ProceduralCurve::new(
                 procedure_id,
                 ProceduralCurveDefinition::Compound {
-                    parameters: compound.parameters.clone(),
-                    component_parameters: compound.parameters[..compound.parameters.len() - 1]
-                        .to_vec(),
+                    component_parameters: parameters[..parameters.len() - 1].to_vec(),
+                    parameters,
                     components: component_ids,
                 },
             ),
@@ -4847,8 +4847,8 @@ fn c2_curve_to_nurbs_join(
     curve: crate::curves::DecodedCurve,
     offset: usize,
 ) -> Result<crate::curves::NurbsJoin, crate::curves::GeometryError> {
-    let Some(compound) = curve.compound else {
-        return match curve.geometry {
+    match curve {
+        crate::curves::DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Nurbs(nurbs) => Ok(crate::curves::NurbsJoin {
                 curve: nurbs,
                 warnings: Vec::new(),
@@ -4857,36 +4857,38 @@ fn c2_curve_to_nurbs_join(
                 offset,
                 "C2 child has no parameter-space representation",
             )),
-        };
-    };
-    if compound.children.len().checked_add(1) != Some(compound.parameters.len()) {
-        return Err(crate::curves::error(
-            offset,
-            "C2 polycurve parameter count mismatch",
-        ));
-    }
-    let mut segments = Vec::with_capacity(compound.children.len());
-    let mut warnings = Vec::new();
-    for (index, child) in compound.children.into_iter().enumerate() {
-        let target = [compound.parameters[index], compound.parameters[index + 1]];
-        if !target[0].is_finite() || !target[1].is_finite() || target[0] >= target[1] {
-            return Err(crate::curves::error(
-                offset,
-                "C2 polycurve segment domain is invalid",
-            ));
+        },
+        crate::curves::DecodedCurve::Compound {
+            children,
+            end_parameter,
+            ..
+        } => {
+            let mut segments = Vec::with_capacity(children.len());
+            let mut warnings = Vec::new();
+            let starts = children.iter().map(|(start, _)| *start).collect::<Vec<_>>();
+            for (index, (_, child)) in children.into_iter().enumerate() {
+                let end = starts.get(index + 1).copied().unwrap_or(end_parameter);
+                let target = [starts[index], end];
+                if !target[0].is_finite() || !target[1].is_finite() || target[0] >= target[1] {
+                    return Err(crate::curves::error(
+                        offset,
+                        "C2 polycurve segment domain is invalid",
+                    ));
+                }
+                let joined = c2_curve_to_nurbs_join(child, offset)?;
+                warnings.extend(joined.warnings);
+                segments.push(crate::curves::remap_nurbs_domain(
+                    joined.curve,
+                    target,
+                    offset,
+                )?);
+            }
+            let mut joined = crate::curves::join_nurbs_segments(segments, offset)?;
+            warnings.append(&mut joined.warnings);
+            joined.warnings = warnings;
+            Ok(joined)
         }
-        let joined = c2_curve_to_nurbs_join(child, offset)?;
-        warnings.extend(joined.warnings);
-        segments.push(crate::curves::remap_nurbs_domain(
-            joined.curve,
-            target,
-            offset,
-        )?);
     }
-    let mut joined = crate::curves::join_nurbs_segments(segments, offset)?;
-    warnings.append(&mut joined.warnings);
-    joined.warnings = warnings;
-    Ok(joined)
 }
 
 fn finite_tolerance(value: f64) -> Option<f64> {
@@ -5092,9 +5094,9 @@ fn disjoint_root(parent: &mut [usize], mut value: usize) -> usize {
 }
 
 fn curve_warnings(curve: &crate::curves::DecodedCurve) -> Vec<String> {
-    let mut warnings = curve.warnings.clone();
-    if let Some(compound) = &curve.compound {
-        for child in &compound.children {
+    let mut warnings = curve.warnings().to_vec();
+    if let crate::curves::DecodedCurve::Compound { children, .. } = curve {
+        for (_, child) in children {
             warnings.extend(curve_warnings(child));
         }
     }
@@ -5110,9 +5112,10 @@ fn commit_curve_tree(
     record: Option<UnknownId>,
     path: &str,
 ) -> cadmpeg_ir::ids::CurveId {
+    let parameters = curve.compound_parameters();
     let mut component_ids = Vec::new();
-    if let Some(compound) = &curve.compound {
-        for (index, child) in compound.children.iter().cloned().enumerate() {
+    if let crate::curves::DecodedCurve::Compound { children, .. } = &curve {
+        for (index, (_, child)) in children.iter().cloned().enumerate() {
             let child_path = format!("{path}.component-{index}");
             component_ids.push(commit_curve_tree(
                 ir,
@@ -5130,10 +5133,10 @@ fn commit_curve_tree(
     } else {
         format!("rhino:object:curve#{key}.{path}").into()
     };
-    let geometry = if curve.compound.is_some() {
+    let geometry = if curve.is_compound() {
         CurveGeometry::Unknown { record }
     } else {
-        curve.geometry
+        curve.into_leaf_geometry().expect("leaf curve")
     };
     ir.model.curves.push(Curve {
         id: id.clone(),
@@ -5141,7 +5144,7 @@ fn commit_curve_tree(
         source_object: Some(association.clone()),
     });
     set_exactness(annotations, &id, Exactness::Derived);
-    if let Some(compound) = curve.compound {
+    if let Some(parameters) = parameters {
         let procedure_id: cadmpeg_ir::ids::ProceduralCurveId = if path == "root" {
             format!("rhino:object:procedural-curve#{key}").into()
         } else {
@@ -5152,9 +5155,8 @@ fn commit_curve_tree(
             ProceduralCurve::new(
                 procedure_id,
                 ProceduralCurveDefinition::Compound {
-                    parameters: compound.parameters.clone(),
-                    component_parameters: compound.parameters[..compound.parameters.len() - 1]
-                        .to_vec(),
+                    component_parameters: parameters[..parameters.len() - 1].to_vec(),
+                    parameters,
                     components: component_ids,
                 },
             ),
@@ -5164,16 +5166,16 @@ fn commit_curve_tree(
 }
 
 fn decoded_curve_entity_count(curve: &crate::curves::DecodedCurve) -> usize {
-    let child_count = curve.compound.as_ref().map_or(0, |compound| {
-        compound
-            .children
+    let child_count = match curve {
+        crate::curves::DecodedCurve::Compound { children, .. } => children
             .iter()
-            .map(decoded_curve_entity_count)
-            .fold(0_usize, usize::saturating_add)
-    });
+            .map(|(_, child)| decoded_curve_entity_count(child))
+            .fold(0_usize, usize::saturating_add),
+        crate::curves::DecodedCurve::Leaf { .. } => 0,
+    };
     child_count
         .saturating_add(1)
-        .saturating_add(usize::from(curve.compound.is_some()))
+        .saturating_add(usize::from(curve.is_compound()))
 }
 
 fn compose_body_transform(body: &mut Body, transform: Transform) {
@@ -5201,21 +5203,26 @@ fn transform_decoded_curve(
     curve: &mut crate::curves::DecodedCurve,
     transform: Transform,
 ) -> Result<(), String> {
-    if let Some(compound) = &mut curve.compound {
-        for child in &mut compound.children {
-            transform_decoded_curve(child, transform)?;
+    match curve {
+        crate::curves::DecodedCurve::Compound { children, .. } => {
+            for (_, child) in children {
+                transform_decoded_curve(child, transform)?;
+            }
+            return Ok(());
         }
-        return Ok(());
+        crate::curves::DecodedCurve::Leaf { geometry, warnings } => {
+            let source = std::mem::replace(geometry, CurveGeometry::Unknown { record: None });
+            let mut carrier = Curve {
+                id: "rhino:hatch:placement".into(),
+                geometry: source,
+                source_object: None,
+            };
+            transform_curve(&mut carrier, transform)?;
+            *geometry = carrier.geometry;
+            let _ = warnings;
+            Ok(())
+        }
     }
-    let geometry = std::mem::replace(&mut curve.geometry, CurveGeometry::Unknown { record: None });
-    let mut carrier = Curve {
-        id: "rhino:hatch:placement".into(),
-        geometry,
-        source_object: None,
-    };
-    transform_curve(&mut carrier, transform)?;
-    curve.geometry = carrier.geometry;
-    Ok(())
 }
 
 fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String> {
@@ -5233,16 +5240,15 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             ref_direction,
             radius,
         } => {
-            let decoded = crate::curves::DecodedCurve {
-                geometry: CurveGeometry::Circle {
+            let decoded = crate::curves::DecodedCurve::leaf(
+                CurveGeometry::Circle {
                     center,
                     axis,
                     ref_direction,
                     radius,
                 },
-                compound: None,
-                warnings: Vec::new(),
-            };
+                Vec::new(),
+            );
             let mut nurbs = crate::curves::exact_nurbs(&decoded, 0)
                 .map_err(|error| format!("analytic instance curve conversion failed: {error}"))?;
             for pole in nurbs.control_points_mut() {

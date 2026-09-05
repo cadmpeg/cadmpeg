@@ -966,7 +966,7 @@ fn extended_geometry_json(
             .iter()
             .map(|boundary| {
                 serde_json::json!({
-                    "start_curve": boundary.start_curve.geometry,
+                    "start_curve": boundary.start_curve.reported_geometry(),
                     "start_nurbs": boundary.start_nurbs,
                     "end_nurbs": boundary.end_nurbs,
                     "start_pcurve": {
@@ -1073,7 +1073,7 @@ fn extended_geometry_json(
                         crate::hatch::LoopKind::Outer => "outer",
                         crate::hatch::LoopKind::Inner => "inner",
                     },
-                    "curve": hatch_loop.curve.geometry,
+                    "curve": hatch_loop.curve.reported_geometry(),
                 })
             })
             .collect::<Vec<_>>();
@@ -1105,7 +1105,7 @@ fn extended_geometry_json(
         let detail = crate::detail::decode(data, value.class_data_range.clone(), archive).ok()?;
         serde_json::json!({
             "kind": "detail_view",
-            "boundary": detail.boundary.geometry,
+            "boundary": detail.boundary.reported_geometry(),
             "page_per_model_ratio": detail.page_per_model_ratio,
         })
     } else if crate::dimensions::supported_class(value.class_id) {
@@ -1186,7 +1186,7 @@ fn structured_value_properties(
                                 serde_json::to_string(&cloud.points)
                             }
                             crate::curves::DecodedGeometry::Curve { curve } => {
-                                serde_json::to_string(&curve.geometry)
+                                serde_json::to_string(&curve.reported_geometry())
                             }
                             crate::curves::DecodedGeometry::Surface { surface } => match surface {
                                 crate::surfaces::DecodedSurface::Typed { geometry, .. } => {

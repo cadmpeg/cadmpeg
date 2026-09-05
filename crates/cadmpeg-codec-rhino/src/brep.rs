@@ -1354,9 +1354,7 @@ fn legacy_curve_shape(
         return Err(error(offset, "legacy Brep polycurve is not a curve"));
     };
     let parameters = curve
-        .compound
-        .as_ref()
-        .map(|compound| compound.parameters.as_slice())
+        .compound_parameters()
         .filter(|parameters| parameters.len() >= 2)
         .ok_or_else(|| error(offset, "legacy Brep polycurve has no parameter range"))?;
     let endpoints = legacy_decoded_curve_endpoints(curve, offset)?;
@@ -1373,21 +1371,19 @@ fn legacy_decoded_curve_endpoints(
     curve: &crate::curves::DecodedCurve,
     offset: usize,
 ) -> Result<[Point3; 2], GeometryError> {
-    if let Some(compound) = &curve.compound {
-        let first = compound
-            .children
+    if let crate::curves::DecodedCurve::Compound { children, .. } = curve {
+        let first = children
             .first()
             .ok_or_else(|| error(offset, "legacy Brep polycurve has no first segment"))?;
-        let last = compound
-            .children
+        let last = children
             .last()
             .ok_or_else(|| error(offset, "legacy Brep polycurve has no last segment"))?;
         return Ok([
-            legacy_decoded_curve_endpoints(first, offset)?[0],
-            legacy_decoded_curve_endpoints(last, offset)?[1],
+            legacy_decoded_curve_endpoints(&first.1, offset)?[0],
+            legacy_decoded_curve_endpoints(&last.1, offset)?[1],
         ]);
     }
-    match &curve.geometry {
+    match curve.leaf_geometry().expect("leaf curve") {
         CurveGeometry::Nurbs(nurbs) => {
             let first = nurbs
                 .control_points()
@@ -3185,26 +3181,22 @@ mod tests {
 
     #[test]
     fn legacy_curve_endpoints_cover_analytic_and_degenerate_children() {
-        let circle = crate::curves::DecodedCurve {
-            geometry: CurveGeometry::Circle {
+        let circle = crate::curves::DecodedCurve::leaf(
+            CurveGeometry::Circle {
                 center: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
                 axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                 radius: 2.0,
             },
-            compound: None,
-            warnings: Vec::new(),
-        };
+            Vec::new(),
+        );
         assert_eq!(
             legacy_decoded_curve_endpoints(&circle, 0).expect("circle endpoints"),
             [Point3([3.0, 2.0, 3.0]); 2]
         );
         let point = cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0);
-        let degenerate = crate::curves::DecodedCurve {
-            geometry: CurveGeometry::Degenerate { point },
-            compound: None,
-            warnings: Vec::new(),
-        };
+        let degenerate =
+            crate::curves::DecodedCurve::leaf(CurveGeometry::Degenerate { point }, Vec::new());
         assert_eq!(
             legacy_decoded_curve_endpoints(&degenerate, 0).expect("degenerate endpoints"),
             [Point3([4.0, 5.0, 6.0]); 2]

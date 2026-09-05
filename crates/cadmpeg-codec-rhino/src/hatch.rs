@@ -680,7 +680,7 @@ pub(crate) mod tests {
         assert_eq!(hatch.loops.len(), 1);
         assert_eq!(hatch.loops[0].kind, LoopKind::Outer);
         assert!(matches!(
-            hatch.loops[0].curve.geometry,
+            hatch.loops[0].curve.reported_geometry(),
             cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
         ));
     }

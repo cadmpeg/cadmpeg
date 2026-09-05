@@ -88,11 +88,7 @@ pub(crate) fn decode(
     Ok(Detail {
         source_range: range,
         view_range,
-        boundary: DecodedCurve {
-            geometry: CurveGeometry::Nurbs(geometry),
-            compound: None,
-            warnings: Vec::new(),
-        },
+        boundary: DecodedCurve::leaf(CurveGeometry::Nurbs(geometry), Vec::new()),
         page_per_model_ratio,
     })
 }
@@ -159,7 +155,7 @@ mod tests {
             decode(&bytes, 0..bytes.len(), ArchiveVersion::V8).expect("required invariant");
         assert_eq!(detail.page_per_model_ratio, 0.5);
         assert_eq!(&bytes[detail.view_range], &[7, 8, 9]);
-        let CurveGeometry::Nurbs(boundary) = detail.boundary.geometry else {
+        let CurveGeometry::Nurbs(boundary) = detail.boundary.reported_geometry() else {
             panic!("detail boundary must be NURBS");
         };
         assert_eq!(boundary.control_points()[1].x, 2.0);
@@ -191,7 +187,7 @@ mod tests {
 
         let detail =
             decode(&bytes, 0..bytes.len(), ArchiveVersion::V5).expect("required invariant");
-        let CurveGeometry::Nurbs(boundary) = detail.boundary.geometry else {
+        let CurveGeometry::Nurbs(boundary) = detail.boundary.reported_geometry() else {
             panic!("detail boundary must be NURBS");
         };
         assert_eq!(boundary.control_points()[0].z, 7.0);
