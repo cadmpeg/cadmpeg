@@ -138,7 +138,7 @@ enum Command {
             default_missing_value = "true",
             value_parser = reject_convert_json
         )]
-        json: bool,
+        json: Option<std::convert::Infallible>,
         /// Stream a binary output format to standard output anyway.
         #[arg(long, hide = true)]
         binary_stdout: bool,
@@ -250,7 +250,7 @@ enum Command {
             default_missing_value = "true",
             value_parser = reject_dump_json
         )]
-        json: bool,
+        json: Option<std::convert::Infallible>,
         /// Output file; omit to write CADIR to standard output.
         #[arg(short, long)]
         output: Option<PathBuf>,
@@ -344,7 +344,7 @@ enum Command {
 }
 
 /// Rejects `--json` on convert. Pinned by `json_on_artifact_commands_is_a_teaching_error`.
-fn reject_convert_json(_: &str) -> Result<bool, String> {
+fn reject_convert_json(_: &str) -> Result<std::convert::Infallible, String> {
     Err(
         "--json is not an output selector on convert; the artifact format comes from \
          --format/-o, and the machine-readable report from --report FILE, projected \
@@ -354,7 +354,7 @@ fn reject_convert_json(_: &str) -> Result<bool, String> {
 }
 
 /// Rejects `--json` on dump. Pinned by `json_on_artifact_commands_is_a_teaching_error`.
-fn reject_dump_json(_: &str) -> Result<bool, String> {
+fn reject_dump_json(_: &str) -> Result<std::convert::Infallible, String> {
     Err(
         "dump writes the CADIR JSON artifact itself; its standard output is \
          already JSON when -o is omitted; the dump report goes to --report FILE, \

@@ -113,7 +113,7 @@ impl FileArg {
 /// Rejects `--json` on inspect tools that have no JSON form.
 ///
 /// The teaching text is pinned by `json_on_a_tool_without_a_json_form_teaches_where_json_lives`.
-fn reject_inspect_json(_: &str) -> Result<bool, String> {
+fn reject_inspect_json(_: &str) -> Result<std::convert::Infallible, String> {
     Err(
         "this inspect tool has no JSON form; JSON lives on `inspect FILE --json` \
          (the container summary), `inspect container --json`, and `inspect \
@@ -144,7 +144,7 @@ pub struct HexArgs {
         default_missing_value = "true",
         value_parser = reject_inspect_json
     )]
-    pub json: bool,
+    pub json: Option<std::convert::Infallible>,
 }
 
 /// Arguments for `cadmpeg inspect read`.
@@ -174,7 +174,7 @@ pub struct ReadArgs {
         default_missing_value = "true",
         value_parser = reject_inspect_json
     )]
-    pub json: bool,
+    pub json: Option<std::convert::Infallible>,
 }
 
 /// Arguments for `cadmpeg inspect find`.
@@ -296,7 +296,7 @@ pub struct StringsArgs {
         default_missing_value = "true",
         value_parser = reject_inspect_json
     )]
-    pub json: bool,
+    pub json: Option<std::convert::Infallible>,
 }
 
 /// Arguments for `cadmpeg inspect struct`.
@@ -321,7 +321,7 @@ pub struct StructArgs {
         default_missing_value = "true",
         value_parser = reject_inspect_json
     )]
-    pub json: bool,
+    pub json: Option<std::convert::Infallible>,
 }
 
 /// Arguments for `cadmpeg inspect container`.
@@ -362,7 +362,7 @@ pub struct ExtractArgs {
         default_missing_value = "true",
         value_parser = reject_inspect_json
     )]
-    pub json: bool,
+    pub json: Option<std::convert::Infallible>,
 }
 
 /// Arguments for `cadmpeg inspect cmp`.
@@ -389,7 +389,7 @@ pub struct CmpArgs {
         default_missing_value = "true",
         value_parser = reject_inspect_json
     )]
-    pub json: bool,
+    pub json: Option<std::convert::Infallible>,
 }
 
 /// Runs one byte subcommand.
