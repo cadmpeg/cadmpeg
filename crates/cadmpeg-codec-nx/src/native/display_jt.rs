@@ -687,8 +687,21 @@ pub struct DisplayJtMaterialAttribute {
     pub source_offset: u64,
 }
 
+/// Extra partition-node bounds selected by flag bit zero.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DisplayJtPartitionBounds {
+    /// Reserved bounds when partition flag bit zero is clear.
+    Reserved([[f32; 3]; 2]),
+    /// Untransformed bounds when partition flag bit zero is set.
+    Untransformed([[f32; 3]; 2]),
+}
+
 /// Complete JT 9 partition node linking an LSG branch to a partition file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DisplayJtPartitionNodeWire",
+    into = "DisplayJtPartitionNodeWire"
+)]
 pub struct DisplayJtPartitionNode {
     /// Globally unique partition-node identity.
     pub id: String,
@@ -700,8 +713,6 @@ pub struct DisplayJtPartitionNode {
     pub group_version: u16,
     /// Ordered child node object identifiers.
     pub child_object_ids: Vec<u32>,
-    /// Serialized partition flags.
-    pub partition_flags: u32,
     /// Exact partition filename UTF-16 code units.
     pub file_name_code_units: Vec<u16>,
     /// Decoded partition filename.
@@ -716,12 +727,94 @@ pub struct DisplayJtPartitionNode {
     pub node_count_range: [i32; 2],
     /// Minimum and maximum descendant polygon counts.
     pub polygon_count_range: [i32; 2],
-    /// Untransformed bounds when partition flag bit zero is set.
-    pub untransformed_bounds: Option<[[f32; 3]; 2]>,
-    /// Reserved bounds when partition flag bit zero is clear.
-    pub reserved_bounds: Option<[[f32; 3]; 2]>,
+    /// Extra bounds selected by partition flag bit zero.
+    pub bounds: DisplayJtPartitionBounds,
     /// Absolute source offset of the owning compressed envelope.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtPartitionNodeWire {
+    id: String,
+    base_node: String,
+    object_id: u32,
+    group_version: u16,
+    child_object_ids: Vec<u32>,
+    partition_flags: u32,
+    file_name_code_units: Vec<u16>,
+    file_name: String,
+    transformed_bounds: [[f32; 3]; 2],
+    area: f32,
+    vertex_count_range: [i32; 2],
+    node_count_range: [i32; 2],
+    polygon_count_range: [i32; 2],
+    untransformed_bounds: Option<[[f32; 3]; 2]>,
+    reserved_bounds: Option<[[f32; 3]; 2]>,
+    source_offset: u64,
+}
+
+impl From<DisplayJtPartitionNode> for DisplayJtPartitionNodeWire {
+    fn from(value: DisplayJtPartitionNode) -> Self {
+        let (partition_flags, untransformed_bounds, reserved_bounds) = match value.bounds {
+            DisplayJtPartitionBounds::Reserved(bounds) => (0, None, Some(bounds)),
+            DisplayJtPartitionBounds::Untransformed(bounds) => (1, Some(bounds), None),
+        };
+        Self {
+            id: value.id,
+            base_node: value.base_node,
+            object_id: value.object_id,
+            group_version: value.group_version,
+            child_object_ids: value.child_object_ids,
+            partition_flags,
+            file_name_code_units: value.file_name_code_units,
+            file_name: value.file_name,
+            transformed_bounds: value.transformed_bounds,
+            area: value.area,
+            vertex_count_range: value.vertex_count_range,
+            node_count_range: value.node_count_range,
+            polygon_count_range: value.polygon_count_range,
+            untransformed_bounds,
+            reserved_bounds,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<DisplayJtPartitionNodeWire> for DisplayJtPartitionNode {
+    type Error = String;
+
+    fn try_from(wire: DisplayJtPartitionNodeWire) -> Result<Self, Self::Error> {
+        let bounds = match (
+            wire.partition_flags,
+            wire.untransformed_bounds,
+            wire.reserved_bounds,
+        ) {
+            (0, None, Some(bounds)) => DisplayJtPartitionBounds::Reserved(bounds),
+            (1, Some(bounds), None) => DisplayJtPartitionBounds::Untransformed(bounds),
+            _ => {
+                return Err(
+                    "JT partition bounds are reserved when flag bit 0 is clear and untransformed when it is set"
+                        .to_owned(),
+                )
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            base_node: wire.base_node,
+            object_id: wire.object_id,
+            group_version: wire.group_version,
+            child_object_ids: wire.child_object_ids,
+            file_name_code_units: wire.file_name_code_units,
+            file_name: wire.file_name,
+            transformed_bounds: wire.transformed_bounds,
+            area: wire.area,
+            vertex_count_range: wire.vertex_count_range,
+            node_count_range: wire.node_count_range,
+            polygon_count_range: wire.polygon_count_range,
+            bounds,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Complete JT 9 range-LOD node selecting among ordered child nodes.
@@ -1021,7 +1114,6 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
 pub(crate) struct ParsedJtPartitionNode {
     pub(crate) group_version: u16,
     pub(crate) child_object_ids: Vec<u32>,
-    pub(crate) partition_flags: u32,
     pub(crate) file_name_code_units: Vec<u16>,
     pub(crate) file_name: String,
     pub(crate) transformed_bounds: [[f32; 3]; 2],
@@ -1029,8 +1121,7 @@ pub(crate) struct ParsedJtPartitionNode {
     pub(crate) vertex_count_range: [i32; 2],
     pub(crate) node_count_range: [i32; 2],
     pub(crate) polygon_count_range: [i32; 2],
-    pub(crate) untransformed_bounds: Option<[[f32; 3]; 2]>,
-    pub(crate) reserved_bounds: Option<[[f32; 3]; 2]>,
+    pub(crate) bounds: DisplayJtPartitionBounds,
 }
 
 fn parse_jt9_group_data(bytes: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
@@ -1079,12 +1170,12 @@ pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtParti
     };
     let first_bounds = bounds_at(name_end)?;
     let mut cursor = name_end.checked_add(24)?;
-    let (reserved_bounds, transformed_bounds) = if partition_flags & 1 == 0 {
+    let transformed_bounds = if partition_flags & 1 == 0 {
         let transformed = bounds_at(cursor)?;
         cursor = cursor.checked_add(24)?;
-        (Some(first_bounds), transformed)
+        transformed
     } else {
-        (None, first_bounds)
+        first_bounds
     };
     let area = f32_at(cursor)?;
     if area < 0.0 {
@@ -1100,17 +1191,16 @@ pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtParti
     let node_count_range = count_range(cursor + 8)?;
     let polygon_count_range = count_range(cursor + 16)?;
     cursor = cursor.checked_add(24)?;
-    let untransformed_bounds = if partition_flags & 1 != 0 {
+    let bounds = if partition_flags & 1 != 0 {
         let bounds = bounds_at(cursor)?;
         cursor = cursor.checked_add(24)?;
-        Some(bounds)
+        DisplayJtPartitionBounds::Untransformed(bounds)
     } else {
-        None
+        DisplayJtPartitionBounds::Reserved(first_bounds)
     };
     (cursor == family.len()).then_some(ParsedJtPartitionNode {
         group_version,
         child_object_ids,
-        partition_flags,
         file_name_code_units,
         file_name,
         transformed_bounds,
@@ -1118,8 +1208,7 @@ pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtParti
         vertex_count_range,
         node_count_range,
         polygon_count_range,
-        untransformed_bounds,
-        reserved_bounds,
+        bounds,
     })
 }
 
@@ -3070,7 +3159,6 @@ pub fn display_jt_partition_nodes(
                 object_id: element.object_id,
                 group_version: node.group_version,
                 child_object_ids: node.child_object_ids,
-                partition_flags: node.partition_flags,
                 file_name_code_units: node.file_name_code_units,
                 file_name: node.file_name,
                 transformed_bounds: node.transformed_bounds,
@@ -3078,8 +3166,7 @@ pub fn display_jt_partition_nodes(
                 vertex_count_range: node.vertex_count_range,
                 node_count_range: node.node_count_range,
                 polygon_count_range: node.polygon_count_range,
-                untransformed_bounds: node.untransformed_bounds,
-                reserved_bounds: node.reserved_bounds,
+                bounds: node.bounds,
                 source_offset: segment.source_offset + 24,
             });
         }
@@ -4966,10 +5053,9 @@ mod tests {
         assert_eq!(node.node_count_range, [3, 4]);
         assert_eq!(node.polygon_count_range, [5, 6]);
         assert_eq!(
-            node.untransformed_bounds,
-            Some([[-3.0, -2.0, -1.0], [0.0, 1.0, 2.0]])
+            node.bounds,
+            DisplayJtPartitionBounds::Untransformed([[-3.0, -2.0, -1.0], [0.0, 1.0, 2.0]])
         );
-        assert!(node.reserved_bounds.is_none());
 
         body.pop();
         assert!(super::parse_jt9_partition_node_body(&body).is_none());
