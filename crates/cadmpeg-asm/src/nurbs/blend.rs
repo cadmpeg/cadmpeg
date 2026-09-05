@@ -77,13 +77,11 @@ pub(crate) fn cyl_spl_sur(
         let direction = cur.take_vector3()?;
         let native_position = cur.take_position()?;
         let RevisionSurfaceTail {
-            enumeration: tail_enum,
-            fit_tolerance,
-            solved_cache_domains: _,
-            parameterization,
+            cache,
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
+        let fit_tolerance = cache.fit_tolerance();
         cur.at_scope_end().then_some(())?;
         (
             directrix,
@@ -97,11 +95,7 @@ pub(crate) fn cyl_spl_sur(
                 reference_endpoints: [None; 2],
                 second_endpoints: [None; 2],
                 flags: vec![directrix_sense],
-                cache: super::proc_surface::revision_cache_form(
-                    tail_enum,
-                    fit_tolerance,
-                    parameterization,
-                )?,
+                cache: cache.into_form(),
                 discontinuities,
                 tail_flag,
                 trailing_flags: Vec::new(),
@@ -1095,13 +1089,11 @@ pub(crate) fn var_blend_spl_sur(
     let shape_length = cur.take_f64()? * LEN_TO_MM;
     let shape_tail = cur.take_long()?;
     let RevisionSurfaceTail {
-        enumeration: tail_enum,
-        fit_tolerance: stored_cache_fit_tolerance,
-        solved_cache_domains: _,
-        parameterization: tail_parameterization,
+        cache,
         discontinuities,
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
+    let stored_cache_fit_tolerance = cache.fit_tolerance();
     let cache_fit_tolerance = if shape_prefix == 0 {
         None
     } else {
@@ -1158,11 +1150,7 @@ pub(crate) fn var_blend_spl_sur(
                 shape_parameter,
                 shape_length,
                 shape_tail,
-                cache: match super::proc_surface::revision_cache_form(
-                    tail_enum,
-                    stored_cache_fit_tolerance,
-                    tail_parameterization,
-                )? {
+                cache: match cache.into_form() {
                     RevisionCacheForm::SolvedCache { fit_tolerance } => {
                         RevisionCacheForm::SolvedCache {
                             fit_tolerance: if shape_prefix == 0 {
@@ -1489,13 +1477,11 @@ pub(crate) fn full_rb_blend_spl_sur(
     let parameters = [cur.take_f64()?, cur.take_f64()?];
     let tail = cur.take_long()?;
     let RevisionSurfaceTail {
-        enumeration: tail_enum,
-        fit_tolerance: cache_fit_tolerance,
-        solved_cache_domains: _,
-        parameterization: tail_parameterization,
+        cache,
         discontinuities,
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
+    let cache_fit_tolerance = cache.fit_tolerance();
     let third = if has_third {
         Some(Box::new(rolling_ball_third_side(&mut cur)?))
     } else {
@@ -1534,11 +1520,7 @@ pub(crate) fn full_rb_blend_spl_sur(
                 shape_prefix,
                 parameters,
                 tail,
-                cache: super::proc_surface::revision_cache_form(
-                    tail_enum,
-                    cache_fit_tolerance,
-                    tail_parameterization,
-                )?,
+                cache: cache.into_form(),
                 discontinuities,
                 tail_flag,
                 third,

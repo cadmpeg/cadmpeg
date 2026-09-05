@@ -602,13 +602,11 @@ fn g2_blend_spl_sur(
         let shape_length = cur.take_f64()? * LEN_TO_MM;
         let shape_tail = cur.take_long()?;
         let RevisionSurfaceTail {
-            enumeration: tail_enum,
-            fit_tolerance,
-            solved_cache_domains: _,
-            parameterization,
+            cache,
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
+        let fit_tolerance = cache.fit_tolerance();
         let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
         cur.at_scope_end().then_some(())?;
         return Some(DecodedProceduralSurface {
@@ -627,7 +625,7 @@ fn g2_blend_spl_sur(
                     shape_parameter,
                     shape_length,
                     shape_tail,
-                    cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
+                    cache: cache.into_form(),
                     discontinuities,
                     tail_flag,
                     tail_extensions,
@@ -1819,13 +1817,11 @@ fn revision_loft(
     }
     let ints = [cur.take_long()?, cur.take_long()?];
     let RevisionSurfaceTail {
-        enumeration: tail_enum,
-        fit_tolerance,
-        solved_cache_domains: _,
-        parameterization,
+        cache,
         discontinuities,
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
+    let fit_tolerance = cache.fit_tolerance();
     cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
@@ -1834,7 +1830,7 @@ fn revision_loft(
                 revision,
                 flags,
                 ints,
-                cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
+                cache: cache.into_form(),
                 discontinuities,
                 tail_flag,
             }),
@@ -1979,13 +1975,11 @@ fn revision_compound_loft(
     let revision = cur.take_long()?;
     (revision > 0).then_some(())?;
     let RevisionSurfaceTail {
-        enumeration: tail_enum,
-        fit_tolerance,
-        solved_cache_domains: _,
-        parameterization,
+        cache,
         discontinuities,
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
+    let fit_tolerance = cache.fit_tolerance();
     let asm_extension_present = revision_loft_carries_asm_extension(table);
     let (base_profile, base_path) = revision_cl_scale(&mut cur, table, asm_extension_present)?;
     let entry_count = usize::try_from(cur.take_long()?).ok()?;
@@ -2036,7 +2030,7 @@ fn revision_compound_loft(
         definition: DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(Box::new(
             EmbeddedRevisionCompoundLoft {
                 revision,
-                cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
+                cache: cache.into_form(),
                 discontinuities,
                 tail_flag,
                 base_profile,
@@ -3048,13 +3042,11 @@ fn revision_sweep_sur(
         )
     };
     let RevisionSurfaceTail {
-        enumeration: tail_enum,
-        fit_tolerance: cache_fit_tolerance,
-        solved_cache_domains: _,
-        parameterization: tail_parameterization,
+        cache,
         discontinuities,
         tail_flag: discontinuity_flag,
     } = revision_surface_tail(&mut cur)?;
+    let cache_fit_tolerance = cache.fit_tolerance();
     cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
@@ -3064,7 +3056,7 @@ fn revision_sweep_sur(
                 primary_flag,
                 profile_endpoints,
                 path_endpoints,
-                cache: revision_cache_form(tail_enum, cache_fit_tolerance, tail_parameterization)?,
+                cache: cache.into_form(),
             }),
             layout,
             discontinuities,
@@ -3114,13 +3106,11 @@ fn taper_spl_sur(
         let pcurve = nullable_embedded_pcurve(&mut cur)?.value();
         let parameter = cur.take_f64()?;
         let RevisionSurfaceTail {
-            enumeration: tail_enum,
-            fit_tolerance,
-            solved_cache_domains: _,
-            parameterization,
+            cache,
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
+        let fit_tolerance = cache.fit_tolerance();
         // The single trailing logical after the shared tail is the record's own
         // orthogonal-sense field, positionally matching the text form's single
         // boolean. `tail_flag` above is the shared-tail illegal-region flag.
@@ -3139,7 +3129,7 @@ fn taper_spl_sur(
                     reference_endpoints,
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
-                    cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
+                    cache: cache.into_form(),
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -3238,17 +3228,41 @@ fn comp_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     })
 }
 
+/// Approximation data carried by a revision surface tail.
+pub enum RevisionSurfaceCache {
+    /// Solved surface cache tolerance and U/V knot domains.
+    Solved {
+        /// Fit tolerance of the solved surface.
+        fit_tolerance: f64,
+        /// U and V knot domains.
+        domains: [[f64; 2]; 2],
+    },
+    /// Parameter intervals and closure/singularity enums.
+    Parameterized(RevisionSurfaceParameterization),
+}
+
+impl RevisionSurfaceCache {
+    /// Fit tolerance when a solved cache is present.
+    pub(crate) fn fit_tolerance(&self) -> Option<f64> {
+        match self {
+            Self::Solved { fit_tolerance, .. } => Some(*fit_tolerance),
+            Self::Parameterized(_) => None,
+        }
+    }
+
+    /// Convert cache metadata to its neutral representation.
+    pub(crate) fn into_form(self) -> RevisionCacheForm {
+        match self {
+            Self::Solved { fit_tolerance, .. } => RevisionCacheForm::SolvedCache { fit_tolerance },
+            Self::Parameterized(parameters) => RevisionCacheForm::Parameterization(parameters),
+        }
+    }
+}
+
 /// The shared revision-gated surface tail, decoded.
 pub struct RevisionSurfaceTail {
-    /// Enum opening the tail, selecting the approximation-cache form.
-    pub enumeration: i64,
-    /// Fit tolerance of the solved cache. Carried by form `0` only.
-    pub fit_tolerance: Option<f64>,
-    /// U and V knot domains of the solved cache. Carried by form `0` only.
-    pub solved_cache_domains: Option<[[f64; 2]; 2]>,
-    /// Parameter intervals and closure/singularity enums. Carried by form `2`
-    /// only.
-    pub parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+    /// Approximation-cache form and its payload.
+    pub cache: RevisionSurfaceCache,
     /// Six ordered discontinuity arrays.
     pub discontinuities: [Vec<f64>; 6],
     /// Boolean terminating the tail.
@@ -3263,7 +3277,7 @@ pub struct RevisionSurfaceTail {
 /// retains the containing record in native form for other values.
 pub fn revision_surface_tail(cur: &mut Cur<'_>) -> Option<RevisionSurfaceTail> {
     let enumeration = cur.take_enum()?;
-    let (fit_tolerance, solved_cache_domains, parameterization) = match enumeration {
+    let cache = match enumeration {
         0 => {
             let (cache, cache_end) = surface_block(cur.toks(), cur.pos())?;
             cur.set_pos(cache_end);
@@ -3271,7 +3285,10 @@ pub fn revision_surface_tail(cur: &mut Cur<'_>) -> Option<RevisionSurfaceTail> {
                 [*cache.u_knots().first()?, *cache.u_knots().last()?],
                 [*cache.v_knots().first()?, *cache.v_knots().last()?],
             ];
-            (Some(cur.take_f64()? * LEN_TO_MM), Some(domains), None)
+            RevisionSurfaceCache::Solved {
+                fit_tolerance: cur.take_f64()? * LEN_TO_MM,
+                domains,
+            }
         }
         2 => {
             let u_interval = [
@@ -3282,18 +3299,14 @@ pub fn revision_surface_tail(cur: &mut Cur<'_>) -> Option<RevisionSurfaceTail> {
                 cur.take_optional_range_value()?.value(),
                 cur.take_optional_range_value()?.value(),
             ];
-            (
-                None,
-                None,
-                Some(cadmpeg_ir::geometry::RevisionSurfaceParameterization {
-                    u_interval,
-                    v_interval,
-                    u_closure: cur.take_enum()?,
-                    v_closure: cur.take_enum()?,
-                    u_singularity: cur.take_enum()?,
-                    v_singularity: cur.take_enum()?,
-                }),
-            )
+            RevisionSurfaceCache::Parameterized(RevisionSurfaceParameterization {
+                u_interval,
+                v_interval,
+                u_closure: cur.take_enum()?,
+                v_closure: cur.take_enum()?,
+                u_singularity: cur.take_enum()?,
+                v_singularity: cur.take_enum()?,
+            })
         }
         _ => return None,
     };
@@ -3307,27 +3320,10 @@ pub fn revision_surface_tail(cur: &mut Cur<'_>) -> Option<RevisionSurfaceTail> {
     ];
     let tail_flag = cur.take_bool()?;
     Some(RevisionSurfaceTail {
-        enumeration,
-        fit_tolerance,
-        solved_cache_domains,
-        parameterization,
+        cache,
         discontinuities,
         tail_flag,
     })
-}
-
-pub(crate) fn revision_cache_form(
-    selector: i64,
-    fit_tolerance: Option<f64>,
-    parameterization: Option<RevisionSurfaceParameterization>,
-) -> Option<RevisionCacheForm> {
-    match (selector, fit_tolerance, parameterization) {
-        (0, Some(fit_tolerance), None) => Some(RevisionCacheForm::SolvedCache { fit_tolerance }),
-        (2, None, Some(parameterization)) => {
-            Some(RevisionCacheForm::Parameterization(parameterization))
-        }
-        _ => None,
-    }
 }
 
 fn off_spl_sur(
@@ -3358,13 +3354,11 @@ fn off_spl_sur(
             flags.push(cur.take_bool()?);
         }
         let RevisionSurfaceTail {
-            enumeration: tail_enum,
-            fit_tolerance,
-            solved_cache_domains: _,
-            parameterization,
+            cache,
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
+        let fit_tolerance = cache.fit_tolerance();
         cur.at_scope_end().then_some(())?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Offset {
@@ -3379,7 +3373,7 @@ fn off_spl_sur(
                         reference_endpoints: [None; 2],
                         second_endpoints: [None; 2],
                         flags: flags.try_into().ok()?,
-                        cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
+                        cache: cache.into_form(),
                         discontinuities,
                         tail_flag,
                         trailing_flags: Vec::new(),
@@ -3447,15 +3441,16 @@ fn rot_spl_sur(
         let origin = cur.take_position()?;
         let axis = cur.take_vector3()?;
         let RevisionSurfaceTail {
-            enumeration: tail_enum,
-            fit_tolerance,
-            solved_cache_domains,
-            parameterization,
+            cache,
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
+        let fit_tolerance = cache.fit_tolerance();
         cur.at_scope_end().then_some(())?;
-        let angular_interval = solved_cache_domains?[1];
+        let angular_interval = match &cache {
+            RevisionSurfaceCache::Solved { domains, .. } => domains[1],
+            RevisionSurfaceCache::Parameterized(_) => return None,
+        };
         let parameter_interval = [
             profile_endpoints[0].unwrap_or(*profile.knots().first()?),
             profile_endpoints[1].unwrap_or(*profile.knots().last()?),
@@ -3477,7 +3472,7 @@ fn rot_spl_sur(
                     reference_endpoints: profile_endpoints,
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
-                    cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
+                    cache: cache.into_form(),
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -3542,13 +3537,11 @@ fn sum_spl_sur(
         ];
         let origin = cur.take_position()?;
         let RevisionSurfaceTail {
-            enumeration: tail_enum,
-            fit_tolerance,
-            solved_cache_domains: _,
-            parameterization,
+            cache,
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
+        let fit_tolerance = cache.fit_tolerance();
         cur.at_scope_end().then_some(())?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Sum {
@@ -3565,7 +3558,7 @@ fn sum_spl_sur(
                     reference_endpoints: first_endpoints,
                     second_endpoints,
                     flags: Vec::new(),
-                    cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
+                    cache: cache.into_form(),
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -3637,13 +3630,11 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         let revision = cur.take_long()?;
         (revision > 0).then_some(())?;
         let RevisionSurfaceTail {
-            enumeration: tail_enum,
-            fit_tolerance,
-            solved_cache_domains: _,
-            parameterization,
+            cache,
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
+        let fit_tolerance = cache.fit_tolerance();
         // The two unextended parameter intervals, each an ordered [lo, hi] pair
         // of optional bounds. This subtype serializes them U-then-V; loft wrap
         // ranges sharing `RevisionRanges` serialize V-then-U. Store the
@@ -3671,7 +3662,7 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                         reference_endpoints: [None; 2],
                         second_endpoints: [None; 2],
                         flags: Vec::new(),
-                        cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
+                        cache: cache.into_form(),
                         discontinuities,
                         tail_flag,
                         trailing_flags: Vec::new(),
@@ -3723,10 +3714,7 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         let revision = cur.take_long()?;
         (revision > 0).then_some(())?;
         let RevisionSurfaceTail {
-            enumeration: tail_enum,
-            fit_tolerance,
-            solved_cache_domains: _,
-            parameterization,
+            cache,
             discontinuities: tail_discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
@@ -3734,7 +3722,7 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         for bound in &mut bounds {
             *bound = cur.take_optional_range_value()?.value();
         }
-        cache_fit_tolerance = fit_tolerance;
+        cache_fit_tolerance = cache.fit_tolerance();
         discontinuities = tail_discontinuities.clone();
         discontinuity_flag = tail_flag;
         parameter_ranges = [
@@ -3748,7 +3736,7 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             reference_endpoints: [None; 2],
             second_endpoints: [None; 2],
             flags: Vec::new(),
-            cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
+            cache: cache.into_form(),
             discontinuities: tail_discontinuities,
             tail_flag,
             trailing_flags: Vec::new(),
@@ -4050,13 +4038,11 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let (revision_form, cache_fit_tolerance, discontinuities, discontinuity_flag) =
         if let Some((revision, support_bounds)) = revision_form_head {
             let RevisionSurfaceTail {
-                enumeration: tail_enum,
-                fit_tolerance,
-                solved_cache_domains: _,
-                parameterization: tail_parameterization,
+                cache,
                 discontinuities,
                 tail_flag,
             } = revision_surface_tail(&mut cur)?;
+            let fit_tolerance = cache.fit_tolerance();
             (
                 Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
                     revision,
@@ -4064,7 +4050,7 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                     reference_endpoints: [None; 2],
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
-                    cache: revision_cache_form(tail_enum, fit_tolerance, tail_parameterization)?,
+                    cache: cache.into_form(),
                     discontinuities: discontinuities.clone(),
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -4482,10 +4468,9 @@ mod tail_selector_tests {
         let mut cur = Cur::at(&toks, 0);
         let tail = revision_surface_tail(&mut cur).expect("parameterized tail");
         assert_eq!(cur.pos(), toks.len());
-        assert_eq!(tail.enumeration, 2);
-        assert_eq!(tail.fit_tolerance, None);
-        assert_eq!(tail.solved_cache_domains, None);
-        let parameterization = tail.parameterization.expect("parameterization");
+        let RevisionSurfaceCache::Parameterized(parameterization) = tail.cache else {
+            panic!("parameterization");
+        };
         assert_eq!(parameterization.u_interval, [Some(0.25), None]);
         assert_eq!(parameterization.v_interval, [Some(-1.5), Some(3.5)]);
         assert_eq!(parameterization.u_closure, 1);
