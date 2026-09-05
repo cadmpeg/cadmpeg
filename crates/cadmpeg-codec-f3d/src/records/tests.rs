@@ -3042,3 +3042,68 @@ fn canvas_bounds_preserve_segment_order_and_derive_extents() {
         assert!(super::DesignCanvasBounds::try_from(segments).is_err());
     }
 }
+
+#[test]
+fn canvas_bounds_decode_u_and_v_mirroring_from_endpoint_order() {
+    use super::DesignCanvasBounds;
+    use cadmpeg_ir::math::Point2;
+    assert_eq!(
+        DesignCanvasBounds::try_from([
+            [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
+            [Point2::new(-2.0, 4.0), Point2::new(3.0, 4.0)],
+        ]).ok().map(DesignCanvasBounds::mirroring),
+        Some((false, false))
+    );
+    assert_eq!(
+        DesignCanvasBounds::try_from([
+            [Point2::new(3.0, -1.0), Point2::new(-2.0, -1.0)],
+            [Point2::new(3.0, 4.0), Point2::new(-2.0, 4.0)],
+        ]).ok().map(DesignCanvasBounds::mirroring),
+        Some((true, false))
+    );
+    assert_eq!(
+        DesignCanvasBounds::try_from([
+            [Point2::new(-2.0, 4.0), Point2::new(3.0, 4.0)],
+            [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
+        ]).ok().map(DesignCanvasBounds::mirroring),
+        Some((false, true))
+    );
+    assert_eq!(
+        DesignCanvasBounds::try_from([
+            [Point2::new(3.0, 4.0), Point2::new(-2.0, 4.0)],
+            [Point2::new(3.0, -1.0), Point2::new(-2.0, -1.0)],
+        ]).ok().map(DesignCanvasBounds::mirroring),
+        Some((true, true))
+    );
+    assert_eq!(
+        DesignCanvasBounds::try_from([
+            [Point2::new(-2.0, 4.0), Point2::new(-2.0, -1.0)],
+            [Point2::new(3.0, 4.0), Point2::new(3.0, -1.0)],
+        ]).ok().map(DesignCanvasBounds::mirroring),
+        Some((false, true))
+    );
+    assert_eq!(
+        DesignCanvasBounds::try_from([
+            [Point2::new(3.0, -1.0), Point2::new(3.0, 4.0)],
+            [Point2::new(-2.0, -1.0), Point2::new(-2.0, 4.0)],
+        ]).ok().map(DesignCanvasBounds::mirroring),
+        Some((true, false))
+    );
+    assert_eq!(
+        DesignCanvasBounds::try_from([
+            [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
+            [
+                Point2::new(f64::from_bits((-2.0f64).to_bits() + 4), 4.0),
+                Point2::new(f64::from_bits(3.0f64.to_bits() + 4), 4.0),
+            ],
+        ]).ok().map(DesignCanvasBounds::mirroring),
+        Some((false, false))
+    );
+    assert_eq!(
+        DesignCanvasBounds::try_from([
+            [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
+            [Point2::new(-2.0, 4.0), Point2::new(2.0, 4.0)],
+        ]).ok().map(DesignCanvasBounds::mirroring),
+        None
+    );
+}
