@@ -824,13 +824,17 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
         occurrence_identity: None,
         neutron_role: "role".into(),
         neutron_role_offset: 0,
-        transform: selected,
-        transform_offset: Some(0),
-        carrier_transform_offset: Some(0),
+        placement: Some(crate::records::DesignComponentInsertMatrix {
+            scope: crate::records::Located { value: selected, offset: 0 },
+            carrier_offset: Some(0),
+        }),
     };
     let ignored_construction = crate::records::DesignComponentInsertConstruction {
         neutron_role: "other".into(),
-        transform: ignored,
+        placement: Some(crate::records::DesignComponentInsertMatrix {
+            scope: crate::records::Located { value: ignored, offset: 0 },
+            carrier_offset: Some(0),
+        }),
         ..selected_construction.clone()
     };
 

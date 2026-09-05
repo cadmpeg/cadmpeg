@@ -93,14 +93,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
             occurrence_identity: Some(17),
             neutron_role: "cccccccc-dddd-eeee-ffff-000000000000".into(),
             neutron_role_offset: 259,
-            transform: [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-            transform_offset: None,
-            carrier_transform_offset: None,
+            placement: None,
         });
     }
 

@@ -330,7 +330,7 @@ pub fn bind_component_insert_features(
         };
         let mut matches = table.references.iter().filter(|reference| {
             reference.neutron_role == construction.neutron_role
-                && reference.transform == Some(construction.transform)
+                && reference.transform == Some(*construction.transform())
         });
         let Some(reference) = matches.next() else {
             continue;
@@ -481,7 +481,7 @@ where
         .filter(|(construction_stream, construction)| {
             *construction_stream == stream && construction.neutron_role == role
         })
-        .map(|(_, construction)| construction.transform)
+        .map(|(_, construction)| *construction.transform())
         .collect()
 }
 

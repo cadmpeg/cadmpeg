@@ -174,7 +174,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             parent: OccurrenceParent::Root,
             ordinal: u32::try_from(ordinal_start.saturating_add(occurrences.len()))
                 .unwrap_or(u32::MAX),
-            transform: neutral_transform(construction.transform),
+            transform: neutral_transform(*construction.transform()),
             linked_prototype: None,
             scale: [1.0; 3],
             name: Some(construction.neutron_role.clone()),

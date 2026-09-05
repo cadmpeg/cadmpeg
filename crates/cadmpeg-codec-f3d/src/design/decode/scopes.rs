@@ -2224,10 +2224,14 @@ pub(crate) fn exact_component_insert_construction(
         occurrence_identity: Some(occurrence_identity),
         neutron_role: neutron_role.clone(),
         neutron_role_offset: u64::try_from(*neutron_role_offset).ok()?,
-        transform,
-        transform_offset: transform_at.and_then(|offset| u64::try_from(offset).ok()),
-        carrier_transform_offset: carrier_transform_offset
-            .and_then(|offset| u64::try_from(offset).ok()),
+        placement: match (transform_at, *carrier_transform_offset) {
+            (Some(offset), carrier_offset) => Some(crate::records::DesignComponentInsertMatrix {
+                scope: crate::records::Located { value: transform, offset: u64::try_from(offset).ok()? },
+                carrier_offset: carrier_offset.map(u64::try_from).transpose().ok()?,
+            }),
+            (None, None) => None,
+            (None, Some(_)) => return None,
+        },
     })
 }
 
