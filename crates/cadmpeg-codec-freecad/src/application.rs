@@ -53,7 +53,7 @@ pub(crate) fn transfer(
                 dependencies: object.dependencies.clone(),
                 side_entries: owned
                     .iter()
-                    .flat_map(|property| &property.side_entries)
+                    .flat_map(|property| property.side_entries())
                     .cloned()
                     .collect(),
                 inert_payload: owned.iter().any(|property| {
@@ -79,12 +79,12 @@ pub(crate) fn transfer(
                             type_name: property.type_name.clone(),
                             family: property.family,
                             order: property.order,
-                            links: property.links.clone(),
+                            links: property.links().to_vec(),
                             byte_start: property.byte_start,
                             byte_end: property.byte_end,
                             data,
                             payloads: property
-                                .side_entries
+                                .side_entries()
                                 .iter()
                                 .filter_map(|name| entries.get(name.as_str()))
                                 .map(|entry| ApplicationPayloadRecord {

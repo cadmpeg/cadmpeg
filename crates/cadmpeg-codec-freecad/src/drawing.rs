@@ -63,13 +63,13 @@ pub(crate) fn transfer(
                 .collect(),
                 relationships: owned
                     .iter()
-                    .filter(|property| !property.links.is_empty())
-                    .map(|property| (property.name.clone(), property.links.clone()))
+                    .filter(|property| !property.links().is_empty())
+                    .map(|property| (property.name.clone(), property.links().to_vec()))
                     .collect(),
                 parameters: drawing_parameters(&owned)?,
                 side_entries: owned
                     .iter()
-                    .flat_map(|property| &property.side_entries)
+                    .flat_map(|property| property.side_entries())
                     .cloned()
                     .collect(),
             })
@@ -357,12 +357,12 @@ fn source_links(
         )));
     }
     let is_list = is_link_list_type(&property.type_name);
-    if !is_list && property.links.len() > 1 {
+    if !is_list && property.links().len() > 1 {
         return Err(CodecError::malformed(format_args!(
             "drawing source {name} has multiple targets",
         )));
     }
-    Ok(property.links.clone())
+    Ok(property.links().to_vec())
 }
 
 fn is_link_carrier_type(type_name: &str) -> bool {
@@ -414,7 +414,7 @@ fn typed_links(
     type_name: &str,
 ) -> Result<Vec<crate::native::LinkTarget>, CodecError> {
     Ok(typed_property(properties, name, type_name)?
-        .map(|property| property.links.clone())
+        .map(|property| property.links().to_vec())
         .unwrap_or_default())
 }
 
@@ -426,7 +426,7 @@ fn typed_single_link(
     let Some(property) = typed_property(properties, name, type_name)? else {
         return Ok(None);
     };
-    match property.links.as_slice() {
+    match property.links() {
         [] => Ok(None),
         [link] => Ok(Some(link.clone())),
         _ => Err(CodecError::malformed(format_args!(
@@ -616,7 +616,7 @@ fn root_value<'a>(
     match selected_orders.as_slice() {
         [] => Ok(None),
         [selected_order] => property
-            .values
+            .values()
             .iter()
             .find(|value| value.order == *selected_order)
             .map(Some)

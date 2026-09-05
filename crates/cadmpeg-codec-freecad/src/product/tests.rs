@@ -1027,7 +1027,7 @@ fn restores_shadowed_link_subelement_name() {
         .iter()
         .find(|property| property.name == "Support")
         .expect("support");
-    assert_eq!(support.links[0].subelements, ["Face7"]);
+    assert_eq!(support.links()[0].subelements, ["Face7"]);
 }
 
 #[test]

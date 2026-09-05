@@ -47,7 +47,7 @@ pub(crate) fn schema_three_uses_the_object_envelope_and_defaults_file_version() 
     assert_eq!(objects[0].type_name, "App::FeaturePython");
     assert_eq!(properties.len(), 2);
     assert_eq!(
-        properties[1].links[0].object(),
+        properties[1].links()[0].object(),
         Some(objects[0].id.as_str())
     );
     assert!(crate::validate_native(result.ir()).is_empty());
@@ -82,7 +82,7 @@ pub(crate) fn schema_two_uses_the_feature_envelope_and_common_property_grammar()
     );
     assert_eq!(properties.len(), 2);
     assert_eq!(
-        properties[1].links[0].object(),
+        properties[1].links()[0].object(),
         Some(objects[0].id.as_str())
     );
     assert!(objects.iter().all(|object| object.persistent_id.is_none()));
@@ -244,42 +244,42 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .expect("support");
     assert_eq!(support.owner, "fcstd:native:object#Body");
     assert_eq!(
-        support.links[0].object(),
+        support.links()[0].object(),
         Some("fcstd:native:object#Sketch")
     );
     assert_eq!(support.family, crate::native::PropertyFamily::Link);
-    assert_eq!(support.links[0].subelements, vec!["Face1"]);
-    assert_eq!(
-        support.dynamic.as_ref().and_then(|meta| meta.read_only),
-        Some(true)
-    );
+    assert_eq!(support.links()[0].subelements, vec!["Face1"]);
+    let crate::native::PropertyBody::Persisted { dynamic, .. } = &support.body else {
+        panic!("support property is not persisted");
+    };
+    assert_eq!(dynamic.as_ref().and_then(|meta| meta.read_only), Some(true));
     let members = properties
         .iter()
         .find(|property| property.name == "Members")
         .expect("members");
-    assert_eq!(members.links.len(), 2);
+    assert_eq!(members.links().len(), 2);
     assert_eq!(
-        members.links[0].object(),
+        members.links()[0].object(),
         Some("fcstd:native:object#Sketch")
     );
-    assert_eq!(members.links[1].object(), None);
+    assert_eq!(members.links()[1].object(), None);
     let transient = properties
         .iter()
         .find(|property| property.name == "TransientState")
         .expect("transient");
-    assert!(transient.transient);
+    assert!(transient.is_transient());
     assert_eq!(transient.status, Some(8));
     let payload = properties
         .iter()
         .find(|property| property.name == "Payload")
         .expect("payload");
-    assert_eq!(payload.side_entries, vec!["Payload.bin"]);
+    assert_eq!(payload.side_entries(), vec!["Payload.bin"]);
     let shape = properties
         .iter()
         .find(|property| property.name == "Shape")
         .expect("shape");
     assert_eq!(shape.family, crate::native::PropertyFamily::Geometry);
-    assert_eq!(shape.side_entries, vec!["Shape.brp"]);
+    assert_eq!(shape.side_entries(), vec!["Shape.brp"]);
     let shape_payloads = namespace
         .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
         .expect("shape payloads");
@@ -612,5 +612,5 @@ fn unknown_property_runtime_names_do_not_select_a_family_by_substring() {
         .find(|property| property.name == "Custom")
         .expect("custom property");
     assert_eq!(property.family, crate::native::PropertyFamily::Unknown);
-    assert!(property.links.is_empty());
+    assert!(property.links().is_empty());
 }

@@ -34,12 +34,12 @@ pub(crate) fn transfer(
             owned.sort_by_key(|property| (property.byte_start, property.byte_end));
             let references = owned
                 .iter()
-                .filter(|property| !property.links.is_empty())
-                .map(|property| (property.name.clone(), property.links.clone()))
+                .filter(|property| !property.links().is_empty())
+                .map(|property| (property.name.clone(), property.links().to_vec()))
                 .collect();
             let parameters = owned
                 .iter()
-                .filter(|property| property.links.is_empty())
+                .filter(|property| property.links().is_empty())
                 .map(|property| (property.name.clone(), property.raw_xml.clone()))
                 .collect();
             SemanticAnnotationRecord {
@@ -60,7 +60,7 @@ pub(crate) fn transfer(
                 parameters,
                 side_entries: owned
                     .iter()
-                    .flat_map(|property| &property.side_entries)
+                    .flat_map(|property| property.side_entries())
                     .cloned()
                     .collect(),
             }

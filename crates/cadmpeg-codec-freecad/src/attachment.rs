@@ -150,17 +150,19 @@ fn support_links(property: &PropertyRecord) -> Result<Vec<LinkTarget>, CodecErro
         )));
     }
     if property
-        .values
+        .values()
         .first()
         .is_none_or(|value| value.tag != "LinkSubList")
-        || property.values[1..].iter().any(|value| value.tag != "Link")
+        || property.values()[1..]
+            .iter()
+            .any(|value| value.tag != "Link")
     {
         return Err(malformed(format!(
             "attachment property {} requires one LinkSubList value",
             property.id
         )));
     }
-    Ok(property.links.clone())
+    Ok(property.links().to_vec())
 }
 
 fn map_mode_value(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
@@ -170,7 +172,7 @@ fn map_mode_value(property: &PropertyRecord) -> Result<Option<String>, CodecErro
             property.id, property.type_name
         )));
     }
-    let [value] = property.values.as_slice() else {
+    let [value] = property.values() else {
         return Err(malformed(format!(
             "attachment property {} requires one Integer value",
             property.id

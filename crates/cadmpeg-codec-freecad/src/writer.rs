@@ -83,7 +83,7 @@ pub(crate) fn write_seekable(
         &written_graph.extensions,
     )?;
     for property in &written_graph.properties {
-        for entry in &property.side_entries {
+        for entry in property.side_entries() {
             if !entries.iter().any(|candidate| candidate.name == *entry) {
                 return Err(CodecError::malformed(format_args!(
                     "edited property {} references missing side entry {entry}",
@@ -288,14 +288,14 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
         })
         .map(|node| (node.range().start - 6, node.range().end - 6))
         .collect::<Vec<_>>();
-    if source_ranges.len() != property.values.len() {
+    if source_ranges.len() != property.values().len() {
         return Err(CodecError::malformed(format_args!(
             "property {} value provenance count changed",
             property.id
         )));
     }
     let mut edits = Vec::new();
-    for (value, (start, end)) in property.values.iter().zip(source_ranges) {
+    for (value, (start, end)) in property.values().iter().zip(source_ranges) {
         let serialized = serialize_value(value)?;
         if serialized == value.raw_xml {
             continue;
@@ -330,7 +330,7 @@ fn validate_property_wrapper(property: &PropertyRecord) -> Result<(), CodecError
         .root_element()
         .first_element_child()
         .ok_or_else(|| CodecError::Malformed("retained property has no element".into()))?;
-    let expected_tag = if property.transient {
+    let expected_tag = if property.is_transient() {
         "_Property"
     } else {
         "Property"

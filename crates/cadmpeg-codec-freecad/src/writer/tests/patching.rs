@@ -34,12 +34,13 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
         type_name: "App::PropertyStringList".into(),
         family: crate::native::PropertyFamily::List,
         status: None,
-        transient: false,
-        dynamic: None,
+        body: crate::native::PropertyBody::Persisted {
+            values,
+            links: Vec::new(),
+            side_entries: Vec::new(),
+            dynamic: None,
+        },
         order: 0,
-        values,
-        links: Vec::new(),
-        side_entries: Vec::new(),
         raw_xml: format!(
             r#"<Property name="Values" type="App::PropertyStringList">{raw_value}{raw_value}</Property>"#
         ),
@@ -123,7 +124,7 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
         })
         .expect("document Label");
     assert_eq!(
-        output_label.values[0]
+        output_label.values()[0]
             .attributes
             .get("value")
             .map(String::as_str),
