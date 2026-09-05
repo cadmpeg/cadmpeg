@@ -627,7 +627,7 @@ pub(crate) fn creation_timestamp(attribute: &SourceAttribute) -> Option<Creation
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_asm::brep::AnnotationRecord;
+    use cadmpeg_asm::brep::annotations::AnnotationRecord;
     use cadmpeg_ir::ids::{FaceId, RegionId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
 
@@ -783,7 +783,7 @@ mod tests {
                     id: "f3d:brep:entity#1".into(),
                     stream: "asset/BREP.source.smbh".into(),
                     offset: 10,
-                    tag: "body".into(),
+                    tag: cadmpeg_asm::brep::annotations::AnnotationTag::Record("body".into()),
                     derived_fields: Vec::new(),
                 }],
                 ..AsmBrep::default()

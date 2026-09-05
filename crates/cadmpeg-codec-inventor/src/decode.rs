@@ -1501,7 +1501,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         let stream = annotations.stream(format!("inventor:{}", record.stream));
         annotations
             .note(&record.id, stream, record.offset)
-            .tag(record.tag);
+            .tag(record.tag.as_str());
         for field in record.derived_fields {
             annotations.derived(&record.id, field);
         }

@@ -2137,7 +2137,7 @@ fn finish_model_decode<'a>(
 /// content alone; product decoding still runs through the same session path.
 struct GeometryIndex {
     primary_model_brep_name: String,
-    annotation_records: Vec<cadmpeg_asm::brep::AnnotationRecord>,
+    annotation_records: Vec<cadmpeg_asm::brep::annotations::AnnotationRecord>,
     mesh_projection: MeshProjection,
 }
 
@@ -3831,7 +3831,7 @@ fn populate_annotations(
     ir: &CadIr,
     scan: &ContainerScan,
     native: &F3dNative,
-    brep: Option<(&str, &[cadmpeg_asm::brep::AnnotationRecord])>,
+    brep: Option<(&str, &[cadmpeg_asm::brep::annotations::AnnotationRecord])>,
     unknowns: &[UnknownRecord],
 ) -> cadmpeg_ir::Annotations {
     use std::collections::{HashMap, HashSet};
@@ -3842,7 +3842,7 @@ fn populate_annotations(
         for record in records {
             annotations
                 .note(&record.id, stream, record.offset)
-                .tag(&record.tag);
+                .tag(record.tag.as_str());
             for field in &record.derived_fields {
                 annotations.derived(&record.id, *field);
             }

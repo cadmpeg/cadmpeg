@@ -8,8 +8,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::unknown::UnknownRecord;
 
+use super::annotations::AnnotationRecord;
 use super::stats::Stats;
-use super::{AnnotationRecord, AsmBrep};
+use super::AsmBrep;
 
 const ASM_NATIVE_ARENAS: [&str; 12] = [
     "edge_continuities",
