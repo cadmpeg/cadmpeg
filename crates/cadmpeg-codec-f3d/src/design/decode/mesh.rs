@@ -1082,7 +1082,7 @@ fn parse_mesh_collection_owner_record(
 fn parse_mesh_texture_filename_record(
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
-) -> Result<(DesignMeshRecordIdentity, String, u64), CodecError> {
+) -> Result<(DesignMeshRecordIdentity, String), CodecError> {
     let identity = parse_typed_identity(
         bytes,
         frame,
@@ -1098,11 +1098,7 @@ fn parse_mesh_texture_filename_record(
         .then_some(())?;
         let (filename, end) =
             lp_utf16_bounded(record, texture_filename::BASENAME_CODE_UNIT_COUNT, 1..=1024)?;
-        (end == record.len()).then_some((
-            identity,
-            filename,
-            source_offset(frame.start, texture_filename::LEN)?,
-        ))
+        (end == record.len()).then_some((identity, filename))
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-texture-filename", frame.entity_id))
 }
@@ -1379,7 +1375,7 @@ where
                 .ok_or_else(|| {
                     stream_error("each texture filename reference targets a filename record")
                 })?;
-            let (filename_record, filename, filename_offset) =
+            let (filename_record, filename) =
                 parse_mesh_texture_filename_record(bytes, filename_frame)?;
             let (archive_entry_name, asset) = asset_for_filename(&filename)?;
             textures.push(DesignMeshTextureResource {
@@ -1390,11 +1386,9 @@ where
                 flags_offset: flag.value_offset,
                 filename_ordinal: filename_entry.ordinal,
                 filename_guid_offset: filename_entry.guid_offset,
-                filename_record,
                 filename_record_reference_offset: filename_entry.reference_offset,
-                filename,
-                filename_offset,
-                archive_entry_name,
+                file: crate::records::DesignMeshTextureFile::new(filename_record, &filename, archive_entry_name)
+                    .map_err(|message| malformed_mesh_graph(&stream, &message))?,
                 asset,
             });
         }
@@ -2516,10 +2510,10 @@ mod tests {
         let textures = &design.features[0].textures;
         assert_eq!(textures.len(), 2);
         assert_eq!(textures[0].flags, 2);
-        assert_eq!(textures[0].filename, "mesh-a.png");
+        assert_eq!(textures[0].file.filename(), "mesh-a.png");
         assert_eq!(textures[0].filename_ordinal, 1);
         assert_eq!(textures[1].flags, 258);
-        assert_eq!(textures[1].filename, "mesh-b.jpg");
+        assert_eq!(textures[1].file.filename(), "mesh-b.jpg");
         assert_eq!(textures[1].filename_ordinal, 0);
     }
 
@@ -2562,7 +2556,7 @@ mod tests {
         .expect("shared texture filename record");
         let textures = &design.features[0].textures;
         assert_eq!(textures.len(), 2);
-        assert_eq!(textures[0].filename_record, textures[1].filename_record);
+        assert_eq!(textures[0].file.record(), textures[1].file.record());
         assert_eq!(textures[0].asset, textures[1].asset);
     }
 

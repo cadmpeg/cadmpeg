@@ -13700,6 +13700,8 @@ impl From<DesignMeshRecordIdentity> for DesignMeshRecordIdentityWire {
 /// One texture resource owned by a Design mesh feature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignMeshTextureResourceWire"))]
+#[serde(try_from = "DesignMeshTextureResourceWire", into = "DesignMeshTextureResourceWire")]
 pub struct DesignMeshTextureResource {
     /// Zero-based position in the serialized flags map.
     pub ordinal: u32,
@@ -13715,18 +13717,110 @@ pub struct DesignMeshTextureResource {
     pub filename_ordinal: u32,
     /// Byte offset of the filename-map GUID payload.
     pub filename_guid_offset: u64,
-    /// Record storing the archive-entry basename.
-    pub filename_record: DesignMeshRecordIdentity,
     /// Byte offset of the filename-record reference.
     pub filename_record_reference_offset: u64,
-    /// Archive-entry basename stored by `filename_record`.
-    pub filename: String,
-    /// Byte offset of the UTF-16LE filename code units.
-    pub filename_offset: u64,
-    /// Complete matching archive-entry name.
-    pub archive_entry_name: String,
+    /// Filename record joined to its archive entry.
+    pub file: DesignMeshTextureFile,
     /// Neutral embedded asset projected from the matching archive entry.
     pub asset: AssetId,
+}
+
+/// A filename record and the archive entry with its exact basename.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignMeshTextureFile {
+    record: DesignMeshRecordIdentity,
+    archive_entry_name: String,
+}
+
+impl DesignMeshTextureFile {
+    pub fn new(record: DesignMeshRecordIdentity, filename: &str, archive_entry_name: String) -> Result<Self, String> {
+        let value = Self { record, archive_entry_name };
+        if filename.is_empty() || value.filename() != filename {
+            return Err("archive_entry_name basename must match nonempty filename".into());
+        }
+        let byte_length = u64::try_from(filename.encode_utf16().count()).ok()
+            .and_then(|units| units.checked_mul(2))
+            .and_then(|bytes| bytes.checked_add(crate::layout::paramesh_texture_filename_prefix::LEN as u64));
+        if byte_length != Some(value.record.frame_length()) {
+            return Err("filename_record.frame_length must contain exactly filename".into());
+        }
+        Ok(value)
+    }
+    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
+    pub fn filename(&self) -> &str {
+        self.archive_entry_name.rsplit_once('/').map_or(self.archive_entry_name.as_str(), |(_, basename)| basename)
+    }
+    pub fn archive_entry_name(&self) -> &str { &self.archive_entry_name }
+    pub fn filename_offset(&self) -> u64 {
+        self.record.byte_offset() + crate::layout::paramesh_texture_filename_prefix::LEN as u64
+    }
+}
+
+/// One texture resource owned by a Design mesh feature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignMeshTextureResourceWire {
+    /// Zero-based position in the serialized flags map.
+    ordinal: u32,
+    /// Stable resource GUID used as the key in both texture maps.
+    resource_guid: String,
+    /// Byte offset of the flags-map GUID payload.
+    flags_guid_offset: u64,
+    /// Opaque resource flags retained without reinterpretation.
+    flags: u32,
+    /// Byte offset of `flags`.
+    flags_offset: u64,
+    /// Zero-based position of the same GUID in the serialized filename map.
+    filename_ordinal: u32,
+    /// Byte offset of the filename-map GUID payload.
+    filename_guid_offset: u64,
+    /// Record storing the archive-entry basename.
+    filename_record: DesignMeshRecordIdentity,
+    /// Byte offset of the filename-record reference.
+    filename_record_reference_offset: u64,
+    /// Archive-entry basename stored by `filename_record`.
+    filename: String,
+    /// Byte offset of the UTF-16LE filename code units.
+    filename_offset: u64,
+    /// Complete matching archive-entry name.
+    archive_entry_name: String,
+    /// Neutral embedded asset projected from the matching archive entry.
+    asset: AssetId,
+}
+
+
+impl TryFrom<DesignMeshTextureResourceWire> for DesignMeshTextureResource {
+    type Error = String;
+    fn try_from(wire: DesignMeshTextureResourceWire) -> Result<Self, Self::Error> {
+        let file = DesignMeshTextureFile::new(wire.filename_record, &wire.filename, wire.archive_entry_name)?;
+        if file.filename_offset() != wire.filename_offset {
+            return Err("filename_offset must follow filename_record header".into());
+        }
+        Ok(Self {
+            ordinal: wire.ordinal, resource_guid: wire.resource_guid,
+            flags_guid_offset: wire.flags_guid_offset, flags: wire.flags,
+            flags_offset: wire.flags_offset, filename_ordinal: wire.filename_ordinal,
+            filename_guid_offset: wire.filename_guid_offset,
+            filename_record_reference_offset: wire.filename_record_reference_offset,
+            file, asset: wire.asset,
+        })
+    }
+}
+impl From<DesignMeshTextureResource> for DesignMeshTextureResourceWire {
+    fn from(value: DesignMeshTextureResource) -> Self {
+        Self {
+            ordinal: value.ordinal, resource_guid: value.resource_guid,
+            flags_guid_offset: value.flags_guid_offset, flags: value.flags,
+            flags_offset: value.flags_offset, filename_ordinal: value.filename_ordinal,
+            filename_guid_offset: value.filename_guid_offset,
+            filename_record_reference_offset: value.filename_record_reference_offset,
+            filename: value.file.filename().to_owned(),
+            filename_offset: value.file.filename_offset(),
+            filename_record: value.file.record,
+            archive_entry_name: value.file.archive_entry_name,
+            asset: value.asset,
+        }
+    }
 }
 
 /// One finite axis-aligned bound stored by a mesh Scene record.
