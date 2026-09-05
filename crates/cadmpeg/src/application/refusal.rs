@@ -584,11 +584,7 @@ mod tests {
     #[test]
     fn refusal_codes_are_stable_for_tests_and_absent_from_display() {
         let refusal = ConversionRefusal::UnsupportedTarget {
-            refusal: Box::new(TargetRefusal::unknown_explicit(
-                "iges",
-                "iges:9.9",
-                IGES_CATALOG,
-            )),
+            refusal: Box::new(TargetRefusal::unknown_explicit("iges:9.9", IGES_CATALOG)),
             decode_report: None,
             validation: ValidationReport {
                 entity_counts: BTreeMap::new(),

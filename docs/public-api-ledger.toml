@@ -4425,3 +4425,52 @@ crate = "cadmpeg-container"
 kind = "field"
 item = "cadmpeg_container::EntryRecord::compression"
 reason = "CORE-04: name the ZIP admission enum ZipCompression"
+
+[[change]]
+commit = "2ac33cd45af9f3538ba007f5cf4d119d63ccc87b"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::dialect::DialectId::as_str"
+reason = "CORE-05: make the accessor const for static catalog construction"
+
+[[change]]
+commit = "2ac33cd45af9f3538ba007f5cf4d119d63ccc87b"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::target::TargetCatalog::EMPTY"
+reason = "CORE-05: replace namespace-free empty catalogs with empty(namespace)"
+
+[[change]]
+commit = "2ac33cd45af9f3538ba007f5cf4d119d63ccc87b"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::target::TargetCatalog::empty"
+reason = "CORE-05: construct an empty catalog with its format namespace"
+
+[[change]]
+commit = "2ac33cd45af9f3538ba007f5cf4d119d63ccc87b"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::target::TargetCatalog::namespace"
+reason = "CORE-05: derive a nonempty catalog namespace from its checked rows"
+
+[[change]]
+commit = "2ac33cd45af9f3538ba007f5cf4d119d63ccc87b"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::target::TargetRefusal::new"
+reason = "CORE-05: remove the independent format argument"
+
+[[change]]
+commit = "2ac33cd45af9f3538ba007f5cf4d119d63ccc87b"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::target::TargetRefusal::unknown_explicit"
+reason = "CORE-05: remove the independent format argument"
+
+[[change]]
+commit = "2ac33cd45af9f3538ba007f5cf4d119d63ccc87b"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::write::TargetDomain::targets"
+reason = "CORE-05: pass the backend format for dialect-free catalogs"

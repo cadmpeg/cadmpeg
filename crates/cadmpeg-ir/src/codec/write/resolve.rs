@@ -100,7 +100,6 @@ pub enum ResolvedTarget<'a> {
 /// Codecs query it; they do not reconstruct the target/source relation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedWrite<'a> {
-    format: &'static str,
     target: ResolvedTarget<'a>,
     available: TargetCatalog,
 }
@@ -243,11 +242,7 @@ impl<'a> ResolvedWrite<'a> {
                 }
             }
         };
-        CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(
-            self.format,
-            kind,
-            self.available,
-        )))
+        CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(kind, self.available)))
     }
 }
 
@@ -272,11 +267,10 @@ fn source_identity(ir: &CadIr, format: &str) -> SourceIdentity {
 pub(in crate::codec) fn resolve_write_request<'a>(
     ir: &CadIr,
     request: TargetRequest<'a>,
-    format: &'static str,
     catalog: TargetCatalog,
 ) -> Result<ResolvedWrite<'a>, CodecError> {
-    let refuse =
-        |kind| CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(format, kind, catalog)));
+    let format = catalog.namespace();
+    let refuse = |kind| CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(kind, catalog)));
     let source = source_identity(ir, format);
     let target = match request {
         TargetRequest::Explicit(requested) => {
@@ -317,7 +311,6 @@ pub(in crate::codec) fn resolve_write_request<'a>(
         },
     };
     Ok(ResolvedWrite {
-        format,
         target,
         available: catalog,
     })
