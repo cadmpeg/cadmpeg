@@ -4,7 +4,6 @@
 use crate::card::{CardScan, Section};
 use crate::loss::IgesLossCode;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
-use crate::IgesVersion;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::LossNote;
 
@@ -32,10 +31,90 @@ impl Defect {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 enum Supplied<T> {
     Absent,
     Value(T),
     Malformed,
+}
+
+impl<T: Copy> Supplied<T> {
+    fn value(self) -> Option<T> {
+        match self {
+            Self::Value(value) => Some(value),
+            Self::Absent | Self::Malformed => None,
+        }
+    }
+}
+
+#[derive(Debug)]
+enum VersionDeclaration {
+    Exact(VersionFlag),
+    Unreadable(String),
+    Clamped(i64),
+}
+
+impl VersionDeclaration {
+    const fn declared_flag(&self) -> i64 {
+        match self {
+            Self::Exact(version) => version.value(),
+            Self::Unreadable(_) => 3,
+            Self::Clamped(value) => *value,
+        }
+    }
+
+    const fn effective_version(&self) -> VersionFlag {
+        match self {
+            Self::Exact(version) => *version,
+            Self::Unreadable(_) => VersionFlag::V2_0,
+            Self::Clamped(value) => VersionFlag::effective(*value),
+        }
+    }
+
+    fn recovery(&self) -> DialectRecovery<'_> {
+        match self {
+            Self::Unreadable(declaration) => DialectRecovery::Unverified(
+                UnverifiedDialectRecovery::UnreadableDeclaration(declaration),
+            ),
+            Self::Clamped(_) => DialectRecovery::Unverified(UnverifiedDialectRecovery::Clamped),
+            Self::Exact(version) => match version.verified_version() {
+                Some(_) => DialectRecovery::Verified,
+                None => DialectRecovery::Unverified(UnverifiedDialectRecovery::UnverifiedVersion),
+            },
+        }
+    }
+}
+
+#[derive(Debug)]
+struct NumericDeclarations {
+    integer_bits: Option<u32>,
+    single_magnitude: Option<i64>,
+    double_magnitude: Supplied<i64>,
+    single_significance: Supplied<u32>,
+    double_significance: Supplied<u32>,
+}
+
+impl NumericDeclarations {
+    fn precision(&self) -> RealPrecision {
+        RealPrecision {
+            single_significance: self
+                .single_significance
+                .value()
+                .unwrap_or(FALLBACK_SIGNIFICANCE),
+            double_significance: self
+                .double_significance
+                .value()
+                .unwrap_or(FALLBACK_SIGNIFICANCE),
+        }
+    }
+
+    fn limits(&self) -> NumericLimits {
+        NumericLimits {
+            integer_bits: self.integer_bits,
+            single_magnitude: self.single_magnitude,
+            double_magnitude: self.double_magnitude.value(),
+        }
+    }
 }
 
 enum SuppliedReal {
@@ -157,16 +236,11 @@ pub(crate) struct ResolvedGlobal {
     receiver_product: Option<String>,
     native_file_name: Option<String>,
     units_name: Option<String>,
-    precision: RealPrecision,
-    numeric_limits: NumericLimits,
+    numeric: NumericDeclarations,
     minimum_resolution: f64,
     length_factor_mm: Option<f64>,
     line_weight_scale: Option<LineWeightScale>,
-    double_magnitude_absent: bool,
-    double_significance_absent: bool,
-    declared_version_flag: i64,
-    effective_version: VersionFlag,
-    unreadable_version_declaration: Option<String>,
+    declaration: VersionDeclaration,
 }
 
 /// Length-valued Global view. It exists only when the millimetre factor resolved.
@@ -931,6 +1005,16 @@ impl Resolution {
         global_table: GlobalTable,
         admits: fn(i64) -> bool,
     ) -> Option<i64> {
+        self.metadata_integer_declaration(index, global_table, admits)
+            .value()
+    }
+
+    fn metadata_integer_declaration(
+        &mut self,
+        index: usize,
+        global_table: GlobalTable,
+        admits: fn(i64) -> bool,
+    ) -> Supplied<i64> {
         let supplied = self.supplied_integer(index);
         let absent = matches!(&supplied, Supplied::Absent);
         let admitted = match &supplied {
@@ -951,8 +1035,9 @@ impl Resolution {
             );
         }
         match supplied {
-            Supplied::Value(value) if admitted => Some(value),
-            Supplied::Absent | Supplied::Malformed | Supplied::Value(_) => None,
+            Supplied::Value(value) if admitted => Supplied::Value(value),
+            Supplied::Absent => Supplied::Absent,
+            Supplied::Malformed | Supplied::Value(_) => Supplied::Malformed,
         }
     }
 
@@ -986,11 +1071,11 @@ impl Resolution {
         }
     }
 
-    fn significance(&mut self, index: usize) -> u32 {
+    fn significance(&mut self, index: usize) -> Supplied<u32> {
         let defect = match self.supplied_integer(index) {
             Supplied::Absent => Defect::Absent,
             Supplied::Value(value) => match u32::try_from(value).ok().filter(|value| *value > 0) {
-                Some(value) => return value,
+                Some(value) => return Supplied::Value(value),
                 None => Defect::Malformed,
             },
             Supplied::Malformed => Defect::Malformed,
@@ -1001,7 +1086,10 @@ impl Resolution {
             defect,
             SIGNIFICANCE_CONSEQUENCE,
         );
-        FALLBACK_SIGNIFICANCE
+        match defect {
+            Defect::Absent => Supplied::Absent,
+            Defect::Malformed => Supplied::Malformed,
+        }
     }
 
     fn minimum_resolution(&mut self, global_table: GlobalTable) -> f64 {
@@ -1206,13 +1294,17 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         losses: Vec::new(),
     };
 
-    let (declared_version_flag, unreadable_version_declaration) =
-        match resolution.supplied_integer(FIELD_VERSION_FLAG) {
-            Supplied::Absent => (3, None),
-            Supplied::Value(value) => (value, None),
-            Supplied::Malformed => (3, Some(resolution.declaration_text(FIELD_VERSION_FLAG))),
-        };
-    let effective_version = VersionFlag::effective(declared_version_flag);
+    let declaration = match resolution.supplied_integer(FIELD_VERSION_FLAG) {
+        Supplied::Absent => VersionDeclaration::Exact(VersionFlag::V2_0),
+        Supplied::Value(value) => match VersionFlag::exact(value) {
+            Some(version) => VersionDeclaration::Exact(version),
+            None => VersionDeclaration::Clamped(value),
+        },
+        Supplied::Malformed => {
+            VersionDeclaration::Unreadable(resolution.declaration_text(FIELD_VERSION_FLAG))
+        }
+    };
+    let effective_version = declaration.effective_version();
     let global_table = effective_version.global_table();
     resolution.apply_string_policy(global_table);
     let global_field_count = global_table.global_field_count();
@@ -1236,20 +1328,14 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     let single_magnitude =
         resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, global_table, |_| true);
     let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE);
-    let double_magnitude_absent = global_table == GlobalTable::V5_0
-        && matches!(
-            resolution.supplied_integer(FIELD_DOUBLE_MAGNITUDE),
-            Supplied::Absent
-        );
     let double_magnitude =
-        resolution.metadata_integer_value(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true);
-    let double_significance_absent = global_table == GlobalTable::V5_0
+        resolution.metadata_integer_declaration(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true);
+    let double_significance = if global_table == GlobalTable::V5_0
         && matches!(
             resolution.supplied_integer(FIELD_DOUBLE_SIGNIFICANCE),
             Supplied::Absent
-        );
-    let double_significance = if double_significance_absent {
-        FALLBACK_SIGNIFICANCE
+        ) {
+        Supplied::Absent
     } else {
         resolution.significance(FIELD_DOUBLE_SIGNIFICANCE)
     };
@@ -1302,23 +1388,17 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         receiver_product,
         native_file_name,
         units_name,
-        precision: RealPrecision {
-            single_significance,
-            double_significance,
-        },
-        numeric_limits: NumericLimits {
+        numeric: NumericDeclarations {
             integer_bits,
             single_magnitude,
             double_magnitude,
+            single_significance,
+            double_significance,
         },
         minimum_resolution,
         length_factor_mm,
         line_weight_scale,
-        double_magnitude_absent,
-        double_significance_absent,
-        declared_version_flag,
-        effective_version,
-        unreadable_version_declaration,
+        declaration,
     };
     (resolved, resolution.losses)
 }
@@ -1330,18 +1410,18 @@ impl ResolvedGlobal {
         Some(ProjectedGlobal {
             length_factor_mm,
             minimum_resolution_mm: self.minimum_resolution * length_factor_mm,
-            precision: self.precision,
+            precision: self.real_precision(),
             line_weight_scale: self.line_weight_scale,
             global_table: self.global_table(),
         })
     }
 
     pub(crate) fn real_precision(&self) -> RealPrecision {
-        self.precision
+        self.numeric.precision()
     }
 
     pub(crate) fn numeric_limits(&self) -> NumericLimits {
-        self.numeric_limits
+        self.numeric.limits()
     }
 
     pub(crate) fn sender_product(&self) -> Option<String> {
@@ -1362,22 +1442,25 @@ impl ResolvedGlobal {
 
     /// The version flag as declared, with the specification default for an absent field.
     pub(crate) fn declared_version_flag(&self) -> i64 {
-        self.declared_version_flag
+        self.declaration.declared_flag()
     }
 
     /// The exact field-23 table entry, before postprocessor recovery.
     pub(crate) fn declared_version(&self) -> Option<VersionFlag> {
-        VersionFlag::exact(self.declared_version_flag)
+        VersionFlag::exact(self.declared_version_flag())
     }
 
     /// The declaration text of a field 23 that does not read as an integer.
     pub(crate) fn unreadable_version_declaration(&self) -> Option<&str> {
-        self.unreadable_version_declaration.as_deref()
+        match &self.declaration {
+            VersionDeclaration::Unreadable(text) => Some(text),
+            _ => None,
+        }
     }
 
     /// The declared version flag after the specification's postprocessor clamp.
     pub(crate) fn effective_version_flag(&self) -> i64 {
-        self.effective_version.value()
+        self.declaration.effective_version().value()
     }
 
     /// Why this decode did not read the file with a Global table verified for
@@ -1387,31 +1470,15 @@ impl ResolvedGlobal {
     /// admission. Loss reporting consumes that admission as the authoritative
     /// proof and consults this recovery only for the explanatory message.
     pub(crate) fn dialect_recovery(&self) -> DialectRecovery<'_> {
-        if let Some(declaration) = self.unreadable_version_declaration() {
-            // A malformed field 23 is replaced by the specification default, so
-            // it never also reads as clamped; the arms stay disjoint.
-            DialectRecovery::Unverified(UnverifiedDialectRecovery::UnreadableDeclaration(
-                declaration,
-            ))
-        } else if self.declared_version().is_none() {
-            DialectRecovery::Unverified(UnverifiedDialectRecovery::Clamped)
-        } else if self.version().is_some() {
-            DialectRecovery::Verified
-        } else {
-            DialectRecovery::Unverified(UnverifiedDialectRecovery::UnverifiedVersion)
-        }
-    }
-
-    pub(crate) const fn version(&self) -> Option<IgesVersion> {
-        self.effective_version.verified_version()
+        self.declaration.recovery()
     }
 
     pub(crate) fn version_name(&self) -> &'static str {
-        self.effective_version.name()
+        self.declaration.effective_version().name()
     }
 
     pub(crate) fn global_table(&self) -> GlobalTable {
-        self.effective_version.global_table()
+        self.declaration.effective_version().global_table()
     }
 
     pub(crate) fn conditional_double_precision_losses(
@@ -1422,7 +1489,7 @@ impl ResolvedGlobal {
             return Vec::new();
         }
         let mut losses = Vec::new();
-        if self.double_magnitude_absent {
+        if matches!(self.numeric.double_magnitude, Supplied::Absent) {
             losses.push(global_loss_note(
                 IgesLossCode::GlobalMetadataFieldUnusable,
                 FIELD_DOUBLE_MAGNITUDE,
@@ -1430,7 +1497,7 @@ impl ResolvedGlobal {
                 METADATA_CONSEQUENCE,
             ));
         }
-        if self.double_significance_absent {
+        if matches!(self.numeric.double_significance, Supplied::Absent) {
             losses.push(global_loss_note(
                 IgesLossCode::GlobalSemanticContextSubstituted,
                 FIELD_DOUBLE_SIGNIFICANCE,
@@ -1472,7 +1539,7 @@ impl ResolvedGlobal {
             notes.push("iges_version=unverified".into());
             notes.push(format!(
                 "iges_declared_version_flag={}",
-                self.declared_version_flag
+                self.declaration.declared_flag()
             ));
             notes.push(format!("iges_effective_version={}", self.version_name()));
         }
