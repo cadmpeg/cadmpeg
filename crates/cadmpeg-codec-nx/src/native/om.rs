@@ -14,6 +14,7 @@ use crate::om::compact::{CompactIndexAtom, CountedIndexMembers, LocatedCompactIn
 mod row_wire;
 mod membership_wire;
 use crate::container::membership::ObjectIdMembers;
+use crate::container::extref_handles::ExtrefHandles;
 use crate::om::color::{ColorComponent, PaletteIndex, PALETTE_SIZE, BACKGROUND_NAME};
 mod color_wire;
 pub(crate) mod column_index;
@@ -3069,12 +3070,9 @@ pub struct ExternalReferenceRecord {
     pub declared_count: u16,
     /// Four uninterpreted little-endian ID slots.
     pub id_slots: [u32; 4],
-    /// Non-decreasing persistent handles; only the serialized closing duplicate is omitted.
-    pub handles: Vec<u32>,
-    /// Whether the final serialized handle repeats the preceding handle.
-    pub closing_duplicate: bool,
-    /// Length of the decoded record prefix.
-    pub prefix_byte_len: u64,
+    /// Ordered encoded handle tokens with derived closing and length fields.
+    #[serde(flatten)]
+    pub handles: ExtrefHandles,
     /// Length after the decoded handle-set prefix and before the next record or string table.
     pub tail_byte_len: u64,
     /// Directory entry containing the external-reference stream.
@@ -3365,8 +3363,6 @@ pub fn external_reference_records(container: &Container) -> Vec<ExternalReferenc
                 declared_count: record.declared_count,
                 id_slots: record.id_slots,
                 handles: record.handles,
-                closing_duplicate: record.closing_duplicate,
-                prefix_byte_len: record.prefix_byte_len as u64,
                 tail_byte_len: record.tail_byte_len as u64,
                 source_entry: entry.name.clone(),
                 source_offset: entry_offset + record.offset as u64,
@@ -3441,7 +3437,7 @@ pub fn external_reference_tail_reference_pairs(
     records
         .iter()
         .flat_map(|record| {
-            let Some(source_offset) = record.source_offset.checked_add(record.prefix_byte_len)
+            let Some(source_offset) = record.source_offset.checked_add(record.handles.prefix_byte_len() as u64)
             else {
                 return Vec::new();
             };
@@ -5393,18 +5389,12 @@ pub fn persistent_handles(
         }
     }
     for record in external {
-        for handle in &record.handles {
+        for handle in record.handles.serialized() {
             let group = groups.entry(*handle).or_default();
             group.external_occurrence_count += 1;
             if !group.external_records.contains(&record.id) {
                 group.external_records.push(record.id.clone());
             }
-        }
-        if record.closing_duplicate {
-            let Some(handle) = record.handles.last() else {
-                continue;
-            };
-            groups.entry(*handle).or_default().external_occurrence_count += 1;
         }
     }
     for pair in external_tail_pairs {

@@ -11,6 +11,8 @@
 
 use cadmpeg_core::container::ContainerRole;
 
+pub(crate) mod extref_handles;
+use extref_handles::ExtrefHandles;
 pub(crate) mod membership;
 pub(crate) mod entry_ref;
 use entry_ref::EntryRef;
@@ -569,9 +571,7 @@ pub(crate) struct ExtrefRecord {
     pub offset: usize,
     pub declared_count: u16,
     pub id_slots: [u32; 4],
-    pub handles: Vec<u32>,
-    pub closing_duplicate: bool,
-    pub prefix_byte_len: usize,
+    pub handles: ExtrefHandles,
     pub tail_byte_len: usize,
 }
 
@@ -625,33 +625,21 @@ pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
         let count = usize::from(*bytes.get(handle_set::COUNT)?);
         (count >= 2).then_some(())?;
         let handle_token_count = count - 1;
-        let prefix_byte_len = 26usize.checked_add(handle_token_count.checked_mul(5)?)?;
-        (prefix_byte_len <= bytes.len() && bytes.get(prefix_byte_len - 1) == Some(&(count as u8)))
-            .then_some(())?;
         let mut handles = Vec::with_capacity(handle_token_count);
         for handle_index in 0..handle_token_count {
             let token = handle_set::LEN + handle_index * 5;
             (bytes.get(token) == Some(&0xe0)).then_some(())?;
             handles.push(View::u32_be_at(bytes, token + 1)?);
         }
-        let closing_duplicate = handle_token_count >= 2
-            && handles[handle_token_count - 1] == handles[handle_token_count - 2];
-        let unique_count = handle_token_count - usize::from(closing_duplicate);
-        handles[..unique_count]
-            .windows(2)
-            .all(|pair| pair[0] <= pair[1])
-            .then_some(())?;
-        if closing_duplicate {
-            handles.pop();
-        }
+        let handles = ExtrefHandles::new(handles).ok()?;
+        let prefix_byte_len = handles.prefix_byte_len();
+        (bytes.get(prefix_byte_len - 1) == Some(&(count as u8))).then_some(())?;
         Some(ExtrefRecord {
             record_id,
             offset,
             declared_count,
             id_slots,
             handles,
-            closing_duplicate,
-            prefix_byte_len,
             tail_byte_len: bytes.len() - prefix_byte_len,
         })
     };
