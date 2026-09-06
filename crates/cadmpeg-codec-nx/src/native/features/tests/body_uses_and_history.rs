@@ -709,11 +709,14 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
     let lane = |operation: &str| FeatureSimpleHoleRepeatedScalarLane {
         id: format!("lane-{operation}"),
         operation_label: operation.into(),
-        values: vec![crate::native::features::FeatureRepeatedScalarToken {
-            value: 25.4,
-            raw: [0x30; 8],
+        values: crate::om::nonempty::NonEmpty::new([crate::om::scalar::RepeatedScalar {
+            scalar: {
+                let mut raw = 25.4_f64.to_be_bytes();
+                raw[0] -= 0x10;
+                crate::om::scalar::ShiftedBinary64::read(&raw).unwrap()
+            },
             witness_offsets: [1, 2],
-        }],
+        }]).unwrap(),
     };
     let reference =
         |operation: &str, last: &str| FeatureSimpleHoleRepeatedScalarLaneBlockReferences {

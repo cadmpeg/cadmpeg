@@ -18,7 +18,7 @@ where
 #[test]
 fn repeated_scalar_lane_preserves_parallel_wire_and_requires_complete_tokens() {
     check_lane_wire::<FeatureSimpleHoleRepeatedScalarLane>(
-        r#"{"id":"lane","operation_label":"operation","values":[2.5,4.0],"raw_values":[[1,2,3,4,5,6,7,8],[8,7,6,5,4,3,2,1]],"first_witness_offsets":[10,18],"second_witness_offsets":[40,48]}"#,
+        r#"{"id":"lane","operation_label":"operation","values":[2.5,4.0],"raw_values":[[48,4,0,0,0,0,0,0],[48,16,0,0,0,0,0,0]],"first_witness_offsets":[10,18],"second_witness_offsets":[40,48]}"#,
         &[
             "values",
             "raw_values",
@@ -294,4 +294,12 @@ fn draft_binary32_lane_rejects_inconsistent_or_wrong_width_atoms() {
         invalid["raw_values"][0] = serde_json::json!(raw);
         assert!(serde_json::from_value::<FeatureDraftConstructionBinary32Lane>(invalid).is_err());
     }
+}
+
+#[test]
+fn repeated_scalar_lane_rejects_empty_and_inconsistent_atoms() {
+    let empty = r#"{"id":"lane","operation_label":"operation","values":[],"raw_values":[],"first_witness_offsets":[],"second_witness_offsets":[]}"#;
+    assert!(serde_json::from_str::<FeatureSimpleHoleRepeatedScalarLane>(empty).unwrap_err().to_string().contains("values"));
+    let invalid = r#"{"id":"lane","operation_label":"operation","values":[4.0],"raw_values":[[48,4,0,0,0,0,0,0]],"first_witness_offsets":[10],"second_witness_offsets":[40]}"#;
+    assert!(serde_json::from_str::<FeatureSimpleHoleRepeatedScalarLane>(invalid).unwrap_err().to_string().contains("raw_values"));
 }

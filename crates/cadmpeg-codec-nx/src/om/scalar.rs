@@ -252,3 +252,10 @@ mod tests {
         assert!(ShiftedBinary64::read(&[0; 7]).is_none());
     }
 }
+
+/// A scalar with the locations of its two identical source encodings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RepeatedScalar<O> {
+    pub(crate) scalar: ShiftedBinary64,
+    pub(crate) witness_offsets: [O; 2],
+}

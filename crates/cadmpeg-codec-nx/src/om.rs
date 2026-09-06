@@ -11,11 +11,13 @@ pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 use branch_items::BranchItems;
 pub(crate) mod parameter_name;
+pub(crate) mod nonempty;
+use nonempty::NonEmpty;
 pub(crate) mod pattern;
 use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWideValues};
 pub(crate) mod swp104_state;
 pub(crate) mod scalar;
-use scalar::{LocatedBinary64, PayloadScalarAtom, ShiftedBinary32, ShiftedBinary64, ShiftedScalar, shifted_ieee_f64, is_shifted_ieee_f64_marker};
+use scalar::{LocatedBinary64, PayloadScalarAtom, RepeatedScalar, ShiftedBinary32, ShiftedBinary64, ShiftedScalar, shifted_ieee_f64, is_shifted_ieee_f64_marker};
 pub(crate) mod thru_curve_endings;
 pub(crate) mod thru_curve_controls;
 use thru_curve_controls::ThruCurveControls;
@@ -2626,20 +2628,6 @@ pub struct OperationTerminalDiscriminator {
     pub trailing_indices: Vec<LaneToken<u32>>,
 }
 
-/// One scalar with the exact encoding and offsets of both witnesses.
-#[derive(Debug, Clone, PartialEq)]
-pub struct RepeatedScalarToken {
-    pub value: f64,
-    pub raw: [u8; 8],
-    pub witness_offsets: [usize; 2],
-}
-
-/// Nonempty scalar lane serialized twice in a simple-hole payload.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SimpleHoleRepeatedScalarLane {
-    pub values: Vec<RepeatedScalarToken>,
-}
-
 /// Two tagged offset-store indices following each repeated scalar-lane witness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SimpleHoleRepeatedScalarLaneBlockReferences {
@@ -3470,7 +3458,7 @@ pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPa
 /// Decode an exact nonempty duplicated shifted-binary64 lane before a hole template.
 pub fn simple_hole_repeated_scalar_lane(
     record: OperationRecord<'_>,
-) -> Option<SimpleHoleRepeatedScalarLane> {
+) -> Option<NonEmpty<RepeatedScalar<usize>>> {
     if record.label.value != "SIMPLE HOLE" {
         return None;
     }
@@ -3487,17 +3475,16 @@ pub fn simple_hole_repeated_scalar_lane(
     let mut at = 0usize;
     while at + 8 <= prefix.len() {
         if prefix[at] == 0x30 {
-            let raw_value = <[u8; 8]>::try_from(&prefix[at..at + 8]).ok()?;
-            if let Some(value) = shifted_ieee_f64(&raw_value) {
-                scalars.push((raw_value, value, record.payload_offset + at));
+            if let Some(scalar) = ShiftedBinary64::read(&prefix[at..at + 8]) {
+                scalars.push((scalar, record.payload_offset + at));
                 at += 8;
                 continue;
             }
         }
         at += 1;
     }
-    let half = scalars.len().checked_div(2)?;
-    if half == 0 || scalars.len() != half * 2 {
+    let half = scalars.len() / 2;
+    if scalars.len() != half * 2 {
         return None;
     }
     let (first, second) = scalars.split_at(half);
@@ -3508,17 +3495,10 @@ pub fn simple_hole_repeated_scalar_lane(
     {
         return None;
     }
-    Some(SimpleHoleRepeatedScalarLane {
-        values: first
-            .iter()
-            .zip(second)
-            .map(|(left, right)| RepeatedScalarToken {
-                value: left.1,
-                raw: left.0,
-                witness_offsets: [left.2, right.2],
-            })
-            .collect(),
-    })
+    NonEmpty::new(first.iter().zip(second).map(|(left, right)| RepeatedScalar {
+        scalar: left.0,
+        witness_offsets: [left.1, right.1],
+    }))
 }
 
 /// Decode the two tagged block indices immediately following each witnessed
@@ -3556,9 +3536,9 @@ pub fn simple_hole_repeated_scalar_lane_block_references(
         ))
     };
     let (first, first_offsets, first_prefix) =
-        decode_pair(pair.values.last()?.witness_offsets[0], FIRST_PREFIX)?;
+        decode_pair(pair.last().witness_offsets[0], FIRST_PREFIX)?;
     let (second, second_offsets, second_prefix) =
-        decode_pair(pair.values.last()?.witness_offsets[1], SECOND_PREFIX)?;
+        decode_pair(pair.last().witness_offsets[1], SECOND_PREFIX)?;
     Some(SimpleHoleRepeatedScalarLaneBlockReferences {
         first,
         second,

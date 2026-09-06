@@ -12,8 +12,9 @@ use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLin
 use std::borrow::Cow;
 use std::num::NonZeroU8;
 use crate::om::swp104_state::Swp104StateLane;
-use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, ShiftedBinary32, ShiftedBinary64, ShiftedScalar};
+use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, RepeatedScalar, ShiftedBinary32, ShiftedBinary64, ShiftedScalar};
 use crate::om::branch_items::BranchItems;
+use crate::om::nonempty::NonEmpty;
 use crate::om::pattern::{PatternRow, PatternRows, PatternScalarEncoding, PatternTerminal, PatternValue, PatternWideValues};
 use crate::om::thru_curve_state::ThruCurveBranchItems;
 use crate::om::thru_curve_controls::ThruCurveControls;
@@ -522,14 +523,7 @@ pub struct FeatureSimpleHoleRepeatedScalarLane {
     /// Owning `SIMPLE HOLE` operation label.
     pub operation_label: String,
     /// Ordered scalars with both source witnesses.
-    pub values: Vec<FeatureRepeatedScalarToken>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FeatureRepeatedScalarToken {
-    pub value: f64,
-    pub raw: [u8; 8],
-    pub witness_offsets: [u64; 2],
+    pub values: NonEmpty<RepeatedScalar<u64>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -547,8 +541,8 @@ impl From<FeatureSimpleHoleRepeatedScalarLane> for FeatureSimpleHoleRepeatedScal
         Self {
             id: lane.id,
             operation_label: lane.operation_label,
-            values: lane.values.iter().map(|token| token.value).collect(),
-            raw_values: lane.values.iter().map(|token| token.raw).collect(),
+            values: lane.values.iter().map(|token| token.scalar.value()).collect(),
+            raw_values: lane.values.iter().map(|token| token.scalar.raw()).collect(),
             first_witness_offsets: lane
                 .values
                 .iter()
@@ -573,23 +567,18 @@ impl TryFrom<FeatureSimpleHoleRepeatedScalarLaneWire> for FeatureSimpleHoleRepea
         {
             return Err("simple-hole values, raw_values, first_witness_offsets, and second_witness_offsets must have equal lengths".into());
         }
+        let values = wire.values.into_iter().zip(wire.raw_values)
+            .zip(wire.first_witness_offsets).zip(wire.second_witness_offsets)
+            .map(|(((value, raw), first), second)| Ok(RepeatedScalar {
+                scalar: ShiftedBinary64::from_wire(value, raw)
+                    .map_err(|error| format!("values/raw_values: {error}"))?,
+                witness_offsets: [first, second],
+            }))
+            .collect::<Result<Vec<_>, String>>()?;
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            values: wire
-                .values
-                .into_iter()
-                .zip(wire.raw_values)
-                .zip(wire.first_witness_offsets)
-                .zip(wire.second_witness_offsets)
-                .map(
-                    |(((value, raw), first), second)| FeatureRepeatedScalarToken {
-                        value,
-                        raw,
-                        witness_offsets: [first, second],
-                    },
-                )
-                .collect(),
+            values: NonEmpty::new(values).ok_or("values must contain a repeated scalar")?,
         })
     }
 }
@@ -7168,11 +7157,10 @@ pub fn feature_simple_hole_repeated_scalar_lanes(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                values: pair.values.into_iter().map(|token| FeatureRepeatedScalarToken {
-                    value: token.value,
-                    raw: token.raw,
+                values: pair.map(|token| RepeatedScalar {
+                    scalar: token.scalar,
                     witness_offsets: token.witness_offsets.map(|offset| entry_offset + offset as u64),
-                }).collect(),
+                }),
             });
         },
     );

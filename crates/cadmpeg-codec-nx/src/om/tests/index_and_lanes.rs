@@ -381,18 +381,17 @@ fn om_simple_hole_lane_requires_two_identical_nonempty_scalar_runs() {
         label,
     };
     let lane = super::simple_hole_repeated_scalar_lane(record).unwrap();
-    assert_eq!(lane.values[0].value, 508.0);
-    assert!((lane.values[1].value - 38.1).abs() < 2.0e-12);
+    assert_eq!(lane.iter().next().unwrap().scalar.value(), 508.0);
+    assert!((lane.iter().nth(1).unwrap().scalar.value() - 38.1).abs() < 2.0e-12);
     assert_eq!(
-        lane.values
+        lane
             .iter()
-            .map(|token| token.raw)
+            .map(|token| token.scalar.raw())
             .collect::<Vec<_>>(),
         [shifted(508.0), shifted(38.1)]
     );
     assert_eq!(
         [0, 1].map(|i| lane
-            .values
             .iter()
             .map(|token| token.witness_offsets[i])
             .collect::<Vec<_>>()),
@@ -434,22 +433,21 @@ fn om_simple_hole_lane_accepts_one_repeated_scalar() {
     };
     let lane = super::simple_hole_repeated_scalar_lane(record).unwrap();
     assert_eq!(
-        lane.values
+        lane
             .iter()
-            .map(|token| token.value)
+            .map(|token| token.scalar.value())
             .collect::<Vec<_>>(),
         [25.4]
     );
     assert_eq!(
-        lane.values
+        lane
             .iter()
-            .map(|token| token.raw)
+            .map(|token| token.scalar.raw())
             .collect::<Vec<_>>(),
         [scalar]
     );
     assert_eq!(
         [0, 1].map(|i| lane
-            .values
             .iter()
             .map(|token| token.witness_offsets[i])
             .collect::<Vec<_>>()),

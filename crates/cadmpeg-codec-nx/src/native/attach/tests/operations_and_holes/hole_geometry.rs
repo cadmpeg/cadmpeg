@@ -21,18 +21,17 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
     let lane = FeatureSimpleHoleRepeatedScalarLane {
         id: "lane".to_string(),
         operation_label: operation.to_string(),
-        values: vec![
-            crate::native::features::FeatureRepeatedScalarToken {
-                value: 508.0,
-                raw: [0x30; 8],
-                witness_offsets: [10, 30],
-            },
-            crate::native::features::FeatureRepeatedScalarToken {
-                value: 38.1,
-                raw: [0x31; 8],
-                witness_offsets: [18, 38],
-            },
-        ],
+        values: crate::om::nonempty::NonEmpty::new([
+            (508.0_f64, [10, 30]),
+            (38.1_f64, [18, 38]),
+        ].map(|(value, witness_offsets)| {
+            let mut raw = value.to_be_bytes();
+            raw[0] -= 0x10;
+            crate::om::scalar::RepeatedScalar {
+                scalar: crate::om::scalar::ShiftedBinary64::read(&raw).unwrap(),
+                witness_offsets,
+            }
+        })).unwrap(),
     };
     let blocks = FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
         id: "blocks".to_string(),
