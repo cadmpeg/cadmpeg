@@ -50,7 +50,6 @@ pub(crate) struct ByteRange {
 #[derive(Debug, Clone)]
 pub(crate) struct DisplayFace {
     pub(crate) mesh: Mesh,
-    pub(crate) table_index: usize,
     pub(crate) table: ByteRange,
     pub(crate) metadata: ByteRange,
     pub(crate) surface_references: Vec<PersistentSurfaceReference>,
@@ -411,7 +410,6 @@ pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
         for (start, end, mesh) in tables {
             faces.push(DisplayFace {
                 mesh,
-                table_index: 0,
                 table: ByteRange { start, end },
                 metadata: ByteRange {
                     start: end,
@@ -427,7 +425,6 @@ pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
             .get(index + 1)
             .map_or(faces[index].metadata.end, |next| next.table.start)
             .min(faces[index].metadata.end);
-        faces[index].table_index = index;
         faces[index].metadata.end = metadata_end;
         faces[index].surface_references =
             persistent_surface_references(payload, faces[index].metadata);

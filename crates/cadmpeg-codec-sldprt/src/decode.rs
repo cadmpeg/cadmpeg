@@ -2764,7 +2764,7 @@ fn build_geometry_ir(
         if display_faces.is_empty() {
             continue;
         }
-        for face in &display_faces {
+        for (table_index, face) in display_faces.iter().enumerate() {
             let candidates = face
                 .surface_references
                 .iter()
@@ -2774,7 +2774,7 @@ fn build_geometry_ir(
                 conflicting_display_references.push(format!(
                     "{}::DisplayFace[{}] ({})",
                     display.display_name(),
-                    face.table_index,
+                    table_index,
                     candidates
                         .iter()
                         .map(u32::to_string)
@@ -2787,11 +2787,11 @@ fn build_geometry_ir(
             crate::appearance::resolve_display_appearances(scan, display, &display_faces);
         matched_feature_sources.extend(resolved.matched_feature_sources);
         let mut display_links = Vec::with_capacity(display_faces.len());
-        for display_face in display_faces {
+        for (table_index, display_face) in display_faces.into_iter().enumerate() {
             let id = format!(
                 "sldprt:displaylist:record#{}:{}",
                 display.ordinal(),
-                display_face.table_index
+                table_index
             );
             if let Some(identity) = display_face.persistent_surface_identity() {
                 persistent_face_bindings.push(crate::tessellation::PersistentFaceBinding {
@@ -2809,7 +2809,7 @@ fn build_geometry_ir(
                 Exactness::ByteExact,
             );
             display_links.push(id.clone());
-            if let Some(definition) = resolved.by_face.get(&display_face.table_index) {
+            if let Some(definition) = resolved.by_face.get(&table_index) {
                 let appearance = ensure_display_appearance(
                     &mut ir,
                     definition,
@@ -2820,7 +2820,7 @@ fn build_geometry_ir(
                     id: format!(
                         "sldprt:appearance:binding#display:{}:{}",
                         display.ordinal(),
-                        display_face.table_index
+                        table_index
                     )
                     .try_into()
                     .expect("valid identity"),
@@ -2829,7 +2829,7 @@ fn build_geometry_ir(
                     source_entity_id: Some(format!(
                         "{}::DisplayFace[{}]",
                         display.display_name(),
-                        display_face.table_index
+                        table_index
                     )),
                     object_type: Some("DisplayFace".into()),
                     visible: None,

@@ -136,7 +136,7 @@ pub(crate) fn display_assignments(
 ) -> Vec<DisplayAppearanceAssignment> {
     let classes = crate::tessellation::class_intervals(section.payload());
     let mut assignments = Vec::new();
-    for face in faces {
+    for (table_index, face) in faces.iter().enumerate() {
         let Some(class) = classes.iter().find(|class| {
             class.name == "uoTempFaceTessData_c"
                 && class.content.start <= face.table.start
@@ -151,7 +151,7 @@ pub(crate) fn display_assignments(
         );
         if let [definition] = definitions.as_slice() {
             assignments.push(DisplayAppearanceAssignment {
-                target: DisplayAppearanceTarget::Face(face.table_index),
+                target: DisplayAppearanceTarget::Face(table_index),
                 definition: definition.clone(),
             });
         }
@@ -171,10 +171,11 @@ pub(crate) fn display_assignments(
             .map_or(0, |previous| previous.content.end);
         let face_indexes = faces
             .iter()
-            .filter(|face| {
+            .enumerate()
+            .filter(|(_, face)| {
                 previous_body_end <= face.table.start && face.table.end <= class.class_offset
             })
-            .map(|face| face.table_index)
+            .map(|(table_index, _)| table_index)
             .collect::<Vec<_>>();
         if !face_indexes.is_empty() {
             assignments.push(DisplayAppearanceAssignment {
@@ -288,12 +289,12 @@ pub(crate) fn resolve_display_appearances(
     }
     let mut matched_feature_sources = BTreeSet::new();
     let mut faces_by_source = BTreeMap::<u32, Vec<usize>>::new();
-    for face in faces {
+    for (table_index, face) in faces.iter().enumerate() {
         if let Some(source_id) = face.feature_source_id() {
             faces_by_source
                 .entry(source_id)
                 .or_default()
-                .push(face.table_index);
+                .push(table_index);
         }
     }
     for (source_id, face_indexes) in faces_by_source {

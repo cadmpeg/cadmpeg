@@ -641,7 +641,6 @@ fn opaque_surface_suffix_remains_source_only() {
     );
     let face = DisplayFace {
         mesh: Mesh::default(),
-        table_index: 0,
         table: ByteRange { start: 0, end: 1 },
         metadata: ByteRange { start: 1, end: 2 },
         surface_references: references,
@@ -654,7 +653,6 @@ fn opaque_surface_suffix_remains_source_only() {
 fn persistent_surface_identity_requires_agreeing_duplicates() {
     let face = DisplayFace {
         mesh: Mesh::default(),
-        table_index: 0,
         table: ByteRange { start: 0, end: 1 },
         metadata: ByteRange { start: 1, end: 2 },
         surface_references: vec![
