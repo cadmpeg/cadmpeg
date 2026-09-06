@@ -891,18 +891,18 @@ pub fn with_topology_serialization<T>(
     coedges: &[Coedge],
     serialize: impl FnOnce() -> T,
 ) -> T {
-    let _scope = TopologySerializationScope::new(faces, loops, coedges);
+    let _scope = TopologyWireScope::new(faces, loops, coedges);
     serialize()
 }
 
-pub(crate) struct TopologySerializationScope {
+pub(crate) struct TopologyWireScope {
     neighbors: HashMap<CoedgeId, (CoedgeId, CoedgeId)>,
     roles: HashMap<LoopId, LoopBoundaryRole>,
     // A scope must restore the same thread-local state that it installed.
     _thread: std::marker::PhantomData<std::rc::Rc<()>>,
 }
 
-impl TopologySerializationScope {
+impl TopologyWireScope {
     pub(crate) fn new(faces: &[Face], loops: &[Loop], coedges: &[Coedge]) -> Self {
         let neighbors = COEDGE_RING_NEIGHBORS.with(|slot| std::mem::take(&mut *slot.borrow_mut()));
         let roles = LOOP_BOUNDARY_ROLES.with(|slot| std::mem::take(&mut *slot.borrow_mut()));
@@ -917,7 +917,7 @@ impl TopologySerializationScope {
     }
 }
 
-impl Drop for TopologySerializationScope {
+impl Drop for TopologyWireScope {
     fn drop(&mut self) {
         COEDGE_RING_NEIGHBORS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.neighbors));
         LOOP_BOUNDARY_ROLES.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.roles));
@@ -1137,6 +1137,32 @@ mod tests {
             assert_eq!(serde_json::to_value(coedge).unwrap(), expected);
         });
         assert!(serde_json::to_value(coedge).is_err());
+    }
+
+    #[test]
+    fn model_deserialization_restores_enclosing_topology_context() {
+        let mut model = crate::examples::unit_cube().model;
+        let loop_ = &model.loops[0];
+        model
+            .faces
+            .iter_mut()
+            .find(|face| face.id == loop_.face)
+            .unwrap()
+            .loops
+            .classify_outer(Some(&loop_.id));
+        let empty_model = serde_json::to_value(crate::document::Model::default()).unwrap();
+        with_topology_serialization(&model.faces, &model.loops, &model.coedges, || {
+            let expected = serde_json::to_value(loop_).unwrap();
+            serde_json::from_value::<crate::document::Model>(empty_model.clone()).unwrap();
+            assert_eq!(serde_json::to_value(loop_).unwrap(), expected);
+            let mut conflicting_loop = expected.clone();
+            conflicting_loop["boundary_role"] = serde_json::json!("inner");
+            let mut invalid = empty_model.clone();
+            invalid["loops"] = serde_json::json!([conflicting_loop]);
+            invalid["vertices"] = serde_json::json!("invalid");
+            assert!(serde_json::from_value::<crate::document::Model>(invalid).is_err());
+            assert_eq!(serde_json::to_value(loop_).unwrap(), expected);
+        });
     }
 
     #[test]

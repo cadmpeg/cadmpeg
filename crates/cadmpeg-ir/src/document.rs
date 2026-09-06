@@ -353,7 +353,7 @@ macro_rules! declare_model {
             where
                 S: Serializer,
             {
-                let _scope = crate::topology::TopologySerializationScope::new(
+                let _scope = crate::topology::TopologyWireScope::new(
                     &self.faces, &self.loops, &self.coedges,
                 );
                 ModelWriteWire {
@@ -368,6 +368,7 @@ macro_rules! declare_model {
             where
                 D: Deserializer<'de>,
             {
+                let _scope = crate::topology::TopologyWireScope::new(&[], &[], &[]);
                 let mut wire = ModelReadWire::deserialize(deserializer)?;
                 let procedural_surfaces = std::mem::take(&mut wire.procedural_surfaces);
                 let procedural_curves = std::mem::take(&mut wire.procedural_curves);
@@ -476,7 +477,7 @@ macro_rules! declare_model {
                 other: Self,
                 rewrite: &mut R,
             ) -> Result<(), R::Error> {
-                let _scope = crate::topology::TopologySerializationScope::new(
+                let _scope = crate::topology::TopologyWireScope::new(
                     &other.faces, &other.loops, &other.coedges,
                 );
                 $(
