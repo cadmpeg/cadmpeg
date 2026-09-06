@@ -172,7 +172,7 @@ mod tests {
             Some(ForcedInput::Cadir),
         )
         .unwrap();
-        assert!(matches!(outcome.origin, LoadOrigin::Decoded { .. }));
+        assert!(matches!(outcome.origin, LoadOrigin::Restored { .. }));
 
         std::fs::write(&path, format!("{text}\n")).unwrap();
         let error = load_artifact(

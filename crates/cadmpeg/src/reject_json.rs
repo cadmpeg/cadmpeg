@@ -30,6 +30,7 @@ impl Args for RejectJson {
             Arg::new("json")
                 .long("json")
                 .hide(true)
+                .action(clap::ArgAction::Set)
                 .num_args(0)
                 .default_missing_value("true")
                 .value_parser(move |_: &str| -> Result<String, String> { Err(message.to_owned()) }),

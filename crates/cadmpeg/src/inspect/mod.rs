@@ -31,6 +31,59 @@ use numeric::{parse_offset, EndianArgs, ScalarType};
 /// Default number of bytes a bare `inspect hex` prints.
 const DEFAULT_HEX_LEN: u64 = 256;
 
+/// A container summary or a byte tool with its own input arguments.
+#[derive(Debug)]
+pub enum InspectArgs {
+    Summary(SummaryArgs),
+    Bytes(ByteCommand),
+}
+
+/// Arguments for a codec-aware container summary.
+#[derive(Debug, Args)]
+pub struct SummaryArgs {
+    #[command(flatten)]
+    pub file: FileArg,
+    /// Write JSON to standard output.
+    #[arg(long)]
+    pub json: bool,
+    /// Write a JSON report to this file.
+    #[arg(short = 'o', long, visible_alias = "output")]
+    pub report: Option<PathBuf>,
+    /// Replace an existing report file.
+    #[arg(long)]
+    pub force: bool,
+    /// Resource-limit profile applied during inspection.
+    #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
+    pub limits: LimitProfile,
+    #[command(flatten)]
+    pub input_args: crate::InputArgs,
+}
+
+impl clap::Args for InspectArgs {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        ByteCommand::augment_subcommands(SummaryArgs::augment_args(command))
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+impl clap::FromArgMatches for InspectArgs {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        if matches.subcommand_name().is_some() {
+            ByteCommand::from_arg_matches(matches).map(Self::Bytes)
+        } else {
+            SummaryArgs::from_arg_matches(matches).map(Self::Summary)
+        }
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
+}
+
 /// Byte-level subcommands of `cadmpeg inspect`.
 ///
 /// The tools run directly, as `cadmpeg inspect hex FILE`. The hidden `bytes`
@@ -112,10 +165,15 @@ impl clap::Args for FileArg {
         } else {
             "File to read"
         };
+        let value_name = if command.get_name() == "inspect" {
+            "INPUT"
+        } else {
+            "FILE"
+        };
         command
             .arg(
                 clap::Arg::new("file")
-                    .value_name("FILE")
+                    .value_name(value_name)
                     .help(help)
                     .required_unless_present("input_flag")
                     .value_parser(clap::value_parser!(PathBuf)),
