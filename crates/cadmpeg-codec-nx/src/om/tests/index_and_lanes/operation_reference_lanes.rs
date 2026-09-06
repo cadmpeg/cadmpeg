@@ -75,7 +75,7 @@ fn om_projected_curve_references_require_one_complete_field() {
         field
             .references
             .iter()
-            .map(|reference| (reference.object_index, reference.offset))
+            .map(|reference| (reference.token.value(), reference.offset))
             .collect::<Vec<_>>(),
         [(712, 203), (713, 206), (714, 214)]
     );
@@ -123,7 +123,7 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
         field
             .references
             .iter()
-            .map(|reference| (reference.object_index, reference.offset))
+            .map(|reference| (reference.token.value(), reference.offset))
             .collect::<Vec<_>>(),
         [
             (792, 210),
@@ -195,7 +195,7 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
         field
             .references
             .iter()
-            .map(|reference| reference.object_index)
+            .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
         (6920..=6928).collect::<Vec<_>>()
     );
@@ -212,7 +212,7 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
     })
     .expect("populated terminal slot");
     assert_eq!(field.references.len(), 10);
-    assert_eq!(field.references[9].object_index, 6929);
+    assert_eq!(field.references[9].token.value(), 6929);
 
     let mut malformed = nullable.to_vec();
     malformed[18] = 0x60;
@@ -240,7 +240,7 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
         field
             .references
             .iter()
-            .map(|reference| reference.object_index)
+            .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
         (0x1b20..=0x1b28).collect::<Vec<_>>()
     );

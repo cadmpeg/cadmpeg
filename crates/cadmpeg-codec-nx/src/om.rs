@@ -4,6 +4,8 @@
 pub(crate) mod draft_identity;
 pub(crate) mod plane_descriptor;
 pub(crate) mod csys_descriptor;
+pub(crate) mod reference_index;
+use reference_index::ReferenceIndexToken;
 pub(crate) mod control_word;
 use control_word::ControlWord24;
 
@@ -1433,10 +1435,8 @@ pub struct OperationPayloadTextFrame<'a> {
 pub struct PayloadObjectReference {
     /// Absolute offset of the width marker.
     pub offset: usize,
-    /// Decoded object index.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    /// Checked token retaining the exact marker and width.
+    pub token: ReferenceIndexToken,
 }
 
 /// Counted reference field in one bounded sketch-operation payload.
@@ -2797,7 +2797,7 @@ pub fn simple_hole_repeated_scalar_lane_block_references(
         let second_offset = at;
         let (second, _) = payload_object_index(record.payload.get(at..)?)?;
         Some((
-            [first, second],
+            [first.value(), second.value()],
             [
                 record.payload_offset + first_offset,
                 record.payload_offset + second_offset,
@@ -2855,13 +2855,9 @@ pub fn hole_package_construction_group_lane(
                 }
                 let reference_offset = at;
                 let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-                if !matches!(record.payload.get(at), Some(0xf0 | 0xf1)) {
-                    return None;
-                }
                 references.push(PayloadObjectReference {
                     offset: record.payload_offset + reference_offset,
-                    object_index,
-                    raw_object_index: record.payload.get(at..at + width)?.to_vec(),
+                    token: object_index,
                 });
                 at += width;
             }
@@ -2941,17 +2937,15 @@ fn sketch_reference_field(
         let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
         references.push(PayloadObjectReference {
             offset: record.payload_offset + at,
-            object_index,
-            raw_object_index: record.payload[at..at + width].to_vec(),
+            token: object_index,
         });
         at += width;
     }
     at += 2;
-    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+    let object_index = ReferenceIndexToken::read_payload(record.payload.get(at..)?)?;
     references.push(PayloadObjectReference {
         offset: record.payload_offset + at,
-        object_index,
-        raw_object_index: record.payload[at..at + width].to_vec(),
+        token: object_index,
     });
     Some(SketchPayloadReferenceField {
         declared_count,
@@ -2959,15 +2953,9 @@ fn sketch_reference_field(
     })
 }
 
-fn payload_object_index(bytes: &[u8]) -> Option<(u32, usize)> {
-    match *bytes.first()? {
-        0xf0 => Some((u32::from(*bytes.get(1)?), 2)),
-        0xf1 => {
-            let value = u16::from_be_bytes([*bytes.get(1)?, *bytes.get(2)?]);
-            (value >= 0x0100).then_some((u32::from(value), 3))
-        }
-        _ => None,
-    }
+fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {
+    let token = ReferenceIndexToken::read_payload(bytes)?;
+    Some((token, token.raw().len()))
 }
 
 /// Decode the unique exactly framed construction-reference field in a bounded
@@ -2989,8 +2977,7 @@ pub fn projected_curve_payload_references(
         *at += width;
         Some(PayloadObjectReference {
             offset: record.payload_offset + offset,
-            object_index,
-            raw_object_index: record.payload[offset..offset + width].to_vec(),
+            token: object_index,
         })
     };
     let decode_field = |start: usize| match record.label.value {
@@ -3025,7 +3012,7 @@ pub fn projected_curve_payload_references(
                     .then_some(())?;
                 at += CMB_BRANCH_PREFIX.len();
                 let repeated = decode_reference(&mut at)?;
-                (repeated.object_index == references[anchor].object_index).then_some(())?;
+                (repeated.token.value() == references[anchor].token.value()).then_some(())?;
                 (record.payload.get(at..at + CMB_BRANCH_MIDDLE.len()) == Some(&CMB_BRANCH_MIDDLE))
                     .then_some(())?;
                 at += CMB_BRANCH_MIDDLE.len();
@@ -3083,8 +3070,7 @@ pub fn pattern_payload_references(
         *at += width;
         Some(PayloadObjectReference {
             offset: record.payload_offset + offset,
-            object_index,
-            raw_object_index: record.payload[offset..offset + width].to_vec(),
+            token: object_index,
         })
     };
     let decode_graph = |start: usize| {
@@ -3234,8 +3220,7 @@ pub fn pattern_payload_counted_reference_lane(
             at = at.checked_add(width)?;
             references.push(PayloadObjectReference {
                 offset: record.payload_offset + offset,
-                object_index,
-                raw_object_index: record.payload[offset..at].to_vec(),
+                token: object_index,
             });
         }
         Some(PatternPayloadCountedReferenceLane {
@@ -3258,13 +3243,12 @@ pub fn fset_payload_reference_graph(
     let decode_reference = |at: &mut usize| {
         let offset = *at;
         (record.payload.get(offset) == Some(&0x90)).then_some(())?;
-        let object_index = u32::from(View::u16_be_at(record.payload, offset + 1)?);
+        let object_index = ReferenceIndexToken::read_feature(record.payload.get(offset..)?)?;
         let width = 3;
         *at += width;
         Some(PayloadObjectReference {
             offset: record.payload_offset + offset,
-            object_index,
-            raw_object_index: record.payload[offset..offset + width].to_vec(),
+            token: object_index,
         })
     };
     let decode = |start: usize| {
@@ -3324,7 +3308,7 @@ pub fn delete_payload_references(
             (None, 1)
         } else {
             let (object_index, width) = payload_object_index(&record.payload[at..])?;
-            (Some(object_index), width)
+            (Some(object_index.value()), width)
         };
         at += width;
         references.push(DeletePayloadReferenceSlot {
@@ -3591,13 +3575,11 @@ pub fn multi_instance_output_payload_lane(
             Vec::with_capacity(usize::from(instance_count.saturating_sub(1)));
         for _ in 1..instance_count {
             let reference_offset = at;
-            let (Some(object_index), end) = feature_object_index(record.payload, at)? else {
-                return None;
-            };
+            let object_index = ReferenceIndexToken::read_feature(record.payload.get(at..)?)?;
+            let end = at + object_index.raw().len();
             trailing_references.push(PayloadObjectReference {
                 offset: record.payload_offset + reference_offset,
-                object_index,
-                raw_object_index: record.payload[reference_offset..end].to_vec(),
+                token: object_index,
             });
             at = end;
         }
@@ -3731,8 +3713,7 @@ pub fn point_feature_payload_header(
     Some(PointFeaturePayloadHeader {
         reference: PayloadObjectReference {
             offset: record.payload_offset + reference_offset,
-            object_index,
-            raw_object_index: record.payload[reference_offset..reference_offset + width].to_vec(),
+            token: object_index,
         },
         mode,
     })
@@ -3790,8 +3771,7 @@ pub fn draft_feature_payload_references(
             *at += width;
             Some(PayloadObjectReference {
                 offset: record.payload_offset + offset,
-                object_index,
-                raw_object_index: record.payload[offset..offset + width].to_vec(),
+                token: object_index,
             })
         };
         let first = decode_reference(&mut at)?;
@@ -3958,8 +3938,7 @@ pub fn surface_feature_payload_references(
         *at += width;
         Some(PayloadObjectReference {
             offset: record.payload_offset + offset,
-            object_index,
-            raw_object_index: record.payload[offset..offset + width].to_vec(),
+            token: object_index,
         })
     };
     let mut at = 5;
@@ -4012,8 +3991,7 @@ pub fn thru_curve_payload_references(
         *at += width;
         Some(PayloadObjectReference {
             offset: record.payload_offset + offset,
-            object_index,
-            raw_object_index: record.payload[offset..offset + width].to_vec(),
+            token: object_index,
         })
     };
     for _ in 0..3 {
@@ -4060,8 +4038,7 @@ fn thru_curve_payload_branch(
         cursor += width;
         members.push(PayloadObjectReference {
             offset: record.payload_offset + offset,
-            object_index,
-            raw_object_index: record.payload[offset..cursor].to_vec(),
+            token: object_index,
         });
     }
     (record.payload.get(cursor..cursor + 2) == Some(&[0x01, declared_count])).then_some(())?;
@@ -4084,8 +4061,7 @@ fn thru_curve_payload_branch(
     cursor += width;
     let terminal = PayloadObjectReference {
         offset: record.payload_offset + terminal_offset,
-        object_index,
-        raw_object_index: record.payload[terminal_offset..cursor].to_vec(),
+        token: object_index,
     };
     (*record.payload.get(cursor)? == 0x00).then_some(())?;
     cursor += 1;
@@ -4166,8 +4142,7 @@ pub fn swp104_payload_leading_branch(
         at += width;
         members.push(PayloadObjectReference {
             offset: record.payload_offset + offset,
-            object_index,
-            raw_object_index: record.payload[offset..at].to_vec(),
+            token: object_index,
         });
     }
 
@@ -4196,8 +4171,7 @@ pub fn swp104_payload_leading_branch(
     at += width;
     let terminal = PayloadObjectReference {
         offset: record.payload_offset + terminal_offset,
-        object_index,
-        raw_object_index: record.payload[terminal_offset..at].to_vec(),
+        token: object_index,
     };
     (*record.payload.get(at)? == 0x00).then_some(())?;
     at += 1;
@@ -4269,7 +4243,6 @@ fn surface_feature_branch_paths(
         return Vec::new();
     };
     let terminal_offset = cursor;
-    let terminal_width = width;
     cursor += width;
     if payload.get(cursor) != Some(&0x00) {
         return Vec::new();
@@ -4303,15 +4276,13 @@ fn surface_feature_branch_paths(
             };
             members.push(PayloadObjectReference {
                 offset: payload_offset + member_cursor,
-                object_index,
-                raw_object_index: payload[member_cursor..member_cursor + width].to_vec(),
+                token: object_index,
             });
             member_cursor += width;
         }
         let terminal = PayloadObjectReference {
             offset: payload_offset + terminal_offset,
-            object_index,
-            raw_object_index: payload[terminal_offset..terminal_offset + terminal_width].to_vec(),
+            token: object_index,
         };
         let Ok(members) = BranchItems::new(members) else { return Vec::new(); };
         for mut continuation in continuations {
@@ -4808,7 +4779,8 @@ fn operation_body_reference_lane_values(
                 (value, width)
             }
             OperationBodyReferenceLaneEncoding::PayloadObjectIndex => {
-                payload_object_index(record.bytes.get(at..)?)?
+                let (token, width) = payload_object_index(record.bytes.get(at..)?)?;
+                (token.value(), width)
             }
         };
         at += width;
@@ -4885,8 +4857,7 @@ pub fn block_construction_references(
         let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
         references.push(PayloadObjectReference {
             offset: record.payload_offset + at,
-            object_index,
-            raw_object_index: record.payload[at..at + width].to_vec(),
+            token: object_index,
         });
         at += width;
     }
@@ -4897,8 +4868,7 @@ pub fn block_construction_references(
     let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
     references.push(PayloadObjectReference {
         offset: record.payload_offset + at,
-        object_index,
-        raw_object_index: record.payload[at..at + width].to_vec(),
+        token: object_index,
     });
     at += width;
     if record.payload.get(at..at + TRAILER.len()) != Some(&TRAILER) {
@@ -4928,8 +4898,7 @@ pub fn datum_csys_references(record: OperationRecord<'_>) -> Option<DatumCsysRef
         let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
         references.push(PayloadObjectReference {
             offset: record.payload_offset + at,
-            object_index,
-            raw_object_index: record.payload[at..at + width].to_vec(),
+            token: object_index,
         });
         at += width;
     }
@@ -4987,7 +4956,7 @@ pub fn datum_plane_single_reference_branch(
         descriptor_index,
         raw_descriptor_index,
         descriptor_offset,
-        object_index,
+        object_index: object_index.value(),
         raw_object_index,
         object_offset,
     })
@@ -5029,7 +4998,7 @@ pub fn datum_plane_descriptor_reference_branch(
         descriptor_index,
         raw_descriptor_index,
         descriptor_offset,
-        object_index,
+        object_index: object_index.value(),
         raw_object_index,
         object_offset,
     })
@@ -5060,8 +5029,7 @@ pub fn datum_plane_double_reference_branch(
     let (first_index, first_width) = payload_object_index(record.payload.get(at..)?)?;
     let first = PayloadObjectReference {
         offset: record.payload_offset + at,
-        object_index: first_index,
-        raw_object_index: record.payload[at..at + first_width].to_vec(),
+        token: first_index,
     };
     at += first_width;
     let middle = if header.declared_count == 2 {
@@ -5074,8 +5042,7 @@ pub fn datum_plane_double_reference_branch(
     let (second_index, second_width) = payload_object_index(record.payload.get(at..)?)?;
     let second = PayloadObjectReference {
         offset: record.payload_offset + at,
-        object_index: second_index,
-        raw_object_index: record.payload[at..at + second_width].to_vec(),
+        token: second_index,
     };
     at += second_width;
     let suffix = if header.declared_count == 2 {
@@ -5558,8 +5525,7 @@ fn extrude_profile_reference_field(
         let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
         references.push(PayloadObjectReference {
             offset: record.payload_offset + at,
-            object_index,
-            raw_object_index: record.payload[at..at + width].to_vec(),
+            token: object_index,
         });
         at += width;
     }
@@ -7098,11 +7064,11 @@ fn counted_feature_object_indices(
     let mut cursor = values_start;
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {
-        let (value, next) = feature_object_index(bytes, cursor)?;
+        let value = ReferenceIndexToken::read_feature(bytes.get(cursor..)?)?;
+        let next = cursor + value.raw().len();
         values.push(PayloadObjectReference {
             offset: base_offset + cursor,
-            object_index: value?,
-            raw_object_index: bytes.get(cursor..next)?.to_vec(),
+            token: value,
         });
         cursor = next;
     }

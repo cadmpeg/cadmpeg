@@ -33,14 +33,14 @@ fn om_pattern_counted_reference_lane_requires_exact_terminator() {
     assert_eq!(
         lane.references
             .iter()
-            .map(|reference| reference.object_index)
+            .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
         [0x06b1, 0x06b2, 0x06b3]
     );
     assert_eq!(
         lane.references
             .iter()
-            .map(|reference| reference.raw_object_index.clone())
+            .map(|reference| reference.token.raw().to_vec())
             .collect::<Vec<_>>(),
         references
             .iter()

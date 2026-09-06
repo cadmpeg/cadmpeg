@@ -6190,16 +6190,16 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
                 operation_label,
                 kind,
                 target: FeatureIndexToken {
-                    value: operation.target.object_index,
-                    raw: operation.target.raw_object_index,
+                    value: operation.target.token.value(),
+                    raw: operation.target.token.raw().to_vec(),
                     source_offset: entry_offset + operation.target.offset as u64,
                 },
                 tools: operation
                     .tools
                     .into_iter()
                     .map(|tool| FeatureIndexToken {
-                        value: tool.object_index,
-                        raw: tool.raw_object_index,
+                        value: tool.token.value(),
+                        raw: tool.token.raw().to_vec(),
                         source_offset: entry_offset + tool.offset as u64,
                     })
                     .collect(),
@@ -7261,7 +7261,7 @@ pub fn feature_hole_package_construction_group_lanes(
             let data_blocks = lane
                 .references
                 .iter()
-                .map(|reference| unique_offset_data_block(&indexed, reference.object_index))
+                .map(|reference| unique_offset_data_block(&indexed, reference.token.value()))
                 .collect::<Option<Vec<_>>>()
                 .and_then(|blocks| blocks.try_into().ok());
             let Some(data_blocks) = data_blocks else {
@@ -7276,11 +7276,11 @@ pub fn feature_hole_package_construction_group_lanes(
                 operation_label,
                 selector: lane.selector,
                 branch: lane.branch,
-                object_indices: lane.references.clone().map(|reference| reference.object_index),
+                object_indices: lane.references.clone().map(|reference| reference.token.value()),
                 raw_object_indices: lane
                     .references
                     .clone()
-                    .map(|reference| reference.raw_object_index),
+                    .map(|reference| reference.token.raw().to_vec()),
                 data_blocks,
                 payload_offset: lane.offset as u64,
                 source_offset: entry_offset + record.payload_offset as u64 + lane.offset as u64,
@@ -8015,10 +8015,10 @@ pub fn feature_datum_csys_constructions(
                 return;
             };
             let resolved = field.references.map(|reference| {
-                unique_offset_data_block(&indexed, reference.object_index).map(|data_block| {
+                unique_offset_data_block(&indexed, reference.token.value()).map(|data_block| {
                     (
-                        reference.object_index,
-                        reference.raw_object_index,
+                        reference.token.value(),
+                        reference.token.raw().to_vec(),
                         data_block,
                         entry_offset + reference.offset as u64,
                     )
@@ -9484,7 +9484,7 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
             let declared_count = decoded.declared_count;
             let terminal_ordinal = decoded.references.len() - 1;
             references.extend(decoded.references.into_iter().enumerate().map(|(ordinal, reference)| {
-                let data_block = unique_offset_data_block(&indexed, reference.object_index);
+                let data_block = unique_offset_data_block(&indexed, reference.token.value());
                 FeatureSketchReference {
                     id: format!(
                         "nx:feature-history:sketch-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
@@ -9493,8 +9493,8 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
                     ordinal: ordinal as u32,
                     declared_count,
                     terminal: ordinal == terminal_ordinal,
-                    object_index: reference.object_index,
-                    raw_object_index: reference.raw_object_index,
+                    object_index: reference.token.value(),
+                    raw_object_index: reference.token.raw().to_vec(),
                     data_block,
                     source_offset: entry_offset + reference.offset as u64,
                 }
@@ -9531,9 +9531,9 @@ fn resolved_feature_payload_references(
                     section_key: section_key.to_string(),
                     operation_ordinal,
                     ordinal,
-                    object_index: reference.object_index,
-                    raw_object_index: reference.raw_object_index,
-                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    object_index: reference.token.value(),
+                    raw_object_index: reference.token.raw().to_vec(),
+                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
                 }
             }));
@@ -9594,27 +9594,27 @@ pub fn feature_fset_reference_graphs(container: &Container) -> Vec<FeatureFsetRe
                 first_object_indices: graph
                     .first
                     .each_ref()
-                    .map(|reference| reference.object_index),
+                    .map(|reference| reference.token.value()),
                 raw_first_object_indices: graph
                     .first
                     .each_ref()
-                    .map(|reference| reference.raw_object_index.clone()),
+                    .map(|reference| reference.token.raw().to_vec()),
                 first_data_blocks: graph
                     .first
                     .each_ref()
-                    .map(|reference| unique_offset_data_block(&indexed, reference.object_index)),
+                    .map(|reference| unique_offset_data_block(&indexed, reference.token.value())),
                 second_object_indices: graph
                     .second
                     .each_ref()
-                    .map(|reference| reference.object_index),
+                    .map(|reference| reference.token.value()),
                 raw_second_object_indices: graph
                     .second
                     .each_ref()
-                    .map(|reference| reference.raw_object_index.clone()),
+                    .map(|reference| reference.token.raw().to_vec()),
                 second_data_blocks: graph
                     .second
                     .each_ref()
-                    .map(|reference| unique_offset_data_block(&indexed, reference.object_index)),
+                    .map(|reference| unique_offset_data_block(&indexed, reference.token.value())),
                 source_offset: entry_offset + graph.offset as u64,
                 first_source_offsets: graph
                     .first
@@ -9899,9 +9899,9 @@ pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternRe
                     operation_label: operation_label.clone(),
                     layout,
                     ordinal: ordinal as u32,
-                    object_index: reference.object_index,
-                    raw_object_index: reference.raw_object_index,
-                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    object_index: reference.token.value(),
+                    raw_object_index: reference.token.raw().to_vec(),
+                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
                 }
             }));
@@ -9931,9 +9931,9 @@ pub fn feature_pattern_counted_reference_lanes(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 references: lane.references.into_iter().map(|reference| FeatureDataBlockToken {
-                    value: reference.object_index,
-                    raw: reference.raw_object_index,
-                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    value: reference.token.value(),
+                    raw: reference.token.raw().to_vec(),
+                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
                 }).collect(),
                 source_offset: entry_offset + lane.offset as u64,
@@ -10137,8 +10137,8 @@ pub fn feature_multi_instance_output_lanes(
                     source_offset: entry_offset + row.selector.offset as u64,
                 }).collect(),
                 trailing_references: lane.trailing_references.into_iter().map(|reference| FeatureIndexToken {
-                    value: reference.object_index,
-                    raw: reference.raw_object_index,
+                    value: reference.token.value(),
+                    raw: reference.token.raw().to_vec(),
                     source_offset: entry_offset + reference.offset as u64,
                 }).collect(),
                 source_offset: entry_offset + lane.offset as u64,
@@ -10200,9 +10200,9 @@ pub fn feature_point_construction_headers(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                object_index: header.reference.object_index,
-                raw_object_index: header.reference.raw_object_index,
-                data_block: unique_offset_data_block(&indexed, header.reference.object_index),
+                object_index: header.reference.token.value(),
+                raw_object_index: header.reference.token.raw().to_vec(),
+                data_block: unique_offset_data_block(&indexed, header.reference.token.value()),
                 mode: header.mode,
                 source_offset: entry_offset + header.reference.offset as u64,
             });
@@ -10326,7 +10326,7 @@ pub fn feature_draft_construction_index_lanes(
                     let complete_indices = graph
                         .references
                         .iter()
-                        .map(|reference| reference.object_index)
+                        .map(|reference| reference.token.value())
                         .chain(lane.indices.iter().map(|token| token.value))
                         .collect::<Vec<_>>();
                     unique_offset_data_store(&indexed, &complete_indices)
@@ -10693,9 +10693,9 @@ pub fn feature_thru_curve_construction_branch_groups(
             let resolve = |ordinal: usize, reference: crate::om::PayloadObjectReference| {
                 FeatureSurfaceBranchReference {
                     ordinal: ordinal as u32,
-                    object_index: reference.object_index,
-                    raw_object_index: reference.raw_object_index,
-                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    object_index: reference.token.value(),
+                    raw_object_index: reference.token.raw().to_vec(),
+                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
                 }
             };
@@ -10739,9 +10739,9 @@ pub fn feature_swp104_leading_branches(container: &Container) -> Vec<FeatureSwp1
             let resolve = |ordinal: usize, reference: crate::om::PayloadObjectReference| {
                 FeatureSurfaceBranchReference {
                     ordinal: ordinal as u32,
-                    object_index: reference.object_index,
-                    raw_object_index: reference.raw_object_index,
-                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    object_index: reference.token.value(),
+                    raw_object_index: reference.token.raw().to_vec(),
+                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
                 }
             };
@@ -10904,9 +10904,9 @@ pub fn feature_surface_construction_branches(
                 let resolve = |ordinal: usize, reference: crate::om::PayloadObjectReference| {
                     FeatureSurfaceBranchReference {
                         ordinal: ordinal as u32,
-                        object_index: reference.object_index,
-                        raw_object_index: reference.raw_object_index,
-                        data_block: unique_offset_data_block(&indexed, reference.object_index),
+                        object_index: reference.token.value(),
+                        raw_object_index: reference.token.raw().to_vec(),
+                        data_block: unique_offset_data_block(&indexed, reference.token.value()),
                         source_offset: entry_offset + reference.offset as u64,
                     }
                 };
@@ -10957,9 +10957,9 @@ pub fn feature_extrude_profile_references(
                     ordinal: ordinal as u32,
                     field_tag: decoded.field_tag,
                     witness_source_offset: row.witness_offset.map(|offset| entry_offset + offset as u64),
-                    object_index: reference.object_index,
-                    raw_object_index: reference.raw_object_index,
-                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    object_index: reference.token.value(),
+                    raw_object_index: reference.token.raw().to_vec(),
+                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
                 }
             }));
@@ -11464,9 +11464,9 @@ pub fn feature_block_construction_references(
                     control: field.control,
                     ordinal: ordinal as u32,
                     terminal: ordinal == terminal_ordinal,
-                    object_index: reference.object_index,
-                    raw_object_index: reference.raw_object_index,
-                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    object_index: reference.token.value(),
+                    raw_object_index: reference.token.raw().to_vec(),
+                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
                 },
             ));
