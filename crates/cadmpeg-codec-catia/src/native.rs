@@ -13,6 +13,9 @@ use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 pub(crate) mod entity_record;
 use entity_record::{CatiaEntityRecord, CatiaEntityRecordBody, CatiaEntityObjectProduction, CatiaEntityValueProduction};
 
+pub(crate) mod schema_configuration_chain;
+use schema_configuration_chain::{derive_schema_configuration_row_chains, CatiaSchemaConfigurationRowChain};
+
 pub(crate) mod owner_chart;
 use owner_chart::{
     CatiaOwnerChartAddress, CatiaOwnerChartAliasBinding, CatiaOwnerChartBridge,
@@ -3364,36 +3367,6 @@ pub struct CatiaSchemaConfigurationRowLink {
     pub successor: CatiaEntityReference,
 }
 
-/// One complete ordered schema-configuration chain formed by exact `configrow` links.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaSchemaConfigurationRowChain {
-    /// Stable identity derived from the graph and stored class identity.
-    pub id: String,
-    /// Object graph containing every row link.
-    pub object_graph: String,
-    /// Successor incidences in chain order from the root row.
-    #[serde(default)]
-    pub links: Vec<CatiaSchemaConfigurationRowChainLink>,
-}
-
-/// One ordered edge in a complete schema-configuration-row successor chain.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaSchemaConfigurationRowChainLink {
-    /// Row entity carrying the successor occurrence.
-    pub row: CatiaEntityReference,
-    /// Byte offset of the successor atom within the row object's payload.
-    pub successor_payload_offset: u64,
-    /// Stored successor identity and its same-graph resolution.
-    pub successor: CatiaEntityReference,
-    /// Same-graph entities strictly between the row and successor.
-    ///
-    /// Absent when the successor does not follow the row in source order.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub intervening_entities: Option<Vec<CatiaEntityReference>>,
-}
-
 /// Exact framing production for a compound relation-program instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CatiaRelationProgramInstanceFraming {
@@ -5979,107 +5952,6 @@ fn schema_configuration_row_link(
             terminal_nulls,
         ),
     })
-}
-
-fn derive_schema_configuration_row_chains(
-    records: &[CatiaEntityRecord],
-    entities: &HashMap<(String, u32), String>,
-    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
-    terminal_nulls: &CatiaTerminalNullByGraphIndex,
-) -> Vec<CatiaSchemaConfigurationRowChain> {
-    let row_ids = records
-        .iter()
-        .filter(|entity| entity.schema_configuration_row_link().is_some())
-        .map(|entity| (entity.object_graph.as_str(), entity.entity_id))
-        .collect::<HashSet<_>>();
-    let mut groups = HashMap::<(&str, u32), Vec<(u32, &CatiaSchemaConfigurationRowLink)>>::new();
-    for entity in records {
-        let Some(link) = &entity.schema_configuration_row_link() else {
-            continue;
-        };
-        groups
-            .entry((
-                entity.object_graph.as_str(),
-                link.class_reference.entity_id(),
-            ))
-            .or_default()
-            .push((entity.entity_id, link));
-    }
-    let mut groups = groups.into_iter().collect::<Vec<_>>();
-    groups.sort_by(
-        |((left_graph, left_root), _), ((right_graph, right_root), _)| {
-            left_graph.cmp(right_graph).then(left_root.cmp(right_root))
-        },
-    );
-
-    groups
-        .into_iter()
-        .filter_map(|((graph, root), links)| {
-            let successors = links.iter().copied().collect::<HashMap<_, _>>();
-            if successors.len() != links.len() {
-                return None;
-            }
-            let mut row_ids_in_order = Vec::with_capacity(links.len());
-            let mut visited = HashSet::new();
-            let mut current = root;
-            while let Some(link) = successors.get(&current).copied() {
-                if !visited.insert(current) {
-                    return None;
-                }
-                row_ids_in_order.push(current);
-                current = link.successor.entity_id();
-            }
-            if visited.len() != links.len() || row_ids.contains(&(graph, current)) {
-                return None;
-            }
-            let links = row_ids_in_order
-                .into_iter()
-                .map(|row_id| {
-                    let link = successors[&row_id];
-                    let successor_id = link.successor.entity_id();
-                    CatiaSchemaConfigurationRowChainLink {
-                        row: entity_reference(
-                            graph,
-                            row_id,
-                            entities,
-                            entity_classes,
-                            terminal_nulls,
-                        ),
-                        successor_payload_offset: link.successor_payload_offset,
-                        successor: link.successor.clone(),
-                        intervening_entities: (row_id < successor_id).then(|| {
-                            records
-                                .iter()
-                                .filter(|entity| {
-                                    entity.object_graph == graph
-                                        && entity.entity_id > row_id
-                                        && entity.entity_id < successor_id
-                                })
-                                .map(|entity| {
-                                    entity_reference(
-                                        graph,
-                                        entity.entity_id,
-                                        entities,
-                                        entity_classes,
-                                        terminal_nulls,
-                                    )
-                                })
-                                .collect()
-                        }),
-                    }
-                })
-                .collect();
-            Some(CatiaSchemaConfigurationRowChain {
-                id: object_graph_derived_id(
-                    graph,
-                    "schema-configuration-row-chain",
-                    &root.to_string(),
-                )?,
-                object_graph: graph.to_string(),
-                links,
-            })
-        })
-        .collect()
 }
 
 fn relation_program_instance_lead_12(

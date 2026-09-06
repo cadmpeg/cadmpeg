@@ -36,7 +36,7 @@ fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usiz
         native
             .schema_configuration_row_chains
             .iter()
-            .map(|chain| chain.links.len())
+            .map(|chain| chain.links().len())
             .sum(),
     )
 }
@@ -1341,14 +1341,12 @@ fn finish_decode(
     let resolved_schema_configuration_row_chain_terminal_count = native
         .schema_configuration_row_chains
         .iter()
-        .filter_map(|chain| chain.links.last())
-        .filter(|link| link.successor.entity().is_some())
+        .filter(|chain| chain.terminal.entity().is_some())
         .count();
     let null_schema_configuration_row_chain_terminal_count = native
         .schema_configuration_row_chains
         .iter()
-        .filter_map(|chain| chain.links.last())
-        .filter(|link| link.successor.is_null())
+        .filter(|chain| chain.terminal.is_null())
         .count();
     let unresolved_schema_configuration_row_chain_terminal_count =
         complete_schema_configuration_row_chain_count
@@ -1357,13 +1355,12 @@ fn finish_decode(
     let classified_schema_configuration_row_chain_terminal_count = native
         .schema_configuration_row_chains
         .iter()
-        .filter_map(|chain| chain.links.last())
-        .filter(|link| link.successor.class_name().is_some())
+        .filter(|chain| chain.terminal.class_name().is_some())
         .count();
     let schema_configuration_row_intervening_entity_count = native
         .schema_configuration_row_chains
         .iter()
-        .flat_map(|chain| &chain.links)
+        .flat_map(|chain| chain.links())
         .filter_map(|link| link.intervening_entities.as_ref())
         .flatten()
         .count();
@@ -1372,7 +1369,7 @@ fn finish_decode(
         .iter()
         .filter(|chain| {
             chain
-                .links
+                .links()
                 .iter()
                 .all(|link| link.intervening_entities.is_some())
         })
@@ -1386,7 +1383,7 @@ fn finish_decode(
     let schema_configuration_row_intervening_schema_configuration_count = native
         .schema_configuration_row_chains
         .iter()
-        .flat_map(|chain| &chain.links)
+        .flat_map(|chain| chain.links())
         .filter_map(|link| link.intervening_entities.as_ref())
         .flatten()
         .filter_map(|reference| reference.entity())

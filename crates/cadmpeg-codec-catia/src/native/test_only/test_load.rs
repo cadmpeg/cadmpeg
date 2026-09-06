@@ -180,8 +180,14 @@ impl CatiaNative {
         } else {
             "configuration_row_chains"
         };
+        let migrate_row_chains = namespace.version() < CATIA_DERIVED_NATIVE_ID_VERSION
+            || namespace.version() < CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION;
         let mut schema_configuration_row_chains: Vec<CatiaSchemaConfigurationRowChain> =
-            namespace.arena_as(row_chain_arena)?;
+            if migrate_row_chains {
+                Vec::new()
+            } else {
+                namespace.arena_as(row_chain_arena)?
+            };
         let mut reference_signature_cohorts: Vec<CatiaReferenceSignatureCohort> =
             namespace.arena_as("reference_signature_cohorts")?;
         if namespace.version() < CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION {
@@ -407,9 +413,7 @@ impl CatiaNative {
             &entity_classes_by_graph_identity,
             &terminal_nulls_by_graph,
         );
-        if namespace.version() < CATIA_DERIVED_NATIVE_ID_VERSION
-            || namespace.version() < CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION
-        {
+        if migrate_row_chains {
             schema_configuration_row_chains = expected_schema_configuration_row_chains;
         } else if schema_configuration_row_chains != expected_schema_configuration_row_chains {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
