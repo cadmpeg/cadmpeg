@@ -4,7 +4,6 @@
 use super::joined_payload::JoinedPayload;
 use super::payload_content::FeaturePayloadBlock;
 use super::payload_content::FeaturePayloadContent;
-use super::reference::ConstructionReference;
 use super::FeatureConstructionOwner;
 use super::FeatureConstructionPayload;
 use crate::container::Container;
@@ -32,6 +31,8 @@ use super::offset_data_block_bytes;
 use super::resolved_feature_payload_references;
 use super::unique_offset_data_store;
 use super::visit_feature_history_operation_records;
+
+use crate::om::draft_leading::DraftLeadingLane;
 
 /// Ordered construction reference carried by a bounded draft-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,8 +67,8 @@ pub struct FeatureDraftConstructionIndexLane {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeatureDraftConstructionIndices {
-    Unresolved(CountedIndexMembers<LocatedCompactIndex<u64>, 1>),
-    Resolved(CountedIndexMembers<ConstructionReference<String, CompactIndexAtom>, 1>),
+    Unresolved(DraftLeadingLane<(), u64>),
+    Resolved(DraftLeadingLane<String, u64>),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -92,30 +93,38 @@ struct FeatureDraftConstructionIndexLaneWire {
 
 impl From<FeatureDraftConstructionIndexLane> for FeatureDraftConstructionIndexLaneWire {
     fn from(lane: FeatureDraftConstructionIndexLane) -> Self {
-        let (tokens, data_blocks): (Vec<_>, _) = match lane.indices {
-            FeatureDraftConstructionIndices::Unresolved(tokens) => {
-                (tokens.into_iter().collect(), None)
-            }
-            FeatureDraftConstructionIndices::Resolved(tokens) => {
-                let (tokens, blocks) = tokens
-                    .into_iter()
-                    .map(|row| {
+        let (declared_count, tokens, data_blocks): (_, Vec<_>, _) = match lane.indices {
+            FeatureDraftConstructionIndices::Unresolved(frame) => (
+                usize::from(frame.declared_count()),
+                frame
+                    .indices()
+                    .map(|token| LocatedCompactIndex {
+                        atom: token.atom,
+                        offset: token.offset,
+                    })
+                    .collect(),
+                None,
+            ),
+            FeatureDraftConstructionIndices::Resolved(frame) => {
+                let (tokens, blocks) = frame
+                    .indices()
+                    .map(|token| {
                         (
                             LocatedCompactIndex {
-                                atom: row.token,
-                                offset: row.source_offset,
+                                atom: token.atom,
+                                offset: token.offset,
                             },
-                            row.data_block,
+                            token.target.clone(),
                         )
                     })
                     .unzip();
-                (tokens, Some(blocks))
+                (usize::from(frame.declared_count()), tokens, Some(blocks))
             }
         };
         Self {
             id: lane.id,
             operation_label: lane.operation_label,
-            declared_count: tokens.len() + 1,
+            declared_count,
             indices: tokens.iter().map(|token| token.atom.value()).collect(),
             raw_indices: tokens
                 .iter()
@@ -146,39 +155,43 @@ impl TryFrom<FeatureDraftConstructionIndexLaneWire> for FeatureDraftConstruction
         {
             return Err("draft index lane columns must have equal lengths".into());
         }
+        let origin = wire
+            .source_offsets
+            .first()
+            .and_then(|offset| offset.checked_sub(24))
+            .ok_or("source_offsets: missing draft frame prefix")?;
         let tokens = wire
             .indices
             .into_iter()
             .zip(wire.raw_indices)
-            .zip(wire.source_offsets)
             .enumerate()
-            .map(|(slot, ((value, raw), offset))| {
-                Ok(LocatedCompactIndex {
-                    atom: CompactIndexAtom::from_wire(value, &raw)
-                        .map_err(|error| format!("indices[{slot}]: {error}"))?,
-                    offset,
-                })
+            .map(|(slot, (value, raw))| {
+                CompactIndexAtom::from_wire(value, &raw)
+                    .map(Into::into)
+                    .map_err(|error| format!("indices[{slot}]: {error}"))
             })
-            .collect::<Result<Vec<_>, String>>()?;
-        let tokens = tokens.into_iter();
+            .collect::<Result<Vec<_>, _>>()?;
+        let tokens =
+            CountedIndexMembers::new(tokens).map_err(|error| format!("indices: {error}"))?;
+        let frame = DraftLeadingLane::<(), u64>::new(tokens, origin)
+            .ok_or("source_offsets: draft frame extent overflows")?;
+        if !frame
+            .indices()
+            .map(|token| token.offset)
+            .eq(wire.source_offsets)
+        {
+            return Err("source_offsets: must follow the compact-index token widths".into());
+        }
         let indices = match wire.data_blocks {
-            None => FeatureDraftConstructionIndices::Unresolved(
-                CountedIndexMembers::new(tokens.collect())
-                    .map_err(|error| format!("indices: {error}"))?,
-            ),
-            Some(blocks) => FeatureDraftConstructionIndices::Resolved(
-                CountedIndexMembers::new(
-                    tokens
-                        .zip(blocks)
-                        .map(|(token, data_block)| ConstructionReference {
-                            token: token.atom,
-                            source_offset: token.offset,
-                            data_block,
-                        })
-                        .collect(),
+            None => FeatureDraftConstructionIndices::Unresolved(frame),
+            Some(blocks) => {
+                let mut blocks = blocks.into_iter();
+                FeatureDraftConstructionIndices::Resolved(
+                    frame
+                        .try_resolve(|_| blocks.next())
+                        .ok_or("data_blocks: missing draft lane target")?,
                 )
-                .map_err(|error| format!("indices: {error}"))?,
-            ),
+            }
         };
         Ok(Self {
             id: wire.id,
@@ -683,8 +696,7 @@ pub fn feature_draft_construction_index_lanes(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::draft_feature_leading_index_lane(record.payload_view())
-            else {
+            let Some(lane) = crate::om::draft_leading::scan(record.payload_view()) else {
                 return;
             };
             let section_ordinal = crate::om::draft_feature_payload_references(
@@ -695,32 +707,18 @@ pub fn feature_draft_construction_index_lanes(
                     .references
                     .iter()
                     .map(|reference| reference.token.value())
-                    .chain(
-                        lane.indices
-                            .as_slice()
-                            .iter()
-                            .map(|token| token.atom.value()),
-                    )
+                    .chain(lane.indices().map(|token| token.atom.value()))
                     .collect::<Vec<_>>();
                 unique_offset_data_store(&indexed, &complete_indices)
             });
-            let tokens = lane.indices.map(|token| LocatedCompactIndex {
-                atom: token.atom,
-                offset: entry_offset + token.offset as u64,
-            });
+            let Some(frame) = lane.into_absolute(entry_offset) else {
+                return;
+            };
             let indices = match section_ordinal {
-                None => FeatureDraftConstructionIndices::Unresolved(tokens),
+                None => FeatureDraftConstructionIndices::Unresolved(frame),
                 Some(section_ordinal) => {
-                    FeatureDraftConstructionIndices::Resolved(tokens.map(|token| {
-                        let data_block = format!(
-                            "nx:om-data-blocks-{section_ordinal}:block#{}",
-                            token.atom.value()
-                        );
-                        ConstructionReference {
-                            token: token.atom,
-                            source_offset: token.offset,
-                            data_block,
-                        }
+                    FeatureDraftConstructionIndices::Resolved(frame.resolve(|index| {
+                        format!("nx:om-data-blocks-{section_ordinal}:block#{index}")
                     }))
                 }
             };
@@ -751,9 +749,8 @@ pub fn feature_draft_construction_payloads(
                 return None;
             };
             let data_blocks = tokens
-                .as_slice()
-                .iter()
-                .map(|row| row.data_block.clone())
+                .indices()
+                .map(|row| row.target.clone())
                 .collect::<Vec<_>>();
             let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             Some(FeatureConstructionPayload {
@@ -785,12 +782,7 @@ pub fn feature_draft_construction_graph_payloads(
             let FeatureDraftConstructionIndices::Resolved(tokens) = &lane.indices else {
                 return None;
             };
-            let store = tokens
-                .as_slice()
-                .first()?
-                .data_block
-                .rsplit_once(":block#")?
-                .0;
+            let store = tokens.indices().next()?.target.rsplit_once(":block#")?.0;
             let mut graph = references
                 .iter()
                 .filter(|reference| reference.operation_label == lane.operation_label)

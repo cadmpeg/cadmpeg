@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::native::features::payload_name::FeaturePayloadName;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -646,25 +647,26 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
 #[test]
 fn nx_block_payload_points_require_exactly_two_named_scalars() {
     use super::{
-        feature_block_payload_point_groups, feature_block_payload_points, FeatureBlockPayloadName,
-        FeatureBlockPayloadNamedRecord, FeaturePayloadScalar, FeaturePayloadTypeCode,
+        feature_block_payload_point_groups, feature_block_payload_points,
+        FeatureBlockPayloadNamedRecord, FeaturePayloadScalar,
     };
 
     let operation_label = "operation".to_string();
     let construction_payload = "payload".to_string();
-    let name = FeatureBlockPayloadName {
+    let name = FeaturePayloadName {
         id: "name".to_string(),
         operation_label: operation_label.clone(),
         construction_payload: construction_payload.clone(),
         ordinal: 0,
-        type_code: Some(FeaturePayloadTypeCode {
-            value: 131,
-            raw: vec![0x80, 0x83],
-            payload_offset: 11,
-            source_offset: Some(101),
-        }),
-        value: "Point7".to_string(),
-        payload_offset: 10,
+        frame: crate::om::name_field::NameField::new(
+            "Point7".to_string(),
+            10,
+            Some(crate::om::compact::CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(131, &[0x80, 0x83]).unwrap(),
+                target: Some(101),
+            }),
+        )
+        .unwrap(),
         source_offset: 100,
     };
     let scalar = |id: &str, ordinal: u32, value: f64| {
@@ -722,7 +724,15 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
             .is_empty()
     );
     let mut malformed = name;
-    malformed.value = "Point0".to_string();
+    malformed.frame = crate::om::name_field::NameField::new(
+        "Point0".to_string(),
+        10,
+        Some(crate::om::compact::CompactIndexTarget {
+            atom: crate::om::compact::CompactIndexAtom::from_wire(131, &[0x80, 0x83]).unwrap(),
+            target: Some(101),
+        }),
+    )
+    .unwrap();
     assert!(feature_block_payload_points(&[record], &[malformed], &scalars).is_empty());
 }
 

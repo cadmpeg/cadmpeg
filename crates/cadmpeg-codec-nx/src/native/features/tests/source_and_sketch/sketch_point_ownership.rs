@@ -1,12 +1,12 @@
 use super::*;
+use crate::native::features::payload_name::FeaturePayloadName;
 use crate::om::scalar_pair::{PairPosition, SketchPairForm};
 
 #[test]
 fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     use super::super::{
         feature_sketch_fixed_points, feature_sketch_payload_named_records,
-        FeatureConstructionPayload, FeaturePayloadTypeCode, FeatureSketchPayloadFixedPair,
-        FeatureSketchPayloadName,
+        FeatureConstructionPayload, FeatureSketchPayloadFixedPair,
     };
     let payload = FeatureConstructionPayload {
         id: "payload".to_string(),
@@ -26,19 +26,20 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
         )
         .unwrap(),
     };
-    let name = |id: &str, ordinal, offset| FeatureSketchPayloadName {
+    let name = |id: &str, ordinal, offset| FeaturePayloadName {
         id: id.to_string(),
         operation_label: "sketch".to_string(),
         construction_payload: "payload".to_string(),
         ordinal,
-        type_code: Some(FeaturePayloadTypeCode {
-            value: 1,
-            raw: vec![1],
-            payload_offset: offset + 1,
-            source_offset: Some(1001 + offset),
-        }),
-        value: format!("Point{}", ordinal + 1),
-        payload_offset: offset,
+        frame: crate::om::name_field::NameField::new(
+            format!("Point{}", ordinal + 1),
+            offset,
+            Some(crate::om::compact::CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(1, &[1]).unwrap(),
+                target: Some(1001 + offset),
+            }),
+        )
+        .unwrap(),
         source_offset: 1000 + offset,
     };
     let pair = FeatureSketchPayloadFixedPair {

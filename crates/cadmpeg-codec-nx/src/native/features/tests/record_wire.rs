@@ -52,10 +52,10 @@ fn payload_scalar_preserves_each_payload_owner_key() {
 #[test]
 fn scalar_pair_preserves_payload_key_and_discriminator_presence() {
     for json in [
-        r#"{"id":"pair","operation_label":"operation","datum_csys_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"payload_offset":10,"value_payload_offsets":[11,19],"source_offset":30,"value_source_offsets":[31,39],"discriminator":[4]}"#,
-        r#"{"id":"pair","operation_label":"operation","datum_plane_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"payload_offset":10,"value_payload_offsets":[11,19],"source_offset":30,"value_source_offsets":[31,39]}"#,
-        r#"{"id":"pair","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"payload_offset":10,"value_payload_offsets":[11,19],"source_offset":30,"value_source_offsets":[31,39],"discriminator":[8,2,3,1,3,1]}"#,
-        r#"{"id":"pair","operation_label":"operation","surface_construction_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"payload_offset":10,"value_payload_offsets":[11,19],"source_offset":30,"value_source_offsets":[31,39],"discriminator":[]}"#,
+        r#"{"id":"pair","operation_label":"operation","datum_csys_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"payload_offset":10,"value_payload_offsets":[25,34],"source_offset":30,"value_source_offsets":[31,39],"discriminator":[8,2,3,1,3,1,192,69,4,0,128,134,2,0,3]}"#,
+        r#"{"id":"pair","operation_label":"operation","datum_plane_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"payload_offset":10,"value_payload_offsets":[28,37],"source_offset":30,"value_source_offsets":[31,39]}"#,
+        r#"{"id":"pair","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"payload_offset":10,"value_payload_offsets":[27,35],"source_offset":30,"value_source_offsets":[31,39],"discriminator":[47,47,65,0,3,1,3,1,192,69,4,0,128,134,2,0,3]}"#,
+        r#"{"id":"pair","operation_label":"operation","surface_construction_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"payload_offset":10,"value_payload_offsets":[25,34],"source_offset":30,"value_source_offsets":[31,39],"discriminator":[8,2,3,1,3,1,192,69,4,0,128,134,2,0,3]}"#,
     ] {
         let pair: super::FeaturePayloadScalarPair = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&pair).unwrap(), json);
@@ -339,8 +339,13 @@ fn binary64_pair_wire_preserves_all_payload_owner_forms() {
         } else {
             r#","discriminator":[8,2,3,1,3,1,192,69,4,0,128,134,2,0,3]"#
         };
+        let positions = if payload == "datum_plane_payload" {
+            "23,32"
+        } else {
+            "20,29"
+        };
         let json = format!(
-            r#"{{"id":"pair","operation_label":"operation","{payload}":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"payload_offset":5,"value_payload_offsets":[20,29],"source_offset":105,"value_source_offsets":[120,129]{discriminator}}}"#
+            r#"{{"id":"pair","operation_label":"operation","{payload}":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"payload_offset":5,"value_payload_offsets":[{positions}],"source_offset":105,"value_source_offsets":[120,129]{discriminator}}}"#
         );
         let pair: super::FeaturePayloadScalarPair = serde_json::from_str(&json).unwrap();
         assert_eq!(serde_json::to_string(&pair).unwrap(), json);
@@ -823,4 +828,93 @@ fn datum_plane_payload_rejects_detached_member_positions_and_frame_overflow() {
     wire["index_lane_value_offsets"] = serde_json::json!([origin + 3, origin + 5]);
     let error = serde_json::from_value::<super::FeatureDatumPlanePayload>(wire).unwrap_err();
     assert!(error.to_string().contains("index_lane_offset"));
+}
+
+#[test]
+fn binary64_pair_wire_requires_owner_form_and_complete_payload_extent() {
+    let forms = [
+        (
+            "datum_csys_payload",
+            Some(vec![8, 2, 3, 1, 3, 1, 192, 69, 4, 0, 128, 134, 2, 0, 3]),
+            15_u64,
+            1_u64,
+        ),
+        (
+            "surface_construction_payload",
+            Some(vec![
+                8, 2, 3, 1, 129, 2, 1, 192, 69, 4, 0, 128, 134, 2, 0, 3,
+            ]),
+            16,
+            1,
+        ),
+        ("datum_plane_payload", None, 18, 1),
+        (
+            "construction_payload",
+            Some(vec![
+                47, 47, 65, 0, 3, 1, 3, 1, 192, 69, 4, 0, 128, 134, 2, 0, 3,
+            ]),
+            17,
+            0,
+        ),
+    ];
+    for (owner, discriminator, prefix, separator) in forms {
+        let origin = u64::MAX - prefix - 16 - separator;
+        let mut wire = serde_json::json!({
+            "id": "pair", "operation_label": "operation", "ordinal": 0,
+            "values": [1.0,2.0], "raw_values": [[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],
+            "payload_offset": origin, "value_payload_offsets": [origin + prefix, origin + prefix + 8 + separator],
+            "source_offset": 300, "value_source_offsets": [900,20]
+        });
+        wire[owner] = "payload".into();
+        if let Some(discriminator) = discriminator {
+            wire["discriminator"] = serde_json::json!(discriminator);
+        }
+        let record: super::FeaturePayloadScalarPair = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        for slot in 0..2 {
+            let mut invalid = wire.clone();
+            invalid["value_payload_offsets"][slot] = serde_json::json!(origin);
+            assert!(
+                serde_json::from_value::<super::FeaturePayloadScalarPair>(invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("value_payload_offsets")
+            );
+        }
+        let mut invalid = wire.clone();
+        invalid["payload_offset"] = serde_json::json!(origin + 1);
+        assert!(
+            serde_json::from_value::<super::FeaturePayloadScalarPair>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("payload_offset")
+        );
+        if owner != "datum_plane_payload" {
+            for discriminator in [
+                vec![],
+                vec![8, 2, 3, 1, 3, 1],
+                vec![0, 0, 65, 0, 3, 1, 3, 1, 192, 69, 4, 0, 128, 134, 2, 0, 3],
+            ] {
+                let mut invalid = wire.clone();
+                invalid["discriminator"] = serde_json::json!(discriminator);
+                assert!(
+                    serde_json::from_value::<super::FeaturePayloadScalarPair>(invalid)
+                        .unwrap_err()
+                        .to_string()
+                        .contains("discriminator")
+                );
+            }
+        }
+        if owner == "construction_payload" {
+            let mut invalid = wire.clone();
+            invalid.as_object_mut().unwrap().remove(owner);
+            invalid["datum_csys_payload"] = "payload".into();
+            assert!(
+                serde_json::from_value::<super::FeaturePayloadScalarPair>(invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("discriminator")
+            );
+        }
+    }
 }

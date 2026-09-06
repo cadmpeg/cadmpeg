@@ -13,6 +13,7 @@ use crate::native::features::datum_plane_header::{
     feature_datum_plane_headers, FeatureDatumPlaneHeader,
 };
 use crate::native::features::object_frame::DataBlockObjectFrame;
+use crate::native::features::payload_name::FeaturePayloadName;
 use crate::native::features::swp104_branch::FeatureSwp104LeadingBranch;
 use crate::native::om::column_row::{
     data_block_index_rows, data_block_linked_index_rows, data_block_target_index_rows,
@@ -251,7 +252,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_block_constructions: Vec<FeatureBlockConstruction>,
     pub(crate) feature_block_construction_payloads: Vec<FeatureConstructionPayload>,
     pub(crate) feature_block_payload_scalars: Vec<FeaturePayloadScalar>,
-    pub(crate) feature_block_payload_names: Vec<FeatureBlockPayloadName>,
+    pub(crate) feature_block_payload_names: Vec<FeaturePayloadName>,
     pub(crate) feature_block_payload_named_records: Vec<FeatureBlockPayloadNamedRecord>,
     pub(crate) feature_block_payload_points: Vec<FeatureBlockPayloadPoint>,
     pub(crate) feature_block_payload_point_groups: Vec<FeatureBlockPayloadPointGroup>,
@@ -263,7 +264,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_sketch_payload_mixed_pairs: Vec<FeatureSketchPayloadMixedPair>,
     pub(crate) feature_sketch_payload_scalars: Vec<FeaturePayloadScalar>,
     pub(crate) feature_sketch_payload_scalar_lanes: Vec<FeatureSketchPayloadScalarLane>,
-    pub(crate) feature_sketch_payload_names: Vec<FeatureSketchPayloadName>,
+    pub(crate) feature_sketch_payload_names: Vec<FeaturePayloadName>,
     pub(crate) feature_sketch_payload_named_records: Vec<FeatureSketchPayloadNamedRecord>,
     pub(crate) feature_sketch_fixed_points: Vec<FeatureSketchFixedPoint>,
     pub(crate) feature_sketch_points: Vec<FeatureSketchPoint>,

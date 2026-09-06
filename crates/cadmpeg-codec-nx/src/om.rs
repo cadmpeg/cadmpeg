@@ -9,6 +9,7 @@ use reference_value::{DirectReference, LocatedReference, RecordReference, Tagged
 pub(crate) mod csys_descriptor;
 pub(crate) mod datum_index;
 pub(crate) mod draft_identity;
+pub(crate) mod draft_leading;
 pub(crate) mod draft_terminal;
 pub(crate) mod header_references;
 pub(crate) mod operation_record;
@@ -36,15 +37,14 @@ use crate::printable_string::PrintableString;
 use cadmpeg_core::decode::{alloc_filled, View};
 
 pub(crate) mod compact;
-use compact::{
-    CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex, NullableCompactIndex,
-    WrappedCompactIndex,
-};
+use compact::{CompactIndexAtom, LocatedCompactIndex, NullableCompactIndex, WrappedCompactIndex};
 pub(crate) mod color;
 use color::{ColorComponent, PaletteIndex, BACKGROUND_NAME, PALETTE_SIZE};
 pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 use branch_items::BranchItems;
+pub(crate) mod binary64_pair;
+pub(crate) mod name_field;
 pub(crate) mod parameter_name;
 pub(crate) mod scalar_pair;
 use scalar_pair::{DatumPairForm, SketchPairForm};
@@ -428,35 +428,6 @@ pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPaylo
     fields
 }
 
-/// Compact type code on a construction payload name that is not payload-leading.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConstructionPayloadTypeCode {
-    /// Decoded non-null compact type code following the `66` marker.
-    pub value: u32,
-    /// Exact compact type-code token.
-    pub raw: Vec<u8>,
-    /// Payload-relative compact type-code offset.
-    pub offset: usize,
-}
-
-/// One compact-code string field in a reconstructed construction payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConstructionPayloadNamedField<'a> {
-    /// Payload-relative offset of the `66` marker.
-    pub offset: usize,
-    /// Compact type code, absent for the type-free payload-leading form.
-    pub type_code: Option<ConstructionPayloadTypeCode>,
-    /// Exact nonempty printable ASCII value.
-    pub value: &'a str,
-}
-
-impl ConstructionPayloadNamedField<'_> {
-    /// Whether the field uses the type-free payload-leading form.
-    pub fn payload_leading(&self) -> bool {
-        self.type_code.is_none()
-    }
-}
-
 /// Exact type-free named point record spanning consecutive store blocks.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OffsetStoreNamedPoint {
@@ -477,26 +448,26 @@ pub(crate) fn offset_store_named_point<'a>(
     for (block_ordinal, block) in blocks.into_iter().enumerate() {
         // A later type-free name starts the next bounded data-block object.
         if !bytes.is_empty()
-            && construction_payload_named_fields(block)
+            && name_field::scan(block)
                 .first()
-                .is_some_and(ConstructionPayloadNamedField::payload_leading)
+                .is_some_and(|name| name.code().is_none())
         {
             return candidate;
         }
         bytes.extend_from_slice(block);
-        let names = construction_payload_named_fields(&bytes);
+        let names = name_field::scan(&bytes);
         let name = names.first()?;
-        if !name.payload_leading() || parse_positive_decimal_suffix(name.value, "Point").is_none() {
+        if name.code().is_some() || parse_positive_decimal_suffix(name.value(), "Point").is_none() {
             return None;
         }
         let next_name = names
             .iter()
-            .find(|next| !next.payload_leading() && next.offset > name.offset);
-        let interval_end = next_name.map_or(bytes.len(), |next| next.offset);
+            .find(|next| next.code().is_some() && next.offset() > name.offset());
+        let interval_end = next_name.map_or(bytes.len(), name_field::NameField::offset);
         let scalars = construction_payload_scalar_fields(&bytes)
             .into_iter()
             .filter(|scalar| {
-                scalar.offset > name.offset
+                scalar.offset > name.offset()
                     && scalar
                         .offset
                         .checked_add(SHIFTED_BINARY64_SCALAR_FRAME_LEN)
@@ -507,7 +478,7 @@ pub(crate) fn offset_store_named_point<'a>(
             [] | [_] => {}
             [first_scalar, second_scalar] => {
                 candidate.get_or_insert_with(|| OffsetStoreNamedPoint {
-                    name: name.value.to_string(),
+                    name: name.value().to_string(),
                     values: [first_scalar, second_scalar].map(|field| LocatedBinary64 {
                         scalar: field.scalar,
                         offset: field.offset,
@@ -531,61 +502,6 @@ fn parse_positive_decimal_suffix(value: &str, prefix: &str) -> Option<u32> {
     }
     let ordinal = suffix.parse::<u32>().ok()?;
     (ordinal != 0).then_some(ordinal)
-}
-
-/// Decode exact `66, compact_type, 03, declared_len, text, 00` fields.
-pub fn construction_payload_named_fields(bytes: &[u8]) -> Vec<ConstructionPayloadNamedField<'_>> {
-    let mut fields = Vec::new();
-    if bytes.first() == Some(&0x03) {
-        if let Some(value) = construction_payload_name_text(bytes, 1) {
-            fields.push(ConstructionPayloadNamedField {
-                offset: 0,
-                type_code: None,
-                value,
-            });
-        }
-    }
-    for start in 0..bytes.len().saturating_sub(5) {
-        if bytes[start] != 0x66 {
-            continue;
-        }
-        let Some((CompactIndex::Value(type_code), type_width)) =
-            bytes.get(start + 1..).and_then(compact_index)
-        else {
-            continue;
-        };
-        let marker = start + 1 + type_width;
-        if bytes.get(marker) != Some(&0x03) {
-            continue;
-        }
-        let Some(value) = construction_payload_name_text(bytes, marker + 1) else {
-            continue;
-        };
-        fields.push(ConstructionPayloadNamedField {
-            offset: start,
-            type_code: Some(ConstructionPayloadTypeCode {
-                value: type_code,
-                raw: bytes[start + 1..marker].to_vec(),
-                offset: start + 1,
-            }),
-            value,
-        });
-    }
-    fields
-}
-
-fn construction_payload_name_text(bytes: &[u8], length_offset: usize) -> Option<&str> {
-    let text_len = usize::from(bytes.get(length_offset).copied()?.checked_sub(2)?);
-    let text_start = length_offset.checked_add(1)?;
-    let text_end = text_start.checked_add(text_len)?;
-    let text = bytes.get(text_start..text_end)?;
-    if text.is_empty()
-        || !text.iter().all(u8::is_ascii_graphic)
-        || bytes.get(text_end) != Some(&0x00)
-    {
-        return None;
-    }
-    std::str::from_utf8(text).ok()
 }
 
 /// Unit declared by an NX numeric-expression serialization.
@@ -614,8 +530,13 @@ pub struct NumericExpression<'a> {
     pub unit: ExpressionUnit,
     /// Exact expression text following the serialized name separator.
     pub expression: &'a str,
+}
+
+impl NumericExpression<'_> {
     /// Finite value when the expression is context-free arithmetic.
-    pub value: Option<f64>,
+    pub(crate) fn constant_value(&self) -> Option<f64> {
+        evaluate_constant_expression(self.expression)
+    }
 }
 
 /// One validated external entity-index/object-id-table pair.
@@ -1075,13 +996,6 @@ pub struct DraftFeaturePayloadReferenceField {
     pub references: [PayloadObjectReference; 4],
 }
 
-/// Counted compact-index lane preceding a draft-feature construction graph.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DraftFeatureLeadingIndexLane {
-    /// Non-null compact indices in serialized order with absolute token offsets.
-    pub indices: CountedIndexMembers<LocatedCompactIndex, 1>,
-}
-
 /// Exact common construction references in a surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfaceFeaturePayloadReferenceField {
@@ -1247,26 +1161,6 @@ pub struct DatumPlaneSingleReferenceBranch {
 pub struct DatumPlaneDoubleReferenceBranch {
     /// Canonical payload object indices in branch order.
     pub references: [PayloadObjectReference<reference_index::PayloadIndexToken>; 2],
-}
-
-/// Exact scalar pair following a datum-plane object-record discriminator.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DatumPlaneObjectScalarPair {
-    /// Payload-relative offset of the discriminator.
-    pub offset: usize,
-    /// Checked scalar atoms with their payload-relative offsets.
-    pub values: [LocatedBinary64; 2],
-}
-
-/// Exact scalar pair following an object or sketch discriminator.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ObjectPayloadScalarPair {
-    /// Payload-relative offset of the discriminator.
-    pub offset: usize,
-    /// Checked scalar atoms with their payload-relative offsets.
-    pub values: [LocatedBinary64; 2],
-    /// Exact discriminator selecting the scalar-pair branch.
-    pub discriminator: Vec<u8>,
 }
 
 /// Exact pair of scaled shifted-binary64 atoms in a reconstructed sketch payload.
@@ -2985,38 +2879,6 @@ pub fn draft_feature_payload_references(
     )
 }
 
-/// Decode the exactly positioned counted compact-index lane preceding a `DRAFT` graph.
-pub fn draft_feature_leading_index_lane(
-    record: OperationPayload<'_>,
-) -> Option<DraftFeatureLeadingIndexLane> {
-    const PREFIX: [u8; 22] = [
-        0x67, 0x00, 0x00, 0x01, 0x00, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0x03, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    ];
-    if record.name() != "DRAFT" || record.payload().get(..PREFIX.len()) != Some(&PREFIX) {
-        return None;
-    }
-    let mut at = PREFIX.len();
-    (record.payload().get(at) == Some(&0x01)).then_some(())?;
-    let declared_count = *record.payload().get(at + 1)?;
-    (declared_count >= 2).then_some(())?;
-    at += 2;
-    let mut indices = Vec::with_capacity(usize::from(declared_count - 1));
-    for _ in 1..declared_count {
-        let token = LocatedCompactIndex::read(record.payload(), at)?;
-        at += token.atom.raw().len();
-        indices.push(LocatedCompactIndex {
-            atom: token.atom,
-            offset: record.payload_offset() + token.offset,
-        });
-    }
-    (record.payload().get(at..at + 2) == Some(&[0x01, 0x02])).then_some(())?;
-
-    Some(DraftFeatureLeadingIndexLane {
-        indices: CountedIndexMembers::new(indices).ok()?,
-    })
-}
-
 /// Decode the exact common construction-reference envelope in a bounded
 /// `SKIN` or `Studio Surface` payload.
 pub fn surface_feature_payload_references(
@@ -4062,106 +3924,9 @@ pub fn datum_plane_double_reference_branch(
     })
 }
 
-/// Decode every exactly framed scalar pair in a reconstructed datum-plane payload.
-pub fn datum_plane_object_scalar_pairs(bytes: &[u8]) -> Vec<DatumPlaneObjectScalarPair> {
-    const DISCRIMINATOR: [u8; 18] = [
-        0x6d, 0x00, 0xf0, 0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86,
-        0x02, 0x00, 0x03,
-    ];
-    bytes
-        .windows(DISCRIMINATOR.len())
-        .enumerate()
-        .filter_map(|(offset, window)| {
-            (window == DISCRIMINATOR).then_some(())?;
-            let first = offset + DISCRIMINATOR.len();
-            let second = first + 9;
-            (bytes.get(first + 8) == Some(&0x00)).then_some(())?;
-            let [first, second] =
-                [first, second].map(|offset| LocatedBinary64::read(bytes, offset));
-            Some(DatumPlaneObjectScalarPair {
-                offset,
-                values: [first?, second?],
-            })
-        })
-        .collect()
-}
-
 /// Decode one complete datum-plane descriptor block.
 pub fn datum_plane_descriptor_block(bytes: &[u8]) -> Option<plane_descriptor::PlaneDescriptor> {
     plane_descriptor::PlaneDescriptor::read(bytes)
-}
-
-/// Decode every exactly framed scalar pair in a reconstructed object payload.
-pub fn object_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair> {
-    const SHORT: [u8; 15] = [
-        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
-    ];
-    const EXTENDED: [u8; 16] = [
-        0x08, 0x02, 0x03, 0x01, 0x81, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00,
-        0x03,
-    ];
-    let mut pairs = Vec::new();
-    for discriminator in [SHORT.as_slice(), EXTENDED.as_slice()] {
-        for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
-            if window != discriminator {
-                continue;
-            }
-            let first = offset + discriminator.len();
-            let second = first + 9;
-            if bytes.get(first + 8) != Some(&0x00) {
-                continue;
-            }
-            let [Some(first), Some(second)] =
-                [first, second].map(|offset| LocatedBinary64::read(bytes, offset))
-            else {
-                continue;
-            };
-            pairs.push(ObjectPayloadScalarPair {
-                offset,
-                values: [first, second],
-                discriminator: discriminator.to_vec(),
-            });
-        }
-    }
-    pairs.sort_by_key(|pair| pair.offset);
-    pairs
-}
-
-/// Decode the repeated-type scalar-pair lane in a reconstructed sketch payload.
-pub fn sketch_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair> {
-    const FRAME_SUFFIX: [u8; 14] = [
-        0x00, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
-    ];
-    let mut pairs = object_payload_scalar_pairs(bytes);
-    for (offset, window) in bytes.windows(3).enumerate() {
-        let [type_code, repeated_type_code, 0x41] = window else {
-            continue;
-        };
-        if *type_code == 0 || type_code != repeated_type_code {
-            continue;
-        }
-        if offset == 0 || bytes.get(offset - 1) != Some(&0x00) {
-            continue;
-        }
-        let discriminator_len = 3 + FRAME_SUFFIX.len();
-        if bytes.get(offset + 3..offset + discriminator_len) != Some(&FRAME_SUFFIX) {
-            continue;
-        }
-        let first = offset + discriminator_len;
-        let second = first + 8;
-        let [Some(first), Some(second)] =
-            [first, second].map(|offset| LocatedBinary64::read(bytes, offset))
-        else {
-            continue;
-        };
-        pairs.push(ObjectPayloadScalarPair {
-            offset,
-            values: [first, second],
-            discriminator: bytes[offset..offset + discriminator_len].to_vec(),
-        });
-    }
-    pairs.sort_by_key(|pair| pair.offset);
-    pairs
 }
 
 /// Decode every complete scalar-vector frame in a reconstructed sketch
@@ -6644,14 +6409,12 @@ fn numeric_expression_at(
     if !comment.is_empty() && !numeric_expression_comment_is_valid(comment) {
         return None;
     }
-    let value = evaluate_constant_expression(value_text);
     Some(NumericExpression {
         object_id,
         offset: base_offset + relative,
         name: ParameterName::new(name),
         unit,
         expression: value_text,
-        value,
     })
 }
 

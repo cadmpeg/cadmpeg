@@ -110,54 +110,6 @@ fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
 }
 
 #[test]
-fn om_sketch_name_field_decodes_direct_and_extended_compact_type_codes() {
-    let bytes = [
-        0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00, 0xaa, 0x66, 0x80, 0x83,
-        0x03, 0x07, b'L', b'i', b'n', b'e', b'2', 0x00,
-    ];
-    let fields = super::construction_payload_named_fields(&bytes);
-    assert_eq!(fields.len(), 2);
-    assert_eq!(fields[0].offset, 0);
-    assert_eq!(fields[0].value, "Point1");
-    let first = fields[0].type_code.as_ref().expect("typed name");
-    assert_eq!(first.value, 0x32);
-    assert_eq!(first.raw, vec![0x32]);
-    assert_eq!(first.offset, 1);
-    assert_eq!(fields[1].offset, 12);
-    assert_eq!(fields[1].value, "Line2");
-    let second = fields[1].type_code.as_ref().expect("typed name");
-    assert_eq!(second.value, 0x83);
-    assert_eq!(second.raw, vec![0x80, 0x83]);
-    assert_eq!(second.offset, 13);
-
-    assert!(super::construction_payload_named_fields(&[
-        0x66, 0xff, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00,
-    ])
-    .is_empty());
-    assert!(super::construction_payload_named_fields(&[
-        0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't',
-    ])
-    .is_empty());
-}
-
-#[test]
-fn om_sketch_name_field_decodes_type_free_payload_leading_form() {
-    let fields = super::construction_payload_named_fields(&[
-        0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00, 0x04,
-    ]);
-    assert_eq!(fields.len(), 1);
-    assert_eq!(fields[0].offset, 0);
-    assert!(fields[0].type_code.is_none());
-    assert!(fields[0].payload_leading());
-    assert_eq!(fields[0].value, "Point1");
-
-    assert!(super::construction_payload_named_fields(&[
-        0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1',
-    ])
-    .is_empty());
-}
-
-#[test]
 fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
     let first = [
         0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'7', 0x00, 0x50, 0x59, 0x66, 0x58, 0x00, 0x30,
@@ -680,66 +632,6 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
 }
 
 #[test]
-fn om_datum_plane_object_index_lane_ends_at_logical_payload_boundary() {
-    let bytes = [
-        0x80, 0xab, 0x01, 0x04, 0x81, 0x01, 0x01, 0x01, 0x00, 0x12, 0x34, 0x56, 0x78,
-    ];
-    let lanes = crate::om::datum_index::scan(&bytes);
-    assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].offset(), 2);
-    assert_eq!(usize::from(lanes[0].declared_count()), 4);
-    assert_eq!(
-        lanes[0]
-            .indices()
-            .map(|token| (token.atom.value(), token.offset))
-            .collect::<Vec<_>>(),
-        [(257, 4), (1, 6), (1, 7)]
-    );
-    assert_eq!(
-        lanes[0]
-            .indices()
-            .map(|token| token.atom.raw().to_vec())
-            .collect::<Vec<_>>(),
-        [vec![0x81, 0x01], vec![1], vec![1]]
-    );
-    assert_eq!(lanes[0].trailer(), 0x1234_5678);
-
-    let mut trailing = bytes.to_vec();
-    trailing.push(0);
-    assert!(crate::om::datum_index::scan(&trailing).is_empty());
-}
-
-#[test]
-fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {
-    let mut bytes = vec![0x7f, 0x01, 0x01, 0xff];
-    bytes.extend_from_slice(&[
-        0x6d, 0x00, 0xf0, 0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86,
-        0x02, 0x00, 0x03,
-    ]);
-    bytes.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
-    bytes.push(0);
-    bytes.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
-    let pairs = super::datum_plane_object_scalar_pairs(&bytes);
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].offset, 4);
-    assert_eq!(pairs[0].values.map(|value| value.offset), [22, 31]);
-    assert_eq!(
-        pairs[0].values.map(|value| value.scalar.value()),
-        [10.0, -20.0]
-    );
-    assert_eq!(
-        pairs[0].values[0].scalar.raw(),
-        [0x30, 0x24, 0, 0, 0, 0, 0, 0]
-    );
-    assert_eq!(
-        pairs[0].values[1].scalar.raw(),
-        [0xb0, 0x34, 0, 0, 0, 0, 0, 0]
-    );
-    bytes[10] ^= 1;
-    assert!(super::datum_plane_object_scalar_pairs(&bytes).is_empty());
-}
-
-#[test]
 fn om_datum_plane_descriptor_requires_complete_lowercase_hex_identity() {
     let mut bytes = *b"793487222121a5474a9125451b8e31f5?A\xf0\x1e\xff\x02\x01\x33";
     let descriptor = super::datum_plane_descriptor_block(&bytes).unwrap();
@@ -757,53 +649,6 @@ fn om_datum_plane_descriptor_requires_complete_lowercase_hex_identity() {
     bytes[0] = b'G';
     assert!(super::datum_plane_descriptor_block(&bytes).is_none());
     assert!(super::datum_plane_descriptor_block(&bytes[..39]).is_none());
-}
-
-#[test]
-fn om_datum_csys_scalar_pairs_require_discriminator_and_separator() {
-    let mut bytes = vec![0x2f, 0x2f, 0x41, 0x6d, 0x00, 0xf0];
-    bytes.extend_from_slice(&[
-        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
-    ]);
-    bytes.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
-    bytes.push(0);
-    bytes.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
-    let pairs = super::object_payload_scalar_pairs(&bytes);
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].offset, 6);
-    assert_eq!(pairs[0].values.map(|value| value.offset), [21, 30]);
-    assert_eq!(
-        pairs[0].values.map(|value| value.scalar.value()),
-        [10.0, -20.0]
-    );
-    assert_eq!(
-        pairs[0].values[0].scalar.raw(),
-        [0x30, 0x24, 0, 0, 0, 0, 0, 0]
-    );
-    assert_eq!(
-        pairs[0].values[1].scalar.raw(),
-        [0xb0, 0x34, 0, 0, 0, 0, 0, 0]
-    );
-    assert_eq!(pairs[0].discriminator.len(), 15);
-
-    let mut extended = vec![
-        0x08, 0x02, 0x03, 0x01, 0x81, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00,
-        0x03,
-    ];
-    extended.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
-    extended.push(0);
-    extended.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
-    let extended_pairs = super::object_payload_scalar_pairs(&extended);
-    assert_eq!(extended_pairs.len(), 1);
-    assert_eq!(extended_pairs[0].discriminator.len(), 16);
-    assert_eq!(extended_pairs[0].values.map(|value| value.offset), [16, 25]);
-    assert_eq!(
-        extended_pairs[0].values[0].scalar.raw(),
-        [0x30, 0x24, 0, 0, 0, 0, 0, 0]
-    );
-
-    bytes[29] = 1;
-    assert!(super::object_payload_scalar_pairs(&bytes).is_empty());
 }
 
 #[test]
