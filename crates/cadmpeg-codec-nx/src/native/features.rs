@@ -29,7 +29,8 @@ use crate::native::om::{
 use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
 use std::borrow::Cow;
 use std::num::NonZeroU8;
-use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, RepeatedScalar, ShiftedBinary32, ShiftedBinary64, ShiftedScalar};
+use crate::om::binary64_pair::{Binary64Pair, Binary64PairForm, ObjectPairForm, DatumPlanePairForm, SketchBinary64PairForm};
+use crate::om::scalar::{PayloadScalarAtom, PayloadScalarEncoding, RepeatedScalar, ShiftedBinary32, ShiftedBinary64, ShiftedScalar};
 use crate::om::branch_items::BranchItems;
 use crate::om::nonempty::NonEmpty;
 use crate::om::reference_index::{PayloadIndexToken, ReferenceIndexToken};
@@ -1434,10 +1435,8 @@ pub struct FeaturePayloadScalarPair {
     pub payload: FeatureScalarPairPayload,
     /// Zero-based frame order within the payload.
     pub ordinal: u32,
-    /// Checked scalar atoms with payload and source offsets.
-    pub values: [FeaturePayloadBinary64Token; 2],
-    /// Payload-relative offset of the discriminator.
-    pub payload_offset: u64,
+    /// Absolute source offsets of the scalar encodings across payload blocks.
+    pub value_source_offsets: [u64; 2],
     /// Absolute source offset of the discriminator.
     pub source_offset: u64,
 }
@@ -1450,7 +1449,7 @@ struct FeaturePayloadScalarPairWire {
     operation_label: String,
     /// Reconstructed payload carrying the frame.
     #[serde(flatten)]
-    payload: FeatureScalarPairPayload,
+    payload: FeatureScalarPairPayloadWire,
     /// Zero-based frame order within the payload.
     ordinal: u32,
     /// Ordered finite shifted-IEEE values.
@@ -1467,48 +1466,37 @@ struct FeaturePayloadScalarPairWire {
     value_source_offsets: [u64; 2],
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FeaturePayloadBinary64Token {
-    pub scalar: ShiftedBinary64,
-    pub payload_offset: u64,
-    pub source_offset: u64,
-}
-
-fn resolved_payload_scalar_pair(
-    values: [LocatedBinary64; 2],
-    source_offset: impl Fn(usize) -> Option<u64>,
-) -> Option<[FeaturePayloadBinary64Token; 2]> {
-    let [first, second] = values.map(|value| {
-        Some(FeaturePayloadBinary64Token {
-            scalar: value.scalar,
-            payload_offset: value.offset as u64,
-            source_offset: source_offset(value.offset)?,
-        })
-    });
-    Some([first?, second?])
-}
-
 impl TryFrom<FeaturePayloadScalarPairWire> for FeaturePayloadScalarPair {
     type Error = String;
 
     fn try_from(wire: FeaturePayloadScalarPairWire) -> Result<Self, Self::Error> {
         let [first, second] = std::array::from_fn::<_, 2, _>(|i| {
             ShiftedBinary64::from_wire(wire.values[i], wire.raw_values[i])
-                .map(|scalar| FeaturePayloadBinary64Token {
-                    scalar,
-                    payload_offset: wire.value_payload_offsets[i],
-                    source_offset: wire.value_source_offsets[i],
-                })
                 .map_err(|error| format!("values/raw_values[{i}]: {error}"))
         });
+        let atoms = [first?, second?];
+        fn frame<F: Binary64PairForm>(form: F, offset: u64, atoms: [ShiftedBinary64; 2], positions: [u64; 2]) -> Result<Binary64Pair<F, u64>, String> {
+            let frame = Binary64Pair::new(form, offset, atoms).ok_or("payload_offset must leave room for the complete binary64 pair")?;
+            if frame.value_offsets() != positions { return Err("value_payload_offsets must match the binary64 pair form".into()); }
+            Ok(frame)
+        }
+        let payload = match wire.payload {
+            FeatureScalarPairPayloadWire::DatumCsys { datum_csys_payload, discriminator } => FeatureScalarPairPayload::DatumCsys {
+                datum_csys_payload, frame: frame(ObjectPairForm::try_from(discriminator.as_slice())?, wire.payload_offset, atoms, wire.value_payload_offsets)?,
+            },
+            FeatureScalarPairPayloadWire::DatumPlane { datum_plane_payload } => FeatureScalarPairPayload::DatumPlane {
+                datum_plane_payload, frame: frame(DatumPlanePairForm, wire.payload_offset, atoms, wire.value_payload_offsets)?,
+            },
+            FeatureScalarPairPayloadWire::Construction { construction_payload, discriminator } => FeatureScalarPairPayload::Construction {
+                construction_payload, frame: frame(SketchBinary64PairForm::try_from(discriminator.as_slice())?, wire.payload_offset, atoms, wire.value_payload_offsets)?,
+            },
+            FeatureScalarPairPayloadWire::SurfaceConstruction { surface_construction_payload, discriminator } => FeatureScalarPairPayload::SurfaceConstruction {
+                surface_construction_payload, frame: frame(ObjectPairForm::try_from(discriminator.as_slice())?, wire.payload_offset, atoms, wire.value_payload_offsets)?,
+            },
+        };
         Ok(Self {
-            id: wire.id,
-            operation_label: wire.operation_label,
-            payload: wire.payload,
-            ordinal: wire.ordinal,
-            values: [first?, second?],
-            payload_offset: wire.payload_offset,
-            source_offset: wire.source_offset,
+            id: wire.id, operation_label: wire.operation_label, payload, ordinal: wire.ordinal,
+            value_source_offsets: wire.value_source_offsets, source_offset: wire.source_offset,
         })
     }
 }
@@ -1516,7 +1504,7 @@ impl TryFrom<FeaturePayloadScalarPairWire> for FeaturePayloadScalarPair {
 /// Payload identity and its scalar-pair branch discriminator.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
-pub enum FeatureScalarPairPayload {
+enum FeatureScalarPairPayloadWire {
     DatumCsys {
         datum_csys_payload: String,
         discriminator: Vec<u8>,
@@ -1534,6 +1522,15 @@ pub enum FeatureScalarPairPayload {
     },
 }
 
+/// Payload identity and the exact scalar-pair frame for that owner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FeatureScalarPairPayload {
+    DatumCsys { datum_csys_payload: String, frame: Binary64Pair<ObjectPairForm, u64> },
+    DatumPlane { datum_plane_payload: String, frame: Binary64Pair<DatumPlanePairForm, u64> },
+    Construction { construction_payload: String, frame: Binary64Pair<SketchBinary64PairForm, u64> },
+    SurfaceConstruction { surface_construction_payload: String, frame: Binary64Pair<ObjectPairForm, u64> },
+}
+
 impl FeatureScalarPairPayload {
     #[must_use]
     pub fn id(&self) -> &str {
@@ -1542,7 +1539,7 @@ impl FeatureScalarPairPayload {
                 datum_csys_payload, ..
             } => datum_csys_payload,
             Self::DatumPlane {
-                datum_plane_payload,
+                datum_plane_payload, ..
             } => datum_plane_payload,
             Self::Construction {
                 construction_payload,
@@ -1559,33 +1556,18 @@ impl FeatureScalarPairPayload {
 impl Serialize for FeaturePayloadScalarPair {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let (payload_key, payload_id, discriminator) = match &self.payload {
-            FeatureScalarPairPayload::DatumCsys {
-                datum_csys_payload,
-                discriminator,
-            } => (
-                "datum_csys_payload",
-                datum_csys_payload,
-                Some(discriminator),
+        let (payload_key, payload_id, discriminator, atoms, payload_offset, positions) = match &self.payload {
+            FeatureScalarPairPayload::DatumCsys { datum_csys_payload, frame } => (
+                "datum_csys_payload", datum_csys_payload, Some(frame.discriminator()), frame.atoms(), frame.offset(), frame.value_offsets(),
             ),
-            FeatureScalarPairPayload::DatumPlane {
-                datum_plane_payload,
-            } => ("datum_plane_payload", datum_plane_payload, None),
-            FeatureScalarPairPayload::Construction {
-                construction_payload,
-                discriminator,
-            } => (
-                "construction_payload",
-                construction_payload,
-                Some(discriminator),
+            FeatureScalarPairPayload::DatumPlane { datum_plane_payload, frame } => (
+                "datum_plane_payload", datum_plane_payload, None, frame.atoms(), frame.offset(), frame.value_offsets(),
             ),
-            FeatureScalarPairPayload::SurfaceConstruction {
-                surface_construction_payload,
-                discriminator,
-            } => (
-                "surface_construction_payload",
-                surface_construction_payload,
-                Some(discriminator),
+            FeatureScalarPairPayload::Construction { construction_payload, frame } => (
+                "construction_payload", construction_payload, Some(frame.discriminator()), frame.atoms(), frame.offset(), frame.value_offsets(),
+            ),
+            FeatureScalarPairPayload::SurfaceConstruction { surface_construction_payload, frame } => (
+                "surface_construction_payload", surface_construction_payload, Some(frame.discriminator()), frame.atoms(), frame.offset(), frame.value_offsets(),
             ),
         };
         let mut record = serializer.serialize_struct(
@@ -1596,14 +1578,14 @@ impl Serialize for FeaturePayloadScalarPair {
         record.serialize_field("operation_label", &self.operation_label)?;
         record.serialize_field(payload_key, payload_id)?;
         record.serialize_field("ordinal", &self.ordinal)?;
-        record.serialize_field("values", &self.values.map(|token| token.scalar.value()))?;
-        record.serialize_field("raw_values", &self.values.map(|token| token.scalar.raw()))?;
-        record.serialize_field("payload_offset", &self.payload_offset)?;
-        record.serialize_field("value_payload_offsets", &self.values.map(|token| token.payload_offset))?;
+        record.serialize_field("values", &atoms.map(ShiftedBinary64::value))?;
+        record.serialize_field("raw_values", &atoms.map(ShiftedBinary64::raw))?;
+        record.serialize_field("payload_offset", &payload_offset)?;
+        record.serialize_field("value_payload_offsets", &positions)?;
         record.serialize_field("source_offset", &self.source_offset)?;
-        record.serialize_field("value_source_offsets", &self.values.map(|token| token.source_offset))?;
+        record.serialize_field("value_source_offsets", &self.value_source_offsets)?;
         if let Some(discriminator) = discriminator {
-            record.serialize_field("discriminator", discriminator)?;
+            record.serialize_field("discriminator", &discriminator)?;
         }
         record.end()
     }
@@ -8028,11 +8010,10 @@ pub fn feature_datum_csys_payload_scalar_pairs(
                 operation_label: payload.operation_label.clone(),
                 payload: FeatureScalarPairPayload::DatumCsys {
                     datum_csys_payload: payload.id.clone(),
-                    discriminator: pair.discriminator().into_owned(),
+                    frame: pair.into_wire_frame()?,
                 },
                 ordinal: ordinal as u32,
-                values: resolved_payload_scalar_pair(pair.values(), source_offset)?,
-                payload_offset: pair.offset() as u64,
+                value_source_offsets: [source_offset(pair.value_offsets()[0])?, source_offset(pair.value_offsets()[1])?],
                 source_offset: source_offset(pair.offset())?,
             })
         },
@@ -8171,10 +8152,10 @@ pub fn feature_datum_plane_payload_scalar_pairs(
                 operation_label: payload.operation_label.clone(),
                 payload: FeatureScalarPairPayload::DatumPlane {
                     datum_plane_payload: payload.id.clone(),
+                    frame: pair.into_wire_frame()?,
                 },
                 ordinal: ordinal as u32,
-                values: resolved_payload_scalar_pair(pair.values(), source_offset)?,
-                payload_offset: pair.offset() as u64,
+                value_source_offsets: [source_offset(pair.value_offsets()[0])?, source_offset(pair.value_offsets()[1])?],
                 source_offset: source_offset(pair.offset())?,
             })
         },
@@ -8442,11 +8423,10 @@ pub fn feature_sketch_payload_coordinate_pairs(
                 operation_label: payload.operation_label.clone(),
                 payload: FeatureScalarPairPayload::Construction {
                     construction_payload: payload.id.clone(),
-                    discriminator: pair.discriminator().into_owned(),
+                    frame: pair.into_wire_frame()?,
                 },
                 ordinal: ordinal as u32,
-                values: resolved_payload_scalar_pair(pair.values(), source_offset)?,
-                payload_offset: pair.offset() as u64,
+                value_source_offsets: [source_offset(pair.value_offsets()[0])?, source_offset(pair.value_offsets()[1])?],
                 source_offset: source_offset(pair.offset())?,
             })
         },
@@ -10595,11 +10575,10 @@ pub fn feature_surface_construction_scalar_pairs(
                         operation_label: payload.operation_label.clone(),
                         payload: FeatureScalarPairPayload::SurfaceConstruction {
                             surface_construction_payload: payload.id.clone(),
-                            discriminator: pair.discriminator().into_owned(),
+                            frame: pair.into_wire_frame()?,
                         },
                         ordinal: ordinal as u32,
-                        values: resolved_payload_scalar_pair(pair.values(), |offset| joined.source_offset(offset as u64))?,
-                        payload_offset: pair.offset() as u64,
+                        value_source_offsets: [joined.source_offset(pair.value_offsets()[0] as u64)?, joined.source_offset(pair.value_offsets()[1] as u64)?],
                         source_offset: joined.source_offset(pair.offset() as u64)?,
                     })
                 })

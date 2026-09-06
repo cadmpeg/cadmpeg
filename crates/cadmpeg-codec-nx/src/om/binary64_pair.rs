@@ -3,7 +3,8 @@
 
 use std::borrow::Cow;
 use std::num::NonZeroU8;
-use super::scalar::{LocatedBinary64, ShiftedBinary64};
+use std::ops::Add;
+use super::scalar::ShiftedBinary64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ObjectPairForm { Short, Extended }
@@ -53,9 +54,9 @@ impl Binary64PairForm for SketchBinary64PairForm {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Binary64Pair<F> {
+pub(crate) struct Binary64Pair<F, O = usize> {
     form: F,
-    offset: usize,
+    offset: O,
     values: [ShiftedBinary64; 2],
 }
 
@@ -72,12 +73,45 @@ impl<F: Binary64PairForm> Binary64Pair<F> {
         Some(Self { form, offset, values })
     }
 
-    pub(crate) fn offset(&self) -> usize { self.offset }
+    pub(crate) fn into_wire_frame(self) -> Option<Binary64Pair<F, u64>> {
+        Binary64Pair::new(self.form, u64::try_from(self.offset).ok()?, self.values)
+    }
+}
+
+impl<F: Binary64PairForm, O: Copy + Add<Output = O> + From<u16>> Binary64Pair<F, O> {
+    pub(crate) fn offset(&self) -> O { self.offset }
     pub(crate) fn discriminator(&self) -> Cow<'static, [u8]> { self.form.discriminator() }
-    pub(crate) fn values(&self) -> [LocatedBinary64; 2] {
-        let first = self.offset + self.form.discriminator().len();
-        let positions = [first, first + 8 + self.form.separator_width()];
-        std::array::from_fn(|i| LocatedBinary64 { scalar: self.values[i], offset: positions[i] })
+    pub(crate) fn atoms(&self) -> [ShiftedBinary64; 2] { self.values }
+    pub(crate) fn value_offsets(&self) -> [O; 2] {
+        let first = self.offset + O::from(self.form.discriminator().len() as u16);
+        [first, first + O::from(8 + self.form.separator_width() as u16)]
+    }
+}
+
+impl<F: Binary64PairForm> Binary64Pair<F, u64> {
+    pub(crate) fn new(form: F, offset: u64, values: [ShiftedBinary64; 2]) -> Option<Self> {
+        offset.checked_add(form.discriminator().len() as u64 + 16 + form.separator_width() as u64)?;
+        Some(Self { form, offset, values })
+    }
+}
+
+impl TryFrom<&[u8]> for ObjectPairForm {
+    type Error = &'static str;
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::ALL.into_iter().find(|form| form.discriminator().as_ref() == bytes)
+            .ok_or("discriminator must name an object binary64 pair form")
+    }
+}
+
+impl TryFrom<&[u8]> for SketchBinary64PairForm {
+    type Error = &'static str;
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        if let Ok(form) = ObjectPairForm::try_from(bytes) { return Ok(Self::Object(form)); }
+        if let Some(code) = bytes.first().copied().and_then(NonZeroU8::new) {
+            let form = Self::Repeated(code);
+            if form.discriminator().as_ref() == bytes { return Ok(form); }
+        }
+        Err("discriminator must name a sketch binary64 pair form")
     }
 }
 
@@ -123,10 +157,10 @@ mod tests {
         let pairs = crate::om::binary64_pair::datum_plane_pairs(&bytes);
         assert_eq!(pairs.len(), 1);
         assert_eq!(pairs[0].offset(), 4);
-        assert_eq!(pairs[0].values().map(|value| value.offset), [22, 31]);
-        assert_eq!(pairs[0].values().map(|value| value.scalar.value()), [10.0, -20.0]);
-        assert_eq!(pairs[0].values()[0].scalar.raw(), [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
-        assert_eq!(pairs[0].values()[1].scalar.raw(), [0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(pairs[0].value_offsets(), [22, 31]);
+        assert_eq!(pairs[0].atoms().map(|value| value.value()), [10.0, -20.0]);
+        assert_eq!(pairs[0].atoms()[0].raw(), [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(pairs[0].atoms()[1].raw(), [0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
         bytes[10] ^= 1;
         assert!(crate::om::binary64_pair::datum_plane_pairs(&bytes).is_empty());
     }
@@ -143,10 +177,10 @@ mod tests {
         let pairs = crate::om::binary64_pair::object_pairs(&bytes);
         assert_eq!(pairs.len(), 1);
         assert_eq!(pairs[0].offset(), 6);
-        assert_eq!(pairs[0].values().map(|value| value.offset), [21, 30]);
-        assert_eq!(pairs[0].values().map(|value| value.scalar.value()), [10.0, -20.0]);
-        assert_eq!(pairs[0].values()[0].scalar.raw(), [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
-        assert_eq!(pairs[0].values()[1].scalar.raw(), [0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(pairs[0].value_offsets(), [21, 30]);
+        assert_eq!(pairs[0].atoms().map(|value| value.value()), [10.0, -20.0]);
+        assert_eq!(pairs[0].atoms()[0].raw(), [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(pairs[0].atoms()[1].raw(), [0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
         assert_eq!(pairs[0].discriminator().len(), 15);
 
         let mut extended = vec![
@@ -159,9 +193,9 @@ mod tests {
         let extended_pairs = crate::om::binary64_pair::object_pairs(&extended);
         assert_eq!(extended_pairs.len(), 1);
         assert_eq!(extended_pairs[0].discriminator().len(), 16);
-        assert_eq!(extended_pairs[0].values().map(|value| value.offset), [16, 25]);
+        assert_eq!(extended_pairs[0].value_offsets(), [16, 25]);
         assert_eq!(
-            extended_pairs[0].values()[0].scalar.raw(),
+            extended_pairs[0].atoms()[0].raw(),
             [0x30, 0x24, 0, 0, 0, 0, 0, 0]
         );
 
@@ -187,9 +221,9 @@ mod tests {
         let pairs = crate::om::binary64_pair::sketch_pairs(&bytes);
         assert_eq!(pairs.len(), 1);
         assert_eq!(pairs[0].offset(), discriminator_offset);
-        assert_eq!(pairs[0].values().map(|value| value.offset), [first_offset, second_offset]);
-        assert!((pairs[0].values()[0].scalar.value() - 10.0).abs() < EPS_SKETCH_SCALAR);
-        assert!((pairs[0].values()[1].scalar.value() + 20.0).abs() < EPS_SKETCH_SCALAR);
+        assert_eq!(pairs[0].value_offsets(), [first_offset, second_offset]);
+        assert!((pairs[0].atoms()[0].value() - 10.0).abs() < EPS_SKETCH_SCALAR);
+        assert!((pairs[0].atoms()[1].value() + 20.0).abs() < EPS_SKETCH_SCALAR);
         assert_eq!(
             pairs[0].discriminator(),
             bytes[discriminator_offset..first_offset].to_vec()

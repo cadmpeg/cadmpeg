@@ -19,19 +19,18 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
         operation_label: label.id.clone(),
         payload: crate::native::features::FeatureScalarPairPayload::Construction {
             construction_payload: "payload".to_string(),
-            discriminator: vec![8, 2, 3, 1, 3, 1],
+            frame: crate::om::binary64_pair::Binary64Pair::new(
+                crate::om::binary64_pair::SketchBinary64PairForm::Object(crate::om::binary64_pair::ObjectPairForm::Short),
+                12,
+                [12.5_f64, -3.0_f64].map(|value| {
+                    let mut raw = value.to_be_bytes();
+                    raw[0] -= 0x10;
+                    crate::om::scalar::ShiftedBinary64::try_from(raw).unwrap()
+                }),
+            ).unwrap(),
         },
         ordinal: 0,
-        values: [(12.5_f64, 20, 59), (-3.0_f64, 28, 67)].map(|(value, payload_offset, source_offset)| {
-            let mut raw = value.to_be_bytes();
-            raw[0] -= 0x10;
-            crate::native::features::FeaturePayloadBinary64Token {
-                scalar: crate::om::scalar::ShiftedBinary64::try_from(raw).unwrap(),
-                payload_offset,
-                source_offset,
-            }
-        }),
-        payload_offset: 12,
+        value_source_offsets: [59, 67],
         source_offset: 51,
     };
     let coordinate_pairs = [&pair];
