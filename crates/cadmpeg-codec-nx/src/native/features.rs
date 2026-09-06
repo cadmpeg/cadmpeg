@@ -20,6 +20,7 @@ use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncodin
 use crate::om::branch_items::BranchItems;
 use crate::om::nonempty::NonEmpty;
 use crate::om::reference_index::ReferenceIndexToken;
+use crate::om::compact::CompactIndexAtom;
 use crate::om::sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLaneForm};
 use crate::om::fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 use crate::om::scalar_run::FramedScalarRun;
@@ -5439,8 +5440,8 @@ pub struct FeatureExtrudePayload32Branch {
     pub operation_label: String,
     pub scalar: ShiftedBinary64,
     pub atoms: Vec<FeatureDataBlockToken<u32>>,
-    pub first_indices: Vec<FeatureDataBlockToken<Vec<u8>>>,
-    pub second_indices: Vec<FeatureDataBlockToken<Vec<u8>>>,
+    pub first_indices: Vec<ConstructionReference<Option<String>, CompactIndexAtom>>,
+    pub second_indices: Vec<ConstructionReference<Option<String>, CompactIndexAtom>>,
     pub terminal: ReferenceIndexToken,
     pub terminal_source_offset: u64,
     pub source_offset: u64,
@@ -5523,12 +5524,12 @@ impl From<FeatureExtrudePayload32Branch> for FeatureExtrudePayload32BranchWire {
             first_indices: branch
                 .first_indices
                 .iter()
-                .map(|token| token.value)
+                .map(|token| token.token.value())
                 .collect(),
             raw_first_indices: branch
                 .first_indices
                 .iter()
-                .map(|token| token.raw.clone())
+                .map(|token| token.token.raw().to_vec())
                 .collect(),
             first_index_source_offsets: branch
                 .first_indices
@@ -5543,12 +5544,12 @@ impl From<FeatureExtrudePayload32Branch> for FeatureExtrudePayload32BranchWire {
             second_indices: branch
                 .second_indices
                 .iter()
-                .map(|token| token.value)
+                .map(|token| token.token.value())
                 .collect(),
             raw_second_indices: branch
                 .second_indices
                 .iter()
-                .map(|token| token.raw.clone())
+                .map(|token| token.token.raw().to_vec())
                 .collect(),
             second_index_source_offsets: branch
                 .second_indices
@@ -5620,14 +5621,14 @@ impl TryFrom<FeatureExtrudePayload32BranchWire> for FeatureExtrudePayload32Branc
                 .zip(wire.first_index_source_offsets)
                 .zip(wire.first_data_blocks)
                 .map(
-                    |(((value, raw), source_offset), data_block)| FeatureDataBlockToken {
-                        value,
-                        raw,
+                    |(((value, raw), source_offset), data_block)| Ok(ConstructionReference {
+                        token: CompactIndexAtom::from_wire(value, &raw)
+                            .map_err(|error| format!("first_indices/raw_first_indices: {error}"))?,
                         source_offset,
                         data_block,
-                    },
+                    }),
                 )
-                .collect(),
+                .collect::<Result<_, String>>()?,
             second_indices: wire
                 .second_indices
                 .into_iter()
@@ -5635,14 +5636,14 @@ impl TryFrom<FeatureExtrudePayload32BranchWire> for FeatureExtrudePayload32Branc
                 .zip(wire.second_index_source_offsets)
                 .zip(wire.second_data_blocks)
                 .map(
-                    |(((value, raw), source_offset), data_block)| FeatureDataBlockToken {
-                        value,
-                        raw,
+                    |(((value, raw), source_offset), data_block)| Ok(ConstructionReference {
+                        token: CompactIndexAtom::from_wire(value, &raw)
+                            .map_err(|error| format!("second_indices/raw_second_indices: {error}"))?,
                         source_offset,
                         data_block,
-                    },
+                    }),
                 )
-                .collect(),
+                .collect::<Result<_, String>>()?,
             terminal: ReferenceIndexToken::from_wire(
                 wire.terminal_object_index, &wire.raw_terminal_object_index,
             ).map_err(|error| format!("terminal_object_index/raw_terminal_object_index: {error}"))?,
@@ -11442,17 +11443,15 @@ pub fn feature_extrude_payload_32_branches(
                     source_offset: entry_offset + token.offset as u64,
                     data_block: unique_offset_data_block(&indexed, token.value),
                 }).collect(),
-                first_indices: branch.first_indices.into_iter().map(|token| FeatureDataBlockToken {
-                    value: token.value,
-                    raw: token.raw,
+                first_indices: branch.first_indices.into_iter().map(|token| ConstructionReference {
+                    token: token.atom,
                     source_offset: entry_offset + token.offset as u64,
-                    data_block: unique_offset_data_block(&indexed, token.value),
+                    data_block: unique_offset_data_block(&indexed, token.atom.value()),
                 }).collect(),
-                second_indices: branch.second_indices.into_iter().map(|token| FeatureDataBlockToken {
-                    value: token.value,
-                    raw: token.raw,
+                second_indices: branch.second_indices.into_iter().map(|token| ConstructionReference {
+                    token: token.atom,
                     source_offset: entry_offset + token.offset as u64,
-                    data_block: unique_offset_data_block(&indexed, token.value),
+                    data_block: unique_offset_data_block(&indexed, token.atom.value()),
                 }).collect(),
                 terminal: branch.terminal.token,
                 terminal_source_offset: entry_offset + branch.terminal.offset as u64,

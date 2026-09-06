@@ -1432,15 +1432,13 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
             source_offset: 20,
             data_block: Some("block#1".to_string()),
         }],
-        first_indices: vec![super::FeatureDataBlockToken {
-            value: 2,
-            raw: vec![2],
+        first_indices: vec![super::ConstructionReference {
+            token: crate::om::compact::CompactIndexAtom::from_wire(2, &[2]).unwrap(),
             source_offset: 21,
             data_block: Some("block#2".to_string()),
         }],
-        second_indices: vec![super::FeatureDataBlockToken {
-            value: 3,
-            raw: vec![3],
+        second_indices: vec![super::ConstructionReference {
+            token: crate::om::compact::CompactIndexAtom::from_wire(3, &[3]).unwrap(),
             source_offset: 22,
             data_block: Some("block#3".to_string()),
         }],

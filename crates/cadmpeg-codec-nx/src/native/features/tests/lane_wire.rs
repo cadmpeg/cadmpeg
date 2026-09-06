@@ -407,6 +407,12 @@ fn extrude_32_branch_rejects_disagreeing_scalar_and_body_copies() {
         ("raw_terminal_object_index", serde_json::json!([43])),
         ("raw_terminal_object_index", serde_json::json!([255])),
         ("raw_terminal_object_index", serde_json::json!([42, 0])),
+        ("raw_first_indices", serde_json::json!([[3]])),
+        ("raw_first_indices", serde_json::json!([[255]])),
+        ("raw_first_indices", serde_json::json!([[2, 0]])),
+        ("raw_second_indices", serde_json::json!([[2]])),
+        ("raw_second_indices", serde_json::json!([[255]])),
+        ("raw_second_indices", serde_json::json!([[128]])),
     ] {
         let mut invalid = original.clone();
         invalid[field] = value;

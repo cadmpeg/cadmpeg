@@ -4,8 +4,8 @@
 use crate::om::reference_index::ReferenceIndexToken;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ConstructionReference<B> {
-    pub(crate) token: ReferenceIndexToken,
+pub(crate) struct ConstructionReference<B, T = ReferenceIndexToken> {
+    pub(crate) token: T,
     pub(crate) data_block: B,
     pub(crate) source_offset: u64,
 }

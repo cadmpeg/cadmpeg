@@ -2024,9 +2024,9 @@ pub struct ExtrudePayload32Branch {
     /// Fixed-width wrapped compact indices with their source words and offsets.
     pub atoms: Vec<LaneToken<u32, u32>>,
     /// Ordered values in the first compact-index lane.
-    pub first_indices: Vec<LaneToken<u32>>,
+    pub first_indices: Vec<LocatedCompactIndex>,
     /// Ordered values in the second compact-index lane.
-    pub second_indices: Vec<LaneToken<u32>>,
+    pub second_indices: Vec<LocatedCompactIndex>,
     /// Exact required terminal reference and its absolute source offset.
     pub terminal: PayloadObjectReference,
 }
@@ -5424,7 +5424,7 @@ fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<Vec<LaneToken<u32, 
     Some(values)
 }
 
-fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<Vec<LaneToken<u32>>> {
+fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<Vec<LocatedCompactIndex>> {
     if bytes.get(*at) != Some(&0x01) {
         return None;
     }
@@ -5433,28 +5433,11 @@ fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<Vec<LaneToken<
         return None;
     }
     *at += 2;
-    let values_start = *at;
-    let mut scan_at = values_start;
-    for _ in 1..count {
-        let (CompactIndex::Value(_), width) = compact_index(bytes.get(scan_at..)?)? else {
-            return None;
-        };
-        scan_at += width;
-    }
-
     let mut values = Vec::with_capacity(count - 1);
-    *at = values_start;
     for _ in 1..count {
-        let value_at = *at;
-        let (CompactIndex::Value(value), width) = compact_index(bytes.get(*at..)?)? else {
-            return None;
-        };
-        values.push(LaneToken {
-            value,
-            raw: bytes[value_at..value_at + width].to_vec(),
-            offset: value_at,
-        });
-        *at += width;
+        let token = LocatedCompactIndex::read(bytes, *at)?;
+        *at += token.atom.raw().len();
+        values.push(token);
     }
     Some(values)
 }

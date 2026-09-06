@@ -1325,7 +1325,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
         branch
             .first_indices
             .iter()
-            .map(|token| token.value)
+            .map(|token| token.atom.value())
             .collect::<Vec<_>>(),
         [43, 45, 44]
     );
@@ -1333,7 +1333,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
         branch
             .first_indices
             .iter()
-            .map(|token| token.raw.clone())
+            .map(|token| token.atom.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x80, 0x2b], vec![0x80, 0x2d], vec![0x80, 0x2c]]
     );
@@ -1349,7 +1349,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
         branch
             .second_indices
             .iter()
-            .map(|token| token.value)
+            .map(|token| token.atom.value())
             .collect::<Vec<_>>(),
         [46, 119]
     );
@@ -1357,7 +1357,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
         branch
             .second_indices
             .iter()
-            .map(|token| token.raw.clone())
+            .map(|token| token.atom.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x80, 0x2e], vec![0x80, 0x77]]
     );
