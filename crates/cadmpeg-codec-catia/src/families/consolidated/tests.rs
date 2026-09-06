@@ -7,6 +7,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::native::edge_definition::CatiaConsolidatedEdgeDefinition;
 use crate::test_support::*;
 use crate::CatiaCodec;
 
@@ -580,7 +581,7 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
         native.consolidated_edge_nodes[0]
             .definition
             .as_ref()
-            .and_then(|definition| definition.data()),
+            .and_then(CatiaConsolidatedEdgeDefinition::data),
         Some(
             crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Compact24 {
                 operand: 1
@@ -882,7 +883,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         native.consolidated_edge_nodes[0]
             .definition
             .as_ref()
-            .and_then(|definition| definition.data()),
+            .and_then(CatiaConsolidatedEdgeDefinition::data),
         Some(
             crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Scalar25 {
                 operands: [1, 57, 3463],

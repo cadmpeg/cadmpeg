@@ -728,14 +728,17 @@ mod tests {
             assert_eq!(width.is_ok(), matches!(byte, 1..=3));
             if let Ok(width) = width {
                 assert_eq!(
-                    serde_json::to_value(width).unwrap(),
+                    serde_json::to_value(width).expect("serialize frame width"),
                     serde_json::json!(byte)
                 );
             }
             let flag = serde_json::from_value::<ConsolidatedFrameFlag>(serde_json::json!(byte));
             assert_eq!(flag.is_ok(), matches!(byte, 0x03 | 0x13 | 0x83));
             if let Ok(flag) = flag {
-                assert_eq!(serde_json::to_value(flag).unwrap(), serde_json::json!(byte));
+                assert_eq!(
+                    serde_json::to_value(flag).expect("serialize frame flag"),
+                    serde_json::json!(byte)
+                );
             }
         }
     }

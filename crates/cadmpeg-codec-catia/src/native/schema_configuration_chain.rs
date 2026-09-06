@@ -257,18 +257,20 @@ mod tests {
                 .to_vec(),
             terminal: CatiaEntityReference::Unresolved { entity_id: 3 },
         };
-        let wire = serde_json::to_value(&chain).unwrap();
+        let wire = serde_json::to_value(&chain).expect("serialize row chain");
         assert_eq!(wire["links"][0]["successor"], wire["links"][1]["row"]);
         assert_eq!(
             wire["links"][1]["successor"],
-            serde_json::to_value(&chain.terminal).unwrap()
+            serde_json::to_value(&chain.terminal).expect("serialize terminal")
         );
         assert_eq!(
-            serde_json::from_value::<CatiaSchemaConfigurationRowChain>(wire.clone()).unwrap(),
+            serde_json::from_value::<CatiaSchemaConfigurationRowChain>(wire.clone())
+                .expect("valid row chain"),
             chain
         );
         let mut mismatched = wire.clone();
-        mismatched["links"][0]["successor"] = serde_json::to_value(&chain.terminal).unwrap();
+        mismatched["links"][0]["successor"] =
+            serde_json::to_value(&chain.terminal).expect("serialize terminal");
         assert!(serde_json::from_value::<CatiaSchemaConfigurationRowChain>(mismatched).is_err());
         let mut empty = wire;
         empty["links"] = serde_json::json!([]);

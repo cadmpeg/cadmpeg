@@ -388,7 +388,7 @@ fn incidence_degree_support_budget_exhaustion_keeps_candidate_unknown() {
     assert!(!budget.exhausted());
     assert!(degree_budget.exhausted());
     search.search();
-    assert!(search.state != IncidenceSearchState::Exhausted);
+    assert_ne!(search.state, IncidenceSearchState::Exhausted);
 }
 
 #[test]
@@ -604,7 +604,7 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
 
     search.search();
 
-    assert!(search.state != IncidenceSearchState::Exhausted);
+    assert_ne!(search.state, IncidenceSearchState::Exhausted);
     assert_eq!(search.solutions.len(), 1);
 }
 
@@ -851,7 +851,7 @@ fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
 
     search.search();
 
-    assert!(search.state != IncidenceSearchState::Exhausted);
+    assert_ne!(search.state, IncidenceSearchState::Exhausted);
     assert_eq!(search.solutions, vec![vec![(0, [0, 0])]]);
     assert!(propagation_budget.exhausted());
 }
@@ -1341,7 +1341,7 @@ fn incidence_forced_face_chain_does_not_consume_branch_budget() {
 
     search.search();
 
-    assert!(search.state != IncidenceSearchState::Exhausted);
+    assert_ne!(search.state, IncidenceSearchState::Exhausted);
     assert_eq!(search.solutions, vec![vec![(0, [0, 0]), (1, [1, 1])]]);
 }
 
@@ -1392,7 +1392,7 @@ fn incidence_forced_face_configuration_closes_its_frontier_atomically() {
 
     search.search();
 
-    assert!(search.state != IncidenceSearchState::Exhausted);
+    assert_ne!(search.state, IncidenceSearchState::Exhausted);
     assert_eq!(search.solutions, vec![vec![(0, [0, 1]), (1, [0, 1])]]);
 }
 

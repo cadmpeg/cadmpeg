@@ -808,10 +808,10 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
                 (direction[0].powi(2) + direction[1].powi(2) + direction[2].powi(2)).sqrt();
             ((length - 1.0).abs() < EPS_GUIDE_DIRECTION_UNIT).then_some(GuideCurveSite {
                 knot,
-                point,
-                direction,
                 first_derivative,
                 second_derivative,
+                point,
+                direction,
             })
         })
         .collect();

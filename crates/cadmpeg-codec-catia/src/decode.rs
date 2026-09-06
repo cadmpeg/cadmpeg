@@ -26,6 +26,8 @@ use crate::entity_table;
 use crate::families;
 use crate::formula;
 use crate::loss::CatiaLossCode;
+use crate::native::entity_record::CatiaEntityRecord;
+use crate::native::schema_configuration_chain::CatiaSchemaConfigurationRowChain;
 use crate::native::{CatiaNative, CatiaObjectGraph};
 use crate::pmi;
 use crate::sketch;
@@ -625,7 +627,7 @@ fn finish_decode(
     let mut numeric_entity_value_packet_count = 0;
     let mut layout_entity_value_packet_count = 0;
     let mut e9_scalar_entity_value_packet_count = 0;
-    for packet in native.entity_records.iter().flat_map(|record| record.value_packets()) {
+    for packet in native.entity_records.iter().flat_map(CatiaEntityRecord::value_packets) {
         match packet {
             entity_table::EntityValuePacket::Compact { .. } => compact_entity_value_packet_count += 1,
             entity_table::EntityValuePacket::Numeric { .. } => numeric_entity_value_packet_count += 1,
@@ -1360,7 +1362,7 @@ fn finish_decode(
     let schema_configuration_row_intervening_entity_count = native
         .schema_configuration_row_chains
         .iter()
-        .flat_map(|chain| chain.links())
+        .flat_map(CatiaSchemaConfigurationRowChain::links)
         .filter_map(|link| link.intervening_entities.as_ref())
         .flatten()
         .count();
@@ -1383,7 +1385,7 @@ fn finish_decode(
     let schema_configuration_row_intervening_schema_configuration_count = native
         .schema_configuration_row_chains
         .iter()
-        .flat_map(|chain| chain.links())
+        .flat_map(CatiaSchemaConfigurationRowChain::links)
         .filter_map(|link| link.intervening_entities.as_ref())
         .flatten()
         .filter_map(|reference| reference.entity())
