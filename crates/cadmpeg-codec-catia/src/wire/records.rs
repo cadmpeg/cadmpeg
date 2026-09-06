@@ -272,14 +272,14 @@ pub struct ConsolidatedRawFrame<Offset = usize> {
 }
 
 impl ConsolidatedRawFrame {
-    pub(crate) fn from_record(record: &ConsolidatedRecord, payload: Vec<u8>) -> Option<Self> {
-        Some(Self {
+    pub(crate) fn from_record(record: &ConsolidatedRecord, payload: Vec<u8>) -> Self {
+        Self {
             pos: record.range.start,
-            width: ConsolidatedFrameWidth::try_from(record.width).ok()?,
-            flag: ConsolidatedFrameFlag::try_from(record.flag).ok()?,
+            width: record.width,
+            flag: record.flag,
             header_token: record.header_token,
             payload,
-        })
+        }
     }
 }
 
@@ -324,9 +324,9 @@ pub struct ConsolidatedRecord {
     /// Record family.
     pub family: ConsolidatedFamily,
     /// Header-token width in bytes.
-    pub width: u8,
+    pub width: ConsolidatedFrameWidth,
     /// Independent flag byte (`0x03`, `0x13`, or `0x83`).
-    pub flag: u8,
+    pub flag: ConsolidatedFrameFlag,
     /// Record class byte.
     pub class: u8,
     /// Little-endian width-coded header token.
@@ -500,7 +500,7 @@ fn parse_spanning_consolidated_record(
     let first = source_byte(source_start)?;
     let (family, width, header_len, length) = if let Some(width) = first
         .checked_sub(0xa4)
-        .filter(|width| (1..=3).contains(width))
+        .and_then(|width| ConsolidatedFrameWidth::try_from(width).ok())
     {
         let length_bytes = [
             source_byte(source_start.checked_add(3)?)?,
@@ -514,7 +514,7 @@ fn parse_spanning_consolidated_record(
     } else {
         let width = first
             .checked_sub(0xb1)
-            .filter(|width| (1..=3).contains(width))?;
+            .and_then(|width| ConsolidatedFrameWidth::try_from(width).ok())?;
         (
             ConsolidatedFamily::B,
             width,
@@ -524,13 +524,12 @@ fn parse_spanning_consolidated_record(
             )?),
         )
     };
-    let flag = source_byte(source_start.checked_add(a_frame::FLAG)?)?;
+    let flag =
+        ConsolidatedFrameFlag::try_from(source_byte(source_start.checked_add(a_frame::FLAG)?)?)
+            .ok()?;
     let class = source_byte(source_start.checked_add(a_frame::CLASS)?)?;
-    if ![0x03, 0x13, 0x83].contains(&flag) {
-        return None;
-    }
     let token_at = source_start.checked_add(header_len)?;
-    let payload_start = token_at.checked_add(usize::from(width))?;
+    let payload_start = token_at.checked_add(usize::from(u8::from(width)))?;
     let source_end = payload_start.checked_add(length)?;
     if source_end > source_length {
         return None;
@@ -544,7 +543,7 @@ fn parse_spanning_consolidated_record(
     if !crosses_extent {
         return None;
     }
-    let header_token = (0..usize::from(width)).try_fold(0u32, |value, relative| {
+    let header_token = (0..usize::from(u8::from(width))).try_fold(0u32, |value, relative| {
         Some(value | (u32::from(source_byte(token_at.checked_add(relative)?)?) << (8 * relative)))
     })?;
     let mut logical_start = 0usize;
@@ -578,11 +577,10 @@ fn parse_consolidated_record(
     pos: usize,
     source_end: usize,
 ) -> Option<ConsolidatedRecord> {
-    let flags = [0x03, 0x13, 0x83];
     let (family, width, token_at, length) = if let Some(width) = data
         .get(pos)
         .and_then(|byte| byte.checked_sub(0xa4))
-        .filter(|width| (1..=3).contains(width))
+        .and_then(|width| ConsolidatedFrameWidth::try_from(width).ok())
     {
         let length = View::u32_le_at(data, pos.checked_add(a_frame::PAYLOAD_LEN)?)
             .and_then(|value| usize::try_from(value).ok())?;
@@ -596,7 +594,7 @@ fn parse_consolidated_record(
         let width = data
             .get(pos)
             .and_then(|byte| byte.checked_sub(0xb1))
-            .filter(|width| (1..=3).contains(width))?;
+            .and_then(|width| ConsolidatedFrameWidth::try_from(width).ok())?;
         (
             ConsolidatedFamily::B,
             width,
@@ -604,12 +602,9 @@ fn parse_consolidated_record(
             usize::from(*data.get(pos.checked_add(b_frame::PAYLOAD_LEN)?)?),
         )
     };
-    let flag = *data.get(pos.checked_add(a_frame::FLAG)?)?;
+    let flag = ConsolidatedFrameFlag::try_from(*data.get(pos.checked_add(a_frame::FLAG)?)?).ok()?;
     let class = *data.get(pos.checked_add(a_frame::CLASS)?)?;
-    if !flags.contains(&flag) {
-        return None;
-    }
-    let payload_start = token_at.checked_add(usize::from(width))?;
+    let payload_start = token_at.checked_add(usize::from(u8::from(width)))?;
     let end = payload_start.checked_add(length)?;
     if end > source_end {
         return None;
@@ -727,6 +722,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn frame_states_admit_only_defined_widths_and_flags() {
+        for byte in u8::MIN..=u8::MAX {
+            let width = serde_json::from_value::<ConsolidatedFrameWidth>(serde_json::json!(byte));
+            assert_eq!(width.is_ok(), matches!(byte, 1..=3));
+            if let Ok(width) = width {
+                assert_eq!(
+                    serde_json::to_value(width).unwrap(),
+                    serde_json::json!(byte)
+                );
+            }
+            let flag = serde_json::from_value::<ConsolidatedFrameFlag>(serde_json::json!(byte));
+            assert_eq!(flag.is_ok(), matches!(byte, 0x03 | 0x13 | 0x83));
+            if let Ok(flag) = flag {
+                assert_eq!(serde_json::to_value(flag).unwrap(), serde_json::json!(byte));
+            }
+        }
+    }
+
+    #[test]
     fn record_walk_does_not_rescan_a_wide_header_token() {
         let mut bytes = vec![0xa7, 0x03, 0x20];
         bytes.extend_from_slice(&8u32.to_le_bytes());
@@ -793,8 +807,8 @@ mod tests {
             source_range: 0..4,
             physically_contiguous: true,
             family: ConsolidatedFamily::A,
-            width: 1,
-            flag: 0x03,
+            width: ConsolidatedFrameWidth::One,
+            flag: ConsolidatedFrameFlag::Flag03,
             class: 0x20,
             header_token: 0,
             range: 0..4,

@@ -567,7 +567,7 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
                 descriptor: ConsolidatedRawFrame::from_record(
                     parameter,
                     data[parameter.payload.clone()].to_vec(),
-                )?,
+                ),
                 circle: circles.get(&circle.range.start)?.clone(),
                 #[cfg(test)]
                 definition,
@@ -708,7 +708,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                         frame: ConsolidatedRawFrame::from_record(
                             record,
                             data[record.payload.clone()].to_vec(),
-                        )?,
+                        ),
                         class: ConsolidatedEdgeDefinitionClass::try_from(record.class).ok()?,
                     })
                 });
@@ -765,7 +765,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                 frame: ConsolidatedRawFrame::from_record(
                     definition_record,
                     data[definition_record.payload.clone()].to_vec(),
-                )?,
+                ),
                 class: ConsolidatedEdgeDefinitionClass::try_from(definition_record.class).ok()?,
             }),
             uses,

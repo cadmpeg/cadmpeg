@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::native::edge_definition::CatiaConsolidatedEdgeDefinition;
+use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth};
 
 use super::{
     CatiaAllocationReferenceEncoding, CatiaConsolidatedAnalyticCircleBinding,
@@ -23,9 +24,9 @@ pub struct CatiaConsolidatedEdgeNode {
     /// Zero-based bounded record-source ordinal.
     pub source_index: usize,
     /// Header-token width in bytes.
-    pub width: u8,
+    pub width: ConsolidatedFrameWidth,
     /// Independent framing flag.
-    pub flag: u8,
+    pub flag: ConsolidatedFrameFlag,
     /// Width-coded header token.
     pub header_token: u32,
     /// Owning compact class-`0x62` packet and frame ordinal.
@@ -64,8 +65,8 @@ pub(super) struct CatiaConsolidatedEdgeNodeWire {
     id: String,
     byte_offset: u64,
     source_index: usize,
-    width: u8,
-    flag: u8,
+    width: ConsolidatedFrameWidth,
+    flag: ConsolidatedFrameFlag,
     header_token: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     allocation_owner: Option<String>,

@@ -1580,8 +1580,8 @@ fn native_namespace_retains_standalone_consolidated_edge_nodes() {
     let [node] = native.consolidated_edge_nodes.as_slice() else {
         panic!("one standalone consolidated edge node");
     };
-    assert_eq!(node.width, 1);
-    assert_eq!(node.flag, 0x03);
+    assert_eq!(u8::from(node.width), 1);
+    assert_eq!(u8::from(node.flag), 0x03);
     assert_eq!(node.header_token, 5);
     assert_eq!(node.terminal_value, 8);
     assert_eq!(

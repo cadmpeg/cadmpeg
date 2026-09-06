@@ -44,7 +44,7 @@ use crate::object_graph::{
     PayloadSubtype,
 };
 use crate::value_block;
-use crate::wire::records::ConsolidatedRecord;
+use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRecord};
 
 /// Current schema version for the CATIA native namespace.
 pub const CATIA_NATIVE_VERSION: u32 = 288;
@@ -1061,9 +1061,9 @@ pub struct CatiaConsolidatedPlaneCarrier {
     /// Complete framed-record length.
     pub byte_len: u64,
     /// Header-token width in bytes.
-    pub width: u8,
+    pub width: ConsolidatedFrameWidth,
     /// Independent frame flag.
-    pub flag: u8,
+    pub flag: ConsolidatedFrameFlag,
     /// Width-coded frame header token.
     pub header_token: u32,
     /// Selector-specific finite scalar payload.
@@ -1076,8 +1076,8 @@ struct CatiaConsolidatedPlaneCarrierWire {
     id: String,
     byte_offset: u64,
     byte_len: u64,
-    width: u8,
-    flag: u8,
+    width: ConsolidatedFrameWidth,
+    flag: ConsolidatedFrameFlag,
     header_token: u32,
     selector: u8,
     payload: CatiaConsolidatedPlaneCarrierPayload,

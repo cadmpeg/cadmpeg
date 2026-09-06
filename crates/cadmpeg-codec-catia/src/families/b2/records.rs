@@ -22,7 +22,8 @@ use crate::wire::bytes::{
 use crate::wire::records::{b_family_frames, consolidated_records};
 use crate::wire::records::{
     b_family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFamily, ConsolidatedFrame,
-    ConsolidatedPcurve, ConsolidatedRawFrame, ConsolidatedRecord,
+    ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedPcurve, ConsolidatedRawFrame,
+    ConsolidatedRecord,
 };
 
 const EPS_B2_RECORD_COARSE_GEOMETRY: f64 = 1.0e-6;
@@ -195,9 +196,9 @@ pub struct B2PlaneCarrier {
     /// Exclusive end of the complete framed record.
     pub end: usize,
     /// Header-token width in bytes.
-    pub width: u8,
+    pub width: ConsolidatedFrameWidth,
     /// Independent frame flag.
-    pub flag: u8,
+    pub flag: ConsolidatedFrameFlag,
     /// Width-coded frame header token.
     pub header_token: u32,
     /// Selector-specific finite scalar payload.
@@ -1516,7 +1517,7 @@ pub(crate) fn b2_class5b5c_records_from_records(
             let class = crate::native::class5b5c::CatiaClass5b5c::try_from(record.class).ok()?;
             let payload = data.get(record.payload.clone())?;
             Some(B2Class5b5cRecord {
-                frame: ConsolidatedRawFrame::from_record(record, payload.to_vec())?,
+                frame: ConsolidatedRawFrame::from_record(record, payload.to_vec()),
                 source_index: record.source_index,
                 source_offset: record.source_range.start,
                 class,
@@ -1728,9 +1729,6 @@ pub(crate) fn b2_plane_carriers_from_records(
         .iter()
         .filter(|record| record.family == ConsolidatedFamily::B && record.class == 0x27)
         .filter_map(|record| {
-            if !matches!(record.flag, 0x03 | 0x13 | 0x83) {
-                return None;
-            }
             let marker = *data.get(record.payload.start)?;
             let selector = *data.get(record.payload.start + 1)?;
             if marker != 0xb4 {

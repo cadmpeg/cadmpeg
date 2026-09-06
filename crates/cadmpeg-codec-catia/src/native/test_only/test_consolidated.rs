@@ -467,18 +467,16 @@ pub(super) fn validate_consolidated_plane_carriers(
                 !values.is_empty() && values.iter().all(|value| value.is_finite()),
             ),
         };
-        let header_limit = 1u32.checked_shl(8 * u32::from(carrier.width));
+        let header_limit = 1u32 << (8 * u8::from(carrier.width));
         let scalar_count = u64::try_from(scalar_count).map_err(|_| {
             cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated plane carrier `{}` has too many scalars",
                 carrier.id
             ))
         })?;
-        let expected_len = 4 + u64::from(carrier.width) + 2 + 8 * scalar_count;
+        let expected_len = 4 + u64::from(u8::from(carrier.width)) + 2 + 8 * scalar_count;
         if carrier.id != format!("catia:consolidated:plane-carrier#{index}")
-            || !matches!(carrier.width, 1..=3)
-            || header_limit.is_none_or(|limit| carrier.header_token >= limit)
-            || !matches!(carrier.flag, 0x03 | 0x13 | 0x83)
+            || carrier.header_token >= header_limit
             || matches!(
                 &carrier.payload,
                 CatiaConsolidatedPlaneCarrierPayload::ScalarLane { .. }

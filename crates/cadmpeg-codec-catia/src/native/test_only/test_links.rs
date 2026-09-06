@@ -119,7 +119,7 @@ pub(super) fn validate_consolidated_edge_runs(
         .collect::<HashSet<_>>();
     let mut run_nodes = HashSet::new();
     for (index, node) in nodes.iter().enumerate() {
-        let token_limit = 1u32.checked_shl(u32::from(node.width) * 8);
+        let token_limit = 1u32 << (u8::from(node.width) * 8);
         let uses_valid = node.uses.as_ref().is_none_or(|uses| {
             node.curve_ref
                 .checked_sub(2)
@@ -177,9 +177,7 @@ pub(super) fn validate_consolidated_edge_runs(
                 && descriptor.values.iter().all(|value| value.is_finite())
         });
         if node.id != format!("catia:consolidated:edge-node#{index}")
-            || !matches!(node.width, 1..=3)
-            || !matches!(node.flag, 0x03 | 0x13 | 0x83)
-            || token_limit.is_some_and(|limit| node.header_token >= limit)
+            || node.header_token >= token_limit
             || !uses_valid
             || !definition_valid
             || !analytic_circle_valid

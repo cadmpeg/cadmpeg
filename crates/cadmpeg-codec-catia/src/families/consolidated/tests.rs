@@ -468,7 +468,11 @@ fn consolidated_record_walk_inventory_preserves_width_flag_and_boundaries() {
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].family, ConsolidatedFamily::A);
     assert_eq!(
-        (records[0].width, records[0].flag, records[0].class),
+        (
+            u8::from(records[0].width),
+            u8::from(records[0].flag),
+            records[0].class
+        ),
         (2, 0x03, 0x20)
     );
     assert_eq!(records[0].range, 0..first.len());
