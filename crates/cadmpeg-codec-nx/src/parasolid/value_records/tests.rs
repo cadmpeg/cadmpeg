@@ -12,7 +12,7 @@ fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].offset, 1);
     assert_eq!(records[0].byte_len, 17);
-    assert_eq!(records[0].xmt, 17);
+    assert_eq!(u32::from(records[0].xmt), 17);
     assert_eq!(records[0].value.as_str(), "deadbeef");
     assert_eq!(
         crate::parasolid::value_records::entity_54_string_record_at(&bytes, 1),
@@ -38,7 +38,7 @@ fn parasolid_entity_52_integers_require_complete_counted_values() {
     let records = crate::parasolid::value_records::entity_value_records(&bytes).integers;
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].offset, 1);
-    assert_eq!(records[0].xmt, 17);
+    assert_eq!(u32::from(records[0].xmt), 17);
     assert_eq!(records[0].value.as_slice(), [3, u32::MAX]);
     assert_eq!(records[0].byte_len, 16);
     assert_eq!(
@@ -64,7 +64,7 @@ fn parasolid_entity_53_doubles_require_complete_finite_values() {
     let records = crate::parasolid::value_records::entity_value_records(&bytes).doubles;
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].offset, 1);
-    assert_eq!(records[0].xmt, 18);
+    assert_eq!(u32::from(records[0].xmt), 18);
     assert_eq!(records[0].value.as_slice(), [0.001, 0.25]);
     assert_eq!(records[0].byte_len, 25);
     assert_eq!(
@@ -223,7 +223,7 @@ fn parasolid_value_scan_does_not_admit_nested_counted_candidates() {
 
     let records = crate::parasolid::value_records::entity_value_records(&outer);
     assert_eq!(records.integers.len(), 1);
-    assert_eq!(records.integers[0].xmt, 10);
+    assert_eq!(u32::from(records.integers[0].xmt), 10);
     assert_eq!(records.integers[0].value.as_slice().len(), 4);
     assert!(records.doubles.is_empty());
 }
@@ -235,7 +235,7 @@ fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
     ];
     let records = crate::parasolid::value_records::entity_value_records(&tags).tags;
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].xmt, 24);
+    assert_eq!(u32::from(records[0].xmt), 24);
     assert_eq!(records[0].value.as_slice(), [7, u32::MAX]);
     assert!(
         crate::parasolid::value_records::entity_value_records(&tags[..tags.len() - 1])
@@ -252,7 +252,7 @@ fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
     }
     let records = crate::parasolid::value_records::entity_value_records(&unicode).unicode;
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].xmt, 32_768);
+    assert_eq!(u32::from(records[0].xmt), 32_768);
     assert_eq!(
         records[0].value.as_str().encode_utf16().collect::<Vec<_>>(),
         code_units

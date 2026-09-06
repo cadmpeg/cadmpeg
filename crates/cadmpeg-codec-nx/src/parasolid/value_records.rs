@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use cadmpeg_core::decode::View;
 use crate::framing::read_and_advance as read_xmt;
+use crate::framing::xmt_reference::NonNullXmt;
 use crate::parasolid::counted_values::{CountedLane, CountedValues};
 use crate::parasolid::printable_string::PrintableString;
 use crate::parasolid::unicode_value::{UnicodeLane, UnicodeValue};
@@ -12,7 +13,7 @@ use crate::parasolid::unicode_value::{UnicodeLane, UnicodeValue};
 pub(crate) struct ValueRecord<T> {
     pub(crate) offset: usize,
     pub(crate) byte_len: usize,
-    pub(crate) xmt: u32,
+    pub(crate) xmt: NonNullXmt,
     pub(crate) value: T,
 }
 
@@ -74,7 +75,7 @@ pub(super) fn value_record_candidates(bytes: &[u8]) -> BTreeMap<u32, Vec<usize>>
             offset += 1;
             continue;
         };
-        candidates.entry(frame.xmt).or_default().push(offset);
+        candidates.entry(u32::from(frame.xmt)).or_default().push(offset);
         offset = frame.next_offset();
     }
     candidates
@@ -88,7 +89,7 @@ pub(crate) fn entity_value_record_identity_at(
     let frame = value_record_frame_at(bytes, offset)?;
     Some((
         u16::from(frame.payload.tag()),
-        frame.xmt,
+        u32::from(frame.xmt),
         frame.end - offset,
     ))
 }
@@ -121,7 +122,7 @@ impl ValuePayload<'_> {
 struct ValueRecordFrame<'a> {
  offset: usize,
  end: usize,
- xmt: u32,
+ xmt: NonNullXmt,
  payload: ValuePayload<'a>,
 }
 impl ValueRecordFrame<'_> {
@@ -159,7 +160,7 @@ fn frame_at<'a>(bytes: &'a [u8], offset: usize, tag: u8, width: usize,
  if bytes.get(at) == Some(&0xff) { at += 1; }
  let count = View::u32_be_at(bytes, at)? as usize;
  at += 4;
- let xmt = read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1)?;
+ let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
  let mut end = at.checked_add(count.checked_mul(width)?)?;
  let payload = decode(bytes.get(at..end)?)?;
  if matches!(payload, ValuePayload::String(_)) {

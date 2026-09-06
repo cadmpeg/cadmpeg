@@ -1227,7 +1227,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     let integer = ParasolidEntity52IntegerRecord {
         id: "integers".into(),
         stream_ordinal: 3,
-        xmt: 70,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
         values: crate::parasolid::counted_values::CountedValues::new(vec![4, u32::MAX]).unwrap(),
         byte_len: 18,
         inflated_offset: 400,
@@ -1235,7 +1235,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     let double = ParasolidEntity53DoubleRecord {
         id: "doubles".into(),
         stream_ordinal: 3,
-        xmt: 71,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
         values: crate::parasolid::counted_values::CountedValues::new(vec![0.25, 7.5]).unwrap(),
         byte_len: 26,
         inflated_offset: 500,
@@ -1701,7 +1701,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         ParasolidEntity53DoubleRecord {
             id: "head-value".into(),
             stream_ordinal: 3,
-            xmt: 70,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
             values: crate::parasolid::counted_values::CountedValues::new(vec![1.0]).unwrap(),
             byte_len: 18,
             inflated_offset: 400,
@@ -1709,7 +1709,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         ParasolidEntity53DoubleRecord {
             id: "child-value".into(),
             stream_ordinal: 3,
-            xmt: 71,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
             values: crate::parasolid::counted_values::CountedValues::new(vec![2.0]).unwrap(),
             byte_len: 18,
             inflated_offset: 410,
@@ -1815,7 +1815,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         id: id.into(),
         stream_ordinal: 3,
         kind,
-        xmt: 70,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
         values: crate::parasolid::counted_values::CountedValues::new(vec![value]).unwrap(),
         byte_len: 36,
         inflated_offset: 400,
@@ -1823,7 +1823,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
     let axis = ParasolidEntity57AxisRecord {
         id: "axis".into(),
         stream_ordinal: 3,
-        xmt: 73,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(73).unwrap(),
         values: crate::parasolid::counted_values::CountedValues::new(vec![
             [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
         ]).unwrap(),
@@ -1833,7 +1833,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
     let tag = ParasolidEntity58TagRecord {
         id: "tag".into(),
         stream_ordinal: 3,
-        xmt: 74,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(74).unwrap(),
         values: crate::parasolid::counted_values::CountedValues::new(vec![u32::MAX]).unwrap(),
         byte_len: 16,
         inflated_offset: 440,
@@ -1841,7 +1841,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
     let unicode = ParasolidEntity62UnicodeRecord {
         id: "unicode".into(),
         stream_ordinal: 3,
-        xmt: 75,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(75).unwrap(),
         value: crate::parasolid::unicode_value::UnicodeValue::new("μ".into()).unwrap(),
         byte_len: 14,
         inflated_offset: 450,

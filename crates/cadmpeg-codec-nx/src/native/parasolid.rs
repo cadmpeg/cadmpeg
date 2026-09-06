@@ -1867,7 +1867,7 @@ pub struct ParasolidEntity54StringRecord {
     /// Zero-based inflated Parasolid stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Exact nonempty printable value.
     pub value: PrintableString<String>,
     /// Exact framed record length.
@@ -1884,7 +1884,7 @@ pub struct ParasolidEntity52IntegerRecord {
     /// Zero-based inflated Parasolid stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Ordered big-endian unsigned values.
     pub values: CountedValues<u32>,
     /// Exact framed record length.
@@ -1901,7 +1901,7 @@ pub struct ParasolidEntity53DoubleRecord {
     /// Zero-based inflated Parasolid stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Ordered finite big-endian binary64 values.
     pub values: CountedValues<f64>,
     /// Exact framed record length.
@@ -1932,7 +1932,7 @@ pub struct ParasolidEntityVectorRecord {
     /// Exact value family.
     pub kind: ParasolidVectorValueKind,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Ordered finite xyz values.
     pub values: CountedValues<[f64; 3]>,
     /// Exact framed record length.
@@ -1949,7 +1949,7 @@ pub struct ParasolidEntity57AxisRecord {
     /// Zero-based inflated Parasolid stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Ordered axes, each retaining its two serialized xyz vectors.
     pub values: CountedValues<[[f64; 3]; 2]>,
     /// Exact framed record length.
@@ -1966,7 +1966,7 @@ pub struct ParasolidEntity58TagRecord {
     /// Zero-based inflated Parasolid stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Ordered exact tag values.
     pub values: CountedValues<u32>,
     /// Exact framed record length.
@@ -1987,7 +1987,7 @@ pub struct ParasolidEntity62UnicodeRecord {
     /// Zero-based inflated Parasolid stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Validated Unicode scalar string.
     pub value: UnicodeValue,
     /// Exact framed record length.
@@ -2000,7 +2000,7 @@ pub struct ParasolidEntity62UnicodeRecord {
 struct ParasolidEntity62UnicodeRecordWire {
     id: String,
     stream_ordinal: u32,
-    xmt: u32,
+    xmt: NonNullXmt,
     code_units: Vec<u16>,
     value: UnicodeValue,
     byte_len: u64,
@@ -2309,13 +2309,13 @@ pub fn parasolid_attribute_field_names(
     let mut names_by_xmt = BTreeMap::<(u32, u32), Vec<(&str, &str)>>::new();
     for string in strings {
         names_by_xmt
-            .entry((string.stream_ordinal, string.xmt))
+            .entry((string.stream_ordinal, u32::from(string.xmt)))
             .or_default()
             .push((string.id.as_str(), string.value.as_str()));
     }
     for value in unicode {
         names_by_xmt
-            .entry((value.stream_ordinal, value.xmt))
+            .entry((value.stream_ordinal, u32::from(value.xmt)))
             .or_default()
             .push((value.id.as_str(), value.value.as_str()));
     }
@@ -2523,7 +2523,7 @@ pub(crate) fn parasolid_entity_value_records(
             records.integers.push(ParasolidEntity52IntegerRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:entity-52-integers#{}-{}",
-                    record.xmt, record.offset
+                    u32::from(record.xmt), record.offset
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
@@ -2536,7 +2536,7 @@ pub(crate) fn parasolid_entity_value_records(
             records.doubles.push(ParasolidEntity53DoubleRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:entity-53-doubles#{}-{}",
-                    record.xmt, record.offset
+                    u32::from(record.xmt), record.offset
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
@@ -2549,7 +2549,7 @@ pub(crate) fn parasolid_entity_value_records(
             records.strings.push(ParasolidEntity54StringRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:entity-54-string#{}-{}",
-                    record.xmt, record.offset
+                    u32::from(record.xmt), record.offset
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
@@ -2560,7 +2560,7 @@ pub(crate) fn parasolid_entity_value_records(
         }
         let mut retain_vector = |kind, family: &str, xmt, offset, byte_len, values| {
             records.vectors.push(ParasolidEntityVectorRecord {
-                id: format!("nx:s{stream_ordinal}:entity-{family}#{xmt}-{offset}"),
+                id: format!("nx:s{stream_ordinal}:entity-{family}#{}-{offset}", u32::from(xmt)),
                 stream_ordinal: stream_ordinal as u32,
                 kind,
                 xmt,
@@ -2603,7 +2603,7 @@ pub(crate) fn parasolid_entity_value_records(
             records.axes.push(ParasolidEntity57AxisRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:entity-57-axes#{}-{}",
-                    record.xmt, record.offset
+                    u32::from(record.xmt), record.offset
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
@@ -2616,7 +2616,7 @@ pub(crate) fn parasolid_entity_value_records(
             records.tags.push(ParasolidEntity58TagRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:entity-58-tags#{}-{}",
-                    record.xmt, record.offset
+                    u32::from(record.xmt), record.offset
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
@@ -2629,7 +2629,7 @@ pub(crate) fn parasolid_entity_value_records(
             records.unicode.push(ParasolidEntity62UnicodeRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:entity-62-unicode#{}-{}",
-                    record.xmt, record.offset
+                    u32::from(record.xmt), record.offset
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
@@ -2672,13 +2672,13 @@ pub fn parasolid_entity_51_numeric_uses(
     let mut values = BTreeMap::<(u32, u32), Vec<(ParasolidEntity51NumericKind, &str)>>::new();
     for record in integers {
         values
-            .entry((record.stream_ordinal, record.xmt))
+            .entry((record.stream_ordinal, u32::from(record.xmt)))
             .or_default()
             .push((ParasolidEntity51NumericKind::UnsignedIntegers, &record.id));
     }
     for record in doubles {
         values
-            .entry((record.stream_ordinal, record.xmt))
+            .entry((record.stream_ordinal, u32::from(record.xmt)))
             .or_default()
             .push((ParasolidEntity51NumericKind::Doubles, &record.id));
     }
@@ -2719,7 +2719,7 @@ pub fn parasolid_entity_51_string_uses(
     let mut strings_by_identity = BTreeMap::<(u32, u32), Vec<&str>>::new();
     for string in strings {
         strings_by_identity
-            .entry((string.stream_ordinal, string.xmt))
+            .entry((string.stream_ordinal, u32::from(string.xmt)))
             .or_default()
             .push(string.id.as_str());
     }
@@ -2767,7 +2767,7 @@ pub fn parasolid_entity_51_structured_uses(
             ParasolidVectorValueKind::Directions => StructuredValueKind::Directions,
         };
         values
-            .entry((record.stream_ordinal, record.xmt))
+            .entry((record.stream_ordinal, u32::from(record.xmt)))
             .or_default()
             .push((kind, record.id.as_str()));
     }
@@ -2799,7 +2799,7 @@ pub fn parasolid_entity_51_structured_uses(
         }))
     {
         values
-            .entry((stream_ordinal, xmt))
+            .entry((stream_ordinal, u32::from(xmt)))
             .or_default()
             .push((kind, id));
     }
@@ -3148,7 +3148,7 @@ pub fn parasolid_topology_attribute_fields_have_untransferred_values(
 mod tests {
     #[test]
     fn unicode_record_wire_derives_exact_utf16_and_rejects_disagreement() {
-        let wire = r#"{"id":"unicode","stream_ordinal":0,"xmt":1,"code_units":[78,88,55357,56960],"value":"NX🚀","byte_len":8,"inflated_offset":0}"#;
+        let wire = r#"{"id":"unicode","stream_ordinal":0,"xmt":2,"code_units":[78,88,55357,56960],"value":"NX🚀","byte_len":8,"inflated_offset":0}"#;
         let record: super::ParasolidEntity62UnicodeRecord = serde_json::from_str(wire).unwrap();
         assert_eq!(serde_json::to_string(&record).unwrap(), wire);
         let inconsistent = wire.replace("[78,88,55357,56960]", "[78,88,55357]");
@@ -4034,7 +4034,7 @@ mod tests {
             id: "point".into(),
             stream_ordinal: 2,
             kind: ParasolidVectorValueKind::Points,
-            xmt: 12,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(12).unwrap(),
             values: crate::parasolid::counted_values::CountedValues::new(vec![[1.0, 2.0, 3.0]]).unwrap(),
             byte_len: 36,
             inflated_offset: 80,
@@ -4054,7 +4054,7 @@ mod tests {
         let colliding_tag = ParasolidEntity58TagRecord {
             id: "tag".into(),
             stream_ordinal: 2,
-            xmt: 12,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(12).unwrap(),
             values: crate::parasolid::counted_values::CountedValues::new(vec![7]).unwrap(),
             byte_len: 16,
             inflated_offset: 90,
@@ -4308,7 +4308,7 @@ mod tests {
         let strings = [28, 30].map(|xmt| ParasolidEntity54StringRecord {
             id: format!("string-{xmt}"),
             stream_ordinal: 3,
-            xmt,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(xmt).unwrap(),
             value: PrintableString::new((xmt - 27).to_string()).unwrap(),
             byte_len: 10,
             inflated_offset: u64::from(xmt),
@@ -4316,7 +4316,7 @@ mod tests {
         let unicode = ParasolidEntity62UnicodeRecord {
             id: "unicode-29".into(),
             stream_ordinal: 3,
-            xmt: 29,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(29).unwrap(),
             value: crate::parasolid::unicode_value::UnicodeValue::new("μ".into()).unwrap(),
             byte_len: 12,
             inflated_offset: 29,
@@ -4349,7 +4349,7 @@ mod tests {
         .is_empty());
 
         let ambiguous = ParasolidEntity62UnicodeRecord {
-            xmt: 28,
+            xmt: NonNullXmt::try_from(28).unwrap(),
             ..unicode.clone()
         };
         assert!(parasolid_attribute_field_names(
@@ -4693,7 +4693,7 @@ mod tests {
         let integers = [ParasolidEntity52IntegerRecord {
             id: "integers".into(),
             stream_ordinal: 3,
-            xmt: 70,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
             values: crate::parasolid::counted_values::CountedValues::new(vec![1]).unwrap(),
             byte_len: 12,
             inflated_offset: 300,
@@ -4701,7 +4701,7 @@ mod tests {
         let strings = [ParasolidEntity54StringRecord {
             id: "string".into(),
             stream_ordinal: 3,
-            xmt: 71,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
             value: PrintableString::new("value".to_owned()).unwrap(),
             byte_len: 14,
             inflated_offset: 400,
