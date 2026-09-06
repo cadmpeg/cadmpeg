@@ -801,13 +801,9 @@ fn bind_face_support_occurrences(
     face: &mut ZeroEntityFace,
     supports: &[ZeroEntitySupportOccurrence],
 ) {
-    let loop_count = face.loops.as_ref().map(Vec::len);
-    let Some(loop_count) = loop_count else {
+    let Some(face_loops) = face.loops.as_mut() else {
         return;
     };
-    if loop_count != face.loop_terminals().len() {
-        return;
-    }
     let mut supports_by_slot = HashMap::<u32, Option<u32>>::new();
     for support in supports {
         supports_by_slot
@@ -815,11 +811,8 @@ fn bind_face_support_occurrences(
             .and_modify(|record| *record = None)
             .or_insert(Some(support.record_ordinal));
     }
-    let bindings = face
-        .loops
-        .as_ref()
-        .into_iter()
-        .flatten()
+    let bindings = face_loops
+        .iter()
         .map(|loop_record| {
             loop_record
                 .member_ids
@@ -841,9 +834,6 @@ fn bind_face_support_occurrences(
     if bound.len() != supports.len() {
         return;
     }
-    let Some(face_loops) = face.loops.as_mut() else {
-        return;
-    };
     for (loop_record, support_record_ordinals) in face_loops.iter_mut().zip(bindings) {
         loop_record.support_record_ordinals = support_record_ordinals;
     }
@@ -851,7 +841,7 @@ fn bind_face_support_occurrences(
         .iter()
         .map(|support| (support.record_ordinal, support))
         .collect::<HashMap<_, _>>();
-    for loop_record in face.loops.as_mut().into_iter().flatten() {
+    for loop_record in face_loops {
         let endpoints = loop_record
             .support_record_ordinals
             .iter()
