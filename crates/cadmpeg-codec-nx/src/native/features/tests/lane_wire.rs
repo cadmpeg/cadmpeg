@@ -123,7 +123,7 @@ fn draft_binary32_lane_preserves_parallel_wire_and_requires_complete_tokens() {
 #[test]
 fn multi_instance_lane_preserves_wire_and_requires_complete_rows_and_references() {
     check_lane_wire::<FeatureMultiInstanceOutputLane>(
-        r#"{"id":"lane","operation_label":"operation","declared_count":3,"selectors":[7,8],"raw_selectors":[[7],[8]],"ordinals":[1,2],"row_indices":[2,3],"instance_count":2,"trailing_object_indices":[9],"raw_trailing_object_indices":[[9]],"source_offset":100,"selector_source_offsets":[110,120],"trailing_object_index_source_offsets":[130]}"#,
+        r#"{"id":"lane","operation_label":"operation","declared_count":3,"selectors":[7,8],"raw_selectors":[[7],[8]],"ordinals":[2,2],"row_indices":[2,3],"instance_count":2,"trailing_object_indices":[9],"raw_trailing_object_indices":[[9]],"source_offset":100,"selector_source_offsets":[110,120],"trailing_object_index_source_offsets":[130]}"#,
         &[
             "selectors",
             "raw_selectors",
@@ -604,4 +604,30 @@ fn identical_instance_selectors_check_tokens_and_terminal_count_capacity() {
             assert!(result.unwrap_err().to_string().contains("selectors"));
         }
     }
+}
+
+#[test]
+fn multi_instance_groups_preserve_interleaving_and_reject_invalid_ordinals() {
+    let json = r#"{"id":"lane","operation_label":"operation","declared_count":5,"selectors":[7,8,7,8],"raw_selectors":[[7],[8],[128,7],[128,8]],"ordinals":[2,2,3,3],"row_indices":[2,3,4,5],"instance_count":3,"trailing_object_indices":[9,256],"raw_trailing_object_indices":[[9],[144,1,0]],"source_offset":100,"selector_source_offsets":[110,120,130,140],"trailing_object_index_source_offsets":[150,160]}"#;
+    check_lane_wire::<FeatureMultiInstanceOutputLane>(json, &[]);
+    for (field, value, error_field) in [
+        ("ordinals", serde_json::json!([1, 2, 3, 3]), "ordinals"),
+        ("ordinals", serde_json::json!([2, 2, 2, 3]), "ordinals"),
+        ("ordinals", serde_json::json!([2, 2, 4, 3]), "ordinals"),
+        ("raw_selectors", serde_json::json!([[7], [8], [255], [128, 8]]), "selectors"),
+        ("raw_trailing_object_indices", serde_json::json!([[9], [240, 1]]), "trailing_object_indices"),
+        ("trailing_object_indices", serde_json::json!([9, 257]), "trailing_object_indices"),
+    ] {
+        let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+        malformed[field] = value;
+        let error = serde_json::from_value::<FeatureMultiInstanceOutputLane>(malformed).unwrap_err();
+        assert!(error.to_string().contains(error_field), "{error}");
+    }
+    let mut incomplete: serde_json::Value = serde_json::from_str(json).unwrap();
+    incomplete["declared_count"] = serde_json::json!(4);
+    for field in ["selectors", "raw_selectors", "ordinals", "row_indices", "selector_source_offsets"] {
+        incomplete[field].as_array_mut().unwrap().pop();
+    }
+    let error = serde_json::from_value::<FeatureMultiInstanceOutputLane>(incomplete).unwrap_err();
+    assert!(error.to_string().contains("trailing_object_indices"));
 }

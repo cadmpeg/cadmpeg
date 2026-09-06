@@ -67,36 +67,36 @@ fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
     };
     let lane = super::multi_instance_output_payload_lane(record).expect("complete output lane");
     assert_eq!(lane.offset, 209);
-    assert_eq!(lane.rows.len() + 1, 7);
+    assert_eq!(lane.outputs.selectors().len() + 1, 7);
     assert_eq!(
-        lane.rows
+        lane.outputs.selectors()
             .iter()
-            .map(|row| row.selector.value)
+            .map(|row| row.atom.value())
             .collect::<Vec<_>>(),
         [2, 2, 3, 3, 4, 4]
     );
     assert_eq!(
-        lane.rows.iter().map(|row| row.ordinal).collect::<Vec<_>>(),
+        lane.outputs.ordinals().collect::<Vec<_>>(),
         [2, 3, 2, 3, 2, 3]
     );
-    assert_eq!(lane.trailing_references.len() + 1, 3);
+    assert_eq!(lane.outputs.references().len() + 1, 3);
     assert_eq!(
-        lane.rows
+        lane.outputs.selectors()
             .iter()
-            .map(|row| row.selector.offset)
+            .map(|row| row.offset)
             .collect::<Vec<_>>(),
         [219, 230, 241, 252, 263, 274]
     );
     assert_eq!(
-        lane.trailing_references
+        lane.outputs.references()
             .iter()
             .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
         [15850, 15851]
     );
-    assert_eq!(lane.trailing_references[0].offset, 280);
+    assert_eq!(lane.outputs.references()[0].offset, 280);
     assert_eq!(
-        lane.trailing_references[0].token.raw().to_vec(),
+        lane.outputs.references()[0].token.raw().to_vec(),
         [0x90, 0x3d, 0xea]
     );
 

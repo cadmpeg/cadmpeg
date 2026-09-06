@@ -3603,14 +3603,6 @@ pub struct FeatureIndexToken {
     pub source_offset: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureMultiInstanceOutputRow {
-    pub value: u32,
-    pub raw: Vec<u8>,
-    pub ordinal: u8,
-    pub source_offset: u64,
-}
-
 /// Exact counted instance-output lane carried by a bounded operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -3622,10 +3614,8 @@ pub struct FeatureMultiInstanceOutputLane {
     pub id: String,
     /// Owning `Multi Instance Output` operation label.
     pub operation_label: String,
-    /// Ordered complete source tokens.
-    pub rows: Vec<FeatureMultiInstanceOutputRow>,
-    /// Ordered complete source tokens.
-    pub trailing_references: Vec<FeatureIndexToken>,
+    /// Complete selector groups and their trailing references.
+    pub outputs: crate::om::instances::MultiInstanceOutputs<u64>,
     /// Absolute source offset of the opening `25 01, count` field.
     pub source_offset: u64,
 }
@@ -3667,28 +3657,28 @@ impl From<FeatureMultiInstanceOutputLane> for FeatureMultiInstanceOutputLaneWire
         Self {
             id: lane.id,
             operation_label: lane.operation_label,
-            declared_count: lane.rows.len() + 1,
-            instance_count: lane.trailing_references.len() + 1,
+            declared_count: lane.outputs.selectors().len() + 1,
+            instance_count: lane.outputs.references().len() + 1,
             source_offset: lane.source_offset,
-            selectors: lane.rows.iter().map(|token| token.value).collect(),
-            raw_selectors: lane.rows.iter().map(|token| token.raw.clone()).collect(),
-            ordinals: lane.rows.iter().map(|token| token.ordinal).collect(),
-            row_indices: (2..lane.rows.len() + 2).collect(),
-            selector_source_offsets: lane.rows.iter().map(|token| token.source_offset).collect(),
-            trailing_object_indices: lane
-                .trailing_references
+            selectors: lane.outputs.selectors().iter().map(|token| token.atom.value()).collect(),
+            raw_selectors: lane.outputs.selectors().iter().map(|token| token.atom.raw().to_vec()).collect(),
+            ordinals: lane.outputs.ordinals().collect(),
+            row_indices: (2..lane.outputs.selectors().len() + 2).collect(),
+            selector_source_offsets: lane.outputs.selectors().iter().map(|token| token.offset).collect(),
+            trailing_object_indices: lane.outputs
+                .references()
                 .iter()
-                .map(|token| token.value)
+                .map(|token| token.token.value())
                 .collect(),
-            raw_trailing_object_indices: lane
-                .trailing_references
+            raw_trailing_object_indices: lane.outputs
+                .references()
                 .iter()
-                .map(|token| token.raw.clone())
+                .map(|token| token.token.raw().to_vec())
                 .collect(),
-            trailing_object_index_source_offsets: lane
-                .trailing_references
+            trailing_object_index_source_offsets: lane.outputs
+                .references()
                 .iter()
-                .map(|token| token.source_offset)
+                .map(|token| token.offset)
                 .collect(),
         }
     }
@@ -3719,36 +3709,27 @@ impl TryFrom<FeatureMultiInstanceOutputLaneWire> for FeatureMultiInstanceOutputL
         {
             return Err("FeatureMultiInstanceOutputLane trailing_references columns must have equal lengths".into());
         }
+        let rows = wire.selectors.into_iter().zip(wire.raw_selectors).zip(wire.ordinals)
+            .zip(wire.selector_source_offsets).map(|(((value, raw), ordinal), offset)| {
+                Ok((crate::om::compact::LocatedCompactIndex {
+                    atom: crate::om::compact::CompactIndexAtom::from_wire(value, &raw)
+                        .map_err(|error| format!("selectors/raw_selectors: {error}"))?,
+                    offset,
+                }, ordinal))
+            }).collect::<Result<Vec<_>, String>>()?;
+        let references = wire.trailing_object_indices.into_iter().zip(wire.raw_trailing_object_indices)
+            .zip(wire.trailing_object_index_source_offsets).map(|((value, raw), offset)| {
+                Ok(crate::om::PayloadObjectReference {
+                    token: crate::om::reference_index::FeatureReferenceToken::from_wire(value, &raw)
+                        .map_err(|error| format!("trailing_object_indices: {error}"))?,
+                    offset,
+                })
+            }).collect::<Result<Vec<_>, String>>()?;
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
             source_offset: wire.source_offset,
-            rows: wire
-                .selectors
-                .into_iter()
-                .zip(wire.raw_selectors)
-                .zip(wire.ordinals)
-                .zip(wire.selector_source_offsets)
-                .map(|(((value, raw), ordinal), source_offset)| {
-                    FeatureMultiInstanceOutputRow {
-                        value,
-                        raw,
-                        ordinal,
-                        source_offset,
-                    }
-                })
-                .collect(),
-            trailing_references: wire
-                .trailing_object_indices
-                .into_iter()
-                .zip(wire.raw_trailing_object_indices)
-                .zip(wire.trailing_object_index_source_offsets)
-                .map(|((value, raw), source_offset)| FeatureIndexToken {
-                    value,
-                    raw,
-                    source_offset,
-                })
-                .collect(),
+            outputs: crate::om::instances::MultiInstanceOutputs::new(rows, references)?,
         })
     }
 }
@@ -10269,17 +10250,7 @@ pub fn feature_multi_instance_output_lanes(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                rows: lane.rows.into_iter().map(|row| FeatureMultiInstanceOutputRow {
-                    value: row.selector.value,
-                    raw: row.selector.raw,
-                    ordinal: row.ordinal,
-                    source_offset: entry_offset + row.selector.offset as u64,
-                }).collect(),
-                trailing_references: lane.trailing_references.into_iter().map(|reference| FeatureIndexToken {
-                    value: reference.token.value(),
-                    raw: reference.token.raw().to_vec(),
-                    source_offset: entry_offset + reference.offset as u64,
-                }).collect(),
+                outputs: lane.outputs.map_offsets(|offset| entry_offset + offset as u64),
                 source_offset: entry_offset + lane.offset as u64,
             });
         },

@@ -63,6 +63,27 @@ impl ReferenceIndexToken {
     }
 }
 
+/// Required index restricted to the direct/compact/word feature grammar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FeatureReferenceToken(ReferenceIndexToken);
+
+impl FeatureReferenceToken {
+    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+        ReferenceIndexToken::read_feature(bytes).map(Self)
+    }
+
+    pub(crate) fn from_wire(value: u32, raw: &[u8]) -> Result<Self, &'static str> {
+        let token = Self::read(raw).ok_or("invalid feature reference token")?;
+        if token.raw().len() != raw.len() || token.value() != value {
+            return Err("feature index/raw token: value or width mismatch");
+        }
+        Ok(token)
+    }
+
+    pub(crate) fn value(self) -> u32 { self.0.value() }
+    pub(crate) fn raw(&self) -> &[u8] { self.0.raw() }
+}
+
 /// Required index restricted to the payload `f0`/`f1` grammar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PayloadIndexToken(ReferenceIndexToken);

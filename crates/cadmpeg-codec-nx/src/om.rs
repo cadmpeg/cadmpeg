@@ -5,6 +5,7 @@ pub(crate) mod draft_identity;
 pub(crate) mod plane_descriptor;
 pub(crate) mod csys_descriptor;
 pub(crate) mod reference_index;
+pub(crate) mod instances;
 use reference_index::ReferenceIndexToken;
 pub(crate) mod control_word;
 use control_word::ControlWord24;
@@ -1527,22 +1528,13 @@ pub struct PatternPayloadTransformLane {
     pub rows: PatternRows<LocatedCompactIndex, usize>,
 }
 
-/// One multi-instance output row and its compact selector token.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MultiInstanceOutputRow {
-    pub selector: LaneToken<u32>,
-    pub ordinal: u8,
-}
-
 /// Exact counted instance-output lane in a multi-instance operation payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MultiInstanceOutputPayloadLane {
     /// Absolute offset of the opening `25 01, count` field.
     pub offset: usize,
-    /// Serialized output rows.
-    pub rows: Vec<MultiInstanceOutputRow>,
-    /// Ordered non-null trailing object references.
-    pub trailing_references: Vec<PayloadObjectReference>,
+    /// Complete selector groups and their trailing references.
+    pub outputs: instances::MultiInstanceOutputs<usize>,
 }
 
 /// Count schema index with room for the three consecutive selector-row indices.
@@ -3445,40 +3437,11 @@ pub fn multi_instance_output_payload_lane(
     if record.label.value != "Multi Instance Output" {
         return None;
     }
-    let validate = |start: usize| {
+    let decode = |start: usize| {
         (record.payload.get(start..start + ENVELOPE.len()) == Some(&ENVELOPE)).then_some(())?;
         let declared_count = *record.payload.get(start + ENVELOPE.len())?;
         (declared_count >= 2).then_some(())?;
-        let mut at = start + ENVELOPE.len() + 1;
         let mut instance_count = 0;
-        for expected_row_index in 2..=declared_count {
-            (record.payload.get(at..at + ROW_PREFIX.len()) == Some(&ROW_PREFIX)).then_some(())?;
-            at += ROW_PREFIX.len();
-            let (CompactIndex::Value(_), width) = compact_index(record.payload.get(at..)?)? else {
-                return None;
-            };
-            at += width;
-            (record.payload.get(at) == Some(&ROW_ORDINAL_MARKER)).then_some(())?;
-            let ordinal = *record.payload.get(at + 1)?;
-            (ordinal >= 2).then_some(())?;
-            instance_count = instance_count.max(ordinal);
-            (record.payload.get(at + 2) == Some(&expected_row_index)).then_some(())?;
-            at += 3;
-        }
-        (record.payload.get(at..at + REFERENCE_PREFIX.len()) == Some(&REFERENCE_PREFIX))
-            .then_some(())?;
-        at += REFERENCE_PREFIX.len();
-        for _ in 1..instance_count {
-            let (Some(_), end) = feature_object_index(record.payload, at)? else {
-                return None;
-            };
-            at = end;
-        }
-        (record.payload.get(at..at + 2) == Some(&[0x01, instance_count])).then_some(())?;
-        Some((declared_count, instance_count))
-    };
-    let decode = |start: usize| {
-        let (declared_count, instance_count) = validate(start)?;
         let row_count = usize::from(declared_count - 1);
         let mut at = start + ENVELOPE.len() + 1;
         let mut rows = Vec::with_capacity(row_count);
@@ -3486,40 +3449,19 @@ pub fn multi_instance_output_payload_lane(
             (record.payload.get(at..at + ROW_PREFIX.len()) == Some(&ROW_PREFIX)).then_some(())?;
             at += ROW_PREFIX.len();
             let selector_offset = at;
-            let (selector, width) = compact_index(record.payload.get(at..)?)?;
-            let CompactIndex::Value(selector) = selector else {
-                return None;
-            };
-            let selector = LaneToken {
-                value: selector,
-                raw: record.payload[at..at + width].to_vec(),
+            let atom = CompactIndexAtom::read(record.payload.get(at..)?)?;
+            let width = atom.raw().len();
+            let selector = LocatedCompactIndex {
+                atom,
                 offset: record.payload_offset + selector_offset,
             };
             at += width;
             (record.payload.get(at) == Some(&ROW_ORDINAL_MARKER)).then_some(())?;
             let ordinal = *record.payload.get(at + 1)?;
-            (ordinal >= 2).then_some(())?;
+            instance_count = instance_count.max(ordinal);
             (record.payload.get(at + 2) == Some(&expected_row_index)).then_some(())?;
-            rows.push(MultiInstanceOutputRow {
-                selector,
-                ordinal,
-            });
+            rows.push((selector, ordinal));
             at += 3;
-        }
-        (rows.iter().map(|row| row.ordinal).max() == Some(instance_count)).then_some(())?;
-        let expected_ordinals = (2..=instance_count).collect::<Vec<_>>();
-        let mut distinct_selectors = Vec::new();
-        for row in &rows {
-            if !distinct_selectors.contains(&row.selector.value) {
-                distinct_selectors.push(row.selector.value);
-            }
-        }
-        for selector in distinct_selectors {
-            let actual = rows
-                .iter()
-                .filter_map(|row| (row.selector.value == selector).then_some(row.ordinal))
-                .collect::<Vec<_>>();
-            (actual == expected_ordinals).then_some(())?;
         }
         (record.payload.get(at..at + REFERENCE_PREFIX.len()) == Some(&REFERENCE_PREFIX))
             .then_some(())?;
@@ -3528,7 +3470,7 @@ pub fn multi_instance_output_payload_lane(
             Vec::with_capacity(usize::from(instance_count.saturating_sub(1)));
         for _ in 1..instance_count {
             let reference_offset = at;
-            let object_index = ReferenceIndexToken::read_feature(record.payload.get(at..)?)?;
+            let object_index = reference_index::FeatureReferenceToken::read(record.payload.get(at..)?)?;
             let end = at + object_index.raw().len();
             trailing_references.push(PayloadObjectReference {
                 offset: record.payload_offset + reference_offset,
@@ -3539,8 +3481,7 @@ pub fn multi_instance_output_payload_lane(
         (record.payload.get(at..at + 2) == Some(&[0x01, instance_count])).then_some(())?;
         Some(MultiInstanceOutputPayloadLane {
             offset: record.payload_offset + start + 8,
-            rows,
-            trailing_references,
+            outputs: instances::MultiInstanceOutputs::new(rows, trailing_references).ok()?,
         })
     };
     unique_candidate((0..=record.payload.len().saturating_sub(ENVELOPE.len())).filter_map(decode))
