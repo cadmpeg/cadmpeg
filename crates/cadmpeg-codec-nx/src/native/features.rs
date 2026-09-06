@@ -15,6 +15,7 @@ use crate::om::swp104_state::Swp104StateLane;
 use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, RepeatedScalar, ShiftedBinary32, ShiftedBinary64, ShiftedScalar};
 use crate::om::branch_items::BranchItems;
 use crate::om::nonempty::NonEmpty;
+use crate::om::fixed::{Q155, Q155Atom, Q155Marker};
 use crate::om::pattern::{PatternRow, PatternRows, PatternScalarEncoding, PatternTerminal, PatternValue, PatternWideValues};
 use crate::om::thru_curve_state::ThruCurveBranchItems;
 use crate::om::thru_curve_controls::ThruCurveControls;
@@ -1526,9 +1527,8 @@ pub struct FeatureDatumCsysPayloadFixedPair {
     /// Zero-based frame order within the payload.
     pub ordinal: u32,
     /// Ordered dimensionless Q1.55 values.
-    pub values: [f64; 2],
-    /// Exact seven-byte two's-complement payloads.
-    pub raw_values: [[u8; 7]; 2],
+    #[serde(flatten, with = "crate::om::fixed::pair_wire")]
+    pub values: [Q155; 2],
     /// Exact discriminator selecting the pair branch.
     pub discriminator: Vec<u8>,
     /// Payload-relative offset of the discriminator.
@@ -3067,9 +3067,7 @@ pub struct FeaturePatternConstructionString {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureFixedScalarToken {
-    pub value: f64,
-    pub marker: u8,
-    pub raw: [u8; 7],
+    pub atom: Q155Atom,
     pub payload_offset: u64,
     pub source_offset: u64,
 }
@@ -3097,7 +3095,7 @@ pub struct FeaturePatternConstructionFixedLane {
     /// Zero-based lane order within the payload.
     pub ordinal: u32,
     /// Ordered scalar tokens with their source locations.
-    pub values: Vec<FeatureFixedScalarToken>,
+    pub values: NonEmpty<FeatureFixedScalarToken>,
     /// Payload-relative offset of the fixed discriminator.
     pub payload_offset: u64,
     /// Absolute source offset of the fixed discriminator.
@@ -3139,9 +3137,9 @@ impl From<FeaturePatternConstructionFixedLane> for FeaturePatternConstructionFix
             ordinal: lane.ordinal,
             payload_offset: lane.payload_offset,
             source_offset: lane.source_offset,
-            values: lane.values.iter().map(|token| token.value).collect(),
-            markers: lane.values.iter().map(|token| token.marker).collect(),
-            raw_values: lane.values.iter().map(|token| token.raw).collect(),
+            values: lane.values.iter().map(|token| token.atom.scalar.value()).collect(),
+            markers: lane.values.iter().map(|token| token.atom.marker.byte()).collect(),
+            raw_values: lane.values.iter().map(|token| token.atom.scalar.raw()).collect(),
             value_payload_offsets: lane
                 .values
                 .iter()
@@ -3169,6 +3167,16 @@ impl TryFrom<FeaturePatternConstructionFixedLaneWire> for FeaturePatternConstruc
                 "FeaturePatternConstructionFixedLane scalar columns must have equal lengths".into(),
             );
         }
+        let values = wire.values.into_iter().zip(wire.markers).zip(wire.raw_values)
+            .zip(wire.value_payload_offsets).zip(wire.value_source_offsets)
+            .map(|((((value, marker), raw), payload_offset), source_offset)| Ok(FeatureFixedScalarToken {
+                atom: Q155Atom {
+                    marker: Q155Marker::read(marker).ok_or("markers must contain 48 or 176")?,
+                    scalar: Q155::from_wire(value, raw)?,
+                },
+                payload_offset,
+                source_offset,
+            })).collect::<Result<Vec<_>, String>>()?;
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
@@ -3176,25 +3184,7 @@ impl TryFrom<FeaturePatternConstructionFixedLaneWire> for FeaturePatternConstruc
             ordinal: wire.ordinal,
             payload_offset: wire.payload_offset,
             source_offset: wire.source_offset,
-            values: wire
-                .values
-                .into_iter()
-                .zip(wire.markers)
-                .zip(wire.raw_values)
-                .zip(wire.value_payload_offsets)
-                .zip(wire.value_source_offsets)
-                .map(
-                    |((((value, marker), raw), payload_offset), source_offset)| {
-                        FeatureFixedScalarToken {
-                            value,
-                            marker,
-                            raw,
-                            payload_offset,
-                            source_offset,
-                        }
-                    },
-                )
-                .collect(),
+            values: NonEmpty::new(values).ok_or("values must contain a Q1.55 atom")?,
         })
     }
 }
@@ -3937,7 +3927,7 @@ pub struct FeatureDraftConstructionFixedLane {
     /// Zero-based lane order in the reconstructed payload.
     pub ordinal: u32,
     /// Ordered scalar tokens with their source locations.
-    pub values: Vec<FeatureFixedScalarToken>,
+    pub values: NonEmpty<FeatureFixedScalarToken>,
     /// Payload-relative offset of the fixed discriminator.
     pub payload_offset: u64,
     /// Absolute source offset of the fixed discriminator.
@@ -3979,9 +3969,9 @@ impl From<FeatureDraftConstructionFixedLane> for FeatureDraftConstructionFixedLa
             ordinal: lane.ordinal,
             payload_offset: lane.payload_offset,
             source_offset: lane.source_offset,
-            values: lane.values.iter().map(|token| token.value).collect(),
-            markers: lane.values.iter().map(|token| token.marker).collect(),
-            raw_values: lane.values.iter().map(|token| token.raw).collect(),
+            values: lane.values.iter().map(|token| token.atom.scalar.value()).collect(),
+            markers: lane.values.iter().map(|token| token.atom.marker.byte()).collect(),
+            raw_values: lane.values.iter().map(|token| token.atom.scalar.raw()).collect(),
             value_payload_offsets: lane
                 .values
                 .iter()
@@ -4009,6 +3999,16 @@ impl TryFrom<FeatureDraftConstructionFixedLaneWire> for FeatureDraftConstruction
                 "FeatureDraftConstructionFixedLane scalar columns must have equal lengths".into(),
             );
         }
+        let values = wire.values.into_iter().zip(wire.markers).zip(wire.raw_values)
+            .zip(wire.value_payload_offsets).zip(wire.value_source_offsets)
+            .map(|((((value, marker), raw), payload_offset), source_offset)| Ok(FeatureFixedScalarToken {
+                atom: Q155Atom {
+                    marker: Q155Marker::read(marker).ok_or("markers must contain 48 or 176")?,
+                    scalar: Q155::from_wire(value, raw)?,
+                },
+                payload_offset,
+                source_offset,
+            })).collect::<Result<Vec<_>, String>>()?;
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
@@ -4016,25 +4016,7 @@ impl TryFrom<FeatureDraftConstructionFixedLaneWire> for FeatureDraftConstruction
             ordinal: wire.ordinal,
             payload_offset: wire.payload_offset,
             source_offset: wire.source_offset,
-            values: wire
-                .values
-                .into_iter()
-                .zip(wire.markers)
-                .zip(wire.raw_values)
-                .zip(wire.value_payload_offsets)
-                .zip(wire.value_source_offsets)
-                .map(
-                    |((((value, marker), raw), payload_offset), source_offset)| {
-                        FeatureFixedScalarToken {
-                            value,
-                            marker,
-                            raw,
-                            payload_offset,
-                            source_offset,
-                        }
-                    },
-                )
-                .collect(),
+            values: NonEmpty::new(values).ok_or("values must contain a Q1.55 atom")?,
         })
     }
 }
@@ -8331,7 +8313,6 @@ pub fn feature_datum_csys_payload_fixed_pairs(
                 datum_csys_payload: payload.id.clone(),
                 ordinal: ordinal as u32,
                 values: pair.values,
-                raw_values: pair.raw_values,
                 discriminator: pair.discriminator,
                 payload_offset: pair.offset as u64,
                 value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
@@ -10292,12 +10273,9 @@ pub fn feature_pattern_construction_fixed_lanes(
                     let payload_offset = lane.offset as u64;
                     let values = lane
                         .values
-                        .into_iter()
                         .map(|token| {
                             Some(FeatureFixedScalarToken {
-                                value: token.value,
-                                marker: token.marker,
-                                raw: token.raw,
+                                atom: token.atom,
                                 payload_offset: token.offset as u64,
                                 source_offset: joined_payload_source_offset(
                                     token.offset as u64,
@@ -10307,7 +10285,7 @@ pub fn feature_pattern_construction_fixed_lanes(
                                 )?,
                             })
                         })
-                        .collect::<Option<Vec<_>>>()?;
+                        .transpose()?;
                     Some(FeaturePatternConstructionFixedLane {
                         id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
@@ -10718,12 +10696,9 @@ pub fn feature_draft_construction_fixed_lanes(
                     let payload_offset = lane.offset as u64;
                     let values = lane
                         .values
-                        .into_iter()
                         .map(|token| {
                             Some(FeatureFixedScalarToken {
-                                value: token.value,
-                                marker: token.marker,
-                                raw: token.raw,
+                                atom: token.atom,
                                 payload_offset: token.offset as u64,
                                 source_offset: joined_payload_source_offset(
                                     token.offset as u64,
@@ -10733,7 +10708,7 @@ pub fn feature_draft_construction_fixed_lanes(
                                 )?,
                             })
                         })
-                        .collect::<Option<Vec<_>>>()?;
+                        .transpose()?;
                     Some(FeatureDraftConstructionFixedLane {
                         id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),

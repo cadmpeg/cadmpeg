@@ -65,7 +65,7 @@ fn sketch_scalar_lane_preserves_parallel_wire_and_requires_complete_tokens() {
 #[test]
 fn pattern_fixed_lane_preserves_parallel_wire_and_requires_complete_tokens() {
     check_lane_wire::<FeaturePatternConstructionFixedLane>(
-        r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":[48,49],"raw_values":[[1,2,3,4,5,6,7],[7,6,5,4,3,2,1]],"payload_offset":0,"value_payload_offsets":[2,10],"source_offset":100,"value_source_offsets":[102,110]}"#,
+        r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":[48,176],"raw_values":[[32,0,0,0,0,0,0],[64,0,0,0,0,0,0]],"payload_offset":0,"value_payload_offsets":[2,10],"source_offset":100,"value_source_offsets":[102,110]}"#,
         &[
             "values",
             "markers",
@@ -79,7 +79,7 @@ fn pattern_fixed_lane_preserves_parallel_wire_and_requires_complete_tokens() {
 #[test]
 fn draft_fixed_lane_preserves_parallel_wire_and_requires_complete_tokens() {
     check_lane_wire::<FeatureDraftConstructionFixedLane>(
-        r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":[48,49],"raw_values":[[1,2,3,4,5,6,7],[7,6,5,4,3,2,1]],"payload_offset":0,"value_payload_offsets":[2,10],"source_offset":100,"value_source_offsets":[102,110]}"#,
+        r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":[48,176],"raw_values":[[32,0,0,0,0,0,0],[64,0,0,0,0,0,0]],"payload_offset":0,"value_payload_offsets":[2,10],"source_offset":100,"value_source_offsets":[102,110]}"#,
         &[
             "values",
             "markers",
@@ -302,4 +302,26 @@ fn repeated_scalar_lane_rejects_empty_and_inconsistent_atoms() {
     assert!(serde_json::from_str::<FeatureSimpleHoleRepeatedScalarLane>(empty).unwrap_err().to_string().contains("values"));
     let invalid = r#"{"id":"lane","operation_label":"operation","values":[4.0],"raw_values":[[48,4,0,0,0,0,0,0]],"first_witness_offsets":[10],"second_witness_offsets":[40]}"#;
     assert!(serde_json::from_str::<FeatureSimpleHoleRepeatedScalarLane>(invalid).unwrap_err().to_string().contains("raw_values"));
+}
+
+#[test]
+fn datum_fixed_pair_preserves_values_and_raw_values_wire() {
+    check_lane_wire::<FeatureDatumCsysPayloadFixedPair>(
+        r#"{"id":"pair","operation_label":"operation","datum_csys_payload":"payload","ordinal":0,"values":[0.5,-0.5],"raw_values":[[64,0,0,0,0,0,0],[192,0,0,0,0,0,0]],"discriminator":[11,2,3,1,3,1,192,69,4,0,128,134,2,0,3],"payload_offset":0,"value_payload_offsets":[15,24],"source_offset":100,"value_source_offsets":[115,124]}"#,
+        &["values", "raw_values", "value_payload_offsets", "value_source_offsets"],
+    );
+}
+
+#[test]
+fn q155_lanes_reject_mismatched_values_and_unknown_markers() {
+    let pattern = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.5],"markers":[48],"raw_values":[[64,0,0,0,0,0,0]],"payload_offset":0,"value_payload_offsets":[18],"source_offset":100,"value_source_offsets":[118]}"#;
+    let draft = pattern.replace("construction_payload", "graph_payload");
+    for (key, value) in [("values", serde_json::json!([0.25])), ("markers", serde_json::json!([49]))] {
+        let mut invalid: serde_json::Value = serde_json::from_str(pattern).unwrap();
+        invalid[key] = value.clone();
+        assert!(serde_json::from_value::<FeaturePatternConstructionFixedLane>(invalid).is_err());
+        let mut invalid: serde_json::Value = serde_json::from_str(&draft).unwrap();
+        invalid[key] = value;
+        assert!(serde_json::from_value::<FeatureDraftConstructionFixedLane>(invalid).is_err());
+    }
 }

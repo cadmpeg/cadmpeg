@@ -11,6 +11,8 @@ pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 use branch_items::BranchItems;
 pub(crate) mod parameter_name;
+pub(crate) mod fixed;
+use fixed::{Q155, Q155Atom, Q155Marker};
 pub(crate) mod nonempty;
 use nonempty::NonEmpty;
 pub(crate) mod pattern;
@@ -2508,11 +2510,9 @@ pub struct DatumCsysPayloadFixedPair {
     /// Payload-relative offset of the discriminator.
     pub offset: usize,
     /// Ordered dimensionless Q1.55 values.
-    pub values: [f64; 2],
+    pub values: [Q155; 2],
     /// Payload-relative offsets of the two `30` atom markers.
     pub value_offsets: [usize; 2],
-    /// Exact seven-byte two's-complement payloads.
-    pub raw_values: [[u8; 7]; 2],
     /// Exact discriminator selecting the pair branch.
     pub discriminator: Vec<u8>,
 }
@@ -2569,9 +2569,7 @@ pub enum DraftConstructionIdentityFrameForm {
 /// One signed Q1.55 atom and its source encoding.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FixedScalarToken {
-    pub value: f64,
-    pub marker: u8,
-    pub raw: [u8; 7],
+    pub atom: Q155Atom,
     pub offset: usize,
 }
 
@@ -2581,7 +2579,7 @@ pub struct DraftConstructionFixedLane {
     /// Payload-relative offset of the fixed discriminator.
     pub offset: usize,
     /// Ordered scalar atoms with exact source encodings.
-    pub values: Vec<FixedScalarToken>,
+    pub values: NonEmpty<FixedScalarToken>,
 }
 
 /// Complete shifted-binary32 lane in a reconstructed draft graph payload.
@@ -6201,27 +6199,14 @@ pub fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadFixed
             };
             pairs.push(DatumCsysPayloadFixedPair {
                 offset,
-                values: [decode_q1_55(first_raw), decode_q1_55(second_raw)],
+                values: [Q155::from_raw(first_raw), Q155::from_raw(second_raw)],
                 value_offsets: [first, second],
-                raw_values: [first_raw, second_raw],
                 discriminator: discriminator.to_vec(),
             });
         }
     }
     pairs.sort_by_key(|pair| pair.offset);
     pairs
-}
-
-fn decode_q1_55(raw: [u8; 7]) -> f64 {
-    let unsigned = raw
-        .into_iter()
-        .fold(0_u64, |value, byte| (value << 8) | u64::from(byte));
-    let signed = if unsigned & (1_u64 << 55) == 0 {
-        unsigned as i64
-    } else {
-        (unsigned as i64) - (1_i64 << 56)
-    };
-    signed as f64 / (1_u64 << 55) as f64
 }
 
 /// Decode every complete signed Q1.55 lane in a reconstructed draft graph payload.
@@ -6237,20 +6222,18 @@ pub fn draft_construction_fixed_lanes(bytes: &[u8]) -> Vec<DraftConstructionFixe
             (window == DISCRIMINATOR).then_some(())?;
             let mut at = offset + DISCRIMINATOR.len();
             let mut values = Vec::new();
-            while matches!(bytes.get(at), Some(0x30 | 0xb0)) {
+            while let Some(marker) = bytes.get(at).copied().and_then(Q155Marker::read) {
                 let raw = bytes.get(at + 1..at + 8)?.try_into().ok()?;
                 values.push(FixedScalarToken {
-                    value: decode_q1_55(raw),
-                    marker: bytes[at],
-                    raw,
+                    atom: Q155Atom { marker, scalar: Q155::from_raw(raw) },
                     offset: at,
                 });
                 at += 8;
             }
-            if values.is_empty() || bytes.get(at) != Some(&0x00) {
+            if bytes.get(at) != Some(&0x00) {
                 return None;
             }
-            Some(DraftConstructionFixedLane { offset, values })
+            Some(DraftConstructionFixedLane { offset, values: NonEmpty::new(values)? })
         })
         .collect()
 }

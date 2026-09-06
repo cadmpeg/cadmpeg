@@ -302,9 +302,9 @@ fn datum_csys_fixed_pair_requires_its_exact_branch_discriminator() {
     bytes.extend_from_slice(&[0xc0, 0, 0, 0, 0, 0, 0]);
     let pairs = super::datum_csys_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].values, [0.5, -0.5]);
+    assert_eq!(pairs[0].values.map(crate::om::fixed::Q155::value), [0.5, -0.5]);
     assert_eq!(pairs[0].value_offsets, [15, 24]);
-    assert_eq!(pairs[0].raw_values[0], [0x40, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(pairs[0].values[0].raw(), [0x40, 0, 0, 0, 0, 0, 0]);
 
     bytes[0] = 0x08;
     assert!(super::datum_csys_payload_fixed_pairs(&bytes).is_empty());
@@ -325,7 +325,7 @@ fn datum_csys_fixed_pair_accepts_the_continuation_branch() {
 
     let pairs = super::datum_csys_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].values, [0.5, -0.5]);
+    assert_eq!(pairs[0].values.map(crate::om::fixed::Q155::value), [0.5, -0.5]);
     assert_eq!(
         pairs[0].value_offsets,
         [discriminator.len(), discriminator.len() + 9]
@@ -963,7 +963,7 @@ fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
         lanes[0]
             .values
             .iter()
-            .map(|token| token.value)
+            .map(|token| token.atom.scalar.value())
             .collect::<Vec<_>>(),
         [0.5, -0.5]
     );
@@ -971,7 +971,7 @@ fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
         lanes[0]
             .values
             .iter()
-            .map(|token| token.marker)
+            .map(|token| token.atom.marker.byte())
             .collect::<Vec<_>>(),
         [0x30, 0xb0]
     );
