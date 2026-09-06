@@ -241,7 +241,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let faces = FaceSelection::Faces(vec!["test:model:face#1".into()]);
+    let faces = FaceSelection::Faces(vec!["test:model:face#1"
+        .try_into()
+        .expect("valid identity")]);
     let bodies = BodySelection::Bodies(vec![
         BodyId::mint("test:model:body#1").expect("identity grammar")
     ]);
@@ -326,7 +328,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     )));
     assert!(!feature_definition_is_incomplete(&shell(
         None,
-        FaceSelection::Faces(vec!["test:model:face#opening".into()]),
+        FaceSelection::Faces(vec!["test:model:face#opening"
+            .try_into()
+            .expect("valid identity")]),
     )));
     assert!(feature_definition_is_incomplete(&shell(
         None,
@@ -389,7 +393,9 @@ fn knit_surfaces_require_resolved_faces_and_operation_settings() {
             create_solid,
             gap_tolerance,
         };
-    let faces = FaceSelection::Faces(vec!["test:model:face#1".into()]);
+    let faces = FaceSelection::Faces(vec!["test:model:face#1"
+        .try_into()
+        .expect("valid identity")]);
 
     assert!(!feature_definition_is_incomplete(&complete(
         faces.clone(),

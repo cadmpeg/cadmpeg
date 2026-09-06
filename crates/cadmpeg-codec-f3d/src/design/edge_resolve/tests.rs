@@ -462,7 +462,7 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
             None,
         ),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
-            if edges.len() == 1 && edges[0].0.ends_with(":17")
+            if edges.len() == 1 && edges[0].as_str().ends_with(":17")
     ));
 
     let invalid_corners = [corner(10, 0, 3), corner(12, 2, 5)];

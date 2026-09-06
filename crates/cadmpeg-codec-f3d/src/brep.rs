@@ -107,7 +107,7 @@ impl Brep {
             if let Some(previous) = resolved.insert(body.clone(), *selector) {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "F3D body {} is selected by both {previous} and {selector}",
-                    body.0
+                    body.as_str()
                 )));
             }
         }
@@ -134,12 +134,12 @@ impl Brep {
             .asm
             .body_native_keys
             .iter()
-            .map(|native| native.body.0.as_str())
+            .map(|native| native.body.as_str())
             .collect::<HashSet<_>>();
         let mut roots = self
             .body_selectors_for(selected_keys)?
             .into_keys()
-            .map(|body| body.0)
+            .map(|body| body.into_string())
             .collect::<HashSet<_>>();
         // A Design body map selects native ASM body records. Neutral roots
         // projected from other saved top-level entities have no ASM body key
@@ -149,7 +149,7 @@ impl Brep {
                 .bodies
                 .iter()
                 .filter(|body| !native_body_ids.contains(body.id.as_str()))
-                .map(|body| body.id.0.clone()),
+                .map(|body| body.id.as_str().to_owned()),
         );
         let mut adjacency = HashMap::<String, HashSet<String>>::new();
         collect_entity_adjacency(&value, &owned, &mut adjacency);
@@ -592,13 +592,13 @@ fn generic_tag_payload(
 fn retained_attribute_target(target: &AttributeTarget, reachable: &HashSet<String>) -> bool {
     match target {
         AttributeTarget::Document => true,
-        AttributeTarget::Body(id) => reachable.contains(&id.0),
-        AttributeTarget::Face(id) => reachable.contains(&id.0),
-        AttributeTarget::Shell(id) => reachable.contains(&id.0),
-        AttributeTarget::Loop(id) => reachable.contains(&id.0),
-        AttributeTarget::Coedge(id) => reachable.contains(&id.0),
-        AttributeTarget::Edge(id) => reachable.contains(&id.0),
-        AttributeTarget::Vertex(id) => reachable.contains(&id.0),
+        AttributeTarget::Body(id) => reachable.contains(id.as_str()),
+        AttributeTarget::Face(id) => reachable.contains(id.as_str()),
+        AttributeTarget::Shell(id) => reachable.contains(id.as_str()),
+        AttributeTarget::Loop(id) => reachable.contains(id.as_str()),
+        AttributeTarget::Coedge(id) => reachable.contains(id.as_str()),
+        AttributeTarget::Edge(id) => reachable.contains(id.as_str()),
+        AttributeTarget::Vertex(id) => reachable.contains(id.as_str()),
     }
 }
 
@@ -638,7 +638,7 @@ mod tests {
         groups: Vec<AttributeValue>,
     ) -> SourceAttribute {
         SourceAttribute {
-            id: "f3d:brep:attribute#1".into(),
+            id: "f3d:brep:attribute#1".try_into().expect("valid identity"),
             target,
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: [
@@ -809,7 +809,7 @@ mod tests {
                 .and_then(|record| record.asm_body_key.as_ref()),
             Some(&7)
         );
-        assert_eq!(brep.asm.annotation_records[0].id, qualified.0);
+        assert_eq!(brep.asm.annotation_records[0].id, qualified.as_str());
         assert_eq!(
             brep.asm.body_native_keys[0].source_brep.as_deref(),
             Some("BREP.source.smbh")

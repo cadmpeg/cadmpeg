@@ -1733,7 +1733,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         Some(FaceSelection::Historical { state, faces, native })
             if state == feature_input_topology_id(&crate::ids::neutral_feature_id(&historical_face_scope), 49)
                 && faces.len() == 1
-                && faces[0].0.ends_with(":49:50")
+                && faces[0].as_str().ends_with(":49:50")
                 && native == historical_face_scope.id
     ));
     operand.resolved_face_slots.clear();
@@ -1811,7 +1811,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .cloned()
         .expect("nested bounded-face candidate");
     let nested_slot = nested_candidate
-        .0
+        .as_str()
         .rsplit_once('#')
         .and_then(|(_, slot)| slot.parse::<i64>().ok())
         .expect("nested bounded-face slot");
@@ -1837,7 +1837,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         Some(FaceSelection::Historical { state, faces, native })
             if state == feature_input_topology_id(&crate::ids::neutral_feature_id(&split_scope), 49)
                 && faces.len() == 1
-                && faces[0].0.ends_with(":49:50")
+                && faces[0].as_str().ends_with(":49:50")
                 && native == split_group.id
     ));
     let mut candidate_context = split_context.clone();

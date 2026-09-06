@@ -182,7 +182,7 @@ pub(crate) fn neutral_face_appearance_binding_id(
     visual_guid: &str,
     face: &cadmpeg_ir::ids::FaceId,
 ) -> String {
-    let face = identity_key_component(&face.0);
+    let face = identity_key_component(face.as_str());
     format!(
         "f3d:appearance:face#{face_guid}:{visual_guid}:{}:{face}",
         face.len()

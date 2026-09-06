@@ -164,7 +164,7 @@ fn surface_patch_grouped_recipe_edges(operands: &[&DesignEdgeOperand]) -> Surfac
         return SurfacePatchRecipeEdges::Absent;
     }
     let mut distinct = edges.clone();
-    distinct.sort_by(|left, right| left.0.cmp(&right.0));
+    distinct.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     distinct.dedup();
     if distinct.len() != edges.len() {
         return SurfacePatchRecipeEdges::Inconclusive;
@@ -173,7 +173,7 @@ fn surface_patch_grouped_recipe_edges(operands: &[&DesignEdgeOperand]) -> Surfac
 }
 
 fn stable_edge_slot(edge: &cadmpeg_ir::ids::EdgeId) -> Option<i64> {
-    edge.0
+    edge.as_str()
         .rsplit_once('#')?
         .1
         .split(':')
@@ -420,7 +420,7 @@ pub(crate) fn resolved_edge_treatment_group_with_corners(
     }
     let edge_slots = edges
         .iter()
-        .map(|edge| edge.0.rsplit(':').next()?.parse::<i64>().ok())
+        .map(|edge| edge.as_str().rsplit(':').next()?.parse::<i64>().ok())
         .collect::<Option<Vec<_>>>();
     let Some(edge_slots) = edge_slots else {
         return EdgeSelection::Native(group.id.clone());

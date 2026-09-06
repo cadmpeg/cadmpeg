@@ -203,7 +203,7 @@ fn project_occurrence(
     project_component(components, component_guid);
     let occurrence_id = crate::ids::neutral_component_occurrence_id(occurrence_guid);
     occurrences
-        .entry(occurrence_id.0.clone())
+        .entry(occurrence_id.as_str().to_owned())
         .or_insert_with(|| Occurrence {
             id: occurrence_id,
             prototype: PrototypeReference::Local {
@@ -228,7 +228,7 @@ fn project_occurrence(
 fn project_component(components: &mut BTreeMap<String, ProductDefinition>, component_guid: &str) {
     let component_id = crate::ids::neutral_component_id(component_guid);
     components
-        .entry(component_id.0.clone())
+        .entry(component_id.as_str().to_owned())
         .or_insert_with(|| ProductDefinition {
             id: component_id,
             kind: ProductDefinitionKind::Part,

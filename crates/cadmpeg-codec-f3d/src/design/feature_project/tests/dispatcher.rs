@@ -196,7 +196,7 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
             VertexSelection::Historical { vertex: first, .. },
             VertexSelection::Historical { vertex: second, .. },
             VertexSelection::Historical { vertex: third, .. },
-        ] if first.0.ends_with(":43") && second.0.ends_with(":64") && third.0.ends_with(":84")
+        ] if first.as_str().ends_with(":43") && second.as_str().ends_with(":64") && third.as_str().ends_with(":84")
     ));
 }
 

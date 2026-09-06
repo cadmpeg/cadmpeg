@@ -969,7 +969,9 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
 
     source_less.model.surfaces[0].source_object = None;
     source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
-        id: "generated:test:associated-curve#0".into(),
+        id: "generated:test:associated-curve#0"
+            .try_into()
+            .expect("valid identity"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Line {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),

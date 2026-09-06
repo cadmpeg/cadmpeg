@@ -484,19 +484,19 @@ pub(crate) fn bind_recipe_reference_candidates(
     }
     reference
         .candidate_faces
-        .sort_by(|left, right| left.0.cmp(&right.0));
+        .sort_by(|left, right| left.as_str().cmp(right.as_str()));
     reference.candidate_faces.dedup();
     reference
         .candidate_edges
-        .sort_by(|left, right| left.0.cmp(&right.0));
+        .sort_by(|left, right| left.as_str().cmp(right.as_str()));
     reference.candidate_edges.dedup();
     reference
         .alternate_selector_faces
-        .sort_by(|left, right| left.0.cmp(&right.0));
+        .sort_by(|left, right| left.as_str().cmp(right.as_str()));
     reference.alternate_selector_faces.dedup();
     reference
         .alternate_selector_edges
-        .sort_by(|left, right| left.0.cmp(&right.0));
+        .sort_by(|left, right| left.as_str().cmp(right.as_str()));
     reference.alternate_selector_edges.dedup();
 }
 

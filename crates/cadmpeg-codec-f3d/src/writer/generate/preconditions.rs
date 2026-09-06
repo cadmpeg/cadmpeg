@@ -801,13 +801,14 @@ pub(crate) fn validate_source_less_design_links(
         if !coedges.contains(coedge) {
             return Err(CodecError::InvalidInput(format!(
                 "F3D sketch-curve link {} targets a missing coedge {}",
-                link.id, coedge.0
+                link.id,
+                coedge.as_str()
             )));
         }
         if !linked_coedges.insert(coedge) {
             return Err(CodecError::InvalidInput(format!(
                 "source-less F3D generation supports one sketch-curve link per coedge: {}",
-                coedge.0
+                coedge.as_str()
             )));
         }
     }
@@ -834,7 +835,7 @@ pub(crate) fn validate_source_less_design_links(
     for link in &native.persistent_design_links {
         let target_key = match &link.target {
             cadmpeg_ir::attributes::AttributeTarget::Body(id) if bodies.contains(id) => {
-                Some(id.0.clone())
+                Some(id.as_str().to_owned())
             }
             _ => None,
         };
@@ -857,10 +858,10 @@ pub(crate) fn validate_source_less_design_links(
     for tag in &native.persistent_subentity_tags {
         let target_key = match &tag.target {
             cadmpeg_ir::attributes::AttributeTarget::Face(id) if faces.contains(id) => {
-                Some((2, id.0.clone()))
+                Some((2, id.as_str().to_owned()))
             }
             cadmpeg_ir::attributes::AttributeTarget::Edge(id) if edges.contains(id) => {
-                Some((1, id.0.clone()))
+                Some((1, id.as_str().to_owned()))
             }
             _ => None,
         };

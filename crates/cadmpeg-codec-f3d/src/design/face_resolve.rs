@@ -147,13 +147,13 @@ pub(crate) fn resolved_direct_face_selection(
         return None;
     }
     let mut faces = resolved_face_operand(matching[0])?;
-    faces.sort_by(|left, right| left.0.cmp(&right.0));
+    faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     if faces.is_empty() {
         return None;
     }
     for operand in &matching[1..] {
         let mut candidate = resolved_face_operand(operand)?;
-        candidate.sort_by(|left, right| left.0.cmp(&right.0));
+        candidate.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         if candidate != faces {
             return None;
         }
@@ -766,7 +766,12 @@ fn loft_edge_profile_face_slot(
                 if preceding_face != candidate {
                     return None;
                 }
-                let slot = preceding_face.0.rsplit_once('#')?.1.parse::<i64>().ok()?;
+                let slot = preceding_face
+                    .as_str()
+                    .rsplit_once('#')?
+                    .1
+                    .parse::<i64>()
+                    .ok()?;
                 if !operand.preceding_candidate_faces.contains(candidate)
                     || !operand.result_candidate_faces.contains(candidate)
                 {
@@ -963,7 +968,7 @@ fn split_face_updated_target_slots(
         }
         for face in &operand.preceding_candidate_faces {
             let slot = face
-                .0
+                .as_str()
                 .rsplit_once('#')
                 .and_then(|(_, slot)| slot.parse().ok())?;
             if updated.contains(&slot) && represented.insert(slot) {
@@ -1025,12 +1030,12 @@ fn split_face_complete_candidate_slots(operand: &DesignFaceOperand) -> Option<Ve
     let faces = resolved_face_operand(operand)?;
     let slots = faces
         .iter()
-        .map(|face| face.0.rsplit_once('#')?.1.parse::<i64>().ok())
+        .map(|face| face.as_str().rsplit_once('#')?.1.parse::<i64>().ok())
         .collect::<Option<Vec<_>>>()?;
     let preceding = operand
         .preceding_candidate_faces
         .iter()
-        .filter_map(|face| face.0.rsplit_once('#')?.1.parse::<i64>().ok())
+        .filter_map(|face| face.as_str().rsplit_once('#')?.1.parse::<i64>().ok())
         .collect::<HashSet<_>>();
     (!slots.is_empty() && slots.iter().all(|slot| preceding.contains(slot))).then_some(slots)
 }
@@ -1088,7 +1093,7 @@ fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::
                 active_candidates
                     .iter()
                     .find(|face| {
-                        face.0
+                        face.as_str()
                             .rsplit_once('#')
                             .and_then(|(_, ordinal)| ordinal.parse::<i64>().ok())
                             == Some(*slot)
@@ -1164,7 +1169,7 @@ fn explicit_bounded_face_candidates(
         .filter(|lane| !lane.is_empty())
         .collect::<Vec<_>>();
     for lane in &mut lanes {
-        lane.sort_by(|left, right| left.0.cmp(&right.0));
+        lane.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     }
     lanes.sort_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
     let [lane, next @ ..] = lanes.as_slice() else {
@@ -1235,7 +1240,7 @@ pub(crate) fn legacy_face_recipe_reference_candidates(
         })
         .cloned()
         .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| left.0.cmp(&right.0));
+    candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     candidates.dedup();
     if !operand.candidate_faces.is_empty()
         && operand.candidate_faces.iter().collect::<HashSet<_>>()
@@ -1256,7 +1261,7 @@ pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperan
     {
         return None;
     }
-    direct.0.rsplit_once('#')?.1.parse().ok()
+    direct.as_str().rsplit_once('#')?.1.parse().ok()
 }
 
 pub(crate) fn resolve_face_operand_history_candidate_from(
@@ -1268,7 +1273,7 @@ pub(crate) fn resolve_face_operand_history_candidate_from(
     };
     candidates
         .contains(direct)
-        .then(|| direct.0.rsplit_once('#')?.1.parse().ok())
+        .then(|| direct.as_str().rsplit_once('#')?.1.parse().ok())
         .flatten()
 }
 
@@ -1306,7 +1311,7 @@ pub(crate) fn resolve_stable_bounded_face_history_set(
     complete_counted_face_recipe(operand)?;
     let mut active_faces = Vec::with_capacity(operand.preceding_candidate_faces.len());
     for face in &operand.preceding_candidate_faces {
-        let slot = face.0.rsplit_once('#')?.1.parse::<i64>().ok()?;
+        let slot = face.as_str().rsplit_once('#')?.1.parse::<i64>().ok()?;
         if active_faces.contains(&slot) {
             return None;
         }
@@ -1358,7 +1363,7 @@ pub(crate) fn resolve_surface_delete_face_history_set(
 fn unique_stable_face_slots(faces: &[cadmpeg_ir::ids::FaceId]) -> Option<Vec<i64>> {
     let mut slots = faces
         .iter()
-        .map(|face| face.0.rsplit_once('#')?.1.parse::<i64>().ok())
+        .map(|face| face.as_str().rsplit_once('#')?.1.parse::<i64>().ok())
         .collect::<Option<Vec<_>>>()?;
     if slots.iter().any(|slot| *slot < 0) {
         return None;
@@ -1434,7 +1439,7 @@ fn effective_historical_face_slots(
 ) -> Option<Vec<i64>> {
     let mut candidate_slots = candidates
         .iter()
-        .map(|face| face.0.rsplit_once('#')?.1.parse::<i64>().ok())
+        .map(|face| face.as_str().rsplit_once('#')?.1.parse::<i64>().ok())
         .collect::<Option<Vec<_>>>()?;
     candidate_slots.sort_unstable();
     candidate_slots.dedup();
@@ -1586,7 +1591,7 @@ fn resolve_face_operand_support_candidate(operand: &DesignFaceOperand) -> Option
     };
     let active_slots = active_faces
         .iter()
-        .filter_map(|face| face.0.rsplit_once('#')?.1.parse::<i64>().ok())
+        .filter_map(|face| face.as_str().rsplit_once('#')?.1.parse::<i64>().ok())
         .collect::<HashSet<_>>();
     if active_slots.is_empty() {
         return None;
@@ -1641,7 +1646,7 @@ pub(crate) fn historical_face_operand_candidates(
             })
             .cloned()
             .collect::<Vec<_>>();
-        referenced.sort_by(|left, right| left.0.cmp(&right.0));
+        referenced.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         referenced.dedup();
         if !referenced.is_empty() {
             return referenced;
@@ -1675,7 +1680,7 @@ pub(crate) fn nested_bounded_face_history_candidates(
         })
         .cloned()
         .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| left.0.cmp(&right.0));
+    candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     candidates.dedup();
     (!candidates.is_empty()).then_some(candidates)
 }
@@ -1801,7 +1806,7 @@ pub(crate) fn bind_extrude_start_planes(
             }
             candidates.extend(face_operand_candidates(operand).iter().cloned());
         }
-        candidates.sort_by(|left, right| left.0.cmp(&right.0));
+        candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         candidates.dedup();
         if candidates.is_empty() {
             if let Some(geometry_candidates) = extrude_start_plane_geometry_candidates(
@@ -1983,7 +1988,7 @@ fn extrude_target_plane_candidate(
     if candidates.is_empty() {
         candidates = nested_bounded_face_history_candidates(operand)?;
     }
-    candidates.sort_by(|left, right| left.0.cmp(&right.0));
+    candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     candidates.dedup();
     let direction_length = sweep_direction.norm();
     let mut matches = candidates
@@ -2007,7 +2012,7 @@ fn extrude_target_plane_candidate(
             (distance > resolution.linear_tolerance).then_some(candidate)
         })
         .collect::<Vec<_>>();
-    matches.sort_by(|left, right| left.0.cmp(&right.0));
+    matches.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     matches.dedup();
     let [face] = matches.as_slice() else {
         return None;
@@ -2051,7 +2056,7 @@ pub(crate) fn retain_face_operand_resolution(
         return true;
     }
     let Some(slot) = face
-        .0
+        .as_str()
         .rsplit_once('#')
         .and_then(|(_, slot)| slot.parse::<i64>().ok())
     else {
@@ -2478,7 +2483,7 @@ mod tests {
         assert_eq!(
             faces
                 .iter()
-                .map(|face| face.0.rsplit_once(':').unwrap().1)
+                .map(|face| face.as_str().rsplit_once(':').unwrap().1)
                 .collect::<Vec<_>>(),
             ["10", "20", "30"]
         );
@@ -3114,7 +3119,7 @@ mod tests {
     fn target_plane_operand(candidates: &[i64]) -> DesignFaceOperand {
         let candidate_faces = candidates
             .iter()
-            .map(|slot| face(*slot).0)
+            .map(|slot| face(*slot).into_string())
             .collect::<Vec<_>>();
         serde_json::from_value(serde_json::json!({
             "id": "f3d:test:face-operand#200",

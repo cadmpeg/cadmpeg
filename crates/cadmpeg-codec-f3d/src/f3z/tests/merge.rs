@@ -158,9 +158,12 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     for ordinal in 0..2 {
         let prefix = format!("f3d:xref/role/occurrence-{ordinal}/brep:entity#");
         assert_eq!(merged.bodies[ordinal].id.as_str(), format!("{prefix}1"));
-        assert_eq!(merged.bodies[ordinal].regions[0].0, format!("{prefix}2"));
+        assert_eq!(
+            merged.bodies[ordinal].regions[0].as_str(),
+            format!("{prefix}2")
+        );
         assert_eq!(merged.regions[ordinal].id.as_str(), format!("{prefix}2"));
-        assert_eq!(merged.regions[ordinal].body.0, format!("{prefix}1"));
+        assert_eq!(merged.regions[ordinal].body.as_str(), format!("{prefix}1"));
     }
 }
 

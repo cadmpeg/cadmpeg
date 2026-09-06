@@ -801,7 +801,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !body_selection_is_resolved(bodies)
                 || *mode == cadmpeg_ir::features::BodyRetentionMode::Unresolved
         }
-        FeatureDefinition::InsertComponent { occurrence } => occurrence.0.is_empty(),
+        FeatureDefinition::InsertComponent { .. } => false,
         FeatureDefinition::AssemblyJoint { joint } => joint.0.is_empty(),
         FeatureDefinition::Shell {
             bodies,
@@ -4070,7 +4070,7 @@ fn populate_annotations(
             let stream = annotations.stream(crate::ids::native_scope(&fallback.name));
             for unknown in unknowns {
                 annotations
-                    .note(unknown.id().0.as_str(), stream, unknown.offset())
+                    .note(unknown.id().as_str(), stream, unknown.offset())
                     .tag("opaque_brep");
             }
         }
@@ -5312,7 +5312,8 @@ pub(crate) fn resolve_face_appearance_bindings(
                     &assignment.visual_guid,
                     face,
                 )
-                .into(),
+                .try_into()
+                .expect("valid identity"),
                 target,
                 appearance: appearance.clone(),
                 source_entity_id: None,

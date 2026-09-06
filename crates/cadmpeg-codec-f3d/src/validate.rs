@@ -1633,7 +1633,7 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .iter()
                     .flat_map(|reference| reference.candidate_faces.iter().cloned())
                     .collect::<Vec<_>>();
-                faces.sort_by(|a, b| a.0.cmp(&b.0));
+                faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
                 faces.dedup();
                 (!faces.is_empty()).then_some((operand, faces))
             })
@@ -7105,7 +7105,7 @@ fn validate_face_operands<'a>(
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        expected_faces.sort_by(|left, right| left.0.cmp(&right.0));
+        expected_faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         expected_faces.dedup();
         let mut expected_references = design::decode::dimension_frames::decode_recipe_references(
             &operand.recipe_prefix_bytes,
@@ -7139,7 +7139,7 @@ fn validate_face_operands<'a>(
             .flat_map(|reference| &reference.alternate_selector_faces)
             .cloned()
             .collect::<Vec<_>>();
-        expected_alternate_selector_faces.sort_by(|left, right| left.0.cmp(&right.0));
+        expected_alternate_selector_faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         expected_alternate_selector_faces.dedup();
         let expected_node_offsets = operand
             .recipe_program
@@ -8929,7 +8929,7 @@ fn validate_body_links(ctx: &Ctx, findings: &mut Vec<Finding>) {
     for link in &native.persistent_design_links {
         let target_key = match &link.target {
             cadmpeg_ir::attributes::AttributeTarget::Body(id) if body_ids.contains(id) => {
-                Some(id.0.clone())
+                Some(id.as_str().to_owned())
             }
             _ => None,
         };
@@ -8986,10 +8986,10 @@ fn validate_subentity_tags(ctx: &Ctx, findings: &mut Vec<Finding>) {
     for tag in &native.persistent_subentity_tags {
         let target_key = match &tag.target {
             cadmpeg_ir::attributes::AttributeTarget::Face(id) if face_ids.contains(id) => {
-                Some(format!("face:{}", id.0))
+                Some(format!("face:{}", id.as_str()))
             }
             cadmpeg_ir::attributes::AttributeTarget::Edge(id) if edge_ids.contains(id) => {
-                Some(format!("edge:{}", id.0))
+                Some(format!("edge:{}", id.as_str()))
             }
             _ => None,
         };

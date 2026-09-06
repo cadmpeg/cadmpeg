@@ -245,7 +245,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
     );
     let second_body =
         cadmpeg_ir::ids::BodyId::mint("f3d:brep/second/brep:entity#1").expect("identity grammar");
-    let second = resolved_body_binding(stream, 125, 200, "BREP.second.smbh", &second_body.0);
+    let second = resolved_body_binding(stream, 125, 200, "BREP.second.smbh", second_body.as_str());
     let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
     let visual_guid = "11111111-2222-3333-4444-555555555555";
     let appearance = cadmpeg_ir::appearance::Appearance {
@@ -701,8 +701,10 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         "test:model:face#3",
     ] {
         ir.model.attributes.push(SourceAttribute {
-            id: format!("test:model:attribute#{}", face.rsplit_once('#').unwrap().1).into(),
-            target: AttributeTarget::Face(face.into()),
+            id: format!("test:model:attribute#{}", face.rsplit_once('#').unwrap().1)
+                .try_into()
+                .expect("valid identity"),
+            target: AttributeTarget::Face(face.try_into().expect("valid identity")),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
                 AttributeValue::String("NEUTRON_Material_attrib_def".into()),
@@ -711,7 +713,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         });
     }
     let appearance = |id: &str, token: &str| Appearance {
-        id: id.into(),
+        id: id.try_into().expect("valid identity"),
         name: None,
         asset_guid: None,
         library_id: None,
@@ -761,9 +763,9 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
     assert_eq!(
         targets,
         vec![
-            AppearanceTarget::Face("test:model:face#1".into()),
-            AppearanceTarget::Face("test:model:face#2".into()),
-            AppearanceTarget::Face("test:model:face#3".into()),
+            AppearanceTarget::Face("test:model:face#1".try_into().expect("valid identity")),
+            AppearanceTarget::Face("test:model:face#2".try_into().expect("valid identity")),
+            AppearanceTarget::Face("test:model:face#3".try_into().expect("valid identity")),
         ]
     );
 
@@ -817,7 +819,9 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
         let mut ir = cadmpeg_ir::examples::unit_cube();
         let face = ir.model.faces[0].id.clone();
         ir.model.attributes.push(SourceAttribute {
-            id: "f3d:test:attribute#face-material".into(),
+            id: "f3d:test:attribute#face-material"
+                .try_into()
+                .expect("valid identity"),
             target: AttributeTarget::Face(face),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
@@ -826,7 +830,9 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
             ],
         });
         ir.model.appearances.push(Appearance {
-            id: "test:model:appearance#face".into(),
+            id: "test:model:appearance#face"
+                .try_into()
+                .expect("valid identity"),
             name: None,
             asset_guid: None,
             library_id: None,
@@ -2001,7 +2007,9 @@ fn appearance_loss_clears_when_an_assignment_resolves() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let appearance = opaque_appearance("2F0E19C1-0000-4000-8000-000000000001");
     ir.model.appearance_bindings = vec![cadmpeg_ir::appearance::AppearanceBinding {
-        id: "f3d:appearance:body#0_1:2F0E19C1-0000-4000-8000-000000000001".into(),
+        id: "f3d:appearance:body#0_1:2F0E19C1-0000-4000-8000-000000000001"
+            .try_into()
+            .expect("valid identity"),
         target: cadmpeg_ir::appearance::AppearanceTarget::Body(
             cadmpeg_ir::ids::BodyId::mint("f3d:brep/a.smbh/brep:entity#1".to_owned())
                 .expect("identity grammar"),

@@ -708,7 +708,7 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
 
     operand.references[0]
         .candidate_faces
-        .retain(|face| !face.0.contains("/cache/"));
+        .retain(|face| !face.as_str().contains("/cache/"));
     operand
         .references
         .push(reference(&["f3d:brep/cache/brep:face#1"]));

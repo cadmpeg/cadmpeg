@@ -212,7 +212,7 @@ impl<'a> AttributeIndex<'a> {
             .iter()
             .filter(|body| body_links.contains_key(body.id.as_str()))
             .enumerate()
-            .map(|(ordinal, body)| (body.id.0.clone(), ordinal))
+            .map(|(ordinal, body)| (body.id.as_str().to_owned(), ordinal))
             .collect();
         let face_group_ordinals = target
             .model
@@ -220,7 +220,7 @@ impl<'a> AttributeIndex<'a> {
             .iter()
             .filter(|face| face_tags.contains_key(face.id.as_str()))
             .enumerate()
-            .map(|(ordinal, face)| (face.id.0.clone(), ordinal))
+            .map(|(ordinal, face)| (face.id.as_str().to_owned(), ordinal))
             .collect();
         let edge_group_ordinals = target
             .model
@@ -228,7 +228,7 @@ impl<'a> AttributeIndex<'a> {
             .iter()
             .filter(|edge| edge_tags.contains_key(edge.id.as_str()))
             .enumerate()
-            .map(|(ordinal, edge)| (edge.id.0.clone(), ordinal))
+            .map(|(ordinal, edge)| (edge.id.as_str().to_owned(), ordinal))
             .collect();
         let sketch_ordinals = target
             .model
@@ -236,7 +236,7 @@ impl<'a> AttributeIndex<'a> {
             .iter()
             .filter(|coedge| coedge_sketch_links.contains_key(coedge.id.as_str()))
             .enumerate()
-            .map(|(ordinal, coedge)| (coedge.id.0.clone(), ordinal))
+            .map(|(ordinal, coedge)| (coedge.id.as_str().to_owned(), ordinal))
             .collect();
         Ok(Self {
             creation_timestamps: &native.creation_timestamps,

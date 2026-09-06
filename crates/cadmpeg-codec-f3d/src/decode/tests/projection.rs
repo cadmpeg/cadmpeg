@@ -229,7 +229,7 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
         definition: FeatureDefinition::FullRoundFillet {
             groups: vec![FullRoundFilletGroup {
                 center_faces: FaceSelection::Resolved {
-                    faces: vec!["test:model:face#center".into()],
+                    faces: vec!["test:model:face#center".try_into().expect("valid identity")],
                     native: "native:center-group".into(),
                 },
                 side_one_faces: FullRoundSideSelection::Automatic,
@@ -1868,7 +1868,9 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         properties: Default::default(),
     });
     let binding = |id: &str, target| AppearanceBinding {
-        id: format!("test:model:appearance-binding#{id}").into(),
+        id: format!("test:model:appearance-binding#{id}")
+            .try_into()
+            .expect("valid identity"),
         target,
         appearance: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),
         source_entity_id: None,

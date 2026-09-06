@@ -129,7 +129,7 @@ pub fn write_semantic(
                         return None;
                     };
                     Some((
-                        curve.id.0.clone(),
+                        curve.id.as_str().to_owned(),
                         NurbsCurveEdit {
                             curve: nurbs.clone(),
                             periodic: (before.periodic() != nurbs.periodic())
@@ -163,7 +163,7 @@ pub fn write_semantic(
                         return None;
                     };
                     Some((
-                        surface.id.0.clone(),
+                        surface.id.as_str().to_owned(),
                         NurbsSurfaceEdit {
                             surface: nurbs.clone(),
                             periodic: (before.u_periodic() != nurbs.u_periodic()
@@ -425,7 +425,7 @@ pub fn write_semantic(
         .model
         .points
         .iter()
-        .map(|point| (point.id.0.clone(), point.position))
+        .map(|point| (point.id.as_str().to_owned(), point.position))
         .collect::<BTreeMap<_, _>>();
     let lines = target
         .model
@@ -434,7 +434,7 @@ pub fn write_semantic(
         .filter_map(|curve| match curve.geometry {
             CurveGeometry::Line { origin, direction } => edited_curves
                 .contains(curve.id.as_str())
-                .then(|| (curve.id.0.clone(), (origin, direction))),
+                .then(|| (curve.id.as_str().to_owned(), (origin, direction))),
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -450,7 +450,7 @@ pub fn write_semantic(
                 radius,
             } => edited_curves.contains(curve.id.as_str()).then(|| {
                 (
-                    curve.id.0.clone(),
+                    curve.id.as_str().to_owned(),
                     (center, axis, ref_direction, radius, radius),
                 )
             }),
@@ -462,7 +462,7 @@ pub fn write_semantic(
                 minor_radius,
             } => edited_curves.contains(curve.id.as_str()).then(|| {
                 (
-                    curve.id.0.clone(),
+                    curve.id.as_str().to_owned(),
                     (center, axis, major_direction, major_radius, minor_radius),
                 )
             }),
@@ -476,7 +476,7 @@ pub fn write_semantic(
         .filter_map(|curve| match curve.geometry {
             CurveGeometry::Degenerate { point } => edited_curves
                 .contains(curve.id.as_str())
-                .then(|| (curve.id.0.clone(), point)),
+                .then(|| (curve.id.as_str().to_owned(), point)),
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -491,7 +491,7 @@ pub fn write_semantic(
                 u_axis,
             } => edited_surfaces
                 .contains(surface.id.as_str())
-                .then(|| (surface.id.0.clone(), (origin, normal, u_axis))),
+                .then(|| (surface.id.as_str().to_owned(), (origin, normal, u_axis))),
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -505,9 +505,12 @@ pub fn write_semantic(
                 axis,
                 ref_direction,
                 radius,
-            } => edited_surfaces
-                .contains(surface.id.as_str())
-                .then(|| (surface.id.0.clone(), (center, axis, ref_direction, radius))),
+            } => edited_surfaces.contains(surface.id.as_str()).then(|| {
+                (
+                    surface.id.as_str().to_owned(),
+                    (center, axis, ref_direction, radius),
+                )
+            }),
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -524,7 +527,7 @@ pub fn write_semantic(
                 minor_radius,
             } => edited_surfaces.contains(surface.id.as_str()).then(|| {
                 (
-                    surface.id.0.clone(),
+                    surface.id.as_str().to_owned(),
                     (center, axis, ref_direction, major_radius, minor_radius),
                 )
             }),
@@ -543,7 +546,7 @@ pub fn write_semantic(
                 radius,
             } => edited_surfaces.contains(surface.id.as_str()).then(|| {
                 (
-                    surface.id.0.clone(),
+                    surface.id.as_str().to_owned(),
                     (origin, axis, ref_direction, radius, 1.0, 0.0),
                 )
             }),
@@ -556,7 +559,7 @@ pub fn write_semantic(
                 half_angle,
             } => edited_surfaces.contains(surface.id.as_str()).then(|| {
                 (
-                    surface.id.0.clone(),
+                    surface.id.as_str().to_owned(),
                     (origin, axis, ref_direction, radius, ratio, half_angle),
                 )
             }),

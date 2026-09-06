@@ -131,7 +131,7 @@ fn feature_identity_uses_stream_family_ordinal_and_scope_record() {
     assert!(localized.0.contains("Symétrie%20miroir"));
     assert_ne!(localized, literal_escape);
     assert!(!feature_input_topology_id(&localized, 2)
-        .0
+        .as_str()
         .chars()
         .any(char::is_whitespace));
 }

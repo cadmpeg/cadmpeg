@@ -44,7 +44,7 @@ pub(super) fn make_sibling_ordinals_unique(occurrences: &mut [cadmpeg_ir::produc
         let parent = match &occurrence.parent {
             cadmpeg_ir::products::OccurrenceParent::Root => None,
             cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } => {
-                Some(occurrence.0.clone())
+                Some(occurrence.as_str().to_owned())
             }
         };
         let siblings = used.entry(parent).or_default();

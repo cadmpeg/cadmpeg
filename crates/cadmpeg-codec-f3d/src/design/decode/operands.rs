@@ -1158,7 +1158,7 @@ pub fn bind_face_operand_candidates(
             .collect();
         operand
             .candidate_faces
-            .sort_by(|left, right| left.0.cmp(&right.0));
+            .sort_by(|left, right| left.as_str().cmp(right.as_str()));
         operand.candidate_faces.dedup();
         let referenced = operand
             .recipe_references
@@ -1181,7 +1181,7 @@ pub fn bind_face_operand_candidates(
             .collect();
         operand
             .alternate_selector_candidate_faces
-            .sort_by(|left, right| left.0.cmp(&right.0));
+            .sort_by(|left, right| left.as_str().cmp(right.as_str()));
         operand.alternate_selector_candidate_faces.dedup();
     }
 }
@@ -1231,7 +1231,7 @@ pub(crate) fn edge_operand_candidate_faces(
             _ => None,
         })
         .collect::<Vec<_>>();
-    faces.sort_by(|left, right| left.0.cmp(&right.0));
+    faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     faces.dedup();
     faces
 }
@@ -3766,7 +3766,7 @@ pub fn bind_body_recipe_operand_candidates(
                 .collect();
             reference
                 .candidate_faces
-                .sort_by(|left, right| left.0.cmp(&right.0));
+                .sort_by(|left, right| left.as_str().cmp(right.as_str()));
             reference.candidate_faces.dedup();
         }
     }

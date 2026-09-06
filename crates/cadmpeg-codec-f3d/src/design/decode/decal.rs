@@ -93,7 +93,7 @@ pub fn project_decal_images(
             .iter()
             .flat_map(|reference| reference.candidate_faces.iter().cloned())
             .collect::<Vec<_>>();
-        faces.sort_by(|a, b| a.0.cmp(&b.0));
+        faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
         faces.dedup();
         if faces.is_empty() {
             continue;
