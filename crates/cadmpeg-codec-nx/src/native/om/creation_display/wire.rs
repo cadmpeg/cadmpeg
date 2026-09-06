@@ -144,7 +144,7 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
 
 #[cfg(test)]
 mod tests {
-    use super::RmCreationDisplayDataRelation;
+    use super::*;
 
     #[test]
     fn creation_display_rejects_fields_inconsistent_with_its_row() {
@@ -176,6 +176,28 @@ mod tests {
             invalid["encoding"]["index_source_offsets"][index] = 99.into();
             assert!(serde_json::from_value::<RmCreationDisplayDataRelation>(invalid)
                 .unwrap_err().to_string().contains("index_source_offsets"));
+        }
+    }
+    #[test]
+    fn creation_display_relations_keep_all_three_wire_forms() {
+        let encodings = [
+            r#"{"kind":"index","flag":3,"indices":[2,3,4,5],"raw_indices":[[2],[3],[4],[5]],"index_source_offsets":[13,14,15,16]}"#,
+            r#"{"kind":"linked","discriminator":22,"target_index":2,"raw_target_index":[2],"target_index_source_offset":12,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[17,18,19],"flag":3,"mode":4}"#,
+            r#"{"kind":"target","target_index":2,"raw_target_index":[2],"target_index_source_offset":10,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[15,16,17],"mode":7}"#,
+        ];
+        for (ordinal, encoding) in encodings.into_iter().enumerate() {
+            let first = match ordinal {
+                0 => r#","first_index":1,"raw_first_index":[128,1],"first_index_source_offset":8"#,
+                1 => r#","first_index":1,"raw_first_index":[128,1],"first_index_source_offset":7"#,
+                _ => "",
+            };
+            let json = format!(r#"{{"id":"relation","ordinal":0{first},"class_name":"UGS::RM_creation_display_data","class_definition":"definition","encoding":{encoding},"source_entry":"entry","source_offset":5}}"#);
+            let relation: RmCreationDisplayDataRelation = serde_json::from_str(&json).unwrap();
+            assert_eq!(serde_json::to_string(&relation).unwrap(), json);
+            let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
+            wire["encoding"]["raw_indices"][0] = serde_json::json!([255]);
+            let error = serde_json::from_value::<RmCreationDisplayDataRelation>(wire).unwrap_err();
+            assert!(error.to_string().contains("raw_indices"), "{error}");
         }
     }
 }

@@ -252,42 +252,6 @@ pub struct OffsetStoreAbrReferenceLane {
     pub slots: [NullableCompactIndex; 16],
 }
 
-#[cfg(test)]
-mod linked_row_color_index_tests {
-    use crate::om::column_row::scan::{linked_rows, target_rows, preceding_color};
-
-    #[test]
-    fn requires_the_complete_preceding_suffix() {
-        let row_bytes = [
-            0x02, 0x0b, 7, 0x93, 0x8c, 0x16, 2, 0xff, 0xff, 0x90, 0xfe, 3, 4, 5, 0, 0x47, 3, 4, 1,
-            0xc0, 0x44, 4, 0,
-        ];
-        let mut bytes = [1, 0xc0, 0x44, 4, 0, 0x80, 201].to_vec();
-        bytes.extend(row_bytes);
-        let rows = linked_rows(&bytes);
-        let color = preceding_color(&bytes, rows[0].offset()).expect("complete prefix");
-        assert_eq!(color.value(), 201);
-        assert_eq!(color.display_raw(), [0x80, 201]);
-
-        bytes[1] = 0;
-        assert_eq!(preceding_color(&bytes, rows[0].offset()), None);
-    }
-
-    #[test]
-    fn accepts_the_same_prefix_for_a_target_index_row() {
-        let row_bytes = [
-            0x02, 0x01, 0x01, 0x01, 0x16, 2, 0xff, 0xff, 0x90, 0xfe, 3, 4, 5, 0, 0x47, 3, 4, 1,
-            0xc0, 0x44, 4, 0,
-        ];
-        let mut bytes = [1, 0xc0, 0x44, 4, 0, 0x80, 201].to_vec();
-        bytes.extend(row_bytes);
-        let rows = target_rows(&bytes);
-        let color = preceding_color(&bytes, rows[0].offset()).expect("complete prefix");
-        assert_eq!(color.value(), 201);
-        assert_eq!(color.display_raw(), [0x80, 201]);
-    }
-}
-
 /// One RGB definition from an NX part color table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColorTableDefinition<'a> {

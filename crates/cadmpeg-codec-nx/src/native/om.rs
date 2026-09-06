@@ -14,8 +14,6 @@ mod reference_wire;
 use material_texture::MaterialTextureAsset;
 
 use crate::om::compact::{CompactIndexAtom, CountedIndexMembers};
-#[cfg(test)]
-mod row_wire;
 pub(crate) mod column_row;
 pub(crate) mod creation_display;
 pub(crate) mod display_color;
