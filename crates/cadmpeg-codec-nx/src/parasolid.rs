@@ -16,6 +16,9 @@ use cadmpeg_core::bytes::{contains, find};
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 
+pub(crate) mod printable_string;
+use printable_string::PrintableString;
+
 pub(crate) mod entity_references;
 use entity_references::EntityReferences;
 
@@ -186,7 +189,7 @@ pub struct Entity54StringRecord<'a> {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Nonempty printable string value.
-    pub value: &'a str,
+    pub value: PrintableString<&'a str>,
 }
 
 /// One counted type-82 unsigned-integer value record.
@@ -493,7 +496,7 @@ enum ValueRecordFrame<'a> {
         offset: usize,
         end: usize,
         xmt: u32,
-        value: &'a str,
+        value: PrintableString<&'a str>,
     },
 }
 
@@ -932,7 +935,7 @@ struct StringValueFrame<'a> {
     offset: usize,
     end: usize,
     xmt: u32,
-    value: &'a str,
+    value: PrintableString<&'a str>,
 }
 
 fn string_value_frame_at(bytes: &[u8], offset: usize) -> Option<StringValueFrame<'_>> {
@@ -941,19 +944,13 @@ fn string_value_frame_at(bytes: &[u8], offset: usize) -> Option<StringValueFrame
     if bytes.get(at) == Some(&0xff) {
         at += 1;
     }
-    let length = View::u32_be_at(bytes, at)
-        .map(|value| value as usize)
-        .filter(|length| *length > 0)?;
+    let length = View::u32_be_at(bytes, at)? as usize;
     at += 4;
     let xmt = read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1)?;
     let end = at.checked_add(length)?;
-    let value = bytes.get(at..end).filter(|value| {
-        value
-            .iter()
-            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-    })?;
+    let value = bytes.get(at..end)?;
     (bytes.get(end) == Some(&0)).then_some(())?;
-    let value = std::str::from_utf8(value).ok()?;
+    let value = PrintableString::new(std::str::from_utf8(value).ok()?).ok()?;
     Some(StringValueFrame {
         offset,
         end: end.checked_add(1)?,

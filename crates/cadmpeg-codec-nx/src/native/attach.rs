@@ -4322,7 +4322,7 @@ fn attach_parasolid_topology_string_attributes(
                             .map(|class_name| format!("{class_name}.{generic_name}"))
                     })
                     .unwrap_or(generic_name),
-                values: vec![AttributeValue::String(string.value.clone())],
+                values: vec![AttributeValue::String(string.value.as_str().to_owned())],
             });
         }
     }

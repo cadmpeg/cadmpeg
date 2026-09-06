@@ -166,7 +166,7 @@ fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
     assert_eq!(records[0].offset, 1);
     assert_eq!(records[0].byte_len, 17);
     assert_eq!(records[0].xmt, 17);
-    assert_eq!(records[0].value, "deadbeef");
+    assert_eq!(records[0].value.as_str(), "deadbeef");
     assert_eq!(
         crate::parasolid::entity_54_string_record_at(&bytes, 1),
         Some(records[0].clone())
@@ -175,7 +175,7 @@ fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
 
     let minimum = [0, 0x54, 0, 0, 0, 1, 0, 2, b'a', 0];
     assert_eq!(
-        crate::parasolid::entity_value_records(&minimum).strings[0].value,
+        crate::parasolid::entity_value_records(&minimum).strings[0].value.as_str(),
         "a"
     );
 }
@@ -376,7 +376,7 @@ fn parasolid_entity_value_records_dispatches_all_value_families() {
     assert_eq!(records.unicode.len(), 1);
     assert_eq!(records.integers[0].values, [3, u32::MAX]);
     assert_eq!(records.doubles[0].values, [0.25]);
-    assert_eq!(records.strings[0].value, "label");
+    assert_eq!(records.strings[0].value.as_str(), "label");
     assert_eq!(records.axes[0].values.len(), 1);
     assert_eq!(records.tags[0].values, [17]);
     assert_eq!(records.unicode[0].value, "NX");

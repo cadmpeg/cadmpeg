@@ -9,6 +9,7 @@ use crate::deltas::Census;
 mod entity51_wire;
 use entity51_wire::Entity51Wire;
 use crate::parasolid::entity_references::EntityReferences;
+use crate::parasolid::printable_string::PrintableString;
 pub(crate) mod named_fields;
 use named_fields::NamedField;
 mod support_uv_wire;
@@ -1854,7 +1855,7 @@ pub struct ParasolidEntity54StringRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Exact nonempty printable value.
-    pub value: String,
+    pub value: PrintableString<String>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -2522,7 +2523,7 @@ pub(crate) fn parasolid_entity_value_records(
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
-                value: record.value.to_string(),
+                value: record.value.into_owned(),
                 byte_len: record.byte_len as u64,
                 inflated_offset: record.offset as u64,
             });
@@ -4300,7 +4301,7 @@ mod tests {
             id: format!("string-{xmt}"),
             stream_ordinal: 3,
             xmt,
-            value: (xmt - 27).to_string(),
+            value: PrintableString::new((xmt - 27).to_string()).unwrap(),
             byte_len: 10,
             inflated_offset: u64::from(xmt),
         });
@@ -4693,7 +4694,7 @@ mod tests {
             id: "string".into(),
             stream_ordinal: 3,
             xmt: 71,
-            value: "value".into(),
+            value: PrintableString::new("value".to_owned()).unwrap(),
             byte_len: 14,
             inflated_offset: 400,
         }];
