@@ -298,7 +298,7 @@ impl OmRollForwardStateRowWire {
 pub(super) enum OmOperationStateStatusPayloadWire {
     Plain,
     Linked {
-        link_code: u8,
+        link_code: crate::om::state_link::StateLinkCode,
         object_index: u32,
         raw_object_index: Vec<u8>,
     },

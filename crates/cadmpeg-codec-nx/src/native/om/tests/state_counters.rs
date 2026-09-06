@@ -281,10 +281,10 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
     assert!(matches!(
         statuses[1].payload,
         crate::native::om::OmOperationStateStatusPayload::Linked {
-            link_code: 0x4b,
+            link_code,
             object_index,
             ..
-        } if object_index.value() == 0x22
+        } if u8::from(link_code) == 0x4b && object_index.value() == 0x22
     ));
 
     let lanes = operation_state_slot_lanes(&container);

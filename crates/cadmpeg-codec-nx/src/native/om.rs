@@ -384,7 +384,7 @@ pub enum OmOperationStateStatusPayload {
     /// Status carrying one linked object index.
     Linked {
         /// Serialized link discriminator.
-        link_code: u8,
+        link_code: crate::om::state_link::StateLinkCode,
         /// Linked object index.
         object_index: StateIndexToken,
     },

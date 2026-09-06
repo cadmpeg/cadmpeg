@@ -146,9 +146,9 @@ fn operation_state_status_table_retains_plain_link_diagnostic_and_opaque_rows() 
     assert!(matches!(
         table.rows[1].payload,
         OperationStateStatusPayload::Linked {
-            link_code: 0x45,
+            link_code,
             ..
-        }
+        } if u8::from(link_code) == 0x45
     ));
     let OperationStateStatusPayload::Diagnostic { message } = table.rows[2].payload else {
         panic!("diagnostic row was not typed");

@@ -27,6 +27,8 @@ use fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 pub(crate) mod nonempty;
 pub(crate) mod state_tagged_value;
 pub(crate) mod state_index;
+pub(crate) mod state_link;
+use state_link::StateLinkCode;
 pub(crate) mod state_group;
 use state_group::{OperationStateGroupCount, OperationStateGroupOpener, StateGroupMembers};
 use state_index::{OperationStateIndex, NonNullStateIndex};
@@ -1534,7 +1536,7 @@ pub enum OperationStateStatusPayload<'a> {
     /// Status with a link-code and one linked object index.
     Linked {
         /// Serialized link discriminator.
-        link_code: u8,
+        link_code: StateLinkCode,
         /// Linked object index between the two `ff` sentinels.
         object_index: NonNullStateIndex,
     },
@@ -6748,10 +6750,8 @@ fn operation_state_link_payload(
     end: usize,
     base_offset: usize,
 ) -> Option<(OperationStateStatusPayload<'_>, usize)> {
-    let link_code = *bytes.get(payload_at)?;
-    if matches!(link_code, 0x02 | 0x03 | 0x1e | 0x3f | 0xff)
-        || bytes.get(payload_at + 1) != Some(&0xff)
-    {
+    let link_code = StateLinkCode::try_from(*bytes.get(payload_at)?).ok()?;
+    if bytes.get(payload_at + 1) != Some(&0xff) {
         return None;
     }
     let linked_at = payload_at.checked_add(2)?;
