@@ -1134,7 +1134,7 @@ fn typed_body_records(facts: &typed::Facts, tables: &topology::Tables) -> Option
         regions.sort_by_key(|region| region.attr);
         records.push(BodyRecord {
             attr: hierarchy.body.attr,
-            kind: hierarchy.kind,
+            kind: hierarchy.body.kind,
             refs: body_refs,
             offset: hierarchy.body.offset,
             regions,
@@ -5949,7 +5949,7 @@ mod tests {
                 node_id: 7,
                 topology_refs: [7, 8, 9, 10, 1, 12, 11],
                 ownership_refs: Vec::new(),
-                body_type: 3,
+                kind: BodyKind::Sheet,
                 offset: 1,
                 end: 2,
             }],
@@ -5965,7 +5965,7 @@ mod tests {
                     attr: 11,
                     node_id: 244,
                     refs: [1, 3, 39, 1, 44],
-                    kind: b'V',
+                    kind: crate::brep::typed::RegionKind::Void,
                     offset: 5,
                     end: 6,
                 },
@@ -5973,7 +5973,7 @@ mod tests {
                     attr: 39,
                     node_id: 815,
                     refs: [1, 3, 1, 11, 7],
-                    kind: b'S',
+                    kind: crate::brep::typed::RegionKind::Solid,
                     offset: 7,
                     end: 8,
                 },
@@ -5983,7 +5983,7 @@ mod tests {
                 node_id: 900,
                 attribute_chain: 1,
                 refs: [1, 1, 49, 7, 8],
-                sense: 0x2b,
+                sense: Sense::Forward,
                 offset: 9,
                 end: 10,
             }],
@@ -6011,6 +6011,7 @@ mod tests {
             facts
                 .hierarchies(&HashSet::from([100]))
                 .expect("typed hierarchy")[0]
+                .body
                 .kind,
             BodyKind::Sheet
         );

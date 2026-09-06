@@ -11,7 +11,7 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::topology::BodyKind;
+use cadmpeg_ir::topology::{BodyKind, Sense};
 
 const BODY_TAG: [u8; 2] = [0x00, 0x0c];
 const SHELL_TAG: [u8; 2] = [0x00, 0x0d];
@@ -40,7 +40,7 @@ pub struct BodyNode {
     /// selects it only when REGION links validate.
     pub ownership_refs: Vec<u32>,
     /// Stored Parasolid body kind discriminator.
-    pub body_type: u8,
+    pub kind: BodyKind,
     /// Byte offset of the node payload.  The first BODY has no repeated tag.
     pub offset: usize,
     /// First byte after the complete node.
@@ -48,17 +48,6 @@ pub struct BodyNode {
 }
 
 impl BodyNode {
-    /// Map the stored Parasolid discriminator to the neutral body kind.
-    pub fn kind(&self) -> Option<BodyKind> {
-        match self.body_type {
-            1 => Some(BodyKind::Solid),
-            2 => Some(BodyKind::Wire),
-            3 => Some(BodyKind::Sheet),
-            6 => Some(BodyKind::General),
-            _ => None,
-        }
-    }
-
     /// First shell reference in the body topology fields.
     pub fn shell(&self) -> u32 {
         self.topology_refs[0]
@@ -90,6 +79,22 @@ pub struct ShellNode {
     pub end: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegionKind {
+    Solid,
+    Void,
+}
+
+impl RegionKind {
+    fn read(byte: u8) -> Option<Self> {
+        match byte {
+            b'S' => Some(Self::Solid),
+            b'V' => Some(Self::Void),
+            _ => None,
+        }
+    }
+}
+
 /// A typed REGION node.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegionNode {
@@ -100,7 +105,7 @@ pub struct RegionNode {
     /// `[attribute_chain, body, next, previous, shell_head]`.
     pub refs: [u32; 5],
     /// `S` for solid and `V` for void.
-    pub kind: u8,
+    pub kind: RegionKind,
     /// Byte offset of the node tag.
     pub offset: usize,
     /// First byte after the complete node.
@@ -120,7 +125,7 @@ pub struct FaceNode {
     /// `[next_face, previous_face, loop, shell, surface]`.
     pub refs: [u32; 5],
     /// Stored face sense marker.
-    pub sense: u8,
+    pub sense: Sense,
     /// Byte offset of the node tag.
     pub offset: usize,
     /// First byte after the complete node.
@@ -162,8 +167,7 @@ impl Facts {
         };
         !bodies.is_empty()
             && bodies.values().all(|body| {
-                body.kind().is_some()
-                    && null_like_or_existing(body.shell(), &shells)
+                null_like_or_existing(body.shell(), &shells)
                     && region_chain(body, &regions).is_some()
             })
     }
@@ -244,7 +248,6 @@ impl Facts {
         let mut assigned_faces = HashSet::new();
         for body_attr in relevant_bodies {
             let body = bodies.get(&body_attr)?;
-            let kind = body.kind()?;
             let body_attr = body.attr;
             if !null_like_or_existing(body.shell(), &shells) {
                 return None;
@@ -286,7 +289,6 @@ impl Facts {
 
             out.push(Hierarchy {
                 body: body.clone(),
-                kind,
                 regions: body_regions,
                 shells: body_shells,
                 faces: hierarchy_faces,
@@ -302,7 +304,6 @@ impl Facts {
         let body_attrs = self
             .bodies
             .iter()
-            .filter(|body| body.kind().is_some())
             .map(|body| body.attr)
             .collect::<HashSet<_>>();
         let mut regions = HashMap::new();
@@ -310,7 +311,7 @@ impl Facts {
             let Some(body) = u16_from_ref_or_none(region.refs[1]) else {
                 continue;
             };
-            if !body_attrs.contains(&body) || !matches!(region.kind, b'S' | b'V') {
+            if !body_attrs.contains(&body) {
                 continue;
             }
             if regions.insert(region.attr, region.clone()).is_some() {
@@ -369,8 +370,7 @@ impl Facts {
             .bodies
             .iter()
             .filter(|body| {
-                body.kind().is_some()
-                    && null_like_or_existing(body.shell(), &shells)
+                null_like_or_existing(body.shell(), &shells)
                     && region_chain(body, &regions).is_some()
             })
             .cloned()
@@ -501,7 +501,6 @@ fn region_chain_from_head(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hierarchy {
     pub body: BodyNode,
-    pub kind: BodyKind,
     pub regions: Vec<RegionNode>,
     pub shells: Vec<ShellNode>,
     /// `(face bridge attr, owning shell attr)` pairs.
@@ -632,7 +631,13 @@ fn parse_body_fields(
     }
     at += 1;
     let _owner = read_ref(bytes, &mut at)?;
-    let body_type = *bytes.get(at)?;
+    let kind = match *bytes.get(at)? {
+        1 => BodyKind::Solid,
+        2 => BodyKind::Wire,
+        3 => BodyKind::Sheet,
+        6 => BodyKind::General,
+        _ => return None,
+    };
     at += 1;
     let _nominal_geometry_state = *bytes.get(at)?;
     at += 1;
@@ -646,16 +651,15 @@ fn parse_body_fields(
         ownership_refs.push(reference);
     }
     valid_resolution(size, linear).then_some(())?;
-    let body = BodyNode {
+    Some(BodyNode {
         attr,
         node_id,
         topology_refs,
         ownership_refs,
-        body_type,
+        kind,
         offset,
         end: at,
-    };
-    body.kind().map(|_| body)
+    })
 }
 
 fn parse_body_layout(bytes: &[u8], offset: usize, payload: usize) -> Option<BodyNode> {
@@ -714,16 +718,13 @@ fn parse_region_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Re
     // A schema edit may retain one additional reference before the semantic
     // kind byte.  It is not part of the ownership tuple, but it must be
     // consumed so the node boundary remains correct.
-    let kind = if bytes
-        .get(at)
-        .is_some_and(|byte| matches!(byte, b'S' | b'V'))
-    {
-        *bytes.get(at)?
+    let kind = if let Some(kind) = bytes.get(at).and_then(|byte| RegionKind::read(*byte)) {
+        kind
     } else {
         read_ref(bytes, &mut at)?;
-        *bytes.get(at)?
+        RegionKind::read(*bytes.get(at)?)?
     };
-    if !matches!(kind, b'S' | b'V') || refs[1] <= 1 {
+    if refs[1] <= 1 {
         return None;
     }
     Some(RegionNode {
@@ -756,8 +757,12 @@ fn parse_face_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Face
     }
     at += 8;
     let refs = read_refs::<5>(bytes, &mut at)?;
-    let sense = *bytes.get(at)?;
-    if !matches!(sense, 0x2b | 0x2d) || refs[3] <= 1 {
+    let sense = match *bytes.get(at)? {
+        0x2b => Sense::Forward,
+        0x2d => Sense::Reversed,
+        _ => return None,
+    };
+    if refs[3] <= 1 {
         return None;
     }
     Some(FaceNode {
@@ -1051,7 +1056,7 @@ mod tests {
         let facts = scan(&bytes);
         assert_eq!(facts.bodies.len(), 1);
         assert_eq!(facts.bodies[0].attr, 3);
-        assert_eq!(facts.bodies[0].kind(), Some(BodyKind::Solid));
+        assert_eq!(facts.bodies[0].kind, BodyKind::Solid);
     }
 
     #[test]
@@ -1059,7 +1064,7 @@ mod tests {
         let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
         bytes.extend(body_node(3, 7, 3));
         let facts = scan(&bytes);
-        assert_eq!(facts.bodies[0].kind(), Some(BodyKind::Sheet));
+        assert_eq!(facts.bodies[0].kind, BodyKind::Sheet);
     }
 
     #[test]
@@ -1068,7 +1073,7 @@ mod tests {
         assert_eq!(facts.bodies.len(), 1);
         assert_eq!(facts.bodies[0].attr, 7);
         assert!(facts.bodies[0].ownership_refs.contains(&48));
-        assert_eq!(facts.bodies[0].kind(), Some(BodyKind::Solid));
+        assert_eq!(facts.bodies[0].kind, BodyKind::Solid);
     }
 
     #[test]
@@ -1147,7 +1152,7 @@ mod tests {
         assert_eq!(facts.bodies[0].topology_refs, [7, 1, 8, 9, 10, 1, 1]);
         assert_eq!(facts.regions.len(), 1);
         assert_eq!(facts.regions[0].refs, [1, 3, 1, 1, 7]);
-        assert_eq!(facts.regions[0].kind, b'V');
+        assert_eq!(facts.regions[0].kind, RegionKind::Void);
     }
 
     #[test]
@@ -1164,7 +1169,7 @@ mod tests {
         assert_eq!(facts.regions.len(), 1);
         assert_eq!(facts.regions[0].attr, 11);
         assert_eq!(facts.regions[0].refs, [1, 3, 45, 1, 51]);
-        assert_eq!(facts.regions[0].kind, b'V');
+        assert_eq!(facts.regions[0].kind, RegionKind::Void);
     }
 
     #[test]
@@ -1193,7 +1198,7 @@ mod tests {
             .hierarchies(&HashSet::from([100]))
             .expect("closed typed hierarchy");
         assert_eq!(hierarchy.len(), 1);
-        assert_eq!(hierarchy[0].kind, BodyKind::Solid);
+        assert_eq!(hierarchy[0].body.kind, BodyKind::Solid);
         assert_eq!(
             hierarchy[0]
                 .regions
@@ -1213,7 +1218,7 @@ mod tests {
                 node_id: 7,
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
-                body_type: 1,
+                kind: BodyKind::Solid,
                 offset: 1,
                 end: 2,
             }],
@@ -1237,7 +1242,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
-                kind: b'S',
+                kind: RegionKind::Solid,
                 offset: 7,
                 end: 8,
             }],
@@ -1246,7 +1251,7 @@ mod tests {
                 node_id: 55,
                 attribute_chain: 1,
                 refs: [1, 1, 1, 8, 12],
-                sense: 0x2b,
+                sense: Sense::Forward,
                 offset: 9,
                 end: 10,
             }],
@@ -1270,7 +1275,7 @@ mod tests {
                     node_id: 7,
                     topology_refs: [8, 1, 1, 1, 1, 1, 1],
                     ownership_refs: vec![41],
-                    body_type: 1,
+                    kind: BodyKind::Solid,
                     offset: 1,
                     end: 2,
                 },
@@ -1279,7 +1284,7 @@ mod tests {
                     node_id: 70,
                     topology_refs: [999, 1, 1, 1, 1, 1, 1],
                     ownership_refs: vec![900],
-                    body_type: 1,
+                    kind: BodyKind::Solid,
                     offset: 3,
                     end: 4,
                 },
@@ -1295,7 +1300,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
-                kind: b'S',
+                kind: RegionKind::Solid,
                 offset: 7,
                 end: 8,
             }],
@@ -1318,7 +1323,7 @@ mod tests {
                 node_id: 7,
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
-                body_type: 1,
+                kind: BodyKind::Solid,
                 offset: 1,
                 end: 2,
             }],
@@ -1333,7 +1338,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
-                kind: b'S',
+                kind: RegionKind::Solid,
                 offset: 5,
                 end: 6,
             }],
@@ -1343,7 +1348,7 @@ mod tests {
                     node_id: 55,
                     attribute_chain: 1,
                     refs: [1, 1, 1, 65_536, 12],
-                    sense: 0x2b,
+                    sense: Sense::Forward,
                     offset: 7,
                     end: 8,
                 },
@@ -1352,7 +1357,7 @@ mod tests {
                     node_id: 56,
                     attribute_chain: 1,
                     refs: [1, 1, 1, 8, 12],
-                    sense: 0x2b,
+                    sense: Sense::Forward,
                     offset: 9,
                     end: 10,
                 },
@@ -1372,7 +1377,7 @@ mod tests {
                 node_id: 7,
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
-                body_type: 1,
+                kind: BodyKind::Solid,
                 offset: 1,
                 end: 2,
             }],
@@ -1396,7 +1401,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
-                kind: b'S',
+                kind: RegionKind::Solid,
                 offset: 7,
                 end: 8,
             }],
@@ -1431,7 +1436,7 @@ mod tests {
                 node_id: 7,
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
-                body_type: 1,
+                kind: BodyKind::Solid,
                 offset: 1,
                 end: 2,
             }],
@@ -1440,7 +1445,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
-                kind: b'S',
+                kind: RegionKind::Solid,
                 offset: 5,
                 end: 6,
             }],
@@ -1458,7 +1463,7 @@ mod tests {
             node_id: 7,
             topology_refs: [7, 1, 1, 1, 10, 1, 1],
             ownership_refs: Vec::new(),
-            body_type: 1,
+            kind: BodyKind::Solid,
             offset: 1,
             end: 2,
         };
@@ -1468,7 +1473,7 @@ mod tests {
                 attr: 35,
                 node_id: 52,
                 refs: [1, 3, 1, 10, 7],
-                kind: b'S',
+                kind: RegionKind::Solid,
                 offset: 3,
                 end: 4,
             },
@@ -1506,7 +1511,7 @@ mod tests {
                 node_id: 7,
                 topology_refs: [1, 1, 1, 1, 1, 1, 1],
                 ownership_refs: Vec::new(),
-                body_type: 2,
+                kind: BodyKind::Wire,
                 offset: 1,
                 end: 2,
             }],
@@ -1516,7 +1521,7 @@ mod tests {
             .hierarchies(&HashSet::new())
             .expect("typed wire hierarchy");
         assert_eq!(hierarchy.len(), 1);
-        assert_eq!(hierarchy[0].kind, BodyKind::Wire);
+        assert_eq!(hierarchy[0].body.kind, BodyKind::Wire);
         assert!(hierarchy[0].regions.is_empty());
         assert!(hierarchy[0].faces.is_empty());
     }
