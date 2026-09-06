@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use crate::chunks::{
-    chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges, ArchiveVersion,
-    BoundedReader, ChecksumStatus, FramingError,
+    ArchiveVersion, BoundedReader, ChecksumStatus, FramingError, chunk_at, direct_checksum_ranges,
+    verify_checksum, verify_checksum_ranges,
 };
 use crate::container::Record;
 use crate::layout::class_uuid_chunk_body as class_uuid_body;
@@ -395,6 +395,8 @@ pub(crate) struct ObjectDescriptor {
 
 /// A scanned object record: framed contents, or a degraded outer range.
 #[derive(Debug, Clone, PartialEq)]
+// Framed records are the common case; retain their descriptors inline during table traversal.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum ObjectRecord {
     /// Bounded inner framing was malformed; only the outer range survived.
     Degraded {
@@ -804,7 +806,7 @@ fn parse_history(
                 return Err(FramingError::structural(
                     item.header_start,
                     "history child is duplicate or out of order",
-                ))
+                ));
             }
         }
         offset = item.next_offset();
@@ -1680,7 +1682,7 @@ pub(crate) fn parse_object_record(
                 return Err(FramingError::structural(
                     item.header_start,
                     "object trailer child is out of order or malformed",
-                ))
+                ));
             }
         }
         offset = item.next_offset();

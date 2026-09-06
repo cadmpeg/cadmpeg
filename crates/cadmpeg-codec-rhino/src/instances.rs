@@ -7,11 +7,11 @@ use std::ops::Range;
 use cadmpeg_ir::transform::Transform;
 
 use crate::chunks::{
-    checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges,
-    ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
+    ArchiveVersion, BoundedReader, ChecksumStatus, FramingError, checked_count_bytes, chunk_at,
+    direct_checksum_ranges, verify_checksum, verify_checksum_ranges,
 };
 use crate::container::{OpaqueRecord, Record};
-use crate::objects::{parse_class_wrapper_with_userdata, UserdataDescriptor};
+use crate::objects::{UserdataDescriptor, parse_class_wrapper_with_userdata};
 use crate::settings::{bbox, utf16};
 use crate::wire::Uuid;
 
@@ -101,7 +101,7 @@ pub(crate) enum LinkSource {
         /// Whether the packed V5 path was the relative slot.
         relative_preferred: bool,
     },
-    /// Structured ON_FileReference payload.
+    /// Structured `ON_FileReference` payload.
     Structured(FileReference),
 }
 
@@ -405,7 +405,7 @@ fn model_component(
             return Err(FramingError::structural(
                 payload.position(),
                 "invalid model serial status",
-            ))
+            ));
         }
     }
     let id = match payload.u8()? {
@@ -415,7 +415,7 @@ fn model_component(
             return Err(FramingError::structural(
                 payload.position(),
                 "invalid model UUID status",
-            ))
+            ));
         }
     };
     match payload.u8()? {
@@ -425,7 +425,7 @@ fn model_component(
             return Err(FramingError::structural(
                 payload.position(),
                 "invalid component type status",
-            ))
+            ));
         }
     }
     let index = match payload.u8()? {
@@ -435,7 +435,7 @@ fn model_component(
             return Err(FramingError::structural(
                 payload.position(),
                 "invalid component index status",
-            ))
+            ));
         }
     };
     let name = match payload.u8()? {
@@ -445,7 +445,7 @@ fn model_component(
             return Err(FramingError::structural(
                 payload.position(),
                 "invalid component name status",
-            ))
+            ));
         }
     };
     finish(&mut payload, "model-component attributes")?;
@@ -818,11 +818,13 @@ fn parse_v6(
             ));
         }
         linked_file = Some(file_reference(data, &mut linked, archive, warnings)?);
-        let mut linked_children = vec![linked_file
-            .as_ref()
-            .expect("file reference assigned")
-            .source_range
-            .clone()];
+        let mut linked_children = vec![
+            linked_file
+                .as_ref()
+                .expect("file reference assigned")
+                .source_range
+                .clone(),
+        ];
         linked_depth = linked.i32()?;
         linked_appearance = linked.u32()?;
         if linked.bool()? {

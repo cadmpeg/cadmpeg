@@ -494,16 +494,18 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
     let mut wrong_hash = fingerprint;
     wrong_hash.face_sha1[0] ^= 1;
     let (bytes, descriptor) = proxy_userdata(&embedded, fingerprint, true);
-    assert!(decode_mesh_proxy(
-        &bytes,
-        &descriptor,
-        ArchiveVersion::V5,
-        1.0,
-        "rhino:test:proxy-subd#0".into(),
-        wrong_hash,
-    )
-    .expect("wrong hash is an admission rejection")
-    .is_none());
+    assert!(
+        decode_mesh_proxy(
+            &bytes,
+            &descriptor,
+            ArchiveVersion::V5,
+            1.0,
+            "rhino:test:proxy-subd#0".into(),
+            wrong_hash,
+        )
+        .expect("wrong hash is an admission rejection")
+        .is_none()
+    );
 
     let empty_parent = MeshProxyFingerprint {
         face_count: 0,
@@ -512,38 +514,57 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
         vertex_sha1: EMPTY_CONTENT_SHA1,
     };
     let (bytes, descriptor) = proxy_userdata(&embedded, empty_parent, true);
-    assert!(decode_mesh_proxy(
-        &bytes,
-        &descriptor,
-        ArchiveVersion::V5,
-        1.0,
-        "rhino:test:proxy-subd#0".into(),
-        empty_parent,
-    )
-    .expect("empty parent is an admission rejection")
-    .is_none());
+    assert!(
+        decode_mesh_proxy(
+            &bytes,
+            &descriptor,
+            ArchiveVersion::V5,
+            1.0,
+            "rhino:test:proxy-subd#0".into(),
+            empty_parent,
+        )
+        .expect("empty parent is an admission rejection")
+        .is_none()
+    );
 
     let (bytes, descriptor) = proxy_userdata(&embedded, fingerprint, false);
-    assert!(decode_mesh_proxy(
-        &bytes,
-        &descriptor,
-        ArchiveVersion::V5,
-        1.0,
-        "rhino:test:proxy-subd#0".into(),
-        fingerprint,
-    )
-    .expect("nonidentity userdata transform is an admission rejection")
-    .is_none());
+    assert!(
+        decode_mesh_proxy(
+            &bytes,
+            &descriptor,
+            ArchiveVersion::V5,
+            1.0,
+            "rhino:test:proxy-subd#0".into(),
+            fingerprint,
+        )
+        .expect("nonidentity userdata transform is an admission rejection")
+        .is_none()
+    );
 }
 
 #[test]
 fn decodes_empty_outer_subd_without_carrier() {
     assert!(matches!(
-        decode(&[0], 0..1, ArchiveVersion::V5, 1.0, "rhino:test:subd#0".into())
-            .expect("required invariant"),
+        decode(
+            &[0],
+            0..1,
+            ArchiveVersion::V5,
+            1.0,
+            "rhino:test:subd#0".into()
+        )
+        .expect("required invariant"),
         DecodedSubd::Empty
     ));
-    assert!(decode(&[2], 0..1, ArchiveVersion::V5, 1.0, "rhino:test:subd#0".into()).is_err());
+    assert!(
+        decode(
+            &[2],
+            0..1,
+            ArchiveVersion::V5,
+            1.0,
+            "rhino:test:subd#0".into()
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -597,14 +618,16 @@ fn decodes_valid_old_and_new_component_bases() {
         ArchiveVersion::V7,
         ArchiveVersion::V8,
     ] {
-        assert!(decode_fixture(
-            Fixture {
-                archive,
-                ..Fixture::default()
-            },
-            1.0
-        )
-        .is_ok());
+        assert!(
+            decode_fixture(
+                Fixture {
+                    archive,
+                    ..Fixture::default()
+                },
+                1.0
+            )
+            .is_ok()
+        );
     }
 }
 
@@ -626,14 +649,16 @@ fn preserves_directed_reversed_face_edge_use() {
 
 #[test]
 fn rejects_open_or_repeated_face_rings() {
-    assert!(decode_fixture(
-        Fixture {
-            open_ring: true,
-            ..Fixture::default()
-        },
-        1.0
-    )
-    .is_err());
+    assert!(
+        decode_fixture(
+            Fixture {
+                open_ring: true,
+                ..Fixture::default()
+            },
+            1.0
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -698,16 +723,18 @@ fn maps_scalar_and_preserves_v8_two_ended_sharpness() {
 
 #[test]
 fn consumes_saved_limit_points_and_future_additions() {
-    assert!(decode_fixture(
-        Fixture {
-            archive: ArchiveVersion::V7,
-            saved_limit_points: true,
-            future_additions: true,
-            ..Fixture::default()
-        },
-        1.0
-    )
-    .is_ok());
+    assert!(
+        decode_fixture(
+            Fixture {
+                archive: ArchiveVersion::V7,
+                saved_limit_points: true,
+                future_additions: true,
+                ..Fixture::default()
+            },
+            1.0
+        )
+        .is_ok()
+    );
 }
 
 #[test]
@@ -752,14 +779,16 @@ fn rejects_noncontiguous_partitions_and_future_versions() {
     let level_partition_offset =
         subd_chunk_header + subd_version_and_header + level_chunk_header + 8 + 2 + 3 + 48;
     bytes[level_partition_offset..level_partition_offset + 4].copy_from_slice(&2_u32.to_le_bytes());
-    assert!(decode(
-        &bytes,
-        0..bytes.len(),
-        ArchiveVersion::V5,
-        1.0,
-        "rhino:test:subd#0".into()
-    )
-    .is_err());
+    assert!(
+        decode(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            1.0,
+            "rhino:test:subd#0".into()
+        )
+        .is_err()
+    );
 
     let mut future = payload(Fixture::default());
     future[(1 + 12)..=16].copy_from_slice(&2_i32.to_le_bytes());
@@ -809,7 +838,7 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
             .annotations
             .exactness()
             .get(&subd.id.to_string())
-            .map(|note| note.entity()),
+            .map(cadmpeg_ir::ExactnessNote::entity),
         Some(cadmpeg_ir::Exactness::Derived)
     );
     assert_eq!(
@@ -862,9 +891,11 @@ fn unknown_subd_symmetry_type_preserves_surface_and_native_source_bytes() {
         .iter()
         .find(|record| record.id().starts_with("rhino:object:record#"))
         .expect("SubD source record is retained");
-    assert!(retained
-        .data()
-        .is_some_and(|data| data.windows(payload.len()).any(|window| window == payload)));
+    assert!(
+        retained
+            .data()
+            .is_some_and(|data| data.windows(payload.len()).any(|window| window == payload))
+    );
 }
 
 #[test]
@@ -896,11 +927,13 @@ fn malformed_subd_is_atomic_and_later_object_recovers() {
             .len(),
         2
     );
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.severity == Severity::Error));
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.severity == Severity::Error)
+    );
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/2 Rhino object records")));

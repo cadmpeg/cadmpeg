@@ -5,15 +5,15 @@ use std::io::{Seek, SeekFrom, Write};
 
 pub(crate) mod target;
 
-use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry, knots_nondecreasing};
 use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
-use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
 use crate::RhinoArchiveVersion;
+use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
 
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 
@@ -126,7 +126,7 @@ pub(crate) fn write_seekable(
             1,
             POINT_CLASS,
             &payload,
-            &point.id.as_str(),
+            point.id.as_str(),
             None,
             None,
             None,
@@ -181,7 +181,7 @@ pub(crate) fn write_seekable(
             4,
             class,
             &payload,
-            &curve.id.as_str(),
+            curve.id.as_str(),
             None,
             None,
             None,
@@ -207,7 +207,7 @@ pub(crate) fn write_seekable(
             8,
             class,
             &payload,
-            &surface.id.as_str(),
+            surface.id.as_str(),
             None,
             None,
             None,
@@ -685,7 +685,7 @@ fn prepare_write(
         } = &curve.geometry
         else {
             if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
-                check_nurbs_curve(&curve.id.as_str(), nurbs)?;
+                check_nurbs_curve(curve.id.as_str(), nurbs)?;
                 continue;
             }
             return Err(CodecError::NotImplemented(format!(
@@ -729,14 +729,14 @@ fn prepare_write(
                 normal,
                 u_axis,
             } => {
-                check_frame(&surface.id.as_str(), *origin, *normal, *u_axis, "plane")?;
+                check_frame(surface.id.as_str(), *origin, *normal, *u_axis, "plane")?;
             }
-            SurfaceGeometry::Nurbs(nurbs) => check_nurbs_surface(&surface.id.as_str(), nurbs)?,
+            SurfaceGeometry::Nurbs(nurbs) => check_nurbs_surface(surface.id.as_str(), nurbs)?,
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "Rhino writer cannot represent surface {} as a native object",
                     surface.id.as_str()
-                )))
+                )));
             }
         }
     }
@@ -754,7 +754,7 @@ fn prepare_write(
         })?;
         brep_records.write_all(&brep_object_record(
             &payload,
-            &body.id.as_str(),
+            body.id.as_str(),
             body.name.as_deref(),
             body.color,
             body.visible,
@@ -960,7 +960,7 @@ fn planar_sheet_brep_payload(
             "planar sheet body placement is not writable".into(),
         ));
     }
-    check_object_attributes(&body.id.as_str(), body.name.as_deref(), body.color)?;
+    check_object_attributes(body.id.as_str(), body.name.as_deref(), body.color)?;
     let region = &model.regions[0];
     let shell = &model.shells[0];
     let face = &model.faces[0];
@@ -1009,14 +1009,14 @@ fn planar_sheet_brep_payload(
             normal,
             u_axis,
         } => {
-            check_frame(&surface.id.as_str(), *origin, *normal, *u_axis, "plane")?;
+            check_frame(surface.id.as_str(), *origin, *normal, *u_axis, "plane")?;
             (
                 Some((*origin, *normal, *u_axis, normal.cross(*u_axis))),
                 None,
             )
         }
         SurfaceGeometry::Nurbs(nurbs) => {
-            check_nurbs_surface(&surface.id.as_str(), nurbs)?;
+            check_nurbs_surface(surface.id.as_str(), nurbs)?;
             if nurbs.u_periodic() || nurbs.v_periodic() {
                 return Err(CodecError::NotImplemented(
                     "rectangular Brep patch surface must be nonperiodic".into(),
@@ -1027,7 +1027,7 @@ fn planar_sheet_brep_payload(
         _ => {
             return Err(CodecError::NotImplemented(
                 "single-face Brep surface is not a plane or NURBS patch".into(),
-            ))
+            ));
         }
     };
 
@@ -1050,8 +1050,7 @@ fn planar_sheet_brep_payload(
             ordered_coedges.push(coedge);
         }
         let end = ordered_coedges.len();
-        for index in start..end {
-            let current = ordered_coedges[index];
+        for current in &ordered_coedges[start..end] {
             if current.radial_next != current.id {
                 return Err(CodecError::malformed(format_args!(
                     "coedge {} ring is inconsistent",
@@ -1425,7 +1424,7 @@ fn multi_face_brep_payload(
             "multi-face planar sheet body placement is not writable".into(),
         ));
     }
-    check_object_attributes(&body.id.as_str(), body.name.as_deref(), body.color)?;
+    check_object_attributes(body.id.as_str(), body.name.as_deref(), body.color)?;
     let region = &model.regions[0];
     let shell = &model.shells[0];
     if region.id != body.regions[0]
@@ -1570,7 +1569,7 @@ fn multi_face_brep_payload(
                 normal,
                 u_axis,
             } => {
-                check_frame(&surface.id.as_str(), *origin, *normal, *u_axis, "plane")?;
+                check_frame(surface.id.as_str(), *origin, *normal, *u_axis, "plane")?;
                 face_surfaces.push(WritableFaceSurface::Plane {
                     origin: *origin,
                     normal: *normal,
@@ -1579,7 +1578,7 @@ fn multi_face_brep_payload(
                 });
             }
             SurfaceGeometry::Nurbs(nurbs) => {
-                check_nurbs_surface(&surface.id.as_str(), nurbs)?;
+                check_nurbs_surface(surface.id.as_str(), nurbs)?;
                 if nurbs.u_periodic() || nurbs.v_periodic() {
                     return Err(CodecError::NotImplemented(format!(
                         "face {} does not have a nonperiodic NURBS surface",
@@ -1592,7 +1591,7 @@ fn multi_face_brep_payload(
                 return Err(CodecError::NotImplemented(format!(
                     "face {} surface is not a plane or NURBS patch",
                     face.id.as_str()
-                )))
+                )));
             }
         }
         for loop_id in &face.loops {
@@ -2188,7 +2187,7 @@ fn validate_planar_edge(
             )
         }
         CurveGeometry::Nurbs(nurbs) => {
-            check_nurbs_curve(&curve.id.as_str(), nurbs)?;
+            check_nurbs_curve(curve.id.as_str(), nurbs)?;
             let count = nurbs.control_points().len();
             let domain = [nurbs.knots()[nurbs.degree() as usize], nurbs.knots()[count]];
             if nurbs.periodic() || domain != [start_parameter, end_parameter] {
@@ -2203,7 +2202,7 @@ fn validate_planar_edge(
             return Err(CodecError::NotImplemented(format!(
                 "edge curve {} is not a line or NURBS curve",
                 curve.id.as_str()
-            )))
+            )));
         }
     };
     let start = vertex_point(model, &edge.start).ok_or_else(|| {
@@ -2318,7 +2317,7 @@ fn generated_projected_brep_c2_curve(
                     .map(|knot| sum - knot)
                     .collect::<Vec<_>>();
                 projected.knots_mut().copy_from_slice(&reversed);
-                canonicalize_native_curve_knots(&mut projected, &curve.id.as_str())?;
+                canonicalize_native_curve_knots(&mut projected, curve.id.as_str())?;
             }
             (
                 NURBS_CURVE_CLASS,
@@ -2445,7 +2444,7 @@ fn explicit_brep_c2_curve(
             .map_err(|error| {
                 CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id.as_str()))
             })?;
-            check_nurbs_curve(&pcurve.id.as_str(), &curve)?;
+            check_nurbs_curve(pcurve.id.as_str(), &curve)?;
             let count = curve.control_points().len();
             if curve.periodic()
                 || [curve.knots()[curve.degree() as usize], curve.knots()[count]] != domain
@@ -2510,7 +2509,7 @@ fn brep_pcurve_fit_tolerance(
         .first()
         .map(|pcurve_use| &pcurve_use.pcurve)
         .and_then(|id| model.pcurves.iter().find(|pcurve| pcurve.id == *id))
-        .and_then(|pcurve| pcurve.fit_tolerance())
+        .and_then(cadmpeg_ir::geometry::Pcurve::fit_tolerance)
         .unwrap_or(0.0)
 }
 
@@ -2576,7 +2575,7 @@ fn validate_nurbs_trim_loop(
                 return Err(CodecError::NotImplemented(format!(
                     "pcurve {} geometry is not writable on a Rhino NURBS face",
                     pcurve.id.as_str()
-                )))
+                )));
             }
         };
         if !control_hull_inside {
@@ -2851,7 +2850,7 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
                     "mesh {} channel kind {:#x} is not writable",
                     mesh.id,
                     channel.kind()
-                )))
+                )));
             }
         };
         if !kinds.insert(channel.kind())
@@ -2896,7 +2895,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                 body.id.as_str()
             )));
         }
-        check_object_attributes(&body.id.as_str(), body.name.as_deref(), body.color)?;
+        check_object_attributes(body.id.as_str(), body.name.as_deref(), body.color)?;
         let region = model
             .regions
             .iter()

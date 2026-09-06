@@ -363,6 +363,8 @@ pub struct ProductNodeRecord {
 
 /// Structural family of a product node.
 #[derive(Debug, Clone, PartialEq)]
+// Keep each native node payload inline; occurrence fields are read together during projection.
+#[allow(clippy::large_enum_variant)]
 pub enum ProductNode {
     /// `App::DocumentObjectGroup`.
     Group(ContainerNode),
@@ -1153,7 +1155,7 @@ impl ExternalDocument {
         attribute: Option<&str>,
     ) -> Result<Option<Self>, String> {
         match (document, attribute) {
-            (None, None) | (None, Some("file")) => Ok(None),
+            (None, None | Some("file")) => Ok(None),
             (Some(path), Some("file")) => NonEmptyString::new(path)
                 .map(Self::File)
                 .map(Some)
@@ -1169,7 +1171,7 @@ impl ExternalDocument {
     }
 }
 
-/// One XLink, PropertyLink, or PropertyLinkSub target.
+/// One `XLink`, `PropertyLink`, or `PropertyLinkSub` target.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "LinkTargetWire", into = "LinkTargetWire")]
 pub struct LinkTarget {
@@ -1225,8 +1227,7 @@ impl From<LinkTarget> for LinkTargetWire {
                 value
                     .object
                     .as_ref()
-                    .map(NonEmptyString::as_str)
-                    .unwrap_or("")
+                    .map_or("", NonEmptyString::as_str)
                     .to_owned(),
             ),
             subelements: value.subelements,

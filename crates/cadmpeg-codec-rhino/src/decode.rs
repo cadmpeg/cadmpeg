@@ -5240,7 +5240,7 @@ fn transform_decoded_curve(
             for (_, child) in children {
                 transform_decoded_curve(child, transform)?;
             }
-            return Ok(());
+            Ok(())
         }
         crate::curves::DecodedCurve::Leaf { geometry, warnings } => {
             let source = std::mem::replace(geometry, CurveGeometry::Unknown { record: None });

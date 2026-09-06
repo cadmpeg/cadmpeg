@@ -1262,9 +1262,9 @@ mod tests {
                 stream_trailer_sha256: cadmpeg_ir::hash::sha256_hex(&[]),
             },
         };
-        let wire = serde_json::to_value(&record).unwrap();
+        let wire = serde_json::to_value(&record).expect("valid test fixture");
         assert_eq!(
-            serde_json::from_value::<SegmentBulkRecord>(wire.clone()).unwrap(),
+            serde_json::from_value::<SegmentBulkRecord>(wire.clone()).expect("valid test fixture"),
             record
         );
         for field in [
@@ -1274,7 +1274,10 @@ mod tests {
             "stream_trailer_sha256",
         ] {
             let mut missing = wire.clone();
-            missing.as_object_mut().unwrap().remove(field);
+            missing
+                .as_object_mut()
+                .expect("valid test fixture")
+                .remove(field);
             assert!(
                 serde_json::from_value::<SegmentBulkRecord>(missing).is_err(),
                 "{field}"
@@ -1294,9 +1297,9 @@ mod tests {
             },
             ..record
         };
-        let mut wire = serde_json::to_value(&unavailable).unwrap();
+        let mut wire = serde_json::to_value(&unavailable).expect("valid test fixture");
         assert_eq!(
-            serde_json::from_value::<SegmentBulkRecord>(wire.clone()).unwrap(),
+            serde_json::from_value::<SegmentBulkRecord>(wire.clone()).expect("valid test fixture"),
             unavailable
         );
         wire["record_count"] = serde_json::json!(1);
@@ -1308,9 +1311,10 @@ mod tests {
         let record = ActiveCarrierRecord::NotApplicable {
             id: "inventor:rse:active-carrier#1".into(),
         };
-        let wire = serde_json::to_value(&record).unwrap();
+        let wire = serde_json::to_value(&record).expect("valid test fixture");
         assert_eq!(
-            serde_json::from_value::<ActiveCarrierRecord>(wire.clone()).unwrap(),
+            serde_json::from_value::<ActiveCarrierRecord>(wire.clone())
+                .expect("valid test fixture"),
             record
         );
         for (field, value) in [
@@ -1330,9 +1334,10 @@ mod tests {
             id: "inventor:rse:active-carrier#1".into(),
             detail: "no selection".into(),
         };
-        let mut wire = serde_json::to_value(&unavailable).unwrap();
+        let mut wire = serde_json::to_value(&unavailable).expect("valid test fixture");
         assert_eq!(
-            serde_json::from_value::<ActiveCarrierRecord>(wire.clone()).unwrap(),
+            serde_json::from_value::<ActiveCarrierRecord>(wire.clone())
+                .expect("valid test fixture"),
             unavailable
         );
         wire["segment_token"] = serde_json::json!("segment");

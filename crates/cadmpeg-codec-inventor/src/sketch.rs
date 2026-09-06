@@ -3,8 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -14,11 +14,11 @@ use cadmpeg_ir::sketches::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::pmdc::{
-    content_header, reference_list, type_id_string, Cursor, PmDcContentHeader, PmDcReference,
-    PmDcReferenceList,
+    Cursor, PmDcContentHeader, PmDcReference, PmDcReferenceList, content_header, reference_list,
+    type_id_string,
 };
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const EPS_SKETCH_LINE_CARRIER_MATCHES_E10: f64 = 1.0e-10;
@@ -111,6 +111,8 @@ pub(crate) struct PmDcConstraintHeader {
     into = "PmDcReferenceScalarMapWire"
 )]
 pub(crate) struct PmDcReferenceScalarMap {
+    // Metadata belongs to the nonempty sequence of reference/value pairs.
+    #[allow(clippy::type_complexity)]
     items: Option<([u32; 2], Vec<(PmDcReference, f64)>)>,
 }
 
@@ -134,8 +136,7 @@ impl PmDcReferenceScalarMap {
     pub(crate) fn entries(&self) -> &[(PmDcReference, f64)] {
         self.items
             .as_ref()
-            .map(|(_, entries)| entries.as_slice())
-            .unwrap_or(&[])
+            .map_or(&[] as &[_], |(_, entries)| entries.as_slice())
     }
 }
 
@@ -169,6 +170,8 @@ impl TryFrom<PmDcReferenceScalarMapWire> for PmDcReferenceScalarMap {
     into = "PmDcReferencePairMapWire"
 )]
 pub(crate) struct PmDcReferencePairMap {
+    // Metadata belongs to the nonempty sequence of ordered reference pairs.
+    #[allow(clippy::type_complexity)]
     items: Option<([u32; 2], Vec<(PmDcReference, PmDcReference)>)>,
 }
 
@@ -195,8 +198,7 @@ impl PmDcReferencePairMap {
     pub(crate) fn entries(&self) -> &[(PmDcReference, PmDcReference)] {
         self.items
             .as_ref()
-            .map(|(_, entries)| entries.as_slice())
-            .unwrap_or(&[])
+            .map_or(&[] as &[_], |(_, entries)| entries.as_slice())
     }
 }
 
@@ -801,7 +803,7 @@ fn parse_direction(source: View<'_>, version: u8) -> Result<PmDcDirection, Codec
         remaining => {
             return Err(CodecError::malformed(format_args!(
                 "Inventor PmDc direction has {remaining} bytes before its vector"
-            )))
+            )));
         }
     };
     let direction = point3(&mut cursor, "direction vector")?;

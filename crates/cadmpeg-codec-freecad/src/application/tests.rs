@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Application-domain census unit tests.
 
-use crate::test_support::*;
 use crate::FcstdCodec;
+use crate::test_support::*;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::fmt::Write as _;
 use std::io::Cursor;
@@ -116,7 +116,7 @@ fn absent_object_data_keeps_the_legacy_empty_wire_without_a_domain_sentinel() {
         type_name: "Vendor::Feature".into(),
         persistent_id: None,
         view_type: None,
-        attributes: Default::default(),
+        attributes: std::collections::BTreeMap::new(),
         dependencies: Vec::new(),
         dependency_allow_partial: None,
         order: 0,

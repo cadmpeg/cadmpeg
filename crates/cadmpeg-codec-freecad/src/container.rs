@@ -455,7 +455,10 @@ pub(crate) fn byte_coverage(
         physical_byte_len,
         physical_span_count: physical.len(),
         logical_entry_count: entries.len(),
-        logical_byte_len: entries.iter().map(|entry| entry.byte_len()).sum(),
+        logical_byte_len: entries
+            .iter()
+            .map(super::native::EntryRecord::byte_len)
+            .sum(),
         logical_span_count: logical.len(),
         classification_bytes,
         named_opaque_entries: named_opaque_entries.into_iter().collect(),

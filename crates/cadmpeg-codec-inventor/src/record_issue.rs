@@ -144,16 +144,23 @@ mod tests {
             if typed {
                 expected["type_id"] = serde_json::json!("0123456789abcdef0123456789abcdef");
             }
-            assert_eq!(serde_json::to_value(&issue).unwrap(), expected);
             assert_eq!(
-                serde_json::from_value::<RecordIssue>(expected.clone()).unwrap(),
+                serde_json::to_value(&issue).expect("valid test fixture"),
+                expected
+            );
+            assert_eq!(
+                serde_json::from_value::<RecordIssue>(expected.clone())
+                    .expect("valid test fixture"),
                 issue
             );
             let mut wrong_location = expected.clone();
             wrong_location["record_ordinal"] = serde_json::json!(8);
             assert!(serde_json::from_value::<RecordIssue>(wrong_location).is_err());
             if typed {
-                expected.as_object_mut().unwrap().remove("type_id");
+                expected
+                    .as_object_mut()
+                    .expect("valid test fixture")
+                    .remove("type_id");
             } else {
                 expected["type_id"] = serde_json::json!("0123456789abcdef0123456789abcdef");
             }

@@ -1676,9 +1676,9 @@ pub(crate) fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, BTreeMap<String, usi
             locations,
             curve2ds,
             curves,
-            surfaces,
             polygons3d,
             polygons_on_triangulations,
+            surfaces,
             triangulations,
             tshapes,
             roots,
@@ -1712,9 +1712,9 @@ pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<ShapeSet, CodecError> 
         let location = match kind {
             1 => {
                 let mut rows = Transform::identity().rows();
-                for row in 0..3 {
-                    for column in 0..4 {
-                        rows[row][column] = cursor.f64("binary location transform")?;
+                for row in rows.iter_mut().take(3) {
+                    for value in row {
+                        *value = cursor.f64("binary location transform")?;
                     }
                 }
                 let transform = Transform::from_rows(rows).ok_or_else(|| {
@@ -3051,9 +3051,9 @@ fn parse_locations(
         let location = match kind {
             1 => {
                 let mut rows = Transform::identity().rows();
-                for row in 0..3 {
-                    for column in 0..4 {
-                        rows[row][column] = cursor.real("location transform value")?;
+                for row in rows.iter_mut().take(3) {
+                    for value in row {
+                        *value = cursor.real("location transform value")?;
                     }
                 }
                 let transform = Transform::from_rows(rows).ok_or_else(|| {

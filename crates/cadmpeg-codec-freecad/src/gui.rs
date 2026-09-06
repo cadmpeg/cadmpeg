@@ -5,8 +5,9 @@ mod schema;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
+use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::AppearanceId;
@@ -16,7 +17,6 @@ use cadmpeg_ir::presentation::{
 };
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Color;
-use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
 use crate::loss::FreecadLossCode;
@@ -345,7 +345,7 @@ fn transfer_schema_one(
                     .bodies
                     .iter()
                     .filter(move |body| {
-                        crate::native::id_key(&body.id.as_str())
+                        crate::native::id_key(body.id.as_str())
                             .starts_with(&format!("{}:", crate::native::id_key(payload)))
                     })
                     .map(|body| body.id.clone())
@@ -790,7 +790,7 @@ fn transfer_edge_appearance(
         .filter(|edge| {
             payload_prefixes
                 .iter()
-                .any(|prefix| crate::native::id_key(&edge.id.as_str()).starts_with(prefix))
+                .any(|prefix| crate::native::id_key(edge.id.as_str()).starts_with(prefix))
         })
         .map(|edge| edge.id.clone())
         .collect::<Vec<_>>();
@@ -844,7 +844,7 @@ fn transfer_vertex_appearance(
         .filter(|vertex| {
             payload_prefixes
                 .iter()
-                .any(|prefix| crate::native::id_key(&vertex.id.as_str()).starts_with(prefix))
+                .any(|prefix| crate::native::id_key(vertex.id.as_str()).starts_with(prefix))
         })
         .map(|vertex| vertex.id.clone())
         .collect::<Vec<_>>();
@@ -3580,7 +3580,7 @@ fn displayed_shape_bodies(
             ir.model
                 .bodies
                 .iter()
-                .filter(move |body| crate::native::id_key(&body.id.as_str()).starts_with(&prefix))
+                .filter(move |body| crate::native::id_key(body.id.as_str()).starts_with(&prefix))
                 .map(|body| body.id.clone())
         })
         .collect())

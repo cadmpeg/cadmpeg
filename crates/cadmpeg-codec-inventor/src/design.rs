@@ -943,8 +943,7 @@ impl ReferenceArray {
     pub(crate) fn references(&self) -> &[PmDcReference] {
         self.items
             .as_ref()
-            .map(|(_, references)| references.as_slice())
-            .unwrap_or(&[])
+            .map_or(&[] as &[_], |(_, references)| references.as_slice())
     }
 }
 
@@ -997,15 +996,16 @@ mod tests {
     #[test]
     fn unit_definition_rejects_detached_reference_metadata() {
         let unit = PmDcUnitKind::Definition {
-            numerators: ReferenceArray::new(Some([3, 7]), vec![reference(1, false)]).unwrap(),
-            denominators: ReferenceArray::new(None, Vec::new()).unwrap(),
+            numerators: ReferenceArray::new(Some([3, 7]), vec![reference(1, false)])
+                .expect("valid test fixture"),
+            denominators: ReferenceArray::new(None, Vec::new()).expect("valid test fixture"),
             visible: true,
             derived: reference(0, false),
         };
-        let wire = serde_json::to_value(&unit).unwrap();
+        let wire = serde_json::to_value(&unit).expect("valid test fixture");
         assert_eq!(wire["numerator_metadata"], serde_json::json!([3, 7]));
         assert_eq!(
-            serde_json::from_value::<PmDcUnitKind>(wire.clone()).unwrap(),
+            serde_json::from_value::<PmDcUnitKind>(wire.clone()).expect("valid test fixture"),
             unit
         );
         let mut missing_metadata = wire.clone();
@@ -1152,7 +1152,7 @@ mod tests {
                 .expect("unit view");
         let unit = parse_unit_definition(&ctx, source, 22).expect("unit definition parses");
         assert!(
-            matches!(unit.kind, PmDcUnitKind::Definition { ref numerators, visible: true, .. } if numerators.references() == &[reference(7, true)])
+            matches!(unit.kind, PmDcUnitKind::Definition { ref numerators, visible: true, .. } if numerators.references() == [reference(7, true)])
         );
     }
 
@@ -1184,8 +1184,9 @@ mod tests {
             header_value: 0,
             header_id: 0,
             kind: PmDcUnitKind::Definition {
-                numerators: ReferenceArray::new(Some([0, 0]), vec![reference(1, false)]).unwrap(),
-                denominators: ReferenceArray::new(None, Vec::new()).unwrap(),
+                numerators: ReferenceArray::new(Some([0, 0]), vec![reference(1, false)])
+                    .expect("valid test fixture"),
+                denominators: ReferenceArray::new(None, Vec::new()).expect("valid test fixture"),
                 visible: true,
                 derived: reference(0, false),
             },

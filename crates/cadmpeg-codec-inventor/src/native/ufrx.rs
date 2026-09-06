@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! UFRx document states and their owned child records.
+//! `UFRx` document states and their owned child records.
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{Deserialize, Serialize, de::Error as _};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+// One document state owns all child arenas; no extra box is needed for the singleton header.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum UfrxRecord {
     Absent {
         id: String,
@@ -460,22 +462,31 @@ mod tests {
             tail_sha256: "0".repeat(64),
         };
         let mut namespace = NativeNamespace::new(NonZeroU32::MIN);
-        record.install(&mut namespace).unwrap();
-        assert_eq!(UfrxRecord::read(&namespace).unwrap(), record);
-        let mut wire = namespace.arena_as::<serde_json::Value>("ufrx").unwrap();
+        record.install(&mut namespace).expect("valid test fixture");
+        assert_eq!(
+            UfrxRecord::read(&namespace).expect("valid test fixture"),
+            record
+        );
+        let mut wire = namespace
+            .arena_as::<serde_json::Value>("ufrx")
+            .expect("valid test fixture");
         assert_eq!(wire[0]["model_state_count"], 1);
         wire[0]["model_state_count"] = serde_json::json!(0);
-        namespace.set_arena("ufrx", &wire).unwrap();
+        namespace
+            .set_arena("ufrx", &wire)
+            .expect("valid test fixture");
         assert!(
             UfrxRecord::read(&namespace)
-                .unwrap_err()
+                .expect_err("invalid test fixture")
                 .to_string()
                 .contains("model_state_count")
         );
         let absent = UfrxRecord::Absent {
             id: "inventor:ufrx:state#root".into(),
         };
-        namespace.set_arena("ufrx", &[absent]).unwrap();
+        namespace
+            .set_arena("ufrx", &[absent])
+            .expect("valid test fixture");
         assert!(UfrxRecord::read(&namespace).is_err());
     }
 
@@ -501,11 +512,18 @@ mod tests {
             },
         ] {
             let mut namespace = NativeNamespace::new(NonZeroU32::MIN);
-            record.install(&mut namespace).unwrap();
-            assert_eq!(UfrxRecord::read(&namespace).unwrap(), record);
-            let mut wire = namespace.arena_as::<serde_json::Value>("ufrx").unwrap();
+            record.install(&mut namespace).expect("valid test fixture");
+            assert_eq!(
+                UfrxRecord::read(&namespace).expect("valid test fixture"),
+                record
+            );
+            let mut wire = namespace
+                .arena_as::<serde_json::Value>("ufrx")
+                .expect("valid test fixture");
             wire[0]["caption"] = serde_json::json!("orphan");
-            namespace.set_arena("ufrx", &wire).unwrap();
+            namespace
+                .set_arena("ufrx", &wire)
+                .expect("valid test fixture");
             assert!(UfrxRecord::read(&namespace).is_err());
         }
     }

@@ -8,9 +8,9 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::chunks::{checked_count_bytes, ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{ArchiveVersion, BoundedReader, FramingError, checked_count_bytes};
 use crate::objects::parse_class_wrapper;
-use crate::settings::{bbox, interval, plane, Point3 as NativePoint3};
+use crate::settings::{Point3 as NativePoint3, bbox, interval, plane};
 use crate::wire::Uuid;
 
 const EPS_CURVE_POSITION: f64 = 1.0e-8;
@@ -489,7 +489,7 @@ pub(crate) fn decode_inner(
             return Err(GeometryError::unsupported(
                 range.start,
                 "unsupported Rhino geometry class",
-            ))
+            ));
         }
     };
     reader.skip_remaining()?;
@@ -654,7 +654,7 @@ fn scale_decoded_curve(
                 return Err(GeometryError::malformed(
                     offset,
                     "unsupported plane-space analytic curve",
-                ))
+                ));
             }
         },
     }
@@ -701,8 +701,7 @@ pub(crate) fn exact_nurbs(
             for (index, (start, child)) in children.iter().enumerate() {
                 let end = children
                     .get(index + 1)
-                    .map(|(next, _)| *next)
-                    .unwrap_or(*end_parameter);
+                    .map_or(*end_parameter, |(next, _)| *next);
                 let target = [*start, end];
                 if !target[0].is_finite() || !target[1].is_finite() || target[0] >= target[1] {
                     return Err(error(offset, "polycurve segment domain is invalid"));
@@ -819,7 +818,7 @@ fn insert_knot_once(
 }
 
 fn elevate_to_degree(
-    curve: NurbsCurve,
+    curve: &NurbsCurve,
     target: usize,
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
@@ -950,7 +949,7 @@ pub(crate) fn join_nurbs_segments(
         return Err(error(offset, "polycurve segment degree must be positive"));
     }
     segments = segments
-        .into_iter()
+        .iter()
         .map(|segment| elevate_to_degree(segment, target, offset))
         .collect::<Result<_, _>>()?;
     if segments.len() == 1 {
@@ -1109,7 +1108,7 @@ pub(crate) fn decode_inner_2d(
             return Err(GeometryError::unsupported(
                 range.start,
                 "unsupported Rhino C2 curve class",
-            ))
+            ));
         }
     };
     reader.skip_remaining()?;

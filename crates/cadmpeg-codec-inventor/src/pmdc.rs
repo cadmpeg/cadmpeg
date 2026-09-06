@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Common `PmDc` scalar, reference, content-header, and typed-list grammar.
 
-use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, View};
 use serde::{Deserialize, Serialize};
 
 pub(crate) fn type_id_string(value: [u8; 16]) -> String {
@@ -86,8 +86,7 @@ impl PmDcReferenceList {
     pub(crate) fn references(&self) -> &[PmDcReference] {
         self.items
             .as_ref()
-            .map(|(_, references)| references.as_slice())
-            .unwrap_or(&[])
+            .map_or(&[] as &[_], |(_, references)| references.as_slice())
     }
 }
 
@@ -146,8 +145,7 @@ impl PmDcU32List {
     pub(crate) fn values(&self) -> &[u32] {
         self.items
             .as_ref()
-            .map(|(_, values)| values.as_slice())
-            .unwrap_or(&[])
+            .map_or(&[] as &[_], |(_, values)| values.as_slice())
     }
 }
 
@@ -177,6 +175,8 @@ impl TryFrom<PmDcU32ListWire> for PmDcU32List {
     }
 }
 
+// The outer option reports a mismatched metadata/list pair; the inner option is an empty list.
+#[allow(clippy::option_option)]
 pub(crate) fn paired_items<M, T>(
     metadata: Option<M>,
     values: Vec<T>,

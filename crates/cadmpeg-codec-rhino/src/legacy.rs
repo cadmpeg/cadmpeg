@@ -3,8 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -24,7 +24,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::unknown::UnknownRecord;
 use serde::Serialize;
 
-use crate::chunks::{chunk_at, parse_header, ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{ArchiveVersion, BoundedReader, FramingError, chunk_at, parse_header};
 use crate::layout::file_header;
 use crate::loss::RhinoLossCode;
 
@@ -806,7 +806,7 @@ fn v1_nurbs_curve_data(
         value => {
             return Err(CodecError::malformed(format_args!(
                 "invalid RhinoIO V1 NURBS curve rational flag {value}"
-            )))
+            )));
         }
     };
     let order = reader.i32().map_err(malformed)?;
@@ -1186,7 +1186,7 @@ fn v1_direct_record(
             return Err(CodecError::malformed(format_args!(
                 "unsupported V1 direct typecode {:#010x}",
                 chunk.typecode
-            )))
+            )));
         }
     };
     Ok(V1DirectRecord {
@@ -1691,7 +1691,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                             trim.pcurve.knots().to_vec(),
                             trim.pcurve
                                 .control_points()
-                                .into_iter()
+                                .iter()
                                 .map(|point| Point2::new(point.x, point.y))
                                 .collect(),
                             trim.pcurve.weights().map(<[f64]>::to_vec),
@@ -1860,7 +1860,7 @@ fn legacy_loop(
         _ => {
             return Err(CodecError::Malformed(
                 "invalid V1 boundary type".to_string(),
-            ))
+            ));
         }
     };
     reader.skip(32).map_err(malformed)?;
@@ -1886,7 +1886,7 @@ fn legacy_face(
         _ => {
             return Err(CodecError::Malformed(
                 "invalid V1 face reversal".to_string(),
-            ))
+            ));
         }
     };
     let _face_type = reader.i32().map_err(malformed)?;
@@ -2969,11 +2969,13 @@ mod tests {
                 .count(),
             3
         );
-        assert!(!result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("ffffffff")));
+        assert!(
+            !result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains("ffffffff"))
+        );
     }
 
     #[test]
@@ -2994,14 +2996,18 @@ mod tests {
         assert_eq!(retained[0].byte_len(), record.len() as u64);
         assert_eq!(retained[0].data(), Some(record.as_slice()));
         assert_eq!(retained[0].stream(), "rhino");
-        assert!(retained[0]
-            .id()
-            .starts_with("rhino:legacy:record#00200004-"));
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code == RhinoLossCode::ObjectFamilyNotTransferred.kind()));
+        assert!(
+            retained[0]
+                .id()
+                .starts_with("rhino:legacy:record#00200004-")
+        );
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == RhinoLossCode::ObjectFamilyNotTransferred.kind())
+        );
     }
 
     #[test]
@@ -3150,12 +3156,14 @@ mod tests {
         );
         assert_eq!(result.ir().model.edges.len(), 4);
         assert_eq!(result.ir().model.curves.len(), 4);
-        assert!(result
-            .ir()
-            .model
-            .edges
-            .iter()
-            .all(|edge| edge.curve.is_some()));
+        assert!(
+            result
+                .ir()
+                .model
+                .edges
+                .iter()
+                .all(|edge| edge.curve.is_some())
+        );
     }
 
     #[test]

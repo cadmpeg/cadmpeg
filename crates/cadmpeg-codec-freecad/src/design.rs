@@ -68,7 +68,7 @@ pub(crate) fn transfer(
                 .get(body.id.as_str())
                 .and_then(|properties| body_membership_property(properties))
                 .into_iter()
-                .flat_map(|property| property.links())
+                .flat_map(PropertyRecord::links)
                 .filter_map(|link| link.object())
                 .map(move |member| (member, feature_id(body)))
         })
@@ -1008,7 +1008,7 @@ fn spreadsheet_dimensions(
                 })?;
             let index = if element == "Column" {
                 CellAddress::parse(&format!("{name}1"))
-                    .map(|address| address.col())
+                    .map(cadmpeg_ir::CellAddress::col)
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!(
                             "{} dimension has invalid column {name}",
@@ -4695,7 +4695,7 @@ fn loft_definition(
     let profiles = property(properties, "Profile")
         .into_iter()
         .chain(property(properties, "Sections"))
-        .flat_map(|property| property.links())
+        .flat_map(PropertyRecord::links)
         .filter_map(|link| link.object())
         .map(|object| {
             sketches
@@ -4757,7 +4757,7 @@ fn sweep_definition(
     let mut profiles = property(properties, "Profile")
         .into_iter()
         .chain(property(properties, "Sections"))
-        .flat_map(|property| property.links())
+        .flat_map(PropertyRecord::links)
         .filter_map(|link| link.object())
         .map(profile_ref)
         .collect::<Vec<_>>();

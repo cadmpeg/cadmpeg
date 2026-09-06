@@ -421,7 +421,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             sketch
                 .auxiliary
                 .iter()
-                .flat_map(|list| list.references())
+                .flat_map(super::pmdc::PmDcReferenceList::references)
                 .map(|reference| reference.index),
         )
         .collect::<Vec<_>>();
@@ -1111,7 +1111,9 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
     );
     unique(
         findings,
-        data.face_native_keys.iter().map(|record| record.id()),
+        data.face_native_keys
+            .iter()
+            .map(cadmpeg_asm::brep::records::FaceNativeKey::id),
         "ASM face-native-key id",
     );
     unique(
@@ -2107,7 +2109,7 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
     );
     projected
         .occurrences
-        .sort_by(|left, right| left.id.as_str().cmp(&right.id.as_str()));
+        .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     if ir.model.occurrences != projected.occurrences {
         findings.push(finding(
             Check::NativeLinks,

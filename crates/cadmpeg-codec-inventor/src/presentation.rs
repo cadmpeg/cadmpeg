@@ -3,15 +3,15 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, BodyId, FaceId};
 use cadmpeg_ir::topology::Color;
 
-use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::pmdc::PmDcReference;
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const DEFAULT_STYLE_TYPE: [u8; 16] = [
@@ -440,12 +440,12 @@ pub(crate) fn inventory<'a>(
                 }
                 GRAPHICS_STYLE_COLLECTION_TYPE if segment.kind == SegmentKind::PmGraphics => {
                     parse_graphics_style_collection(ctx, record.payload, version).map(|value| {
-                        graphics_style_collections.push(Located::at(token, ordinal, value))
+                        graphics_style_collections.push(Located::at(token, ordinal, value));
                     })
                 }
                 GRAPHICS_PRIMARY_COLOR_STYLE_TYPE if segment.kind == SegmentKind::PmGraphics => {
                     parse_graphics_primary_color_style(record.payload, version).map(|value| {
-                        graphics_primary_color_styles.push(Located::at(token, ordinal, value))
+                        graphics_primary_color_styles.push(Located::at(token, ordinal, value));
                     })
                 }
                 _ => continue,
@@ -787,11 +787,7 @@ fn parse_rendering_style<'a>(
 }
 
 const fn legacy_block_len(version: u8) -> usize {
-    if version <= 14 {
-        4
-    } else {
-        0
-    }
+    if version <= 14 { 4 } else { 0 }
 }
 
 struct Cursor<'a> {

@@ -40,6 +40,8 @@ pub struct JointRecord {
 
 /// Joint payload discriminated by grounded vs paired connectors.
 #[derive(Debug, Clone, PartialEq)]
+// Paired connector arrays stay inline and preserve their fixed cardinality without allocation.
+#[allow(clippy::large_enum_variant)]
 pub enum JointBody {
     /// Object-to-ground constraint.
     Grounded {

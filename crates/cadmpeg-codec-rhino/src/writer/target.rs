@@ -4,8 +4,8 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite, WritePath};
 
-use crate::loss::RhinoLossCode;
 use crate::RhinoArchiveVersion;
+use crate::loss::RhinoLossCode;
 
 /// Why this writer cannot reproduce a source archive version outside
 /// [`RhinoArchiveVersion::TARGETS`].
@@ -13,8 +13,7 @@ use crate::RhinoArchiveVersion;
 /// Archives 1, 2, 3, 4, 5 and 90 decode without a writer, unknown words decode
 /// as residual, and 3DM has no retained-image path that could write any of
 /// them back.
-const OFF_CATALOG_SOURCE_REASON: &str =
-    "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
+const OFF_CATALOG_SOURCE_REASON: &str = "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
      path that could preserve it";
 
 /// Synthesize the resolved archive version.
@@ -38,7 +37,7 @@ pub(crate) fn plan(
             .model
             .tessellations
             .iter()
-            .flat_map(|mesh| mesh.vertices())
+            .flat_map(cadmpeg_ir::tessellation::Tessellation::vertices)
             .any(|point| {
                 f64::from(point.x as f32) != point.x
                     || f64::from(point.y as f32) != point.y
@@ -49,7 +48,7 @@ pub(crate) fn plan(
         .model
         .tessellations
         .iter()
-        .flat_map(|mesh| mesh.normals())
+        .flat_map(cadmpeg_ir::tessellation::Tessellation::normals)
         .any(|normal| {
             f64::from(normal.x as f32) != normal.x
                 || f64::from(normal.y as f32) != normal.y

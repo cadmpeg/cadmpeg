@@ -436,10 +436,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                         active_model_state_state: state.active_model_state_state,
                     }
                 }),
-                model_states: model_states,
+                model_states,
                 external_references: references,
                 embedded_references: embedded,
-                occurrences: occurrences,
+                occurrences,
                 tail_len: document.unparsed_tail.window().len() as u64,
                 tail_sha256: sha256_hex(document.unparsed_tail.window()),
             }
@@ -995,8 +995,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         })
         .collect::<Vec<_>>();
     let assembly_projection = crate::assembly::project_occurrences(
-        &ufrx_occurrences,
-        &external_references,
+        ufrx_occurrences,
+        external_references,
         &assembly_occurrences,
         &assembly_placements,
     );

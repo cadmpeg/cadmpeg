@@ -2,7 +2,7 @@
 //! Protein state and its owned package entries on the native wire.
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
-use serde::{de::Error as _, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Error as _};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProteinRecord {
@@ -214,7 +214,7 @@ mod tests {
         let record = ProteinRecord::Package {
             id: "inventor:protein:state#root".into(),
             directory_id: 3,
-            declared_len: NonZeroU32::new(128).unwrap(),
+            declared_len: NonZeroU32::new(128).expect("valid test fixture"),
             entries: vec![ProteinEntryRecord {
                 id: "inventor:protein:entry#0".into(),
                 ordinal: 0,
@@ -226,20 +226,31 @@ mod tests {
             }],
         };
         let mut namespace = NativeNamespace::new(NonZeroU32::MIN);
-        record.install(&mut namespace).unwrap();
-        let mut wire = namespace.arena_as::<serde_json::Value>("protein").unwrap();
+        record.install(&mut namespace).expect("valid test fixture");
+        let mut wire = namespace
+            .arena_as::<serde_json::Value>("protein")
+            .expect("valid test fixture");
         assert_eq!(wire[0]["entry_count"], 1);
-        assert_eq!(ProteinRecord::read(&namespace).unwrap(), record);
+        assert_eq!(
+            ProteinRecord::read(&namespace).expect("valid test fixture"),
+            record
+        );
         wire[0]["entry_count"] = serde_json::json!(0);
-        namespace.set_arena("protein", &wire).unwrap();
-        assert!(ProteinRecord::read(&namespace)
-            .unwrap_err()
-            .to_string()
-            .contains("entry_count"));
+        namespace
+            .set_arena("protein", &wire)
+            .expect("valid test fixture");
+        assert!(
+            ProteinRecord::read(&namespace)
+                .expect_err("invalid test fixture")
+                .to_string()
+                .contains("entry_count")
+        );
         let absent = ProteinRecord::Absent {
             id: "inventor:protein:state#root".into(),
         };
-        namespace.set_arena("protein", &[absent]).unwrap();
+        namespace
+            .set_arena("protein", &[absent])
+            .expect("valid test fixture");
         assert!(ProteinRecord::read(&namespace).is_err());
     }
 
@@ -260,9 +271,12 @@ mod tests {
             },
         ] {
             let mut namespace = NativeNamespace::new(NonZeroU32::MIN);
-            record.install(&mut namespace).unwrap();
+            record.install(&mut namespace).expect("valid test fixture");
             assert!(record.entries().is_empty());
-            assert_eq!(ProteinRecord::read(&namespace).unwrap(), record);
+            assert_eq!(
+                ProteinRecord::read(&namespace).expect("valid test fixture"),
+                record
+            );
         }
     }
 }
