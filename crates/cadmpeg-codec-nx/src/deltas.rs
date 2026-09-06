@@ -2858,7 +2858,7 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
                 .into_iter()
                 .chain(record.trailing_references.into_values())
                 .collect();
-            (record.xmt, record.byte_len, references)
+            (record.xmt.into(), record.byte_len, references)
         }
         82..=89 | 98 => {
             let (parsed_kind, xmt, byte_len) =

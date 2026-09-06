@@ -68,8 +68,8 @@ fn parasolid_entity_51_records_retain_layout_selected_references() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].offset, 0);
     assert_eq!(records[0].byte_len, 26);
-    assert_eq!(records[0].xmt, 10);
-    assert_eq!(records[0].sequence, 2);
+    assert_eq!(u32::from(records[0].xmt), 10);
+    assert_eq!(records[0].sequence.get(), 2);
     assert_eq!(records[0].definition_xmt, 0x21);
     assert_eq!(records[0].leading_references, [3, 4, 5, 6, 7]);
     assert_eq!(records[0].trailing_references.values(), [8]);

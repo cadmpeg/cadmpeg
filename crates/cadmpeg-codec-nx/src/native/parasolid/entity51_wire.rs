@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Entity 51 wire counts are derived from the bounded reference collection.
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroU32;
+use crate::framing::xmt_reference::NonNullXmt;
 use super::ParasolidEntity51Record;
 use crate::parasolid::entity_references::EntityReferences;
 
@@ -20,9 +22,9 @@ pub(super) struct Entity51Wire {
 impl From<ParasolidEntity51Record> for Entity51Wire {
     fn from(value: ParasolidEntity51Record) -> Self {
         Self {
-            id: value.id, stream_ordinal: value.stream_ordinal, xmt: value.xmt,
+            id: value.id, stream_ordinal: value.stream_ordinal, xmt: value.xmt.into(),
             flags: value.trailing_references.values().len() as u32,
-            sequence: value.sequence, definition_xmt: value.definition_xmt,
+            sequence: value.sequence.get(), definition_xmt: value.definition_xmt,
             leading_references: value.leading_references,
             trailing_references: value.trailing_references.into_values(),
             byte_len: value.byte_len, inflated_offset: value.inflated_offset,
@@ -37,8 +39,8 @@ impl TryFrom<Entity51Wire> for ParasolidEntity51Record {
             return Err("flags: must equal trailing_references length");
         }
         Ok(Self {
-            id: wire.id, stream_ordinal: wire.stream_ordinal, xmt: wire.xmt,
-            sequence: wire.sequence, definition_xmt: wire.definition_xmt,
+            id: wire.id, stream_ordinal: wire.stream_ordinal, xmt: NonNullXmt::try_from(wire.xmt).map_err(|_| "xmt must exceed one")?,
+            sequence: NonZeroU32::new(wire.sequence).ok_or("sequence must be nonzero")?, definition_xmt: wire.definition_xmt,
             leading_references: wire.leading_references, trailing_references,
             byte_len: wire.byte_len, inflated_offset: wire.inflated_offset,
         })
@@ -54,6 +56,12 @@ mod tests {
         let json = r#"{"id":"entity","stream_ordinal":0,"xmt":50,"flags":2,"sequence":7,"definition_xmt":34,"leading_references":[60,61,70,71,72],"trailing_references":[70,71],"byte_len":28,"inflated_offset":200}"#;
         let record: ParasolidEntity51Record = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        for (field, invalid) in [("xmt", 0), ("xmt", 1), ("sequence", 0)] {
+            let mut wire = serde_json::to_value(&record).unwrap();
+            wire[field] = invalid.into();
+            let error = serde_json::from_value::<ParasolidEntity51Record>(wire).unwrap_err();
+            assert!(error.to_string().contains(field));
+        }
         let mut wire = serde_json::to_value(&record).unwrap();
         wire["flags"] = 1.into();
         assert!(serde_json::from_value::<ParasolidEntity51Record>(wire).unwrap_err().to_string().contains("flags"));

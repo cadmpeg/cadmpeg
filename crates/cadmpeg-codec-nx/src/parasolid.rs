@@ -178,9 +178,9 @@ pub struct Entity51Record {
     /// Exact framed record length.
     pub byte_len: usize,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Serialized sequence value.
-    pub sequence: u32,
+    pub sequence: NonZeroU32,
     /// Stream-local type-80 attribute-definition identity.
     pub definition_xmt: u32,
     /// Five fixed leading stream-local references.
@@ -418,7 +418,7 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
     let mut referenced = BTreeSet::new();
     let mut entities = BTreeMap::<u32, Vec<Entity51Record>>::new();
     for record in entity_51_records(bytes) {
-        entities.entry(record.xmt).or_default().push(record);
+        entities.entry(u32::from(record.xmt)).or_default().push(record);
     }
     for records in entities.into_values() {
         if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {
@@ -962,8 +962,8 @@ pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity5
 struct Entity51Frame {
     offset: usize,
     end: usize,
-    xmt: u32,
-    sequence: u32,
+    xmt: NonNullXmt,
+    sequence: NonZeroU32,
     definition_xmt: u32,
     references_at: usize,
     reference_count: usize,
@@ -988,11 +988,11 @@ fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
     }
     let flags = View::u32_be_at(bytes, at)?;
     at += 4;
-    let xmt = read_xmt(bytes, &mut at)?;
-    let sequence = View::u32_be_at(bytes, at)?;
+    let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
+    let sequence = NonZeroU32::new(View::u32_be_at(bytes, at)?)?;
     at += 4;
     let definition_xmt = read_xmt(bytes, &mut at)?;
-    (xmt > 1 && sequence != 0 && (1..=0x20).contains(&flags)).then_some(())?;
+    (1..=0x20).contains(&flags).then_some(())?;
     let reference_count = usize::try_from(flags).ok()?.checked_add(5)?;
     let references_at = at;
     let (end, shared_terminal) = entity_51_reference_end(bytes, &mut at, reference_count)?;

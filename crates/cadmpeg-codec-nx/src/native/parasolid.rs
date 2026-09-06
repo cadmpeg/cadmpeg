@@ -1843,9 +1843,9 @@ pub struct ParasolidEntity51Record {
     /// Zero-based inflated Parasolid stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Serialized sequence value.
-    pub sequence: u32,
+    pub sequence: NonZeroU32,
     /// Stream-local type-80 attribute-definition identity.
     pub definition_xmt: u32,
     /// Five fixed leading stream-local references.
@@ -2402,7 +2402,7 @@ pub(crate) fn parasolid_topology_attribute_list_references(
     let mut records_by_identity = BTreeMap::<(u32, u32), Vec<&str>>::new();
     for record in entity_records {
         records_by_identity
-            .entry((record.stream_ordinal, record.xmt))
+            .entry((record.stream_ordinal, u32::from(record.xmt)))
             .or_default()
             .push(record.id.as_str());
     }
@@ -2462,7 +2462,7 @@ pub fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51R
                 .map(move |record| ParasolidEntity51Record {
                     id: format!(
                         "nx:s{stream_ordinal}:entity-51#{}-{}",
-                        record.xmt, record.offset
+                        u32::from(record.xmt), record.offset
                     ),
                     stream_ordinal: stream_ordinal as u32,
                     xmt: record.xmt,
@@ -2692,7 +2692,7 @@ pub fn parasolid_entity_51_numeric_uses(
             uses.push(ParasolidEntity51NumericUse {
                 id: format!(
                     "nx:s{}:entity-51-numeric-use#{}-{}-{reference_ordinal}",
-                    entity.stream_ordinal, entity.xmt, entity.inflated_offset
+                    entity.stream_ordinal, u32::from(entity.xmt), entity.inflated_offset
                 ),
                 stream_ordinal: entity.stream_ordinal,
                 entity_51_record: entity.id.clone(),
@@ -2735,7 +2735,7 @@ pub fn parasolid_entity_51_string_uses(
             uses.push(ParasolidEntity51StringUse {
                 id: format!(
                     "nx:s{}:entity-51-string-use#{}-{}-{reference_ordinal}",
-                    entity.stream_ordinal, entity.xmt, entity.inflated_offset
+                    entity.stream_ordinal, u32::from(entity.xmt), entity.inflated_offset
                 ),
                 stream_ordinal: entity.stream_ordinal,
                 entity_51_record: entity.id.clone(),
@@ -2817,7 +2817,7 @@ pub fn parasolid_entity_51_structured_uses(
             uses.push(ParasolidEntity51StructuredUse {
                 id: format!(
                     "nx:s{}:entity-51-structured-use#{}-{}-{reference_ordinal}",
-                    entity.stream_ordinal, entity.xmt, entity.inflated_offset
+                    entity.stream_ordinal, u32::from(entity.xmt), entity.inflated_offset
                 ),
                 stream_ordinal: entity.stream_ordinal,
                 entity_51_record: entity.id.clone(),
@@ -2842,7 +2842,7 @@ pub fn parasolid_topology_attribute_class_uses(
     let mut records_by_identity = BTreeMap::<(u32, u32), Vec<&ParasolidEntity51Record>>::new();
     for record in entity_records {
         records_by_identity
-            .entry((record.stream_ordinal, record.xmt))
+            .entry((record.stream_ordinal, u32::from(record.xmt)))
             .or_default()
             .push(record);
     }
@@ -2890,7 +2890,7 @@ pub fn parasolid_topology_attribute_class_uses(
         );
         let mut member_xmt_counts = BTreeMap::<u32, usize>::new();
         for member in members {
-            *member_xmt_counts.entry(member.xmt).or_default() += 1;
+            *member_xmt_counts.entry(u32::from(member.xmt)).or_default() += 1;
         }
         for member in members {
             let Some([class_use]) = class_uses_by_entity
@@ -2901,10 +2901,10 @@ pub fn parasolid_topology_attribute_class_uses(
             };
             let id = if member.id == head.id {
                 base_id.clone()
-            } else if member_xmt_counts.get(&member.xmt) == Some(&1) {
-                format!("{base_id}-{}", member.xmt)
+            } else if member_xmt_counts.get(&u32::from(member.xmt)) == Some(&1) {
+                format!("{base_id}-{}", u32::from(member.xmt))
             } else {
-                format!("{base_id}-{}-{}", member.xmt, member.inflated_offset)
+                format!("{base_id}-{}-{}", u32::from(member.xmt), member.inflated_offset)
             };
             uses.push(ParasolidTopologyAttributeClassUse {
                 id,
@@ -2946,7 +2946,7 @@ pub fn parasolid_attribute_class_uses(
             Some(ParasolidAttributeClassUse {
                 id: format!(
                     "nx:s{}:attribute-class-use#{}-{}",
-                    entity.stream_ordinal, entity.xmt, entity.inflated_offset
+                    entity.stream_ordinal, u32::from(entity.xmt), entity.inflated_offset
                 ),
                 stream_ordinal: entity.stream_ordinal,
                 entity_51_record: entity.id.clone(),
@@ -4024,8 +4024,8 @@ mod tests {
         let entity = ParasolidEntity51Record {
             id: "entity".into(),
             stream_ordinal: 2,
-            xmt: 10,
-            sequence: 0,
+            xmt: NonNullXmt::try_from(10).unwrap(),
+            sequence: NonZeroU32::new(1).unwrap(),
             definition_xmt: 9,
             leading_references: [1; 5],
             trailing_references: EntityReferences::new(vec![12]).unwrap(),
@@ -4169,8 +4169,8 @@ mod tests {
         let entity = ParasolidEntity51Record {
             id: "entity".into(),
             stream_ordinal: 0,
-            xmt: 30,
-            sequence: 0,
+            xmt: NonNullXmt::try_from(30).unwrap(),
+            sequence: NonZeroU32::new(1).unwrap(),
             definition_xmt: 20,
             leading_references: [1; 5],
             trailing_references: EntityReferences::new(vec![40]).unwrap(),
@@ -4201,7 +4201,7 @@ mod tests {
             stream_ordinal: 0,
             topology_type: TopologyAttributeKind::Face,
             topology_xmt: 50,
-            attribute_list_xmt: entity.xmt,
+            attribute_list_xmt: entity.xmt.into(),
             attribute_list_record: Some(entity.id.clone()),
             inflated_offset: 28,
         };
@@ -4554,8 +4554,8 @@ mod tests {
         let entity = ParasolidEntity51Record {
             id: "entity".into(),
             stream_ordinal: 3,
-            xmt: 50,
-            sequence: 7,
+            xmt: NonNullXmt::try_from(50).unwrap(),
+            sequence: NonZeroU32::new(7).unwrap(),
             definition_xmt: 34,
             leading_references: [60, 61, 1, 62, 63],
             trailing_references: EntityReferences::new(vec![64]).unwrap(),
@@ -4633,8 +4633,8 @@ mod tests {
         let head = ParasolidEntity51Record {
             id: "head".into(),
             stream_ordinal: 0,
-            xmt: 30,
-            sequence: 1,
+            xmt: NonNullXmt::try_from(30).unwrap(),
+            sequence: NonZeroU32::new(1).unwrap(),
             definition_xmt: 20,
             leading_references: [40, 1, 1, 1, 1],
             trailing_references: EntityReferences::new(vec![50]).unwrap(),
@@ -4643,8 +4643,8 @@ mod tests {
         };
         let child = ParasolidEntity51Record {
             id: "child".into(),
-            xmt: 31,
-            sequence: 2,
+            xmt: NonNullXmt::try_from(31).unwrap(),
+            sequence: NonZeroU32::new(2).unwrap(),
             leading_references: [40, 1, 999, 1, 1],
             inflated_offset: 60,
             ..head.clone()
@@ -4684,8 +4684,8 @@ mod tests {
         let entity = ParasolidEntity51Record {
             id: "entity".into(),
             stream_ordinal: 3,
-            xmt: 50,
-            sequence: 7,
+            xmt: NonNullXmt::try_from(50).unwrap(),
+            sequence: NonZeroU32::new(7).unwrap(),
             definition_xmt: 34,
             leading_references: [60, 61, 70, 71, 72],
             trailing_references: EntityReferences::new(vec![70, 71]).unwrap(),
