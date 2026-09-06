@@ -26,6 +26,7 @@ pub(crate) mod sketch_references;
 use header_references::{HeaderReferences, OperationHeader};
 use operation_record::{OperationBodyInput, OperationPayload, OperationRecord};
 use sketch_references::SketchReferenceField;
+pub(crate) mod block_construction;
 pub(crate) mod body_write;
 pub(crate) mod common_frame;
 pub(crate) mod direct_reference;
@@ -1007,15 +1008,6 @@ pub struct ExtrudePayload32Branch {
     pub second_indices: Vec<LocatedCompactIndex>,
     /// Exact required terminal reference and its absolute source offset.
     pub terminal: PayloadObjectReference,
-}
-
-/// Ordered construction-reference field at the start of a `BLOCK` payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BlockConstructionReferenceField {
-    /// Payload control byte preceding the field framing.
-    pub control: u8,
-    /// Eighteen leading references followed by the terminal reference.
-    pub references: [PayloadObjectReference; 19],
 }
 
 /// Self-framed NX parameter name in one bounded expression declaration record.
@@ -2701,47 +2693,6 @@ pub fn extrude_payload_32_branch(record: OperationBodyInput<'_>) -> Option<Extru
             token: terminal_token,
             offset: record.offset() + at + 2,
         },
-    })
-}
-
-/// Decode the ordered construction-reference field at the start of a `BLOCK` payload.
-pub fn block_construction_references(
-    record: OperationPayload<'_>,
-) -> Option<BlockConstructionReferenceField> {
-    const TRAILER: [u8; 15] = [
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
-    ];
-    if record.name() != "BLOCK"
-        || record.payload().get(1..6) != Some(&[0x00, 0x00, 0x01, 0x00, 0x00])
-    {
-        return None;
-    }
-    let mut at = 6usize;
-    let mut references = Vec::with_capacity(19);
-    for _ in 0..18 {
-        let (object_index, width) = payload_object_index(record.payload().get(at..)?)?;
-        references.push(PayloadObjectReference {
-            offset: record.payload_offset() + at,
-            token: object_index,
-        });
-        at += width;
-    }
-    if record.payload().get(at) != Some(&0x01) {
-        return None;
-    }
-    at += 1;
-    let (object_index, width) = payload_object_index(record.payload().get(at..)?)?;
-    references.push(PayloadObjectReference {
-        offset: record.payload_offset() + at,
-        token: object_index,
-    });
-    at += width;
-    if record.payload().get(at..at + TRAILER.len()) != Some(&TRAILER) {
-        return None;
-    }
-    Some(BlockConstructionReferenceField {
-        control: record.payload()[0],
-        references: references.try_into().ok()?,
     })
 }
 

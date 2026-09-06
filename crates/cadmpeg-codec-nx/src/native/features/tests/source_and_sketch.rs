@@ -1257,9 +1257,9 @@ fn nx_block_construction_requires_complete_resolved_reference_field() {
                     ordinal,
                 )
                 .unwrap(),
-                token: crate::om::reference_index::ReferenceIndexToken::from_wire(
+                token: crate::om::reference_index::PayloadIndexToken::from_wire(
                     ordinal + 100,
-                    &[(ordinal + 100) as u8],
+                    &[0xf0, (ordinal + 100) as u8],
                 )
                 .unwrap(),
                 data_block: Some(format!("block#{ordinal}")),

@@ -17,7 +17,7 @@ pub(crate) struct FeatureBlockConstructionReference {
     pub position: BlockReferencePosition,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: crate::om::reference_index::ReferenceIndexToken,
+    pub token: crate::om::reference_index::PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -112,6 +112,8 @@ mod tests {
                 );
             }
         }
+        let invalid = r#"{"id":"reference","operation_label":"block-op","control":38,"ordinal":0,"terminal":false,"object_index":66,"raw_object_index":[66],"source_offset":100}"#;
+        assert!(serde_json::from_str::<FeatureBlockConstructionReference>(invalid).is_err());
         for ordinal in [19, u32::MAX] {
             let wire = serde_json::json!({"ordinal":ordinal,"terminal":false});
             assert!(serde_json::from_value::<BlockReferencePosition>(wire)

@@ -8009,23 +8009,25 @@ pub fn feature_block_construction_references(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(field) = crate::om::block_construction_references(record.payload_view())
+            let Some(field) =
+                crate::om::block_construction::block_construction_references(record.payload_view())
+                    .and_then(|field| field.relocate(entry_offset))
             else {
                 return;
             };
-            references.extend(BlockReferencePosition::enumerate(field.references).map(
-                |(position, reference)| FeatureBlockConstructionReference {
+            references.extend(BlockReferencePosition::enumerate(field.references()).map(
+                |(position, (token, source_offset))| FeatureBlockConstructionReference {
                     id: format!(
                         "nx:feature-history:block-construction-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}", ordinal = position.ordinal()
                     ),
                     operation_label: format!(
                         "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                     ),
-                    control: field.control,
+                    control: field.control(),
                     position,
-                    token: reference.token,
-                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
-                    source_offset: entry_offset + reference.offset as u64,
+                    token,
+                    data_block: unique_offset_data_block(&indexed, token.value()),
+                    source_offset,
                 },
             ));
         },

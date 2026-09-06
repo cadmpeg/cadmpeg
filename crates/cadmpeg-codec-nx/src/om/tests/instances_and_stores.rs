@@ -1404,29 +1404,28 @@ fn om_block_construction_field_decodes_ordered_canonical_references() {
     payload.extend([0xff; 11]);
     payload.extend([0; 4]);
     let record = crate::om::operation_record::OperationPayload::new(&payload, 200, label).unwrap();
-    let field = super::block_construction_references(record).unwrap();
-    assert_eq!(field.control, 0x26);
-    assert_eq!(field.references.len(), 19);
-    assert_eq!(field.references[0].token.value(), 1);
-    assert_eq!(field.references[0].token.raw().to_vec(), [0xf0, 0x01]);
-    assert_eq!(field.references[18].token.value(), 256);
-    assert_eq!(
-        field.references[18].token.raw().to_vec(),
-        [0xf1, 0x01, 0x00]
-    );
-    assert_eq!(field.references[0].offset, 206);
+    let field = crate::om::block_construction::block_construction_references(record).unwrap();
+    assert_eq!(field.control(), 0x26);
+    assert_eq!(field.references().len(), 19);
+    assert_eq!(field.references()[0].0.value(), 1);
+    assert_eq!(field.references()[0].0.raw().to_vec(), [0xf0, 0x01]);
+    assert_eq!(field.references()[18].0.value(), 256);
+    assert_eq!(field.references()[18].0.raw().to_vec(), [0xf1, 0x01, 0x00]);
+    assert_eq!(field.references()[0].1, 206);
 
     let mut invalid = payload.clone();
     invalid[42] = 0xf0;
-    assert!(super::block_construction_references(
-        crate::om::operation_record::OperationPayload::new(
-            &invalid,
-            record.payload_offset(),
-            record.name()
+    assert!(
+        crate::om::block_construction::block_construction_references(
+            crate::om::operation_record::OperationPayload::new(
+                &invalid,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
         )
-        .unwrap()
-    )
-    .is_none());
+        .is_none()
+    );
 }
 
 #[test]
