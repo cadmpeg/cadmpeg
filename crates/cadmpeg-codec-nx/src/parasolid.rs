@@ -35,6 +35,8 @@ pub(crate) mod printable_string;
 use printable_string::PrintableString;
 
 pub(crate) mod entity_references;
+pub(crate) mod name_references;
+use name_references::NameReferences;
 use entity_references::EntityReferences;
 
 use crate::container::Container;
@@ -202,9 +204,9 @@ pub struct FieldNamesRecord {
     /// Exact framed record length.
     pub byte_len: usize,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Ordered stream-local character or Unicode value references.
-    pub name_xmts: Vec<u32>,
+    pub name_xmts: NameReferences,
 }
 
 /// Locate unique snapshot values owned by typed attribute relations.
@@ -255,7 +257,7 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
 
     let mut field_name_lists = BTreeMap::<u32, Vec<FieldNamesRecord>>::new();
     for record in field_names_records(bytes) {
-        field_name_lists.entry(record.xmt).or_default().push(record);
+        field_name_lists.entry(u32::from(record.xmt)).or_default().push(record);
     }
     let mut definitions = BTreeMap::<u32, Vec<AttributeDefinition<'_>>>::new();
     for definition in attribute_definitions(bytes) {
@@ -282,7 +284,7 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
             continue;
         }
         for record in records {
-            referenced.extend(record.name_xmts);
+            referenced.extend(record.name_xmts.as_slice().iter().copied().map(u32::from));
         }
     }
     referenced
@@ -293,13 +295,9 @@ pub fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
     let mut records = Vec::new();
     let mut offset = 0;
     while offset < bytes.len() {
-        let Some(frame) = field_names_frame_at(bytes, offset) else {
-            offset += 1;
-            continue;
-        };
-        if let Some(record) = field_names_record_from_frame(bytes, frame) {
+        if let Some(record) = field_names_record_at(bytes, offset) {
+            offset += record.byte_len;
             records.push(record);
-            offset = frame.end;
         } else {
             offset += 1;
         }
@@ -307,54 +305,23 @@ pub fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
     records
 }
 
-#[cfg(test)]
 pub(crate) fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<FieldNamesRecord> {
-    let frame = field_names_frame_at(bytes, offset)?;
-    field_names_record_from_frame(bytes, frame)
-}
-
-#[derive(Clone, Copy)]
-struct FieldNamesFrame {
-    offset: usize,
-    end: usize,
-    xmt: u32,
-    count: usize,
-    names_at: usize,
-}
-
-fn field_names_frame_at(bytes: &[u8], offset: usize) -> Option<FieldNamesFrame> {
     let mut at = offset.checked_add(2)?;
     (bytes.get(offset..at) == Some(&[0, 0x63])).then_some(())?;
     if bytes.get(at) == Some(&0xff) {
         at += 1;
     }
     let count = usize::try_from(View::u32_be_at(bytes, at)?).ok()?;
-    (count > 0).then_some(())?;
     at += 4;
-    let xmt = read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1)?;
-    let names_at = at;
-    for _ in 0..count {
-        read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1)?;
-    }
-    Some(FieldNamesFrame {
-        offset,
-        end: at,
-        xmt,
-        count,
-        names_at,
-    })
-}
-
-fn field_names_record_from_frame(bytes: &[u8], frame: FieldNamesFrame) -> Option<FieldNamesRecord> {
-    let mut at = frame.names_at;
-    let name_xmts = (0..frame.count)
-        .map(|_| read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1))
+    let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
+    let name_xmts = (0..count)
+        .map(|_| NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok())
         .collect::<Option<Vec<_>>>()?;
     Some(FieldNamesRecord {
-        offset: frame.offset,
-        byte_len: frame.end - frame.offset,
-        xmt: frame.xmt,
-        name_xmts,
+        offset,
+        byte_len: at - offset,
+        xmt,
+        name_xmts: NameReferences::try_from(name_xmts).ok()?,
     })
 }
 

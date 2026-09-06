@@ -165,8 +165,8 @@ fn parasolid_field_names_require_a_complete_nonempty_reference_lane() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].offset, 1);
     assert_eq!(records[0].byte_len, 14);
-    assert_eq!(records[0].xmt, 25);
-    assert_eq!(records[0].name_xmts, [28, 29, 30]);
+    assert_eq!(u32::from(records[0].xmt), 25);
+    assert_eq!(records[0].name_xmts.as_slice().iter().copied().map(u32::from).collect::<Vec<_>>(), [28, 29, 30]);
     assert!(crate::parasolid::field_names_record_at(&bytes[..14], 1).is_none());
 
     let empty = [0x00, 0x63, 0, 0, 0, 0, 0, 25];
@@ -189,7 +189,7 @@ fn parasolid_field_name_scan_does_not_admit_nested_counted_candidates() {
     let records = crate::parasolid::field_names_records(&bytes);
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].offset, 0);
-    assert_eq!(records[0].name_xmts, [99, 256, 256, 8192, 12288, 64]);
+    assert_eq!(records[0].name_xmts.as_slice().iter().copied().map(u32::from).collect::<Vec<_>>(), [99, 256, 256, 8192, 12288, 64]);
 }
 
 

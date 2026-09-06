@@ -4,6 +4,8 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+use crate::parasolid::name_references::NameReferences;
+
 use crate::deltas::Census;
 use crate::parasolid::attribute_field::AttributeField;
 use crate::parasolid::attribute_action::AttributeAction;
@@ -1790,9 +1792,9 @@ pub struct ParasolidFieldNamesRecord {
     /// Zero-based embedded stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Ordered stream-local character or Unicode value references.
-    pub name_xmts: Vec<u32>,
+    pub name_xmts: NameReferences,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -2270,7 +2272,7 @@ pub fn parasolid_field_names_records(streams: &[Stream]) -> Vec<ParasolidFieldNa
                 .map(move |record| ParasolidFieldNamesRecord {
                     id: format!(
                         "nx:s{stream_ordinal}:field-names#{}-{}",
-                        record.xmt, record.offset
+                        u32::from(record.xmt), record.offset
                     ),
                     stream_ordinal: stream_ordinal as u32,
                     xmt: record.xmt,
@@ -2302,7 +2304,7 @@ pub fn parasolid_attribute_field_names(
     let mut lists = BTreeMap::<(u32, u32), Vec<&ParasolidFieldNamesRecord>>::new();
     for list in field_names {
         lists
-            .entry((list.stream_ordinal, list.xmt))
+            .entry((list.stream_ordinal, u32::from(list.xmt)))
             .or_default()
             .push(list);
     }
@@ -2335,13 +2337,14 @@ pub fn parasolid_attribute_field_names(
             else {
                 return None;
             };
-            (list.name_xmts.len() == definition.field_codes.len()).then_some(())?;
+            (list.name_xmts.as_slice().len() == definition.field_codes.len()).then_some(())?;
             let resolved = list
                 .name_xmts
+                .as_slice()
                 .iter()
                 .map(|xmt| {
                     let [name] = names_by_xmt
-                        .get(&(definition.stream_ordinal, *xmt))?
+                        .get(&(definition.stream_ordinal, u32::from(*xmt)))?
                         .as_slice()
                     else {
                         return None;
@@ -4300,8 +4303,8 @@ mod tests {
         let list = ParasolidFieldNamesRecord {
             id: "field-names".into(),
             stream_ordinal: 3,
-            xmt: 25,
-            name_xmts: vec![28, 29, 30],
+            xmt: NonNullXmt::try_from(25).unwrap(),
+            name_xmts: NameReferences::try_from([28, 29, 30].map(|xmt| NonNullXmt::try_from(xmt).unwrap()).to_vec()).unwrap(),
             byte_len: 15,
             inflated_offset: 30,
         };
@@ -4332,7 +4335,7 @@ mod tests {
         assert_eq!(relations[0].fields.iter().map(|field| field.name.as_str()).collect::<Vec<_>>(), ["1", "μ", "3"]);
 
         let mut incomplete = list.clone();
-        incomplete.name_xmts.pop();
+        incomplete.name_xmts = NameReferences::try_from(incomplete.name_xmts.as_slice()[..2].to_vec()).unwrap();
         assert!(parasolid_attribute_field_names(
             std::slice::from_ref(&definition),
             &[incomplete],
@@ -4357,8 +4360,8 @@ mod tests {
             &[ParasolidFieldNamesRecord {
                 id: "field-names".into(),
                 stream_ordinal: 3,
-                xmt: 25,
-                name_xmts: vec![28, 29, 30],
+                xmt: NonNullXmt::try_from(25).unwrap(),
+                name_xmts: NameReferences::try_from([28, 29, 30].map(|xmt| NonNullXmt::try_from(xmt).unwrap()).to_vec()).unwrap(),
                 byte_len: 15,
                 inflated_offset: 30,
             }],
