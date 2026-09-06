@@ -6,6 +6,8 @@ use super::*;
 
 use cadmpeg_core::decode::View;
 
+use crate::om::color::{ColorComponent, PaletteIndex, PALETTE_SIZE, BACKGROUND_NAME};
+mod color_wire;
 pub(crate) mod column_index;
 use column_index::ColumnIndexRows;
 
@@ -2771,21 +2773,16 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
 
 /// Complete named NX part palette for color indices 1 through 216.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "color_wire::PartColorTableWire", into = "color_wire::PartColorTableWire")]
 pub struct PartColorTable {
     /// Globally unique table identity.
     pub id: String,
     /// Registered `UGS::COLOR_table` declaration in `class_definitions`.
     pub class_definition: String,
-    /// Name of the separately encoded background color.
-    pub background_name: String,
-    /// Normalized background RGB components.
-    pub background_rgb: [f32; 3],
-    /// Exact serialized background component atoms.
-    pub raw_background_components: [Vec<u8>; 3],
-    /// Absolute file offsets of the background component atoms.
-    pub background_component_source_offsets: [u64; 3],
+    /// Exact background components and their absolute file offsets.
+    pub background: [(ColorComponent, u64); 3],
     /// Ordered entries in the native `part_color_definitions` arena.
-    pub definitions: Vec<String>,
+    pub definitions: [String; PALETTE_SIZE],
     /// Directory entry containing the table.
     pub source_entry: String,
     /// Absolute file offset of the counted name roster.
@@ -2794,25 +2791,20 @@ pub struct PartColorTable {
 
 /// One named RGB entry from an NX part palette.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "color_wire::PartColorDefinitionWire", into = "color_wire::PartColorDefinitionWire")]
 pub struct PartColorDefinition {
     /// Globally unique color-definition identity.
     pub id: String,
     /// Owning table in the native `part_color_tables` arena.
     pub color_table: String,
     /// One-based NX color index.
-    pub color_index: u16,
+    pub color_index: PaletteIndex,
     /// Serialized color name.
     pub name: String,
-    /// Normalized RGB components.
-    pub rgb: [f32; 3],
-    /// Exact serialized index token.
-    pub raw_color_index: Vec<u8>,
-    /// Exact serialized component atoms.
-    pub raw_components: [Vec<u8>; 3],
+    /// Exact normalized components and their absolute file offsets.
+    pub components: [(ColorComponent, u64); 3],
     /// Absolute file offset of the opening `05` marker.
     pub source_offset: u64,
-    /// Absolute file offsets of the three component atoms.
-    pub component_source_offsets: [u64; 3],
 }
 
 /// Exact row encoding carrying one `RMFastLoad` display-color assignment.
@@ -2867,6 +2859,7 @@ pub enum RmDisplayColorAssignmentEncoding {
 
 /// Explicit color assignment carried by one complete `RMFastLoad` row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "color_wire::RmDisplayColorAssignmentWire", into = "color_wire::RmDisplayColorAssignmentWire")]
 pub struct RmDisplayColorAssignment {
     /// Globally unique assignment identity.
     pub id: String,
@@ -2879,11 +2872,9 @@ pub struct RmDisplayColorAssignment {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_object_id: Option<String>,
     /// One-based part palette index.
-    pub color_index: u16,
+    pub color_index: PaletteIndex,
     /// Target in `part_color_definitions`.
     pub color_definition: String,
-    /// Exact color-index token.
-    pub raw_color_index: Vec<u8>,
     /// Owning directory entry.
     pub source_entry: String,
     /// Absolute color-token offset.
@@ -5126,42 +5117,23 @@ pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<Par
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let source_base = entry_offset + storage_offset as u64;
         let table_id = format!("nx:part-color-tables:table#{section_ordinal}");
-        let definition_ids = table
-            .definitions
-            .iter()
-            .map(|definition| {
-                format!(
-                    "nx:part-color-definitions-{section_ordinal}:color#{}",
-                    definition.color_index
-                )
-            })
-            .collect::<Vec<_>>();
-        definitions.extend(table.definitions.iter().zip(&definition_ids).map(
-            |(definition, id)| {
-                PartColorDefinition {
-                    id: id.clone(),
-                    color_table: table_id.clone(),
-                    color_index: definition.color_index,
-                    name: definition.name.to_string(),
-                    rgb: definition.rgb,
-                    raw_color_index: definition.raw_color_index.clone(),
-                    raw_components: definition.raw_components.clone(),
-                    source_offset: source_base + definition.offset as u64,
-                    component_source_offsets: definition
-                        .component_offsets
-                        .map(|offset| source_base + offset as u64),
-                }
-            },
-        ));
+        let parsed_definitions = PaletteIndex::all().map(|color_index| {
+            let definition = &table.definitions[usize::from(color_index.value()) - 1];
+            PartColorDefinition {
+                id: format!("nx:part-color-definitions-{section_ordinal}:color#{}", color_index.value()),
+                color_table: table_id.clone(),
+                color_index,
+                name: definition.name.to_string(),
+                components: definition.components.map(|(component, offset)| (component, source_base + offset as u64)),
+                source_offset: source_base + definition.offset as u64,
+            }
+        });
+        let definition_ids = parsed_definitions.each_ref().map(|definition| definition.id.clone());
+        definitions.extend(parsed_definitions);
         tables.push(PartColorTable {
             id: table_id,
             class_definition: format!("nx:om-entry-{entry_index}:class#{}", class.offset),
-            background_name: table.background_name.to_string(),
-            background_rgb: table.background_rgb,
-            raw_background_components: table.raw_background_components.clone(),
-            background_component_source_offsets: table
-                .background_component_offsets
-                .map(|offset| source_base + offset as u64),
+            background: table.background.map(|(component, offset)| (component, source_base + offset as u64)),
             definitions: definition_ids,
             source_entry: entry.name.clone(),
             source_offset: source_base + table.offset as u64,
@@ -5225,7 +5197,6 @@ pub fn rm_display_color_assignments(
                 target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
                 color_index: color.color_index,
                 color_definition: definition.id.clone(),
-                raw_color_index: color.raw_color_index,
                 source_entry: entry.name.clone(),
                 source_offset: source_base + color.offset as u64,
                 row_source_offset: source_base + row.offset as u64,
@@ -5261,7 +5232,6 @@ pub fn rm_display_color_assignments(
                 target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
                 color_index: color.color_index,
                 color_definition: definition.id.clone(),
-                raw_color_index: color.raw_color_index,
                 source_entry: entry.name.clone(),
                 source_offset: source_base + color.offset as u64,
                 row_source_offset: source_base + row.offset as u64,

@@ -7,6 +7,8 @@ use std::num::NonZeroU8;
 
 use cadmpeg_core::decode::{alloc_filled, View};
 
+pub(crate) mod color;
+use color::{ColorComponent, PaletteIndex, PALETTE_SIZE, BACKGROUND_NAME};
 pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 use branch_items::BranchItems;
@@ -25,7 +27,7 @@ pub(crate) mod pattern;
 use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWideValues};
 pub(crate) mod swp104_state;
 pub(crate) mod scalar;
-use scalar::{LocatedBinary64, PayloadScalarAtom, RepeatedScalar, ShiftedBinary32, ShiftedBinary64, ShiftedScalar, shifted_ieee_f64, is_shifted_ieee_f64_marker};
+use scalar::{LocatedBinary64, PayloadScalarAtom, RepeatedScalar, ShiftedBinary32, ShiftedBinary64, ShiftedScalar, shifted_ieee_f64};
 pub(crate) mod thru_curve_endings;
 pub(crate) mod thru_curve_controls;
 use thru_curve_controls::ThruCurveControls;
@@ -308,9 +310,7 @@ pub struct OffsetStoreLinkedIndexRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkedRowColorIndex {
     /// One-based part palette index.
-    pub color_index: u16,
-    /// Exact serialized index token.
-    pub raw_color_index: Vec<u8>,
+    pub color_index: PaletteIndex,
     /// Color token's byte offset.
     pub offset: usize,
 }
@@ -333,29 +333,15 @@ pub fn target_row_color_index(
 
 fn row_color_index(bytes: &[u8], row_offset: usize) -> Option<LinkedRowColorIndex> {
     const PRECEDING_SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
-    let direct_offset = row_offset.checked_sub(1)?;
-    let direct = *bytes.get(direct_offset)?;
-    if (1..=127).contains(&direct)
-        && bytes.get(direct_offset.checked_sub(PRECEDING_SUFFIX.len())?..direct_offset)
-            == Some(&PRECEDING_SUFFIX)
-    {
-        return Some(LinkedRowColorIndex {
-            color_index: u16::from(direct),
-            raw_color_index: vec![direct],
-            offset: direct_offset,
-        });
+    for width in [1, 2] {
+        let Some(offset) = row_offset.checked_sub(width) else { continue; };
+        let Some(prefix_offset) = offset.checked_sub(PRECEDING_SUFFIX.len()) else { continue; };
+        if bytes.get(prefix_offset..offset) != Some(&PRECEDING_SUFFIX) { continue; }
+        if let Some(color_index) = PaletteIndex::read_display(bytes.get(offset..row_offset)?) {
+            return Some(LinkedRowColorIndex { color_index, offset });
+        }
     }
-    let extended_offset = row_offset.checked_sub(2)?;
-    let token: [u8; 2] = bytes.get(extended_offset..row_offset)?.try_into().ok()?;
-    (token[0] == 0x80
-        && (128..=216).contains(&token[1])
-        && bytes.get(extended_offset.checked_sub(PRECEDING_SUFFIX.len())?..extended_offset)
-            == Some(&PRECEDING_SUFFIX))
-    .then(|| LinkedRowColorIndex {
-        color_index: u16::from(token[1]),
-        raw_color_index: token.to_vec(),
-        offset: extended_offset,
-    })
+    None
 }
 
 #[cfg(test)]
@@ -372,8 +358,8 @@ mod linked_row_color_index_tests {
         bytes.extend(row_bytes);
         let rows = offset_store_linked_index_rows(&bytes);
         let color = linked_row_color_index(&bytes, &rows[0]).expect("complete prefix");
-        assert_eq!(color.color_index, 201);
-        assert_eq!(color.raw_color_index, [0x80, 201]);
+        assert_eq!(color.color_index.value(), 201);
+        assert_eq!(color.color_index.display_raw(), [0x80, 201]);
 
         bytes[1] = 0;
         assert_eq!(linked_row_color_index(&bytes, &rows[0]), None);
@@ -389,8 +375,8 @@ mod linked_row_color_index_tests {
         bytes.extend(row_bytes);
         let rows = offset_store_target_index_rows(&bytes);
         let color = target_row_color_index(&bytes, &rows[0]).expect("complete prefix");
-        assert_eq!(color.color_index, 201);
-        assert_eq!(color.raw_color_index, [0x80, 201]);
+        assert_eq!(color.color_index.value(), 201);
+        assert_eq!(color.color_index.display_raw(), [0x80, 201]);
     }
 }
 
@@ -414,20 +400,12 @@ pub struct OffsetStoreTargetIndexRow {
 /// One RGB definition from an NX part color table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColorTableDefinition<'a> {
-    /// One-based NX color index.
-    pub color_index: u16,
     /// Color name paired by table order.
     pub name: &'a str,
-    /// Normalized red, green, and blue components.
-    pub rgb: [f32; 3],
-    /// Exact serialized index token after the `05` marker.
-    pub raw_color_index: Vec<u8>,
-    /// Exact serialized component atoms.
-    pub raw_components: [Vec<u8>; 3],
+    /// Exact normalized components and their payload offsets.
+    pub components: [(ColorComponent, usize); 3],
     /// Byte offset of the opening `05` marker.
     pub offset: usize,
-    /// Byte offsets of the three component atoms.
-    pub component_offsets: [usize; 3],
 }
 
 /// Complete 216-entry NX part color table.
@@ -435,41 +413,19 @@ pub struct ColorTableDefinition<'a> {
 pub struct ColorTable<'a> {
     /// Byte offset of the counted name roster.
     pub offset: usize,
-    /// Name associated with the separately encoded background color.
-    pub background_name: &'a str,
-    /// Normalized background RGB components.
-    pub background_rgb: [f32; 3],
-    /// Exact serialized background component atoms.
-    pub raw_background_components: [Vec<u8>; 3],
-    /// Byte offsets of the three background component atoms.
-    pub background_component_offsets: [usize; 3],
+    /// Exact background components and their payload offsets.
+    pub background: [(ColorComponent, usize); 3],
     /// Ordered definitions for color indices 1 through 216.
-    pub definitions: Vec<ColorTableDefinition<'a>>,
+    pub definitions: [ColorTableDefinition<'a>; PALETTE_SIZE],
 }
 
-fn color_component_layout(bytes: &[u8]) -> Option<(f32, usize)> {
-    match bytes.first().copied()? {
-        0x00 => Some((0.0, 1)),
-        0x01 => Some((1.0, 1)),
-        marker if is_shifted_ieee_f64_marker(marker) => {
-            let raw: [u8; 8] = bytes.get(..8)?.try_into().ok()?;
-            let value = shifted_ieee_f64(&raw)? / 4.0;
-            (value.is_finite() && (0.0..=1.0).contains(&value)).then_some((value as f32, 8))
-        }
-        0x40..=0x5f | 0xc0..=0xdf => {
-            let raw: [u8; 4] = bytes.get(..4)?.try_into().ok()?;
-            let mut decoded = raw;
-            decoded[0] = decoded[0].checked_sub(0x10)?;
-            let value = f32::from_be_bytes(decoded) / 4.0;
-            (value.is_finite() && (0.0..=1.0).contains(&value)).then_some((value, 4))
-        }
-        _ => None,
-    }
-}
-
-fn color_component(bytes: &[u8]) -> Option<(f32, Vec<u8>, usize)> {
-    let (value, width) = color_component_layout(bytes)?;
-    Some((value, bytes.get(..width)?.to_vec(), width))
+fn color_components(bytes: &[u8], at: &mut usize) -> Option<[(ColorComponent, usize); 3]> {
+    (0..3).map(|_| {
+        let offset = *at;
+        let component = ColorComponent::read(bytes.get(offset..)?)?;
+        *at += component.raw().len();
+        Some((component, offset))
+    }).collect::<Option<Vec<_>>>()?.try_into().ok()
 }
 
 fn color_name_frame(bytes: &[u8], offset: usize) -> Option<(&str, usize)> {
@@ -505,7 +461,7 @@ fn color_table_end(bytes: &[u8], start: usize) -> Option<usize> {
     let mut at = start + COLOR_TABLE_NAME_HEADER.len();
     for ordinal in 0..=216 {
         let (name, width) = color_name_frame(bytes, at)?;
-        if ordinal == 0 && name != "Background" {
+        if ordinal == 0 && name != BACKGROUND_NAME {
             return None;
         }
         at += width;
@@ -517,29 +473,22 @@ fn color_table_end(bytes: &[u8], start: usize) -> Option<usize> {
     }
     at += COLOR_TABLE_DEFINITION_PREAMBLE.len();
     for _ in 0..3 {
-        at += color_component_layout(bytes.get(at..)?)?.1;
+        at += ColorComponent::read(bytes.get(at..)?)?.raw().len();
     }
-    for color_index in 1u16..=216 {
+    for color_index in PaletteIndex::all() {
         if bytes.get(at) != Some(&0x05) {
             return None;
         }
         at += 1;
-        let token = if color_index < 128 {
-            [color_index as u8, 0]
-        } else {
-            [0x80, (color_index - 1) as u8]
-        };
-        let token_width = if color_index < 128 { 1 } else { 2 };
-        if bytes.get(at..at + token_width) != Some(&token[..token_width]) {
-            return None;
-        }
-        at += token_width;
+        let (token, width) = color_index.definition_token();
+        if bytes.get(at..at + width) != Some(&token[..width]) { return None; }
+        at += width;
         if bytes.get(at..at + 3) != Some(&[0x01, 0x80, 0xc8]) {
             return None;
         }
         at += 3;
         for _ in 0..3 {
-            at += color_component_layout(bytes.get(at..)?)?.1;
+            at += ColorComponent::read(bytes.get(at..)?)?.raw().len();
         }
     }
     Some(at)
@@ -555,56 +504,22 @@ fn color_table_at(bytes: &[u8], start: usize) -> Option<ColorTable<'_>> {
     }
     at += COLOR_TABLE_DEFINITION_PREAMBLE.len();
 
-    let mut background_rgb = Vec::with_capacity(3);
-    let mut raw_background_components = Vec::with_capacity(3);
-    let mut background_component_offsets = Vec::with_capacity(3);
-    for _ in 0..3 {
-        background_component_offsets.push(at);
-        let (value, raw, width) = color_component(bytes.get(at..)?)?;
-        background_rgb.push(value);
-        raw_background_components.push(raw);
-        at += width;
-    }
-
-    let mut definitions = Vec::with_capacity(216);
-    for color_index in 1u16..=216 {
+    let background = color_components(bytes, &mut at)?;
+    let mut definitions = Vec::with_capacity(PALETTE_SIZE);
+    for color_index in PaletteIndex::all() {
         let offset = at;
-        at += 1;
-        let raw_color_index = if color_index < 128 {
-            vec![color_index as u8]
-        } else {
-            vec![0x80, (color_index - 1) as u8]
-        };
-        at += raw_color_index.len();
-        at += 3;
-
-        let mut rgb = Vec::with_capacity(3);
-        let mut raw_components = Vec::with_capacity(3);
-        let mut component_offsets = Vec::with_capacity(3);
-        for _ in 0..3 {
-            component_offsets.push(at);
-            let (value, raw, width) = color_component(bytes.get(at..)?)?;
-            rgb.push(value);
-            raw_components.push(raw);
-            at += width;
-        }
+        at += 1 + color_index.definition_token().1 + 3;
+        let components = color_components(bytes, &mut at)?;
         definitions.push(ColorTableDefinition {
-            color_index,
-            name: names[usize::from(color_index)],
-            rgb: rgb.try_into().ok()?,
-            raw_color_index,
-            raw_components: raw_components.try_into().ok()?,
+            name: names[usize::from(color_index.value())],
+            components,
             offset,
-            component_offsets: component_offsets.try_into().ok()?,
         });
     }
     Some(ColorTable {
         offset: start,
-        background_name: names[0],
-        background_rgb: background_rgb.try_into().ok()?,
-        raw_background_components: raw_background_components.try_into().ok()?,
-        background_component_offsets: background_component_offsets.try_into().ok()?,
-        definitions,
+        background,
+        definitions: definitions.try_into().ok()?,
     })
 }
 

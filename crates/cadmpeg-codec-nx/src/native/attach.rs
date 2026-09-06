@@ -497,9 +497,9 @@ fn attach_rm_appearances(
             continue;
         };
         let color = Color {
-            r: definition.rgb[0],
-            g: definition.rgb[1],
-            b: definition.rgb[2],
+            r: definition.components[0].0.value(),
+            g: definition.components[1].0.value(),
+            b: definition.components[2].0.value(),
             a: 1.0,
         };
         if existing_color.is_some_and(|existing| existing != color) {
@@ -566,9 +566,9 @@ fn ensure_rm_color_appearance(
                 schema: Some("UGS::COLOR_table".into()),
                 category: None,
                 base_color: Some(Color {
-                    r: definition.rgb[0],
-                    g: definition.rgb[1],
-                    b: definition.rgb[2],
+                    r: definition.components[0].0.value(),
+                    g: definition.components[1].0.value(),
+                    b: definition.components[2].0.value(),
                     a: 1.0,
                 }),
                 properties: BTreeMap::new(),
@@ -640,9 +640,9 @@ fn resolve_rm_face_colors(
             Some((
                 binding.face_id,
                 Color {
-                    r: definition.rgb[0],
-                    g: definition.rgb[1],
-                    b: definition.rgb[2],
+                    r: definition.components[0].0.value(),
+                    g: definition.components[1].0.value(),
+                    b: definition.components[2].0.value(),
                     a: 1.0,
                 },
             ))

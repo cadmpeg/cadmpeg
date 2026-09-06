@@ -9,13 +9,14 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
     let definition = crate::native::om::PartColorDefinition {
         id: "nx:test:color#201".into(),
         color_table: "nx:test:table#0".into(),
-        color_index: 201,
+        color_index: crate::om::color::PaletteIndex::new(201).unwrap(),
         name: "Iron Gray".into(),
-        rgb: [0.25, 0.5, 0.75],
-        raw_color_index: vec![0x80, 200],
-        raw_components: [vec![1], vec![1], vec![1]],
+        components: [(0.25_f64, 11), (0.5, 12), (0.75, 13)].map(|(value, offset)| {
+            let mut raw = (value * 4.0).to_be_bytes();
+            raw[0] -= 0x10;
+            (crate::om::color::ColorComponent::read(&raw).unwrap(), offset)
+        }),
         source_offset: 10,
-        component_source_offsets: [11, 12, 13],
     };
     let assignment = crate::native::om::RmDisplayColorAssignment {
         id: "nx:test:assignment#0".into(),
@@ -35,9 +36,8 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
             mode: crate::om::discriminators::IndexRowMode::Form04,
         },
         target_object_id: Some("nx:test:object-id#7".into()),
-        color_index: 201,
+        color_index: crate::om::color::PaletteIndex::new(201).unwrap(),
         color_definition: definition.id.clone(),
-        raw_color_index: vec![0x80, 201],
         source_entry: "/Root/FastLoad/RMFastLoad".into(),
         source_offset: 20,
         row_source_offset: 21,
@@ -140,9 +140,8 @@ fn rm_source_color_bindings_require_one_palette_per_source_identity() {
                 mode: crate::om::discriminators::IndexRowMode::Form04,
             },
             target_object_id: source_id.map(str::to_owned),
-            color_index: 201,
+            color_index: crate::om::color::PaletteIndex::new(201).unwrap(),
             color_definition: color_definition.into(),
-            raw_color_index: vec![0x80, 201],
             source_entry: "/Root/FastLoad/RMFastLoad".into(),
             source_offset: offset,
             row_source_offset: offset,

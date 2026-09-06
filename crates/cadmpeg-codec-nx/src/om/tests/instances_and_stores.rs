@@ -1802,13 +1802,17 @@ fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
 
     let tables = super::color_tables(&bytes);
     assert_eq!(tables.len(), 1);
-    assert_eq!(tables[0].background_name, "Background");
-    assert_eq!(tables[0].background_rgb, [1.0, 1.0, 1.0]);
+    assert_eq!(tables[0].background.map(|(component, _)| component.value()), [1.0, 1.0, 1.0]);
     assert_eq!(tables[0].definitions.len(), 216);
     assert_eq!(tables[0].definitions[0].name, "Color 1");
-    assert_eq!(tables[0].definitions[0].rgb, [1.0, 1.0, 1.0]);
-    assert_eq!(tables[0].definitions[1].rgb, [0.5, 0.25, 0.0]);
-    assert_eq!(tables[0].definitions[127].raw_color_index, [0x80, 0x7f]);
+    assert_eq!(tables[0].definitions[0].components.map(|(component, _)| component.value()), [1.0, 1.0, 1.0]);
+    assert_eq!(tables[0].definitions[1].components.map(|(component, _)| component.value()), [0.5, 0.25, 0.0]);
+    let index_offset = tables[0].definitions[127].offset + 1;
+    assert_eq!(bytes[index_offset..index_offset + 2], [0x80, 0x7f]);
+
+    let mut wrong_background = bytes.clone();
+    wrong_background[5] = b'b';
+    assert!(super::color_tables(&wrong_background).is_empty());
 
     let mut malformed = bytes.clone();
     *malformed.last_mut().unwrap() = 0x02;
