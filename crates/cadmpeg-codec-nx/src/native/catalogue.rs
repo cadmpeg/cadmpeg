@@ -6,6 +6,7 @@
 //! emission order; `phase` splits semantic islands for [`super::attach`].
 //! Stream choice (`nx:container` vs `nx:s{ordinal}`) lives in the `note` fn.
 
+use crate::native::om::compact_lane::DataBlockAbrReferenceLane;
 use crate::native::om::object_uuid::ObjectUuidValue;
 use crate::native::om::material_texture::MaterialTextureAsset;
 use crate::native::features::object_frame::DataBlockObjectFrame;
@@ -284,7 +285,7 @@ impl ContainerNoted for FeatureSketchDatumCsysDependency {
 }
 impl ContainerNoted for DataBlockAbrReferenceLane {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.frame.offset())
     }
 }
 impl ContainerNoted for SegmentOmLink {

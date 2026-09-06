@@ -2,7 +2,7 @@
 //! Compact-index column rows with positions derived from their wire layout.
 
 use std::ops::Add;
-use super::compact::{CompactIndexAtom, LocatedCompactIndex};
+use super::compact::{CompactIndexAtom, CompactIndexTarget, LocatedCompactIndex, PositionedIndex};
 use super::discriminators::{IndexRowMode, LinkedIndexDiscriminator, LinkedIndexFlag};
 
 pub(crate) mod scan;
@@ -16,29 +16,10 @@ const TARGET_PREFIX: [u8; 5] = [0x02, 0x01, 0x01, 0x01, 0x16];
 const TARGET_MIDDLE: [u8; 4] = [0xff, 0xff, 0x90, 0xfe];
 pub(crate) const ROW_SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
 
-/// One source index paired with its resolved target, or `()` before resolution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct RowIndex<T> {
-    pub(crate) atom: CompactIndexAtom,
-    pub(crate) target: T,
-}
-
-impl From<CompactIndexAtom> for RowIndex<()> {
-    fn from(atom: CompactIndexAtom) -> Self { Self { atom, target: () } }
-}
-
-/// Read-only projection of one row index and its derived source position.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PositionedIndex<'a, T, O> {
-    pub(crate) atom: CompactIndexAtom,
-    pub(crate) target: &'a T,
-    pub(crate) offset: O,
-}
-
 fn width(atom: CompactIndexAtom) -> u8 { atom.raw().len() as u8 }
 
 fn positions<T, O: Copy + Add<Output = O> + From<u8>, const N: usize>(
-    indices: &[RowIndex<T>; N], mut offset: O,
+    indices: &[CompactIndexTarget<T>; N], mut offset: O,
 ) -> [PositionedIndex<'_, T, O>; N] {
     std::array::from_fn(|i| {
         let index = &indices[i];
@@ -53,7 +34,7 @@ pub(crate) struct IndexRow<T = (), O = usize> {
     offset: O,
     first_index: CompactIndexAtom,
     flag: LinkedIndexFlag,
-    indices: [RowIndex<T>; 4],
+    indices: [CompactIndexTarget<T>; 4],
 }
 
 impl<T, O> IndexRow<T, O> {
@@ -77,7 +58,7 @@ impl<T> IndexRow<T, usize> {
 
 impl<O> IndexRow<(), O> {
     pub(crate) fn try_resolve<U>(self, mut resolve: impl FnMut(CompactIndexAtom) -> Option<U>) -> Option<IndexRow<U, O>> {
-        let [a, b, c, d] = self.indices.map(|index| Some(RowIndex { atom: index.atom, target: resolve(index.atom)? }));
+        let [a, b, c, d] = self.indices.map(|index| Some(CompactIndexTarget { atom: index.atom, target: resolve(index.atom)? }));
         Some(IndexRow { offset: self.offset, indices: [a?, b?, c?, d?], first_index: self.first_index, flag: self.flag })
     }
 }
@@ -87,8 +68,8 @@ pub(crate) struct LinkedRow<T = (), O = usize> {
     offset: O,
     first_index: CompactIndexAtom,
     discriminator: LinkedIndexDiscriminator,
-    target_index: RowIndex<T>,
-    indices: [RowIndex<T>; 3],
+    target_index: CompactIndexTarget<T>,
+    indices: [CompactIndexTarget<T>; 3],
     flag: LinkedIndexFlag,
     mode: IndexRowMode,
 }
@@ -117,8 +98,8 @@ impl<T> LinkedRow<T, usize> {
 
 impl<O> LinkedRow<(), O> {
     pub(crate) fn try_resolve<U>(self, mut resolve: impl FnMut(CompactIndexAtom) -> Option<U>) -> Option<LinkedRow<U, O>> {
-        let target_index = RowIndex { atom: self.target_index.atom, target: resolve(self.target_index.atom)? };
-        let [a, b, c] = self.indices.map(|index| Some(RowIndex { atom: index.atom, target: resolve(index.atom)? }));
+        let target_index = CompactIndexTarget { atom: self.target_index.atom, target: resolve(self.target_index.atom)? };
+        let [a, b, c] = self.indices.map(|index| Some(CompactIndexTarget { atom: index.atom, target: resolve(index.atom)? }));
         Some(LinkedRow { offset: self.offset, indices: [a?, b?, c?], first_index: self.first_index, discriminator: self.discriminator, flag: self.flag, mode: self.mode, target_index })
     }
 }
@@ -126,8 +107,8 @@ impl<O> LinkedRow<(), O> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TargetRow<T = (), O = usize> {
     offset: O,
-    target_index: RowIndex<T>,
-    indices: [RowIndex<T>; 3],
+    target_index: CompactIndexTarget<T>,
+    indices: [CompactIndexTarget<T>; 3],
     mode: IndexRowMode,
 }
 
@@ -152,8 +133,8 @@ impl<T> TargetRow<T, usize> {
 
 impl<O> TargetRow<(), O> {
     pub(crate) fn try_resolve<U>(self, mut resolve: impl FnMut(CompactIndexAtom) -> Option<U>) -> Option<TargetRow<U, O>> {
-        let target_index = RowIndex { atom: self.target_index.atom, target: resolve(self.target_index.atom)? };
-        let [a, b, c] = self.indices.map(|index| Some(RowIndex { atom: index.atom, target: resolve(index.atom)? }));
+        let target_index = CompactIndexTarget { atom: self.target_index.atom, target: resolve(self.target_index.atom)? };
+        let [a, b, c] = self.indices.map(|index| Some(CompactIndexTarget { atom: index.atom, target: resolve(index.atom)? }));
         Some(TargetRow { offset: self.offset, indices: [a?, b?, c?], mode: self.mode, target_index })
     }
 }
@@ -161,21 +142,21 @@ impl<O> TargetRow<(), O> {
 macro_rules! checked_origins {
     ($offset:ty) => {
         impl<T> IndexRow<T, $offset> {
-            pub(crate) fn new(first_index: CompactIndexAtom, flag: LinkedIndexFlag, indices: [RowIndex<T>; 4], offset: $offset) -> Option<Self> {
+            pub(crate) fn new(first_index: CompactIndexAtom, flag: LinkedIndexFlag, indices: [CompactIndexTarget<T>; 4], offset: $offset) -> Option<Self> {
                 let row = Self { offset, first_index, flag, indices };
                 offset.checked_add(<$offset>::from(row.byte_len()))?;
                 Some(row)
             }
         }
         impl<T> LinkedRow<T, $offset> {
-            pub(crate) fn new(first_index: CompactIndexAtom, discriminator: LinkedIndexDiscriminator, target_index: RowIndex<T>, indices: [RowIndex<T>; 3], flag: LinkedIndexFlag, mode: IndexRowMode, offset: $offset) -> Option<Self> {
+            pub(crate) fn new(first_index: CompactIndexAtom, discriminator: LinkedIndexDiscriminator, target_index: CompactIndexTarget<T>, indices: [CompactIndexTarget<T>; 3], flag: LinkedIndexFlag, mode: IndexRowMode, offset: $offset) -> Option<Self> {
                 let row = Self { offset, first_index, discriminator, target_index, indices, flag, mode };
                 offset.checked_add(<$offset>::from(row.byte_len()))?;
                 Some(row)
             }
         }
         impl<T> TargetRow<T, $offset> {
-            pub(crate) fn new(target_index: RowIndex<T>, indices: [RowIndex<T>; 3], mode: IndexRowMode, offset: $offset) -> Option<Self> {
+            pub(crate) fn new(target_index: CompactIndexTarget<T>, indices: [CompactIndexTarget<T>; 3], mode: IndexRowMode, offset: $offset) -> Option<Self> {
                 let row = Self { offset, target_index, indices, mode };
                 offset.checked_add(<$offset>::from(row.byte_len()))?;
                 Some(row)

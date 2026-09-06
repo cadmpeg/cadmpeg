@@ -2,6 +2,7 @@
 //! Frame NX object-model entities using external boundary and identity arrays.
 
 pub(crate) mod column_row;
+pub(crate) mod compact_lane;
 pub(crate) mod reference_value;
 use reference_value::{DirectReference, LocatedReference, RecordReference, Tagged28};
 
@@ -232,26 +233,6 @@ fn compact_index(bytes: &[u8]) -> Option<(CompactIndex, usize)> {
     Some((value, token.raw().len()))
 }
 
-/// One counted compact-index lane ending in the exact `01 11` marker.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OffsetStoreCountedIndexLane {
-    /// Byte offset of the opening `01` marker.
-    pub offset: usize,
-    /// Non-null compact index immediately following the count.
-    pub anchor: LocatedCompactIndex,
-    /// Ordered non-null compact indices preceding the terminator.
-    pub members: CountedIndexMembers<LocatedCompactIndex>,
-}
-
-/// Fixed-width nullable block-index lane terminated by the literal `ABR` tag.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OffsetStoreAbrReferenceLane {
-    /// Byte offset of the opening `11` marker.
-    pub offset: usize,
-    /// Sixteen ordered nullable compact indices and their byte offsets.
-    pub slots: [NullableCompactIndex; 16],
-}
-
 /// One RGB definition from an NX part color table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColorTableDefinition<'a> {
@@ -398,89 +379,6 @@ pub fn color_tables(bytes: &[u8]) -> Vec<ColorTable<'_>> {
         start = end;
     }
     tables
-}
-
-/// Decode fixed-width `ABR` block-reference lanes from contiguous column storage.
-pub fn offset_store_abr_reference_lanes(bytes: &[u8]) -> Vec<OffsetStoreAbrReferenceLane> {
-    const SLOT_COUNT: usize = 16;
-    const TERMINATOR: [u8; 7] = [0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03];
-    let mut lanes = Vec::new();
-    let mut start = 0;
-    while start < bytes.len() {
-        if bytes[start] != 0x11 {
-            start += 1;
-            continue;
-        }
-        let mut at = start + 1;
-        let tokens = (0..SLOT_COUNT).map(|_| {
-            let token = NullableCompactIndex::read(bytes, at)?;
-            at += token.raw().len();
-            Some(token)
-        }).collect::<Option<Vec<_>>>();
-        let Some(tokens) = tokens.and_then(|tokens| tokens.try_into().ok()) else {
-            start += 1;
-            continue;
-        };
-        let Some(end) = at.checked_add(TERMINATOR.len()) else {
-            start += 1;
-            continue;
-        };
-        if bytes.get(at..end) == Some(&TERMINATOR) {
-            lanes.push(OffsetStoreAbrReferenceLane { offset: start, slots: tokens });
-            start = end;
-        } else {
-            start += 1;
-        }
-    }
-    lanes
-}
-
-/// Decode complete counted compact-index lanes from one bounded store block.
-///
-/// A lane is `01, count:u8, anchor, member[count-2], 01 11`, with
-/// `count >= 3`. Compact indices use the ordinary direct/extended encoding;
-/// null indices reject the candidate atomically.
-pub fn offset_store_counted_index_lanes(bytes: &[u8]) -> Vec<OffsetStoreCountedIndexLane> {
-    let decode = |start: usize| {
-        (bytes.get(start) == Some(&0x01)).then_some(())?;
-        let declared_count = *bytes.get(start + 1)?;
-        (declared_count >= 3).then_some(())?;
-        let anchor = LocatedCompactIndex::read(bytes, start + 2)?;
-        let members_start = anchor.offset + anchor.atom.raw().len();
-        let mut at = members_start;
-        for _ in 0..usize::from(declared_count) - 2 {
-            at += LocatedCompactIndex::read(bytes, at)?.atom.raw().len();
-        }
-        let end = at.checked_add(2)?;
-        (bytes.get(at..end) == Some(&[0x01, 0x11])).then_some(())?;
-        at = members_start;
-        let members = (0..usize::from(declared_count) - 2)
-            .map(|_| {
-                let token = LocatedCompactIndex::read(bytes, at)?;
-                at += token.atom.raw().len();
-                Some(token)
-            })
-            .collect::<Option<Vec<_>>>()?;
-        Some((
-            OffsetStoreCountedIndexLane {
-                offset: start,
-                anchor,
-                members: CountedIndexMembers::new(members).ok()?,
-            },
-            end,
-        ))
-    };
-    let mut lanes = Vec::new();
-    let mut start = 0;
-    while start + 4 <= bytes.len() {
-        if let Some((lane, end)) = decode(start) {
-            lanes.push(lane);
-            start = end;
-        } else {
-            start += 1;
-        }
-    }
-    lanes
 }
 
 /// One exact shifted-IEEE scalar field in a reconstructed construction payload.

@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::om::compact::CompactIndexAtom;
-use crate::om::column_row::RowIndex;
+use crate::om::compact::CompactIndexTarget;
 
 fn atom(value: u32, raw: &[u8], field: &str) -> Result<CompactIndexAtom, String> {
     CompactIndexAtom::from_wire(value, raw).map_err(|error| format!("{field}: {error}"))
@@ -52,7 +52,7 @@ impl TryFrom<DataBlockIndexRowWire> for DataBlockIndexRow {
     fn try_from(wire: DataBlockIndexRowWire) -> Result<Self, Self::Error> {
         let [a, b, c, d] = indices(wire.indices, wire.raw_indices);
         let [a_block, b_block, c_block, d_block] = wire.data_blocks;
-        let indices = [RowIndex { atom: a?, target: a_block }, RowIndex { atom: b?, target: b_block }, RowIndex { atom: c?, target: c_block }, RowIndex { atom: d?, target: d_block }];
+        let indices = [CompactIndexTarget { atom: a?, target: a_block }, CompactIndexTarget { atom: b?, target: b_block }, CompactIndexTarget { atom: c?, target: c_block }, CompactIndexTarget { atom: d?, target: d_block }];
         let first = atom(wire.first_index, &wire.raw_first_index, "first_index/raw_first_index")?;
         let flag = crate::om::discriminators::LinkedIndexFlag::try_from(wire.flag).map_err(|_| "flag: must be 3 or 7")?;
         let frame = IndexRow::<String, u64>::new(first, flag, indices, wire.source_offset).ok_or("source_offset: row extent overflows")?;
@@ -132,9 +132,9 @@ impl TryFrom<DataBlockLinkedIndexRowWire> for DataBlockLinkedIndexRow {
     fn try_from(wire: DataBlockLinkedIndexRowWire) -> Result<Self, Self::Error> {
         let [a, b, c] = indices(wire.indices, wire.raw_indices);
         let [target_block, a_block, b_block, c_block] = wire.data_blocks;
-        let indices = [RowIndex { atom: a?, target: a_block }, RowIndex { atom: b?, target: b_block }, RowIndex { atom: c?, target: c_block }];
+        let indices = [CompactIndexTarget { atom: a?, target: a_block }, CompactIndexTarget { atom: b?, target: b_block }, CompactIndexTarget { atom: c?, target: c_block }];
         let first = atom(wire.first_index, &wire.raw_first_index, "first_index/raw_first_index")?;
-        let target = RowIndex { atom: atom(wire.target_index, &wire.raw_target_index, "target_index/raw_target_index")?, target: target_block };
+        let target = CompactIndexTarget { atom: atom(wire.target_index, &wire.raw_target_index, "target_index/raw_target_index")?, target: target_block };
         let frame = LinkedRow::<String, u64>::new(first, wire.discriminator, target, indices, wire.flag, wire.mode, wire.source_offset).ok_or("source_offset: row extent overflows")?;
         if frame.first_index().offset != wire.first_index_source_offset { return Err("first_index_source_offset differs from the row layout".into()); }
         if frame.target_index().offset != wire.target_index_source_offset { return Err("target_index_source_offset differs from the row layout".into()); }
@@ -208,8 +208,8 @@ impl TryFrom<DataBlockTargetIndexRowWire> for DataBlockTargetIndexRow {
     fn try_from(wire: DataBlockTargetIndexRowWire) -> Result<Self, Self::Error> {
         let [a, b, c] = indices(wire.indices, wire.raw_indices);
         let [target_block, a_block, b_block, c_block] = wire.data_blocks;
-        let indices = [RowIndex { atom: a?, target: a_block }, RowIndex { atom: b?, target: b_block }, RowIndex { atom: c?, target: c_block }];
-        let target = RowIndex { atom: atom(wire.target_index, &wire.raw_target_index, "target_index/raw_target_index")?, target: target_block };
+        let indices = [CompactIndexTarget { atom: a?, target: a_block }, CompactIndexTarget { atom: b?, target: b_block }, CompactIndexTarget { atom: c?, target: c_block }];
+        let target = CompactIndexTarget { atom: atom(wire.target_index, &wire.raw_target_index, "target_index/raw_target_index")?, target: target_block };
         let frame = TargetRow::<String, u64>::new(target, indices, wire.mode, wire.source_offset).ok_or("source_offset: row extent overflows")?;
         if frame.target_index().offset != wire.target_index_source_offset { return Err("target_index_source_offset differs from the row layout".into()); }
         if frame.indices().map(|index| index.offset) != wire.index_source_offsets { return Err("index_source_offsets differ from the row layout".into()); }

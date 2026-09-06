@@ -13,7 +13,7 @@ pub(crate) mod object_uuid;
 mod reference_wire;
 use material_texture::MaterialTextureAsset;
 
-use crate::om::compact::{CompactIndexAtom, CountedIndexMembers};
+pub(crate) mod compact_lane;
 pub(crate) mod column_row;
 pub(crate) mod creation_display;
 pub(crate) mod display_color;
@@ -2091,228 +2091,6 @@ impl TryFrom<DataBlockReferenceWire> for DataBlockReference {
     }
 }
 
-/// Complete counted block-index lane carried by one offset-store block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DataBlockCountedIndexLaneWire",
-    into = "DataBlockCountedIndexLaneWire"
-)]
-pub struct DataBlockCountedIndexLane {
-    /// Globally unique lane identity.
-    pub id: String,
-    /// Owning block in the native `data_blocks` arena.
-    pub data_block: String,
-    /// Zero-based lane order within the block.
-    pub ordinal: u32,
-    /// Resolved non-null anchor with its source token.
-    pub anchor: DataBlockIndexToken,
-    /// Ordered nonempty resolved member tokens.
-    pub members: CountedIndexMembers<DataBlockIndexToken>,
-    /// Absolute file offset of the opening `01` marker.
-    pub source_offset: u64,
-}
-
-/// A compact index with its resolved block and source token.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DataBlockIndexToken {
-    pub target: DataBlockIndexTarget,
-    pub source_offset: u64,
-}
-
-/// A non-null compact index and the block it addresses.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DataBlockIndexTarget {
-    pub atom: CompactIndexAtom,
-    pub data_block: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct DataBlockCountedIndexLaneWire {
-    /// Globally unique lane identity.
-    id: String,
-    /// Owning block in the native `data_blocks` arena.
-    data_block: String,
-    /// Zero-based lane order within the block.
-    ordinal: u32,
-    /// Serialized count including the anchor and terminal slot.
-    declared_count: u8,
-    /// Decoded anchoring block index.
-    anchor_index: u32,
-    /// Exact serialized anchor token.
-    raw_anchor_index: Vec<u8>,
-    /// Same-section block addressed by the anchor.
-    anchor_data_block: String,
-    /// Ordered decoded member block indices.
-    member_indices: Vec<u32>,
-    /// Exact serialized member tokens in lane order.
-    raw_member_indices: Vec<Vec<u8>>,
-    /// Ordered same-section blocks addressed by the members.
-    member_data_blocks: Vec<String>,
-    /// Absolute file offset of the opening `01` marker.
-    source_offset: u64,
-    /// Absolute file offset of the anchoring compact index.
-    anchor_source_offset: u64,
-    /// Ordered absolute file offsets of member compact indices.
-    member_source_offsets: Vec<u64>,
-}
-
-impl From<DataBlockCountedIndexLane> for DataBlockCountedIndexLaneWire {
-    fn from(value: DataBlockCountedIndexLane) -> Self {
-        Self {
-            id: value.id,
-            data_block: value.data_block,
-            ordinal: value.ordinal,
-            declared_count: value.members.declared_count(),
-            anchor_index: value.anchor.target.atom.value(),
-            raw_anchor_index: value.anchor.target.atom.raw().to_vec(),
-            anchor_data_block: value.anchor.target.data_block,
-            source_offset: value.source_offset,
-            anchor_source_offset: value.anchor.source_offset,
-            member_indices: value.members.as_slice().iter().map(|token| token.target.atom.value()).collect(),
-            raw_member_indices: value.members.as_slice().iter().map(|token| token.target.atom.raw().to_vec()).collect(),
-            member_data_blocks: value.members.as_slice().iter().map(|token| token.target.data_block.clone()).collect(),
-            member_source_offsets: value.members.as_slice().iter().map(|token| token.source_offset).collect(),
-        }
-    }
-}
-impl TryFrom<DataBlockCountedIndexLaneWire> for DataBlockCountedIndexLane {
-    type Error = String;
-    fn try_from(wire: DataBlockCountedIndexLaneWire) -> Result<Self, Self::Error> {
-        let count = wire.member_indices.len();
-        if wire.raw_member_indices.len() != count
-            || wire.member_data_blocks.len() != count
-            || wire.member_source_offsets.len() != count
-        {
-            return Err("counted index lane member columns must have equal lengths".to_owned());
-        }
-        let members = wire.member_indices.into_iter().zip(wire.raw_member_indices)
-            .zip(wire.member_data_blocks).zip(wire.member_source_offsets)
-            .map(|(((index, raw), data_block), source_offset)| {
-                Ok(DataBlockIndexToken {
-                    target: DataBlockIndexTarget { atom: CompactIndexAtom::from_wire(index, &raw).map_err(|error| format!("member_indices/raw_member_indices: {error}"))?, data_block },
-                    source_offset,
-                })
-            }).collect::<Result<Vec<_>, String>>()?;
-        let members = CountedIndexMembers::new(members)?;
-        if wire.declared_count != members.declared_count() {
-            return Err("declared_count: must equal member count plus anchor and terminator".into());
-        }
-        Ok(Self {
-            members,
-            id: wire.id,
-            data_block: wire.data_block,
-            ordinal: wire.ordinal,
-            anchor: DataBlockIndexToken {
-                target: DataBlockIndexTarget {
-                    atom: CompactIndexAtom::from_wire(wire.anchor_index, &wire.raw_anchor_index).map_err(|error| format!("anchor_index/raw_anchor_index: {error}"))?,
-                    data_block: wire.anchor_data_block,
-                },
-                source_offset: wire.anchor_source_offset,
-            },
-            source_offset: wire.source_offset,
-        })
-    }
-}
-
-/// Fixed-width nullable `ABR` block-reference lane in contiguous column storage.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DataBlockAbrReferenceLaneWire",
-    into = "DataBlockAbrReferenceLaneWire"
-)]
-pub struct DataBlockAbrReferenceLane {
-    /// Globally unique lane identity.
-    pub id: String,
-    /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
-    /// Zero-based lane order within the section's column storage.
-    pub ordinal: u32,
-    /// Sixteen ordered nullable resolved tokens.
-    pub slots: [DataBlockAbrSlot; 16],
-    /// Directory entry containing the offset-only store.
-    pub source_entry: String,
-    /// Absolute file offset of the opening `11` marker.
-    pub source_offset: u64,
-}
-
-/// A nullable block target and its source token.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DataBlockAbrSlot {
-    pub target: Option<DataBlockIndexTarget>,
-    pub source_offset: u64,
-}
-
-
-#[derive(Serialize, Deserialize)]
-struct DataBlockAbrReferenceLaneWire {
-    /// Globally unique lane identity.
-    id: String,
-    /// Zero-based indexed-section ordinal within the container.
-    section_ordinal: u32,
-    /// Zero-based lane order within the section's column storage.
-    ordinal: u32,
-    /// Sixteen ordered nullable serialized block indices.
-    slot_indices: [Option<u32>; 16],
-    /// Exact compact-index tokens in slot order.
-    raw_slot_indices: [Vec<u8>; 16],
-    /// Sixteen ordered nullable same-section block identities.
-    slot_data_blocks: [Option<String>; 16],
-    /// Absolute file offsets of the sixteen compact-index tokens.
-    slot_source_offsets: [u64; 16],
-    /// Directory entry containing the offset-only store.
-    source_entry: String,
-    /// Absolute file offset of the opening `11` marker.
-    source_offset: u64,
-}
-
-impl From<DataBlockAbrReferenceLane> for DataBlockAbrReferenceLaneWire {
-    fn from(value: DataBlockAbrReferenceLane) -> Self {
-        Self {
-            id: value.id,
-            section_ordinal: value.section_ordinal,
-            ordinal: value.ordinal,
-            source_entry: value.source_entry,
-            source_offset: value.source_offset,
-            slot_indices: value
-                .slots
-                .each_ref()
-                .map(|slot| slot.target.as_ref().map(|target| target.atom.value())),
-            raw_slot_indices: value.slots.each_ref().map(|slot| slot.target.as_ref().map_or_else(|| vec![0xff], |target| target.atom.raw().to_vec())),
-            slot_data_blocks: value
-                .slots
-                .each_ref()
-                .map(|slot| slot.target.as_ref().map(|target| target.data_block.clone())),
-            slot_source_offsets: value.slots.map(|slot| slot.source_offset),
-        }
-    }
-}
-impl TryFrom<DataBlockAbrReferenceLaneWire> for DataBlockAbrReferenceLane {
-    type Error = String;
-    fn try_from(wire: DataBlockAbrReferenceLaneWire) -> Result<Self, Self::Error> {
-        let slots = wire.raw_slot_indices.into_iter().zip(wire.slot_indices)
-            .zip(wire.slot_data_blocks).zip(wire.slot_source_offsets)
-            .map(|(((raw, index), data_block), source_offset)| {
-                let target = match (index, data_block) {
-                    (None, None) if raw == [0xff] => None,
-                    (Some(index), Some(data_block)) => Some(DataBlockIndexTarget {
-                        atom: CompactIndexAtom::from_wire(index, &raw).map_err(|error| format!("slot_indices/raw_slot_indices: {error}"))?, data_block,
-                    }),
-                    _ => return Err("slot_indices/slot_data_blocks/raw_slot_indices: inconsistent null or target token".into()),
-                };
-                Ok(DataBlockAbrSlot { target, source_offset })
-            }).collect::<Result<Vec<_>, String>>()?;
-        let slots = slots.try_into().map_err(|_: Vec<DataBlockAbrSlot>| "slot_indices: must contain sixteen slots")?;
-        Ok(Self {
-            slots,
-            id: wire.id,
-            section_ordinal: wire.section_ordinal,
-            ordinal: wire.ordinal,
-            source_entry: wire.source_entry,
-            source_offset: wire.source_offset,
-        })
-    }
-}
-
 /// Complete named NX part palette for color indices 1 through 216.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "color_wire::PartColorTableWire", into = "color_wire::PartColorTableWire")]
@@ -3977,121 +3755,6 @@ pub fn data_block_references(
         .collect()
 }
 
-/// Decode complete in-range counted block-index lanes from offset-only stores.
-pub fn data_block_counted_index_lanes(container: &Container) -> Vec<DataBlockCountedIndexLane> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some((_, _, records)) = section.as_offset_only() else {
-                return Vec::new();
-            };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            let block_count = records.len() + 1;
-            records
-                .iter()
-                .cloned()
-                .enumerate()
-                .flat_map(|(record_ordinal, block)| {
-                    let block_ordinal = record_ordinal + 1;
-                    crate::om::offset_store_counted_index_lanes(block.bytes)
-                        .into_iter()
-                        .filter_map(|lane| {
-                            let anchor_data_block = control_index_data_block(
-                                section_ordinal,
-                                block_count,
-                                lane.anchor.atom.value(),
-                            )?;
-                            let source_base = entry_offset + block.offset as u64;
-                            let members = lane.members.try_map(|token| {
-                                Some(DataBlockIndexToken {
-                                    target: DataBlockIndexTarget {
-                                        atom: token.atom,
-                                        data_block: control_index_data_block(section_ordinal, block_count, token.atom.value())?,
-                                    },
-                                    source_offset: source_base + token.offset as u64,
-                                })
-                            })?;
-                            let anchor = DataBlockIndexToken {
-                                target: DataBlockIndexTarget { atom: lane.anchor.atom, data_block: anchor_data_block },
-                                source_offset: source_base + lane.anchor.offset as u64,
-                            };
-                            Some((lane.offset, anchor, members, source_base))
-                        })
-                        .enumerate()
-                        .map(
-                            |(
-                                ordinal,
-                                (offset, anchor, members, source_base),
-                            )| DataBlockCountedIndexLane {
-                                id: format!(
-                                    "nx:om-data-block-counted-index-lanes-{section_ordinal}-{block_ordinal}:lane#{ordinal}"
-                                ),
-                                data_block: format!(
-                                    "nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"
-                                ),
-                                ordinal: ordinal as u32,
-                                anchor,
-                                members,
-                                source_offset: source_base + offset as u64,
-                            },
-                        )
-                        .collect::<Vec<_>>()
-                })
-                .collect()
-        })
-        .collect()
-}
-
-/// Decode complete in-range `ABR` reference lanes from offset-store column storage.
-pub fn data_block_abr_reference_lanes(container: &Container) -> Vec<DataBlockAbrReferenceLane> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some((_, storage, records)) = section.as_offset_only() else {
-                return Vec::new();
-            };
-            let Some(storage_offset) = records.first().map(|record| record.offset) else {
-                return Vec::new();
-            };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            let source_base = entry_offset + storage_offset as u64;
-            let block_count = records.len() + 1;
-            crate::om::offset_store_abr_reference_lanes(storage)
-                .into_iter()
-                .filter_map(|lane| {
-                    let slots = lane.slots.into_iter().map(|token| {
-                        let target = match token.atom {
-                            Some(atom) => Some(DataBlockIndexTarget {
-                                atom,
-                                data_block: control_index_data_block(section_ordinal, block_count, atom.value())?,
-                            }),
-                            None => None,
-                        };
-                        Some(DataBlockAbrSlot { target, source_offset: source_base + token.offset as u64 })
-                    }).collect::<Option<Vec<_>>>()?;
-                    let slots = slots.try_into().ok()?;
-                    Some((lane, slots))
-                })
-                .enumerate()
-                .map(|(ordinal, (lane, slots))| DataBlockAbrReferenceLane {
-                    id: format!(
-                        "nx:om-data-block-abr-reference-lanes-{section_ordinal}:lane#{ordinal}"
-                    ),
-                    section_ordinal: section_ordinal as u32,
-                    ordinal: ordinal as u32,
-                    slots,
-                    source_entry: entry.name.clone(),
-                    source_offset: source_base + lane.offset as u64,
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
-}
-
 /// Decode complete part-local color tables from class-declaring offset stores.
 pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<PartColorDefinition>) {
     const CLASS_NAME: &str = "UGS::COLOR_table";
@@ -4713,14 +4376,11 @@ mod tests {
 
     #[test]
     fn counted_lane_wire_preserves_member_columns() {
-        let json = r#"{"id":"lane","data_block":"block","ordinal":0,"declared_count":3,"anchor_index":1,"raw_anchor_index":[1],"anchor_data_block":"anchor","member_indices":[2],"raw_member_indices":[[2]],"member_data_blocks":["member"],"source_offset":10,"anchor_source_offset":11,"member_source_offsets":[12]}"#;
-        let lane: super::DataBlockCountedIndexLane = serde_json::from_str(json).unwrap();
+        let json = r#"{"id":"lane","data_block":"block","ordinal":0,"declared_count":3,"anchor_index":1,"raw_anchor_index":[1],"anchor_data_block":"anchor","member_indices":[2],"raw_member_indices":[[2]],"member_data_blocks":["member"],"source_offset":9,"anchor_source_offset":11,"member_source_offsets":[12]}"#;
+        let lane: crate::native::om::compact_lane::DataBlockCountedIndexLane = serde_json::from_str(json).unwrap();
         assert_eq!(
-            lane.members.as_slice(),
-            [super::DataBlockIndexToken {
-                target: super::DataBlockIndexTarget { atom: CompactIndexAtom::read(&[2]).unwrap(), data_block: "member".to_owned() },
-                source_offset: 12,
-            }]
+            lane.frame.members().map(|index| (index.atom, index.target.as_str(), index.offset)).collect::<Vec<_>>(),
+            [(crate::om::compact::CompactIndexAtom::read(&[2]).unwrap(), "member", 12)]
         );
         assert_eq!(serde_json::to_string(&lane).unwrap(), json);
         for field in [
@@ -4731,7 +4391,7 @@ mod tests {
         ] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed[field] = serde_json::json!([]);
-            assert!(serde_json::from_value::<super::DataBlockCountedIndexLane>(malformed).is_err());
+            assert!(serde_json::from_value::<crate::native::om::compact_lane::DataBlockCountedIndexLane>(malformed).is_err());
         }
         for (field, invalid) in [
             ("declared_count", serde_json::json!(4)),
@@ -4740,7 +4400,7 @@ mod tests {
         ] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed[field] = invalid;
-            let error = serde_json::from_value::<super::DataBlockCountedIndexLane>(malformed).unwrap_err();
+            let error = serde_json::from_value::<crate::native::om::compact_lane::DataBlockCountedIndexLane>(malformed).unwrap_err();
             assert!(error.to_string().contains(field), "{error}");
         }
 
@@ -4749,18 +4409,12 @@ mod tests {
     #[test]
     fn abr_lane_wire_preserves_sixteen_nullable_columns() {
         let json = r#"{"id":"lane","section_ordinal":0,"ordinal":0,"slot_indices":[2,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"raw_slot_indices":[[2],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255]],"slot_data_blocks":["block",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"slot_source_offsets":[10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],"source_entry":"entry","source_offset":9}"#;
-        let lane: super::DataBlockAbrReferenceLane = serde_json::from_str(json).unwrap();
+        let lane: crate::native::om::compact_lane::DataBlockAbrReferenceLane = serde_json::from_str(json).unwrap();
         assert_eq!(
-            lane.slots[0],
-            super::DataBlockAbrSlot {
-                target: Some(super::DataBlockIndexTarget {
-                    atom: CompactIndexAtom::read(&[2]).unwrap(),
-                    data_block: "block".to_owned()
-                }),
-                source_offset: 10,
-            }
+            (lane.frame.slots()[0].atom.map(|index| (index.atom, index.target.as_str())), lane.frame.slots()[0].offset),
+            (Some((crate::om::compact::CompactIndexAtom::read(&[2]).unwrap(), "block")), 10)
         );
-        assert!(lane.slots[1..].iter().all(|slot| slot.target.is_none()));
+        assert!(lane.frame.slots()[1..].iter().all(|slot| slot.atom.is_none()));
         assert_eq!(serde_json::to_string(&lane).unwrap(), json);
         for field in [
             "slot_indices",
@@ -4770,17 +4424,17 @@ mod tests {
         ] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed[field].as_array_mut().unwrap().pop();
-            assert!(serde_json::from_value::<super::DataBlockAbrReferenceLane>(malformed).is_err());
+            assert!(serde_json::from_value::<crate::native::om::compact_lane::DataBlockAbrReferenceLane>(malformed).is_err());
         }
         for field in ["slot_indices", "slot_data_blocks"] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed[field][0] = serde_json::Value::Null;
-            assert!(serde_json::from_value::<super::DataBlockAbrReferenceLane>(malformed).is_err());
+            assert!(serde_json::from_value::<crate::native::om::compact_lane::DataBlockAbrReferenceLane>(malformed).is_err());
         }
         for (slot, raw) in [(0, vec![3]), (1, vec![0])] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed["raw_slot_indices"][slot] = serde_json::json!(raw);
-            let error = serde_json::from_value::<super::DataBlockAbrReferenceLane>(malformed).unwrap_err();
+            let error = serde_json::from_value::<crate::native::om::compact_lane::DataBlockAbrReferenceLane>(malformed).unwrap_err();
             assert!(error.to_string().contains("raw_slot_indices"), "{error}");
         }
 
@@ -5817,22 +5471,21 @@ mod tests {
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
         let container = container::scan_bytes(file).expect("required invariant");
 
-        let lanes = super::data_block_abr_reference_lanes(&container);
+        let lanes = crate::native::om::compact_lane::data_block_abr_reference_lanes(&container);
         assert_eq!(lanes.len(), 1);
         assert_eq!(
-            lanes[0].slots[0].target.as_ref().map(|target| target.atom.value()),
+            lanes[0].frame.slots()[0].atom.map(|target| target.atom.value()),
             Some(2)
         );
         assert_eq!(
-            lanes[0].slots[0]
-                .target
-                .as_ref()
-                .map(|target| target.data_block.as_str()),
+            lanes[0].frame.slots()[0]
+                .atom
+                .map(|target| target.target.as_str()),
             Some("nx:om-data-blocks-0:block#2")
         );
-        assert!(lanes[0].slots[1..].iter().all(|slot| slot.target.is_none()));
-        assert_eq!(lanes[0].slots.len(), 16);
-        assert_eq!(lanes[0].slots[0].source_offset, lanes[0].source_offset + 1);
+        assert!(lanes[0].frame.slots()[1..].iter().all(|slot| slot.atom.is_none()));
+        assert_eq!(lanes[0].frame.slots().len(), 16);
+        assert_eq!(lanes[0].frame.slots()[0].offset, lanes[0].frame.offset() + 1);
     }
 
     #[test]

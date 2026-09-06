@@ -1,5 +1,7 @@
-use crate::om::column_row::{IndexRow, LinkedRow, TargetRow, RowIndex};
 // SPDX-License-Identifier: Apache-2.0
+
+use crate::om::column_row::{IndexRow, LinkedRow, TargetRow};
+use crate::om::compact::CompactIndexTarget;
 
 use std::io::Cursor;
 use std::sync::Arc;
@@ -1551,7 +1553,7 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
         id: "row#3".into(),
         section_ordinal: 0,
         ordinal: 3,
-        frame: IndexRow::<String, u64>::new(crate::om::compact::CompactIndexAtom::from_wire(20, &[128, 20]).unwrap(), crate::om::discriminators::LinkedIndexFlag::Form03, [4, 4, 5, 6].map(|value| RowIndex { atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(), target: format!("block#{value}") }), 100).unwrap(),
+        frame: IndexRow::<String, u64>::new(crate::om::compact::CompactIndexAtom::from_wire(20, &[128, 20]).unwrap(), crate::om::discriminators::LinkedIndexFlag::Form03, [4, 4, 5, 6].map(|value| CompactIndexTarget { atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(), target: format!("block#{value}") }), 100).unwrap(),
         source_entry: "entry".into(),
         opening_data_block: "opening-block".into(),
         opening_block_offset: 8,
@@ -1592,7 +1594,7 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
         id: "linked-row#3".into(),
         section_ordinal: 0,
         ordinal: 3,
-        frame: LinkedRow::<String, u64>::new(crate::om::compact::CompactIndexAtom::from_wire(20, &[128, 20]).unwrap(), crate::om::discriminators::LinkedIndexDiscriminator::Form16, RowIndex { atom: crate::om::compact::CompactIndexAtom::read(&[4]).unwrap(), target: "block#4".into() }, [5, 6, 4].map(|value| RowIndex { atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(), target: format!("block#{value}") }), crate::om::discriminators::LinkedIndexFlag::Form03, crate::om::discriminators::IndexRowMode::Form04, 100).unwrap(),
+        frame: LinkedRow::<String, u64>::new(crate::om::compact::CompactIndexAtom::from_wire(20, &[128, 20]).unwrap(), crate::om::discriminators::LinkedIndexDiscriminator::Form16, CompactIndexTarget { atom: crate::om::compact::CompactIndexAtom::read(&[4]).unwrap(), target: "block#4".into() }, [5, 6, 4].map(|value| CompactIndexTarget { atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(), target: format!("block#{value}") }), crate::om::discriminators::LinkedIndexFlag::Form03, crate::om::discriminators::IndexRowMode::Form04, 100).unwrap(),
         source_entry: "entry".into(),
         opening_data_block: "opening-block".into(),
         opening_block_offset: 8,
@@ -1665,7 +1667,7 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
         id: "target-row#3".into(),
         section_ordinal: 0,
         ordinal: 3,
-        frame: TargetRow::<String, u64>::new(RowIndex { atom: crate::om::compact::CompactIndexAtom::read(&[4]).unwrap(), target: "block#4".into() }, [5, 6, 4].map(|value| RowIndex { atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(), target: format!("block#{value}") }), crate::om::discriminators::IndexRowMode::Form07, 100).unwrap(),
+        frame: TargetRow::<String, u64>::new(CompactIndexTarget { atom: crate::om::compact::CompactIndexAtom::read(&[4]).unwrap(), target: "block#4".into() }, [5, 6, 4].map(|value| CompactIndexTarget { atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(), target: format!("block#{value}") }), crate::om::discriminators::IndexRowMode::Form07, 100).unwrap(),
         source_entry: "entry".into(),
         opening_data_block: "opening-block".into(),
         opening_block_offset: 8,
@@ -1756,7 +1758,7 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
         id: "target-row#3".into(),
         section_ordinal: 0,
         ordinal: 3,
-        frame: TargetRow::<String, u64>::new(RowIndex { atom: crate::om::compact::CompactIndexAtom::read(&[5]).unwrap(), target: "block#5".into() }, [6, 7, 5].map(|value| RowIndex { atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(), target: format!("block#{value}") }), crate::om::discriminators::IndexRowMode::Form07, 100).unwrap(),
+        frame: TargetRow::<String, u64>::new(CompactIndexTarget { atom: crate::om::compact::CompactIndexAtom::read(&[5]).unwrap(), target: "block#5".into() }, [6, 7, 5].map(|value| CompactIndexTarget { atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(), target: format!("block#{value}") }), crate::om::discriminators::IndexRowMode::Form07, 100).unwrap(),
         source_entry: "entry".into(),
         opening_data_block: "opening-block".into(),
         opening_block_offset: 8,
