@@ -38,8 +38,8 @@ use cadmpeg_ir::geometry::{
     VertexBlendBoundary, VertexBlendBoundaryGeometry, VertexBlendConstruction,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, UnknownId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
+    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -379,7 +379,8 @@ fn emit_carrier_surface(
             ),
         };
         if let Ok(procedural) = ProceduralSurface::try_new(
-            format!("{format}:brep:procedural_surface#{i}").into(),
+            ProceduralSurfaceId::mint(format!("{format}:brep:procedural_surface#{i}"))
+                .expect("valid owning format and numeric record index"),
             definition,
             procedural.cache_fit_tolerance,
             nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens),
@@ -393,7 +394,8 @@ fn emit_carrier_surface(
         out.procedural_surfaces.push((
             SurfaceId::mint(id(format, i)).expect("identity grammar"),
             ProceduralSurface::new(
-                format!("{format}:brep:procedural_surface#{i}").into(),
+                ProceduralSurfaceId::mint(format!("{format}:brep:procedural_surface#{i}"))
+                    .expect("valid owning format and numeric record index"),
                 ProceduralSurfaceDefinition::Unknown {
                     record: Some(
                         UnknownId::mint(unknown_record_id(r, format)).expect("identity grammar"),
@@ -2881,7 +2883,8 @@ fn emit_carrier_curve(
             }
         };
         if let Ok(procedural) = ProceduralCurve::try_new(
-            format!("{format}:brep:procedural_curve#{i}").into(),
+            ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
+                .expect("valid owning format and numeric record index"),
             definition,
             procedural.cache_fit_tolerance,
         ) {
@@ -2894,7 +2897,8 @@ fn emit_carrier_curve(
         out.procedural_curves.push((
             CurveId::mint(id(format, i)).expect("identity grammar"),
             ProceduralCurve::new(
-                format!("{format}:brep:procedural_curve#{i}").into(),
+                ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
+                    .expect("valid owning format and numeric record index"),
                 definition,
             ),
         ));
@@ -4122,7 +4126,7 @@ pub(crate) fn project_subshell_faces(
     for face in &mut out.faces {
         let native_owner = face
             .id
-            .0
+            .as_str()
             .rsplit_once('#')
             .and_then(|(_, index)| index.parse::<i64>().ok())
             .and_then(|index| by_index.get(&index))
@@ -4159,7 +4163,7 @@ pub(crate) fn emit_attributes(
                 if out
                     .bodies
                     .iter()
-                    .any(|entity| entity.id.0 == id(format, index)) =>
+                    .any(|entity| entity.id.as_str() == id(format, index)) =>
             {
                 Some(AttributeTarget::Body(
                     BodyId::mint(id(format, index)).expect("identity grammar"),
@@ -4169,7 +4173,7 @@ pub(crate) fn emit_attributes(
                 if out
                     .shells
                     .iter()
-                    .any(|entity| entity.id.0 == id(format, index)) =>
+                    .any(|entity| entity.id.as_str() == id(format, index)) =>
             {
                 Some(AttributeTarget::Shell(
                     ShellId::mint(id(format, index)).expect("identity grammar"),
@@ -4182,7 +4186,7 @@ pub(crate) fn emit_attributes(
             "region" | "lump" => out
                 .regions
                 .iter()
-                .find(|entity| entity.id.0 == id(format, index))
+                .find(|entity| entity.id.as_str() == id(format, index))
                 .map(|entity| AttributeTarget::Body(entity.body.clone())),
             "face" if kept_faces.contains(&index) => Some(AttributeTarget::Face(
                 FaceId::mint(id(format, index)).expect("identity grammar"),

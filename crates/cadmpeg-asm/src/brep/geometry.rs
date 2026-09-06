@@ -1005,7 +1005,7 @@ pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut AsmBrep) {
         let Some([first, last]) = edge
             .curve
             .as_ref()
-            .and_then(|curve| domains.get(curve.0.as_str()))
+            .and_then(|curve| domains.get(curve.as_str()))
         else {
             continue;
         };

@@ -89,7 +89,7 @@ pub(crate) fn emit_annotation_records(
     let unknown_ids = out
         .unknowns
         .iter()
-        .map(|unknown| unknown.id().0.as_str())
+        .map(|unknown| unknown.id().as_str())
         .collect::<HashSet<_>>();
     let procedural_ids = out
         .procedural_surfaces

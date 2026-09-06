@@ -8,8 +8,8 @@ use crate::nurbs;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
-    CoedgeId, EdgeId, FaceId, LoopId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId,
-    VertexId,
+    CoedgeId, EdgeId, FaceId, LoopId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId,
+    SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::topology::Sense;
 use std::collections::{HashMap, HashSet};
@@ -453,10 +453,7 @@ pub(crate) fn walk_reachable_topology(
                                                 curve_geo.insert(
                                                     cv,
                                                     CurveGeometry::Procedural {
-                                                        construction: format!(
-                                                            "{format}:brep:procedural_curve#{cv}"
-                                                        )
-                                                        .into(),
+                                                        construction: ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{cv}")).expect("valid owning format and numeric record index"),
                                                         cache: None,
                                                     },
                                                 );
@@ -730,7 +727,10 @@ fn keep_wire_edge(
                     reverse_procedural_curve_definition(&mut definition);
                 }
                 entry.insert(CurveGeometry::Procedural {
-                    construction: format!("{format}:brep:procedural_curve#{curve_index}").into(),
+                    construction: ProceduralCurveId::mint(format!(
+                        "{format}:brep:procedural_curve#{curve_index}"
+                    ))
+                    .expect("valid owning format and numeric record index"),
                     cache: None,
                 });
                 cacheless_procedural_curve_defs.insert(curve_index, definition);

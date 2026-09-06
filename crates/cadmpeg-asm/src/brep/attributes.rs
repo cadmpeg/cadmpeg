@@ -119,7 +119,7 @@ pub(crate) fn attribute_owner(record: &Record) -> Option<i64> {
 pub fn attribute_key(attribute: &SourceAttribute) -> &str {
     attribute
         .id
-        .0
+        .as_str()
         .rsplit('#')
         .next()
         .unwrap_or(attribute.id.as_str())

@@ -1022,7 +1022,8 @@ fn append_preserves_body_ordinals_within_each_source_brep() {
         } else {
             "f3d:brep:entity#18"
         }
-        .into(),
+        .try_into()
+        .expect("valid identity"),
         body_ordinal: 0,
         source_brep: Some(source.into()),
         asm_body_key: Some(23),
