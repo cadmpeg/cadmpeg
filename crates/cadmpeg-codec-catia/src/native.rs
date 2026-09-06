@@ -2188,6 +2188,7 @@ impl TryFrom<CatiaValueSchemaSelectionWire> for CatiaValueSchemaSelection {
 /// One exact `7C02` source-schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "CatiaCatalogWire", into = "CatiaCatalogWire")]
 pub struct CatiaCatalog {
     /// Globally unique catalog identity.
     pub id: String,
@@ -2195,11 +2196,74 @@ pub struct CatiaCatalog {
     pub byte_offset: u64,
     /// Total framed byte length.
     pub byte_len: u64,
-    /// Stored count, equal to the entry population plus one.
-    pub declared_count: u32,
     /// Catalog entries in serialized order.
     #[serde(default)]
     pub entries: Vec<CatiaCatalogEntry>,
+}
+
+impl CatiaCatalog {
+    pub fn declared_count(&self) -> u32 {
+        u32::try_from(self.entries.len() + 1).unwrap_or(u32::MAX)
+    }
+}
+
+// The stored header keeps its declared count until the entry arena is joined.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaCatalogWire {
+    /// Globally unique catalog identity.
+    id: String,
+    /// Byte offset of the `7C02` marker.
+    byte_offset: u64,
+    /// Total framed byte length.
+    byte_len: u64,
+    /// Stored count, equal to the entry population plus one.
+    declared_count: u32,
+    /// Catalog entries in serialized order.
+    #[serde(default)]
+    entries: Vec<CatiaCatalogEntry>,
+}
+
+impl CatiaCatalogWire {
+    fn header(catalog: &CatiaCatalog) -> Self {
+        Self {
+            id: catalog.id.clone(),
+            byte_offset: catalog.byte_offset,
+            byte_len: catalog.byte_len,
+            declared_count: catalog.declared_count(),
+            entries: Vec::new(),
+        }
+    }
+}
+
+impl From<CatiaCatalog> for CatiaCatalogWire {
+    fn from(catalog: CatiaCatalog) -> Self {
+        Self {
+            declared_count: catalog.declared_count(),
+            id: catalog.id,
+            byte_offset: catalog.byte_offset,
+            byte_len: catalog.byte_len,
+            entries: catalog.entries,
+        }
+    }
+}
+
+impl TryFrom<CatiaCatalogWire> for CatiaCatalog {
+    type Error = &'static str;
+
+    fn try_from(wire: CatiaCatalogWire) -> Result<Self, Self::Error> {
+        if u32::try_from(wire.entries.len()).ok().and_then(|count| count.checked_add(1))
+            != Some(wire.declared_count)
+        {
+            return Err("catalog count disagrees with entries");
+        }
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            byte_len: wire.byte_len,
+            entries: wire.entries,
+        })
+    }
 }
 
 /// One source-schema name from a [`CatiaCatalog`].
@@ -7215,7 +7279,7 @@ macro_rules! define_catia_arenas {
         pub(crate) struct CatiaArenaProjection {
             $(
                 $(
-                    $field: define_catia_arenas!(@type $stored, $record),
+                    $field: define_catia_arenas!(@type $field, $stored, $record),
                 )?
             )*
             $(
@@ -7237,6 +7301,11 @@ macro_rules! define_catia_arenas {
             fn from(mut native: CatiaNative) -> Self {
                 $(
                     $(
+                        define_catia_arenas!(@prepare $field, native, $stored, $field);
+                    )?
+                )*
+                $(
+                    $(
                         let $field = native
                             .$owner
                             .iter_mut()
@@ -7248,7 +7317,7 @@ macro_rules! define_catia_arenas {
                     $(
                         $(
                             $field: define_catia_arenas!(
-                                @stored_value $stored, native, $field
+                                @stored_value $stored, native, $field, $field
                             ),
                         )?
                     )*
@@ -7293,13 +7362,23 @@ macro_rules! define_catia_arenas {
             }
         }
     };
-    (@type $kind:ident, $record:ty) => {
+    (@type catalogs, $kind:ident, $record:ty) => {
+        Vec<CatiaCatalogWire>
+    };
+    (@type $field:ident, $kind:ident, $record:ty) => {
         Vec<$record>
     };
     (@flattened_type $owner:ident, $children:ident, $record:ty) => {
         Vec<$record>
     };
-    (@stored_value stored, $native:ident, $field:ident) => {
+    (@prepare catalogs, $native:ident, $kind:ident, $binding:ident) => {
+        let $binding = $native.catalogs.iter().map(CatiaCatalogWire::header).collect();
+    };
+    (@prepare $field:ident, $native:ident, $kind:ident, $binding:ident) => {};
+    (@stored_value stored, $native:ident, catalogs, $binding:ident) => {
+        $binding
+    };
+    (@stored_value stored, $native:ident, $field:ident, $binding:ident) => {
         $native.$field
     };
     (@flattened_value $owner:ident, $children:ident, $field:ident) => {
@@ -9865,7 +9944,6 @@ impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
 impl From<catalog::Catalog> for CatiaCatalog {
     fn from(catalog: catalog::Catalog) -> Self {
         let id = format!("catia:outer:catalog#{:010}", catalog.pos);
-        let declared_count = catalog.declared_count();
         let entries = catalog
             .entries
             .into_iter()
@@ -9881,7 +9959,6 @@ impl From<catalog::Catalog> for CatiaCatalog {
             id,
             byte_offset: catalog.pos as u64,
             byte_len: catalog.total_len as u64,
-            declared_count,
             entries,
         }
     }

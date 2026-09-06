@@ -143,12 +143,11 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
     ]));
     let native = crate::native::CatiaNative::decode(&bytes);
 
-    let mut invalid_count = native.clone();
-    invalid_count.catalogs[0].declared_count += 1;
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    invalid_count
-        .store(&mut namespace)
-        .expect("store invalid catalog count");
+    native.store(&mut namespace).expect("store catalogs");
+    let mut catalogs: Vec<serde_json::Value> = namespace.arena_as("catalogs").unwrap();
+    catalogs[0]["declared_count"] = serde_json::json!(native.catalogs[0].declared_count() + 1);
+    namespace.set_arena("catalogs", &catalogs).unwrap();
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))

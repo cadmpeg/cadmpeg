@@ -1716,7 +1716,7 @@ pub(super) fn validate_native_links(
     value_blocks: &[CatiaValueBlock],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for catalog in catalogs {
-        let count_width = if catalog.declared_count <= 0x50 { 1 } else { 2 };
+        let count_width = if catalog.declared_count() <= 0x50 { 1 } else { 2 };
         let Some(mut expected_offset) = catalog.byte_offset.checked_add(6 + count_width) else {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "catalog `{}` has an overflowing extent",

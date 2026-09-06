@@ -36,13 +36,13 @@ impl CatiaNative {
     pub fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        let mut catalogs: Vec<CatiaCatalog> = namespace.arena_as("catalogs")?;
+        let mut catalog_headers: Vec<CatiaCatalogWire> = namespace.arena_as("catalogs")?;
         let entries: Vec<CatiaCatalogEntry> = namespace.arena_as("catalog_entries")?;
-        let catalog_ids = catalogs
+        let catalog_ids = catalog_headers
             .iter()
             .map(|catalog| catalog.id.as_str())
             .collect::<HashSet<_>>();
-        if catalog_ids.len() != catalogs.len() {
+        if catalog_ids.len() != catalog_headers.len() {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "duplicate CATIA catalog identity".to_string(),
             ));
@@ -56,22 +56,18 @@ impl CatiaNative {
                 entry.id, entry.parent
             )));
         }
-        for catalog in &mut catalogs {
+        for catalog in &mut catalog_headers {
             catalog.entries = entries
                 .iter()
                 .filter(|entry| entry.parent == catalog.id)
                 .cloned()
                 .collect();
             catalog.entries.sort_by_key(|entry| entry.ordinal);
-            if u32::try_from(catalog.entries.len())
-                .ok()
-                .and_then(|count| count.checked_add(1))
-                != Some(catalog.declared_count)
-                || catalog
-                    .entries
-                    .iter()
-                    .enumerate()
-                    .any(|(ordinal, entry)| usize::try_from(entry.ordinal).ok() != Some(ordinal))
+            if catalog
+                .entries
+                .iter()
+                .enumerate()
+                .any(|(ordinal, entry)| usize::try_from(entry.ordinal).ok() != Some(ordinal))
             {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "catalog `{}` has an invalid entry sequence",
@@ -79,6 +75,14 @@ impl CatiaNative {
                 )));
             }
         }
+        let catalogs = catalog_headers
+            .into_iter()
+            .map(|header| {
+                CatiaCatalog::try_from(header).map_err(|message| {
+                    cadmpeg_ir::NativeConvertError::InvalidOwner(message.to_owned())
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let mut graphs: Vec<CatiaObjectGraph> = namespace.arena_as("object_graphs")?;
         let mut records: Vec<CatiaObjectRecord> = namespace.arena_as("object_graph_records")?;
         if namespace.version() < CATIA_TYPED_OWNER_SLOT_VERSION {
