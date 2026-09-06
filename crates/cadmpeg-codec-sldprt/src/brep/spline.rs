@@ -10,7 +10,7 @@ use cadmpeg_ir::math::Point3;
 
 use cadmpeg_core::decode::View;
 
-use super::{Carrier, CarrierGeometry, LEN_TO_MM};
+use super::{CurveCarrier, SurfaceCarrier, LEN_TO_MM};
 
 use crate::layout::bspline_array_header as arr_hdr;
 use crate::layout::bspline_compact_array_header as compact_arr;
@@ -671,7 +671,7 @@ pub(crate) fn patch_nurbs_surface(
     patch_f64_span(bytes, v_knot_span, &new_v)
 }
 
-pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
+pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, CurveCarrier> {
     let arrays = scan_arrays(bytes, None);
     let descriptors = scan_curve_descriptors(bytes);
     let mut out = HashMap::new();
@@ -748,14 +748,12 @@ pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         let Ok(nurbs) = NurbsCurve::new(descriptor.degree, knots, points, weights, false) else {
             continue;
         };
-        out.entry(attr).or_insert(Carrier {
+        out.entry(attr).or_insert(CurveCarrier {
             attr,
             offset: off,
             end: off + 2,
-            geometry: CarrierGeometry::Curve(CurveGeometry::Nurbs(nurbs)),
-            frame: None,
+            geometry: CurveGeometry::Nurbs(nurbs),
             parameter_range: None,
-            orientation_reversed: false,
         });
     }
     out
@@ -824,7 +822,7 @@ fn surface_knot_values(
     (resolved.len() == 1).then(|| resolved.pop()).flatten()
 }
 
-pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
+pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, SurfaceCarrier> {
     let descriptors = scan_surface_descriptors(bytes);
     let compact_attrs = descriptors
         .values()
@@ -964,13 +962,11 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         ) else {
             continue;
         };
-        out.entry(attr).or_insert(Carrier {
+        out.entry(attr).or_insert(SurfaceCarrier {
             attr,
             offset: off,
             end: off + 2,
-            geometry: CarrierGeometry::Surface(SurfaceGeometry::Nurbs(nurbs)),
-            frame: None,
-            parameter_range: None,
+            geometry: SurfaceGeometry::Nurbs(nurbs),
             orientation_reversed: false,
         });
     }

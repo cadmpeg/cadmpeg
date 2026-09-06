@@ -324,8 +324,7 @@ fn surface_descriptor_uses_terminal_array_references() {
     let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
         .remove(&180)
         .expect("surface carrier");
-    let crate::brep::CarrierGeometry::Surface(SurfaceGeometry::Nurbs(surface)) = carrier.geometry
-    else {
+    let SurfaceGeometry::Nurbs(surface) = carrier.geometry else {
         panic!("expected NURBS surface");
     };
     assert_eq!(surface.control_points()[0].x, 10_000.0);
@@ -447,7 +446,7 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
 
 #[test]
 fn compact_carrier_shapes_decode() {
-    use crate::brep::{parse_carrier, CarrierGeometry};
+    use crate::brep::{parse_carrier, Carrier, CurveCarrier, SurfaceCarrier};
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
     // Cylinder (tag 00 33, 10 f64): origin, axis, radius, refdir.
@@ -461,8 +460,11 @@ fn compact_carrier_shapes_decode() {
     for v in [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.05, 1.0, 0.0, 0.0] {
         bef64(&mut cyl, v);
     }
-    match parse_carrier(&cyl, 0).unwrap().geometry {
-        CarrierGeometry::Surface(SurfaceGeometry::Cylinder { radius, axis, .. }) => {
+    match parse_carrier(&cyl, 0).unwrap() {
+        Carrier::Surface(SurfaceCarrier {
+            geometry: SurfaceGeometry::Cylinder { radius, axis, .. },
+            ..
+        }) => {
             assert_eq!(radius, 50.0); // 0.05 m ×1000
             assert_eq!(axis.z, 1.0);
         }
@@ -480,8 +482,11 @@ fn compact_carrier_shapes_decode() {
     for v in [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.003] {
         bef64(&mut circ, v);
     }
-    match parse_carrier(&circ, 0).unwrap().geometry {
-        CarrierGeometry::Curve(CurveGeometry::Circle { radius, .. }) => assert_eq!(radius, 3.0),
+    match parse_carrier(&circ, 0).unwrap() {
+        Carrier::Curve(CurveCarrier {
+            geometry: CurveGeometry::Circle { radius, .. },
+            ..
+        }) => assert_eq!(radius, 3.0),
         other => panic!("expected circle, got {other:?}"),
     }
 

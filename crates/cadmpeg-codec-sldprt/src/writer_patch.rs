@@ -490,7 +490,11 @@ fn patch_curves(
 
 fn patch_compact(payload: &mut [u8], body_start: usize, offset: u64, values: &[f64]) -> Option<()> {
     let carrier = crate::brep::parse_carrier(payload.get(body_start..)?, offset as usize)?;
-    let start = body_start.checked_add(carrier.end.checked_sub(values.len() * 8)?)?;
+    let end = match carrier {
+        crate::brep::Carrier::Curve(carrier) => carrier.end,
+        crate::brep::Carrier::Surface(carrier) => carrier.end,
+    };
+    let start = body_start.checked_add(end.checked_sub(values.len() * 8)?)?;
     for (index, value) in values.iter().enumerate() {
         payload
             .get_mut(start + index * 8..start + (index + 1) * 8)?

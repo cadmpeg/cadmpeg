@@ -37,7 +37,7 @@ use super::offset::OffsetCarrier;
 use super::sweep::{self, SweepKind};
 use super::topology;
 use super::typed;
-use super::{scan_carriers, Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
+use super::{scan_carriers, CarrierIndex, CurveCarrier, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
@@ -518,10 +518,7 @@ fn resolve_sweep_surface(
 ) -> Option<(SurfaceGeometry, usize, &'static str, bool)> {
     let construction = carriers.sweep(face.surface_attr)?;
     let profile = carriers.curve(construction.profile_attr)?;
-    let CarrierGeometry::Curve(profile_geometry) = &profile.geometry else {
-        return None;
-    };
-    let curve = sweep::profile_nurbs(profile_geometry)?;
+    let curve = sweep::profile_nurbs(&profile.geometry)?;
     let profile_derived = carriers.curve_is_derived(construction.profile_attr);
     match &construction.kind {
         SweepKind::Spun { base, axis } => Some((
@@ -672,11 +669,8 @@ fn ensure_surface_support(
             if !out.surfaces.iter().any(|surface| surface.id == id)
                 && !emitted_face_surface_by_carrier.contains_key(&attr)
             {
-                let CarrierGeometry::Surface(geometry) = &carrier.geometry else {
-                    unreachable!("surface index contains only surface carriers");
-                };
-                let mut geometry = geometry.clone();
-                if let Some((_, u_reference, v_reference)) = carrier.frame {
+                let mut geometry = carrier.geometry.clone();
+                if let Some((u_reference, v_reference)) = carrier.frame() {
                     fold_surface_frame(&mut geometry, u_reference, v_reference);
                     annotate_surface_frame(annotations, id.as_str(), &geometry);
                 }
@@ -795,16 +789,14 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
 }
 
 fn edge_parameter_range(
-    carrier: &Carrier,
+    carrier: &CurveCarrier,
     endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
 ) -> Option<([f64; 2], bool)> {
     const TOLERANCE_MM: f64 = 1.0e-7;
 
     let range = carrier.parameter_range?;
     let range = match &carrier.geometry {
-        CarrierGeometry::Curve(CurveGeometry::Line { .. }) => {
-            range.map(|parameter| parameter * LEN_TO_MM)
-        }
+        CurveGeometry::Line { .. } => range.map(|parameter| parameter * LEN_TO_MM),
         _ => range,
     };
     let range = if range[0] <= range[1] {
@@ -815,9 +807,7 @@ fn edge_parameter_range(
     let Some(endpoints) = endpoints else {
         return Some((range, false));
     };
-    let CarrierGeometry::Curve(geometry) = &carrier.geometry else {
-        return None;
-    };
+    let geometry = &carrier.geometry;
     let evaluated = range.map(|parameter| cadmpeg_ir::eval::curve_point(geometry, parameter));
     let [Some(first), Some(second)] = evaluated else {
         return None;
@@ -1358,12 +1348,12 @@ fn decode_graph(
             .then(|| carriers.curve(curve_attr))
             .flatten()
             .and_then(|carrier| match &carrier.geometry {
-                CarrierGeometry::Curve(CurveGeometry::Circle {
+                CurveGeometry::Circle {
                     center,
                     ref_direction,
                     radius,
                     ..
-                }) => Some(cadmpeg_ir::math::Point3::new(
+                } => Some(cadmpeg_ir::math::Point3::new(
                     center.x + ref_direction.x * radius,
                     center.y + ref_direction.y * radius,
                     center.z + ref_direction.z * radius,
@@ -1431,18 +1421,12 @@ fn decode_graph(
         let eu = t.edge_uses.get(&e);
         let mut curve = None;
         if curve_attr != 0 {
-            match carriers.curve(curve_attr).map(|c| &c.geometry) {
-                Some(CarrierGeometry::Curve(_)) => {
+            match carriers.curve(curve_attr) {
+                Some(carrier) => {
                     if emitted_curves.insert(curve_attr) {
-                        emit_curve(
-                            &mut out,
-                            carriers.curve(curve_attr).expect("matched curve carrier"),
-                        );
+                        emit_curve(&mut out, carrier);
                         if carriers.curve_is_derived(curve_attr) {
-                            let offset = carriers
-                                .curve(curve_attr)
-                                .expect("matched curve carrier")
-                                .offset;
+                            let offset = carrier.offset;
                             annotations
                                 .note(id_curve(curve_attr), source_stream, offset as u64)
                                 .tag("surface_intersection");
@@ -1544,15 +1528,11 @@ fn decode_graph(
                     .and_then(|(_, _, curve_attr)| {
                         let support_data = carriers.intersection_support_data(*curve_attr)?;
                         let curve_carrier = carriers.curve(*curve_attr)?;
-                        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) =
-                            &curve_carrier.geometry
-                        else {
+                        let CurveGeometry::Nurbs(curve) = &curve_carrier.geometry else {
                             return None;
                         };
                         let surface = carriers.surface(f.surface_attr)?;
-                        let CarrierGeometry::Surface(surface) = &surface.geometry else {
-                            return None;
-                        };
+                        let surface = &surface.geometry;
                         let (geometry, parameter_range, source) = intersection_support_pcurve(
                             support_data,
                             curve,
@@ -1718,14 +1698,14 @@ fn decode_graph(
         // Support surface: a decoded surface carrier, else an opaque carrier.
         let surf_off = t.bridges.get(&f.bridge_attr).map_or(0, |r| r.offset);
         let mut surface_orientation_reversed = false;
-        match carriers.surface(f.surface_attr).map(|c| (c, &c.geometry)) {
-            Some((c, CarrierGeometry::Surface(geo))) => {
+        match carriers.surface(f.surface_attr) {
+            Some(c) => {
                 surface_orientation_reversed = c.orientation_reversed;
                 annotations
                     .note(id_surf(f.bridge_attr), source_stream, c.offset as u64)
                     .tag("compact_surface");
-                let mut geometry = geo.clone();
-                if let Some((_, u_reference, v_reference)) = c.frame {
+                let mut geometry = c.geometry.clone();
+                if let Some((u_reference, v_reference)) = c.frame() {
                     fold_surface_frame(&mut geometry, u_reference, v_reference);
                     annotate_surface_frame(&mut annotations, &id_surf(f.bridge_attr), &geometry);
                 }
@@ -5329,14 +5309,12 @@ fn synthesize_sphere_seams(
     }
 }
 
-fn emit_curve(out: &mut Brep, carrier: &Carrier) {
-    if let CarrierGeometry::Curve(geo) = &carrier.geometry {
-        out.curves.push(Curve {
-            id: CurveId::mint(id_curve(carrier.attr)).expect("identity grammar"),
-            source_object: None,
-            geometry: geo.clone(),
-        });
-    }
+fn emit_curve(out: &mut Brep, carrier: &CurveCarrier) {
+    out.curves.push(Curve {
+        id: CurveId::mint(id_curve(carrier.attr)).expect("identity grammar"),
+        source_object: None,
+        geometry: carrier.geometry.clone(),
+    });
 }
 
 #[cfg(test)]
@@ -5387,19 +5365,15 @@ mod tests {
 
     #[test]
     fn line_edge_parameters_convert_from_metres_to_millimetres() {
-        let carrier = crate::brep::Carrier {
+        let carrier = crate::brep::CurveCarrier {
             attr: 1,
             offset: 0,
             end: 0,
-            geometry: crate::brep::CarrierGeometry::Curve(
-                cadmpeg_ir::geometry::CurveGeometry::Line {
-                    origin: cadmpeg_ir::math::Point3::new(0.0, 17.5, 0.0),
-                    direction: cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0),
-                },
-            ),
-            frame: None,
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point3::new(0.0, 17.5, 0.0),
+                direction: cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0),
+            },
             parameter_range: Some([-0.014, 0.0165]),
-            orientation_reversed: false,
         };
 
         let endpoints = [

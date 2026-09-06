@@ -6,7 +6,7 @@ use cadmpeg_ir::math::Point3;
 
 use cadmpeg_core::decode::View;
 
-use super::{Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
+use super::{CarrierIndex, CurveCarrier, LEN_TO_MM};
 
 const TAG: u8 = 0x85;
 const PAYLOAD_LEN: usize = 2 + 8 * 8;
@@ -115,7 +115,7 @@ fn close(left: Point3, right: Point3) -> bool {
 }
 
 /// Decode `00 85` wrappers whose stored bounds agree with their source curve.
-pub(super) fn scan(bytes: &[u8], carriers: &CarrierIndex) -> Vec<Carrier> {
+pub(super) fn scan(bytes: &[u8], carriers: &CarrierIndex) -> Vec<CurveCarrier> {
     let mut out = Vec::new();
     for off in 0..bytes.len().saturating_sub(2) {
         if bytes.get(off..off + 2) != Some(&[0x00, TAG]) {
@@ -135,9 +135,7 @@ pub(super) fn scan(bytes: &[u8], carriers: &CarrierIndex) -> Vec<Carrier> {
         let Some(source) = carriers.curve(source_attr) else {
             continue;
         };
-        let CarrierGeometry::Curve(geometry) = &source.geometry else {
-            continue;
-        };
+        let geometry = &source.geometry;
         let values = (0..8)
             .map(|index| View::f64_be_at(bytes, marker_at + 3 + index * 8))
             .collect::<Option<Vec<_>>>();
@@ -164,14 +162,12 @@ pub(super) fn scan(bytes: &[u8], carriers: &CarrierIndex) -> Vec<Carrier> {
         if !close(start, evaluated_start) || !close(end, evaluated_end) {
             continue;
         }
-        out.push(Carrier {
+        out.push(CurveCarrier {
             attr,
             offset: off,
             end: marker_at + 1 + PAYLOAD_LEN,
-            geometry: CarrierGeometry::Curve(geometry.clone()),
-            frame: source.frame,
+            geometry: geometry.clone(),
             parameter_range: Some([values[6], values[7]]),
-            orientation_reversed: false,
         });
     }
     out
@@ -204,18 +200,19 @@ mod tests {
 
     fn carriers() -> CarrierIndex {
         let mut carriers = CarrierIndex::default();
-        carriers.insert(Carrier {
-            attr: 10,
-            offset: 100,
-            end: 120,
-            geometry: CarrierGeometry::Curve(CurveGeometry::Line {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(0.0, 1.0, 0.0),
-            }),
-            frame: None,
-            parameter_range: None,
-            orientation_reversed: false,
-        });
+        carriers.curves.insert(
+            10,
+            CurveCarrier {
+                attr: 10,
+                offset: 100,
+                end: 120,
+                geometry: CurveGeometry::Line {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    direction: Vector3::new(0.0, 1.0, 0.0),
+                },
+                parameter_range: None,
+            },
+        );
         carriers
     }
 
@@ -224,10 +221,7 @@ mod tests {
         let decoded = scan(&wrapper(0.005, false), &carriers());
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].attr, 20);
-        assert!(matches!(
-            decoded[0].geometry,
-            CarrierGeometry::Curve(CurveGeometry::Line { .. })
-        ));
+        assert!(matches!(decoded[0].geometry, CurveGeometry::Line { .. }));
         assert_eq!(decoded[0].parameter_range, Some([0.0, 0.005]));
     }
 

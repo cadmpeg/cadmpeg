@@ -18,8 +18,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
     let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
         .remove(&180)
         .expect("compact NURBS carrier");
-    let crate::brep::CarrierGeometry::Surface(SurfaceGeometry::Nurbs(old)) = carrier.geometry
-    else {
+    let SurfaceGeometry::Nurbs(old) = carrier.geometry else {
         panic!("compact NURBS surface");
     };
     let mut new = old.clone();
@@ -37,8 +36,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
     let patched = crate::brep::spline::scan_surface_carriers(&bytes)
         .remove(&180)
         .expect("patched compact NURBS carrier");
-    let crate::brep::CarrierGeometry::Surface(SurfaceGeometry::Nurbs(patched)) = patched.geometry
-    else {
+    let SurfaceGeometry::Nurbs(patched) = patched.geometry else {
         panic!("patched compact NURBS surface");
     };
     assert_eq!(patched, new);

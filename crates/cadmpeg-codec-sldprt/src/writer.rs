@@ -3708,9 +3708,7 @@ mod nurbs_write_tests {
         let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
             .remove(&2)
             .expect("surface carrier");
-        let crate::brep::CarrierGeometry::Surface(SurfaceGeometry::Nurbs(decoded)) =
-            carrier.geometry
-        else {
+        let SurfaceGeometry::Nurbs(decoded) = carrier.geometry else {
             panic!("expected NURBS surface");
         };
         assert_eq!((decoded.u_degree(), decoded.v_degree()), (9, 1));
@@ -3747,9 +3745,7 @@ mod nurbs_write_tests {
         let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
             .remove(&2)
             .expect("surface carrier");
-        let crate::brep::CarrierGeometry::Surface(SurfaceGeometry::Nurbs(decoded)) =
-            carrier.geometry
-        else {
+        let SurfaceGeometry::Nurbs(decoded) = carrier.geometry else {
             panic!("expected NURBS surface");
         };
         assert_eq!(
