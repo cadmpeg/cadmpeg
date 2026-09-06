@@ -410,8 +410,6 @@ pub struct ParasolidDeltasTombstone {
     pub kind: crate::deltas::record_kind::RecordKind,
     /// Stream-local deleted XMT identity.
     pub xmt: u32,
-    /// Exact compact tombstone length.
-    pub byte_len: u64,
     /// Record tag offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -442,7 +440,7 @@ impl From<ParasolidDeltasTombstone> for ParasolidDeltasTombstoneWire {
             id: value.id,
             stream_ordinal: value.stream_ordinal,
             xmt: value.xmt,
-            byte_len: value.byte_len,
+            byte_len: 6,
             inflated_offset: value.inflated_offset,
         }
     }
@@ -451,6 +449,9 @@ impl From<ParasolidDeltasTombstone> for ParasolidDeltasTombstoneWire {
 impl TryFrom<ParasolidDeltasTombstoneWire> for ParasolidDeltasTombstone {
     type Error = &'static str;
     fn try_from(wire: ParasolidDeltasTombstoneWire) -> Result<Self, Self::Error> {
+        if wire.byte_len != 6 {
+            return Err("byte_len: compact tombstone must contain six bytes");
+        }
         let kind = crate::deltas::record_kind::RecordKind::try_from(wire.kind)?;
         if kind.name() != wire.family {
             return Err("deltas tombstone family disagrees with its node kind");
@@ -460,7 +461,6 @@ impl TryFrom<ParasolidDeltasTombstoneWire> for ParasolidDeltasTombstone {
             id: wire.id,
             stream_ordinal: wire.stream_ordinal,
             xmt: wire.xmt,
-            byte_len: wire.byte_len,
             inflated_offset: wire.inflated_offset,
         })
     }
@@ -965,7 +965,6 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                 stream_ordinal: stream_ordinal as u32,
                 kind: tombstone.kind,
                 xmt: tombstone.xmt,
-                byte_len: 6,
                 inflated_offset: tombstone.offset as u64,
             });
         }
@@ -3696,7 +3695,7 @@ mod tests {
         assert_eq!(events.tombstones.len(), 1);
         assert_eq!(events.tombstones[0].kind.name(), "POINT");
         assert_eq!(events.tombstones[0].xmt, 11);
-        assert_eq!(events.tombstones[0].byte_len, 6);
+        assert_eq!(serde_json::to_value(&events.tombstones[0]).unwrap()["byte_len"], 6);
         assert_eq!(
             events.tombstones[0].inflated_offset,
             tombstone_offset as u64
