@@ -1707,10 +1707,12 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
         id: "column-table".into(),
         section_ordinal: 0,
         opening_linked_row: row.id.clone(),
-        target_rows: vec!["target-row".into()],
-        linked_rows: vec!["suffix-row".into()],
-        first_target_index: 4,
-        last_target_index: 2,
+        rows: crate::native::om::column_index::ColumnIndexRows::new(
+            4,
+            vec!["target-row".into()],
+            vec!["suffix-row".into()],
+        )
+        .unwrap(),
         source_entry: "entry".into(),
         source_offset: 100,
     };
@@ -1790,10 +1792,12 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
         id: "column-table".into(),
         section_ordinal: 0,
         opening_linked_row: "opening-row".into(),
-        target_rows: vec!["target-row#3".into()],
-        linked_rows: vec!["suffix-row".into()],
-        first_target_index: 5,
-        last_target_index: 3,
+        rows: crate::native::om::column_index::ColumnIndexRows::new(
+            5,
+            vec!["target-row#3".into()],
+            vec!["suffix-row".into()],
+        )
+        .unwrap(),
         source_entry: "entry".into(),
         source_offset: 50,
     };
@@ -1888,10 +1892,12 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
         id: "column-table".into(),
         section_ordinal: 0,
         opening_linked_row: "opening-row".into(),
-        target_rows: vec![row.id.clone()],
-        linked_rows: vec![],
-        first_target_index: 5,
-        last_target_index: 3,
+        rows: crate::native::om::column_index::ColumnIndexRows::new(
+            5,
+            vec![row.id.clone()],
+            vec!["suffix-row".into()],
+        )
+        .unwrap(),
         source_entry: "entry".into(),
         source_offset: 50,
     };

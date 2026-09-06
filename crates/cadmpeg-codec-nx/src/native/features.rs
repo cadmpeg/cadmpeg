@@ -7147,8 +7147,8 @@ fn column_relations_by_block<'a>(
     let mut table_by_row = ColumnTableByRow::new();
     for table in tables {
         for row in std::iter::once(table.opening_linked_row.as_str())
-            .chain(table.target_rows.iter().map(String::as_str))
-            .chain(table.linked_rows.iter().map(String::as_str))
+            .chain(table.rows.target_rows().iter().map(String::as_str))
+            .chain(table.rows.linked_rows().iter().map(String::as_str))
         {
             table_by_row
                 .entry(row)

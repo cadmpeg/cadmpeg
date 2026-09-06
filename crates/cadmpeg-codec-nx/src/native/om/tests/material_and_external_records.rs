@@ -490,12 +490,15 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
     assert_eq!(tables[0].id, "nx:om-data-block-column-index-tables:table#2");
     assert_eq!(tables[0].opening_linked_row, "opening");
     assert_eq!(
-        tables[0].target_rows,
+        tables[0].rows.target_rows(),
         ["target-62", "target-61", "target-60"]
     );
-    assert_eq!(tables[0].linked_rows, ["linked-59", "linked-58"]);
-    assert_eq!(tables[0].first_target_index, 63);
-    assert_eq!(tables[0].last_target_index, 58);
+    assert_eq!(tables[0].rows.linked_rows(), ["linked-59", "linked-58"]);
+    assert_eq!(
+        serde_json::to_value(&tables[0]).unwrap()["first_target_index"],
+        63
+    );
+    assert_eq!(tables[0].rows.last_target_index(), 58);
     assert_eq!(tables[0].source_offset, 100);
 
     let mut gap = target_rows.clone();

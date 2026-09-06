@@ -6,6 +6,9 @@ use super::*;
 
 use cadmpeg_core::decode::View;
 
+pub(crate) mod column_index;
+use column_index::ColumnIndexRows;
+
 use crate::native::segments::segment_om_links;
 use crate::om::parameter_name::ParameterName;
 use crate::om::{IndexedStore, OperationStateGroupCount, OperationStateGroupOpener};
@@ -2898,14 +2901,9 @@ pub struct DataBlockColumnIndexTable {
     pub section_ordinal: u32,
     /// Leading mode-7 linked row.
     pub opening_linked_row: String,
-    /// Consecutive target-index rows in ascending source order.
-    pub target_rows: Vec<String>,
-    /// Consecutive mode-4 linked rows in ascending source order.
-    pub linked_rows: Vec<String>,
-    /// First and greatest target block ordinal.
-    pub first_target_index: u32,
-    /// Last and least target block ordinal.
-    pub last_target_index: u32,
+    /// Consecutive target and linked rows with their checked index interval.
+    #[serde(flatten)]
+    pub rows: ColumnIndexRows,
     /// Directory entry containing the store.
     pub source_entry: String,
     /// Absolute source offset of the opening linked row.
@@ -5348,10 +5346,12 @@ pub fn data_block_column_index_tables(
                 id: format!("nx:om-data-block-column-index-tables:table#{section_ordinal}"),
                 section_ordinal,
                 opening_linked_row: opening.id.clone(),
-                target_rows: targets.iter().map(|row| row.id.clone()).collect(),
-                linked_rows: suffix.iter().map(|row| row.id.clone()).collect(),
-                first_target_index: opening.target_index,
-                last_target_index: ordered.last().expect("nonempty column table").0,
+                rows: ColumnIndexRows::new(
+                    opening.target_index,
+                    targets.iter().map(|row| row.id.clone()).collect(),
+                    suffix.iter().map(|row| row.id.clone()).collect(),
+                )
+                .ok()?,
                 source_entry: opening.source_entry.clone(),
                 source_offset: opening.source_offset,
             })
