@@ -3157,7 +3157,7 @@ fn deserialize_reference_lane_count<'de, D: serde::Deserializer<'de>>(
 pub struct FeaturePatternCountedReferenceLane {
     pub id: String,
     pub operation_label: String,
-    pub references: Vec<FeatureDataBlockToken<Vec<u8>>>,
+    pub references: Vec<ConstructionReference<Option<String>>>,
     pub source_offset: u64,
 }
 
@@ -3192,12 +3192,12 @@ impl From<FeaturePatternCountedReferenceLane> for FeaturePatternCountedReference
             object_indices: value
                 .references
                 .iter()
-                .map(|reference| reference.value)
+                .map(|reference| reference.token.value())
                 .collect(),
             raw_object_indices: value
                 .references
                 .iter()
-                .map(|reference| reference.raw.clone())
+                .map(|reference| reference.token.raw().to_vec())
                 .collect(),
             data_blocks: value
                 .references
@@ -3237,14 +3237,14 @@ impl TryFrom<FeaturePatternCountedReferenceLaneWire> for FeaturePatternCountedRe
                 .zip(wire.data_blocks)
                 .zip(wire.object_index_source_offsets)
                 .map(
-                    |(((value, raw), data_block), source_offset)| FeatureDataBlockToken {
-                        value,
-                        raw,
+                    |(((value, raw), data_block), source_offset)| Ok(ConstructionReference {
+                        token: ReferenceIndexToken::from_wire(value, &raw)
+                            .map_err(|error| format!("object_indices/raw_object_indices: {error}"))?,
                         data_block,
                         source_offset,
-                    },
+                    }),
                 )
-                .collect(),
+                .collect::<Result<_, String>>()?,
         })
     }
 }
@@ -10046,9 +10046,8 @@ pub fn feature_pattern_counted_reference_lanes(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                references: lane.references.into_iter().map(|reference| FeatureDataBlockToken {
-                    value: reference.token.value(),
-                    raw: reference.token.raw().to_vec(),
+                references: lane.references.into_iter().map(|reference| ConstructionReference {
+                    token: reference.token,
                     data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
                 }).collect(),

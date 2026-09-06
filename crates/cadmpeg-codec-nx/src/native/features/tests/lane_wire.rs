@@ -485,3 +485,16 @@ fn datum_csys_descriptor_preserves_wire_and_rejects_invalid_identity_or_position
         assert!(error.to_string().contains(field), "{error}");
     }
 }
+
+#[test]
+fn pattern_counted_references_preserve_wire_and_reject_token_disagreement() {
+    let json = r#"{"id":"lane","operation_label":"operation","declared_count":2,"object_indices":[1],"raw_object_indices":[[240,1]],"data_blocks":[null],"source_offset":18,"object_index_source_offsets":[20]}"#;
+    let lane: super::FeaturePatternCountedReferenceLane = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+    for raw in [vec![240, 2], vec![255], vec![240], vec![240, 1, 0]] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["raw_object_indices"] = serde_json::json!([raw]);
+        let error = serde_json::from_value::<super::FeaturePatternCountedReferenceLane>(wire).unwrap_err();
+        assert!(error.to_string().contains("raw_object_indices"), "{error}");
+    }
+}
