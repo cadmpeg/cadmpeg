@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::features::FeatureInputBlock;
+use crate::native::features::{FeatureInputBlock, FeatureInputBlockIdentityGroup, FeatureOperationLabel};
 use super::{FeatureBodyReference, FeatureOperationBodyWrite, FeatureOperationObjectReference};
 
 #[test]
@@ -184,25 +184,42 @@ fn surface_branch_counts_are_derived_on_the_wire() {
 
 #[test]
 fn swp104_state_wire_preserves_independent_witness_and_absence() {
-    let member = r#"{"ordinal":0,"object_index":1,"raw_object_index":[1],"source_offset":10}"#;
-    let terminal = r#"{"ordinal":1,"object_index":2,"raw_object_index":[2],"source_offset":20}"#;
+    let member = r#"{"ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":240}"#;
     let raw = "[47,164,122,225,71,174,20,123]";
-    for state in [
-        r#""witnessed_count":4,"state_lane":[0,1,1,0,0,0,0]"#,
-        r#""witnessed_count":2,"state_lane":[0,0,0,0,0]"#,
-        r#""state_lane":[0,0,0,0,0]"#,
+    for (state, terminal_offset, byte_len) in [
+        (r#""witnessed_count":4,"state_lane":[0,1,1,0,0,0,0]"#, 254, 57),
+        (r#""witnessed_count":2,"state_lane":[0,0,0,0,0]"#, 252, 55),
+        (r#""state_lane":[0,0,0,0,0]"#, 250, 53),
     ] {
-        let json = format!(r#"{{"id":"branch","operation_label":"operation","discriminator":33,"scalars":[0.04,0.04,0.04,0.04],"raw_scalars":[{raw},{raw},{raw},{raw}],"leading_zero":false,"mode":35,"declared_count":2,{state},"members":[{member}],"terminal":{terminal},"byte_len":59,"source_offset":200}}"#);
-        let branch: super::FeatureSwp104LeadingBranch = serde_json::from_str(&json).unwrap();
+        let terminal = format!(r#"{{"ordinal":1,"object_index":2,"raw_object_index":[240,2],"source_offset":{terminal_offset}}}"#);
+        let json = format!(r#"{{"id":"branch","operation_label":"operation","discriminator":33,"scalars":[0.04,0.04,0.04,0.04],"raw_scalars":[{raw},{raw},{raw},{raw}],"leading_zero":false,"mode":35,"declared_count":2,{state},"members":[{member}],"terminal":{terminal},"byte_len":{byte_len},"source_offset":200}}"#);
+        let branch: crate::native::features::swp104_branch::FeatureSwp104LeadingBranch = serde_json::from_str(&json).unwrap();
         assert_eq!(serde_json::to_string(&branch).unwrap(), json);
         let invalid = json.replace("\"declared_count\":2", "\"declared_count\":3");
-        assert!(serde_json::from_str::<super::FeatureSwp104LeadingBranch>(&invalid).unwrap_err().to_string().contains("declared_count"));
+        assert!(serde_json::from_str::<crate::native::features::swp104_branch::FeatureSwp104LeadingBranch>(&invalid).unwrap_err().to_string().contains("declared_count"));
         let invalid = json.replace("0.04", "0.05");
-        assert!(serde_json::from_str::<super::FeatureSwp104LeadingBranch>(&invalid).unwrap_err().to_string().contains("scalars"));
+        assert!(serde_json::from_str::<crate::native::features::swp104_branch::FeatureSwp104LeadingBranch>(&invalid).unwrap_err().to_string().contains("scalars"));
+        for (path, bad) in [
+            (vec!["byte_len"], serde_json::json!(byte_len + 1)),
+            (vec!["source_offset"], serde_json::json!(u64::MAX)),
+            (vec!["terminal", "ordinal"], serde_json::json!(0)),
+            (vec!["terminal", "source_offset"], serde_json::json!(terminal_offset + 1)),
+        ] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&json).unwrap();
+            let mut field = &mut invalid;
+            for key in path { field = &mut field[key]; }
+            *field = bad;
+            assert!(serde_json::from_value::<crate::native::features::swp104_branch::FeatureSwp104LeadingBranch>(invalid).is_err());
+        }
+        for field in ["ordinal", "source_offset"] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&json).unwrap();
+            invalid["members"][0][field] = serde_json::json!(99);
+            assert!(serde_json::from_value::<crate::native::features::swp104_branch::FeatureSwp104LeadingBranch>(invalid).is_err());
+        }
         for field in ["discriminator", "mode"] {
             let mut invalid: serde_json::Value = serde_json::from_str(&json).unwrap();
             invalid[field] = serde_json::json!(0);
-            assert!(serde_json::from_value::<super::FeatureSwp104LeadingBranch>(invalid).is_err());
+            assert!(serde_json::from_value::<crate::native::features::swp104_branch::FeatureSwp104LeadingBranch>(invalid).is_err());
         }
     }
 }
@@ -306,7 +323,7 @@ fn construction_reference_records_preserve_wire_and_check_tokens() {
     check::<super::FeatureSurfaceConstructionReference>(r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
     check::<super::FeatureSurfaceBranchReference>(r#"{"ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
     check::<super::FeatureExtrudeProfileReference>(r#"{"id":"r","operation_label":"o","ordinal":0,"field_tag":1,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
-    check::<super::FeatureBlockConstructionReference>(r#"{"id":"r","operation_label":"o","control":1,"ordinal":0,"terminal":true,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
+    check::<crate::native::features::block_reference::FeatureBlockConstructionReference>(r#"{"id":"r","operation_label":"o","control":1,"ordinal":0,"terminal":false,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
 }
 
 #[test]
@@ -481,5 +498,63 @@ fn input_block_reference_preserves_header_encodings_and_rejects_invalid_pairs() 
         let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
         invalid["object_index"] = serde_json::json!(value + 1);
         assert!(serde_json::from_value::<FeatureInputBlock>(invalid).unwrap_err().to_string().contains("object_index"));
+    }
+}
+
+#[test]
+fn operation_label_wire_preserves_nullable_header_tokens() {
+    for identity in ["", r#","stable_identity":"stable""#] {
+        let wire = format!(r#"{{"id":"label","section_link":"section","ordinal":0,"value":"EXTRUDE","object_indices":[null,0,0,0],"raw_object_indices":[[255],[0],[128,0],[144,0,0]]{identity},"source_offset":19}}"#);
+        let label: FeatureOperationLabel = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&label).unwrap(), wire);
+        for (field, slot, value) in [
+            ("object_indices", 0, serde_json::json!(0)),
+            ("object_indices", 1, serde_json::json!(null)),
+            ("object_indices", 2, serde_json::json!(1)),
+            ("raw_object_indices", 0, serde_json::json!([])),
+            ("raw_object_indices", 0, serde_json::json!([0])),
+            ("raw_object_indices", 3, serde_json::json!([144,0])),
+            ("raw_object_indices", 3, serde_json::json!([240,0])),
+            ("raw_object_indices", 3, serde_json::json!([0,0])),
+        ] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+            invalid[field][slot] = value;
+            assert!(serde_json::from_value::<FeatureOperationLabel>(invalid).unwrap_err().to_string().contains("object_indices"));
+        }
+    }
+}
+
+#[test]
+fn operation_input_wire_requires_one_of_the_four_header_slots() {
+    for slot in 0..4 {
+        let wire = format!(r#"{{"id":"input","operation_label":"operation","input_slot":{slot},"object_index":0,"raw_object_index":[0],"data_block":"block","source_offset":10}}"#);
+        let input: FeatureInputBlock = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&input).unwrap(), wire);
+    }
+    for slot in [4, 255] {
+        let wire = serde_json::json!({"id":"input","operation_label":"operation","input_slot":slot,
+            "object_index":0,"raw_object_index":[0],"data_block":"block","source_offset":10});
+        assert!(serde_json::from_value::<FeatureInputBlock>(wire).unwrap_err().to_string().contains("input_slot"));
+        let group = serde_json::json!({"id":"group","data_block":"block","input_blocks":["input"],
+            "operation_labels":["operation"],"input_slots":[slot],"source_offsets":[10]});
+        assert!(serde_json::from_value::<FeatureInputBlockIdentityGroup>(group).unwrap_err().to_string().contains("input_slots"));
+    }
+}
+
+#[test]
+fn sketch_reference_wire_derives_terminal_and_retains_zero_count_form() {
+    use crate::native::features::FeatureSketchReference;
+    for (count, ordinal, terminal) in [(0, 0, true), (1, 0, true), (2, 0, false), (2, 1, true)] {
+        for target in ["", r#","data_block":"block""#] {
+            let wire = format!(r#"{{"id":"reference","operation_label":"sketch","ordinal":{ordinal},"declared_count":{count},"terminal":{terminal},"object_index":66,"raw_object_index":[240,66]{target},"source_offset":100}}"#);
+            let reference: FeatureSketchReference = serde_json::from_str(&wire).unwrap();
+            assert_eq!(serde_json::to_string(&reference).unwrap(), wire);
+            let mut invalid = serde_json::to_value(&reference).unwrap();
+            invalid["ordinal"] = serde_json::json!(count.max(1));
+            assert!(serde_json::from_value::<FeatureSketchReference>(invalid).unwrap_err().to_string().contains("ordinal"));
+            let mut invalid = serde_json::to_value(&reference).unwrap();
+            invalid["terminal"] = serde_json::json!(!terminal);
+            assert!(serde_json::from_value::<FeatureSketchReference>(invalid).unwrap_err().to_string().contains("terminal"));
+        }
     }
 }

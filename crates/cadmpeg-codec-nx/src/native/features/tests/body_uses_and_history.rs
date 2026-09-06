@@ -21,8 +21,7 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "EXTRUDE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         },
@@ -31,8 +30,7 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
             section_link: "history#0".to_string(),
             ordinal: 1,
             value: "UNITE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 1,
         },
@@ -175,8 +173,9 @@ fn feature_body_segment_uses_require_one_alias_pair() {
 
 #[test]
 fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
+    use crate::native::features::object_frame::DataBlockObjectFrame;
     use super::{
-        DataBlockObjectFrame, FeatureBodyDataBlockUse, FeatureBodyReference,
+        FeatureBodyDataBlockUse, FeatureBodyReference,
         feature_body_segment_uses,
     };
     use crate::native::om::{DataBlock, DataBlockRole};
@@ -197,7 +196,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     let input = FeatureInputBlock {
         id: "input#0".into(),
         operation_label: reference.operation_label.clone(),
-        input_slot: 0,
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
         data_block: "block#3".into(),
         source_offset: 80,
@@ -253,9 +252,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         id: "frame#0".into(),
         data_block: "block#11".into(),
         ordinal: 0,
-        object_id: parsed_frames[0].object_id,
-        raw_object_id: parsed_frames[0].raw_object_id.clone(),
-        source_offset: 100,
+        object: crate::om::compact::LocatedCompactIndex { atom: parsed_frames[0].atom, offset: 100 },
     };
     let uses = feature_body_segment_uses(
         std::slice::from_ref(&reference),
@@ -281,7 +278,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     );
 
     let mut mismatched_frame = object_frame.clone();
-    mismatched_frame.object_id = 12;
+    mismatched_frame.object.atom = crate::om::compact::CompactIndexAtom::read(&[12]).unwrap();
     assert!(
         feature_body_segment_uses(
             std::slice::from_ref(&reference),
@@ -335,7 +332,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     let second_input = FeatureInputBlock {
         id: "input#1".into(),
         operation_label: reference.operation_label.clone(),
-        input_slot: 1,
+        input_slot: crate::om::header_references::HeaderSlot::One,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(4, &[4]).unwrap(),
         data_block: "block#4".into(),
         source_offset: 81,
@@ -445,7 +442,7 @@ fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
     let input = FeatureInputBlock {
         id: "input#0".into(),
         operation_label: reference.operation_label.clone(),
-        input_slot: 0,
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
         data_block: "block#3".into(),
         source_offset: 80,
@@ -495,7 +492,7 @@ fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
     let input = |slot: u8, object_index: u32, data_block: &str| FeatureInputBlock {
         id: format!("input#{slot}"),
         operation_label: reference.operation_label.clone(),
-        input_slot: slot,
+        input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(object_index, &[object_index as u8]).unwrap(),
         data_block: data_block.into(),
         source_offset: 80 + u64::from(slot),
@@ -551,7 +548,7 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
     let input = FeatureInputBlock {
         id: "input#0".into(),
         operation_label: "operation#0".into(),
-        input_slot: 0,
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
         data_block: "nx:om-data-blocks-2:block#3".into(),
         source_offset: 80,
@@ -605,8 +602,7 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
         section_link: "history#0".to_string(),
         ordinal,
         value: value.to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 1 - u64::from(ordinal),
     };
@@ -669,8 +665,7 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         section_link: "section#1".into(),
         ordinal,
         value: "SIMPLE HOLE".into(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: u64::from(ordinal),
     };
@@ -934,8 +929,7 @@ fn operation_history_reverses_source_order_within_each_section() {
         section_link: section.to_string(),
         ordinal,
         value: value.to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: u64::from(ordinal),
     };
@@ -969,8 +963,7 @@ fn operation_history_groups_interleaved_sections_before_reversing() {
         section_link: section.to_string(),
         ordinal,
         value: value.to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: u64::from(ordinal),
     };
@@ -1004,8 +997,7 @@ fn operation_history_uses_serialized_offsets_for_section_and_member_order() {
         section_link: section.to_string(),
         ordinal,
         value: value.to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset,
     };

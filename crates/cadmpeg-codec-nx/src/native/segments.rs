@@ -924,8 +924,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal,
             value: value.to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 2 - u64::from(ordinal),
         };
@@ -974,8 +973,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal,
             value: "UNITE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 1 - u64::from(ordinal),
         };
@@ -1043,8 +1041,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal,
             value: value.to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: u64::from(ordinal),
         };
@@ -1116,8 +1113,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "DELETE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
@@ -1164,8 +1160,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "DELETE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
@@ -1233,8 +1228,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "DELETE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
@@ -1285,8 +1279,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "DELETE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
@@ -1341,8 +1334,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "DELETE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
@@ -1356,7 +1348,7 @@ mod tests {
         let inputs = [FeatureInputBlock {
             id: "input#3".to_string(),
             operation_label: "operation#delete".to_string(),
-            input_slot: 0,
+            input_slot: crate::om::header_references::HeaderSlot::Zero,
             object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
             data_block: "block#3".to_string(),
             source_offset: 0,
@@ -1413,8 +1405,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "UNITE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
@@ -1480,8 +1471,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "UNITE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
@@ -1542,8 +1532,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal,
             value: value.to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: u64::from(ordinal),
         };
@@ -1594,8 +1583,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal,
             value: value.to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: u64::from(ordinal),
         };
@@ -1648,8 +1636,7 @@ mod tests {
             section_link: section_link.to_string(),
             ordinal,
             value: value.to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: u64::from(ordinal),
         };
@@ -1701,8 +1688,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal,
             value: value.to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 1 - u64::from(ordinal),
         };
@@ -1757,8 +1743,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "SEW".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
@@ -1809,8 +1794,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "TRIM BODY".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];

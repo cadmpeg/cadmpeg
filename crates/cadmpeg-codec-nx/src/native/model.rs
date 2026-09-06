@@ -5,6 +5,12 @@
 //! record vectors into domain sub-structs. Extraction is infallible: malformed
 //! data is omitted, never surfaced as an error.
 
+use crate::native::om::material_texture::{MaterialTextureAsset, material_texture_assets};
+use crate::native::features::object_frame::DataBlockObjectFrame;
+use crate::native::features::swp104_branch::FeatureSwp104LeadingBranch;
+use crate::native::features::block_reference::FeatureBlockConstructionReference;
+use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
+use super::features::operation_record::FeatureOperationRecord;
 use crate::container::Container;
 use crate::native::features::datum_plane_header::{
     FeatureDatumPlaneHeader, feature_datum_plane_headers,

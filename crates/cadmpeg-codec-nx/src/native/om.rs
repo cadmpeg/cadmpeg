@@ -7,13 +7,14 @@ use crate::om::control_leading_value::ControlLeadingValue;
 use crate::printable_string::PrintableString;
 use crate::om::state_index::StateIndexToken;
 mod state_index_wire;
-
-use cadmpeg_core::decode::View;
+pub(crate) mod material_texture;
+use material_texture::MaterialTextureAsset;
 
 use crate::om::compact::{CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex};
 mod row_wire;
 mod membership_wire;
 use crate::container::membership::ObjectIdMembers;
+use crate::container::extref_handles::ExtrefHandles;
 use crate::om::color::{ColorComponent, PaletteIndex, PALETTE_SIZE, BACKGROUND_NAME};
 mod color_wire;
 pub(crate) mod column_index;
@@ -3069,12 +3070,9 @@ pub struct ExternalReferenceRecord {
     pub declared_count: u16,
     /// Four uninterpreted little-endian ID slots.
     pub id_slots: [u32; 4],
-    /// Non-decreasing persistent handles; only the serialized closing duplicate is omitted.
-    pub handles: Vec<u32>,
-    /// Whether the final serialized handle repeats the preceding handle.
-    pub closing_duplicate: bool,
-    /// Length of the decoded record prefix.
-    pub prefix_byte_len: u64,
+    /// Ordered encoded handle tokens with derived closing and length fields.
+    #[serde(flatten)]
+    pub handles: ExtrefHandles,
     /// Length after the decoded handle-set prefix and before the next record or string table.
     pub tail_byte_len: u64,
     /// Directory entry containing the external-reference stream.
@@ -3141,37 +3139,6 @@ pub struct ExternalReferenceRecordChild {
     pub directory_reference: String,
 }
 
-/// Byte order selected by a TIFF header.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TiffByteOrder {
-    LittleEndian,
-    BigEndian,
-}
-
-/// Embedded NX material texture stored as a TIFF stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MaterialTextureAsset {
-    /// Globally unique native-record identity.
-    pub id: String,
-    /// Texture stream leaf name carried by the directory path.
-    pub name: String,
-    /// TIFF byte order: `little_endian` or `big_endian`.
-    pub byte_order: TiffByteOrder,
-    /// TIFF format version. NX material textures use version 42.
-    pub version: u16,
-    /// Absolute byte offset of the first TIFF image-file directory, relative to the asset payload.
-    pub first_ifd_offset: u32,
-    /// Exact texture payload length.
-    pub byte_len: u64,
-    /// SHA-256 digest of the exact TIFF payload.
-    pub sha256: String,
-    /// Directory entry containing the texture.
-    pub source_entry: String,
-    /// Absolute file offset of the TIFF header.
-    pub source_offset: u64,
-}
-
 /// Exact QAF catalog mapping for one embedded material texture.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MaterialTextureCatalogEntry {
@@ -3191,50 +3158,6 @@ pub struct MaterialTextureCatalogEntry {
     pub source_entry: String,
     /// Absolute file offset of the `folderProperties` element.
     pub source_offset: u64,
-}
-
-/// Decode every strictly framed TIFF material-texture directory entry.
-pub fn material_texture_assets(container: &Container) -> Vec<MaterialTextureAsset> {
-    let mut assets = container
-        .entries
-        .iter()
-        .filter_map(|entry| {
-            let name = entry.name.strip_prefix("/Root/materialsTif/")?;
-            (!name.is_empty()).then_some(())?;
-            let (offset, size) = entry.file_span?;
-            let (start, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-            let payload = container.data.get(start..start.checked_add(size)?)?;
-            let (byte_order, version, first_ifd_offset) = match payload.get(..8)? {
-                [b'I', b'I', 42, 0, ..] => (
-                    TiffByteOrder::LittleEndian,
-                    42,
-                    View::u32_le_at(payload, 4)?,
-                ),
-                [b'M', b'M', 0, 42, ..] => {
-                    (TiffByteOrder::BigEndian, 42, View::u32_be_at(payload, 4)?)
-                }
-                _ => return None,
-            };
-            let first_ifd = usize::try_from(first_ifd_offset).ok()?;
-            (first_ifd >= 8 && first_ifd < payload.len()).then_some(())?;
-            Some(MaterialTextureAsset {
-                id: String::new(),
-                name: name.to_string(),
-                byte_order,
-                version,
-                first_ifd_offset,
-                byte_len: size as u64,
-                sha256: sha256_hex(payload),
-                source_entry: entry.name.clone(),
-                source_offset: offset,
-            })
-        })
-        .collect::<Vec<_>>();
-    assets.sort_by(|first, second| first.source_entry.cmp(&second.source_entry));
-    for (ordinal, asset) in assets.iter_mut().enumerate() {
-        asset.id = format!("nx:container:material-texture#{ordinal}");
-    }
-    assets
 }
 
 /// Join QAF material paths to embedded TIFF streams by exact stored path.
@@ -3285,8 +3208,8 @@ fn parse_material_texture_catalog(
     (root.tag_name().name() == "folderContents").then_some(())?;
     let assets_by_path = assets
         .iter()
-        .map(|asset| Some((asset.source_entry.strip_prefix("/Root/")?, asset)))
-        .collect::<Option<BTreeMap<_, _>>>()?;
+        .map(|asset| (asset.storage_path(), asset))
+        .collect::<BTreeMap<_, _>>();
     let mut catalog = Vec::new();
     let mut seen_assets = BTreeSet::new();
     for node in root.children().filter(roxmltree::Node::is_element) {
@@ -3365,8 +3288,6 @@ pub fn external_reference_records(container: &Container) -> Vec<ExternalReferenc
                 declared_count: record.declared_count,
                 id_slots: record.id_slots,
                 handles: record.handles,
-                closing_duplicate: record.closing_duplicate,
-                prefix_byte_len: record.prefix_byte_len as u64,
                 tail_byte_len: record.tail_byte_len as u64,
                 source_entry: entry.name.clone(),
                 source_offset: entry_offset + record.offset as u64,
@@ -3441,7 +3362,7 @@ pub fn external_reference_tail_reference_pairs(
     records
         .iter()
         .flat_map(|record| {
-            let Some(source_offset) = record.source_offset.checked_add(record.prefix_byte_len)
+            let Some(source_offset) = record.source_offset.checked_add(record.handles.prefix_byte_len() as u64)
             else {
                 return Vec::new();
             };
@@ -5393,18 +5314,12 @@ pub fn persistent_handles(
         }
     }
     for record in external {
-        for handle in &record.handles {
+        for handle in record.handles.serialized() {
             let group = groups.entry(*handle).or_default();
             group.external_occurrence_count += 1;
             if !group.external_records.contains(&record.id) {
                 group.external_records.push(record.id.clone());
             }
-        }
-        if record.closing_duplicate {
-            let Some(handle) = record.handles.last() else {
-                continue;
-            };
-            groups.entry(*handle).or_default().external_occurrence_count += 1;
         }
     }
     for pair in external_tail_pairs {
@@ -6333,7 +6248,7 @@ mod tests {
         let binding = |id: &str, operation: &str, slot: u8, offset: u64| FeatureParameterBinding {
             id: id.to_string(),
             operation_label: operation.to_string(),
-            input_slot: slot,
+            input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
             input_block: format!("block-{slot}"),
             reference_ordinal: 0,
             expression_declaration: "declaration".to_string(),
@@ -6505,7 +6420,7 @@ mod tests {
         let input = FeatureInputBlock {
             id: "nx:feature-history:input-block#0-7-0".to_string(),
             operation_label: "nx:feature-history:operation-label#0-7".to_string(),
-            input_slot: 0,
+            input_slot: crate::om::header_references::HeaderSlot::Zero,
             object: crate::om::reference_index::FeatureReferenceToken::from_wire(45, &[45]).unwrap(),
             data_block: "nx:om-data-blocks-2:block#45".to_string(),
             source_offset: 700,
@@ -6546,7 +6461,7 @@ mod tests {
             bindings[0].id,
             "nx:feature-history:parameter-binding#0-7-0-0"
         );
-        assert_eq!(bindings[0].input_slot, 0);
+        assert_eq!(bindings[0].input_slot.number(), 0);
         assert_eq!(bindings[0].reference_ordinal, 0);
         assert_eq!(bindings[0].object_id, 201);
         assert_eq!(

@@ -835,7 +835,7 @@ fn attach_material_texture_assets(
         let Some(start) = usize::try_from(texture.source_offset).ok() else {
             return Ok(());
         };
-        let Some(byte_len) = usize::try_from(texture.byte_len).ok() else {
+        let Some(byte_len) = usize::try_from(texture.byte_len()).ok() else {
             return Ok(());
         };
         let Some(end) = start.checked_add(byte_len) else {
@@ -854,7 +854,7 @@ fn attach_material_texture_assets(
     for (texture, bytes) in sources {
         assets.push(Asset {
             id: AssetId(format!("{}:asset", texture.id)),
-            name: Some(texture.name.clone()),
+            name: Some(texture.name().to_owned()),
             media_type: Some("image/tiff".to_string()),
             content: AssetContent::Embedded {
                 data: ctx.copy_retained(bytes, "retain NX TIFF material asset", None)?,
@@ -2673,10 +2673,10 @@ fn attach_feature_operations(
                 );
             }
         }
-        for (slot, value) in label.object_indices.iter().enumerate() {
+        for (slot, value) in label.objects.0.iter().enumerate() {
             source_properties.insert(
                 format!("object_index.{slot}"),
-                value.map_or_else(|| "null".to_string(), |value| value.to_string()),
+                value.map_or_else(|| "null".to_string(), |value| value.value().to_string()),
             );
         }
         for input in input_blocks_by_operation
@@ -2721,11 +2721,11 @@ fn attach_feature_operations(
             .flatten()
         {
             source_properties.insert(
-                format!("sketch_reference_record.{}", reference.ordinal),
+                format!("sketch_reference_record.{}", reference.position.ordinal()),
                 reference.id.clone(),
             );
             source_properties.insert(
-                format!("sketch_reference.{}", reference.ordinal),
+                format!("sketch_reference.{}", reference.position.ordinal()),
                 reference
                     .data_block
                     .clone()
@@ -3504,7 +3504,7 @@ fn attach_feature_operations(
                     }
                     let mut definition = non_modeling_history_definition(
                         &label.value,
-                        &label.object_indices,
+                        &label.objects.values(),
                         &outputs,
                         body_reference_occurrences_by_operation
                             .get(label.id.as_str())
@@ -4214,7 +4214,7 @@ fn records_by_operation<'a, T>(
 
 fn operation_source_properties(
     operation_label: &str,
-    records: &[crate::native::features::FeatureOperationRecord],
+    records: &[crate::native::features::operation_record::FeatureOperationRecord],
     common_frames: &[crate::native::features::FeatureOperationCommonFrame],
     terminal_frames: &[crate::native::features::FeatureOperationTerminalFrame],
 ) -> BTreeMap<String, String> {

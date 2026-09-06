@@ -118,7 +118,7 @@ pub(crate) fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureD
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(header) = crate::om::datum_plane_payload_header(record) else {
+            let Some(header) = crate::om::datum_plane_payload_header(record.payload_view()) else {
                 return;
             };
             let object = |reference: crate::om::PayloadObjectReference<PayloadIndexToken>| ConstructionReference {
@@ -126,7 +126,7 @@ pub(crate) fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureD
                 data_block: (),
                 source_offset: entry_offset + reference.offset as u64,
             };
-            let branch = crate::om::datum_plane_descriptor_reference_branch(record)
+            let branch = crate::om::datum_plane_descriptor_reference_branch(record.payload_view())
                 .map(|branch| Branch::Single {
                     descriptor: ConstructionReference {
                         token: branch.descriptor.atom,
@@ -136,7 +136,7 @@ pub(crate) fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureD
                     object: object(branch.object),
                 })
                 .or_else(|| {
-                    crate::om::datum_plane_double_reference_branch(record).map(|branch| {
+                    crate::om::datum_plane_double_reference_branch(record.payload_view()).map(|branch| {
                         Branch::Double { objects: branch.references.map(object) }
                     })
                 });
@@ -171,7 +171,7 @@ pub(crate) fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureD
                 operation_label,
                 header,
                 branch,
-                source_offset: entry_offset + record.payload_offset as u64,
+                source_offset: entry_offset + record.payload_offset() as u64,
             });
         },
     );

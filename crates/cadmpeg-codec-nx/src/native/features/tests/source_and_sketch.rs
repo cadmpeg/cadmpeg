@@ -11,6 +11,7 @@ use crate::test_support::*;
 use crate::NxCodec;
 
 use super::*;
+use crate::native::features::operation_record::FeatureOperationRecord;
 
 #[test]
 fn unique_offset_data_store_rejects_a_second_matching_section() {
@@ -80,20 +81,9 @@ fn nx_feature_source_content_orders_payload_text() {
 
 #[test]
 fn nx_symbolic_thread_retains_all_complete_type_three_text_frames() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "SYMBOLIC_THREAD",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
+    let label = "SYMBOLIC_THREAD";
     let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5\0\x03\x05CUT\0";
-    let record = crate::om::OperationRecord {
-        bytes: payload,
-        payload_offset: 500,
-        payload,
-        label,
-    };
+    let record = crate::om::operation_record::OperationPayload::new(payload, 500, label).unwrap();
 
     let frames = super::symbolic_thread_text_frames(record).expect("two text frames");
     assert_eq!(frames.len(), 3);
@@ -108,20 +98,9 @@ fn nx_symbolic_thread_retains_all_complete_type_three_text_frames() {
 
 #[test]
 fn nx_symbolic_thread_requires_two_complete_type_three_text_frames() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "SYMBOLIC_THREAD",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
+    let label = "SYMBOLIC_THREAD";
     let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5";
-    let record = crate::om::OperationRecord {
-        bytes: payload,
-        payload_offset: 500,
-        payload,
-        label,
-    };
+    let record = crate::om::operation_record::OperationPayload::new(payload, 500, label).unwrap();
 
     assert!(super::symbolic_thread_text_frames(record).is_none());
 }
@@ -145,7 +124,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
     let binding = FeatureParameterBinding {
         id: "binding".into(),
         operation_label: operation.into(),
-        input_slot: 0,
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
         input_block: "input".into(),
         reference_ordinal: 0,
         expression_declaration: "declaration-20".into(),
@@ -287,7 +266,7 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
 #[test]
 fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     use super::{
-        FeatureOperationLabel, FeatureOperationRecord, FeaturePayloadString,
+        FeatureOperationLabel, FeaturePayloadString,
         SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
     };
 
@@ -296,8 +275,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         section_link: "section#0".to_string(),
         ordinal: 3,
         value: "SIMPLE HOLE".to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 100,
     };
@@ -305,13 +283,10 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         id: "record#3".to_string(),
         operation_label: label.id.clone(),
         ordinal: 3,
-        byte_len: 80,
         sha256: "a".repeat(64),
-        payload_byte_len: 40,
         payload_sha256: "b".repeat(64),
         stable_identity: None,
-        payload_source_offset: 120,
-        source_offset: 90,
+        span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40).unwrap(),
     };
     let string = FeaturePayloadString {
         id: "payload-string#3-0".to_string(),
@@ -460,7 +435,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
 #[test]
 fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
     use super::{
-        FeatureOperationLabel, FeatureOperationRecord, FeaturePayloadString, SimpleHoleExtent,
+        FeatureOperationLabel, FeaturePayloadString, SimpleHoleExtent,
         ThreadedHoleFamily,
     };
 
@@ -469,8 +444,7 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
         section_link: "section#0".to_string(),
         ordinal: 7,
         value: "SIMPLE HOLE".to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 100,
     };
@@ -478,13 +452,10 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
         id: "record#threaded".to_string(),
         operation_label: label.id.clone(),
         ordinal: 7,
-        byte_len: 80,
         sha256: "a".repeat(64),
-        payload_byte_len: 40,
         payload_sha256: "b".repeat(64),
         stable_identity: None,
-        payload_source_offset: 120,
-        source_offset: 90,
+        span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40).unwrap(),
     };
     let string = FeaturePayloadString {
         id: "payload-string#threaded-0".to_string(),
@@ -540,7 +511,7 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
 #[test]
 fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     use super::{
-        FeatureInputBlock, FeatureOperationLabel, FeatureOperationRecord, FeatureSketchReference,
+        FeatureInputBlock, FeatureOperationLabel, FeatureSketchReference,
     };
 
     let label = FeatureOperationLabel {
@@ -548,8 +519,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         section_link: "nx:feature-history#0".to_string(),
         ordinal: 7,
         value: "SKETCH".to_string(),
-        object_indices: [Some(45), None, Some(81), None],
-        raw_object_indices: [vec![45], vec![0xff], vec![81], vec![0xff]],
+        objects: crate::om::header_references::HeaderReferences::from_wire([Some(45), None, Some(81), None], [&[45], &[0xff], &[81], &[0xff]]).unwrap(),
         stable_identity: None,
         source_offset: 700,
     };
@@ -557,18 +527,15 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         id: "nx:feature-history:operation-record#0-7".to_string(),
         operation_label: label.id.clone(),
         ordinal: 7,
-        byte_len: 173,
         sha256: "00".repeat(32),
-        payload_byte_len: 140,
         payload_sha256: "11".repeat(32),
         stable_identity: None,
-        payload_source_offset: 733,
-        source_offset: 700,
+        span: crate::native::features::operation_record::OperationRecordSpan::new(700, 733, 140).unwrap(),
     };
     let input = |slot, index| FeatureInputBlock {
         id: format!("nx:feature-history:input-block#0-7-{slot}"),
         operation_label: label.id.clone(),
-        input_slot: slot,
+        input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(index, &[index as u8]).unwrap(),
         data_block: format!("nx:om-data-blocks-2:block#{index}"),
         source_offset: 710 + u64::from(slot),
@@ -577,9 +544,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     let reference = |ordinal, index| FeatureSketchReference {
         id: format!("nx:feature-history:sketch-reference#0-7-{ordinal}"),
         operation_label: label.id.clone(),
-        ordinal,
-        declared_count: 2,
-        terminal: ordinal == 1,
+        position: crate::om::sketch_references::SketchReferencePosition::new(2, ordinal).unwrap(),
         token: crate::om::reference_index::ReferenceIndexToken::from_wire(index, &[0xf0, index as u8]).unwrap(),
         data_block: Some(format!("nx:om-data-blocks-2:block#{index}")),
         source_offset: 740 + u64::from(ordinal),
@@ -641,7 +606,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     );
 
     let mut malformed = references;
-    malformed[0].ordinal = 2;
+    malformed[0].position = crate::om::sketch_references::SketchReferencePosition::new(3, 2).unwrap();
     assert!(super::feature_sketch_construction_inputs(&sketches, &malformed).is_empty());
 }
 
@@ -734,7 +699,7 @@ fn decode_orders_and_deduplicates_linked_feature_history_sections() {
     );
     assert_ne!(labels[0].section_link, labels[1].section_link);
     assert_eq!(
-        labels[0].raw_object_indices,
+        labels[0].objects.0.map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())),
         [
             vec![0x01],
             vec![0x82, 0x40],
@@ -742,9 +707,9 @@ fn decode_orders_and_deduplicates_linked_feature_history_sections() {
             vec![0xff]
         ]
     );
-    assert_eq!(labels[1].raw_object_indices, labels[0].raw_object_indices);
+    assert_eq!(labels[1].objects.0.map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())), labels[0].objects.0.map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())));
     let records = namespace
-        .arena_as::<super::FeatureOperationRecord>("feature_operation_records")
+        .arena_as::<FeatureOperationRecord>("feature_operation_records")
         .expect("required invariant");
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].operation_label, labels[0].id);
@@ -834,7 +799,7 @@ fn decode_retains_role_scoped_om_record_area_header() {
     assert_eq!(labels[0].ordinal, 0);
     assert_eq!(labels[0].value, "UNITE");
     assert_eq!(
-        labels[0].object_indices,
+        labels[0].objects.values(),
         [Some(1), Some(576), Some(6099), None]
     );
     assert_eq!(labels[0].section_link, areas[0].section_link);
@@ -843,11 +808,11 @@ fn decode_retains_role_scoped_om_record_area_header() {
         .native
         .namespace("nx")
         .expect("required invariant")
-        .arena_as::<super::FeatureOperationRecord>("feature_operation_records")
+        .arena_as::<FeatureOperationRecord>("feature_operation_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].operation_label, labels[0].id);
-    assert!(records[0].byte_len > 40);
+    assert!(records[0].span.byte_len() > 40);
     assert_eq!(records[0].sha256.len(), 64);
     let booleans = result
         .ir()
@@ -925,7 +890,7 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
         .arena_as::<super::FeatureInputBlock>("feature_input_blocks")
         .expect("required invariant");
     assert_eq!(inputs.len(), 1);
-    assert_eq!(inputs[0].input_slot, 0);
+    assert_eq!(inputs[0].input_slot.number(), 0);
     assert_eq!(inputs[0].object.value(), 1);
     assert!(inputs[0].data_block.ends_with(":block#1"));
     assert_eq!(
@@ -962,8 +927,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         section_link: "section".to_string(),
         ordinal,
         value: value.to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 100 + u64::from(ordinal),
     };
@@ -1170,7 +1134,7 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
     let input = |id: &str, operation: &str, slot: u8, block: &str| super::FeatureInputBlock {
         id: id.to_string(),
         operation_label: operation.to_string(),
-        input_slot: slot,
+        input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(44, &[44]).unwrap(),
         data_block: block.to_string(),
         source_offset: 200,
@@ -1310,7 +1274,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     let input = |operation: &str, data_block: &str| FeatureInputBlock {
         id: format!("input-{operation}"),
         operation_label: operation.to_string(),
-        input_slot: 0,
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(1, &[1]).unwrap(),
         data_block: data_block.to_string(),
         source_offset: 0,
@@ -1479,12 +1443,11 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
 #[test]
 fn nx_block_construction_requires_complete_resolved_reference_field() {
     let references = (0..19)
-        .map(|ordinal| super::FeatureBlockConstructionReference {
+        .map(|ordinal| crate::native::features::block_reference::FeatureBlockConstructionReference {
             id: format!("reference#{ordinal}"),
             operation_label: "operation".to_string(),
             control: 0x26,
-            ordinal,
-            terminal: ordinal == 18,
+            position: crate::native::features::block_reference::BlockReferencePosition::new(ordinal).unwrap(),
             token: crate::om::reference_index::ReferenceIndexToken::from_wire(ordinal + 100, &[(ordinal + 100) as u8]).unwrap(),
             data_block: Some(format!("block#{ordinal}")),
             source_offset: u64::from(ordinal),
@@ -1496,6 +1459,10 @@ fn nx_block_construction_requires_complete_resolved_reference_field() {
     assert_eq!(constructions[0].members.len(), 18);
     assert_eq!(constructions[0].terminal_reference, "reference#18");
     assert_eq!(constructions[0].terminal_data_block, "block#18");
+
+    let mut duplicate = references.clone();
+    duplicate[7].position = crate::native::features::block_reference::BlockReferencePosition::new(8).unwrap();
+    assert!(super::feature_block_constructions(&duplicate).is_empty());
 
     let mut unresolved = references;
     unresolved[7].data_block = None;
@@ -1518,7 +1485,7 @@ fn feature_input_identity_groups_require_distinct_operations_and_preserve_order(
     let input = |id: &str, operation: &str, slot: u8, block: &str, offset: u64| FeatureInputBlock {
         id: id.to_string(),
         operation_label: operation.to_string(),
-        input_slot: slot,
+        input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7]).unwrap(),
         data_block: block.to_string(),
         source_offset: offset,
@@ -1552,7 +1519,7 @@ fn feature_input_identity_groups_require_distinct_operations_and_preserve_order(
         groups[0]
             .members
             .iter()
-            .map(|member| member.input_slot)
+            .map(|member| member.input_slot.number())
             .collect::<Vec<_>>(),
         [2, 1]
     );
@@ -1574,7 +1541,7 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
     let input = FeatureInputBlock {
         id: "input#0000000001".into(),
         operation_label: "operation#1".into(),
-        input_slot: 2,
+        input_slot: crate::om::header_references::HeaderSlot::Two,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7]).unwrap(),
         data_block: "block#4".into(),
         source_offset: 10,
@@ -1604,7 +1571,7 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
-    assert_eq!(uses[0].input_slot, 2);
+    assert_eq!(uses[0].input_slot.number(), 2);
     assert_eq!(uses[0].row_kind, ColumnIndexRowKind::Index);
     assert_eq!(uses[0].column_row, "row#3");
     assert_eq!(uses[0].row_slot, 0);
@@ -1624,7 +1591,7 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
     let input = FeatureInputBlock {
         id: "input#0000000001".into(),
         operation_label: "operation#1".into(),
-        input_slot: 2,
+        input_slot: crate::om::header_references::HeaderSlot::Two,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(4, &[4]).unwrap(),
         data_block: "block#4".into(),
         source_offset: 10,
@@ -1678,7 +1645,7 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
-    assert_eq!(uses[0].input_slot, 2);
+    assert_eq!(uses[0].input_slot.number(), 2);
     assert_eq!(uses[0].row_kind, ColumnIndexRowKind::LinkedIndex);
     assert_eq!(uses[0].column_row, "linked-row#3");
     assert_eq!(uses[0].row_slot, 0);
@@ -1711,7 +1678,7 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
     let input = FeatureInputBlock {
         id: "input#0000000001".into(),
         operation_label: "operation#1".into(),
-        input_slot: 2,
+        input_slot: crate::om::header_references::HeaderSlot::Two,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(4, &[4]).unwrap(),
         data_block: "block#4".into(),
         source_offset: 10,
@@ -1770,7 +1737,7 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
-    assert_eq!(uses[0].input_slot, 2);
+    assert_eq!(uses[0].input_slot.number(), 2);
     assert_eq!(uses[0].row_kind, ColumnIndexRowKind::TargetIndex);
     assert_eq!(uses[0].column_row, "target-row#3");
     assert_eq!(uses[0].column_table.as_deref(), Some("column-table"));

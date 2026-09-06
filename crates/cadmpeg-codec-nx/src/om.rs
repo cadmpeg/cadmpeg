@@ -5,6 +5,12 @@ pub(crate) mod draft_identity;
 pub(crate) mod plane_descriptor;
 pub(crate) mod csys_descriptor;
 pub(crate) mod reference_index;
+pub(crate) mod header_references;
+pub(crate) mod operation_record;
+pub(crate) mod sketch_references;
+use sketch_references::SketchReferenceField;
+use operation_record::{OperationRecord, OperationPayload, OperationBodyInput};
+use header_references::{HeaderReferences, OperationHeader};
 pub(crate) mod common_frame;
 pub(crate) mod body_write;
 pub(crate) mod direct_reference;
@@ -1081,53 +1087,29 @@ pub struct Section<'a> {
 /// A feature operation name in a size-framed feature-history record area.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationLabel<'a> {
-    /// Absolute offset of the fixed operation-header marker.
-    pub header_offset: usize,
-    /// Absolute offset of the `03` label tag within the containing entry.
-    pub offset: usize,
+    /// Complete operation header and its exact reference encodings.
+    pub header: OperationHeader,
     /// Printable operation name without its terminating NUL.
     pub value: &'a str,
-    /// Four object-index slots in header order; `None` is the `ff` sentinel.
-    pub object_indices: [Option<u32>; 4],
-    /// Absolute byte offset of each object-index token in header order.
-    pub object_index_offsets: [usize; 4],
-}
-
-/// One operation record bounded by consecutive validated operation headers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationRecord<'a> {
-    /// Complete record bytes through the next operation header or section end.
-    pub bytes: &'a [u8],
-    /// Absolute offset of the first byte after the operation-label terminator.
-    pub payload_offset: usize,
-    /// Post-label serialized operation payload.
-    pub payload: &'a [u8],
-    /// Label decoded from this record's header.
-    pub label: OperationLabel<'a>,
-}
-
-impl OperationRecord<'_> {
-    /// Absolute offset of the fixed operation-header marker.
-    pub fn offset(&self) -> usize {
-        self.label.header_offset
-    }
 }
 
 /// One unlabeled operation record bounded by validated operation headers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnlabeledOperationRecord<'a> {
-    /// Absolute offset of the fixed operation-header marker.
-    pub offset: usize,
-    /// Complete record bytes through the next operation header or section end.
-    pub bytes: &'a [u8],
-    /// Absolute offset of the first byte after the four header slots.
-    pub payload_offset: usize,
-    /// Serialized payload after the four header slots.
-    pub payload: &'a [u8],
-    /// Four object-index slots in header order; `None` is the `ff` sentinel.
-    pub object_indices: [Option<u32>; 4],
-    /// Absolute byte offset of each object-index token in header order.
-    pub object_index_offsets: [usize; 4],
+    header: OperationHeader,
+    bytes: &'a [u8],
+}
+
+impl<'a> UnlabeledOperationRecord<'a> {
+    fn new(header: OperationHeader, bytes: &'a [u8]) -> Option<Self> {
+        bytes.get(usize::from(header.byte_len())..)?;
+        header.offset().checked_add(bytes.len())?;
+        Some(Self { header, bytes })
+    }
+
+    pub(crate) fn header(self) -> OperationHeader { self.header }
+    pub(crate) fn bytes(self) -> &'a [u8] { self.bytes }
+    pub(crate) fn payload(self) -> &'a [u8] { &self.bytes[usize::from(self.header.byte_len())..] }
 }
 
 /// Terminal common-frame suffix with its independently matched preceding frame.
@@ -1360,15 +1342,6 @@ pub struct PayloadObjectReference<T = ReferenceIndexToken, O = usize> {
     pub token: T,
 }
 
-/// Counted reference field in one bounded sketch-operation payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SketchPayloadReferenceField {
-    /// Effective count encoded by the nonempty flag and optional count byte.
-    pub declared_count: u8,
-    /// Ordered pre-separator references followed by the terminal reference.
-    pub references: Vec<PayloadObjectReference>,
-}
-
 /// Exact construction-reference field in a projected-curve payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectedCurvePayloadReferenceField {
@@ -1599,11 +1572,17 @@ pub struct Swp104PayloadLeadingBranch {
     /// Exact state lane preceding the terminal marker.
     pub state_lane: Swp104StateLane,
     /// Ordered nonterminal references.
-    pub members: BranchItems<PayloadObjectReference>,
+    pub members: BranchItems<reference_index::PayloadIndexToken>,
     /// Terminal reference.
-    pub terminal: PayloadObjectReference,
-    /// Absolute offset immediately after the terminal zero.
-    pub end_offset: usize,
+    pub terminal: reference_index::PayloadIndexToken,
+}
+
+impl Swp104PayloadLeadingBranch {
+    pub(crate) fn byte_len(&self) -> usize {
+        40 + usize::from(self.leading_zero)
+            + self.members.as_slice().iter().map(|token| token.raw().len()).sum::<usize>()
+            + self.state_lane.byte_len() + 3 + self.terminal.raw().len() + 1
+    }
 }
 
 /// One counted construction branch in a surface-feature payload.
@@ -1772,17 +1751,6 @@ impl DatumCsysPayloadFixedPair {
         let first = self.offset + self.discriminator().len();
         [first, first + 8 + 1]
     }
-}
-
-/// Compact object frame in a bounded offset-store block.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DataBlockObjectFrame {
-    /// Serialized persistent object ID.
-    pub object_id: u32,
-    /// Exact serialized compact object-index token.
-    pub raw_object_id: Vec<u8>,
-    /// Block-relative offset of the compact index.
-    pub offset: usize,
 }
 
 /// Fixed scalar header in one bounded extrusion payload.
@@ -2203,7 +2171,7 @@ impl<'a> Section<'a> {
         let end = self
             .cached_operation_labels
             .first()
-            .and_then(|label| label.header_offset.checked_sub(base_offset))
+            .and_then(|label| label.header.offset().checked_sub(base_offset))
             .unwrap_or(bytes.len());
         operation_state_journal_groups_before_boundary(bytes, start, end, base_offset)
     }
@@ -2215,7 +2183,7 @@ impl<'a> Section<'a> {
             .operation_records_with_label_ordinals()
             .into_iter()
             .last()?;
-        let start_offset = last_record.payload_offset;
+        let start_offset = last_record.payload_offset();
         let start = start_offset.checked_sub(base_offset)?;
         let group = self.operation_state_group_table();
         let terminal = group
@@ -2295,7 +2263,7 @@ impl<'a> Section<'a> {
         self.operation_records_with_label_ordinals()
             .into_iter()
             .filter_map(|(ordinal, record)| {
-                operation_body_reference(record).map(|reference| (ordinal, reference))
+                operation_body_reference(record.body_view()).map(|reference| (ordinal, reference))
             })
             .collect()
     }
@@ -2309,15 +2277,7 @@ pub fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<
         .collect()
 }
 
-#[derive(Debug, Clone, Copy)]
-struct OperationHeaderLayout {
-    offset: usize,
-    fields_end: usize,
-    object_indices: [Option<u32>; 4],
-    object_index_offsets: [usize; 4],
-}
-
-fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<OperationHeaderLayout> {
+fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<OperationHeader> {
     const PREFIX: &[u8] = &[0x80, 0xcd, 0x01, 0x04, 0x01];
     const SCALAR_LEN: usize = 8;
     let mut headers = Vec::new();
@@ -2335,31 +2295,14 @@ fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<Operatio
         {
             continue;
         }
-        let mut at = scalar_at + SCALAR_LEN + 2;
-        let mut object_indices = [None; 4];
-        let mut object_index_offsets = [0; 4];
-        let mut valid = true;
-        for (slot, offset) in object_indices
-            .iter_mut()
-            .zip(object_index_offsets.iter_mut())
-        {
-            *offset = base_offset + at;
-            let Some((value, next)) = feature_object_index(bytes, at) else {
-                valid = false;
-                break;
-            };
-            *slot = value;
-            at = next;
-        }
-        if !valid {
+        let Some(objects) = HeaderReferences::read(&bytes[scalar_at + SCALAR_LEN + 2..]) else {
             continue;
-        }
-        headers.push(OperationHeaderLayout {
-            offset: base_offset + marker,
-            fields_end: at,
-            object_indices,
-            object_index_offsets,
-        });
+        };
+        let Some(header) = base_offset.checked_add(marker)
+            .and_then(|offset| OperationHeader::<usize>::new(offset, objects)) else {
+            continue;
+        };
+        headers.push(header);
     }
     headers
 }
@@ -2367,9 +2310,9 @@ fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<Operatio
 fn operation_label_at(
     bytes: &[u8],
     base_offset: usize,
-    header: OperationHeaderLayout,
+    header: OperationHeader,
 ) -> Option<OperationLabel<'_>> {
-    let at = header.fields_end;
+    let at = header.end_offset().checked_sub(base_offset)?;
     if bytes.get(at) != Some(&0x03) {
         return None;
     }
@@ -2392,11 +2335,8 @@ fn operation_label_at(
         return None;
     };
     Some(OperationLabel {
-        header_offset: header.offset,
-        offset: base_offset + at,
+        header,
         value,
-        object_indices: header.object_indices,
-        object_index_offsets: header.object_index_offsets,
     })
 }
 
@@ -2412,24 +2352,12 @@ fn operation_records_with_labels_and_ordinals<'a>(
         .filter_map(|(ordinal, header)| {
             let label = labels
                 .iter()
-                .find(|label| label.header_offset == header.offset)?;
-            let start = label.header_offset.checked_sub(base_offset)?;
+                .find(|label| label.header.offset() == header.offset())?;
+            let start = label.header.offset().checked_sub(base_offset)?;
             let end = headers
                 .get(ordinal + 1)
-                .map_or(bytes.len(), |next| next.offset - base_offset);
-            let label_at = label.offset.checked_sub(base_offset)?;
-            let payload_start = label_at
-                .checked_add(usize::from(*bytes.get(label_at + 1)?))?
-                .checked_add(1)?;
-            Some((
-                ordinal,
-                OperationRecord {
-                    bytes: bytes.get(start..end)?,
-                    payload_offset: base_offset + payload_start,
-                    payload: bytes.get(payload_start..end)?,
-                    label: *label,
-                },
-            ))
+                .map_or(bytes.len(), |next| next.offset() - base_offset);
+            Some((ordinal, OperationRecord::new(bytes.get(start..end)?, *label)?))
         })
         .collect()
 }
@@ -2446,24 +2374,17 @@ fn unlabeled_operation_records_with_ordinals<'a>(
         .filter_map(|(ordinal, header)| {
             if labels
                 .iter()
-                .any(|label| label.header_offset == header.offset)
+                .any(|label| label.header.offset() == header.offset())
             {
                 return None;
             }
-            let start = header.offset.checked_sub(base_offset)?;
+            let start = header.offset().checked_sub(base_offset)?;
             let end = headers
                 .get(ordinal + 1)
-                .map_or(bytes.len(), |next| next.offset - base_offset);
+                .map_or(bytes.len(), |next| next.offset() - base_offset);
             Some((
                 ordinal,
-                UnlabeledOperationRecord {
-                    offset: header.offset,
-                    bytes: bytes.get(start..end)?,
-                    payload_offset: base_offset + header.fields_end,
-                    payload: bytes.get(header.fields_end..end)?,
-                    object_indices: header.object_indices,
-                    object_index_offsets: header.object_index_offsets,
-                },
+                UnlabeledOperationRecord::new(*header, bytes.get(start..end)?)?,
             ))
         })
         .collect()
@@ -2471,12 +2392,12 @@ fn unlabeled_operation_records_with_ordinals<'a>(
 
 /// Decode ordered `03|04, length, text, 00` frames from one operation payload.
 pub fn operation_payload_text_frames(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Vec<OperationPayloadTextFrame<'_>> {
     let mut frames = Vec::new();
     let mut at = 0usize;
-    while at + 4 <= record.payload.len() {
-        let marker = match record.payload[at] {
+    while at + 4 <= record.payload().len() {
+        let marker = match record.payload()[at] {
             0x03 => OperationTextMarker::Text,
             0x04 => OperationTextMarker::String,
             _ => {
@@ -2484,12 +2405,12 @@ pub fn operation_payload_text_frames(
                 continue;
             }
         };
-        let declared = usize::from(record.payload[at + 1]);
+        let declared = usize::from(record.payload()[at + 1]);
         let Some(end) = at.checked_add(declared) else {
             at += 1;
             continue;
         };
-        let Some(raw) = record.payload.get(at + 2..end) else {
+        let Some(raw) = record.payload().get(at + 2..end) else {
             at += 1;
             continue;
         };
@@ -2497,13 +2418,13 @@ pub fn operation_payload_text_frames(
             at += 1;
             continue;
         };
-        if declared < 3 || record.payload.get(end) != Some(&0) {
+        if declared < 3 || record.payload().get(end) != Some(&0) {
             at += 1;
             continue;
         }
         frames.push(OperationPayloadTextFrame {
             marker,
-            offset: record.payload_offset + at,
+            offset: record.payload_offset() + at,
             value,
         });
         at = end + 1;
@@ -2512,7 +2433,7 @@ pub fn operation_payload_text_frames(
 }
 
 /// Decode ordered `04, length, text, 00` strings from one operation payload.
-pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPayloadString<'_>> {
+pub fn operation_payload_strings(record: OperationPayload<'_>) -> Vec<OperationPayloadString<'_>> {
     operation_payload_text_frames(record)
         .into_iter()
         .filter(|frame| frame.marker == OperationTextMarker::String)
@@ -2525,9 +2446,9 @@ pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPa
 
 /// Decode an exact nonempty duplicated shifted-binary64 lane before a hole template.
 pub fn simple_hole_repeated_scalar_lane(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<NonEmpty<RepeatedScalar<usize>>> {
-    if record.label.value != "SIMPLE HOLE" {
+    if record.name() != "SIMPLE HOLE" {
         return None;
     }
     let templates = operation_payload_strings(record)
@@ -2537,14 +2458,14 @@ pub fn simple_hole_repeated_scalar_lane(
     let [template] = templates.as_slice() else {
         return None;
     };
-    let boundary = template.offset.checked_sub(record.payload_offset)?;
-    let prefix = record.payload.get(..boundary)?;
+    let boundary = template.offset.checked_sub(record.payload_offset())?;
+    let prefix = record.payload().get(..boundary)?;
     let mut scalars = Vec::new();
     let mut at = 0usize;
     while at + 8 <= prefix.len() {
         if prefix[at] == 0x30 {
             if let Some(scalar) = ShiftedBinary64::read(&prefix[at..at + 8]) {
-                scalars.push((scalar, record.payload_offset + at));
+                scalars.push((scalar, record.payload_offset() + at));
                 at += 8;
                 continue;
             }
@@ -2572,33 +2493,33 @@ pub fn simple_hole_repeated_scalar_lane(
 /// Decode the two tagged block indices immediately following each witnessed
 /// simple-hole scalar lane.
 pub fn simple_hole_repeated_scalar_lane_block_references(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<SimpleHoleRepeatedScalarLaneBlockReferences> {
     const FIRST_PREFIX: [u8; 8] = [0x50, 0x10, 0x00, 0x04, 0x50, 0x49, 0x66, 0x2e];
     const SECOND_PREFIX: [u8; 8] = [0x50, 0x21, 0x66, 0x62, 0x50, 0x49, 0x66, 0x2e];
     let pair = simple_hole_repeated_scalar_lane(record)?;
     let decode_pair = |coordinate_offset: usize, admitted_prefix: [u8; 8]| {
-        let relative = coordinate_offset.checked_sub(record.payload_offset)?;
+        let relative = coordinate_offset.checked_sub(record.payload_offset())?;
         let mut at = relative.checked_add(8)?;
-        let prefix = if payload_object_index(record.payload.get(at..)?).is_some() {
+        let prefix = if payload_object_index(record.payload().get(at..)?).is_some() {
             None
         } else {
             let candidate =
-                <[u8; 8]>::try_from(record.payload.get(at..at.checked_add(8)?)?).ok()?;
+                <[u8; 8]>::try_from(record.payload().get(at..at.checked_add(8)?)?).ok()?;
             (candidate == admitted_prefix).then_some(())?;
             at += 8;
             Some(candidate)
         };
         let first_offset = at;
-        let (first, width) = payload_object_index(record.payload.get(at..)?)?;
+        let (first, width) = payload_object_index(record.payload().get(at..)?)?;
         at += width;
         let second_offset = at;
-        let (second, _) = payload_object_index(record.payload.get(at..)?)?;
+        let (second, _) = payload_object_index(record.payload().get(at..)?)?;
         Some((
             [first.value(), second.value()],
             [
-                record.payload_offset + first_offset,
-                record.payload_offset + second_offset,
+                record.payload_offset() + first_offset,
+                record.payload_offset() + second_offset,
             ],
             prefix,
         ))
@@ -2617,48 +2538,48 @@ pub fn simple_hole_repeated_scalar_lane_block_references(
 
 /// Decode the unique four-block construction-group lane in a `HOLE PACKAGE` payload.
 pub fn hole_package_construction_group_lane(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<HolePackageConstructionGroupLane> {
     const PREFIX: [u8; 5] = [0x00, 0x00, 0x01, 0x00, 0x00];
     const ZEROES: [u8; 4] = [0; 4];
     const SUFFIX: [u8; 3] = [0x00, 0x00, 0xff];
-    if record.label.value != "HOLE PACKAGE" {
+    if record.name() != "HOLE PACKAGE" {
         return None;
     }
     let mut candidate = None;
-    for start in 0..record.payload.len().saturating_sub(PREFIX.len()) {
-        if record.payload.get(start..start + PREFIX.len()) != Some(&PREFIX) {
+    for start in 0..record.payload().len().saturating_sub(PREFIX.len()) {
+        if record.payload().get(start..start + PREFIX.len()) != Some(&PREFIX) {
             continue;
         }
         let Some(lane) = (|| {
-            let selector = NonZeroU8::new(*record.payload.get(start + 5)?)?;
-            let branch = NonZeroU8::new(*record.payload.get(start + 7)?)?;
-            if record.payload.get(start + 6) != Some(&0)
-                || record.payload.get(start + 8..start + 12) != Some(&ZEROES)
+            let selector = NonZeroU8::new(*record.payload().get(start + 5)?)?;
+            let branch = NonZeroU8::new(*record.payload().get(start + 7)?)?;
+            if record.payload().get(start + 6) != Some(&0)
+                || record.payload().get(start + 8..start + 12) != Some(&ZEROES)
             {
                 return None;
             }
             let mut at = start + 12;
             let references = std::array::from_fn::<_, 4, _>(|ordinal| {
                 if ordinal == 2 {
-                    if record.payload.get(at) != Some(&branch.get())
-                        || record.payload.get(at + 1..at + 5) != Some(&ZEROES)
+                    if record.payload().get(at) != Some(&branch.get())
+                        || record.payload().get(at + 1..at + 5) != Some(&ZEROES)
                     {
                         return None;
                     }
                     at += 5;
                 }
                 let reference_offset = at;
-                let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+                let (object_index, width) = payload_object_index(record.payload().get(at..)?)?;
                 at += width;
                 Some(PayloadObjectReference {
-                    offset: record.payload_offset + reference_offset,
+                    offset: record.payload_offset() + reference_offset,
                     token: object_index,
                 })
             });
             let [a, b, c, d] = references;
             let references = [a?, b?, c?, d?];
-            if record.payload.get(at..at + SUFFIX.len()) != Some(&SUFFIX) {
+            if record.payload().get(at..at + SUFFIX.len()) != Some(&SUFFIX) {
                 return None;
             }
             Some(HolePackageConstructionGroupLane {
@@ -2680,74 +2601,19 @@ pub fn hole_package_construction_group_lane(
 
 /// Decode the unique counted reference field in a bounded `SKETCH` payload.
 pub fn sketch_payload_references(
-    record: OperationRecord<'_>,
-) -> Option<SketchPayloadReferenceField> {
-    if record.label.value != "SKETCH" {
+    record: OperationPayload<'_>,
+) -> Option<SketchReferenceField> {
+    if record.name() != "SKETCH" {
         return None;
     }
     unique_candidate(
-        (0..record.payload.len().saturating_sub(3)).filter_map(|start| {
-            if record.payload.get(start..start + 2) != Some(&[0x01, 0x00]) {
+        (0..record.payload().len().saturating_sub(3)).filter_map(|start| {
+            if record.payload().get(start..start + 2) != Some(&[0x01, 0x00]) {
                 return None;
             }
-            sketch_reference_field(record, start)
+            SketchReferenceField::read(record, start)
         }),
     )
-}
-
-fn sketch_reference_field(
-    record: OperationRecord<'_>,
-    start: usize,
-) -> Option<SketchPayloadReferenceField> {
-    let flag = *record.payload.get(start + 2)?;
-    let (declared_count, mut at) = match flag {
-        0 => (0, start + 3),
-        1 => {
-            let count = *record.payload.get(start + 3)?;
-            if count == 0 {
-                return None;
-            }
-            (count, start + 4)
-        }
-        _ => return None,
-    };
-    let leading_count = declared_count.saturating_sub(1) as usize;
-    let leading_start = at;
-    let mut scan_at = leading_start;
-    for _ in 0..leading_count {
-        let (_, width) = payload_object_index(record.payload.get(scan_at..)?)?;
-        scan_at += width;
-    }
-    if record.payload.get(scan_at..scan_at + 2) != Some(&[0x00, 0x00]) {
-        return None;
-    }
-    scan_at += 2;
-    let (_, width) = payload_object_index(record.payload.get(scan_at..)?)?;
-    scan_at += width;
-    if record.payload.get(scan_at..scan_at + 4) != Some(&[0x01, 0x00, 0x00, 0x00]) {
-        return None;
-    }
-
-    let mut references = Vec::with_capacity(leading_count + 1);
-    at = leading_start;
-    for _ in 0..leading_count {
-        let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-        references.push(PayloadObjectReference {
-            offset: record.payload_offset + at,
-            token: object_index,
-        });
-        at += width;
-    }
-    at += 2;
-    let object_index = ReferenceIndexToken::read_payload(record.payload.get(at..)?)?;
-    references.push(PayloadObjectReference {
-        offset: record.payload_offset + at,
-        token: object_index,
-    });
-    Some(SketchPayloadReferenceField {
-        declared_count,
-        references,
-    })
 }
 
 fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {
@@ -2758,7 +2624,7 @@ fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {
 /// Decode the unique exactly framed construction-reference field in a bounded
 /// projected-curve payload.
 pub fn projected_curve_payload_references(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<ProjectedCurvePayloadReferenceField> {
     const CPROJ_MIDDLE: [u8; 5] = [0x80, 0x57, 0x00, 0x02, 0x01];
     const CPROJ_SUFFIX: [u8; 5] = [0xff, 0x01, 0x02, 0x02, 0x7d];
@@ -2770,24 +2636,24 @@ pub fn projected_curve_payload_references(
     const CMB_TAIL_SUFFIX: [u8; 2] = [0x04, 0x02];
     let decode_reference = |at: &mut usize| {
         let offset = *at;
-        let (object_index, width) = payload_object_index(record.payload.get(offset..)?)?;
+        let (object_index, width) = payload_object_index(record.payload().get(offset..)?)?;
         *at += width;
         Some(PayloadObjectReference {
-            offset: record.payload_offset + offset,
+            offset: record.payload_offset() + offset,
             token: object_index,
         })
     };
-    let decode_field = |start: usize| match record.label.value {
+    let decode_field = |start: usize| match record.name() {
         "CPROJ" => {
             let mut at = start + 2;
             let mut references = Vec::with_capacity(3);
             references.push(decode_reference(&mut at)?);
             references.push(decode_reference(&mut at)?);
-            (record.payload.get(at..at + CPROJ_MIDDLE.len()) == Some(&CPROJ_MIDDLE))
+            (record.payload().get(at..at + CPROJ_MIDDLE.len()) == Some(&CPROJ_MIDDLE))
                 .then_some(())?;
             at += CPROJ_MIDDLE.len();
             references.push(decode_reference(&mut at)?);
-            (record.payload.get(at..at + CPROJ_SUFFIX.len()) == Some(&CPROJ_SUFFIX))
+            (record.payload().get(at..at + CPROJ_SUFFIX.len()) == Some(&CPROJ_SUFFIX))
                 .then_some(())?;
             Some(ProjectedCurvePayloadReferenceField { references })
         }
@@ -2795,50 +2661,50 @@ pub fn projected_curve_payload_references(
             let mut at = start + CMB_PREFIX.len();
             let mut references = Vec::with_capacity(8);
             references.push(decode_reference(&mut at)?);
-            (record.payload.get(at) == Some(&0x33)).then_some(())?;
+            (record.payload().get(at) == Some(&0x33)).then_some(())?;
             at += 1;
             references.push(decode_reference(&mut at)?);
-            (record.payload.get(at) == Some(&0x00)).then_some(())?;
+            (record.payload().get(at) == Some(&0x00)).then_some(())?;
             at += 1;
             references.push(decode_reference(&mut at)?);
-            (record.payload.get(at..at + 6) == Some(&[0; 6])).then_some(())?;
+            (record.payload().get(at..at + 6) == Some(&[0; 6])).then_some(())?;
             at += 6;
             references.push(decode_reference(&mut at)?);
             for anchor in 0..2 {
-                (record.payload.get(at..at + CMB_BRANCH_PREFIX.len()) == Some(&CMB_BRANCH_PREFIX))
+                (record.payload().get(at..at + CMB_BRANCH_PREFIX.len()) == Some(&CMB_BRANCH_PREFIX))
                     .then_some(())?;
                 at += CMB_BRANCH_PREFIX.len();
                 let repeated = decode_reference(&mut at)?;
                 (repeated.token.value() == references[anchor].token.value()).then_some(())?;
-                (record.payload.get(at..at + CMB_BRANCH_MIDDLE.len()) == Some(&CMB_BRANCH_MIDDLE))
+                (record.payload().get(at..at + CMB_BRANCH_MIDDLE.len()) == Some(&CMB_BRANCH_MIDDLE))
                     .then_some(())?;
                 at += CMB_BRANCH_MIDDLE.len();
-                (record.payload.get(at..at + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
+                (record.payload().get(at..at + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
                 at += 3;
                 references.push(decode_reference(&mut at)?);
-                (record.payload.get(at..at + CMB_BRANCH_SUFFIX.len()) == Some(&CMB_BRANCH_SUFFIX))
+                (record.payload().get(at..at + CMB_BRANCH_SUFFIX.len()) == Some(&CMB_BRANCH_SUFFIX))
                     .then_some(())?;
                 at += CMB_BRANCH_SUFFIX.len();
             }
-            (record.payload.get(at..at + CMB_TAIL_PREFIX.len()) == Some(&CMB_TAIL_PREFIX))
+            (record.payload().get(at..at + CMB_TAIL_PREFIX.len()) == Some(&CMB_TAIL_PREFIX))
                 .then_some(())?;
             at += CMB_TAIL_PREFIX.len();
             references.push(decode_reference(&mut at)?);
             references.push(decode_reference(&mut at)?);
-            (record.payload.get(at..at + CMB_TAIL_SUFFIX.len()) == Some(&CMB_TAIL_SUFFIX))
+            (record.payload().get(at..at + CMB_TAIL_SUFFIX.len()) == Some(&CMB_TAIL_SUFFIX))
                 .then_some(())?;
             Some(ProjectedCurvePayloadReferenceField { references })
         }
         _ => None,
     };
-    let marker = match record.label.value {
+    let marker = match record.name() {
         "CPROJ" => &[0x01, 0x02][..],
         "CPROJ_CMB" => &CMB_PREFIX[..],
         _ => return None,
     };
     unique_candidate(
-        (0..=record.payload.len().saturating_sub(marker.len())).filter_map(|start| {
-            if record.payload.get(start..start + marker.len()) != Some(marker) {
+        (0..=record.payload().len().saturating_sub(marker.len())).filter_map(|start| {
+            if record.payload().get(start..start + marker.len()) != Some(marker) {
                 return None;
             }
             decode_field(start)
@@ -2849,7 +2715,7 @@ pub fn projected_curve_payload_references(
 /// Decode the unique exactly framed construction-reference field in a bounded
 /// pattern payload.
 pub fn pattern_payload_references(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<PatternPayloadReferenceField> {
     const GRAPH_SEPARATOR: [u8; 4] = [0xff, 0x00, 0xff, 0x01];
     const GRAPH_TAIL_PREFIX: [u8; 4] = [0xff, 0x00, 0x00, 0x01];
@@ -2863,10 +2729,10 @@ pub fn pattern_payload_references(
     ];
     let decode_reference = |at: &mut usize| {
         let offset = *at;
-        let (object_index, width) = payload_object_index(record.payload.get(offset..)?)?;
+        let (object_index, width) = payload_object_index(record.payload().get(offset..)?)?;
         *at += width;
         Some(PayloadObjectReference {
-            offset: record.payload_offset + offset,
+            offset: record.payload_offset() + offset,
             token: object_index,
         })
     };
@@ -2874,33 +2740,33 @@ pub fn pattern_payload_references(
         let mut at = start + 1;
         let mut references = Vec::with_capacity(10);
         references.push(decode_reference(&mut at)?);
-        (record.payload.get(at..at + GRAPH_SEPARATOR.len()) == Some(&GRAPH_SEPARATOR))
+        (record.payload().get(at..at + GRAPH_SEPARATOR.len()) == Some(&GRAPH_SEPARATOR))
             .then_some(())?;
         at += GRAPH_SEPARATOR.len();
         references.push(decode_reference(&mut at)?);
         references.push(decode_reference(&mut at)?);
-        (record.payload.get(at) == Some(&0x61)).then_some(())?;
+        (record.payload().get(at) == Some(&0x61)).then_some(())?;
         at += 1;
         references.push(decode_reference(&mut at)?);
-        (record.payload.get(at..at + GRAPH_SEPARATOR.len()) == Some(&GRAPH_SEPARATOR))
+        (record.payload().get(at..at + GRAPH_SEPARATOR.len()) == Some(&GRAPH_SEPARATOR))
             .then_some(())?;
         at += GRAPH_SEPARATOR.len();
         references.push(decode_reference(&mut at)?);
         references.push(decode_reference(&mut at)?);
-        (record.payload.get(at..at + 2) == Some(&[0xff, 0x62])).then_some(())?;
+        (record.payload().get(at..at + 2) == Some(&[0xff, 0x62])).then_some(())?;
         at += 2;
         references.push(decode_reference(&mut at)?);
         references.push(decode_reference(&mut at)?);
-        (record.payload.get(at..at + GRAPH_TAIL_PREFIX.len()) == Some(&GRAPH_TAIL_PREFIX))
+        (record.payload().get(at..at + GRAPH_TAIL_PREFIX.len()) == Some(&GRAPH_TAIL_PREFIX))
             .then_some(())?;
         at += GRAPH_TAIL_PREFIX.len();
         references.push(decode_reference(&mut at)?);
-        if record.payload.get(at) == Some(&0xff) {
+        if record.payload().get(at) == Some(&0xff) {
             at += 1;
         } else {
             references.push(decode_reference(&mut at)?);
         }
-        (record.payload.get(at..at + GRAPH_SUFFIX.len()) == Some(&GRAPH_SUFFIX)).then_some(())?;
+        (record.payload().get(at..at + GRAPH_SUFFIX.len()) == Some(&GRAPH_SUFFIX)).then_some(())?;
         Some(PatternPayloadReferenceField {
             layout: PatternPayloadReferenceLayout::CanonicalGraph,
             references,
@@ -2910,36 +2776,36 @@ pub fn pattern_payload_references(
         let mut at = start + 1;
         let mut references = Vec::with_capacity(10);
         references.push(decode_reference(&mut at)?);
-        (record.payload.get(at..at + COMPACT_GRAPH_SEPARATOR.len())
+        (record.payload().get(at..at + COMPACT_GRAPH_SEPARATOR.len())
             == Some(&COMPACT_GRAPH_SEPARATOR))
         .then_some(())?;
         at += COMPACT_GRAPH_SEPARATOR.len();
         references.push(decode_reference(&mut at)?);
         references.push(decode_reference(&mut at)?);
-        (record.payload.get(at) == Some(&0x3b)).then_some(())?;
+        (record.payload().get(at) == Some(&0x3b)).then_some(())?;
         at += 1;
         references.push(decode_reference(&mut at)?);
-        (record.payload.get(at..at + COMPACT_GRAPH_SEPARATOR.len())
+        (record.payload().get(at..at + COMPACT_GRAPH_SEPARATOR.len())
             == Some(&COMPACT_GRAPH_SEPARATOR))
         .then_some(())?;
         at += COMPACT_GRAPH_SEPARATOR.len();
         references.push(decode_reference(&mut at)?);
         references.push(decode_reference(&mut at)?);
-        (record.payload.get(at..at + COMPACT_GRAPH_MIDDLE.len()) == Some(&COMPACT_GRAPH_MIDDLE))
+        (record.payload().get(at..at + COMPACT_GRAPH_MIDDLE.len()) == Some(&COMPACT_GRAPH_MIDDLE))
             .then_some(())?;
         at += COMPACT_GRAPH_MIDDLE.len();
         references.push(decode_reference(&mut at)?);
         references.push(decode_reference(&mut at)?);
-        (record.payload.get(at..at + GRAPH_TAIL_PREFIX.len()) == Some(&GRAPH_TAIL_PREFIX))
+        (record.payload().get(at..at + GRAPH_TAIL_PREFIX.len()) == Some(&GRAPH_TAIL_PREFIX))
             .then_some(())?;
         at += GRAPH_TAIL_PREFIX.len();
         references.push(decode_reference(&mut at)?);
-        if record.payload.get(at) == Some(&0xff) {
+        if record.payload().get(at) == Some(&0xff) {
             at += 1;
         } else {
             references.push(decode_reference(&mut at)?);
         }
-        (record.payload.get(at..at + GRAPH_SUFFIX.len()) == Some(&GRAPH_SUFFIX)).then_some(())?;
+        (record.payload().get(at..at + GRAPH_SUFFIX.len()) == Some(&GRAPH_SUFFIX)).then_some(())?;
         Some(PatternPayloadReferenceField {
             layout: PatternPayloadReferenceLayout::CompactGraph,
             references,
@@ -2948,17 +2814,17 @@ pub fn pattern_payload_references(
     let decode_instance = |start: usize| {
         let mut at = start + INSTANCE_PREFIX.len();
         let reference = decode_reference(&mut at)?;
-        (record.payload.get(at..at + INSTANCE_SUFFIX.len()) == Some(&INSTANCE_SUFFIX))
+        (record.payload().get(at..at + INSTANCE_SUFFIX.len()) == Some(&INSTANCE_SUFFIX))
             .then_some(())?;
         Some(PatternPayloadReferenceField {
             layout: PatternPayloadReferenceLayout::GeometryInstance,
             references: vec![reference],
         })
     };
-    let field = match record.label.value {
+    let field = match record.name() {
         "Pattern Feature" | "Pattern Geometry" => {
-            unique_candidate((0..record.payload.len()).filter_map(|start| {
-                match record.payload.get(start) {
+            unique_candidate((0..record.payload().len()).filter_map(|start| {
+                match record.payload().get(start) {
                     Some(0x61) => decode_graph(start),
                     Some(0x3b) => decode_compact_graph(start),
                     _ => None,
@@ -2966,9 +2832,9 @@ pub fn pattern_payload_references(
             }))
         }
         "Geometry Instance" => unique_candidate(
-            (0..=record.payload.len().saturating_sub(INSTANCE_PREFIX.len()))
+            (0..=record.payload().len().saturating_sub(INSTANCE_PREFIX.len()))
                 .filter(|&start| {
-                    record.payload.get(start..start + INSTANCE_PREFIX.len())
+                    record.payload().get(start..start + INSTANCE_PREFIX.len())
                         == Some(&INSTANCE_PREFIX)
                 })
                 .filter_map(decode_instance),
@@ -2981,85 +2847,85 @@ pub fn pattern_payload_references(
 /// Decode the unique exactly terminated counted reference lane in a bounded
 /// `Pattern Feature` payload without assigning its reference roles.
 pub fn pattern_payload_counted_reference_lane(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<PatternPayloadCountedReferenceLane> {
     const TRAILER: [u8; 19] = [
         0x00, 0x00, 0x00, 0x37, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x38, 0xff, 0x01, 0xff, 0xff,
         0xff, 0xff, 0x01, 0xff,
     ];
-    if record.label.value != "Pattern Feature" {
+    if record.name() != "Pattern Feature" {
         return None;
     }
     let decode = |start: usize| {
-        (record.payload.get(start) == Some(&0x01)).then_some(())?;
-        let declared_count = *record.payload.get(start + 1)?;
+        (record.payload().get(start) == Some(&0x01)).then_some(())?;
+        let declared_count = *record.payload().get(start + 1)?;
         (declared_count >= 2).then_some(())?;
         let reference_count = usize::from(declared_count - 1);
         let references_start = start.checked_add(2)?;
         cadmpeg_core::decode::bounded_len(
             u64::from(declared_count - 1),
             2,
-            record.payload.len().saturating_sub(references_start),
+            record.payload().len().saturating_sub(references_start),
         )?;
         let mut scan_at = references_start;
         for _ in 0..reference_count {
-            let (_, width) = payload_object_index(record.payload.get(scan_at..)?)?;
+            let (_, width) = payload_object_index(record.payload().get(scan_at..)?)?;
             scan_at = scan_at.checked_add(width)?;
         }
         let trailer_end = scan_at.checked_add(TRAILER.len())?;
-        (record.payload.get(scan_at..trailer_end) == Some(&TRAILER)).then_some(())?;
+        (record.payload().get(scan_at..trailer_end) == Some(&TRAILER)).then_some(())?;
 
         let mut at = references_start;
         let mut references = Vec::with_capacity(reference_count);
         for _ in 0..reference_count {
             let offset = at;
-            let (object_index, width) = payload_object_index(record.payload.get(offset..)?)?;
+            let (object_index, width) = payload_object_index(record.payload().get(offset..)?)?;
             at = at.checked_add(width)?;
             references.push(PayloadObjectReference {
-                offset: record.payload_offset + offset,
+                offset: record.payload_offset() + offset,
                 token: object_index,
             });
         }
         Some(PatternPayloadCountedReferenceLane {
-            offset: record.payload_offset + start,
+            offset: record.payload_offset() + start,
             references,
         })
     };
-    unique_candidate((0..record.payload.len()).filter_map(decode))
+    unique_candidate((0..record.payload().len()).filter_map(decode))
 }
 
 /// Decode the unique exactly bounded two-group reference graph in an `FSET`
 /// payload without assigning selection roles to either group.
 pub fn fset_payload_reference_graph(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<FsetPayloadReferenceGraph> {
     const SUFFIX: [u8; 3] = [0x00, 0x03, 0x00];
-    if record.label.value != "FSET" {
+    if record.name() != "FSET" {
         return None;
     }
     let decode_reference = |at: &mut usize| {
         let offset = *at;
-        (record.payload.get(offset) == Some(&0x90)).then_some(())?;
-        let object_index = ReferenceIndexToken::read_feature(record.payload.get(offset..)?)?;
+        (record.payload().get(offset) == Some(&0x90)).then_some(())?;
+        let object_index = ReferenceIndexToken::read_feature(record.payload().get(offset..)?)?;
         let width = 3;
         *at += width;
         Some(PayloadObjectReference {
-            offset: record.payload_offset + offset,
+            offset: record.payload_offset() + offset,
             token: object_index,
         })
     };
     let decode = |start: usize| {
-        (record.payload.get(start) == Some(&0x01)).then_some(())?;
-        let declared_len = usize::from(*record.payload.get(start + 1)?);
+        (record.payload().get(start) == Some(&0x01)).then_some(())?;
+        let declared_len = usize::from(*record.payload().get(start + 1)?);
         let body_start = start.checked_add(2)?;
         let body_end = body_start.checked_add(declared_len)?;
         (declared_len >= 9
-            && record.payload.get(body_start) == Some(&0x3c)
-            && record.payload.get(body_end.checked_sub(1)?) == Some(&0x3e))
+            && record.payload().get(body_start) == Some(&0x3c)
+            && record.payload().get(body_end.checked_sub(1)?) == Some(&0x3e))
         .then_some(())?;
         let (selector, first) =
             unique_candidate((body_start + 2..body_end - 1).filter_map(|selector_end| {
-                let selector = record.payload.get(body_start + 1..selector_end)?;
+                let selector = record.payload().get(body_start + 1..selector_end)?;
                 (!selector.is_empty()
                     && selector
                         .iter()
@@ -3076,54 +2942,54 @@ pub fn fset_payload_reference_graph(
             decode_reference(&mut at)?,
             decode_reference(&mut at)?,
         ];
-        (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
+        (record.payload().get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
         Some(FsetPayloadReferenceGraph {
             selector,
             first,
             second,
-            offset: record.payload_offset + start,
+            offset: record.payload_offset() + start,
         })
     };
-    unique_candidate((0..record.payload.len().saturating_sub(1)).filter_map(decode))
+    unique_candidate((0..record.payload().len().saturating_sub(1)).filter_map(decode))
 }
 
 /// Decode the exactly counted nullable construction-reference field at the
 /// start of a bounded `DELETE` payload.
 pub fn delete_payload_references(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<DeletePayloadReferenceField> {
     const PREFIX: [u8; 6] = [0x00, 0x00, 0x01, 0x00, 0x01, 0x06];
-    if record.label.value != "DELETE" || record.payload.get(1..1 + PREFIX.len()) != Some(&PREFIX) {
+    if record.name() != "DELETE" || record.payload().get(1..1 + PREFIX.len()) != Some(&PREFIX) {
         return None;
     }
-    let control = *record.payload.first()?;
+    let control = *record.payload().first()?;
     let mut at = 1 + PREFIX.len();
     let references = std::array::from_fn::<_, 5, _>(|_| {
         let offset = at;
-        let (object_index, width) = if record.payload.get(at) == Some(&0xff) {
+        let (object_index, width) = if record.payload().get(at) == Some(&0xff) {
             (None, 1)
         } else {
-            let (object_index, width) = payload_object_index(&record.payload[at..])?;
+            let (object_index, width) = payload_object_index(&record.payload()[at..])?;
             (Some(object_index), width)
         };
         at += width;
         Some(DeletePayloadReferenceSlot {
             token: object_index,
-            offset: record.payload_offset + offset,
+            offset: record.payload_offset() + offset,
         })
     });
     let [a, b, c, d, e] = references;
     let references = [a?, b?, c?, d?, e?];
-    (record.payload.get(at) == Some(&0x00)).then_some(DeletePayloadReferenceField {
+    (record.payload().get(at) == Some(&0x00)).then_some(DeletePayloadReferenceField {
         control,
         references,
-        offset: record.payload_offset,
+        offset: record.payload_offset(),
     })
 }
 
 /// Decode the unique exactly counted transform lane in a bounded pattern payload.
 pub fn pattern_payload_transform_lane(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<PatternPayloadTransformLane> {
     const FEATURE_PREFIX_TAIL: [u8; 3] = [0x01, 0x00, 0x00];
     const FEATURE_SCALAR_SUFFIX: [u8; 14] = [
@@ -3133,7 +2999,7 @@ pub fn pattern_payload_transform_lane(
     const GEOMETRY_SCALAR_SUFFIX: [u8; 10] =
         [0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03];
     const ROW_TAIL: [u8; 5] = [0x00, 0x00, 0xff, 0x00, 0x00];
-    let (prefix_tail, scalar_suffix) = match record.label.value {
+    let (prefix_tail, scalar_suffix) = match record.name() {
         "Pattern Feature" => (
             FEATURE_PREFIX_TAIL.as_slice(),
             FEATURE_SCALAR_SUFFIX.as_slice(),
@@ -3145,74 +3011,74 @@ pub fn pattern_payload_transform_lane(
         _ => return None,
     };
     let decode = |start: usize| {
-        (record.payload.get(start) == Some(&0x01)).then_some(())?;
-        let declared_count @ 2.. = *record.payload.get(start + 1)? else { return None; };
-        let row_schema_index = NonZeroU8::new(*record.payload.get(start + 2)?)?;
+        (record.payload().get(start) == Some(&0x01)).then_some(())?;
+        let declared_count @ 2.. = *record.payload().get(start + 1)? else { return None; };
+        let row_schema_index = NonZeroU8::new(*record.payload().get(start + 2)?)?;
         let mut at = start + 2;
         let mut rows = Vec::new();
         for ordinal in 1..declared_count {
-            (record.payload.get(at) == Some(&row_schema_index.get())).then_some(())?;
-            (record.payload.get(at + 1..at + 1 + prefix_tail.len()) == Some(prefix_tail))
+            (record.payload().get(at) == Some(&row_schema_index.get())).then_some(())?;
+            (record.payload().get(at + 1..at + 1 + prefix_tail.len()) == Some(prefix_tail))
                 .then_some(())?;
             at += 1 + prefix_tail.len();
-            let scalar = ShiftedScalar::read(record.payload.get(at..)?)?;
+            let scalar = ShiftedScalar::read(record.payload().get(at..)?)?;
             let width = scalar.raw().len();
             let value = PatternValue {
                 scalar,
-                offset: record.payload_offset + at,
+                offset: record.payload_offset() + at,
             };
             at += width;
-            (record.payload.get(at..at + scalar_suffix.len()) == Some(scalar_suffix))
+            (record.payload().get(at..at + scalar_suffix.len()) == Some(scalar_suffix))
                 .then_some(())?;
             at += scalar_suffix.len();
             let selector_offset = at;
-            let atom = CompactIndexAtom::read(record.payload.get(at..)?)?;
+            let atom = CompactIndexAtom::read(record.payload().get(at..)?)?;
             let width = atom.raw().len();
             let selector = LocatedCompactIndex {
                 atom,
-                offset: record.payload_offset + selector_offset,
+                offset: record.payload_offset() + selector_offset,
             };
             rows.push(PatternRow {
                 values: value,
                 selector,
             });
             at += width;
-            (record.payload.get(at) == Some(&0x01)).then_some(())?;
-            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
-            (record.payload.get(at + 2..at + 2 + ROW_TAIL.len()) == Some(&ROW_TAIL))
+            (record.payload().get(at) == Some(&0x01)).then_some(())?;
+            (record.payload().get(at + 1) == Some(&ordinal)).then_some(())?;
+            (record.payload().get(at + 2..at + 2 + ROW_TAIL.len()) == Some(&ROW_TAIL))
                 .then_some(())?;
             at += 2 + ROW_TAIL.len();
         }
         let terminal_schema_index = row_schema_index.get() - 1;
-        (record.payload.get(at) == Some(&terminal_schema_index)).then_some(())?;
-        (record.payload.get(at + 1..at + 3) == Some(&[0x00, 0x00])).then_some(())?;
-        (record.payload.get(at + 3) == Some(&0x01)).then_some(())?;
+        (record.payload().get(at) == Some(&terminal_schema_index)).then_some(())?;
+        (record.payload().get(at + 1..at + 3) == Some(&[0x00, 0x00])).then_some(())?;
+        (record.payload().get(at + 3) == Some(&0x01)).then_some(())?;
         Some(PatternPayloadTransformLane {
-            offset: record.payload_offset + start,
+            offset: record.payload_offset() + start,
             row_schema_index,
             rows: PatternRows::Scalar(BranchItems::new(rows).ok()?),
         })
     };
     let decode_wide = |start: usize| {
-        (record.label.value == "Pattern Feature").then_some(())?;
-        (record.payload.get(start) == Some(&0x01)).then_some(())?;
-        let declared_count @ 2.. = *record.payload.get(start + 1)? else { return None; };
-        let row_schema_index = NonZeroU8::new(*record.payload.get(start + 2)?)?;
+        (record.name() == "Pattern Feature").then_some(())?;
+        (record.payload().get(start) == Some(&0x01)).then_some(())?;
+        let declared_count @ 2.. = *record.payload().get(start + 1)? else { return None; };
+        let row_schema_index = NonZeroU8::new(*record.payload().get(start + 2)?)?;
         let mut at = start + 2;
         let mut rows = Vec::new();
         for ordinal in 1..declared_count {
-            (record.payload.get(at) == Some(&row_schema_index.get())).then_some(())?;
+            (record.payload().get(at) == Some(&row_schema_index.get())).then_some(())?;
             at += 1;
             let mut decode_value = |value_ordinal| {
                 let value_offset = at;
-                let scalar = ShiftedBinary64::read(record.payload.get(at..at + 8)?)?;
+                let scalar = ShiftedBinary64::read(record.payload().get(at..at + 8)?)?;
                 let value = PatternValue {
                     scalar,
-                    offset: record.payload_offset + value_offset,
+                    offset: record.payload_offset() + value_offset,
                 };
                 at += 8;
                 if value_ordinal == 1 {
-                    (record.payload.get(at..at + 2) == Some(&[0x00, 0x00])).then_some(())?;
+                    (record.payload().get(at..at + 2) == Some(&[0x00, 0x00])).then_some(())?;
                     at += 2;
                 }
                 Some(value)
@@ -3223,171 +3089,171 @@ pub fn pattern_payload_transform_lane(
                 decode_value(2)?,
                 decode_value(3)?,
             ];
-            (record.payload.get(at..at + 4) == Some(&[0x00; 4])).then_some(())?;
+            (record.payload().get(at..at + 4) == Some(&[0x00; 4])).then_some(())?;
             at += 4;
             let terminal_value_offset = at;
-            let scalar = PatternTerminal::read(record.payload.get(at..)?)?;
+            let scalar = PatternTerminal::read(record.payload().get(at..)?)?;
             let width = scalar.raw().len();
             let terminal = PatternValue {
                 scalar,
-                offset: record.payload_offset + terminal_value_offset,
+                offset: record.payload_offset() + terminal_value_offset,
             };
             at += width;
-            (record.payload.get(at..at + 7) == Some(&[0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03]))
+            (record.payload().get(at..at + 7) == Some(&[0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03]))
                 .then_some(())?;
             at += 7;
             let selector_offset = at;
-            let atom = CompactIndexAtom::read(record.payload.get(at..)?)?;
+            let atom = CompactIndexAtom::read(record.payload().get(at..)?)?;
             let width = atom.raw().len();
             let selector = LocatedCompactIndex {
                 atom,
-                offset: record.payload_offset + selector_offset,
+                offset: record.payload_offset() + selector_offset,
             };
             rows.push(PatternRow {
                 values: PatternWideValues { first, terminal },
                 selector,
             });
             at += width;
-            (record.payload.get(at) == Some(&0x01)).then_some(())?;
-            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
-            (record.payload.get(at + 2..at + 2 + ROW_TAIL.len()) == Some(&ROW_TAIL))
+            (record.payload().get(at) == Some(&0x01)).then_some(())?;
+            (record.payload().get(at + 1) == Some(&ordinal)).then_some(())?;
+            (record.payload().get(at + 2..at + 2 + ROW_TAIL.len()) == Some(&ROW_TAIL))
                 .then_some(())?;
             at += 2 + ROW_TAIL.len();
         }
         let terminal_schema_index = row_schema_index.get() - 1;
-        (record.payload.get(at) == Some(&terminal_schema_index)).then_some(())?;
-        (record.payload.get(at + 1..at + 4) == Some(&[0x00, 0x00, 0x02])).then_some(())?;
+        (record.payload().get(at) == Some(&terminal_schema_index)).then_some(())?;
+        (record.payload().get(at + 1..at + 4) == Some(&[0x00, 0x00, 0x02])).then_some(())?;
         Some(PatternPayloadTransformLane {
-            offset: record.payload_offset + start,
+            offset: record.payload_offset() + start,
             row_schema_index,
             rows: PatternRows::Wide(BranchItems::new(rows).ok()?),
         })
     };
     unique_candidate(
-        (0..record.payload.len().saturating_sub(1))
+        (0..record.payload().len().saturating_sub(1))
             .filter_map(decode)
-            .chain((0..record.payload.len().saturating_sub(1)).filter_map(decode_wide)),
+            .chain((0..record.payload().len().saturating_sub(1)).filter_map(decode_wide)),
     )
 }
 
 /// Decode the unique exactly counted instance-output lane in a bounded payload.
 pub fn multi_instance_output_payload_lane(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<MultiInstanceOutputPayloadLane> {
     const ENVELOPE: [u8; 10] = [0x3a, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x25, 0x01];
     const ROW_PREFIX: [u8; 7] = [0x26, 0x27, 0x01, 0x02, 0x65, 0x01, 0x02];
     const ROW_ORDINAL_MARKER: u8 = 0x28;
     const REFERENCE_PREFIX: [u8; 2] = [0x00, 0x3b];
 
-    if record.label.value != "Multi Instance Output" {
+    if record.name() != "Multi Instance Output" {
         return None;
     }
     let decode = |start: usize| {
-        (record.payload.get(start..start + ENVELOPE.len()) == Some(&ENVELOPE)).then_some(())?;
-        let declared_count = *record.payload.get(start + ENVELOPE.len())?;
+        (record.payload().get(start..start + ENVELOPE.len()) == Some(&ENVELOPE)).then_some(())?;
+        let declared_count = *record.payload().get(start + ENVELOPE.len())?;
         (declared_count >= 2).then_some(())?;
         let mut instance_count = 0;
         let row_count = usize::from(declared_count - 1);
         let mut at = start + ENVELOPE.len() + 1;
         let mut rows = Vec::with_capacity(row_count);
         for expected_row_index in 2..=declared_count {
-            (record.payload.get(at..at + ROW_PREFIX.len()) == Some(&ROW_PREFIX)).then_some(())?;
+            (record.payload().get(at..at + ROW_PREFIX.len()) == Some(&ROW_PREFIX)).then_some(())?;
             at += ROW_PREFIX.len();
             let selector_offset = at;
-            let atom = CompactIndexAtom::read(record.payload.get(at..)?)?;
+            let atom = CompactIndexAtom::read(record.payload().get(at..)?)?;
             let width = atom.raw().len();
             let selector = LocatedCompactIndex {
                 atom,
-                offset: record.payload_offset + selector_offset,
+                offset: record.payload_offset() + selector_offset,
             };
             at += width;
-            (record.payload.get(at) == Some(&ROW_ORDINAL_MARKER)).then_some(())?;
-            let ordinal = *record.payload.get(at + 1)?;
+            (record.payload().get(at) == Some(&ROW_ORDINAL_MARKER)).then_some(())?;
+            let ordinal = *record.payload().get(at + 1)?;
             instance_count = instance_count.max(ordinal);
-            (record.payload.get(at + 2) == Some(&expected_row_index)).then_some(())?;
+            (record.payload().get(at + 2) == Some(&expected_row_index)).then_some(())?;
             rows.push((selector, ordinal));
             at += 3;
         }
-        (record.payload.get(at..at + REFERENCE_PREFIX.len()) == Some(&REFERENCE_PREFIX))
+        (record.payload().get(at..at + REFERENCE_PREFIX.len()) == Some(&REFERENCE_PREFIX))
             .then_some(())?;
         at += REFERENCE_PREFIX.len();
         let mut trailing_references =
             Vec::with_capacity(usize::from(instance_count.saturating_sub(1)));
         for _ in 1..instance_count {
             let reference_offset = at;
-            let object_index = reference_index::FeatureReferenceToken::read(record.payload.get(at..)?)?;
+            let object_index = reference_index::FeatureReferenceToken::read(record.payload().get(at..)?)?;
             let end = at + object_index.raw().len();
             trailing_references.push(PayloadObjectReference {
-                offset: record.payload_offset + reference_offset,
+                offset: record.payload_offset() + reference_offset,
                 token: object_index,
             });
             at = end;
         }
-        (record.payload.get(at..at + 2) == Some(&[0x01, instance_count])).then_some(())?;
+        (record.payload().get(at..at + 2) == Some(&[0x01, instance_count])).then_some(())?;
         Some(MultiInstanceOutputPayloadLane {
-            offset: record.payload_offset + start + 8,
+            offset: record.payload_offset() + start + 8,
             outputs: instances::MultiInstanceOutputs::new(rows, trailing_references).ok()?,
         })
     };
-    unique_candidate((0..=record.payload.len().saturating_sub(ENVELOPE.len())).filter_map(decode))
+    unique_candidate((0..=record.payload().len().saturating_sub(ENVELOPE.len())).filter_map(decode))
 }
 
 /// Decode the unique exactly counted selector lane in an
 /// `IDENTICAL INSTANCE OUTPUT` payload.
 pub fn identical_instance_output_payload_lane(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<IdenticalInstanceOutputPayloadLane> {
     const ROW_MIDDLE: [u8; 2] = [0x01, 0x02];
     const SENTINEL: [u8; 7] = [0xe0, 0x7f, 0xff, 0xff, 0xff, 0x00, 0x00];
 
-    if record.label.value != "IDENTICAL INSTANCE OUTPUT" {
+    if record.name() != "IDENTICAL INSTANCE OUTPUT" {
         return None;
     }
     let decode = |start: usize| {
-        let leading_schema_index = *record.payload.get(start)?;
-        let count_schema_index = IdenticalInstanceSchemaIndex::new(*record.payload.get(start + 1)?)?;
-        (record.payload.get(start + 2) == Some(&0x01)).then_some(())?;
-        let declared_count = *record.payload.get(start + 3)?;
+        let leading_schema_index = *record.payload().get(start)?;
+        let count_schema_index = IdenticalInstanceSchemaIndex::new(*record.payload().get(start + 1)?)?;
+        (record.payload().get(start + 2) == Some(&0x01)).then_some(())?;
+        let declared_count = *record.payload().get(start + 3)?;
         (declared_count >= 2).then_some(())?;
         let [first_schema_index, second_schema_index, third_schema_index] =
             count_schema_index.row_indices();
         let mut at = start + 4;
         let mut selectors = Vec::with_capacity(usize::from(declared_count - 1));
         for ordinal in 2..=declared_count {
-            (record.payload.get(at) == Some(&first_schema_index)).then_some(())?;
-            (record.payload.get(at + 1) == Some(&second_schema_index)).then_some(())?;
-            (record.payload.get(at + 2..at + 4) == Some(&ROW_MIDDLE)).then_some(())?;
-            (record.payload.get(at + 4) == Some(&third_schema_index)).then_some(())?;
+            (record.payload().get(at) == Some(&first_schema_index)).then_some(())?;
+            (record.payload().get(at + 1) == Some(&second_schema_index)).then_some(())?;
+            (record.payload().get(at + 2..at + 4) == Some(&ROW_MIDDLE)).then_some(())?;
+            (record.payload().get(at + 4) == Some(&third_schema_index)).then_some(())?;
             at += 5;
             let selector_offset = at;
-            let atom = CompactIndexAtom::read(record.payload.get(at..)?)?;
+            let atom = CompactIndexAtom::read(record.payload().get(at..)?)?;
             let width = atom.raw().len();
             selectors.push(LocatedCompactIndex {
                 atom,
-                offset: record.payload_offset + selector_offset,
+                offset: record.payload_offset() + selector_offset,
             });
             at += width;
-            (record.payload.get(at) == Some(&0x00)).then_some(())?;
-            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
+            (record.payload().get(at) == Some(&0x00)).then_some(())?;
+            (record.payload().get(at + 1) == Some(&ordinal)).then_some(())?;
             at += 2;
         }
         let terminal_count = declared_count.checked_add(1)?;
-        (record.payload.get(at) == Some(&0x00)).then_some(())?;
-        (record.payload.get(at + 1) == Some(&terminal_count)).then_some(())?;
-        (record.payload.get(at + 2..at + 2 + SENTINEL.len()) == Some(&SENTINEL)).then_some(())?;
+        (record.payload().get(at) == Some(&0x00)).then_some(())?;
+        (record.payload().get(at + 1) == Some(&terminal_count)).then_some(())?;
+        (record.payload().get(at + 2..at + 2 + SENTINEL.len()) == Some(&SENTINEL)).then_some(())?;
         Some(IdenticalInstanceOutputPayloadLane {
-            offset: record.payload_offset + start,
+            offset: record.payload_offset() + start,
             leading_schema_index,
             count_schema_index,
             selectors: compact::CountedIndexMembers::new(selectors).ok()?,
         })
     };
-    unique_candidate((0..record.payload.len().saturating_sub(3)).filter_map(decode))
+    unique_candidate((0..record.payload().len().saturating_sub(3)).filter_map(decode))
 }
 
 /// Decode the exact leading construction header in a bounded `POINT` payload.
 pub fn point_feature_payload_header(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<PointFeaturePayloadHeader> {
     const PREFIX: [u8; 7] = [0x72, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00];
     const REFERENCE_SUFFIX: [u8; 42] = [
@@ -3399,23 +3265,23 @@ pub fn point_feature_payload_header(
         0xc0, 0x1f, 0xff, 0xfd, 0x01, 0x00, 0x00, 0x01, 0x01, 0x01, 0x03, 0x02, 0x01, 0x01, 0x01,
         0x00, 0x00, 0x00, 0x00, 0x00,
     ];
-    if record.label.value != "POINT" || record.payload.get(..PREFIX.len()) != Some(&PREFIX) {
+    if record.name() != "POINT" || record.payload().get(..PREFIX.len()) != Some(&PREFIX) {
         return None;
     }
     let mut at = PREFIX.len();
     let reference_offset = at;
-    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+    let (object_index, width) = payload_object_index(record.payload().get(at..)?)?;
     at += width;
-    (record.payload.get(at..at + REFERENCE_SUFFIX.len()) == Some(&REFERENCE_SUFFIX))
+    (record.payload().get(at..at + REFERENCE_SUFFIX.len()) == Some(&REFERENCE_SUFFIX))
         .then_some(())?;
     at += REFERENCE_SUFFIX.len();
-    let mode = *record.payload.get(at)?;
+    let mode = *record.payload().get(at)?;
     matches!(mode, 0x02 | 0x03).then_some(())?;
     at += 1;
-    (record.payload.get(at..at + MODE_SUFFIX.len()) == Some(&MODE_SUFFIX)).then_some(())?;
+    (record.payload().get(at..at + MODE_SUFFIX.len()) == Some(&MODE_SUFFIX)).then_some(())?;
     Some(PointFeaturePayloadHeader {
         reference: PayloadObjectReference {
-            offset: record.payload_offset + reference_offset,
+            offset: record.payload_offset() + reference_offset,
             token: object_index,
         },
         mode,
@@ -3450,7 +3316,7 @@ pub fn point_feature_scalar_lane(
 
 /// Decode the unique exactly framed construction-reference graph in a bounded `DRAFT` payload.
 pub fn draft_feature_payload_references(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<DraftFeaturePayloadReferenceField> {
     const PAYLOAD_PREFIX: [u8; 14] = [
         0x67, 0x00, 0x00, 0x01, 0x00, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0x03,
@@ -3461,8 +3327,8 @@ pub fn draft_feature_payload_references(
         0x46, 0x8a, 0x2a, 0x01, 0xa3, 0x60, 0x10, 0x01, 0x01, 0x01, 0x04, 0x02, 0x01, 0x02, 0x01,
         0x00, 0x00, 0x00, 0x00, 0x01,
     ];
-    if record.label.value != "DRAFT"
-        || record.payload.get(..PAYLOAD_PREFIX.len()) != Some(&PAYLOAD_PREFIX)
+    if record.name() != "DRAFT"
+        || record.payload().get(..PAYLOAD_PREFIX.len()) != Some(&PAYLOAD_PREFIX)
     {
         return None;
     }
@@ -3470,32 +3336,32 @@ pub fn draft_feature_payload_references(
         let mut at = start + GRAPH_PREFIX.len();
         let decode_reference = |at: &mut usize| {
             let offset = *at;
-            let (object_index, width) = payload_object_index(record.payload.get(offset..)?)?;
+            let (object_index, width) = payload_object_index(record.payload().get(offset..)?)?;
             *at += width;
             Some(PayloadObjectReference {
-                offset: record.payload_offset + offset,
+                offset: record.payload_offset() + offset,
                 token: object_index,
             })
         };
         let first = decode_reference(&mut at)?;
-        (record.payload.get(at..at + GRAPH_PREFIX.len()) == Some(&GRAPH_PREFIX)).then_some(())?;
+        (record.payload().get(at..at + GRAPH_PREFIX.len()) == Some(&GRAPH_PREFIX)).then_some(())?;
         at += GRAPH_PREFIX.len();
         let second = decode_reference(&mut at)?;
-        (record.payload.get(at..at + MIDDLE.len()) == Some(&MIDDLE)).then_some(())?;
+        (record.payload().get(at..at + MIDDLE.len()) == Some(&MIDDLE)).then_some(())?;
         at += MIDDLE.len();
         let third = decode_reference(&mut at)?;
-        (record.payload.get(at..at + 4) == Some(&[0xff, 0x00, 0x00, 0x00])).then_some(())?;
+        (record.payload().get(at..at + 4) == Some(&[0xff, 0x00, 0x00, 0x00])).then_some(())?;
         at += 4;
         let fourth = decode_reference(&mut at)?;
-        (record.payload.get(at) == Some(&0xff)).then_some(())?;
+        (record.payload().get(at) == Some(&0xff)).then_some(())?;
         Some(DraftFeaturePayloadReferenceField {
             references: [first, second, third, fourth],
         })
     };
     unique_candidate(
-        (PAYLOAD_PREFIX.len()..=record.payload.len().saturating_sub(GRAPH_PREFIX.len()))
+        (PAYLOAD_PREFIX.len()..=record.payload().len().saturating_sub(GRAPH_PREFIX.len()))
             .filter(|&start| {
-                record.payload.get(start..start + GRAPH_PREFIX.len()) == Some(&GRAPH_PREFIX)
+                record.payload().get(start..start + GRAPH_PREFIX.len()) == Some(&GRAPH_PREFIX)
             })
             .filter_map(decode),
     )
@@ -3503,30 +3369,30 @@ pub fn draft_feature_payload_references(
 
 /// Decode the exactly positioned counted compact-index lane preceding a `DRAFT` graph.
 pub fn draft_feature_leading_index_lane(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<DraftFeatureLeadingIndexLane> {
     const PREFIX: [u8; 22] = [
         0x67, 0x00, 0x00, 0x01, 0x00, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0x03, 0xff,
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     ];
-    if record.label.value != "DRAFT" || record.payload.get(..PREFIX.len()) != Some(&PREFIX) {
+    if record.name() != "DRAFT" || record.payload().get(..PREFIX.len()) != Some(&PREFIX) {
         return None;
     }
     let mut at = PREFIX.len();
-    (record.payload.get(at) == Some(&0x01)).then_some(())?;
-    let declared_count = *record.payload.get(at + 1)?;
+    (record.payload().get(at) == Some(&0x01)).then_some(())?;
+    let declared_count = *record.payload().get(at + 1)?;
     (declared_count >= 2).then_some(())?;
     at += 2;
     let mut indices = Vec::with_capacity(usize::from(declared_count - 1));
     for _ in 1..declared_count {
-        let token = LocatedCompactIndex::read(record.payload, at)?;
+        let token = LocatedCompactIndex::read(record.payload(), at)?;
         at += token.atom.raw().len();
         indices.push(LocatedCompactIndex {
             atom: token.atom,
-            offset: record.payload_offset + token.offset,
+            offset: record.payload_offset() + token.offset,
         });
     }
-    (record.payload.get(at..at + 2) == Some(&[0x01, 0x02])).then_some(())?;
+    (record.payload().get(at..at + 2) == Some(&[0x01, 0x02])).then_some(())?;
 
     Some(DraftFeatureLeadingIndexLane {
         indices: CountedIndexMembers::new(indices).ok()?,
@@ -3535,25 +3401,25 @@ pub fn draft_feature_leading_index_lane(
 
 /// Decode the complete end-anchored terminal lane in a bounded `DRAFT` payload.
 pub fn draft_feature_terminal_lane(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<DraftFeatureTerminalLane> {
     const FIXED: [u8; 11] = [
         0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00,
     ];
-    if record.label.value != "DRAFT" {
+    if record.name() != "DRAFT" {
         return None;
     }
-    let start = record.payload.len().checked_sub(4 + FIXED.len() + 4)?;
-    let first = compact::ExtendedCompactIndex::read(record.payload.get(start..)?)?;
-    let second = compact::ExtendedCompactIndex::read(record.payload.get(start + 2..)?)?;
+    let start = record.payload().len().checked_sub(4 + FIXED.len() + 4)?;
+    let first = compact::ExtendedCompactIndex::read(record.payload().get(start..)?)?;
+    let second = compact::ExtendedCompactIndex::read(record.payload().get(start + 2..)?)?;
     let at = start + 4;
-    (record.payload.get(at..at + FIXED.len()) == Some(&FIXED)).then_some(())?;
+    (record.payload().get(at..at + FIXED.len()) == Some(&FIXED)).then_some(())?;
     let at = at + FIXED.len();
-    let tail = record.payload.get(at..at + 3)?.try_into().ok()?;
-    (record.payload.get(at + 3) == Some(&0x00)).then_some(())?;
+    let tail = record.payload().get(at..at + 3)?.try_into().ok()?;
+    (record.payload().get(at + 3) == Some(&0x00)).then_some(())?;
     Some(DraftFeatureTerminalLane {
-        indices: [LocatedCompactIndex { atom: first, offset: record.payload_offset + start },
-            LocatedCompactIndex { atom: second, offset: record.payload_offset + start + 2 }],
+        indices: [LocatedCompactIndex { atom: first, offset: record.payload_offset() + start },
+            LocatedCompactIndex { atom: second, offset: record.payload_offset() + start + 2 }],
         tail,
     })
 }
@@ -3561,7 +3427,7 @@ pub fn draft_feature_terminal_lane(
 /// Decode the exact common construction-reference envelope in a bounded
 /// `SKIN` or `Studio Surface` payload.
 pub fn surface_feature_payload_references(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<SurfaceFeaturePayloadReferenceField> {
     const HEADER_PREFIX: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
     const TRAILING_PREFIX: [u8; 10] = [0x03, 0x03, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b];
@@ -3569,19 +3435,19 @@ pub fn surface_feature_payload_references(
         0x01, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
         0x01, 0x02,
     ];
-    let discriminator = *record.payload.first()?;
-    match record.label.value {
+    let discriminator = *record.payload().first()?;
+    match record.name() {
         "SKIN" if matches!(discriminator, 0x3e | 0x3f) => {}
         "Studio Surface" if discriminator == 0x14 => {}
         _ => return None,
     }
-    (record.payload.get(1..5) == Some(&HEADER_PREFIX)).then_some(())?;
+    (record.payload().get(1..5) == Some(&HEADER_PREFIX)).then_some(())?;
     let decode_reference = |at: &mut usize| {
         let offset = *at;
-        let (object_index, width) = payload_object_index(record.payload.get(offset..)?)?;
+        let (object_index, width) = payload_object_index(record.payload().get(offset..)?)?;
         *at += width;
         Some(PayloadObjectReference {
-            offset: record.payload_offset + offset,
+            offset: record.payload_offset() + offset,
             token: object_index,
         })
     };
@@ -3590,11 +3456,11 @@ pub fn surface_feature_payload_references(
     for _ in 0..3 {
         references.push(decode_reference(&mut at)?);
     }
-    (record.payload.get(at..at + 2) == Some(&[0x01, 0x09])).then_some(())?;
+    (record.payload().get(at..at + 2) == Some(&[0x01, 0x09])).then_some(())?;
     at += 2;
-    record.payload.get(at..at + 8)?;
+    record.payload().get(at..at + 8)?;
     at += 8;
-    (record.payload.get(at..at + 2) == Some(&[0x01, 0x09])).then_some(())?;
+    (record.payload().get(at..at + 2) == Some(&[0x01, 0x09])).then_some(())?;
     at += 2;
     for _ in 0..8 {
         references.push(decode_reference(&mut at)?);
@@ -3602,7 +3468,7 @@ pub fn surface_feature_payload_references(
 
     let trailing_start = unique_candidate(
         record
-            .payload
+            .payload()
             .windows(TRAILING_PREFIX.len())
             .enumerate()
             .filter_map(|(start, bytes)| (bytes == TRAILING_PREFIX).then_some(start)),
@@ -3611,7 +3477,7 @@ pub fn surface_feature_payload_references(
     for _ in 0..3 {
         references.push(decode_reference(&mut at)?);
     }
-    (record.payload.get(at..at + TRAILING_SUFFIX.len()) == Some(&TRAILING_SUFFIX)).then_some(())?;
+    (record.payload().get(at..at + TRAILING_SUFFIX.len()) == Some(&TRAILING_SUFFIX)).then_some(())?;
     Some(SurfaceFeaturePayloadReferenceField {
         references: references.try_into().ok()?,
     })
@@ -3620,40 +3486,40 @@ pub fn surface_feature_payload_references(
 /// Decode the exact leading construction-reference envelope in a bounded
 /// `THRU_CURVE` payload.
 pub fn thru_curve_payload_references(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<ThruCurvePayloadReferenceField> {
     const HEADER: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
-    (record.label.value == "THRU_CURVE").then_some(())?;
-    let discriminator = NonZeroU8::new(*record.payload.first()?)?;
-    (record.payload.get(1..1 + HEADER.len()) == Some(&HEADER)).then_some(())?;
+    (record.name() == "THRU_CURVE").then_some(())?;
+    let discriminator = NonZeroU8::new(*record.payload().first()?)?;
+    (record.payload().get(1..1 + HEADER.len()) == Some(&HEADER)).then_some(())?;
 
     let mut at = 1 + HEADER.len();
     let mut references = Vec::with_capacity(9);
     let decode_reference = |at: &mut usize| {
         let offset = *at;
-        let (object_index, width) = payload_object_index(record.payload.get(offset..)?)?;
+        let (object_index, width) = payload_object_index(record.payload().get(offset..)?)?;
         *at += width;
         Some(PayloadObjectReference {
-            offset: record.payload_offset + offset,
+            offset: record.payload_offset() + offset,
             token: object_index,
         })
     };
     for _ in 0..3 {
         references.push(decode_reference(&mut at)?);
     }
-    (record.payload.get(at..at + 2) == Some(&[0x01, 0x08])).then_some(())?;
+    (record.payload().get(at..at + 2) == Some(&[0x01, 0x08])).then_some(())?;
     at += 2;
-    let controls: [u8; 9] = record.payload.get(at..at + 9)?.try_into().ok()?;
+    let controls: [u8; 9] = record.payload().get(at..at + 9)?.try_into().ok()?;
     let controls = ThruCurveControls::try_from(controls).ok()?;
     at += 9;
     for _ in 0..6 {
         references.push(decode_reference(&mut at)?);
     }
-    (*record.payload.get(at)? == 0x04).then_some(())?;
-    let trailing_control = NonZeroU8::new(*record.payload.get(at + 1)?)?;
-    (*record.payload.get(at + 2)? == 0xa0).then_some(())?;
-    let trailing_value = record.payload.get(at + 3..at + 5)?.try_into().ok()?;
-    (record.payload.get(at + 5..at + 7) == Some(&[0x13, 0x01])).then_some(())?;
+    (*record.payload().get(at)? == 0x04).then_some(())?;
+    let trailing_control = NonZeroU8::new(*record.payload().get(at + 1)?)?;
+    (*record.payload().get(at + 2)? == 0xa0).then_some(())?;
+    let trailing_value = record.payload().get(at + 3..at + 5)?.try_into().ok()?;
+    (record.payload().get(at + 5..at + 7) == Some(&[0x13, 0x01])).then_some(())?;
 
     Some(ThruCurvePayloadReferenceField {
         discriminator,
@@ -3661,61 +3527,61 @@ pub fn thru_curve_payload_references(
         references: references.try_into().ok()?,
         trailing_control,
         trailing_value,
-        end_offset: record.payload_offset + at + 7,
+        end_offset: record.payload_offset() + at + 7,
     })
 }
 
 fn thru_curve_payload_branch(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
     at: usize,
 ) -> Option<(ThruCurvePayloadBranch, usize)> {
-    let mode = NonZeroU8::new(*record.payload.get(at)?)?;
-    (*record.payload.get(at + 1)? == 0x01).then_some(())?;
-    let declared_count @ 2.. = *record.payload.get(at + 2)? else {
+    let mode = NonZeroU8::new(*record.payload().get(at)?)?;
+    (*record.payload().get(at + 1)? == 0x01).then_some(())?;
+    let declared_count @ 2.. = *record.payload().get(at + 2)? else {
         return None;
     };
     let mut cursor = at + 3;
     let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
     for _ in 1..declared_count {
         let offset = cursor;
-        let (object_index, width) = payload_object_index(record.payload.get(cursor..)?)?;
+        let (object_index, width) = payload_object_index(record.payload().get(cursor..)?)?;
         cursor += width;
         members.push(PayloadObjectReference {
-            offset: record.payload_offset + offset,
+            offset: record.payload_offset() + offset,
             token: object_index,
         });
     }
-    (record.payload.get(cursor..cursor + 2) == Some(&[0x01, declared_count])).then_some(())?;
+    (record.payload().get(cursor..cursor + 2) == Some(&[0x01, declared_count])).then_some(())?;
     cursor += 2;
 
     let standard_len = usize::from(declared_count) + 3;
-    let lane = record.payload.get(cursor..cursor + standard_len)?;
+    let lane = record.payload().get(cursor..cursor + standard_len)?;
     let lane = if lane.iter().all(|&byte| byte == 0) {
         lane
     } else {
-        record.payload.get(cursor..cursor + 18)?
+        record.payload().get(cursor..cursor + 18)?
     };
     let lane_len = lane.len();
     let members = ThruCurveBranchItems::from_parts(members, lane).ok()?;
     cursor += lane_len;
-    (record.payload.get(cursor..cursor + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
+    (record.payload().get(cursor..cursor + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
     cursor += 3;
     let terminal_offset = cursor;
-    let (object_index, width) = payload_object_index(record.payload.get(cursor..)?)?;
+    let (object_index, width) = payload_object_index(record.payload().get(cursor..)?)?;
     cursor += width;
     let terminal = PayloadObjectReference {
-        offset: record.payload_offset + terminal_offset,
+        offset: record.payload_offset() + terminal_offset,
         token: object_index,
     };
-    (*record.payload.get(cursor)? == 0x00).then_some(())?;
+    (*record.payload().get(cursor)? == 0x00).then_some(())?;
     cursor += 1;
-    let suffix: [u8; 2] = record.payload.get(cursor..cursor + 2)?.try_into().ok()?;
+    let suffix: [u8; 2] = record.payload().get(cursor..cursor + 2)?.try_into().ok()?;
     let suffix = ThruCurveBranchSuffix::try_from(suffix).ok()?;
     cursor += 2;
 
     Some((
         ThruCurvePayloadBranch {
-            offset: record.payload_offset + at,
+            offset: record.payload_offset() + at,
             mode,
             members,
             terminal,
@@ -3728,12 +3594,12 @@ fn thru_curve_payload_branch(
 /// Decode the exact counted branch group after a bounded `THRU_CURVE`
 /// reference envelope.
 pub fn thru_curve_payload_branch_group(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<ThruCurvePayloadBranchGroup> {
     let envelope = thru_curve_payload_references(record)?;
-    let mut at = envelope.end_offset.checked_sub(record.payload_offset)?;
+    let mut at = envelope.end_offset.checked_sub(record.payload_offset())?;
     let group_offset = at;
-    let declared_count @ 2.. = *record.payload.get(at)? else {
+    let declared_count @ 2.. = *record.payload().get(at)? else {
         return None;
     };
     at += 1;
@@ -3745,9 +3611,9 @@ pub fn thru_curve_payload_branch_group(
     }
     let terminator = ThruCurveGroupTerminator::ALL
         .into_iter()
-        .find(|terminator| record.payload.get(at..at + terminator.bytes().len()) == Some(terminator.bytes()))?;
+        .find(|terminator| record.payload().get(at..at + terminator.bytes().len()) == Some(terminator.bytes()))?;
     Some(ThruCurvePayloadBranchGroup {
-        offset: record.payload_offset + group_offset,
+        offset: record.payload_offset() + group_offset,
         branches: BranchItems::new(branches).ok()?,
         terminator,
     })
@@ -3756,42 +3622,37 @@ pub fn thru_curve_payload_branch_group(
 /// Decode the exact leading construction branch in a bounded `SWP104`
 /// payload.
 pub fn swp104_payload_leading_branch(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<Swp104PayloadLeadingBranch> {
     const HEADER: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
-    (record.label.value == "SWP104").then_some(())?;
-    let discriminator = NonZeroU8::new(*record.payload.first()?)?;
-    (record.payload.get(1..5) == Some(&HEADER)).then_some(())?;
+    (record.name() == "SWP104").then_some(())?;
+    let discriminator = NonZeroU8::new(*record.payload().first()?)?;
+    (record.payload().get(1..5) == Some(&HEADER)).then_some(())?;
 
-    let mut at = 5;
-    let mut scalars = Vec::with_capacity(4);
-    for _ in 0..4 {
-        scalars.push(ShiftedBinary64::read(record.payload.get(at..at + 8)?)?);
-        at += 8;
-    }
-    let scalars = scalars.try_into().ok()?;
+    let [a, b, c, d] = std::array::from_fn::<_, 4, _>(|i| {
+        ShiftedBinary64::read(record.payload().get(5 + i * 8..13 + i * 8)?)
+    });
+    let scalars = [a?, b?, c?, d?];
+    let mut at = 37;
 
-    let leading_zero = record.payload.get(at) == Some(&0x00);
+    let leading_zero = record.payload().get(at) == Some(&0x00);
     at += usize::from(leading_zero);
-    let mode = NonZeroU8::new(*record.payload.get(at)?)?;
-    (*record.payload.get(at + 1)? == 0x01).then_some(())?;
-    let declared_count @ 2.. = *record.payload.get(at + 2)? else {
+    let mode = NonZeroU8::new(*record.payload().get(at)?)?;
+    (*record.payload().get(at + 1)? == 0x01).then_some(())?;
+    let declared_count @ 2.. = *record.payload().get(at + 2)? else {
         return None;
     };
     at += 3;
     let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
     for _ in 1..declared_count {
-        let offset = at;
-        let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+        let object_index = reference_index::PayloadIndexToken::read(record.payload().get(at..)?)?;
+        let width = object_index.raw().len();
         at += width;
-        members.push(PayloadObjectReference {
-            offset: record.payload_offset + offset,
-            token: object_index,
-        });
+        members.push(object_index);
     }
 
-    let witnessed_count = if record.payload.get(at) == Some(&0x01) {
-        let count @ 2.. = *record.payload.get(at + 1)? else {
+    let witnessed_count = if record.payload().get(at) == Some(&0x01) {
+        let count @ 2.. = *record.payload().get(at + 1)? else {
             return None;
         };
         Some(count)
@@ -3805,20 +3666,16 @@ pub fn swp104_payload_leading_branch(
         5
     };
     let state_lane = Swp104StateLane::from_parts(
-        witnessed_count, record.payload.get(at..at + state_len)?.to_vec(),
+        witnessed_count, record.payload().get(at..at + state_len)?.to_vec(),
     ).ok()?;
     at += state_len;
-    (record.payload.get(at..at + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
+    (record.payload().get(at..at + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
     at += 3;
-    let terminal_offset = at;
-    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+    let object_index = reference_index::PayloadIndexToken::read(record.payload().get(at..)?)?;
+    let width = object_index.raw().len();
     at += width;
-    let terminal = PayloadObjectReference {
-        offset: record.payload_offset + terminal_offset,
-        token: object_index,
-    };
-    (*record.payload.get(at)? == 0x00).then_some(())?;
-    at += 1;
+    let terminal = object_index;
+    (*record.payload().get(at)? == 0x00).then_some(())?;
 
     Some(Swp104PayloadLeadingBranch {
         discriminator,
@@ -3828,7 +3685,6 @@ pub fn swp104_payload_leading_branch(
         state_lane,
         members: BranchItems::new(members).ok()?,
         terminal,
-        end_offset: record.payload_offset + at,
     })
 }
 
@@ -3951,37 +3807,37 @@ fn surface_feature_branch_paths(
 /// Decode the unique exactly framed counted branch group in a bounded `SKIN`
 /// or `Studio Surface` payload.
 pub fn surface_feature_payload_branches(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<SurfaceFeaturePayloadBranches> {
     const SKIN_TERMINATOR: [u8; 11] = [
         0x00, 0x00, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01,
     ];
     const STUDIO_TERMINATOR: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01];
-    let terminator = match record.label.value {
+    let terminator = match record.name() {
         "SKIN" => &SKIN_TERMINATOR[..],
         "Studio Surface" => &STUDIO_TERMINATOR[..],
         _ => return None,
     };
     let mut candidate = None;
-    for start in 0..record.payload.len().saturating_sub(6) {
-        if record.payload.get(start..start + 2) != Some(&[0xa0, 0x5a]) {
+    for start in 0..record.payload().len().saturating_sub(6) {
+        if record.payload().get(start..start + 2) != Some(&[0xa0, 0x5a]) {
             continue;
         }
-        let Some(family @ (0x14 | 0x50)) = record.payload.get(start + 2).copied() else {
+        let Some(family @ (0x14 | 0x50)) = record.payload().get(start + 2).copied() else {
             continue;
         };
-        let Some(header_code) = record.payload.get(start + 3).copied() else {
+        let Some(header_code) = record.payload().get(start + 3).copied() else {
             continue;
         };
-        if record.payload.get(start + 4) != Some(&0x01) {
+        if record.payload().get(start + 4) != Some(&0x01) {
             continue;
         }
-        let Some(declared_group_count @ 1..) = record.payload.get(start + 5).copied() else {
+        let Some(declared_group_count @ 1..) = record.payload().get(start + 5).copied() else {
             continue;
         };
         let paths = surface_feature_branch_paths(
-            record.payload,
-            record.payload_offset,
+            record.payload(),
+            record.payload_offset(),
             start + 6,
             declared_group_count,
             terminator,
@@ -4004,15 +3860,15 @@ pub fn surface_feature_payload_branches(
 
 /// Decode the unique witnessed profile-reference field in an `EXTRUDE` payload.
 pub fn extrude_profile_references(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<ExtrudeProfileReferenceField> {
-    if record.label.value != "EXTRUDE" {
+    if record.name() != "EXTRUDE" {
         return None;
     }
     unique_candidate(
-        (0..record.payload.len().saturating_sub(6)).filter_map(|start| {
-            if record.payload.get(start..start + 2) != Some(&[0x01, 0x02])
-                || record.payload.get(start + 3) != Some(&0x01)
+        (0..record.payload().len().saturating_sub(6)).filter_map(|start| {
+            if record.payload().get(start..start + 2) != Some(&[0x01, 0x02])
+                || record.payload().get(start + 3) != Some(&0x01)
             {
                 return None;
             }
@@ -4022,51 +3878,51 @@ pub fn extrude_profile_references(
 }
 
 /// Decode the fixed two-scalar header in a bounded `EXTRUDE` payload.
-pub fn extrude_payload_header(record: OperationRecord<'_>) -> Option<ExtrudePayloadHeader> {
-    if record.label.value != "EXTRUDE"
-        || record.payload.get(..5) != Some(&[0x0f, 0x00, 0x00, 0x01, 0x00])
+pub fn extrude_payload_header(record: OperationPayload<'_>) -> Option<ExtrudePayloadHeader> {
+    if record.name() != "EXTRUDE"
+        || record.payload().get(..5) != Some(&[0x0f, 0x00, 0x00, 0x01, 0x00])
     {
         return None;
     }
     Some(ExtrudePayloadHeader {
-        offset: record.payload_offset + 5,
+        offset: record.payload_offset() + 5,
         scalars: [
-            ShiftedBinary64::read(record.payload.get(5..13)?)?,
-            ShiftedBinary64::read(record.payload.get(13..21)?)?,
+            ShiftedBinary64::read(record.payload().get(5..13)?)?,
+            ShiftedBinary64::read(record.payload().get(13..21)?)?,
         ],
     })
 }
 
 /// Decode the unique terminal discriminator lane in a bounded operation payload.
 pub fn operation_terminal_discriminator(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<OperationTerminalDiscriminator> {
-    if record.payload.last() != Some(&0) {
+    if record.payload().last() != Some(&0) {
         return None;
     }
 
     let decode = |start: usize| {
-        if record.payload.get(start..start + 3) != Some(&[0x01, 0x01, 0x02]) {
+        if record.payload().get(start..start + 3) != Some(&[0x01, 0x01, 0x02]) {
             return None;
         }
         let mut at = start + 3;
-        let type_tokens = LocatedCompactIndex::read_array::<2>(record.payload, &mut at)?;
-        if record.payload.get(at..at + 4) != Some(&[0x01, 0x03, 0x02, 0x01]) {
+        let type_tokens = LocatedCompactIndex::read_array::<2>(record.payload(), &mut at)?;
+        if record.payload().get(at..at + 4) != Some(&[0x01, 0x03, 0x02, 0x01]) {
             return None;
         }
         at += 4;
         let flags = record
-            .payload
+            .payload()
             .get(at..at + 4)
             .and_then(|bytes| bytes.try_into().ok())?;
         at += 4;
-        if record.payload.get(at..at + 5) != Some(&[0x00, 0x00, 0x00, 0x29, 0x29]) {
+        if record.payload().get(at..at + 5) != Some(&[0x00, 0x00, 0x00, 0x29, 0x29]) {
             return None;
         }
         at += 5;
 
-        let trailing_end = record.payload.len() - 1;
-        let trailing_bytes = record.payload.get(at..trailing_end)?;
+        let trailing_end = record.payload().len() - 1;
+        let trailing_bytes = record.payload().get(at..trailing_end)?;
         let mut scan = 0;
         let mut trailing_count = 0;
         while scan < trailing_bytes.len() {
@@ -4084,15 +3940,15 @@ pub fn operation_terminal_discriminator(
             scan += token.atom.raw().len();
             trailing_indices.push(LocatedCompactIndex {
                 atom: token.atom,
-                offset: record.payload_offset + at + token.offset,
+                offset: record.payload_offset() + at + token.offset,
             });
         }
 
         Some(OperationTerminalDiscriminator {
-            offset: record.payload_offset + start,
+            offset: record.payload_offset() + start,
             type_indices: type_tokens.map(|token| LocatedCompactIndex {
                 atom: token.atom,
-                offset: record.payload_offset + token.offset,
+                offset: record.payload_offset() + token.offset,
             }),
             flags,
             trailing_indices,
@@ -4100,7 +3956,7 @@ pub fn operation_terminal_discriminator(
     };
 
     let mut found = None;
-    for start in 0..record.payload.len().saturating_sub(18) {
+    for start in 0..record.payload().len().saturating_sub(18) {
         let Some(lane) = decode(start) else {
             continue;
         };
@@ -4114,99 +3970,74 @@ pub fn operation_terminal_discriminator(
 
 /// Decode complete three-scalar clauses following ordered operation body fields.
 pub fn operation_body_scalar_triples(
-    record: OperationRecord<'_>,
+    record: OperationBodyInput<'_>,
 ) -> Vec<OperationBodyScalarTriple> {
     operation_body_references(record)
         .into_iter()
         .enumerate()
         .filter_map(|(ordinal, reference)| {
-            let token = reference.offset.checked_sub(record.offset())?;
+            let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();
-            let branch = *record.bytes.get(end + 1)?;
+            let branch = *record.bytes().get(end + 1)?;
             let mut at = end + 2;
-            let mut scalars = Vec::with_capacity(3);
-            for _ in 0..3 {
-                let atom = PayloadScalarAtom::read(record.bytes.get(at..)?)?;
-                let width = atom.raw().len();
-                scalars.push(PayloadScalar {
-                    offset: record.offset() + at,
-                    atom,
-                });
-                at += width;
-            }
+            let mut read = || {
+                let atom = PayloadScalarAtom::read(record.bytes().get(at..)?)?;
+                let scalar = PayloadScalar { offset: record.offset() + at, atom };
+                at += scalar.atom.raw().len();
+                Some(scalar)
+            };
+            let scalars = [read()?, read()?, read()?];
             Some(OperationBodyScalarTriple {
                 body_reference_ordinal: ordinal as u32,
                 body_object_index: reference.object_index.value(),
                 branch,
-                scalars: scalars.try_into().ok()?,
+                scalars,
             })
         })
         .collect()
 }
 
 /// Decode wrapped member lanes following branch-`11` body scalar clauses.
-pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyMember> {
+pub fn operation_body_members(record: OperationBodyInput<'_>) -> Vec<OperationBodyMember> {
     operation_body_references(record)
         .into_iter()
         .enumerate()
         .flat_map(|(body_ordinal, reference)| {
-            let Some(token) = reference.offset.checked_sub(record.offset()) else {
-                return Vec::new();
-            };
+            let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();
-            if record.bytes.get(end..end + 2) != Some(&[0xff, 0x11]) {
+            if record.bytes().get(end..end + 2) != Some(&[0xff, 0x11]) {
                 return Vec::new();
             }
             let mut at = end + 2;
             for _ in 0..3 {
-                let Some(atom) = record.bytes.get(at..).and_then(PayloadScalarAtom::read) else {
+                let Some(atom) = record.bytes().get(at..).and_then(PayloadScalarAtom::read) else {
                     return Vec::new();
                 };
                 at += atom.raw().len();
             }
-            if record.bytes.get(at) != Some(&0x01) {
+            if record.bytes().get(at) != Some(&0x01) {
                 return Vec::new();
             }
-            let Some(count) = record.bytes.get(at + 1).copied().map(usize::from) else {
+            let Some(count) = record.bytes().get(at + 1).copied().map(usize::from) else {
                 return Vec::new();
             };
             if count < 2 {
                 return Vec::new();
             }
             at += 2;
-            let members_start = at;
-            let mut scan_at = members_start;
-            for _ in 0..count - 1 {
-                if record.bytes.get(scan_at) != Some(&0x2e) {
-                    return Vec::new();
-                }
-                scan_at += 1;
-                let Some((CompactIndex::Value(_), width)) =
-                    record.bytes.get(scan_at..).and_then(compact_index)
-                else {
-                    return Vec::new();
-                };
-                scan_at += width;
-                if record.bytes.get(scan_at) != Some(&0x00) {
-                    return Vec::new();
-                }
-                scan_at += 1;
-            }
-
-            at = members_start;
             let mut members = Vec::with_capacity(count - 1);
             for ordinal in 0..count - 1 {
-                if record.bytes.get(at) != Some(&0x2e) {
+                if record.bytes().get(at) != Some(&0x2e) {
                     return Vec::new();
                 }
                 at += 1;
                 let member_at = at;
-                let Some(atom) = record.bytes.get(at..).and_then(CompactIndexAtom::read)
+                let Some(atom) = record.bytes().get(at..).and_then(CompactIndexAtom::read)
                 else {
                     return Vec::new();
                 };
                 at += atom.raw().len();
-                if record.bytes.get(at) != Some(&0x00) {
+                if record.bytes().get(at) != Some(&0x00) {
                     return Vec::new();
                 }
                 at += 1;
@@ -4224,63 +4055,63 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
 
 /// Decode exact continuations following `TRIM BODY` branch-`11` member lanes.
 pub fn operation_body_11_continuations(
-    record: OperationRecord<'_>,
+    record: OperationBodyInput<'_>,
 ) -> Vec<OperationBody11Continuation> {
-    if record.label.value != "TRIM BODY" {
+    if record.name() != "TRIM BODY" {
         return Vec::new();
     }
     operation_body_references(record)
         .into_iter()
         .enumerate()
         .filter_map(|(body_ordinal, reference)| {
-            let token = reference.offset.checked_sub(record.offset())?;
+            let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();
-            if record.bytes.get(end..end + 2) != Some(&[0xff, 0x11]) {
+            if record.bytes().get(end..end + 2) != Some(&[0xff, 0x11]) {
                 return None;
             }
             let mut at = end + 2;
             for _ in 0..3 {
-                let width = PayloadScalarAtom::read(record.bytes.get(at..)?)?.raw().len();
+                let width = PayloadScalarAtom::read(record.bytes().get(at..)?)?.raw().len();
                 at += width;
             }
-            if record.bytes.get(at) != Some(&0x01) {
+            if record.bytes().get(at) != Some(&0x01) {
                 return None;
             }
-            let member_count = usize::from(*record.bytes.get(at + 1)?);
+            let member_count = usize::from(*record.bytes().get(at + 1)?);
             if member_count < 2 {
                 return None;
             }
             at += 2;
             for _ in 0..member_count - 1 {
-                if record.bytes.get(at) != Some(&0x2e) {
+                if record.bytes().get(at) != Some(&0x2e) {
                     return None;
                 }
                 at += 1;
-                let (CompactIndex::Value(_), width) = compact_index(record.bytes.get(at..)?)?
+                let (CompactIndex::Value(_), width) = compact_index(record.bytes().get(at..)?)?
                 else {
                     return None;
                 };
                 at += width;
-                if record.bytes.get(at) != Some(&0x00) {
+                if record.bytes().get(at) != Some(&0x00) {
                     return None;
                 }
                 at += 1;
             }
-            if record.bytes.get(at..at + 2) != Some(&[0x01, 0x02]) {
+            if record.bytes().get(at..at + 2) != Some(&[0x01, 0x02]) {
                 return None;
             }
             at += 2;
-            let mut continuation = LocatedCompactIndex::read(record.bytes, at)?;
+            let mut continuation = LocatedCompactIndex::read(record.bytes(), at)?;
             at += continuation.atom.raw().len();
             continuation.offset += record.offset();
-            if record.bytes.get(at..at + 3) != Some(&[0x00, 0x00, 0x01]) {
+            if record.bytes().get(at..at + 3) != Some(&[0x00, 0x00, 0x01]) {
                 return None;
             }
             at += 3;
             let terminal_at = at;
-            let terminal_token = ReferenceIndexToken::read_feature(record.bytes.get(at..)?)?;
+            let terminal_token = ReferenceIndexToken::read_feature(record.bytes().get(at..)?)?;
             let next = at + terminal_token.raw().len();
-            if record.bytes.get(next..next + 2) != Some(&[0x00, 0x00]) {
+            if record.bytes().get(next..next + 2) != Some(&[0x00, 0x00]) {
                 return None;
             }
             Some(OperationBody11Continuation {
@@ -4298,24 +4129,24 @@ pub fn operation_body_11_continuations(
 
 /// Decode complete unwrapped counted reference lanes following body scalar clauses.
 pub fn operation_body_reference_lanes(
-    record: OperationRecord<'_>,
+    record: OperationBodyInput<'_>,
 ) -> Vec<OperationBodyReferenceLane> {
     operation_body_references(record)
         .into_iter()
         .enumerate()
         .filter_map(|(body_ordinal, reference)| {
-            let token = reference.offset.checked_sub(record.offset())?;
+            let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();
-            let branch = discriminators::OperationBodyReferenceBranch::try_from(*record.bytes.get(end + 1)?).ok()?;
+            let branch = discriminators::OperationBodyReferenceBranch::try_from(*record.bytes().get(end + 1)?).ok()?;
             let mut at = end + 2;
             for _ in 0..3 {
-                let width = PayloadScalarAtom::read(record.bytes.get(at..)?)?.raw().len();
+                let width = PayloadScalarAtom::read(record.bytes().get(at..)?)?.raw().len();
                 at += width;
             }
-            if record.bytes.get(at) != Some(&0x01) {
+            if record.bytes().get(at) != Some(&0x01) {
                 return None;
             }
-            let count = usize::from(*record.bytes.get(at + 1)?);
+            let count = usize::from(*record.bytes().get(at + 1)?);
             if count < 2 {
                 return None;
             }
@@ -4346,50 +4177,50 @@ pub fn operation_body_reference_lanes(
 }
 
 fn operation_body_reference_lane_values<T>(
-    record: OperationRecord<'_>,
+    record: OperationBodyInput<'_>,
     mut at: usize,
     count: usize,
     read: impl Fn(&[u8], usize) -> Option<(T, usize)>,
 ) -> Option<Vec<T>> {
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {
-        let (value, width) = read(record.bytes.get(at..)?, record.offset() + at)?;
+        let (value, width) = read(record.bytes().get(at..)?, record.offset() + at)?;
         at += width;
         values.push(value);
     }
-    (record.bytes.get(at..at + 4) == Some(&[0x00, 0x00, 0x0b, 0x00])).then_some(values)
+    (record.bytes().get(at..at + 4) == Some(&[0x00, 0x00, 0x0b, 0x00])).then_some(values)
 }
 
 /// Decode the structured `32` branch following an extrusion body field.
-pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudePayload32Branch> {
-    if record.label.value != "EXTRUDE" {
+pub fn extrude_payload_32_branch(record: OperationBodyInput<'_>) -> Option<ExtrudePayload32Branch> {
+    if record.name() != "EXTRUDE" {
         return None;
     }
     let reference = operation_body_reference(record)?;
-    let token = reference.offset.checked_sub(record.offset())?;
+    let token = reference.offset - record.offset();
     let end = token + reference.object_index.raw().len();
-    if record.bytes.get(end..end + 4) != Some(&[0xff, 0x32, 0x00, 0x00]) {
+    if record.bytes().get(end..end + 4) != Some(&[0xff, 0x32, 0x00, 0x00]) {
         return None;
     }
     let branch_at = end + 1;
-    let scalar = ShiftedBinary64::read(record.bytes.get(end + 4..end + 12)?)?;
+    let scalar = ShiftedBinary64::read(record.bytes().get(end + 4..end + 12)?)?;
     let mut at = end + 12;
-    let mut atoms = counted_u32_atoms(record.bytes, &mut at)?;
+    let mut atoms = counted_u32_atoms(record.bytes(), &mut at)?;
     for token in &mut atoms {
         token.offset += record.offset();
     }
-    let mut first = counted_compact_values(record.bytes, &mut at)?;
-    let mut second = counted_compact_values(record.bytes, &mut at)?;
+    let mut first = counted_compact_values(record.bytes(), &mut at)?;
+    let mut second = counted_compact_values(record.bytes(), &mut at)?;
     for token in first.iter_mut().chain(&mut second) {
         token.offset += record.offset();
     }
-    if record.bytes.get(at..at + 2) != Some(&[0x00, 0x01]) {
+    if record.bytes().get(at..at + 2) != Some(&[0x00, 0x01]) {
         return None;
     }
-    let terminal_token = ReferenceIndexToken::read_feature(record.bytes.get(at + 2..)?)?;
+    let terminal_token = ReferenceIndexToken::read_feature(record.bytes().get(at + 2..)?)?;
     let next = at + 2 + terminal_token.raw().len();
     if terminal_token.value() != reference.object_index.value()
-        || record.bytes.get(next..next + 2) != Some(&[0x00, 0x00])
+        || record.bytes().get(next..next + 2) != Some(&[0x00, 0x00])
     {
         return None;
     }
@@ -4408,93 +4239,93 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
 
 /// Decode the ordered construction-reference field at the start of a `BLOCK` payload.
 pub fn block_construction_references(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<BlockConstructionReferenceField> {
     const TRAILER: [u8; 15] = [
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
     ];
-    if record.label.value != "BLOCK"
-        || record.payload.get(1..6) != Some(&[0x00, 0x00, 0x01, 0x00, 0x00])
+    if record.name() != "BLOCK"
+        || record.payload().get(1..6) != Some(&[0x00, 0x00, 0x01, 0x00, 0x00])
     {
         return None;
     }
     let mut at = 6usize;
     let mut references = Vec::with_capacity(19);
     for _ in 0..18 {
-        let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+        let (object_index, width) = payload_object_index(record.payload().get(at..)?)?;
         references.push(PayloadObjectReference {
-            offset: record.payload_offset + at,
+            offset: record.payload_offset() + at,
             token: object_index,
         });
         at += width;
     }
-    if record.payload.get(at) != Some(&0x01) {
+    if record.payload().get(at) != Some(&0x01) {
         return None;
     }
     at += 1;
-    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+    let (object_index, width) = payload_object_index(record.payload().get(at..)?)?;
     references.push(PayloadObjectReference {
-        offset: record.payload_offset + at,
+        offset: record.payload_offset() + at,
         token: object_index,
     });
     at += width;
-    if record.payload.get(at..at + TRAILER.len()) != Some(&TRAILER) {
+    if record.payload().get(at..at + TRAILER.len()) != Some(&TRAILER) {
         return None;
     }
     Some(BlockConstructionReferenceField {
-        control: record.payload[0],
+        control: record.payload()[0],
         references: references.try_into().ok()?,
     })
 }
 
 /// Decode the fixed eight-reference construction lane at the start of a
 /// `DATUM_CSYS` payload.
-pub fn datum_csys_references(record: OperationRecord<'_>) -> Option<DatumCsysReferenceField> {
+pub fn datum_csys_references(record: OperationPayload<'_>) -> Option<DatumCsysReferenceField> {
     const HEADER_SUFFIX: [u8; 13] = [
         0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
     ];
     const TRAILER: [u8; 8] = [0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00];
-    if record.label.value != "DATUM_CSYS"
-        || record.payload.get(1..1 + HEADER_SUFFIX.len()) != Some(&HEADER_SUFFIX)
+    if record.name() != "DATUM_CSYS"
+        || record.payload().get(1..1 + HEADER_SUFFIX.len()) != Some(&HEADER_SUFFIX)
     {
         return None;
     }
     let mut at = 1 + HEADER_SUFFIX.len();
     let references = std::array::from_fn::<_, 8, _>(|_| {
-        let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-        let offset = record.payload_offset + at;
+        let (object_index, width) = payload_object_index(record.payload().get(at..)?)?;
+        let offset = record.payload_offset() + at;
         at += width;
         Some(PayloadObjectReference { offset, token: object_index })
     });
     let [a, b, c, d, e, f, g, h] = references;
     let references = [a?, b?, c?, d?, e?, f?, g?, h?];
-    (record.payload.get(at..at + TRAILER.len()) == Some(&TRAILER)).then_some(())?;
+    (record.payload().get(at..at + TRAILER.len()) == Some(&TRAILER)).then_some(())?;
     Some(DatumCsysReferenceField {
-        control: record.payload[0],
+        control: record.payload()[0],
         references,
     })
 }
 
 /// Decode the common header of a bounded `DATUM_PLANE` payload.
-pub fn datum_plane_payload_header(record: OperationRecord<'_>) -> Option<DatumPlanePayloadHeader> {
+pub fn datum_plane_payload_header(record: OperationPayload<'_>) -> Option<DatumPlanePayloadHeader> {
     const PREFIX: [u8; 5] = [0x00, 0x00, 0x01, 0x00, 0x01];
-    if record.label.value != "DATUM_PLANE"
-        || record.payload.get(1..6) != Some(&PREFIX)
-        || record.payload.get(8..10) != Some(&[0x01, 0x02])
+    if record.name() != "DATUM_PLANE"
+        || record.payload().get(1..6) != Some(&PREFIX)
+        || record.payload().get(8..10) != Some(&[0x01, 0x02])
     {
         return None;
     }
-    let declared_count = *record.payload.get(6)?;
+    let declared_count = *record.payload().get(6)?;
     (declared_count >= 2).then_some(DatumPlanePayloadHeader {
-        control: record.payload[0],
+        control: record.payload()[0],
         declared_count,
-        branch_tag: record.payload[7],
+        branch_tag: record.payload()[7],
     })
 }
 
 /// Decode the count-two single-reference datum-plane construction branch.
 pub fn datum_plane_single_reference_branch(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<DatumPlaneSingleReferenceBranch> {
     const SUFFIX: [u8; 12] = [
         0x00, 0x14, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00,
@@ -4504,15 +4335,15 @@ pub fn datum_plane_single_reference_branch(
         return None;
     }
     let mut at = 10;
-    let mut descriptor = LocatedCompactIndex::read(record.payload, at)?;
+    let mut descriptor = LocatedCompactIndex::read(record.payload(), at)?;
     at += descriptor.atom.raw().len();
-    descriptor.offset += record.payload_offset;
-    (record.payload.get(at) == Some(&0x01)).then_some(())?;
+    descriptor.offset += record.payload_offset();
+    (record.payload().get(at) == Some(&0x01)).then_some(())?;
     at += 1;
-    let object_offset = record.payload_offset + at;
-    let object_index = reference_index::PayloadIndexToken::read(record.payload.get(at..)?)?;
+    let object_offset = record.payload_offset() + at;
+    let object_index = reference_index::PayloadIndexToken::read(record.payload().get(at..)?)?;
     at += object_index.raw().len();
-    (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
+    (record.payload().get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
     Some(DatumPlaneSingleReferenceBranch {
         descriptor,
         object: PayloadObjectReference { token: object_index, offset: object_offset },
@@ -4521,7 +4352,7 @@ pub fn datum_plane_single_reference_branch(
 
 /// Decode any datum-plane branch carrying one descriptor and one object reference.
 pub fn datum_plane_descriptor_reference_branch(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<DatumPlaneSingleReferenceBranch> {
     const SEPARATOR: [u8; 4] = [0x01, 0x29, 0x01, 0x02];
     const SUFFIX: [u8; 35] = [
@@ -4537,15 +4368,15 @@ pub fn datum_plane_descriptor_reference_branch(
         return None;
     }
     let mut at = 10;
-    let mut descriptor = LocatedCompactIndex::read(record.payload, at)?;
+    let mut descriptor = LocatedCompactIndex::read(record.payload(), at)?;
     at += descriptor.atom.raw().len();
-    descriptor.offset += record.payload_offset;
-    (record.payload.get(at..at + SEPARATOR.len()) == Some(&SEPARATOR)).then_some(())?;
+    descriptor.offset += record.payload_offset();
+    (record.payload().get(at..at + SEPARATOR.len()) == Some(&SEPARATOR)).then_some(())?;
     at += SEPARATOR.len();
-    let object_offset = record.payload_offset + at;
-    let object_index = reference_index::PayloadIndexToken::read(record.payload.get(at..)?)?;
+    let object_offset = record.payload_offset() + at;
+    let object_index = reference_index::PayloadIndexToken::read(record.payload().get(at..)?)?;
     at += object_index.raw().len();
-    (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
+    (record.payload().get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
     Some(DatumPlaneSingleReferenceBranch {
         descriptor,
         object: PayloadObjectReference { token: object_index, offset: object_offset },
@@ -4554,7 +4385,7 @@ pub fn datum_plane_descriptor_reference_branch(
 
 /// Decode either exact tag-`29` two-reference branch form.
 pub fn datum_plane_double_reference_branch(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
 ) -> Option<DatumPlaneDoubleReferenceBranch> {
     const COUNT_TWO_MIDDLE: [u8; 11] = [
         0x01, 0x01, 0x18, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff,
@@ -4574,9 +4405,9 @@ pub fn datum_plane_double_reference_branch(
         return None;
     }
     let mut at = 10;
-    let first_index = reference_index::PayloadIndexToken::read(record.payload.get(at..)?)?;
+    let first_index = reference_index::PayloadIndexToken::read(record.payload().get(at..)?)?;
     let first = PayloadObjectReference {
-        offset: record.payload_offset + at,
+        offset: record.payload_offset() + at,
         token: first_index,
     };
     at += first_index.raw().len();
@@ -4585,11 +4416,11 @@ pub fn datum_plane_double_reference_branch(
     } else {
         COUNT_THREE_MIDDLE.as_slice()
     };
-    (record.payload.get(at..at + middle.len()) == Some(middle)).then_some(())?;
+    (record.payload().get(at..at + middle.len()) == Some(middle)).then_some(())?;
     at += middle.len();
-    let second_index = reference_index::PayloadIndexToken::read(record.payload.get(at..)?)?;
+    let second_index = reference_index::PayloadIndexToken::read(record.payload().get(at..)?)?;
     let second = PayloadObjectReference {
-        offset: record.payload_offset + at,
+        offset: record.payload_offset() + at,
         token: second_index,
     };
     at += second_index.raw().len();
@@ -4598,7 +4429,7 @@ pub fn datum_plane_double_reference_branch(
     } else {
         COUNT_THREE_SUFFIX.as_slice()
     };
-    (record.payload.get(at..at + suffix.len()) == Some(suffix)).then_some(())?;
+    (record.payload().get(at..at + suffix.len()) == Some(suffix)).then_some(())?;
     Some(DatumPlaneDoubleReferenceBranch {
         references: [first, second],
     })
@@ -4952,7 +4783,7 @@ pub fn draft_construction_identity_frames(bytes: &[u8]) -> Vec<draft_identity::D
 
 
 /// Decode compact object IDs followed by their complete frame discriminator.
-pub fn data_block_object_frames(bytes: &[u8]) -> Vec<DataBlockObjectFrame> {
+pub fn data_block_object_frames(bytes: &[u8]) -> Vec<LocatedCompactIndex> {
     const DISCRIMINATOR: [u8; 18] = [
         0x00, 0x72, 0x01, 0xc0, 0x20, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x01,
         0x02, 0x80, 0xa4,
@@ -4960,19 +4791,16 @@ pub fn data_block_object_frames(bytes: &[u8]) -> Vec<DataBlockObjectFrame> {
     let mut references = Vec::new();
     let mut offset = 0;
     while offset < bytes.len() {
-        let Some((CompactIndex::Value(object_id), width)) = compact_index(&bytes[offset..]) else {
+        let Some(atom) = CompactIndexAtom::read(&bytes[offset..]) else {
             offset += 1;
             continue;
         };
+        let width = atom.raw().len();
         if bytes.get(offset + width..offset + width + DISCRIMINATOR.len()) != Some(&DISCRIMINATOR) {
             offset += 1;
             continue;
         }
-        references.push(DataBlockObjectFrame {
-            object_id,
-            raw_object_id: bytes[offset..offset + width].to_vec(),
-            offset,
-        });
+        references.push(LocatedCompactIndex { atom, offset });
         offset += width + DISCRIMINATOR.len();
     }
     references
@@ -5012,10 +4840,10 @@ fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<Vec<LocatedCom
 
 
 fn extrude_profile_reference_field(
-    record: OperationRecord<'_>,
+    record: OperationPayload<'_>,
     start: usize,
 ) -> Option<ExtrudeProfileReferenceField> {
-    let count = *record.payload.get(start + 4)?;
+    let count = *record.payload().get(start + 4)?;
     if count < 2 {
         return None;
     }
@@ -5023,20 +4851,20 @@ fn extrude_profile_reference_field(
     let mut at = references_start;
     let mut references = Vec::with_capacity(usize::from(count - 1));
     for _ in 1..count {
-        let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+        let (object_index, width) = payload_object_index(record.payload().get(at..)?)?;
         references.push(PayloadObjectReference {
-            offset: record.payload_offset + at,
+            offset: record.payload_offset() + at,
             token: object_index,
         });
         at += width;
     }
-    if record.payload.get(at..at + 3) != Some(&[0x01, 0x03, 0x79]) {
+    if record.payload().get(at..at + 3) != Some(&[0x01, 0x03, 0x79]) {
         return None;
     }
-    let encoded_references = record.payload.get(references_start..at)?;
+    let encoded_references = record.payload().get(references_start..at)?;
     let witness_len = 2 + encoded_references.len() + 2;
     let witness_starts = record
-        .payload
+        .payload()
         .windows(witness_len)
         .enumerate()
         .filter_map(|(witness_start, candidate)| {
@@ -5051,15 +4879,15 @@ fn extrude_profile_reference_field(
         _ => None,
     };
     Some(ExtrudeProfileReferenceField {
-        field_tag: record.payload[start + 2],
+        field_tag: record.payload()[start + 2],
         references: references
             .into_iter()
             .map(|reference| {
-                let relative_offset = reference.offset - record.payload_offset - references_start;
+                let relative_offset = reference.offset - record.payload_offset() - references_start;
                 ExtrudeProfileReference {
                     reference,
                     witness_offset: witness_start
-                        .map(|start| record.payload_offset + start + 2 + relative_offset),
+                        .map(|start| record.payload_offset() + start + 2 + relative_offset),
                 }
             })
             .collect(),
@@ -5115,38 +4943,34 @@ pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclaration
 }
 
 /// Decode the unique direct primary-body field in one operation.
-pub fn operation_body_reference(record: OperationRecord<'_>) -> Option<OperationBodyReference> {
+pub fn operation_body_reference(record: OperationBodyInput<'_>) -> Option<OperationBodyReference> {
     unique_candidate(operation_body_reference_candidates(record))
 }
 
 fn operation_body_reference_candidates(
-    record: OperationRecord<'_>,
+    record: OperationBodyInput<'_>,
 ) -> impl Iterator<Item = OperationBodyReference> + '_ {
-    let payload_start = record.payload_offset.checked_sub(record.offset());
     let mut cursor = 0usize;
     std::iter::from_fn(move || loop {
         let window_end = cursor.checked_add(3)?;
-        let window = record.bytes.get(cursor..window_end)?;
+        let window = record.bytes().get(cursor..window_end)?;
         let marker = cursor;
         cursor += 1;
-        let body_write = payload_start
-            .and_then(|payload_start| marker.checked_sub(payload_start))
+        let body_write = marker.checked_sub(record.payload_start())
             .and_then(|payload_marker| {
-                operation_body_write_frame_at(record.payload, record.payload_offset, payload_marker)
+                operation_body_write_frame_at(record.payload(), record.payload_offset(), payload_marker)
             });
         if let Some(body_write) = body_write {
-            if let Some(end) = body_write.end_offset().checked_sub(record.offset()) {
-                cursor = cursor.max(end);
-            }
+            cursor = cursor.max(body_write.end_offset() - record.offset());
             continue;
         }
         if window == [0x01, 0x02, 0x10] {
             let token = marker + 3;
-            let Some(object_index) = reference_index::FeatureReferenceToken::read(&record.bytes[token..]) else {
+            let Some(object_index) = reference_index::FeatureReferenceToken::read(&record.bytes()[token..]) else {
                 continue;
             };
             let end = token + object_index.raw().len();
-            if record.bytes.get(end) != Some(&0xff) {
+            if record.bytes().get(end) != Some(&0xff) {
                 continue;
             }
             return Some(OperationBodyReference {
@@ -5158,7 +4982,7 @@ fn operation_body_reference_candidates(
 }
 
 /// Decode every ordered direct primary-body field in one operation.
-pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBodyReference> {
+pub fn operation_body_references(record: OperationBodyInput<'_>) -> Vec<OperationBodyReference> {
     operation_body_reference_candidates(record).collect()
 }
 
@@ -5166,15 +4990,15 @@ pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBo
 ///
 /// Both indices are non-null and canonical. Endpoint tags `10`, `12`, and
 /// `15` select the body-image field across the supported schema generations.
-pub fn operation_body_write_frames(record: OperationRecord<'_>) -> Vec<BodyWriteFrame<usize>> {
-    body_write_frames(record.payload, record.payload_offset)
+pub fn operation_body_write_frames(record: OperationPayload<'_>) -> Vec<BodyWriteFrame<usize>> {
+    body_write_frames(record.payload(), record.payload_offset())
 }
 
 /// Decode body-write frames from one independently bounded unlabeled record.
 pub fn unlabeled_operation_body_write_frames(
     record: UnlabeledOperationRecord<'_>,
 ) -> Vec<BodyWriteFrame<usize>> {
-    body_write_frames(record.payload, record.payload_offset)
+    body_write_frames(record.payload(), record.header().end_offset())
 }
 
 fn body_write_frames(payload: &[u8], payload_offset: usize) -> Vec<BodyWriteFrame<usize>> {
@@ -6191,18 +6015,18 @@ fn unique_candidate<T>(candidates: impl IntoIterator<Item = T>) -> Option<T> {
 }
 
 /// Decode every exact common frame in one bounded operation payload.
-pub fn operation_common_frames(record: OperationRecord<'_>) -> Vec<CommonFrame<usize>> {
+pub fn operation_common_frames(record: OperationPayload<'_>) -> Vec<CommonFrame<usize>> {
     let decode = |start: usize, marker| {
-        if marker == [1, 1, 1] && record.label.value != "DELETE" { return None; }
-        let bytes = record.payload.get(start..)?;
+        if marker == [1, 1, 1] && record.name() != "DELETE" { return None; }
+        let bytes = record.payload().get(start..)?;
         let prefix = CommonFramePrefix::read(bytes, marker)?;
         let state_at = prefix.byte_len();
         let state = bytes.get(state_at..state_at + 8)?.try_into().ok()?;
         let suffix = CommonFrameSuffix::read(bytes.get(state_at + 8..)?)?;
-        CommonFrame::<usize>::new(prefix, state, suffix, record.payload_offset.checked_add(start)?)
+        CommonFrame::<usize>::new(prefix, state, suffix, record.payload_offset().checked_add(start)?)
     };
     let mut frames = Vec::new();
-    for start in 0..record.payload.len() {
+    for start in 0..record.payload().len() {
         if let Some(frame) = decode(start, [1, 3, 2]) { frames.push(frame); }
         if let Some(frame) = decode(start, [1, 1, 1]) { frames.push(frame); }
     }
@@ -6211,14 +6035,14 @@ pub fn operation_common_frames(record: OperationRecord<'_>) -> Vec<CommonFrame<u
 }
 
 /// Decode the unique terminal common-frame suffix and its exact immediate common frame.
-pub fn operation_terminal_frame(record: OperationRecord<'_>) -> Option<OperationTerminalFrame> {
-    let terminator = record.payload.len().checked_sub(1)?;
-    (record.payload.get(terminator) == Some(&0)).then_some(())?;
+pub fn operation_terminal_frame(record: OperationPayload<'_>) -> Option<OperationTerminalFrame> {
+    let terminator = record.payload().len().checked_sub(1)?;
+    (record.payload().get(terminator) == Some(&0)).then_some(())?;
     let common_frames = operation_common_frames(record);
     unique_candidate((terminator.saturating_sub(9)..terminator).filter_map(|start| {
-        let suffix = CommonFrameSuffix::read(record.payload.get(start..)?)?;
-        (start + suffix.byte_len() == record.payload.len()).then_some(())?;
-        let frame = TerminalFrame::<usize>::new(suffix, record.payload_offset.checked_add(start)?)?;
+        let suffix = CommonFrameSuffix::read(record.payload().get(start..)?)?;
+        (start + suffix.byte_len() == record.payload().len()).then_some(())?;
+        let frame = TerminalFrame::<usize>::new(suffix, record.payload_offset().checked_add(start)?)?;
         let immediate_common_frame_offset = common_frames.iter().find(|common| {
             common.local_ordinal_offset() == frame.offset() && common.end_offset() == frame.end_offset()
         }).map(CommonFrame::<usize>::offset);
@@ -6273,7 +6097,7 @@ fn boolean_operations_with_labels(
                 "INTERSECT" => BooleanOperationKind::Intersect,
                 _ => return None,
             };
-            let at = label.offset.checked_sub(base_offset)?;
+            let at = label.header.end_offset().checked_sub(base_offset)?;
             let label_end = at.checked_add(usize::from(*bytes.get(at + 1)?))? + 1;
             if bytes.get(label_end..label_end + BODY_HEADER.len()) != Some(BODY_HEADER) {
                 return None;
@@ -6289,7 +6113,7 @@ fn boolean_operations_with_labels(
             }
             let target = targets.into_iter().next()?;
             Some(BooleanOperation {
-                offset: label.offset,
+                offset: label.header.end_offset(),
                 kind,
                 target,
                 tools,

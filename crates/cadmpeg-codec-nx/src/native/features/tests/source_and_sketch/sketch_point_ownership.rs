@@ -82,21 +82,19 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
         }),
         source_offset: 90,
     };
-    let reference = |id: &str, ordinal: u32, block: Option<&str>| FeatureSketchReference {
+    let reference = |id: &str, ordinal: u32, count: u8, block: Option<&str>| FeatureSketchReference {
         id: id.to_string(),
         operation_label: "nx:feature-history:operation-label#1-4".to_string(),
-        ordinal,
-        declared_count: 2,
-        terminal: ordinal == 1,
+        position: crate::om::sketch_references::SketchReferencePosition::new(count, ordinal).unwrap(),
         token: crate::om::reference_index::ReferenceIndexToken::from_wire(10 + ordinal, &[0xf0, (10 + ordinal) as u8]).unwrap(),
         data_block: block.map(str::to_string),
         source_offset: 200 + u64::from(ordinal),
     };
     let uses = feature_sketch_named_point_block_uses(
         &[
-            reference("miss", 0, Some("block-9")),
-            reference("hit", 1, Some("block-11")),
-            reference("unresolved", 2, None),
+            reference("miss", 0, 2, Some("block-9")),
+            reference("hit", 1, 2, Some("block-11")),
+            reference("unresolved", 2, 3, None),
         ],
         &[point],
     );
@@ -113,19 +111,17 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
         feature_sketch_preceding_named_point_uses, FeatureSketchReference, OffsetStoreNamedPoint,
     };
 
-    let reference = |ordinal, terminal, block: Option<&str>| FeatureSketchReference {
+    let reference = |ordinal, declared_count, block: Option<&str>| FeatureSketchReference {
         id: format!("reference-{ordinal}"),
         operation_label: "nx:feature-history:operation-label#1-4".to_string(),
-        ordinal,
-        declared_count: 2,
-        terminal,
+        position: crate::om::sketch_references::SketchReferencePosition::new(declared_count, ordinal).unwrap(),
         token: crate::om::reference_index::ReferenceIndexToken::from_wire(12 + ordinal, &[0xf0, (12 + ordinal) as u8]).unwrap(),
         data_block: block.map(str::to_string),
         source_offset: 300 + u64::from(ordinal),
     };
     let references = [
-        reference(0, false, Some("nx:om-data-blocks-2:block#12")),
-        reference(1, true, Some("nx:om-data-blocks-2:block#13")),
+        reference(0, 2, Some("nx:om-data-blocks-2:block#12")),
+        reference(1, 2, Some("nx:om-data-blocks-2:block#13")),
     ];
     let point = |id: &str, blocks: &[&str]| OffsetStoreNamedPoint {
         id: id.to_string(),
@@ -170,7 +166,7 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
     );
     assert!(feature_sketch_preceding_named_point_uses(&references, &[gap, other_store]).is_empty());
 
-    let unresolved = [references[0].clone(), reference(1, true, None)];
+    let unresolved = [references[0].clone(), reference(1, 2, None)];
     assert!(feature_sketch_preceding_named_point_uses(
         &unresolved,
         std::slice::from_ref(&preceding)
@@ -178,18 +174,16 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
     .is_empty());
     let noncontiguous = [
         references[0].clone(),
-        reference(2, true, Some("nx:om-data-blocks-2:block#13")),
+        reference(2, 3, Some("nx:om-data-blocks-2:block#13")),
     ];
     assert!(feature_sketch_preceding_named_point_uses(
         &noncontiguous,
         std::slice::from_ref(&preceding),
     )
     .is_empty());
-    let bad_terminal = [
-        references[0].clone(),
-        reference(1, false, Some("nx:om-data-blocks-2:block#13")),
-    ];
-    assert!(feature_sketch_preceding_named_point_uses(&bad_terminal, &[preceding]).is_empty());
+    let mut bad_terminal = serde_json::to_value(&references[1]).unwrap();
+    bad_terminal["terminal"] = serde_json::json!(false);
+    assert!(serde_json::from_value::<FeatureSketchReference>(bad_terminal).unwrap_err().to_string().contains("terminal"));
 }
 
 #[test]

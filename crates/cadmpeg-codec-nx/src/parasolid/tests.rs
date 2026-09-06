@@ -294,8 +294,8 @@ fn external_reference_record_parser_accepts_sorted_repeated_handles() {
     assert_eq!(records[0].record_id, 6);
     assert_eq!(records[0].declared_count, 2);
     assert_eq!(records[0].id_slots, [8, 11, 12, 4]);
-    assert_eq!(records[0].handles, [0x1020_3040, 0x2030_4050, 0x2030_4050]);
-    assert!(records[0].closing_duplicate);
+    assert_eq!(records[0].handles.values(), [0x1020_3040, 0x2030_4050, 0x2030_4050]);
+    assert!(records[0].handles.closing_duplicate());
     assert_eq!(records[0].tail_byte_len, 0);
 
     let duplicate = payload

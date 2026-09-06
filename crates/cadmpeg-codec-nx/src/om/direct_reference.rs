@@ -2,7 +2,7 @@
 //! Exact direct operation reference fields and their derived positions.
 
 use super::reference_index::CanonicalFeatureReferenceToken;
-use super::OperationRecord;
+use crate::om::operation_record::OperationPayload;
 use std::ops::Add;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,16 +50,16 @@ positioned_frame!(usize);
 positioned_frame!(u64);
 
 /// Retain fields with their exact suffix; assign no endpoint or operation role.
-pub(crate) fn operation_reference_fields(record: OperationRecord<'_>, kind: ReferenceFieldKind) -> Vec<DirectReferenceFrame<usize>> {
+pub(crate) fn operation_reference_fields(record: OperationPayload<'_>, kind: ReferenceFieldKind) -> Vec<DirectReferenceFrame<usize>> {
     let prefix = kind.prefix();
-    record.payload.windows(prefix.len()).enumerate().filter_map(|(marker, window)| {
+    record.payload().windows(prefix.len()).enumerate().filter_map(|(marker, window)| {
         if window != prefix { return None; }
         let token = marker + prefix.len();
-        let object = CanonicalFeatureReferenceToken::read(record.payload.get(token..)?)?;
+        let object = CanonicalFeatureReferenceToken::read(record.payload().get(token..)?)?;
         let end = token + object.raw().len();
         let suffix_end = end.checked_add(kind.suffix().len())?;
-        (record.payload.get(end..suffix_end) == Some(kind.suffix())).then_some(())?;
-        DirectReferenceFrame::<usize>::new(kind, object, record.payload_offset.checked_add(marker)?)
+        (record.payload().get(end..suffix_end) == Some(kind.suffix())).then_some(())?;
+        DirectReferenceFrame::<usize>::new(kind, object, record.payload_offset().checked_add(marker)?)
     }).collect()
 }
 

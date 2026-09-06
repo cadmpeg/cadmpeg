@@ -5,17 +5,14 @@ use super::*;
 
 #[test]
 fn operation_source_properties_require_unique_owned_structures() {
-    let record = crate::native::features::FeatureOperationRecord {
+    let record = crate::native::features::operation_record::FeatureOperationRecord {
         id: "record".into(),
         operation_label: "operation".into(),
         ordinal: 3,
-        byte_len: 20,
         sha256: "record-hash".into(),
-        payload_byte_len: 10,
         payload_sha256: "payload-hash".into(),
         stable_identity: None,
-        payload_source_offset: 110,
-        source_offset: 100,
+        span: crate::native::features::operation_record::OperationRecordSpan::new(100, 110, 10).unwrap(),
     };
     let common = crate::native::features::FeatureOperationCommonFrame {
         id: "common".into(),

@@ -756,8 +756,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
         section_link: "section".to_string(),
         ordinal: 7,
         value: "SKETCH".to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: Default::default(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 40,
     };
@@ -834,8 +833,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
         section_link: "section".to_string(),
         ordinal: 8,
         value: "SKETCH".to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: Default::default(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 40,
     };
@@ -1562,7 +1560,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
     let input = |id: &str, operation_label: &str, slot: u8, data_block: &str| FeatureInputBlock {
         id: id.to_string(),
         operation_label: operation_label.to_string(),
-        input_slot: slot,
+        input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(u32::from(slot), &[slot]).unwrap(),
         data_block: data_block.to_string(),
         source_offset: 0,
