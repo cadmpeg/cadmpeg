@@ -793,7 +793,7 @@ fn om_datum_plane_object_index_lane_ends_at_logical_payload_boundary() {
     let lanes = super::datum_plane_object_index_lanes(&bytes);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].offset, 2);
-    assert_eq!(lanes[0].declared_count, 4);
+    assert_eq!(lanes[0].indices.len() + 1, 4);
     assert_eq!(
         lanes[0]
             .indices

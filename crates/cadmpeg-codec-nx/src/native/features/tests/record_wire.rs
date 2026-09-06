@@ -84,3 +84,15 @@ fn construction_payload_rejects_untyped_operation_kinds() {
     let error = serde_json::from_str::<super::FeatureConstructionPayload>(json).unwrap_err();
     assert!(error.to_string().contains("operation_kind"));
 }
+
+#[test]
+fn datum_plane_payload_derives_terminal_index_count() {
+    let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"hash","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":2,"index_lane_values":[1],"index_lane_raw_indices":[[1]],"index_lane_value_offsets":[4],"index_lane_trailer":0}"#;
+    let payload: super::FeatureDatumPlanePayload = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&payload).unwrap(), json);
+    for count in [0, 1, 3, 256] {
+        let invalid = json.replace("\"index_lane_declared_count\":2", &format!("\"index_lane_declared_count\":{count}"));
+        let error = serde_json::from_str::<super::FeatureDatumPlanePayload>(&invalid).unwrap_err();
+        assert!(error.to_string().contains("index_lane_declared_count"));
+    }
+}

@@ -1615,7 +1615,6 @@ pub struct FeatureDatumPlaneIndexLaneEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureDatumPlaneIndexLane {
     pub offset: u64,
-    pub declared_count: u8,
     pub trailer: u32,
     pub entries: Vec<FeatureDatumPlaneIndexLaneEntry>,
 }
@@ -1663,7 +1662,7 @@ struct FeatureDatumPlanePayloadWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     index_lane_offset: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    index_lane_declared_count: Option<u8>,
+    index_lane_declared_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     index_lane_values: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1687,7 +1686,7 @@ impl From<FeatureDatumPlanePayload> for FeatureDatumPlanePayloadWire {
             None => (None, None, Vec::new(), Vec::new(), Vec::new(), None),
             Some(lane) => (
                 Some(lane.offset),
-                Some(lane.declared_count),
+                Some(lane.entries.len() + 1),
                 lane.entries.iter().map(|entry| entry.value).collect(),
                 lane.entries.iter().map(|entry| entry.raw.clone()).collect(),
                 lane.entries.iter().map(|entry| entry.offset).collect(),
@@ -1729,6 +1728,11 @@ impl TryFrom<FeatureDatumPlanePayloadWire> for FeatureDatumPlanePayload {
             ) {
                 (None, None, None, true) => None,
                 (Some(offset), Some(declared_count), Some(trailer), _) => {
+                    if !(2..=255).contains(&declared_count)
+                        || declared_count != wire.index_lane_values.len() + 1
+                    {
+                        return Err("index_lane_declared_count must fit a byte and equal the nonempty entry count plus one".to_owned());
+                    }
                     if wire.index_lane_values.len() != wire.index_lane_raw_indices.len()
                         || wire.index_lane_values.len() != wire.index_lane_value_offsets.len()
                     {
@@ -1736,7 +1740,6 @@ impl TryFrom<FeatureDatumPlanePayloadWire> for FeatureDatumPlanePayload {
                     }
                     Some(FeatureDatumPlaneIndexLane {
                         offset,
-                        declared_count,
                         trailer,
                         entries: wire
                             .index_lane_values
@@ -7726,7 +7729,6 @@ pub fn feature_datum_plane_payloads(
                 block_source_offsets,
                 index_lane: lane.map(|lane| FeatureDatumPlaneIndexLane {
                     offset: lane.offset as u64,
-                    declared_count: lane.declared_count,
                     trailer: lane.trailer,
                     entries: lane
                         .indices

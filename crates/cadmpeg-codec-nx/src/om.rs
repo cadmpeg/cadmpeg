@@ -2448,8 +2448,6 @@ pub struct DatumPlaneDoubleReferenceBranch {
 pub struct DatumPlaneObjectIndexLane {
     /// Payload-relative offset of the opening `01` marker.
     pub offset: usize,
-    /// Serialized count.
-    pub declared_count: u8,
     /// Ordered non-null compact indices and their payload-relative offsets.
     pub indices: Vec<LaneToken<u32>>,
     /// Big-endian trailer word after the zero separator.
@@ -6108,7 +6106,6 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
         };
         lanes.push(DatumPlaneObjectIndexLane {
             offset: start,
-            declared_count,
             indices,
             trailer,
         });
