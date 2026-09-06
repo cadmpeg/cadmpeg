@@ -1407,21 +1407,29 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
         body_object_index: 42,
         scalar: 1.0,
         raw_scalar: [0x2f, 0xf0, 0, 0, 0, 0, 0, 0],
-        atoms_be: vec![0x3d80_0100],
-        atom_source_offsets: vec![20],
-        atom_indices: vec![1],
-        atom_data_blocks: vec![Some("block#1".to_string())],
-        first_indices: vec![2],
-        raw_first_indices: vec![vec![2]],
-        first_index_source_offsets: vec![21],
-        first_data_blocks: vec![Some("block#2".to_string())],
-        second_indices: vec![3],
-        raw_second_indices: vec![vec![3]],
-        second_index_source_offsets: vec![22],
-        second_data_blocks: vec![Some("block#3".to_string())],
-        terminal_object_index: 42,
-        raw_terminal_object_index: vec![42],
-        terminal_source_offset: 23,
+        atoms: vec![super::FeatureDataBlockToken {
+            value: 1,
+            raw: 0x3d80_0100,
+            source_offset: 20,
+            data_block: Some("block#1".to_string()),
+        }],
+        first_indices: vec![super::FeatureDataBlockToken {
+            value: 2,
+            raw: vec![2],
+            source_offset: 21,
+            data_block: Some("block#2".to_string()),
+        }],
+        second_indices: vec![super::FeatureDataBlockToken {
+            value: 3,
+            raw: vec![3],
+            source_offset: 22,
+            data_block: Some("block#3".to_string()),
+        }],
+        terminal: super::FeatureIndexToken {
+            value: 42,
+            raw: vec![42],
+            source_offset: 23,
+        },
         source_offset: 20,
     };
     let constructions = super::feature_extrude_32_constructions(
@@ -1449,7 +1457,7 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
             .is_empty()
     );
     let mut unresolved_lane = branch;
-    unresolved_lane.first_data_blocks[0] = None;
+    unresolved_lane.first_indices[0].data_block = None;
     assert!(super::feature_extrude_32_constructions(
         &[super::FeatureExtrudeProfileReference {
             id: "profile#0".to_string(),

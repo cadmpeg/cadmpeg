@@ -183,3 +183,24 @@ fn pattern_transform_lane_preserves_wire_and_requires_complete_rows() {
         columns,
     );
 }
+
+#[test]
+fn extrude_32_branch_preserves_wire_and_requires_complete_reference_tokens() {
+    check_lane_wire::<FeatureExtrudePayload32Branch>(
+        r#"{"id":"branch","operation_label":"operation","body_object_index":42,"scalar":1.0,"raw_scalar":[47,240,0,0,0,0,0,0],"atoms_be":[1031799040],"atom_source_offsets":[20],"atom_indices":[1],"atom_data_blocks":["block#1"],"first_indices":[2],"raw_first_indices":[[2]],"first_index_source_offsets":[21],"first_data_blocks":[null],"second_indices":[3],"raw_second_indices":[[3]],"second_index_source_offsets":[22],"second_data_blocks":["block#3"],"terminal_object_index":42,"raw_terminal_object_index":[42],"terminal_source_offset":23,"source_offset":20}"#,
+        &[
+            "atoms_be",
+            "atom_source_offsets",
+            "atom_indices",
+            "atom_data_blocks",
+            "first_indices",
+            "raw_first_indices",
+            "first_index_source_offsets",
+            "first_data_blocks",
+            "second_indices",
+            "raw_second_indices",
+            "second_index_source_offsets",
+            "second_data_blocks",
+        ],
+    );
+}
