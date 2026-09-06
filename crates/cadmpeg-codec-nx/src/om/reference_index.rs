@@ -133,7 +133,8 @@ impl CanonicalFeatureReferenceToken {
 }
 
 /// Required index restricted to the payload `f0`/`f1` grammar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "ReferenceIndexWire", into = "ReferenceIndexWire")]
 pub(crate) struct PayloadIndexToken(ReferenceIndexToken);
 
 impl PayloadIndexToken {
@@ -168,6 +169,19 @@ impl From<ReferenceIndexToken> for ReferenceIndexWire {
 impl TryFrom<ReferenceIndexWire> for ReferenceIndexToken {
     type Error = &'static str;
 
+    fn try_from(wire: ReferenceIndexWire) -> Result<Self, Self::Error> {
+        Self::from_wire(wire.object_index, &wire.raw_object_index)
+    }
+}
+
+impl From<PayloadIndexToken> for ReferenceIndexWire {
+    fn from(token: PayloadIndexToken) -> Self {
+        Self { object_index: token.value(), raw_object_index: token.raw().to_vec() }
+    }
+}
+
+impl TryFrom<ReferenceIndexWire> for PayloadIndexToken {
+    type Error = &'static str;
     fn try_from(wire: ReferenceIndexWire) -> Result<Self, Self::Error> {
         Self::from_wire(wire.object_index, &wire.raw_object_index)
     }

@@ -12,6 +12,8 @@ mod body_write_wire;
 pub(crate) mod unlabeled_record;
 pub(crate) mod operation_record;
 pub(crate) mod block_reference;
+pub(crate) mod swp104_branch;
+use swp104_branch::FeatureSwp104LeadingBranch;
 use block_reference::{BlockReferencePosition, FeatureBlockConstructionReference};
 use operation_record::{FeatureOperationRecord, OperationRecordSpan};
 use unlabeled_record::FeatureUnlabeledOperationRecord;
@@ -24,7 +26,6 @@ use crate::native::om::{
 use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
 use std::borrow::Cow;
 use std::num::NonZeroU8;
-use crate::om::swp104_state::Swp104StateLane;
 use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, RepeatedScalar, ShiftedBinary32, ShiftedBinary64, ShiftedScalar};
 use crate::om::branch_items::BranchItems;
 use crate::om::nonempty::NonEmpty;
@@ -4529,99 +4530,6 @@ impl TryFrom<FeatureThruCurveConstructionBranchGroupWire> for FeatureThruCurveCo
             operation_label: wire.operation_label,
             branches: wire.branches,
             terminator: wire.terminator,
-            source_offset: wire.source_offset,
-        })
-    }
-}
-
-
-/// Exact leading construction branch in a `SWP104` payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "FeatureSwp104LeadingBranchWire", into = "FeatureSwp104LeadingBranchWire")]
-pub struct FeatureSwp104LeadingBranch {
-    /// Globally unique leading-branch identity.
-    pub id: String,
-    /// Owning `SWP104` operation label.
-    pub operation_label: String,
-    /// Nonzero construction discriminator.
-    pub discriminator: NonZeroU8,
-    /// Four finite shifted-binary64 values in serialized order.
-    pub scalars: [ShiftedBinary64; 4],
-    /// Whether one zero byte precedes the branch mode.
-    pub leading_zero: bool,
-    /// Serialized nonzero branch mode.
-    pub mode: NonZeroU8,
-    /// Exact state lane preceding the terminal marker.
-    pub state_lane: Swp104StateLane,
-    /// Ordered nonterminal references.
-    pub members: BranchItems<FeatureSurfaceBranchReference>,
-    /// Terminal reference.
-    pub terminal: FeatureSurfaceBranchReference,
-    /// Exact byte length through the terminal zero.
-    pub byte_len: u64,
-    /// Absolute source offset of the discriminator.
-    pub source_offset: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-struct FeatureSwp104LeadingBranchWire {
-    id: String,
-    operation_label: String,
-    discriminator: NonZeroU8,
-    scalars: [f64; 4],
-    raw_scalars: [[u8; 8]; 4],
-    leading_zero: bool,
-    mode: NonZeroU8,
-    declared_count: u8,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    witnessed_count: Option<u8>,
-    state_lane: Vec<u8>,
-    members: BranchItems<FeatureSurfaceBranchReference>,
-    terminal: FeatureSurfaceBranchReference,
-    byte_len: u64,
-    source_offset: u64,
-}
-
-impl From<FeatureSwp104LeadingBranch> for FeatureSwp104LeadingBranchWire {
-    fn from(value: FeatureSwp104LeadingBranch) -> Self {
-        Self {
-            id: value.id,
-            operation_label: value.operation_label,
-            discriminator: value.discriminator,
-            scalars: value.scalars.map(ShiftedBinary64::value),
-            raw_scalars: value.scalars.map(ShiftedBinary64::raw),
-            leading_zero: value.leading_zero,
-            mode: value.mode,
-            declared_count: value.members.declared_count(),
-            witnessed_count: value.state_lane.witnessed_count(),
-            state_lane: value.state_lane.bytes().to_vec(),
-            members: value.members,
-            terminal: value.terminal,
-            byte_len: value.byte_len,
-            source_offset: value.source_offset,
-        }
-    }
-}
-
-impl TryFrom<FeatureSwp104LeadingBranchWire> for FeatureSwp104LeadingBranch {
-    type Error = String;
-    fn try_from(wire: FeatureSwp104LeadingBranchWire) -> Result<Self, Self::Error> {
-        if wire.declared_count != wire.members.declared_count() {
-            return Err("declared_count must equal members length plus one".to_owned());
-        }
-        let [a, b, c, d] = std::array::from_fn::<_, 4, _>(|i| ShiftedBinary64::from_wire(wire.scalars[i], wire.raw_scalars[i]));
-        let scalars = [a?, b?, c?, d?];
-        Ok(Self {
-            id: wire.id,
-            operation_label: wire.operation_label,
-            discriminator: wire.discriminator,
-            scalars,
-            leading_zero: wire.leading_zero,
-            mode: wire.mode,
-            state_lane: Swp104StateLane::from_parts(wire.witnessed_count, wire.state_lane)?,
-            members: wire.members,
-            terminal: wire.terminal,
-            byte_len: wire.byte_len,
             source_offset: wire.source_offset,
         })
     }
@@ -10643,29 +10551,16 @@ pub fn feature_swp104_leading_branches(container: &Container) -> Vec<FeatureSwp1
                 return;
             };
             let operation_key = format!("{section_key}-{operation_ordinal:010}");
-            let resolve = |ordinal: usize, reference: crate::om::PayloadObjectReference| {
-                FeatureSurfaceBranchReference {
-                    ordinal: ordinal as u32,
-                    token: reference.token,
-                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
-                    source_offset: entry_offset + reference.offset as u64,
-                }
-            };
-            let members = branch.members.map_indexed(&resolve);
-            let terminal = resolve(members.len(), branch.terminal);
-            branches.push(FeatureSwp104LeadingBranch {
-                id: format!("nx:feature-history:swp104-leading-branch#{operation_key}"),
-                operation_label: format!("nx:feature-history:operation-label#{operation_key}"),
-                discriminator: branch.discriminator,
-                scalars: branch.scalars,
-                leading_zero: branch.leading_zero,
-                mode: branch.mode,
-                state_lane: branch.state_lane,
-                members,
-                terminal,
-                byte_len: (branch.end_offset - record.payload_offset()) as u64,
-                source_offset: entry_offset + record.payload_offset() as u64,
-            });
+            let Some(source_offset) = entry_offset.checked_add(record.payload_offset() as u64) else { return; };
+            if let Some(branch) = FeatureSwp104LeadingBranch::from_source(
+                format!("nx:feature-history:swp104-leading-branch#{operation_key}"),
+                format!("nx:feature-history:operation-label#{operation_key}"),
+                source_offset,
+                branch,
+                |token| unique_offset_data_block(&indexed, token.value()),
+            ) {
+                branches.push(branch);
+            }
         },
     );
     branches

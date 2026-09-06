@@ -184,25 +184,42 @@ fn surface_branch_counts_are_derived_on_the_wire() {
 
 #[test]
 fn swp104_state_wire_preserves_independent_witness_and_absence() {
-    let member = r#"{"ordinal":0,"object_index":1,"raw_object_index":[1],"source_offset":10}"#;
-    let terminal = r#"{"ordinal":1,"object_index":2,"raw_object_index":[2],"source_offset":20}"#;
+    let member = r#"{"ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":240}"#;
     let raw = "[47,164,122,225,71,174,20,123]";
-    for state in [
-        r#""witnessed_count":4,"state_lane":[0,1,1,0,0,0,0]"#,
-        r#""witnessed_count":2,"state_lane":[0,0,0,0,0]"#,
-        r#""state_lane":[0,0,0,0,0]"#,
+    for (state, terminal_offset, byte_len) in [
+        (r#""witnessed_count":4,"state_lane":[0,1,1,0,0,0,0]"#, 254, 57),
+        (r#""witnessed_count":2,"state_lane":[0,0,0,0,0]"#, 252, 55),
+        (r#""state_lane":[0,0,0,0,0]"#, 250, 53),
     ] {
-        let json = format!(r#"{{"id":"branch","operation_label":"operation","discriminator":33,"scalars":[0.04,0.04,0.04,0.04],"raw_scalars":[{raw},{raw},{raw},{raw}],"leading_zero":false,"mode":35,"declared_count":2,{state},"members":[{member}],"terminal":{terminal},"byte_len":59,"source_offset":200}}"#);
-        let branch: super::FeatureSwp104LeadingBranch = serde_json::from_str(&json).unwrap();
+        let terminal = format!(r#"{{"ordinal":1,"object_index":2,"raw_object_index":[240,2],"source_offset":{terminal_offset}}}"#);
+        let json = format!(r#"{{"id":"branch","operation_label":"operation","discriminator":33,"scalars":[0.04,0.04,0.04,0.04],"raw_scalars":[{raw},{raw},{raw},{raw}],"leading_zero":false,"mode":35,"declared_count":2,{state},"members":[{member}],"terminal":{terminal},"byte_len":{byte_len},"source_offset":200}}"#);
+        let branch: crate::native::features::swp104_branch::FeatureSwp104LeadingBranch = serde_json::from_str(&json).unwrap();
         assert_eq!(serde_json::to_string(&branch).unwrap(), json);
         let invalid = json.replace("\"declared_count\":2", "\"declared_count\":3");
-        assert!(serde_json::from_str::<super::FeatureSwp104LeadingBranch>(&invalid).unwrap_err().to_string().contains("declared_count"));
+        assert!(serde_json::from_str::<crate::native::features::swp104_branch::FeatureSwp104LeadingBranch>(&invalid).unwrap_err().to_string().contains("declared_count"));
         let invalid = json.replace("0.04", "0.05");
-        assert!(serde_json::from_str::<super::FeatureSwp104LeadingBranch>(&invalid).unwrap_err().to_string().contains("scalars"));
+        assert!(serde_json::from_str::<crate::native::features::swp104_branch::FeatureSwp104LeadingBranch>(&invalid).unwrap_err().to_string().contains("scalars"));
+        for (path, bad) in [
+            (vec!["byte_len"], serde_json::json!(byte_len + 1)),
+            (vec!["source_offset"], serde_json::json!(u64::MAX)),
+            (vec!["terminal", "ordinal"], serde_json::json!(0)),
+            (vec!["terminal", "source_offset"], serde_json::json!(terminal_offset + 1)),
+        ] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&json).unwrap();
+            let mut field = &mut invalid;
+            for key in path { field = &mut field[key]; }
+            *field = bad;
+            assert!(serde_json::from_value::<crate::native::features::swp104_branch::FeatureSwp104LeadingBranch>(invalid).is_err());
+        }
+        for field in ["ordinal", "source_offset"] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&json).unwrap();
+            invalid["members"][0][field] = serde_json::json!(99);
+            assert!(serde_json::from_value::<crate::native::features::swp104_branch::FeatureSwp104LeadingBranch>(invalid).is_err());
+        }
         for field in ["discriminator", "mode"] {
             let mut invalid: serde_json::Value = serde_json::from_str(&json).unwrap();
             invalid[field] = serde_json::json!(0);
-            assert!(serde_json::from_value::<super::FeatureSwp104LeadingBranch>(invalid).is_err());
+            assert!(serde_json::from_value::<crate::native::features::swp104_branch::FeatureSwp104LeadingBranch>(invalid).is_err());
         }
     }
 }

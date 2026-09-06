@@ -1572,9 +1572,9 @@ pub struct Swp104PayloadLeadingBranch {
     /// Exact state lane preceding the terminal marker.
     pub state_lane: Swp104StateLane,
     /// Ordered nonterminal references.
-    pub members: BranchItems<PayloadObjectReference>,
+    pub members: BranchItems<PayloadObjectReference<reference_index::PayloadIndexToken>>,
     /// Terminal reference.
-    pub terminal: PayloadObjectReference,
+    pub terminal: PayloadObjectReference<reference_index::PayloadIndexToken>,
     /// Absolute offset immediately after the terminal zero.
     pub end_offset: usize,
 }
@@ -3653,7 +3653,8 @@ pub fn swp104_payload_leading_branch(
     let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
     for _ in 1..declared_count {
         let offset = at;
-        let (object_index, width) = payload_object_index(record.payload().get(at..)?)?;
+        let object_index = reference_index::PayloadIndexToken::read(record.payload().get(at..)?)?;
+        let width = object_index.raw().len();
         at += width;
         members.push(PayloadObjectReference {
             offset: record.payload_offset() + offset,
@@ -3682,7 +3683,8 @@ pub fn swp104_payload_leading_branch(
     (record.payload().get(at..at + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
     at += 3;
     let terminal_offset = at;
-    let (object_index, width) = payload_object_index(record.payload().get(at..)?)?;
+    let object_index = reference_index::PayloadIndexToken::read(record.payload().get(at..)?)?;
+    let width = object_index.raw().len();
     at += width;
     let terminal = PayloadObjectReference {
         offset: record.payload_offset() + terminal_offset,
