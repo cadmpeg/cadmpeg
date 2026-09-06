@@ -605,7 +605,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         .find(|curve| {
             curve
                 .id
-                .0
+                .as_str()
                 .starts_with("catia:consolidated:surface-revolution-directrix#")
         })
         .expect("transferred revolution directrix");
@@ -628,7 +628,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         .find(|surface| {
             surface
                 .id
-                .0
+                .as_str()
                 .starts_with("catia:consolidated:surface-revolution#")
         })
         .expect("transferred revolution construction");

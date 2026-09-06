@@ -478,7 +478,7 @@ pub(crate) fn try_decode_freeform_surfaces(
     let mut unknowns = Vec::new();
     let payload_id =
         UnknownId::mint("catia:payload:unknown#freeform".to_string()).expect("identity grammar");
-    preserve_raw_payload(&mut unknowns, &mut annotations, scan, &payload_id.0);
+    preserve_raw_payload(&mut unknowns, &mut annotations, scan, payload_id.as_str());
     let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
     let mut topology_ir = ir.clone();
     let mut topology_annotations = annotations.clone();
@@ -868,7 +868,7 @@ fn attach_standalone_wires(
         RegionId::mint("catia:freeform:wire-region#0".to_string()).expect("identity grammar");
     let shell_id =
         ShellId::mint("catia:freeform:wire-shell#0".to_string()).expect("identity grammar");
-    for id in [&body_id.0, &region_id.0, &shell_id.0] {
+    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
             annotations,
             id,
@@ -895,11 +895,11 @@ fn attach_standalone_wires(
         let edge_id =
             EdgeId::mint(format!("catia:freeform:wire-edge#{index}")).expect("identity grammar");
         for id in [
-            &point_ids[0].0,
-            &point_ids[1].0,
-            &vertex_ids[0].0,
-            &vertex_ids[1].0,
-            &edge_id.0,
+            point_ids[0].as_str(),
+            point_ids[1].as_str(),
+            vertex_ids[0].as_str(),
+            vertex_ids[1].as_str(),
+            edge_id.as_str(),
         ] {
             annotate(
                 annotations,
@@ -3464,7 +3464,7 @@ mod tests {
         assert!(context.sides.iter().all(|side| {
             side.surface
                 .as_ref()
-                .is_some_and(|id| id.0.starts_with("catia:consolidated:plane#"))
+                .is_some_and(|id| id.as_str().starts_with("catia:consolidated:plane#"))
                 && side.pcurve.is_some()
         }));
     }

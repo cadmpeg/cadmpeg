@@ -504,7 +504,7 @@ fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0 == "catia:standard:surf#0")
+        .find(|surface| surface.id.as_str() == "catia:standard:surf#0")
         .expect("refined standard cylinder");
     assert!(matches!(
         surface.geometry,

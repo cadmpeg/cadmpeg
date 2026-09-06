@@ -1094,7 +1094,7 @@ fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
         .model
         .procedural_surfaces
         .iter()
-        .find(|surface| surface.id.0 == "catia:consolidated:surface-revolution#0")
+        .find(|surface| surface.id.as_str() == "catia:consolidated:surface-revolution#0")
         .expect("transferred freeform revolution");
     assert!(matches!(
         revolution.definition(),
@@ -1127,7 +1127,7 @@ fn transferred_line_profile_identities_retain_their_native_ordinals() {
         .filter(|curve| {
             curve
                 .id
-                .0
+                .as_str()
                 .starts_with("catia:consolidated:line-profile-curve#")
         })
         .map(|curve| curve.id.as_str())

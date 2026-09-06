@@ -812,11 +812,11 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
     assert!(context.sides[0]
         .surface
         .as_ref()
-        .is_some_and(|id| id.0 == "catia:test:surface#surface-0"));
+        .is_some_and(|id| id.as_str() == "catia:test:surface#surface-0"));
     assert!(context.sides[1]
         .surface
         .as_ref()
-        .is_some_and(|id| id.0 == "catia:test:surface#surface-1"));
+        .is_some_and(|id| id.as_str() == "catia:test:surface#surface-1"));
     assert_eq!(context.parameter_range, [0.0, 3.0]);
 }
 
@@ -1449,7 +1449,7 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
     assert_eq!(
         ir.model
             .procedural_surface_owner(&procedural.id)
-            .map(|id| id.0.as_str()),
+            .map(|id| id.as_str()),
         Some("catia:standard:edge-support-surface#21")
     );
     assert_eq!(procedural.definition(), &rolling_ball_definition);

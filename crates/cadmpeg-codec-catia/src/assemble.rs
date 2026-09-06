@@ -213,7 +213,7 @@ pub(crate) fn attach_free_vertices(
         .expect("identity grammar");
     let shell_id =
         ShellId::mint(format!("catia:{namespace}:shell#unbound-points")).expect("identity grammar");
-    for id in [&body_id.0, &region_id.0, &shell_id.0] {
+    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
             annotations,
             id,
@@ -635,8 +635,13 @@ pub(crate) fn link_payload_carriers(
         .model
         .surfaces
         .iter()
-        .map(|surface| surface.id.0.clone())
-        .chain(ir.model.curves.iter().map(|curve| curve.id.0.clone()))
+        .map(|surface| surface.id.as_str().to_owned())
+        .chain(
+            ir.model
+                .curves
+                .iter()
+                .map(|curve| curve.id.as_str().to_owned()),
+        )
         .collect::<Vec<_>>();
     if links.is_empty() {
         return;
@@ -991,7 +996,7 @@ mod route_tests {
             ir.model
                 .curves
                 .iter()
-                .map(|curve| curve.id.0.clone())
+                .map(|curve| curve.id.as_str().to_owned())
                 .collect::<Vec<_>>(),
             ["catia:test:curve#10", "catia:test:curve#9"]
         );

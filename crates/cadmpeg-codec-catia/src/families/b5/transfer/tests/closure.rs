@@ -563,7 +563,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ir.model
             .coedges
             .iter()
-            .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.as_str()))
+            .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.as_str()))
             .collect::<Vec<_>>(),
         [
             "catia:b5:pcurve#20@0",
@@ -584,7 +584,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ir.model.loops[0]
             .anchored_vertex_uses()
             .iter()
-            .map(|use_| use_.vertex.0.as_str())
+            .map(|use_| use_.vertex.as_str())
             .collect::<Vec<_>>(),
         [
             "catia:b5:vertex#1",
@@ -596,7 +596,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ir.model.loops[0]
             .anchored_vertex_uses()
             .iter()
-            .map(|use_| Some(use_.after.0.as_str()))
+            .map(|use_| Some(use_.after.as_str()))
             .collect::<Vec<_>>(),
         [
             Some("catia:b5:coedge#2-0"),

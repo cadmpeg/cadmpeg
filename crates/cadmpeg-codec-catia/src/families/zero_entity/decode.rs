@@ -126,8 +126,9 @@ fn append_oriented_wire_curve(
     procedural: Option<(ProceduralCurveDefinition, Option<f64>)>,
 ) {
     let geometry = if let Some((definition, cache_fit_tolerance)) = procedural {
-        let construction_id = ProceduralCurveId::mint(format!("{}-construction", curve_id.0))
-            .expect("identity grammar");
+        let construction_id =
+            ProceduralCurveId::mint(format!("{}-construction", curve_id.as_str()))
+                .expect("identity grammar");
         annotate(
             annotations,
             &construction_id,

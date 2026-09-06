@@ -301,7 +301,7 @@ fn insert_binding_record(
     id: String,
 ) {
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: id.into(),
+        id: id.try_into().expect("valid identity"),
         target,
         appearance: appearance.clone(),
         source_entity_id: None,

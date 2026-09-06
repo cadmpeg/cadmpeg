@@ -3211,8 +3211,8 @@ pub(crate) fn partition_standard_face_components(
             continue;
         }
         for (id, tag) in [
-            (&region_id.0, "derived_region"),
-            (&shell_id.0, "derived_shell"),
+            (region_id.as_str(), "derived_region"),
+            (shell_id.as_str(), "derived_shell"),
         ] {
             annotate(
                 annotations,
@@ -6882,7 +6882,7 @@ fn bind_standard_a5_owner_surfaces(
         .filter_map(|(face, value)| {
             let ordinal = value
                 .id
-                .0
+                .as_str()
                 .strip_prefix("catia:standard:face#")?
                 .parse::<usize>()
                 .ok()?;

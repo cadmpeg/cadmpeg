@@ -1759,7 +1759,7 @@ fn finish_decode(
         .filter(|curve| {
             curve
                 .id
-                .0
+                .as_str()
                 .starts_with("catia:consolidated:line-profile-curve#")
         })
         .count();
@@ -1910,7 +1910,7 @@ fn finish_decode(
                 .filter(|surface| {
                     surface
                         .id
-                        .0
+                        .as_str()
                         .starts_with("catia:consolidated:surface-revolution#")
                 })
                 .count(),

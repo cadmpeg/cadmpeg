@@ -911,7 +911,7 @@ pub(crate) fn attach_e5_free_vertices(ir: &mut CadIr, annotations: &mut Annotati
         RegionId::mint("catia:e5:region#unbound-points".to_string()).expect("identity grammar");
     let shell_id =
         ShellId::mint("catia:e5:shell#unbound-points".to_string()).expect("identity grammar");
-    for id in [&body_id.0, &region_id.0, &shell_id.0] {
+    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
             annotations,
             id,
@@ -3603,7 +3603,7 @@ mod route_tests {
             vertex_use.vertex,
             VertexId::mint("catia:e5:v#1".to_string()).expect("identity grammar")
         );
-        assert_eq!(vertex_use.after.0.as_str(), "catia:e5:coedge#2-0");
+        assert_eq!(vertex_use.after.as_str(), "catia:e5:coedge#2-0");
     }
 
     #[test]
@@ -4482,11 +4482,19 @@ mod route_tests {
         let context = e5_occurrence_intersection_context(&sides).expect("intersection context");
         assert_eq!(context.parameter_range, [-2.0, 3.0]);
         assert_eq!(
-            context.sides[0].surface.as_ref().expect("left surface").0,
+            context.sides[0]
+                .surface
+                .as_ref()
+                .expect("left surface")
+                .as_str(),
             "catia:test:surface#left"
         );
         assert_eq!(
-            context.sides[1].surface.as_ref().expect("right surface").0,
+            context.sides[1]
+                .surface
+                .as_ref()
+                .expect("right surface")
+                .as_str(),
             "catia:test:surface#right"
         );
 
