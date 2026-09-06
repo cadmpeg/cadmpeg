@@ -4,6 +4,8 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::printable_string::PrintableString;
+use crate::om::state_index::StateIndexToken;
+mod state_index_wire;
 
 use cadmpeg_core::decode::View;
 
@@ -61,15 +63,14 @@ pub struct OmRecordArea {
 
 /// One complete row retained from an audit-trail record area.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "state_index_wire::OmAuditTrailRowWire", into = "state_index_wire::OmAuditTrailRowWire")]
 pub struct OmAuditTrailRow {
     /// Globally unique audit-row identity.
     pub id: String,
     /// Owning audit-trail section link.
     pub section_link: String,
     /// Monotone row ordinal.
-    pub ordinal: u32,
-    /// Exact serialized ordinal token.
-    pub raw_ordinal: Vec<u8>,
+    pub ordinal: StateIndexToken,
     /// Optional selector in the `04 05 selector 00` envelope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame_selector: Option<u8>,
@@ -90,6 +91,7 @@ pub struct OmAuditTrailRow {
 
 /// One row from the feature-history state journal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "state_index_wire::OmOperationStateJournalRowWire", into = "state_index_wire::OmOperationStateJournalRowWire")]
 pub struct OmOperationStateJournalRow {
     /// Big-endian Unix timestamp stored by the journal.
     pub timestamp: u32,
@@ -97,13 +99,9 @@ pub struct OmOperationStateJournalRow {
     #[serde(flatten)]
     pub value: crate::om::state_tagged_value::StateTaggedValue,
     /// Journal schema identifier.
-    pub schema_id: u32,
-    /// Exact schema-identifier token.
-    pub raw_schema_id: Vec<u8>,
+    pub schema_id: StateIndexToken,
     /// Monotone state-counter ordinal.
-    pub state_ordinal: u32,
-    /// Exact state-ordinal token.
-    pub raw_state_ordinal: Vec<u8>,
+    pub state_ordinal: StateIndexToken,
     /// Absolute file offset of the row's `e0` marker.
     pub source_offset: u64,
     /// Absolute exclusive end offset after the `13` terminator.
@@ -133,6 +131,7 @@ pub struct OmOperationStateJournalGroup {
 
 /// One row from the feature-history operation-state counter map.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "state_index_wire::OmOperationStateCounterWire", into = "state_index_wire::OmOperationStateCounterWire")]
 pub struct OmOperationStateCounter {
     /// Globally unique counter-row identity.
     pub id: String,
@@ -143,9 +142,7 @@ pub struct OmOperationStateCounter {
     /// Serialized counter-row kind (`01` or `02`).
     pub row_kind: crate::om::discriminators::OperationStateCounterKind,
     /// Object carrying the introduced/last-modified state pair.
-    pub object_index: u32,
-    /// Exact serialized object-index token.
-    pub raw_object_index: Vec<u8>,
+    pub object_index: StateIndexToken,
     /// State-journal ordinal at object introduction.
     pub introduced_state: u8,
     /// State-journal ordinal at the object's last modification.
@@ -160,19 +157,16 @@ pub struct OmOperationStateCounter {
 
 /// One typed member in an `m_rollForwardStates` group.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "state_index_wire::OmRollForwardStateRowWire", into = "state_index_wire::OmRollForwardStateRowWire")]
 pub enum OmRollForwardStateRow {
     /// Ordered feature-record member from a `4a` list row.
     List {
         /// Zero-based position within the group list.
         ordinal: u32,
         /// Ordered feature-history object index.
-        object_index: u32,
-        /// Exact serialized object-index token.
-        raw_object_index: Vec<u8>,
+        object_index: StateIndexToken,
         /// Serialized list position.
-        position: u32,
-        /// Exact serialized position token.
-        raw_position: Vec<u8>,
+        position: StateIndexToken,
         /// Absolute file offset of the `4a` row marker.
         source_offset: u64,
     },
@@ -183,13 +177,9 @@ pub enum OmRollForwardStateRow {
         /// Schema-generation relation tag.
         tag: crate::om::discriminators::OperationStatePairTag,
         /// First relation endpoint.
-        first: u32,
-        /// Exact serialized first endpoint token.
-        raw_first: Vec<u8>,
+        first: StateIndexToken,
         /// Second relation endpoint.
-        second: u32,
-        /// Exact serialized second endpoint token.
-        raw_second: Vec<u8>,
+        second: StateIndexToken,
         /// Absolute file offset of the relation tag.
         source_offset: u64,
     },
@@ -394,6 +384,7 @@ pub struct OmOperationStateMessage {
 
 /// Native payload retained by one operation-state status row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "state_index_wire::OmOperationStateStatusPayloadWire", into = "state_index_wire::OmOperationStateStatusPayloadWire")]
 pub enum OmOperationStateStatusPayload {
     /// Normal built/healthy state marker.
     Plain,
@@ -402,9 +393,7 @@ pub enum OmOperationStateStatusPayload {
         /// Serialized link discriminator.
         link_code: u8,
         /// Linked object index.
-        object_index: u32,
-        /// Exact linked object-index token.
-        raw_object_index: Vec<u8>,
+        object_index: StateIndexToken,
     },
     /// Status carrying an inline diagnostic message.
     Diagnostic(OmOperationStateMessageBody),
@@ -417,6 +406,7 @@ pub enum OmOperationStateStatusPayload {
 
 /// One per-object operation-state status row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "state_index_wire::OmOperationStateStatusWire", into = "state_index_wire::OmOperationStateStatusWire")]
 pub struct OmOperationStateStatus {
     /// Globally unique status-row identity.
     pub id: String,
@@ -425,13 +415,9 @@ pub struct OmOperationStateStatus {
     /// Zero-based row ordinal within the status table.
     pub ordinal: u32,
     /// Decoded non-null status-code value.
-    pub status_code: u32,
-    /// Exact serialized status-code token.
-    pub raw_status_code: Vec<u8>,
+    pub status_code: StateIndexToken,
     /// Decoded non-null object carrying the status.
-    pub object_index: u32,
-    /// Exact serialized object-index token.
-    pub raw_object_index: Vec<u8>,
+    pub object_index: StateIndexToken,
     /// Exact typed status payload.
     pub payload: OmOperationStateStatusPayload,
     /// Directory entry containing the feature-history section.
@@ -444,13 +430,12 @@ pub struct OmOperationStateStatus {
 
 /// One serialized feature-record slot in an operation-state slot lane.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "state_index_wire::OmOperationStateSlotWire", into = "state_index_wire::OmOperationStateSlotWire")]
 pub struct OmOperationStateSlot {
     /// Zero-based slot ordinal.
     pub ordinal: u32,
     /// Decoded object index; null slots remain null.
-    pub object_index: Option<u32>,
-    /// Exact serialized object-index token.
-    pub raw_object_index: Vec<u8>,
+    pub object_index: Option<StateIndexToken>,
 }
 
 /// One `02 01 11 ... 02 11` operation-state slot lane.
@@ -538,8 +523,7 @@ pub fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
                     OmAuditTrailRow {
                         id: format!("nx:audit-trail:row#{section_key}-{ordinal:010}"),
                         section_link: link.id.clone(),
-                        ordinal,
-                        raw_ordinal: row.ordinal.raw().to_vec(),
+                        ordinal: row.ordinal.token(),
                         frame_selector: row.frame_selector,
                         timestamp: row.timestamp,
                         value: row.value,
@@ -588,8 +572,7 @@ pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCo
                         section_link: link.id.clone(),
                         ordinal,
                         row_kind: row.row_kind,
-                        object_index: row.object_index.value(),
-                        raw_object_index: row.object_index.raw().to_vec(),
+                        object_index: row.object_index.token(),
                         introduced_state: row.introduced_state,
                         modified_state: row.modified_state,
                         object_index_source_offset: entry_offset + row.object_index.offset() as u64,
@@ -636,10 +619,8 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
                             OmOperationStateJournalRow {
                                 timestamp: row.timestamp,
                                 value: row.value,
-                                schema_id: row.schema_id.value(),
-                                raw_schema_id: row.schema_id.raw().to_vec(),
-                                state_ordinal: row.ordinal.value(),
-                                raw_state_ordinal: row.ordinal.raw().to_vec(),
+                                schema_id: row.schema_id.token(),
+                                state_ordinal: row.ordinal.token(),
                                 source_offset: entry_offset + row.offset as u64,
                                 end_offset: entry_offset + row.end_offset as u64,
                             }
@@ -704,10 +685,8 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                                     position,
                                 } => Some(OmRollForwardStateRow::List {
                                     ordinal,
-                                    object_index: object_index.value(),
-                                    raw_object_index: object_index.raw().to_vec(),
-                                    position: position.value(),
-                                    raw_position: position.raw().to_vec(),
+                                    object_index: object_index.token(),
+                                    position: position.token(),
                                     source_offset: entry_offset + offset as u64,
                                 }),
                                 crate::om::OperationStateGroupRow::Pair {
@@ -718,10 +697,8 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                                 } => Some(OmRollForwardStateRow::Pair {
                                     ordinal,
                                     tag,
-                                    first: first.value(),
-                                    raw_first: first.raw().to_vec(),
-                                    second: second.value(),
-                                    raw_second: second.raw().to_vec(),
+                                    first: first.token(),
+                                    second: second.token(),
                                     source_offset: entry_offset + offset as u64,
                                 }),
                             }
@@ -822,8 +799,8 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                 .enumerate()
                 .filter_map(move |(ordinal, row)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let status_code = row.status_code.value();
-                    let object_index = row.object_index.value();
+                    let status_code = row.status_code.token();
+                    let object_index = row.object_index.token();
                     let payload = match row.payload {
                         crate::om::OperationStateStatusPayload::Plain => {
                             OmOperationStateStatusPayload::Plain
@@ -833,8 +810,7 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                             object_index,
                         } => OmOperationStateStatusPayload::Linked {
                             link_code,
-                            object_index: object_index.value(),
-                            raw_object_index: object_index.raw().to_vec(),
+                            object_index: object_index.token(),
                         },
                         crate::om::OperationStateStatusPayload::Diagnostic { message } => {
                             OmOperationStateStatusPayload::Diagnostic(OmOperationStateMessageBody {
@@ -854,9 +830,7 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                         section_link: link.id.clone(),
                         ordinal,
                         status_code,
-                        raw_status_code: row.status_code.raw().to_vec(),
                         object_index,
-                        raw_object_index: row.object_index.raw().to_vec(),
                         payload,
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + row.offset as u64,
@@ -902,8 +876,7 @@ pub fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationState
                         .enumerate()
                         .map(|(slot_ordinal, slot)| OmOperationStateSlot {
                             ordinal: u32::try_from(slot_ordinal).expect("slot ordinal fits u32"),
-                            object_index: slot.value(),
-                            raw_object_index: slot.raw().to_vec(),
+                            object_index: slot.token(),
                         })
                         .collect();
                     Some(OmOperationStateSlotLane {

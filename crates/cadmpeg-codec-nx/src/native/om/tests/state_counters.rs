@@ -47,13 +47,13 @@ fn native_catalog_emits_feature_history_state_counter_rows() {
     let rows = operation_state_counters(&container);
     assert_eq!(rows.len(), 2);
     assert_eq!(u8::from(rows[0].row_kind), 1);
-    assert_eq!(rows[0].object_index, 0x320);
-    assert_eq!(rows[0].raw_object_index, [0x83, 0x20]);
+    assert_eq!(rows[0].object_index.value(), 0x320);
+    assert_eq!(rows[0].object_index.raw(), [0x83, 0x20]);
     assert_eq!(rows[0].introduced_state, 1);
     assert_eq!(rows[0].modified_state, 2);
     assert!(rows[0].object_index_source_offset > rows[0].source_offset);
     assert_eq!(u8::from(rows[1].row_kind), 2);
-    assert_eq!(rows[1].object_index, 0x1234);
+    assert_eq!(rows[1].object_index.value(), 0x1234);
     assert_eq!(rows[1].ordinal, 1);
     assert_eq!(rows[0].section_link, rows[1].section_link);
 
@@ -84,10 +84,10 @@ fn native_catalog_emits_role_gated_audit_trail_rows() {
 
     let rows = audit_trail_rows(&container);
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].ordinal, 2);
+    assert_eq!(rows[0].ordinal.value(), 2);
     assert_eq!(rows[0].frame_selector, None);
     assert_eq!(rows[0].value.marker(), 0xe0);
-    assert_eq!(rows[1].ordinal, 3);
+    assert_eq!(rows[1].ordinal.value(), 3);
     assert_eq!(rows[1].frame_selector, Some(7));
     assert_eq!(rows[1].value.marker(), 0xc0);
     assert!(rows[1].source_offset > rows[0].source_offset);
@@ -133,12 +133,12 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
     assert_eq!(groups[0].rows.len(), 1);
     assert_eq!(groups[0].rows[0].value.marker(), 0xc0);
     assert_eq!(groups[0].rows[0].value.value(), 0x0001_0203);
-    assert_eq!(groups[0].rows[0].schema_id, 0x310);
-    assert_eq!(groups[0].rows[0].state_ordinal, 2);
+    assert_eq!(groups[0].rows[0].schema_id.value(), 0x310);
+    assert_eq!(groups[0].rows[0].state_ordinal.value(), 2);
     assert_eq!(groups[1].selector, [0x05, 0x06]);
     assert_eq!(groups[1].rows[0].value.marker(), 0xa0);
     assert_eq!(groups[1].rows[0].value.value(), 0x0102);
-    assert_eq!(groups[1].rows[0].state_ordinal, 3);
+    assert_eq!(groups[1].rows[0].state_ordinal.value(), 3);
     assert!(groups[1].source_offset > groups[0].source_offset);
 
     let result = NxCodec
@@ -187,18 +187,18 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
     assert!(matches!(
         groups[0].rows[0],
         OmRollForwardStateRow::List {
-            object_index: 0x3ba,
+            object_index,
             ..
-        }
+        } if object_index.value() == 0x3ba
     ));
     assert!(matches!(
         groups[1].rows[0],
         OmRollForwardStateRow::Pair {
             tag: crate::om::discriminators::OperationStatePairTag::Form4f,
-            first: 0x42d,
-            second: 0x3e1,
+            first,
+            second,
             ..
-        }
+        } if first.value() == 0x42d && second.value() == 0x3e1
     ));
     assert_eq!(groups[2].count.declared_count(), 0);
     assert_eq!(groups[0].table_trailing_bytes, [0x01, 0x01]);
@@ -269,30 +269,30 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
 
     let statuses = operation_state_statuses(&container);
     assert_eq!(statuses.len(), 2);
-    assert_eq!(statuses[0].status_code, 0x41);
-    assert_eq!(statuses[0].object_index, 0x20);
-    assert_eq!(statuses[0].raw_status_code, [0x41]);
+    assert_eq!(statuses[0].status_code.value(), 0x41);
+    assert_eq!(statuses[0].object_index.value(), 0x20);
+    assert_eq!(statuses[0].status_code.raw(), [0x41]);
     assert!(matches!(
         statuses[0].payload,
         crate::native::om::OmOperationStateStatusPayload::Plain
     ));
-    assert_eq!(statuses[1].status_code, 0x44);
-    assert_eq!(statuses[1].object_index, 0x21);
+    assert_eq!(statuses[1].status_code.value(), 0x44);
+    assert_eq!(statuses[1].object_index.value(), 0x21);
     assert!(matches!(
         statuses[1].payload,
         crate::native::om::OmOperationStateStatusPayload::Linked {
             link_code: 0x4b,
-            object_index: 0x22,
+            object_index,
             ..
-        }
+        } if object_index.value() == 0x22
     ));
 
     let lanes = operation_state_slot_lanes(&container);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].slots.len(), 3);
-    assert_eq!(lanes[0].slots[0].object_index, None);
-    assert_eq!(lanes[0].slots[1].object_index, Some(0x3ad));
-    assert_eq!(lanes[0].slots[2].object_index, None);
+    assert_eq!(lanes[0].slots[0].object_index.map(crate::om::state_index::StateIndexToken::value), None);
+    assert_eq!(lanes[0].slots[1].object_index.map(crate::om::state_index::StateIndexToken::value), Some(0x3ad));
+    assert_eq!(lanes[0].slots[2].object_index.map(crate::om::state_index::StateIndexToken::value), None);
 
     let result = NxCodec
         .decode(

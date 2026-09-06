@@ -24,6 +24,13 @@ impl StateIndexToken {
         Some(Self(bytes))
     }
 
+    pub(crate) fn from_wire(value: u32, raw: &[u8]) -> Result<Self, &'static str> {
+        let token = Self::read_at(raw, 0).filter(|token| token.raw().len() == raw.len())
+            .ok_or("invalid non-null state-index token")?;
+        if token.value() != value { return Err("decoded value disagrees with raw token"); }
+        Ok(token)
+    }
+
     pub(crate) fn value(self) -> u32 {
         match self.0 {
             IndexBytes::Direct(value) => u32::from(value),
@@ -58,6 +65,8 @@ impl OperationStateIndex {
         Some(Self { token, offset: base_offset.checked_add(at)? })
     }
 
+    pub(crate) fn token(self) -> Option<StateIndexToken> { self.token }
+
     pub(crate) fn value(self) -> Option<u32> { self.token.map(StateIndexToken::value) }
 
     pub(crate) fn raw(&self) -> &[u8] { self.token.as_ref().map_or(&[0xff], StateIndexToken::raw) }
@@ -76,6 +85,8 @@ impl NonNullStateIndex {
     pub(crate) fn from_index(index: OperationStateIndex) -> Option<Self> {
         Some(Self { token: index.token?, offset: index.offset })
     }
+
+    pub(crate) fn token(self) -> StateIndexToken { self.token }
 
     pub(crate) fn value(self) -> u32 { self.token.value() }
 
