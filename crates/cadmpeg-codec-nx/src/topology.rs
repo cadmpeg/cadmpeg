@@ -17,6 +17,8 @@ use crate::framing::{
     read_and_advance, read_sequence_at, read_xmt, skip_sequence_at,
 };
 use crate::vec3_at::vec3_be_at;
+pub(crate) mod surface_curve_state;
+use surface_curve_state::SurfaceCurveState;
 
 const EPS_TOPOLOGY_BLEND_SURFACES_2_E9: f64 = 1.0e-9;
 
@@ -439,14 +441,7 @@ pub struct TrimmedCurve {
 pub struct SurfaceCurve {
     /// Cross-reference index of the `SP_CURVE` record.
     pub xmt: u32,
-    /// Supporting surface reference.
-    pub surface: u32,
-    /// Dimension-2 `B_CURVE` reference.
-    pub pcurve: u32,
-    /// Original model-space curve reference.
-    pub original: u32,
-    /// Fit tolerance to the original curve, in Parasolid metres.
-    pub tolerance: f64,
+    pub state: SurfaceCurveState,
     /// Record type-tag offset in the inflated stream.
     pub pos: usize,
 }
@@ -741,12 +736,9 @@ impl Graph {
                 let mut at = node.compact_tail_offset()?;
                 let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
                 let tolerance = View::f64_be_at(&node.bytes, at)?;
-                (refs[0] > 1 && refs[1] > 1 && tolerance.is_finite()).then_some(SurfaceCurve {
+                Some(SurfaceCurve {
                     xmt: node.xmt,
-                    surface: refs[0],
-                    pcurve: refs[1],
-                    original: refs[2],
-                    tolerance,
+                    state: SurfaceCurveState::new(refs[0], refs[1], refs[2], tolerance).ok()?,
                     pos: node.pos,
                 })
             })

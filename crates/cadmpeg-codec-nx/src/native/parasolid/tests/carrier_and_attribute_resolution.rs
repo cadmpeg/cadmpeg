@@ -179,10 +179,10 @@ fn decode_resolves_surface_curve_to_its_basis_curve() {
         .arena_as::<super::super::ParasolidSurfaceCurveRecord>("parasolid_surface_curve_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].surface_xmt, 6);
-    assert_eq!(records[0].pcurve_xmt, 9);
-    assert_eq!(records[0].original_curve_xmt, 9);
-    assert_eq!(records[0].tolerance_to_original, 0.000_01);
+    assert_eq!(records[0].state.surface(), 6);
+    assert_eq!(records[0].state.pcurve(), 9);
+    assert_eq!(records[0].state.original(), Some(9));
+    assert_eq!(records[0].state.tolerance(), 0.000_01);
     assert_eq!(
         result.ir().model.edges[0].curve.as_ref(),
         Some(&result.ir().model.curves[0].id)

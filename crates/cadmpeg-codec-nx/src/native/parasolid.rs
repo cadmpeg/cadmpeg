@@ -1269,14 +1269,8 @@ pub struct ParasolidSurfaceCurveRecord {
     pub stream_ordinal: u32,
     /// Cross-reference index of the surface curve.
     pub xmt: u32,
-    /// Cross-reference index of the support surface.
-    pub surface_xmt: u32,
-    /// Cross-reference index of the parameter-space B-curve.
-    pub pcurve_xmt: u32,
-    /// Nullable cross-reference index of the original model-space curve.
-    pub original_curve_xmt: u32,
-    /// Serialized tolerance to the original curve in Parasolid metres.
-    pub tolerance_to_original: f64,
+    #[serde(flatten)]
+    pub state: crate::topology::surface_curve_state::SurfaceCurveState,
     /// Record tag offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -1303,10 +1297,7 @@ impl ParasolidStreamRecords for ParasolidSurfaceCurveRecord {
             id,
             stream_ordinal,
             xmt: row.xmt,
-            surface_xmt: row.surface,
-            pcurve_xmt: row.pcurve,
-            original_curve_xmt: row.original,
-            tolerance_to_original: row.tolerance,
+            state: row.state,
             inflated_offset: row.pos as u64,
         }
     }

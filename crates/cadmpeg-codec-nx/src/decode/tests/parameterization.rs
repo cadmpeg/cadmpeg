@@ -342,7 +342,7 @@ fn decode_tracks_fully_extended_compact_geometry_headers() {
     let surface_curves = crate::topology::surface_curves(&surface_curve);
     assert_eq!(surface_curves.len(), 1);
     assert_eq!(surface_curves[0].xmt, 12);
-    assert_eq!(surface_curves[0].pcurve, 9);
+    assert_eq!(surface_curves[0].state.pcurve(), 9);
 
     let mut trimmed = trimmed_topology_partition_stream();
     fully_extend_common_header(&mut trimmed, [0, 133, 0, 12]);
@@ -765,7 +765,7 @@ fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
     let deltas = deltas_surface_curve_partition_stream();
     let merged = crate::deltas::merge_full_records(&partition, &deltas);
     assert_eq!(
-        crate::topology::surface_curves(&merged)[0].tolerance,
+        crate::topology::surface_curves(&merged)[0].state.tolerance(),
         0.000_02
     );
     let result = NxCodec
