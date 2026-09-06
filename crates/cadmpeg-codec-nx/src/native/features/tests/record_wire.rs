@@ -254,3 +254,35 @@ fn payload_text_records_preserve_unicode_and_reject_control_text() {
             .unwrap_err().to_string().contains("value"));
     }
 }
+
+#[test]
+fn construction_reference_records_preserve_wire_and_check_tokens() {
+    fn check<T: serde::Serialize + serde::de::DeserializeOwned>(json: &str) {
+        let record: T = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        let wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        for (field, invalid) in [
+            ("object_index", serde_json::json!(256)),
+            ("raw_object_index", serde_json::json!([240])),
+            ("raw_object_index", serde_json::json!([240, 1, 0])),
+            ("raw_object_index", serde_json::json!([255])),
+            ("raw_object_index", serde_json::json!([241, 0, 1])),
+        ] {
+            let mut malformed = wire.clone();
+            malformed[field] = invalid;
+            match serde_json::from_value::<T>(malformed) {
+                Err(error) => assert!(error.to_string().contains(field)),
+                Ok(_) => panic!("invalid reference token accepted"),
+            }
+        }
+    }
+    check::<super::FeatureSketchReference>(r#"{"id":"r","operation_label":"o","ordinal":0,"declared_count":1,"terminal":true,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
+    check::<super::FeatureProjectedCurveReference>(r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
+    check::<super::FeaturePatternReference>(r#"{"id":"r","operation_label":"o","layout":"canonical_graph","ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
+    check::<super::FeaturePointConstructionHeader>(r#"{"id":"r","operation_label":"o","object_index":1,"raw_object_index":[240,1],"mode":2,"source_offset":10}"#);
+    check::<super::FeatureDraftConstructionReference>(r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
+    check::<super::FeatureSurfaceConstructionReference>(r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
+    check::<super::FeatureSurfaceBranchReference>(r#"{"ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
+    check::<super::FeatureExtrudeProfileReference>(r#"{"id":"r","operation_label":"o","ordinal":0,"field_tag":1,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
+    check::<super::FeatureBlockConstructionReference>(r#"{"id":"r","operation_label":"o","control":1,"ordinal":0,"terminal":true,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
+}

@@ -2729,7 +2729,7 @@ fn attach_feature_operations(
                 reference
                     .data_block
                     .clone()
-                    .unwrap_or_else(|| reference.object_index.to_string()),
+                    .unwrap_or_else(|| reference.token.value().to_string()),
             );
         }
         for reference in projected_curve_references_by_operation
@@ -2746,7 +2746,7 @@ fn attach_feature_operations(
                 reference
                     .data_block
                     .clone()
-                    .unwrap_or_else(|| reference.object_index.to_string()),
+                    .unwrap_or_else(|| reference.token.value().to_string()),
             );
         }
         for payload in projected_curve_construction_payloads_by_operation
@@ -2826,7 +2826,7 @@ fn attach_feature_operations(
                 reference
                     .data_block
                     .clone()
-                    .unwrap_or_else(|| reference.object_index.to_string()),
+                    .unwrap_or_else(|| reference.token.value().to_string()),
             );
         }
         for payload in pattern_construction_payloads_by_operation
@@ -2900,7 +2900,7 @@ fn attach_feature_operations(
                 header
                     .data_block
                     .clone()
-                    .unwrap_or_else(|| header.object_index.to_string()),
+                    .unwrap_or_else(|| header.token.value().to_string()),
             );
             source_properties.insert(
                 "point_construction_mode".to_string(),
@@ -2927,7 +2927,7 @@ fn attach_feature_operations(
                 reference
                     .data_block
                     .clone()
-                    .unwrap_or_else(|| reference.object_index.to_string()),
+                    .unwrap_or_else(|| reference.token.value().to_string()),
             );
         }
         for lane in draft_construction_index_lanes_by_operation
@@ -3021,7 +3021,7 @@ fn attach_feature_operations(
                 reference
                     .data_block
                     .clone()
-                    .unwrap_or_else(|| reference.object_index.to_string()),
+                    .unwrap_or_else(|| reference.token.value().to_string()),
             );
         }
         for payload in surface_construction_payloads_by_operation
@@ -3068,7 +3068,7 @@ fn attach_feature_operations(
                     member
                         .data_block
                         .clone()
-                        .unwrap_or_else(|| member.object_index.to_string()),
+                        .unwrap_or_else(|| member.token.value().to_string()),
                 );
             }
             source_properties.insert(
@@ -3077,7 +3077,7 @@ fn attach_feature_operations(
                     .terminal
                     .data_block
                     .clone()
-                    .unwrap_or_else(|| branch.terminal.object_index.to_string()),
+                    .unwrap_or_else(|| branch.terminal.token.value().to_string()),
             );
         }
         for (ordinal, block_use) in sketch_named_point_uses_by_operation
@@ -3132,7 +3132,7 @@ fn attach_feature_operations(
                 reference
                     .data_block
                     .clone()
-                    .unwrap_or_else(|| reference.object_index.to_string()),
+                    .unwrap_or_else(|| reference.token.value().to_string()),
             );
         }
         if let Some(profile) = extrude_construction_profiles_by_operation.get(label.id.as_str()) {

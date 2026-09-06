@@ -88,8 +88,7 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
         ordinal,
         declared_count: 2,
         terminal: ordinal == 1,
-        object_index: 10 + ordinal,
-        raw_object_index: vec![0xf0, (10 + ordinal) as u8],
+        token: crate::om::reference_index::ReferenceIndexToken::from_wire(10 + ordinal, &[0xf0, (10 + ordinal) as u8]).unwrap(),
         data_block: block.map(str::to_string),
         source_offset: 200 + u64::from(ordinal),
     };
@@ -120,8 +119,7 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
         ordinal,
         declared_count: 2,
         terminal,
-        object_index: 12 + ordinal,
-        raw_object_index: vec![0xf0, (12 + ordinal) as u8],
+        token: crate::om::reference_index::ReferenceIndexToken::from_wire(12 + ordinal, &[0xf0, (12 + ordinal) as u8]).unwrap(),
         data_block: block.map(str::to_string),
         source_offset: 300 + u64::from(ordinal),
     };

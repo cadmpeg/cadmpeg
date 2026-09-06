@@ -2821,10 +2821,9 @@ pub struct FeatureSketchReference {
     pub declared_count: u8,
     /// Whether this is the reference following the `00 00` separator.
     pub terminal: bool,
-    /// Serialized object index.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    /// Checked index retaining the exact serialized token.
+    #[serde(flatten)]
+    pub token: crate::om::reference_index::ReferenceIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -2841,10 +2840,9 @@ pub struct FeatureProjectedCurveReference {
     pub operation_label: String,
     /// Zero-based order among the field's non-repeated references.
     pub ordinal: u32,
-    /// Serialized object index.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    /// Checked index retaining the exact serialized token.
+    #[serde(flatten)]
+    pub token: crate::om::reference_index::ReferenceIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -2956,10 +2954,9 @@ pub struct FeaturePatternReference {
     pub layout: FeaturePatternReferenceLayout,
     /// Zero-based non-null slot order in the exact reference field.
     pub ordinal: u32,
-    /// Serialized object index.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    /// Checked index retaining the exact serialized token.
+    #[serde(flatten)]
+    pub token: crate::om::reference_index::ReferenceIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -3690,10 +3687,9 @@ pub struct FeaturePointConstructionHeader {
     pub id: String,
     /// Owning `POINT` operation label.
     pub operation_label: String,
-    /// Serialized construction object index.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    /// Checked index retaining the exact serialized token.
+    #[serde(flatten)]
+    pub token: crate::om::reference_index::ReferenceIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -3786,10 +3782,9 @@ pub struct FeatureDraftConstructionReference {
     pub operation_label: String,
     /// Zero-based slot order in the exact construction graph.
     pub ordinal: u32,
-    /// Serialized object index.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    /// Checked index retaining the exact serialized token.
+    #[serde(flatten)]
+    pub token: crate::om::reference_index::ReferenceIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -4312,10 +4307,9 @@ pub struct FeatureSurfaceConstructionReference {
     pub operation_label: String,
     /// Zero-based slot order in the exact common envelope.
     pub ordinal: u32,
-    /// Serialized object index.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    /// Checked index retaining the exact serialized token.
+    #[serde(flatten)]
+    pub token: crate::om::reference_index::ReferenceIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -4592,10 +4586,9 @@ pub struct FeatureSurfaceConstructionString {
 pub struct FeatureSurfaceBranchReference {
     /// Zero-based member order, or the declared count minus one for the terminal.
     pub ordinal: u32,
-    /// Serialized object index.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    /// Checked index retaining the exact serialized token.
+    #[serde(flatten)]
+    pub token: crate::om::reference_index::ReferenceIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -4703,10 +4696,9 @@ pub struct FeatureExtrudeProfileReference {
     /// Absolute source offset of the matching duplicate-list index marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub witness_source_offset: Option<u64>,
-    /// Serialized object index.
-    pub object_index: u32,
-    /// Exact serialized payload object-index token.
-    pub raw_object_index: Vec<u8>,
+    /// Checked index retaining the exact serialized token.
+    #[serde(flatten)]
+    pub token: crate::om::reference_index::ReferenceIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -5524,10 +5516,9 @@ pub struct FeatureBlockConstructionReference {
     pub ordinal: u32,
     /// Whether this is the reference following the separator byte.
     pub terminal: bool,
-    /// Serialized object index.
-    pub object_index: u32,
-    /// Exact serialized payload object-index token.
-    pub raw_object_index: Vec<u8>,
+    /// Checked index retaining the exact serialized token.
+    #[serde(flatten)]
+    pub token: crate::om::reference_index::ReferenceIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -9493,8 +9484,7 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
                     ordinal: ordinal as u32,
                     declared_count,
                     terminal: ordinal == terminal_ordinal,
-                    object_index: reference.token.value(),
-                    raw_object_index: reference.token.raw().to_vec(),
+                    token: reference.token,
                     data_block,
                     source_offset: entry_offset + reference.offset as u64,
                 }
@@ -9508,8 +9498,7 @@ struct ResolvedFeaturePayloadReference {
     section_key: String,
     operation_ordinal: usize,
     ordinal: usize,
-    object_index: u32,
-    raw_object_index: Vec<u8>,
+    token: crate::om::reference_index::ReferenceIndexToken,
     data_block: Option<String>,
     source_offset: u64,
 }
@@ -9531,8 +9520,7 @@ fn resolved_feature_payload_references(
                     section_key: section_key.to_string(),
                     operation_ordinal,
                     ordinal,
-                    object_index: reference.token.value(),
-                    raw_object_index: reference.token.raw().to_vec(),
+                    token: reference.token,
                     data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
                 }
@@ -9563,8 +9551,7 @@ pub fn feature_projected_curve_references(
             ),
             operation_label,
             ordinal: reference.ordinal as u32,
-            object_index: reference.object_index,
-            raw_object_index: reference.raw_object_index,
+            token: reference.token,
             data_block: reference.data_block,
             source_offset: reference.source_offset,
         }
@@ -9899,8 +9886,7 @@ pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternRe
                     operation_label: operation_label.clone(),
                     layout,
                     ordinal: ordinal as u32,
-                    object_index: reference.token.value(),
-                    raw_object_index: reference.token.raw().to_vec(),
+                    token: reference.token,
                     data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
                 }
@@ -10200,8 +10186,7 @@ pub fn feature_point_construction_headers(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                object_index: header.reference.token.value(),
-                raw_object_index: header.reference.token.raw().to_vec(),
+                token: header.reference.token,
                 data_block: unique_offset_data_block(&indexed, header.reference.token.value()),
                 mode: header.mode,
                 source_offset: entry_offset + header.reference.offset as u64,
@@ -10222,7 +10207,7 @@ pub fn feature_point_construction_scalar_lanes(
         let Some(expected_target) = header.data_block.as_deref() else {
             continue;
         };
-        let Ok(target_ordinal) = usize::try_from(header.object_index) else {
+        let Ok(target_ordinal) = usize::try_from(header.token.value()) else {
             continue;
         };
         let candidates = indexed
@@ -10300,8 +10285,7 @@ pub fn feature_draft_construction_references(
             ),
             operation_label,
             ordinal: reference.ordinal as u32,
-            object_index: reference.object_index,
-            raw_object_index: reference.raw_object_index,
+            token: reference.token,
             data_block: reference.data_block,
             source_offset: reference.source_offset,
         }
@@ -10642,8 +10626,7 @@ pub fn feature_surface_construction_references(
             ),
             operation_label,
             ordinal: reference.ordinal as u32,
-            object_index: reference.object_index,
-            raw_object_index: reference.raw_object_index,
+            token: reference.token,
             data_block: reference.data_block,
             source_offset: reference.source_offset,
         }
@@ -10693,8 +10676,7 @@ pub fn feature_thru_curve_construction_branch_groups(
             let resolve = |ordinal: usize, reference: crate::om::PayloadObjectReference| {
                 FeatureSurfaceBranchReference {
                     ordinal: ordinal as u32,
-                    object_index: reference.token.value(),
-                    raw_object_index: reference.token.raw().to_vec(),
+                    token: reference.token,
                     data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
                 }
@@ -10739,8 +10721,7 @@ pub fn feature_swp104_leading_branches(container: &Container) -> Vec<FeatureSwp1
             let resolve = |ordinal: usize, reference: crate::om::PayloadObjectReference| {
                 FeatureSurfaceBranchReference {
                     ordinal: ordinal as u32,
-                    object_index: reference.token.value(),
-                    raw_object_index: reference.token.raw().to_vec(),
+                    token: reference.token,
                     data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
                 }
@@ -10904,8 +10885,7 @@ pub fn feature_surface_construction_branches(
                 let resolve = |ordinal: usize, reference: crate::om::PayloadObjectReference| {
                     FeatureSurfaceBranchReference {
                         ordinal: ordinal as u32,
-                        object_index: reference.token.value(),
-                        raw_object_index: reference.token.raw().to_vec(),
+                        token: reference.token,
                         data_block: unique_offset_data_block(&indexed, reference.token.value()),
                         source_offset: entry_offset + reference.offset as u64,
                     }
@@ -10957,8 +10937,7 @@ pub fn feature_extrude_profile_references(
                     ordinal: ordinal as u32,
                     field_tag: decoded.field_tag,
                     witness_source_offset: row.witness_offset.map(|offset| entry_offset + offset as u64),
-                    object_index: reference.token.value(),
-                    raw_object_index: reference.token.raw().to_vec(),
+                    token: reference.token,
                     data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
                 }
@@ -11290,7 +11269,7 @@ pub fn feature_extrude_construction_profiles(
             .iter()
             .map(|reference| {
                 Some(FeatureExtrudeConstructionProfileReference {
-                    object_index: reference.object_index,
+                    object_index: reference.token.value(),
                     data_block: reference.data_block.clone()?,
                     profile_source_offset: reference.source_offset,
                     witness_source_offset: reference.witness_source_offset?,
@@ -11464,8 +11443,7 @@ pub fn feature_block_construction_references(
                     control: field.control,
                     ordinal: ordinal as u32,
                     terminal: ordinal == terminal_ordinal,
-                    object_index: reference.token.value(),
-                    raw_object_index: reference.token.raw().to_vec(),
+                    token: reference.token,
                     data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
                 },

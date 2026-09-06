@@ -10,7 +10,8 @@ enum Encoding {
     PayloadWord([u8; 3]),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "ReferenceIndexWire", into = "ReferenceIndexWire")]
 pub(crate) struct ReferenceIndexToken(Encoding);
 
 impl ReferenceIndexToken {
@@ -33,6 +34,16 @@ impl ReferenceIndexToken {
         }
     }
 
+    pub(crate) fn from_wire(value: u32, raw: &[u8]) -> Result<Self, &'static str> {
+        let token = Self::read_payload(raw).or_else(|| Self::read_feature(raw))
+            .filter(|token| token.raw().len() == raw.len())
+            .ok_or("raw_object_index: invalid required reference token")?;
+        if token.value() != value {
+            return Err("object_index disagrees with raw_object_index");
+        }
+        Ok(token)
+    }
+
     pub(crate) fn value(self) -> u32 {
         match self.0 {
             Encoding::Direct(value) | Encoding::PayloadByte([_, value]) => u32::from(value),
@@ -49,6 +60,26 @@ impl ReferenceIndexToken {
             Encoding::Compact(raw) | Encoding::PayloadByte(raw) => raw,
             Encoding::Word(raw) | Encoding::PayloadWord(raw) => raw,
         }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ReferenceIndexWire {
+    object_index: u32,
+    raw_object_index: Vec<u8>,
+}
+
+impl From<ReferenceIndexToken> for ReferenceIndexWire {
+    fn from(token: ReferenceIndexToken) -> Self {
+        Self { object_index: token.value(), raw_object_index: token.raw().to_vec() }
+    }
+}
+
+impl TryFrom<ReferenceIndexWire> for ReferenceIndexToken {
+    type Error = &'static str;
+
+    fn try_from(wire: ReferenceIndexWire) -> Result<Self, Self::Error> {
+        Self::from_wire(wire.object_index, &wire.raw_object_index)
     }
 }
 
