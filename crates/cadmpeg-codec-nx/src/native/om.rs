@@ -1707,6 +1707,10 @@ pub struct DataBlockReference {
 
 /// Complete counted block-index lane carried by one offset-store block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DataBlockCountedIndexLaneWire",
+    into = "DataBlockCountedIndexLaneWire"
+)]
 pub struct DataBlockCountedIndexLane {
     /// Globally unique lane identity.
     pub id: String,
@@ -1722,22 +1726,130 @@ pub struct DataBlockCountedIndexLane {
     pub raw_anchor_index: Vec<u8>,
     /// Same-section block addressed by the anchor.
     pub anchor_data_block: String,
-    /// Ordered decoded member block indices.
-    pub member_indices: Vec<u32>,
-    /// Exact serialized member tokens in lane order.
-    pub raw_member_indices: Vec<Vec<u8>>,
-    /// Ordered same-section blocks addressed by the members.
-    pub member_data_blocks: Vec<String>,
+    /// Ordered resolved member tokens.
+    pub members: Vec<DataBlockIndexToken>,
     /// Absolute file offset of the opening `01` marker.
     pub source_offset: u64,
     /// Absolute file offset of the anchoring compact index.
     pub anchor_source_offset: u64,
+}
+
+/// A compact index with its resolved block and source token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataBlockIndexToken {
+    pub index: u32,
+    pub raw: Vec<u8>,
+    pub data_block: String,
+    pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DataBlockCountedIndexLaneWire {
+    /// Globally unique lane identity.
+    id: String,
+    /// Owning block in the native `data_blocks` arena.
+    data_block: String,
+    /// Zero-based lane order within the block.
+    ordinal: u32,
+    /// Serialized count including the anchor and terminal slot.
+    declared_count: u8,
+    /// Decoded anchoring block index.
+    anchor_index: u32,
+    /// Exact serialized anchor token.
+    raw_anchor_index: Vec<u8>,
+    /// Same-section block addressed by the anchor.
+    anchor_data_block: String,
+    /// Ordered decoded member block indices.
+    member_indices: Vec<u32>,
+    /// Exact serialized member tokens in lane order.
+    raw_member_indices: Vec<Vec<u8>>,
+    /// Ordered same-section blocks addressed by the members.
+    member_data_blocks: Vec<String>,
+    /// Absolute file offset of the opening `01` marker.
+    source_offset: u64,
+    /// Absolute file offset of the anchoring compact index.
+    anchor_source_offset: u64,
     /// Ordered absolute file offsets of member compact indices.
-    pub member_source_offsets: Vec<u64>,
+    member_source_offsets: Vec<u64>,
+}
+
+impl From<DataBlockCountedIndexLane> for DataBlockCountedIndexLaneWire {
+    fn from(value: DataBlockCountedIndexLane) -> Self {
+        Self {
+            id: value.id,
+            data_block: value.data_block,
+            ordinal: value.ordinal,
+            declared_count: value.declared_count,
+            anchor_index: value.anchor_index,
+            raw_anchor_index: value.raw_anchor_index,
+            anchor_data_block: value.anchor_data_block,
+            source_offset: value.source_offset,
+            anchor_source_offset: value.anchor_source_offset,
+            member_indices: value.members.iter().map(|token| token.index).collect(),
+            raw_member_indices: value
+                .members
+                .iter()
+                .map(|token| token.raw.clone())
+                .collect(),
+            member_data_blocks: value
+                .members
+                .iter()
+                .map(|token| token.data_block.clone())
+                .collect(),
+            member_source_offsets: value
+                .members
+                .iter()
+                .map(|token| token.source_offset)
+                .collect(),
+        }
+    }
+}
+impl TryFrom<DataBlockCountedIndexLaneWire> for DataBlockCountedIndexLane {
+    type Error = String;
+    fn try_from(wire: DataBlockCountedIndexLaneWire) -> Result<Self, Self::Error> {
+        let count = wire.member_indices.len();
+        if wire.raw_member_indices.len() != count
+            || wire.member_data_blocks.len() != count
+            || wire.member_source_offsets.len() != count
+        {
+            return Err("counted index lane member columns must have equal lengths".to_owned());
+        }
+        let members = wire
+            .member_indices
+            .into_iter()
+            .zip(wire.raw_member_indices)
+            .zip(wire.member_data_blocks)
+            .zip(wire.member_source_offsets)
+            .map(
+                |(((index, raw), data_block), source_offset)| DataBlockIndexToken {
+                    index,
+                    raw,
+                    data_block,
+                    source_offset,
+                },
+            )
+            .collect();
+        Ok(Self {
+            members,
+            id: wire.id,
+            data_block: wire.data_block,
+            ordinal: wire.ordinal,
+            declared_count: wire.declared_count,
+            anchor_index: wire.anchor_index,
+            raw_anchor_index: wire.raw_anchor_index,
+            anchor_data_block: wire.anchor_data_block,
+            source_offset: wire.source_offset,
+            anchor_source_offset: wire.anchor_source_offset,
+        })
+    }
 }
 
 /// Fixed-width nullable `ABR` block-reference lane in contiguous column storage.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DataBlockAbrReferenceLaneWire",
+    into = "DataBlockAbrReferenceLaneWire"
+)]
 pub struct DataBlockAbrReferenceLane {
     /// Globally unique lane identity.
     pub id: String,
@@ -1745,18 +1857,104 @@ pub struct DataBlockAbrReferenceLane {
     pub section_ordinal: u32,
     /// Zero-based lane order within the section's column storage.
     pub ordinal: u32,
-    /// Sixteen ordered nullable serialized block indices.
-    pub slot_indices: Vec<Option<u32>>,
-    /// Exact compact-index tokens in slot order.
-    pub raw_slot_indices: Vec<Vec<u8>>,
-    /// Sixteen ordered nullable same-section block identities.
-    pub slot_data_blocks: Vec<Option<String>>,
-    /// Absolute file offsets of the sixteen compact-index tokens.
-    pub slot_source_offsets: Vec<u64>,
+    /// Sixteen ordered nullable resolved tokens.
+    pub slots: [DataBlockAbrSlot; 16],
     /// Directory entry containing the offset-only store.
     pub source_entry: String,
     /// Absolute file offset of the opening `11` marker.
     pub source_offset: u64,
+}
+
+/// A nullable block target and its source token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataBlockAbrSlot {
+    pub target: Option<DataBlockAbrTarget>,
+    pub raw: Vec<u8>,
+    pub source_offset: u64,
+}
+
+/// A non-null block index and the block it addresses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataBlockAbrTarget {
+    pub index: u32,
+    pub data_block: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DataBlockAbrReferenceLaneWire {
+    /// Globally unique lane identity.
+    id: String,
+    /// Zero-based indexed-section ordinal within the container.
+    section_ordinal: u32,
+    /// Zero-based lane order within the section's column storage.
+    ordinal: u32,
+    /// Sixteen ordered nullable serialized block indices.
+    slot_indices: [Option<u32>; 16],
+    /// Exact compact-index tokens in slot order.
+    raw_slot_indices: [Vec<u8>; 16],
+    /// Sixteen ordered nullable same-section block identities.
+    slot_data_blocks: [Option<String>; 16],
+    /// Absolute file offsets of the sixteen compact-index tokens.
+    slot_source_offsets: [u64; 16],
+    /// Directory entry containing the offset-only store.
+    source_entry: String,
+    /// Absolute file offset of the opening `11` marker.
+    source_offset: u64,
+}
+
+impl From<DataBlockAbrReferenceLane> for DataBlockAbrReferenceLaneWire {
+    fn from(value: DataBlockAbrReferenceLane) -> Self {
+        Self {
+            id: value.id,
+            section_ordinal: value.section_ordinal,
+            ordinal: value.ordinal,
+            source_entry: value.source_entry,
+            source_offset: value.source_offset,
+            slot_indices: value
+                .slots
+                .each_ref()
+                .map(|slot| slot.target.as_ref().map(|target| target.index)),
+            raw_slot_indices: value.slots.each_ref().map(|slot| slot.raw.clone()),
+            slot_data_blocks: value
+                .slots
+                .each_ref()
+                .map(|slot| slot.target.as_ref().map(|target| target.data_block.clone())),
+            slot_source_offsets: value.slots.map(|slot| slot.source_offset),
+        }
+    }
+}
+impl TryFrom<DataBlockAbrReferenceLaneWire> for DataBlockAbrReferenceLane {
+    type Error = String;
+    fn try_from(wire: DataBlockAbrReferenceLaneWire) -> Result<Self, Self::Error> {
+        let mut slots = wire.raw_slot_indices.map(|raw| DataBlockAbrSlot {
+            target: None,
+            raw,
+            source_offset: 0,
+        });
+        for (((slot, index), data_block), source_offset) in slots
+            .iter_mut()
+            .zip(wire.slot_indices)
+            .zip(wire.slot_data_blocks)
+            .zip(wire.slot_source_offsets)
+        {
+            slot.target = match (index, data_block) {
+                (None, None) => None,
+                (Some(index), Some(data_block)) => Some(DataBlockAbrTarget { index, data_block }),
+                _ => {
+                    return Err("ABR slot index and data block must be present together".to_owned())
+                }
+            };
+            slot.source_offset = source_offset;
+        }
+        Ok(Self {
+            slots,
+            id: wire.id,
+            section_ordinal: wire.section_ordinal,
+            ordinal: wire.ordinal,
+            source_entry: wire.source_entry,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Self-framed index row in contiguous offset-store column storage.
@@ -4132,25 +4330,22 @@ pub fn data_block_counted_index_lanes(container: &Container) -> Vec<DataBlockCou
                                 block_count,
                                 lane.anchor,
                             )?;
-                            let member_data_blocks = lane
-                                .members
-                                .iter()
-                                .map(|token| {
-                                    control_index_data_block(
-                                        section_ordinal,
-                                        block_count,
-                                        token.value,
-                                    )
-                                })
-                                .collect::<Option<Vec<_>>>()?;
                             let source_base = entry_offset + block.offset as u64;
-                            Some((lane, anchor_data_block, member_data_blocks, source_base))
+                            let members = lane.members.iter().map(|token| {
+                                Some(DataBlockIndexToken {
+                                    index: token.value,
+                                    raw: token.raw.clone(),
+                                    data_block: control_index_data_block(section_ordinal, block_count, token.value)?,
+                                    source_offset: source_base + token.offset as u64,
+                                })
+                            }).collect::<Option<Vec<_>>>()?;
+                            Some((lane, anchor_data_block, members, source_base))
                         })
                         .enumerate()
                         .map(
                             |(
                                 ordinal,
-                                (lane, anchor_data_block, member_data_blocks, source_base),
+                                (lane, anchor_data_block, members, source_base),
                             )| DataBlockCountedIndexLane {
                                 id: format!(
                                     "nx:om-data-block-counted-index-lanes-{section_ordinal}-{block_ordinal}:lane#{ordinal}"
@@ -4163,20 +4358,9 @@ pub fn data_block_counted_index_lanes(container: &Container) -> Vec<DataBlockCou
                                 anchor_index: lane.anchor,
                                 raw_anchor_index: lane.raw_anchor,
                                 anchor_data_block,
-                                member_indices: lane
-                                    .members
-                                    .iter()
-                                    .map(|token| token.value)
-                                    .collect(),
-                                raw_member_indices: lane.members.iter().map(|token| token.raw.clone()).collect(),
-                                member_data_blocks,
+                                members,
                                 source_offset: source_base + lane.offset as u64,
                                 anchor_source_offset: source_base + lane.anchor_offset as u64,
-                                member_source_offsets: lane
-                                    .members
-                                    .iter()
-                                    .map(|token| source_base + token.offset as u64)
-                                    .collect(),
                             },
                         )
                         .collect::<Vec<_>>()
@@ -4205,42 +4389,37 @@ pub fn data_block_abr_reference_lanes(container: &Container) -> Vec<DataBlockAbr
             crate::om::offset_store_abr_reference_lanes(storage)
                 .into_iter()
                 .filter_map(|lane| {
-                    let slot_data_blocks = lane
-                        .slots
-                        .iter()
-                        .map(|token| {
-                            token.value.map_or(Some(None), |value| {
-                                control_index_data_block(section_ordinal, block_count, value)
-                                    .map(Some)
-                            })
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    Some((lane, slot_data_blocks))
+                    let mut slots = lane.slots.each_ref().map(|token| DataBlockAbrSlot {
+                        target: None,
+                        raw: token.raw.clone(),
+                        source_offset: source_base + token.offset as u64,
+                    });
+                    for (slot, token) in slots.iter_mut().zip(&lane.slots) {
+                        slot.target = match token.value {
+                            Some(index) => Some(DataBlockAbrTarget {
+                                index,
+                                data_block: control_index_data_block(
+                                    section_ordinal,
+                                    block_count,
+                                    index,
+                                )?,
+                            }),
+                            None => None,
+                        };
+                    }
+                    Some((lane, slots))
                 })
                 .enumerate()
-                .map(
-                    |(ordinal, (lane, slot_data_blocks))| DataBlockAbrReferenceLane {
-                        id: format!(
-                            "nx:om-data-block-abr-reference-lanes-{section_ordinal}:lane#{ordinal}"
-                        ),
-                        section_ordinal: section_ordinal as u32,
-                        ordinal: ordinal as u32,
-                        slot_indices: lane.slots.iter().map(|token| token.value).collect(),
-                        raw_slot_indices: lane
-                            .slots
-                            .iter()
-                            .map(|token| token.raw.clone())
-                            .collect(),
-                        slot_data_blocks,
-                        slot_source_offsets: lane
-                            .slots
-                            .iter()
-                            .map(|token| source_base + token.offset as u64)
-                            .collect(),
-                        source_entry: entry.name.clone(),
-                        source_offset: source_base + lane.offset as u64,
-                    },
-                )
+                .map(|(ordinal, (lane, slots))| DataBlockAbrReferenceLane {
+                    id: format!(
+                        "nx:om-data-block-abr-reference-lanes-{section_ordinal}:lane#{ordinal}"
+                    ),
+                    section_ordinal: section_ordinal as u32,
+                    ordinal: ordinal as u32,
+                    slots,
+                    source_entry: entry.name.clone(),
+                    source_offset: source_base + lane.offset as u64,
+                })
                 .collect::<Vec<_>>()
         })
         .collect()
@@ -5394,6 +5573,66 @@ mod tests {
     use crate::NxCodec;
 
     #[test]
+    fn counted_lane_wire_preserves_member_columns() {
+        let json = r#"{"id":"lane","data_block":"block","ordinal":0,"declared_count":3,"anchor_index":1,"raw_anchor_index":[1],"anchor_data_block":"anchor","member_indices":[2],"raw_member_indices":[[2]],"member_data_blocks":["member"],"source_offset":10,"anchor_source_offset":11,"member_source_offsets":[12]}"#;
+        let lane: super::DataBlockCountedIndexLane = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            lane.members,
+            vec![super::DataBlockIndexToken {
+                index: 2,
+                raw: vec![2],
+                data_block: "member".to_owned(),
+                source_offset: 12,
+            }]
+        );
+        assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+        for field in [
+            "member_indices",
+            "raw_member_indices",
+            "member_data_blocks",
+            "member_source_offsets",
+        ] {
+            let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+            malformed[field] = serde_json::json!([]);
+            assert!(serde_json::from_value::<super::DataBlockCountedIndexLane>(malformed).is_err());
+        }
+    }
+
+    #[test]
+    fn abr_lane_wire_preserves_sixteen_nullable_columns() {
+        let json = r#"{"id":"lane","section_ordinal":0,"ordinal":0,"slot_indices":[2,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"raw_slot_indices":[[2],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255]],"slot_data_blocks":["block",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"slot_source_offsets":[10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],"source_entry":"entry","source_offset":9}"#;
+        let lane: super::DataBlockAbrReferenceLane = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            lane.slots[0],
+            super::DataBlockAbrSlot {
+                target: Some(super::DataBlockAbrTarget {
+                    index: 2,
+                    data_block: "block".to_owned()
+                }),
+                raw: vec![2],
+                source_offset: 10,
+            }
+        );
+        assert!(lane.slots[1..].iter().all(|slot| slot.target.is_none()));
+        assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+        for field in [
+            "slot_indices",
+            "raw_slot_indices",
+            "slot_data_blocks",
+            "slot_source_offsets",
+        ] {
+            let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+            malformed[field].as_array_mut().unwrap().pop();
+            assert!(serde_json::from_value::<super::DataBlockAbrReferenceLane>(malformed).is_err());
+        }
+        for field in ["slot_indices", "slot_data_blocks"] {
+            let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+            malformed[field][0] = serde_json::Value::Null;
+            assert!(serde_json::from_value::<super::DataBlockAbrReferenceLane>(malformed).is_err());
+        }
+    }
+
+    #[test]
     fn nx_expression_parameter_references_preserve_formula_order() {
         assert_eq!(
             super::expression_parameter_names(
@@ -6417,14 +6656,20 @@ mod tests {
 
         let lanes = super::data_block_abr_reference_lanes(&container);
         assert_eq!(lanes.len(), 1);
-        assert_eq!(lanes[0].slot_indices[0], Some(2));
         assert_eq!(
-            lanes[0].slot_data_blocks[0].as_deref(),
+            lanes[0].slots[0].target.as_ref().map(|target| target.index),
+            Some(2)
+        );
+        assert_eq!(
+            lanes[0].slots[0]
+                .target
+                .as_ref()
+                .map(|target| target.data_block.as_str()),
             Some("nx:om-data-blocks-0:block#2")
         );
-        assert!(lanes[0].slot_indices[1..].iter().all(Option::is_none));
-        assert_eq!(lanes[0].slot_source_offsets.len(), 16);
-        assert_eq!(lanes[0].slot_source_offsets[0], lanes[0].source_offset + 1);
+        assert!(lanes[0].slots[1..].iter().all(|slot| slot.target.is_none()));
+        assert_eq!(lanes[0].slots.len(), 16);
+        assert_eq!(lanes[0].slots[0].source_offset, lanes[0].source_offset + 1);
     }
 
     #[test]
