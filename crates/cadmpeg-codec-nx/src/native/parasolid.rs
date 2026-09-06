@@ -4,6 +4,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+use crate::framing::xmt_reference::XmtTarget;
 use crate::parasolid::name_references::NameReferences;
 
 use crate::deltas::Census;
@@ -1669,8 +1670,8 @@ pub struct ParasolidAttributeDefinition {
     pub stream_ordinal: u32,
     /// Stream-local definition record identity.
     pub xmt: NonNullXmt,
-    /// Stream-local next-definition identity; `1` is null.
-    pub next_definition_xmt: u32,
+    /// Optional stream-local next-definition target.
+    pub next_definition_xmt: Option<XmtTarget>,
     /// Stream-local type-79 identifier identity.
     pub identifier_xmt: NonNullXmt,
     /// Offset of the resolved type-79 identifier in the inflated stream.
@@ -1681,8 +1682,8 @@ pub struct ParasolidAttributeDefinition {
     pub type_id: NonZeroU32,
     /// Ordered actions for the eight logged event families.
     pub action_codes: [AttributeAction; 8],
-    /// Stream-local field-name-list identity; `1` is null.
-    pub field_names_xmt: u32,
+    /// Optional stream-local field-name-list target.
+    pub field_names_xmt: Option<XmtTarget>,
     /// Ordered legal-owner flags.
     pub legal_owner_flags: crate::parasolid::LegalOwnerFlags,
     /// One serialized code for every declared field.
@@ -1738,13 +1739,13 @@ impl From<ParasolidAttributeDefinition> for ParasolidAttributeDefinitionWire {
             id: value.id,
             stream_ordinal: value.stream_ordinal,
             xmt: value.xmt.into(),
-            next_definition_xmt: value.next_definition_xmt,
+            next_definition_xmt: XmtTarget::to_wire(value.next_definition_xmt),
             identifier_xmt: value.identifier_xmt.into(),
             identifier_inflated_offset: value.identifier_inflated_offset,
             name: value.name.into_inner(),
             type_id: value.type_id.get(),
             action_codes: value.action_codes,
-            field_names_xmt: value.field_names_xmt,
+            field_names_xmt: XmtTarget::to_wire(value.field_names_xmt),
             field_codes: value.field_codes,
             inflated_offset: value.inflated_offset,
         }
@@ -1771,13 +1772,13 @@ impl TryFrom<ParasolidAttributeDefinitionWire> for ParasolidAttributeDefinition 
             id: wire.id,
             stream_ordinal: wire.stream_ordinal,
             xmt: NonNullXmt::try_from(wire.xmt).map_err(|_| "xmt must exceed one")?,
-            next_definition_xmt: wire.next_definition_xmt,
+            next_definition_xmt: XmtTarget::from_wire(wire.next_definition_xmt),
             identifier_xmt: NonNullXmt::try_from(wire.identifier_xmt).map_err(|_| "identifier_xmt must exceed one")?,
             identifier_inflated_offset: wire.identifier_inflated_offset,
             name: PrintableString::new(wire.name).map_err(|_| "name must be nonempty printable ASCII")?,
             type_id: NonZeroU32::new(wire.type_id).ok_or("type_id must be nonzero")?,
             action_codes: wire.action_codes,
-            field_names_xmt: wire.field_names_xmt,
+            field_names_xmt: XmtTarget::from_wire(wire.field_names_xmt),
             field_codes: wire.field_codes,
             inflated_offset: wire.inflated_offset,
         })
@@ -2329,10 +2330,9 @@ pub fn parasolid_attribute_field_names(
             };
             Some(*definition)
         })
-        .filter(|definition| definition.field_names_xmt > 1)
         .filter_map(|definition| {
             let [list] = lists
-                .get(&(definition.stream_ordinal, definition.field_names_xmt))?
+                .get(&(definition.stream_ordinal, u32::from(definition.field_names_xmt?)))?
                 .as_slice()
             else {
                 return None;
@@ -3882,13 +3882,13 @@ mod tests {
             id: "definition".into(),
             stream_ordinal: 2,
             xmt: crate::framing::xmt_reference::NonNullXmt::try_from(9).unwrap(),
-            next_definition_xmt: 1,
+            next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(10).unwrap(),
             identifier_inflated_offset: 32,
             name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
-            field_names_xmt: 1,
+            field_names_xmt: None,
             legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
             field_codes: vec![AttributeField::Integer, AttributeField::Real, AttributeField::Character],
@@ -4095,13 +4095,13 @@ mod tests {
             id: "definition".into(),
             stream_ordinal: 2,
             xmt: crate::framing::xmt_reference::NonNullXmt::try_from(9).unwrap(),
-            next_definition_xmt: 1,
+            next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(10).unwrap(),
             identifier_inflated_offset: 32,
             name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
-            field_names_xmt: 1,
+            field_names_xmt: None,
             legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
             field_codes: vec![AttributeField::Point, AttributeField::Vector, AttributeField::Direction, AttributeField::Axis, AttributeField::Tag, AttributeField::Unicode],
@@ -4154,13 +4154,13 @@ mod tests {
             id: "definition".into(),
             stream_ordinal: 0,
             xmt: crate::framing::xmt_reference::NonNullXmt::try_from(20).unwrap(),
-            next_definition_xmt: 1,
+            next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
             identifier_inflated_offset: 10,
             name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
-            field_names_xmt,
+            field_names_xmt: XmtTarget::from_wire(field_names_xmt),
             legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
             field_codes: field_codes.into_iter().map(|code| AttributeField::try_from(code).unwrap()).collect(),
@@ -4288,13 +4288,13 @@ mod tests {
             id: "definition".into(),
             stream_ordinal: 3,
             xmt: crate::framing::xmt_reference::NonNullXmt::try_from(20).unwrap(),
-            next_definition_xmt: 1,
+            next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
             identifier_inflated_offset: 10,
             name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
-            field_names_xmt: 25,
+            field_names_xmt: XmtTarget::from_wire(25),
             legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
             field_codes: vec![AttributeField::Real, AttributeField::Integer, AttributeField::Integer],
@@ -4540,13 +4540,13 @@ mod tests {
             id: "definition".into(),
             stream_ordinal: 3,
             xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
-            next_definition_xmt: 1,
+            next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
             identifier_inflated_offset: 80,
             name: crate::parasolid::printable_string::PrintableString::new("UG2/PMARK_ATTRIBUTE".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(9000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
-            field_names_xmt: 1,
+            field_names_xmt: None,
             legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
             field_codes: vec![AttributeField::Integer],
@@ -4619,13 +4619,13 @@ mod tests {
             id: "definition".into(),
             stream_ordinal: 0,
             xmt: crate::framing::xmt_reference::NonNullXmt::try_from(20).unwrap(),
-            next_definition_xmt: 1,
+            next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
             identifier_inflated_offset: 10,
             name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
-            field_names_xmt: 1,
+            field_names_xmt: None,
             legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
             field_codes: vec![AttributeField::Integer],

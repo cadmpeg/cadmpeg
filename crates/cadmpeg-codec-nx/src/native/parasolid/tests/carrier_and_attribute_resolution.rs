@@ -22,10 +22,10 @@ fn parasolid_attribute_definition_requires_declared_printable_name_and_field_rec
     assert_eq!(u32::from(definitions[0].identifier_xmt), 0x12a);
     assert_eq!(definitions[0].identifier_offset, 1);
     assert_eq!(definitions[0].name.as_str(), "SDL/TYSA_DENSITY");
-    assert_eq!(definitions[0].next_definition_xmt, 1);
+    assert_eq!(XmtTarget::to_wire(definitions[0].next_definition_xmt), 1);
     assert_eq!(definitions[0].type_id.get(), 9000);
     assert_eq!(definitions[0].action_codes.map(|action| action.code()), [0, 1, 2, 3, 4, 5, 6, 0]);
-    assert_eq!(definitions[0].field_names_xmt, 0x30);
+    assert_eq!(XmtTarget::to_wire(definitions[0].field_names_xmt), 0x30);
     assert_eq!(definitions[0].legal_owner_flags.padded()[4], 1);
     assert_eq!(definitions[0].legal_owner_flags.padded()[12], 1);
     assert_eq!(definitions[0].legal_owner_flags.as_slice().len(), 16);

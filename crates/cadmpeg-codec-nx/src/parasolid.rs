@@ -41,7 +41,7 @@ use entity_references::EntityReferences;
 
 use crate::container::Container;
 use crate::framing::read_and_advance as read_xmt;
-use crate::framing::xmt_reference::NonNullXmt;
+use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
 
 /// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -157,8 +157,8 @@ pub struct AttributeDefinition<'a> {
     pub offset: usize,
     /// Stream-local definition record identity.
     pub xmt: NonNullXmt,
-    /// Stream-local next-definition identity; `1` is null.
-    pub next_definition_xmt: u32,
+    /// Optional stream-local next-definition target.
+    pub next_definition_xmt: Option<XmtTarget>,
     /// Stream-local type-79 identifier identity.
     pub identifier_xmt: NonNullXmt,
     /// Inflated-stream offset of the resolved `00 4f` identifier tag.
@@ -169,8 +169,8 @@ pub struct AttributeDefinition<'a> {
     pub type_id: NonZeroU32,
     /// Ordered actions for the eight logged event families.
     pub action_codes: [AttributeAction; 8],
-    /// Stream-local field-name-list identity; `1` is null.
-    pub field_names_xmt: u32,
+    /// Optional stream-local field-name-list target.
+    pub field_names_xmt: Option<XmtTarget>,
     /// Ordered legal-owner flags.
     pub legal_owner_flags: LegalOwnerFlags,
     /// One serialized field code for every declared field.
@@ -273,7 +273,7 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
         }
         referenced_lists.extend(
             records.into_iter().filter_map(|record| {
-                (record.field_names_xmt > 1).then_some(record.field_names_xmt)
+                record.field_names_xmt.map(u32::from)
             }),
         );
     }
@@ -492,7 +492,7 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
             let field_count = View::u32_be_at(bytes, at)?;
             at += 4;
             let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
-            let next_definition_xmt = read_xmt(bytes, &mut at)?;
+            let next_definition_xmt = XmtTarget::from_wire(read_xmt(bytes, &mut at)?);
             let identifier_xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
             let type_id = NonZeroU32::new(View::u32_be_at(bytes, at)?)?;
             at += 4;
@@ -501,7 +501,7 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
                 *action = AttributeAction::try_from(*byte).ok()?;
             }
             at += 8;
-            let field_names_xmt = read_xmt(bytes, &mut at)?;
+            let field_names_xmt = XmtTarget::from_wire(read_xmt(bytes, &mut at)?);
             let mut matches = identifiers
                 .iter()
                 .filter(|identifier| identifier.xmt == identifier_xmt);

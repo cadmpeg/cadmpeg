@@ -27,6 +27,15 @@ fn attribute_definition_wire_preserves_codes_and_rejects_invalid_domains() {
     let wire = r#"{"id":"definition","stream_ordinal":0,"xmt":2,"next_definition_xmt":1,"identifier_xmt":3,"identifier_inflated_offset":4,"name":"CLASS","type_id":8000,"action_codes":[0,1,2,3,4,5,6,0],"field_names_xmt":1,"legal_owner_flags":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"field_count":2,"field_codes":[0,10],"inflated_offset":8}"#;
     let definition: ParasolidAttributeDefinition = serde_json::from_str(wire).unwrap();
     assert_eq!(serde_json::to_string(&definition).unwrap(), wire);
+    for target in [0, 1, 2, u32::MAX] {
+        let wire = wire
+            .replace("\"next_definition_xmt\":1", &format!("\"next_definition_xmt\":{target}"))
+            .replace("\"field_names_xmt\":1", &format!("\"field_names_xmt\":{target}"));
+        let definition: ParasolidAttributeDefinition = serde_json::from_str(&wire).unwrap();
+        assert_eq!(definition.next_definition_xmt.is_none(), target == 1);
+        assert_eq!(definition.field_names_xmt.is_none(), target == 1);
+        assert_eq!(serde_json::to_string(&definition).unwrap(), wire);
+    }
     for invalid in [
         wire.replace("\"xmt\":2", "\"xmt\":1"),
         wire.replace("\"identifier_xmt\":3", "\"identifier_xmt\":0"),
