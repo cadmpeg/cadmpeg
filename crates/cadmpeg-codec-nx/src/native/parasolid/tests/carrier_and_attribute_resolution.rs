@@ -23,14 +23,14 @@ fn parasolid_attribute_definition_requires_declared_printable_name_and_field_rec
     assert_eq!(definitions[0].identifier_offset, 1);
     assert_eq!(definitions[0].name, "SDL/TYSA_DENSITY");
     assert_eq!(definitions[0].next_definition_xmt, 1);
-    assert_eq!(definitions[0].type_id, 9000);
-    assert_eq!(definitions[0].action_codes, [0, 1, 2, 3, 4, 5, 6, 0]);
+    assert_eq!(definitions[0].type_id.get(), 9000);
+    assert_eq!(definitions[0].action_codes.map(|action| action.code()), [0, 1, 2, 3, 4, 5, 6, 0]);
     assert_eq!(definitions[0].field_names_xmt, 0x30);
     assert_eq!(definitions[0].legal_owner_flags.padded()[4], 1);
     assert_eq!(definitions[0].legal_owner_flags.padded()[12], 1);
     assert_eq!(definitions[0].legal_owner_flags.as_slice().len(), 16);
     assert_eq!(definitions[0].field_codes.len(), 1);
-    assert_eq!(definitions[0].field_codes, [2]);
+    assert_eq!(definitions[0].field_codes.iter().map(|field| field.code()).collect::<Vec<_>>(), [2]);
 
     let truncated = &bytes[..bytes.len() - 1];
     assert!(crate::parasolid::attribute_definitions(truncated).is_empty());
@@ -76,7 +76,7 @@ fn parasolid_attribute_definition_accepts_fourteen_legal_owner_flags() {
         [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0]
     );
     assert_eq!(&definitions[0].legal_owner_flags.padded()[14..], [0, 0]);
-    assert_eq!(definitions[0].field_codes, [2, 3]);
+    assert_eq!(definitions[0].field_codes.iter().map(|field| field.code()).collect::<Vec<_>>(), [2, 3]);
 }
 
 #[test]
@@ -503,4 +503,21 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
     assert_eq!(records[0].state.points(), [[0.0; 3]; 2]);
     assert_eq!(records[0].state.parameters(), [0.000_25, 0.000_75]);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+}
+
+#[test]
+fn attribute_definition_wire_preserves_codes_and_rejects_invalid_domains() {
+    use crate::native::parasolid::ParasolidAttributeDefinition;
+
+    let wire = r#"{"id":"definition","stream_ordinal":0,"xmt":2,"next_definition_xmt":1,"identifier_xmt":3,"identifier_inflated_offset":4,"name":"CLASS","type_id":8000,"action_codes":[0,1,2,3,4,5,6,0],"field_names_xmt":1,"legal_owner_flags":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"field_count":2,"field_codes":[0,10],"inflated_offset":8}"#;
+    let definition: ParasolidAttributeDefinition = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&definition).unwrap(), wire);
+    for invalid in [
+        wire.replace("\"type_id\":8000", "\"type_id\":0"),
+        wire.replace("[0,1,2,3,4,5,6,0]", "[0,1,2,3,4,5,7,0]"),
+        wire.replace("\"legal_owner_flags\":[0,", "\"legal_owner_flags\":[2,"),
+        wire.replace("\"field_codes\":[0,10]", "\"field_codes\":[0,11]"),
+    ] {
+        assert!(serde_json::from_str::<ParasolidAttributeDefinition>(&invalid).is_err());
+    }
 }

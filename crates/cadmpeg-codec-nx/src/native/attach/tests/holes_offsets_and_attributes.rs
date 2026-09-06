@@ -6,6 +6,8 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
 
 use crate::test_support::*;
+use crate::parasolid::attribute_field::AttributeField;
+use crate::parasolid::attribute_action::AttributeAction;
 use crate::native::parasolid::topology_attribute_kind::TopologyAttributeKind;
 
 use super::*;
@@ -1268,12 +1270,12 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         identifier_xmt: 35,
         identifier_inflated_offset: 90,
         name: "SDL/TYSA_DENSITY".into(),
-        type_id: 8004,
-        action_codes: [0; 8],
+        type_id: std::num::NonZeroU32::new(8004).unwrap(),
+        action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: 1,
-        legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+        legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
-        field_codes: vec![2],
+        field_codes: vec![AttributeField::Real],
         inflated_offset: 100,
     };
     let class_use = ParasolidTopologyAttributeClassUse {
@@ -1380,12 +1382,12 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         identifier_xmt: 35,
         identifier_inflated_offset: 90,
         name: "SDL/TYSA_DENSITY".into(),
-        type_id: 8004,
-        action_codes: [0; 8],
+        type_id: std::num::NonZeroU32::new(8004).unwrap(),
+        action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: 1,
-        legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+        legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
-        field_codes: vec![2, 3],
+        field_codes: vec![AttributeField::Real, AttributeField::Character],
         inflated_offset: 100,
     };
     let class_use = ParasolidTopologyAttributeClassUse {
@@ -1527,12 +1529,12 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
         identifier_xmt: 35,
         identifier_inflated_offset: 90,
         name: "SDL/TYSA_BLEND_ID".into(),
-        type_id: 8004,
-        action_codes: [0; 8],
+        type_id: std::num::NonZeroU32::new(8004).unwrap(),
+        action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: 1,
-        legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+        legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
-        field_codes: vec![3, 2],
+        field_codes: vec![AttributeField::Character, AttributeField::Real],
         inflated_offset: 100,
     };
     let class_use = ParasolidTopologyAttributeClassUse {
@@ -1621,12 +1623,12 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         identifier_xmt: 35,
         identifier_inflated_offset: 90,
         name: "CLASS".into(),
-        type_id: 8000,
-        action_codes: [0; 8],
+        type_id: std::num::NonZeroU32::new(8000).unwrap(),
+        action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: 1,
-        legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+        legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
-        field_codes: vec![2],
+        field_codes: vec![AttributeField::Real],
         inflated_offset: 100,
     };
     let class_uses = [

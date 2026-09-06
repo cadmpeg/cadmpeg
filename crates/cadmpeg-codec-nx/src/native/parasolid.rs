@@ -5,6 +5,9 @@
 use super::*;
 
 use crate::deltas::Census;
+use crate::parasolid::attribute_field::AttributeField;
+use crate::parasolid::attribute_action::AttributeAction;
+use std::num::NonZeroU32;
 
 pub(crate) mod field_use_wire;
 use field_use_wire::{FieldPosition, FieldUseWire};
@@ -1669,15 +1672,15 @@ pub struct ParasolidAttributeDefinition {
     /// Exact printable attribute class name.
     pub name: String,
     /// Numeric attribute type identifier.
-    pub type_id: u32,
+    pub type_id: NonZeroU32,
     /// Ordered actions for the eight logged event families.
-    pub action_codes: [u8; 8],
+    pub action_codes: [AttributeAction; 8],
     /// Stream-local field-name-list identity; `1` is null.
     pub field_names_xmt: u32,
     /// Ordered legal-owner flags.
     pub legal_owner_flags: crate::parasolid::LegalOwnerFlags,
     /// One serialized code for every declared field.
-    pub field_codes: Vec<u8>,
+    pub field_codes: Vec<AttributeField>,
     /// Offset of the declaration in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -1701,7 +1704,7 @@ struct ParasolidAttributeDefinitionWire {
     /// Numeric attribute type identifier.
     type_id: u32,
     /// Ordered actions for the eight logged event families.
-    action_codes: [u8; 8],
+    action_codes: [AttributeAction; 8],
     /// Stream-local field-name-list identity; `1` is null.
     field_names_xmt: u32,
     /// Ordered legal-owner flags.
@@ -1715,7 +1718,7 @@ struct ParasolidAttributeDefinitionWire {
     /// Declared number of fields.
     field_count: usize,
     /// One serialized code for every declared field.
-    field_codes: Vec<u8>,
+    field_codes: Vec<AttributeField>,
     /// Offset of the declaration in the inflated stream.
     inflated_offset: u64,
 }
@@ -1733,7 +1736,7 @@ impl From<ParasolidAttributeDefinition> for ParasolidAttributeDefinitionWire {
             identifier_xmt: value.identifier_xmt,
             identifier_inflated_offset: value.identifier_inflated_offset,
             name: value.name,
-            type_id: value.type_id,
+            type_id: value.type_id.get(),
             action_codes: value.action_codes,
             field_names_xmt: value.field_names_xmt,
             field_codes: value.field_codes,
@@ -1766,7 +1769,7 @@ impl TryFrom<ParasolidAttributeDefinitionWire> for ParasolidAttributeDefinition 
             identifier_xmt: wire.identifier_xmt,
             identifier_inflated_offset: wire.identifier_inflated_offset,
             name: wire.name,
-            type_id: wire.type_id,
+            type_id: NonZeroU32::new(wire.type_id).ok_or("type_id must be nonzero")?,
             action_codes: wire.action_codes,
             field_names_xmt: wire.field_names_xmt,
             field_codes: wire.field_codes,
@@ -2158,17 +2161,17 @@ pub enum ParasolidAttributeFieldValueKind {
 }
 
 impl ParasolidAttributeFieldValueKind {
-    pub(crate) fn field_code(self) -> u8 {
+    pub(crate) fn field_code(self) -> AttributeField {
         match self {
-            Self::UnsignedIntegers => 1,
-            Self::Doubles => 2,
-            Self::String => 3,
-            Self::Points => 4,
-            Self::Vectors => 5,
-            Self::Directions => 6,
-            Self::Axes => 7,
-            Self::Tags => 8,
-            Self::Unicode => 10,
+            Self::UnsignedIntegers => AttributeField::Integer,
+            Self::Doubles => AttributeField::Real,
+            Self::String => AttributeField::Character,
+            Self::Points => AttributeField::Point,
+            Self::Vectors => AttributeField::Vector,
+            Self::Directions => AttributeField::Direction,
+            Self::Axes => AttributeField::Axis,
+            Self::Tags => AttributeField::Tag,
+            Self::Unicode => AttributeField::Unicode,
         }
     }
 }
@@ -2240,7 +2243,7 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
                     action_codes: definition.action_codes,
                     field_names_xmt: definition.field_names_xmt,
                     legal_owner_flags: definition.legal_owner_flags,
-                    field_codes: definition.field_codes.to_vec(),
+                    field_codes: definition.field_codes,
                     inflated_offset: definition.offset as u64,
                 })
         })
@@ -3118,7 +3121,7 @@ pub fn parasolid_topology_attribute_fields_have_untransferred_values(
             .any(|(field_ordinal, field_code)| {
                 // Field code 0 is ignored. Pointer fields (code 9) are always
                 // transmitted empty and therefore have no value relation.
-                if matches!(field_code, 0 | 9) {
+                if matches!(field_code, AttributeField::Ignored | AttributeField::Pointer) {
                     return false;
                 }
                 let Some(&referenced_xmt) = entity.trailing_references.values().get(field_ordinal) else {
@@ -3879,12 +3882,12 @@ mod tests {
             identifier_xmt: 10,
             identifier_inflated_offset: 32,
             name: "CLASS".into(),
-            type_id: 8000,
-            action_codes: [0; 8],
+            type_id: std::num::NonZeroU32::new(8000).unwrap(),
+            action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: 1,
-            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
-            field_codes: vec![1, 2, 3],
+            field_codes: vec![AttributeField::Integer, AttributeField::Real, AttributeField::Character],
             inflated_offset: 40,
         };
         let class_use = ParasolidAttributeClassUse {
@@ -3937,7 +3940,7 @@ mod tests {
         );
         assert_eq!(uses[0].attribute_definition, "definition");
         assert_eq!(uses[0].position.field_ordinal(), 0);
-        assert_eq!(uses[0].value_kind.field_code(), 1);
+        assert_eq!(uses[0].value_kind.field_code().code(), 1);
         assert_eq!(uses[0].position.reference_ordinal(), 5);
         assert_eq!(
             uses[0].value_kind,
@@ -3946,14 +3949,14 @@ mod tests {
         assert_eq!(uses[0].value_use, "numeric-use");
         assert_eq!(uses[0].value_record, "integers");
         assert_eq!(uses[1].position.field_ordinal(), 1);
-        assert_eq!(uses[1].value_kind.field_code(), 2);
+        assert_eq!(uses[1].value_kind.field_code().code(), 2);
         assert_eq!(
             uses[1].value_kind,
             ParasolidAttributeFieldValueKind::Doubles
         );
         assert_eq!(uses[1].value_record, "doubles");
         assert_eq!(uses[2].position.field_ordinal(), 2);
-        assert_eq!(uses[2].value_kind.field_code(), 3);
+        assert_eq!(uses[2].value_kind.field_code().code(), 3);
         assert_eq!(uses[2].value_kind, ParasolidAttributeFieldValueKind::String);
         assert_eq!(uses[2].value_record, "string");
 
@@ -4092,12 +4095,12 @@ mod tests {
             identifier_xmt: 10,
             identifier_inflated_offset: 32,
             name: "CLASS".into(),
-            type_id: 8000,
-            action_codes: [0; 8],
+            type_id: std::num::NonZeroU32::new(8000).unwrap(),
+            action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: 1,
-            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
-            field_codes: vec![4, 5, 6, 7, 8, 10],
+            field_codes: vec![AttributeField::Point, AttributeField::Vector, AttributeField::Direction, AttributeField::Axis, AttributeField::Tag, AttributeField::Unicode],
             inflated_offset: 40,
         };
         let class_use = ParasolidAttributeClassUse {
@@ -4151,12 +4154,12 @@ mod tests {
             identifier_xmt: 21,
             identifier_inflated_offset: 10,
             name: "CLASS".into(),
-            type_id: 8000,
-            action_codes: [0; 8],
+            type_id: std::num::NonZeroU32::new(8000).unwrap(),
+            action_codes: [AttributeAction::Code0; 8],
             field_names_xmt,
-            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
-            field_codes,
+            field_codes: field_codes.into_iter().map(|code| AttributeField::try_from(code).unwrap()).collect(),
             inflated_offset: 20,
         };
 
@@ -4285,12 +4288,12 @@ mod tests {
             identifier_xmt: 21,
             identifier_inflated_offset: 10,
             name: "CLASS".into(),
-            type_id: 8000,
-            action_codes: [0; 8],
+            type_id: std::num::NonZeroU32::new(8000).unwrap(),
+            action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: 25,
-            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
-            field_codes: vec![2, 1, 1],
+            field_codes: vec![AttributeField::Real, AttributeField::Integer, AttributeField::Integer],
             inflated_offset: 20,
         };
         let list = ParasolidFieldNamesRecord {
@@ -4537,12 +4540,12 @@ mod tests {
             identifier_xmt: 35,
             identifier_inflated_offset: 80,
             name: "UG2/PMARK_ATTRIBUTE".into(),
-            type_id: 9000,
-            action_codes: [0; 8],
+            type_id: std::num::NonZeroU32::new(9000).unwrap(),
+            action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: 1,
-            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
-            field_codes: vec![1],
+            field_codes: vec![AttributeField::Integer],
             inflated_offset: 100,
         };
         let entity = ParasolidEntity51Record {
@@ -4616,12 +4619,12 @@ mod tests {
             identifier_xmt: 21,
             identifier_inflated_offset: 10,
             name: "CLASS".into(),
-            type_id: 8000,
-            action_codes: [0; 8],
+            type_id: std::num::NonZeroU32::new(8000).unwrap(),
+            action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: 1,
-            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
 
-            field_codes: vec![1],
+            field_codes: vec![AttributeField::Integer],
             inflated_offset: 20,
         };
         let head = ParasolidEntity51Record {

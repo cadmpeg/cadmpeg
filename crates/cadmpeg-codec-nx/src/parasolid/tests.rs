@@ -756,3 +756,15 @@ fn extraction_falls_back_to_unindexed_structural_streams_when_index_has_no_paras
         .iter()
         .all(|stream| { stream.schema.as_deref() != Some("SCH_DECOY_1_9999") }));
 }
+
+#[test]
+fn legal_owner_flags_carry_binary_values_and_exact_layout_length() {
+    use crate::parasolid::LegalOwnerFlags;
+
+    let flags = LegalOwnerFlags::try_from(&[1; 14][..]).unwrap();
+    assert_eq!(flags.as_slice(), &[true; 14]);
+    assert_eq!(&flags.padded()[..14], &[1; 14]);
+    assert_eq!(&flags.padded()[14..], &[0; 2]);
+    assert!(LegalOwnerFlags::try_from(&[0; 15][..]).is_err());
+    assert!(LegalOwnerFlags::try_from(&[2; 16][..]).is_err());
+}

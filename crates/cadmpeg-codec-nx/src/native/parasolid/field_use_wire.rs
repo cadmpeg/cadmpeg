@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::parasolid::attribute_field::AttributeField;
+
 use super::{ParasolidAttributeFieldUse, ParasolidAttributeFieldValueKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +35,7 @@ pub(super) struct FieldUseWire {
     /// Zero-based position in the type-80 field declaration.
     field_ordinal: u32,
     /// Declared type-80 field code.
-    field_code: u8,
+    field_code: AttributeField,
     /// Zero-based position in the complete type-81 reference lane.
     reference_ordinal: u32,
     /// Resolved value-record family.

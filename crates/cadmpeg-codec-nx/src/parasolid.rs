@@ -10,11 +10,18 @@
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use cadmpeg_container::compression::inflate_zlib_member;
 use cadmpeg_core::bytes::{contains, find};
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
+
+pub(crate) mod attribute_action;
+use attribute_action::AttributeAction;
+
+pub(crate) mod attribute_field;
+use attribute_field::AttributeField;
 
 pub(crate) mod finite_values;
 use finite_values::{FiniteLane, FiniteValues};
@@ -96,13 +103,13 @@ pub struct Stream {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LegalOwnerFlags {
     /// Fourteen flags in the compact definition layout.
-    Fourteen([u8; 14]),
+    Fourteen([bool; 14]),
     /// Sixteen flags in the extended definition layout.
-    Sixteen([u8; 16]),
+    Sixteen([bool; 16]),
 }
 
 impl LegalOwnerFlags {
-    pub fn as_slice(&self) -> &[u8] {
+    pub fn as_slice(&self) -> &[bool] {
         match self {
             Self::Fourteen(flags) => flags,
             Self::Sixteen(flags) => flags,
@@ -111,24 +118,24 @@ impl LegalOwnerFlags {
 
     /// Fixed-width native JSON representation, padded after the source flags.
     pub fn padded(self) -> [u8; 16] {
-        match self {
-            Self::Fourteen(flags) => {
-                let mut padded = [0; 16];
-                padded[..14].copy_from_slice(&flags);
-                padded
-            }
-            Self::Sixteen(flags) => flags,
+        let mut padded = [0; 16];
+        for (byte, flag) in padded.iter_mut().zip(self.as_slice()) {
+            *byte = u8::from(*flag);
         }
+        padded
     }
 }
 
 impl TryFrom<&[u8]> for LegalOwnerFlags {
     type Error = &'static str;
     fn try_from(flags: &[u8]) -> Result<Self, Self::Error> {
+        if !flags.iter().all(|flag| matches!(flag, 0 | 1)) {
+            return Err("legal_owner_flags must be binary");
+        }
         if let Ok(flags) = <[u8; 16]>::try_from(flags) {
-            Ok(Self::Sixteen(flags))
+            Ok(Self::Sixteen(flags.map(|flag| flag == 1)))
         } else if let Ok(flags) = <[u8; 14]>::try_from(flags) {
-            Ok(Self::Fourteen(flags))
+            Ok(Self::Fourteen(flags.map(|flag| flag == 1)))
         } else {
             Err("attribute owner flags require fourteen or sixteen bytes")
         }
@@ -136,7 +143,7 @@ impl TryFrom<&[u8]> for LegalOwnerFlags {
 }
 
 /// One Parasolid type-80 attribute definition joined to its type-79 identifier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttributeDefinition<'a> {
     /// Inflated-stream offset of the `00 50` definition tag.
     pub offset: usize,
@@ -151,15 +158,15 @@ pub struct AttributeDefinition<'a> {
     /// Exact printable class name.
     pub name: &'a str,
     /// Numeric attribute type identifier.
-    pub type_id: u32,
+    pub type_id: NonZeroU32,
     /// Ordered actions for the eight logged event families.
-    pub action_codes: [u8; 8],
+    pub action_codes: [AttributeAction; 8],
     /// Stream-local field-name-list identity; `1` is null.
     pub field_names_xmt: u32,
     /// Ordered legal-owner flags.
     pub legal_owner_flags: LegalOwnerFlags,
     /// One serialized field code for every declared field.
-    pub field_codes: &'a [u8],
+    pub field_codes: Vec<AttributeField>,
 }
 
 /// One framed type-81 Parasolid entity/attribute-list record.
@@ -1099,38 +1106,36 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
             let xmt = read_xmt(bytes, &mut at)?;
             let next_definition_xmt = read_xmt(bytes, &mut at)?;
             let identifier_xmt = read_xmt(bytes, &mut at)?;
-            let type_id = View::u32_be_at(bytes, at)?;
+            let type_id = NonZeroU32::new(View::u32_be_at(bytes, at)?)?;
             at += 4;
-            let action_codes: [u8; 8] = bytes.get(at..at + 8)?.try_into().ok()?;
-            (xmt > 1
-                && identifier_xmt > 1
-                && type_id != 0
-                && action_codes.iter().all(|action| *action <= 6))
-            .then_some(())?;
+            let mut action_codes = [AttributeAction::Code0; 8];
+            for (action, byte) in action_codes.iter_mut().zip(bytes.get(at..at + 8)?) {
+                *action = AttributeAction::try_from(*byte).ok()?;
+            }
+            (xmt > 1 && identifier_xmt > 1).then_some(())?;
             at += 8;
             let field_names_xmt = read_xmt(bytes, &mut at)?;
-            let field_count_usize = usize::try_from(field_count).ok()?;
-            let (legal_owner_flags, field_codes) =
-                [16_usize, 14].into_iter().find_map(|flag_count| {
-                    let flags = bytes.get(at..at.checked_add(flag_count)?)?;
-                    flags
-                        .iter()
-                        .all(|flag| matches!(flag, 0 | 1))
-                        .then_some(())?;
-                    let field_codes_start = at.checked_add(flag_count)?;
-                    let field_codes_end = field_codes_start.checked_add(field_count_usize)?;
-                    let field_codes = bytes.get(field_codes_start..field_codes_end)?;
-                    field_codes.iter().all(|code| *code <= 10).then_some(())?;
-                    if flag_count == 14 && !attribute_definition_boundary(bytes, field_codes_end) {
-                        return None;
-                    }
-                    Some((LegalOwnerFlags::try_from(flags).ok()?, field_codes))
-                })?;
             let mut matches = identifiers
                 .iter()
                 .filter(|identifier| identifier.xmt == identifier_xmt);
             let identifier = matches.next()?;
             matches.next().is_none().then_some(())?;
+            let field_count_usize = usize::try_from(field_count).ok()?;
+            let (legal_owner_flags, field_codes) =
+                [16_usize, 14].into_iter().find_map(|flag_count| {
+                    let flags = bytes.get(at..at.checked_add(flag_count)?)?;
+                    let legal_owner_flags = LegalOwnerFlags::try_from(flags).ok()?;
+                    let field_codes_start = at.checked_add(flag_count)?;
+                    let field_codes_end = field_codes_start.checked_add(field_count_usize)?;
+                    let field_codes = bytes.get(field_codes_start..field_codes_end)?;
+                    if flag_count == 14 && !attribute_definition_boundary(bytes, field_codes_end) {
+                        return None;
+                    }
+                    let fields = field_codes.iter().copied()
+                        .map(AttributeField::try_from)
+                        .collect::<Result<Vec<_>, _>>().ok()?;
+                    Some((legal_owner_flags, fields))
+                })?;
             Some(AttributeDefinition {
                 offset,
                 xmt,
