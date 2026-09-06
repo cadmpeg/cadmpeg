@@ -1593,8 +1593,9 @@ fn om_indexed_layout_materializes_both_store_forms_without_semantic_drift() {
             .into_iter()
             .next()
             .expect("indexed fixture has one section");
-        let layout = super::IndexedSectionLayout::from_section(&section);
-        assert_eq!(layout.materialize(&bytes), section);
+        let source = std::sync::Arc::<[u8]>::from(bytes.as_slice());
+        let layout = crate::om::cache::IndexedSectionLayout::from_section(&section, &source).unwrap();
+        assert_eq!(layout.materialize(), section);
     }
 }
 

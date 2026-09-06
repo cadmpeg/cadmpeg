@@ -56,6 +56,7 @@ use discriminators::{
     DraftBinary32Branch, DraftIdentityBranch, OperationStateCounterKind, OperationStatePairTag,
 };
 pub(crate) mod registry;
+pub(crate) mod cache;
 use parameter_name::ParameterName;
 
 /// One NX object-model entity payload without a fixed object-id table.
@@ -1069,172 +1070,6 @@ pub struct IndexedSection<'a> {
     pub store: IndexedStore<'a>,
 }
 
-/// Byte ranges needed to materialize one indexed section without rescanning
-/// the containing payload.
-#[derive(Debug, Clone, Copy)]
-struct IndexedByteRange {
-    start: usize,
-    end: usize,
-}
-
-/// One cached declaration range in an indexed section.
-#[derive(Debug, Clone, Copy)]
-struct IndexedDefinitionLayout {
-    offset: usize,
-    name_len: usize,
-    registry_tail: IndexedByteRange,
-}
-
-/// One cached entity-record range with a required fixed-table identity.
-#[derive(Debug, Clone, Copy)]
-struct FixedIndexedRecordLayout {
-    object_id: (u32, u64),
-    bytes: IndexedByteRange,
-}
-
-#[derive(Debug, Clone)]
-enum IndexedStoreLayout {
-    Fixed {
-        records: Vec<FixedIndexedRecordLayout>,
-    },
-    OffsetOnly {
-        control: IndexedByteRange,
-        column_storage: IndexedByteRange,
-        records: Vec<IndexedByteRange>,
-    },
-}
-
-/// Cached indexed-section layout owned by a parsed container.
-#[derive(Debug, Clone)]
-pub(crate) struct IndexedSectionLayout {
-    base: usize,
-    entity_index_offset: usize,
-    pub(crate) object_id_table_offset: usize,
-    types: Vec<IndexedDefinitionLayout>,
-    fields: Vec<IndexedDefinitionLayout>,
-    store: IndexedStoreLayout,
-}
-
-impl IndexedSectionLayout {
-    fn from_section(section: &IndexedSection<'_>) -> Self {
-        let types = registry::type_definition_layouts(&section.types);
-        let fields = registry::field_definition_layouts(&section.fields);
-        let record_range = |offset: usize, bytes: &[u8]| IndexedByteRange {
-            start: offset,
-            end: offset + bytes.len(),
-        };
-        let store = match &section.store {
-            IndexedStore::Fixed { records } => IndexedStoreLayout::Fixed {
-                records: records
-                    .iter()
-                    .map(|record| FixedIndexedRecordLayout {
-                        object_id: record.object_id,
-                        bytes: record_range(record.offset, record.bytes),
-                    })
-                    .collect(),
-            },
-            IndexedStore::OffsetOnly {
-                control,
-                column_storage,
-                records,
-            } => {
-                let start = control.offset + control.bytes.len();
-                IndexedStoreLayout::OffsetOnly {
-                    control: record_range(control.offset, control.bytes),
-                    column_storage: IndexedByteRange {
-                        start,
-                        end: start + column_storage.len(),
-                    },
-                    records: records
-                        .iter()
-                        .map(|record| record_range(record.offset, record.bytes))
-                        .collect(),
-                }
-            }
-        };
-        Self {
-            base: section.base,
-            entity_index_offset: section.entity_index_offset,
-            object_id_table_offset: section.object_id_table_offset,
-            types,
-            fields,
-            store,
-        }
-    }
-
-    pub(crate) fn materialize<'a>(&self, bytes: &'a [u8]) -> IndexedSection<'a> {
-        let materialize_payload = |range: &IndexedByteRange| {
-            (
-                range.start,
-                bytes
-                    .get(range.start..range.end)
-                    .expect("cached indexed record remains in source"),
-            )
-        };
-        let store = match &self.store {
-            IndexedStoreLayout::Fixed { records } => IndexedStore::Fixed {
-                records: records
-                    .iter()
-                    .map(|layout| {
-                        let (offset, payload) = materialize_payload(&layout.bytes);
-                        FixedEntityRecord {
-                            object_id: layout.object_id,
-                            offset,
-                            bytes: payload,
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .into(),
-            },
-            IndexedStoreLayout::OffsetOnly {
-                control,
-                column_storage,
-                records,
-            } => {
-                let (offset, payload) = materialize_payload(control);
-                IndexedStore::OffsetOnly {
-                    control: EntityRecord {
-                        offset,
-                        bytes: payload,
-                    },
-                    column_storage: bytes
-                        .get(column_storage.start..column_storage.end)
-                        .expect("cached indexed column storage remains in source"),
-                    records: records
-                        .iter()
-                        .map(|layout| {
-                            let (offset, payload) = materialize_payload(layout);
-                            EntityRecord {
-                                offset,
-                                bytes: payload,
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .into(),
-                }
-            }
-        };
-        IndexedSection {
-            base: self.base,
-            entity_index_offset: self.entity_index_offset,
-            object_id_table_offset: self.object_id_table_offset,
-            types: self
-                .types
-                .iter()
-                .map(|layout| registry::materialize_type_definition(bytes, layout))
-                .collect::<Vec<_>>()
-                .into(),
-            fields: self
-                .fields
-                .iter()
-                .map(|layout| registry::materialize_field_definition(bytes, layout))
-                .collect::<Vec<_>>()
-                .into(),
-            store,
-        }
-    }
-}
-
 /// Internally pointed record-area bytes with their absolute offset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordArea<'a> {
@@ -1261,66 +1096,6 @@ pub struct Section<'a> {
     cached_operation_labels: Arc<[OperationLabel<'a>]>,
 }
 
-/// Cached byte layout for one size-framed object-model section.
-///
-/// The layout contains offsets and validated declaration metadata only. It
-/// does not borrow the container image, so a container that owns its input can
-/// reuse the layout without reparsing the section on every extractor call.
-#[derive(Debug, Clone)]
-pub(crate) struct SectionLayout {
-    offset: usize,
-    byte_len: usize,
-    types: Vec<IndexedDefinitionLayout>,
-    fields: Vec<IndexedDefinitionLayout>,
-    record_area: Option<IndexedByteRange>,
-    operation_labels: Vec<OperationLabelLayout>,
-}
-
-impl SectionLayout {
-    pub(crate) fn from_section(section: &Section<'_>) -> Self {
-        let record_area = section.record_area.map(|area| IndexedByteRange {
-            start: area.offset,
-            end: area.offset + area.bytes.len(),
-        });
-        Self {
-            offset: section.offset,
-            byte_len: section.byte_len,
-            types: registry::type_definition_layouts(&section.types),
-            fields: registry::field_definition_layouts(&section.fields),
-            record_area,
-            operation_labels: operation_label_layouts(&section.cached_operation_labels),
-        }
-    }
-
-    pub(crate) fn materialize<'a>(&'a self, bytes: &'a [u8]) -> Section<'a> {
-        let record_area = self.record_area.map(|range| RecordArea {
-            offset: range.start,
-            bytes: bytes
-                .get(range.start..range.end)
-                .expect("cached section record area remains in source"),
-        });
-        let cached_operation_labels = materialize_operation_labels(&self.operation_labels).into();
-        Section {
-            offset: self.offset,
-            byte_len: self.byte_len,
-            types: self
-                .types
-                .iter()
-                .map(|layout| registry::materialize_type_definition(bytes, layout))
-                .collect::<Vec<_>>()
-                .into(),
-            fields: self
-                .fields
-                .iter()
-                .map(|layout| registry::materialize_field_definition(bytes, layout))
-                .collect::<Vec<_>>()
-                .into(),
-            record_area,
-            cached_operation_labels,
-        }
-    }
-}
-
 /// A feature operation name in a size-framed feature-history record area.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationLabel<'a> {
@@ -1334,40 +1109,6 @@ pub struct OperationLabel<'a> {
     pub object_indices: [Option<u32>; 4],
     /// Absolute byte offset of each object-index token in header order.
     pub object_index_offsets: [usize; 4],
-}
-
-/// Owned validated operation label retained by a section cache.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct OperationLabelLayout {
-    header_offset: usize,
-    offset: usize,
-    value: String,
-    object_indices: [Option<u32>; 4],
-    object_index_offsets: [usize; 4],
-}
-
-/// Retain owned operation labels for section materialization.
-fn operation_label_layouts(labels: &[OperationLabel<'_>]) -> Vec<OperationLabelLayout> {
-    labels
-        .iter()
-        .map(|label| OperationLabelLayout {
-            header_offset: label.header_offset,
-            offset: label.offset,
-            value: label.value.to_owned(),
-            object_indices: label.object_indices,
-            object_index_offsets: label.object_index_offsets,
-        })
-        .collect()
-}
-
-fn materialize_operation_labels(layouts: &[OperationLabelLayout]) -> Vec<OperationLabel<'_>> {
-    layouts.iter().map(|layout| OperationLabel {
-        header_offset: layout.header_offset,
-        offset: layout.offset,
-        value: &layout.value,
-        object_indices: layout.object_indices,
-        object_index_offsets: layout.object_index_offsets,
-    }).collect()
 }
 
 /// One operation record bounded by consecutive validated operation headers.
@@ -8419,14 +8160,6 @@ fn offset_only_index_is_valid(
         return false;
     };
     usize::try_from(last).is_ok_and(|last| last <= bytes.len())
-}
-
-/// Parse indexed sections once and retain only their source ranges.
-pub(crate) fn indexed_section_layouts(bytes: &[u8]) -> Vec<IndexedSectionLayout> {
-    indexed_sections(bytes)
-        .iter()
-        .map(IndexedSectionLayout::from_section)
-        .collect()
 }
 
 /// Decode the first self-framed NX product/version marker in `bytes`.

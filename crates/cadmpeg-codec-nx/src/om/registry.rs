@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NX OM registry-token framing.
 
-use super::{FieldDefinition, IndexedDefinitionLayout, TypeDefinition};
+use super::{FieldDefinition, TypeDefinition};
 
 const FIELD_START_PROBE_LIMIT: usize = 256;
 
@@ -266,76 +266,6 @@ pub(super) fn type_registry(bytes: &[u8], start: usize, end: usize) -> TypeRegis
         definitions,
         field_start,
     }
-}
-
-pub(super) fn materialize_type_definition<'a>(
-    bytes: &'a [u8],
-    layout: &IndexedDefinitionLayout,
-) -> TypeDefinition<'a> {
-    let name_start = layout.offset + 1;
-    let name_end = name_start + layout.name_len;
-    let name = std::str::from_utf8(
-        bytes
-            .get(name_start..name_end)
-            .expect("cached indexed declaration name remains in source"),
-    )
-    .expect("cached indexed declaration name remains UTF-8");
-    TypeDefinition {
-        offset: layout.offset,
-        name,
-        registry_tail: &bytes[layout.registry_tail.start..layout.registry_tail.end],
-    }
-}
-
-pub(super) fn materialize_field_definition<'a>(
-    bytes: &'a [u8],
-    layout: &IndexedDefinitionLayout,
-) -> FieldDefinition<'a> {
-    let name_start = layout.offset + 1;
-    let name_end = name_start + layout.name_len;
-    let name = std::str::from_utf8(
-        bytes
-            .get(name_start..name_end)
-            .expect("cached indexed declaration name remains in source"),
-    )
-    .expect("cached indexed declaration name remains UTF-8");
-    FieldDefinition {
-        offset: layout.offset,
-        name,
-        registry_tail: &bytes[layout.registry_tail.start..layout.registry_tail.end],
-    }
-}
-
-pub(super) fn type_definition_layouts(
-    definitions: &[TypeDefinition<'_>],
-) -> Vec<IndexedDefinitionLayout> {
-    definitions
-        .iter()
-        .map(|definition| IndexedDefinitionLayout {
-            offset: definition.offset,
-            name_len: definition.name.len(),
-            registry_tail: super::IndexedByteRange {
-                start: definition.offset + definition.name.len() + 1,
-                end: definition.offset + definition.name.len() + 1 + definition.registry_tail.len(),
-            },
-        })
-        .collect()
-}
-
-pub(super) fn field_definition_layouts(
-    definitions: &[FieldDefinition<'_>],
-) -> Vec<IndexedDefinitionLayout> {
-    definitions
-        .iter()
-        .map(|definition| IndexedDefinitionLayout {
-            offset: definition.offset,
-            name_len: definition.name.len(),
-            registry_tail: super::IndexedByteRange {
-                start: definition.offset + definition.name.len() + 1,
-                end: definition.offset + definition.name.len() + 1 + definition.registry_tail.len(),
-            },
-        })
-        .collect()
 }
 
 fn legacy_type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinition<'_>> {
