@@ -25,6 +25,8 @@ use sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLaneForm};
 pub(crate) mod fixed;
 use fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 pub(crate) mod nonempty;
+pub(crate) mod state_tagged_value;
+use state_tagged_value::StateTaggedValue;
 use nonempty::NonEmpty;
 pub(crate) mod pattern;
 use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWideValues};
@@ -1537,24 +1539,6 @@ impl<'a> NonNullStateIndex<'a> {
     }
 }
 
-/// One operation-state tagged integer with its exact serialized form.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationStateTaggedValue<'a> {
-    /// Decoded unsigned value.
-    pub value: u32,
-    /// Exact marker and payload bytes.
-    pub raw: &'a [u8],
-    /// Absolute byte offset of the marker.
-    pub offset: usize,
-}
-
-impl OperationStateTaggedValue<'_> {
-    /// First serialized marker byte.
-    pub fn marker(self) -> u8 {
-        self.raw[0]
-    }
-}
-
 /// One row in the operation-state object counter map.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationStateCounter<'a> {
@@ -1595,7 +1579,7 @@ pub struct OperationStateMessage<'a> {
     /// Exact ASCII Part Navigator text.
     pub text: &'a str,
     /// Tagged value following the four zero bytes.
-    pub value: OperationStateTaggedValue<'a>,
+    pub value: StateTaggedValue,
     /// Big-endian count or severity word following the tagged value.
     pub count_or_severity: u16,
     /// Exclusive absolute end offset after the count/severity word.
@@ -1792,7 +1776,7 @@ pub struct OperationStateJournalRow<'a> {
     /// Big-endian Unix timestamp.
     pub timestamp: u32,
     /// Tagged schema value stored by the journal.
-    pub value: OperationStateTaggedValue<'a>,
+    pub value: StateTaggedValue,
     /// Schema identifier varint.
     pub schema_id: OperationStateIndex<'a>,
     /// Monotone state ordinal varint.
@@ -1831,7 +1815,7 @@ pub struct AuditTrailRow<'a> {
     /// Big-endian timestamp following the `e0` marker.
     pub timestamp: u32,
     /// Tagged value following the timestamp.
-    pub value: OperationStateTaggedValue<'a>,
+    pub value: StateTaggedValue,
     /// Exact complete row bytes.
     pub raw: &'a [u8],
     /// Exclusive absolute end offset after the tagged value.
@@ -6532,34 +6516,6 @@ fn operation_state_index_at(
     })
 }
 
-fn operation_state_tagged_value_at(
-    bytes: &[u8],
-    at: usize,
-    base_offset: usize,
-) -> Option<OperationStateTaggedValue<'_>> {
-    let marker = *bytes.get(at)?;
-    let (width, value) = match marker {
-        0xa0..=0xbf => (
-            3,
-            u32::from(marker - 0xa0) * 0x1_0000 + u32::from(View::u16_be_at(bytes, at + 1)?),
-        ),
-        0xc0..=0xdf => (
-            4,
-            u32::from(marker - 0xc0) * 0x1_000_000
-                + (u32::from(*bytes.get(at + 1)?) << 16)
-                + (u32::from(*bytes.get(at + 2)?) << 8)
-                + u32::from(*bytes.get(at + 3)?),
-        ),
-        0xe0 | 0xff => (5, View::u32_be_at(bytes, at + 1)?),
-        _ => return None,
-    };
-    Some(OperationStateTaggedValue {
-        value,
-        raw: bytes.get(at..at + width)?,
-        offset: base_offset.checked_add(at)?,
-    })
-}
-
 fn operation_state_counter_row(
     bytes: &[u8],
     at: usize,
@@ -6672,8 +6628,8 @@ fn operation_state_message_at(
     let zeros_start = terminator.checked_add(1)?;
     let zeros_end = zeros_start.checked_add(4)?;
     (bytes.get(zeros_start..zeros_end) == Some(&[0, 0, 0, 0])).then_some(())?;
-    let value = operation_state_tagged_value_at(bytes, zeros_end, base_offset)?;
-    let count_at = zeros_end.checked_add(value.raw.len())?;
+    let value = StateTaggedValue::read_at(bytes, zeros_end)?;
+    let count_at = zeros_end.checked_add(value.raw().len())?;
     let count_or_severity = View::u16_be_at(bytes, count_at)?;
     let end = count_at.checked_add(2)?;
     Some(OperationStateMessage {
@@ -7341,8 +7297,8 @@ fn operation_state_journal_row_at(
         return None;
     }
     let timestamp = View::u32_be_at(bytes, at + 1)?;
-    let value = operation_state_tagged_value_at(bytes, at + 5, base_offset)?;
-    let schema_at = at.checked_add(5 + value.raw.len())?;
+    let value = StateTaggedValue::read_at(bytes, at + 5)?;
+    let schema_at = at.checked_add(5 + value.raw().len())?;
     let schema_id = operation_state_index_at(bytes, schema_at, base_offset)?;
     schema_id.value()?;
     let ordinal_at = schema_at.checked_add(schema_id.raw().len())?;
@@ -7397,8 +7353,8 @@ fn audit_trail_row_at(
     }
     let timestamp = View::u32_be_at(bytes, cursor + 1)?;
     cursor = cursor.checked_add(5)?;
-    let value = operation_state_tagged_value_at(bytes, cursor, base_offset)?;
-    let row_end = cursor.checked_add(value.raw.len())?;
+    let value = StateTaggedValue::read_at(bytes, cursor)?;
+    let row_end = cursor.checked_add(value.raw().len())?;
     Some(AuditTrailRow {
         offset: base_offset.checked_add(at)?,
         ordinal,

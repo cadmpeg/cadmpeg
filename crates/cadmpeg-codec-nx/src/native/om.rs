@@ -75,12 +75,9 @@ pub struct OmAuditTrailRow {
     pub frame_selector: Option<u8>,
     /// Big-endian row timestamp.
     pub timestamp: u32,
-    /// Tagged row-value marker.
-    pub value_marker: u8,
-    /// Decoded tagged row value.
-    pub value: u32,
-    /// Exact serialized tagged row value.
-    pub raw_value: Vec<u8>,
+    /// Complete tagged integer token.
+    #[serde(flatten)]
+    pub value: crate::om::state_tagged_value::StateTaggedValue,
     /// Exact complete row bytes.
     pub raw: Vec<u8>,
     /// Directory entry containing the audit-trail section.
@@ -96,12 +93,9 @@ pub struct OmAuditTrailRow {
 pub struct OmOperationStateJournalRow {
     /// Big-endian Unix timestamp stored by the journal.
     pub timestamp: u32,
-    /// Tagged schema-value marker.
-    pub value_marker: u8,
-    /// Decoded tagged schema value.
-    pub value: u32,
-    /// Exact tagged schema-value token.
-    pub raw_value: Vec<u8>,
+    /// Complete tagged integer token.
+    #[serde(flatten)]
+    pub value: crate::om::state_tagged_value::StateTaggedValue,
     /// Journal schema identifier.
     pub schema_id: u32,
     /// Exact schema-identifier token.
@@ -326,12 +320,9 @@ pub struct OmOperationStateMessageBody {
     pub declared_length: u8,
     /// Exact Part Navigator diagnostic text.
     pub text: String,
-    /// Tagged value marker following the four zero bytes.
-    pub value_marker: u8,
-    /// Decoded tagged value.
-    pub value: u32,
-    /// Exact serialized tagged value.
-    pub raw_value: Vec<u8>,
+    /// Complete tagged integer token.
+    #[serde(flatten)]
+    pub value: crate::om::state_tagged_value::StateTaggedValue,
     /// Big-endian count or severity word.
     pub count_or_severity: u16,
 }
@@ -347,9 +338,8 @@ impl OmOperationStateMessageBody {
 struct OmOperationStateMessageBodyWire {
     declared_length: u8,
     text: String,
-    value_marker: u8,
-    value: u32,
-    raw_value: Vec<u8>,
+    #[serde(flatten)]
+    value: crate::om::state_tagged_value::StateTaggedValue,
     count_or_severity: u16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     severity: Option<OmOperationStateMessageSeverity>,
@@ -361,9 +351,7 @@ impl From<OmOperationStateMessageBody> for OmOperationStateMessageBodyWire {
         Self {
             declared_length: value.declared_length,
             text: value.text,
-            value_marker: value.value_marker,
             value: value.value,
-            raw_value: value.raw_value,
             count_or_severity: value.count_or_severity,
             severity,
         }
@@ -377,9 +365,7 @@ impl TryFrom<OmOperationStateMessageBodyWire> for OmOperationStateMessageBody {
         let body = Self {
             declared_length: wire.declared_length,
             text: wire.text,
-            value_marker: wire.value_marker,
             value: wire.value,
-            raw_value: wire.raw_value,
             count_or_severity: wire.count_or_severity,
         };
         if wire.severity != body.severity() {
@@ -559,9 +545,7 @@ pub fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
                         raw_ordinal: row.ordinal.raw().to_vec(),
                         frame_selector: row.frame_selector,
                         timestamp: row.timestamp,
-                        value_marker: row.value.marker(),
-                        value: row.value.value,
-                        raw_value: row.value.raw.to_vec(),
+                        value: row.value,
                         raw: row.raw.to_vec(),
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + row.offset as u64,
@@ -654,9 +638,7 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
                         .map(|row| {
                             Some(OmOperationStateJournalRow {
                                 timestamp: row.timestamp,
-                                value_marker: row.value.marker(),
-                                value: row.value.value,
-                                raw_value: row.value.raw.to_vec(),
+                                value: row.value,
                                 schema_id: row.schema_id.value()?,
                                 raw_schema_id: row.schema_id.raw().to_vec(),
                                 state_ordinal: row.ordinal.value()?,
@@ -804,9 +786,7 @@ pub fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMe
                         body: OmOperationStateMessageBody {
                             declared_length: message.declared_length,
                             text: message.text.to_string(),
-                            value_marker: message.value.marker(),
-                            value: message.value.value,
-                            raw_value: message.value.raw.to_vec(),
+                            value: message.value,
                             count_or_severity: message.count_or_severity,
                         },
                         source_entry: entry.name.clone(),
@@ -864,9 +844,7 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                             OmOperationStateStatusPayload::Diagnostic(OmOperationStateMessageBody {
                                 declared_length: message.declared_length,
                                 text: message.text.to_string(),
-                                value_marker: message.value.marker(),
-                                value: message.value.value,
-                                raw_value: message.value.raw.to_vec(),
+                                value: message.value,
                                 count_or_severity: message.count_or_severity,
                             })
                         }

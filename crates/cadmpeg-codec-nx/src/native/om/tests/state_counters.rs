@@ -86,10 +86,10 @@ fn native_catalog_emits_role_gated_audit_trail_rows() {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].ordinal, 2);
     assert_eq!(rows[0].frame_selector, None);
-    assert_eq!(rows[0].value_marker, 0xe0);
+    assert_eq!(rows[0].value.marker(), 0xe0);
     assert_eq!(rows[1].ordinal, 3);
     assert_eq!(rows[1].frame_selector, Some(7));
-    assert_eq!(rows[1].value_marker, 0xc0);
+    assert_eq!(rows[1].value.marker(), 0xc0);
     assert!(rows[1].source_offset > rows[0].source_offset);
 
     let result = NxCodec
@@ -131,13 +131,13 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].selector, [0x01, 0x02]);
     assert_eq!(groups[0].rows.len(), 1);
-    assert_eq!(groups[0].rows[0].value_marker, 0xc0);
-    assert_eq!(groups[0].rows[0].value, 0x0001_0203);
+    assert_eq!(groups[0].rows[0].value.marker(), 0xc0);
+    assert_eq!(groups[0].rows[0].value.value(), 0x0001_0203);
     assert_eq!(groups[0].rows[0].schema_id, 0x310);
     assert_eq!(groups[0].rows[0].state_ordinal, 2);
     assert_eq!(groups[1].selector, [0x05, 0x06]);
-    assert_eq!(groups[1].rows[0].value_marker, 0xa0);
-    assert_eq!(groups[1].rows[0].value, 0x0102);
+    assert_eq!(groups[1].rows[0].value.marker(), 0xa0);
+    assert_eq!(groups[1].rows[0].value.value(), 0x0102);
     assert_eq!(groups[1].rows[0].state_ordinal, 3);
     assert!(groups[1].source_offset > groups[0].source_offset);
 
@@ -234,8 +234,8 @@ fn native_catalog_emits_bounded_operation_state_messages() {
     let messages = operation_state_messages(&container);
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].body.text, "state warning");
-    assert_eq!(messages[0].body.value_marker, 0xaa);
-    assert_eq!(messages[0].body.value, 0x000a_606b);
+    assert_eq!(messages[0].body.value.marker(), 0xaa);
+    assert_eq!(messages[0].body.value.value(), 0x000a_606b);
     assert_eq!(messages[0].body.count_or_severity, 0x0100);
     assert_eq!(
         messages[0].body.severity(),
@@ -312,4 +312,15 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
         .expect("state-slot-lane arena");
     assert_eq!(emitted_statuses, statuses.as_slice());
     assert_eq!(emitted_lanes, lanes.as_slice());
+}
+
+#[test]
+fn message_body_preserves_flat_tagged_value_wire() {
+    let json = r#"{"declared_length":3,"text":"A","value_marker":160,"value":0,"raw_value":[160,0,0],"count_or_severity":0}"#;
+    let body: super::OmOperationStateMessageBody = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&body).unwrap(), json);
+    let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+    wire["value"] = 1.into();
+    assert!(serde_json::from_value::<super::OmOperationStateMessageBody>(wire)
+        .unwrap_err().to_string().contains("value"));
 }

@@ -36,11 +36,10 @@ fn operation_state_tagged_values_retain_width_and_value() {
 
     for (raw, value, width) in cases {
         let token =
-            super::operation_state_tagged_value_at(&raw, 0, 0).expect("complete tagged value");
-        assert_eq!(token.value, value);
+            crate::om::state_tagged_value::StateTaggedValue::read_at(&raw, 0).expect("complete tagged value");
+        assert_eq!(token.value(), value);
         assert_eq!(token.marker(), raw[0]);
-        assert_eq!(token.raw, &raw[..width]);
-        assert_eq!(token.offset, 0);
+        assert_eq!(token.raw(), &raw[..width]);
     }
 }
 
@@ -102,8 +101,8 @@ fn operation_state_messages_decode_text_value_and_severity() {
     assert_eq!(messages[0].offset, 500);
     assert_eq!(messages[0].declared_length, 7);
     assert_eq!(messages[0].text, "hello");
-    assert_eq!(messages[0].value.raw.len(), 4);
-    assert_eq!(messages[0].value.value, 0x0001_0203);
+    assert_eq!(messages[0].value.raw().len(), 4);
+    assert_eq!(messages[0].value.value(), 0x0001_0203);
     assert_eq!(messages[0].count_or_severity, 3);
     assert_eq!(messages[0].end_offset, 500 + bytes.len());
 }
@@ -337,7 +336,7 @@ fn operation_state_journal_decodes_timestamp_value_schema_and_ordinal() {
     assert_eq!(groups[0].rows.len(), 1);
     let row = groups[0].rows[0];
     assert_eq!(row.timestamp, 0x6553_4d20);
-    assert_eq!(row.value.value, 0x0001_0203);
+    assert_eq!(row.value.value(), 0x0001_0203);
     assert_eq!(row.schema_id.value(), Some(0x310));
     assert_eq!(row.ordinal.value(), Some(0x2a));
 }
@@ -373,14 +372,14 @@ fn audit_trail_rows_retain_optional_selector_variable_value_width_and_raw_bytes(
     assert_eq!(rows[0].ordinal.value(), Some(2));
     assert_eq!(rows[0].frame_selector, None);
     assert_eq!(rows[0].timestamp, 0x6553_4d20);
-    assert_eq!(rows[0].value.raw.len(), 5);
-    assert_eq!(rows[0].value.value, 0x0102_0304);
+    assert_eq!(rows[0].value.raw().len(), 5);
+    assert_eq!(rows[0].value.value(), 0x0102_0304);
     assert_eq!(rows[0].offset, 900 + 7);
     assert_eq!(rows[0].raw, &bytes[7..20]);
     assert_eq!(rows[1].ordinal.value(), Some(3));
     assert_eq!(rows[1].frame_selector, Some(7));
-    assert_eq!(rows[1].value.raw.len(), 4);
-    assert_eq!(rows[1].value.value, 0x0001_0203);
+    assert_eq!(rows[1].value.raw().len(), 4);
+    assert_eq!(rows[1].value.value(), 0x0001_0203);
     assert_eq!(rows[1].raw, &bytes[20..36]);
     assert_eq!(rows[1].end_offset, 900 + 36);
 
