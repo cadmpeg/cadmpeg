@@ -289,8 +289,9 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
                 derived,
                 ..
             } => numerators
+                .references()
                 .iter()
-                .chain(denominators)
+                .chain(denominators.references())
                 .map(|reference| reference.index)
                 .chain(std::iter::once(derived.index))
                 .collect::<Vec<_>>(),

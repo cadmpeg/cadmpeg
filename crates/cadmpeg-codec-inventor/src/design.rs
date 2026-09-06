@@ -3,13 +3,13 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
 use serde::{Deserialize, Serialize};
 
+use crate::pmdc::{Cursor, PmDcContentHeader, PmDcReference, type_id_string};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
-use crate::pmdc::{type_id_string, Cursor, PmDcContentHeader, PmDcReference};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const EXPRESSION_VALUE_TYPE: [u8; 16] = id(0xf8a7_7a04);
@@ -147,8 +147,26 @@ pub(crate) struct PmDcUnit {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(try_from = "PmDcUnitKindWire", into = "PmDcUnitKindWire")]
 pub(crate) enum PmDcUnitKind {
+    Definition {
+        numerators: ReferenceArray,
+        denominators: ReferenceArray,
+        visible: bool,
+        derived: PmDcReference,
+    },
+    Base {
+        dimension: PmDcUnitDimension,
+        symbol: String,
+        scale_to_internal: f64,
+        magnitude: f64,
+        factor: f64,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "form", rename_all = "snake_case")]
+enum PmDcUnitKindWire {
     Definition {
         numerators: Vec<PmDcReference>,
         numerator_metadata: Option<[u16; 2]>,
@@ -164,6 +182,74 @@ pub(crate) enum PmDcUnitKind {
         magnitude: f64,
         factor: f64,
     },
+}
+
+impl From<PmDcUnitKind> for PmDcUnitKindWire {
+    fn from(value: PmDcUnitKind) -> Self {
+        match value {
+            PmDcUnitKind::Definition {
+                numerators,
+                denominators,
+                visible,
+                derived,
+            } => Self::Definition {
+                numerator_metadata: numerators.metadata(),
+                denominator_metadata: denominators.metadata(),
+                numerators: numerators.into_references(),
+                denominators: denominators.into_references(),
+                visible,
+                derived,
+            },
+            PmDcUnitKind::Base {
+                dimension,
+                symbol,
+                scale_to_internal,
+                magnitude,
+                factor,
+            } => Self::Base {
+                dimension,
+                symbol,
+                scale_to_internal,
+                magnitude,
+                factor,
+            },
+        }
+    }
+}
+impl TryFrom<PmDcUnitKindWire> for PmDcUnitKind {
+    type Error = String;
+    fn try_from(value: PmDcUnitKindWire) -> Result<Self, Self::Error> {
+        Ok(match value {
+            PmDcUnitKindWire::Definition {
+                numerators,
+                numerator_metadata,
+                denominators,
+                denominator_metadata,
+                visible,
+                derived,
+            } => Self::Definition {
+                numerators: ReferenceArray::new(numerator_metadata, numerators)
+                    .ok_or("unit numerator metadata disagrees with length")?,
+                denominators: ReferenceArray::new(denominator_metadata, denominators)
+                    .ok_or("unit denominator metadata disagrees with length")?,
+                visible,
+                derived,
+            },
+            PmDcUnitKindWire::Base {
+                dimension,
+                symbol,
+                scale_to_internal,
+                magnitude,
+                factor,
+            } => Self::Base {
+                dimension,
+                symbol,
+                scale_to_internal,
+                magnitude,
+                factor,
+            },
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -442,10 +528,13 @@ fn resolve_unit(
     else {
         return None;
     };
-    if numerators.len() != 1 || !denominators.is_empty() || derived.index != 0 {
+    if numerators.references().len() != 1
+        || !denominators.references().is_empty()
+        || derived.index != 0
+    {
         return None;
     }
-    let base_ordinal = numerators[0].index.checked_sub(1)?;
+    let base_ordinal = numerators.references()[0].index.checked_sub(1)?;
     let base = units.get(&(token.to_string(), base_ordinal))?;
     let PmDcUnitKind::Base {
         dimension,
@@ -735,10 +824,8 @@ fn parse_unit_definition(
         header_value,
         header_id,
         kind: PmDcUnitKind::Definition {
-            numerators: numerators.references().to_vec(),
-            numerator_metadata: numerators.metadata(),
-            denominators: denominators.references().to_vec(),
-            denominator_metadata: denominators.metadata(),
+            numerators,
+            denominators,
             visible,
             derived,
         },
@@ -831,7 +918,8 @@ fn unique_by_ordinal<'a, T>(
         .collect()
 }
 
-struct ReferenceArray {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReferenceArray {
     items: Option<([u16; 2], Vec<PmDcReference>)>,
 }
 
@@ -846,7 +934,13 @@ impl ReferenceArray {
         self.items.as_ref().map(|(metadata, _)| *metadata)
     }
 
-    fn references(&self) -> &[PmDcReference] {
+    fn into_references(self) -> Vec<PmDcReference> {
+        self.items
+            .map(|(_, references)| references)
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn references(&self) -> &[PmDcReference] {
         self.items
             .as_ref()
             .map(|(_, references)| references.as_slice())
@@ -898,6 +992,28 @@ mod tests {
 
     const fn reference(index: u32, qualified: bool) -> PmDcReference {
         PmDcReference { index, qualified }
+    }
+
+    #[test]
+    fn unit_definition_rejects_detached_reference_metadata() {
+        let unit = PmDcUnitKind::Definition {
+            numerators: ReferenceArray::new(Some([3, 7]), vec![reference(1, false)]).unwrap(),
+            denominators: ReferenceArray::new(None, Vec::new()).unwrap(),
+            visible: true,
+            derived: reference(0, false),
+        };
+        let wire = serde_json::to_value(&unit).unwrap();
+        assert_eq!(wire["numerator_metadata"], serde_json::json!([3, 7]));
+        assert_eq!(
+            serde_json::from_value::<PmDcUnitKind>(wire.clone()).unwrap(),
+            unit
+        );
+        let mut missing_metadata = wire.clone();
+        missing_metadata["numerator_metadata"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<PmDcUnitKind>(missing_metadata).is_err());
+        let mut orphan_metadata = wire;
+        orphan_metadata["denominator_metadata"] = serde_json::json!([3, 7]);
+        assert!(serde_json::from_value::<PmDcUnitKind>(orphan_metadata).is_err());
     }
 
     #[test]
@@ -1036,7 +1152,7 @@ mod tests {
                 .expect("unit view");
         let unit = parse_unit_definition(&ctx, source, 22).expect("unit definition parses");
         assert!(
-            matches!(unit.kind, PmDcUnitKind::Definition { ref numerators, visible: true, .. } if numerators == &[reference(7, true)])
+            matches!(unit.kind, PmDcUnitKind::Definition { ref numerators, visible: true, .. } if numerators.references() == &[reference(7, true)])
         );
     }
 
@@ -1068,10 +1184,8 @@ mod tests {
             header_value: 0,
             header_id: 0,
             kind: PmDcUnitKind::Definition {
-                numerators: vec![reference(1, false)],
-                numerator_metadata: Some([0, 0]),
-                denominators: Vec::new(),
-                denominator_metadata: None,
+                numerators: ReferenceArray::new(Some([0, 0]), vec![reference(1, false)]).unwrap(),
+                denominators: ReferenceArray::new(None, Vec::new()).unwrap(),
                 visible: true,
                 derived: reference(0, false),
             },
