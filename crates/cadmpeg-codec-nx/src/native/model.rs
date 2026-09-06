@@ -134,7 +134,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_operation_labels: Vec<FeatureOperationLabel>,
     pub(crate) feature_operation_records: Vec<FeatureOperationRecord>,
     pub(crate) feature_unlabeled_operation_records: Vec<FeatureUnlabeledOperationRecord>,
-    pub(crate) feature_unlabeled_operation_body_writes: Vec<FeatureUnlabeledOperationBodyWrite>,
+    pub(crate) feature_unlabeled_operation_body_writes: Vec<FeatureOperationBodyWrite>,
     pub(crate) feature_operation_body_writes: Vec<FeatureOperationBodyWrite>,
     pub(crate) feature_operation_body_image_segment_uses: Vec<FeatureOperationBodyImageSegmentUse>,
     pub(crate) feature_operation_body_identity_segment_uses:

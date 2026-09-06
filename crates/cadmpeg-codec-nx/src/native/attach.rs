@@ -1853,9 +1853,12 @@ fn attach_feature_operations(
         .collect::<BTreeMap<_, _>>();
     let mut body_writes_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyWrite>>::new();
-    for write in operation_body_writes {
+    for (write, operation_label) in operation_body_writes
+        .iter()
+        .filter_map(|write| write.operation_label.as_deref().map(|label| (write, label)))
+    {
         body_writes_by_operation
-            .entry(write.operation_label.as_str())
+            .entry(operation_label)
             .or_default()
             .push(write);
     }

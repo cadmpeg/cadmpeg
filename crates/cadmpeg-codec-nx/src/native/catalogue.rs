@@ -362,11 +362,6 @@ impl ContainerNoted for FeatureUnlabeledOperationRecord {
         (&self.id, self.source_offset)
     }
 }
-impl ContainerNoted for FeatureUnlabeledOperationBodyWrite {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
-    }
-}
 impl ContainerNoted for FeatureOperationBodyWrite {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)

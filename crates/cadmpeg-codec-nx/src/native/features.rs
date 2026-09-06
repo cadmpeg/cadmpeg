@@ -125,47 +125,14 @@ pub struct FeatureUnlabeledOperationRecord {
     pub source_offset: u64,
 }
 
-/// Exact body-write frame retained from one unlabeled operation record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureUnlabeledOperationBodyWrite {
-    /// Globally unique relation identity.
-    pub id: String,
-    /// Owning bounded unlabeled operation-record identity.
-    pub operation_record: String,
-    /// Zero-based body-write order within the operation payload.
-    pub ordinal: u32,
-    /// Persistent identity of the body written by this operation.
-    pub body_identity: u8,
-    /// Partition-local Parasolid GROUP node owned by this operation.
-    pub group_node: u32,
-    /// Exact serialized GROUP-node token.
-    pub raw_group_node: Vec<u8>,
-    /// Absolute offset of the GROUP-node token.
-    pub group_node_source_offset: u64,
-    /// Tagged body-image field discriminator.
-    pub endpoint_tag: u8,
-    /// Offset-store object containing the body's serialized image.
-    pub body_image_object_index: u32,
-    /// Unambiguous offset-store block selected by the body-image object index.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub body_image_data_block: Option<String>,
-    /// Exact serialized body-image object token.
-    pub raw_body_image_object_index: Vec<u8>,
-    /// Absolute offset of the body-image object token.
-    pub body_image_object_index_source_offset: u64,
-    /// Exact serialized frame byte length.
-    pub byte_len: u64,
-    /// Absolute offset of the opening `01 02` marker.
-    pub source_offset: u64,
-}
-
 /// Exact body-write frame retained from one feature operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureOperationBodyWrite {
     /// Globally unique relation identity.
     pub id: String,
-    /// Owning operation-label identity.
-    pub operation_label: String,
+    /// Owning operation-label identity, absent for an unlabeled record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_label: Option<String>,
     /// Owning bounded operation-record identity.
     pub operation_record: String,
     /// Zero-based body-write order within the operation payload.
@@ -5390,7 +5357,7 @@ pub fn feature_unlabeled_operation_records(
 /// Decode body-write frames owned by independently bounded unlabeled records.
 pub fn feature_unlabeled_operation_body_writes(
     container: &Container,
-) -> Vec<FeatureUnlabeledOperationBodyWrite> {
+) -> Vec<FeatureOperationBodyWrite> {
     let indexed = container.indexed_om_sections();
     let mut writes = Vec::new();
     visit_feature_history_unlabeled_operation_records(
@@ -5403,7 +5370,8 @@ pub fn feature_unlabeled_operation_body_writes(
                 .into_iter()
                 .enumerate()
             {
-                writes.push(FeatureUnlabeledOperationBodyWrite {
+                writes.push(FeatureOperationBodyWrite {
+                    operation_label: None,
                     id: format!(
                         "nx:feature-history:unlabeled-operation-body-write#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                     ),
@@ -5451,7 +5419,7 @@ pub fn feature_operation_body_writes(container: &Container) -> Vec<FeatureOperat
                     id: format!(
                         "nx:feature-history:operation-body-write#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                     ),
-                    operation_label: operation_label.clone(),
+                    operation_label: Some(operation_label.clone()),
                     operation_record: operation_record.clone(),
                     ordinal: ordinal as u32,
                     body_identity: write.body_identity,
@@ -5657,18 +5625,14 @@ pub fn feature_operation_body_partition_uses(
 /// unlabeled writes participate in the same persistent body-identity domain.
 pub fn feature_body_write_group_partition_uses(
     writes: &[FeatureOperationBodyWrite],
-    unlabeled_writes: &[FeatureUnlabeledOperationBodyWrite],
+    unlabeled_writes: &[FeatureOperationBodyWrite],
     groups: &[crate::native::parasolid::ParasolidGroupRecord],
     group_members: &[crate::native::parasolid::ParasolidGroupMember],
 ) -> Vec<FeatureBodyWriteGroupPartitionUse> {
     let candidates = writes
         .iter()
-        .map(|write| (write.id.as_str(), write.body_identity, write.group_node))
-        .chain(
-            unlabeled_writes
-                .iter()
-                .map(|write| (write.id.as_str(), write.body_identity, write.group_node)),
-        );
+        .chain(unlabeled_writes)
+        .map(|write| (write.id.as_str(), write.body_identity, write.group_node));
     candidates
         .filter_map(|(id, body_identity, group_node)| {
             let matching_groups = groups

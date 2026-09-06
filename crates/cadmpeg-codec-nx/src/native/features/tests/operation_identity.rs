@@ -266,7 +266,7 @@ fn body_image_segment_use_requires_one_plain_alias() {
 fn body_identity_segment_use_does_not_require_an_image_block() {
     let mut write = FeatureOperationBodyWrite {
         id: "nx:operation-body-write#0".into(),
-        operation_label: "operation".into(),
+        operation_label: Some("operation".into()),
         operation_record: "record".into(),
         ordinal: 0,
         body_identity: 11,
@@ -416,7 +416,8 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
 
 #[test]
 fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
-    let unlabeled = FeatureUnlabeledOperationBodyWrite {
+    let unlabeled = FeatureOperationBodyWrite {
+        operation_label: None,
         id: "unlabeled-body-write".into(),
         operation_record: "unlabeled-record".into(),
         ordinal: 0,

@@ -16,7 +16,7 @@ fn body_write(group: u8, image: u8) -> Vec<u8> {
 fn native_body_write(id: &str) -> crate::native::features::FeatureOperationBodyWrite {
     crate::native::features::FeatureOperationBodyWrite {
         id: id.into(),
-        operation_label: "operation".into(),
+        operation_label: Some("operation".into()),
         operation_record: "record".into(),
         ordinal: 0,
         body_identity: 17,
