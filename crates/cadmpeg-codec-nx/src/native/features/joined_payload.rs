@@ -78,4 +78,24 @@ mod tests {
         let blocks = BTreeMap::from([("a".to_owned(), (&[1, 2][..], u64::MAX))]);
         assert!(JoinedPayload::from_source(ids.iter(), &blocks).is_none());
     }
+
+    #[test]
+    fn nx_sketch_payload_join_preserves_order_and_cross_block_values() {
+        let ids = vec!["block#2".to_string(), "block#3".to_string()];
+        let blocks = std::collections::BTreeMap::from([
+            ("block#2".to_string(), (&[0x30, 0x43][..], 120_u64)),
+            (
+                "block#3".to_string(),
+                (&[0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72][..], 900_u64),
+            ),
+        ]);
+        let joined = crate::native::features::joined_payload::JoinedPayload::from_source(ids.iter(), &blocks).expect("required invariant");
+        assert_eq!(joined.bytes(), [0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72]);
+        assert_eq!(joined.source_spans().map(|(start, _, _)| start).collect::<Vec<_>>(), [0, 2]);
+        assert_eq!(joined.source_spans().map(|(_, length, _)| length).collect::<Vec<_>>(), [2, 6]);
+        assert_eq!(joined.source_spans().map(|(_, _, source)| source).collect::<Vec<_>>(), [120, 900]);
+
+        let missing = vec!["block#2".to_string(), "missing".to_string()];
+        assert!(crate::native::features::joined_payload::JoinedPayload::from_source(missing.iter(), &blocks).is_none());
+    }
 }
