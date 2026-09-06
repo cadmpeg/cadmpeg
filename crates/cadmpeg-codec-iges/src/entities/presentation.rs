@@ -2,7 +2,7 @@
 //! Directory display attributes and color definitions.
 
 use super::geometry::ProjectionOutcome;
-use crate::directory::DirectoryEntry;
+use crate::directory::{BlankStatus, DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
@@ -107,26 +107,28 @@ fn vertical_text_flag_valid(value: i64) -> bool {
 }
 
 fn line_font_definition_directory_valid(entry: &DirectoryEntry) -> bool {
-    entry.status.subordinate == 0
-        && entry.status.use_flag == 2
+    entry.status.subordinate == Subordinate::Independent
+        && entry.status.use_flag == UseFlag::Definition
         && (1..=5).contains(&entry.line_font)
 }
 
 fn text_template_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
     match global_table {
         GlobalTable::V4_0 | GlobalTable::V5_0 => {
-            entry.status.subordinate != 0 && entry.status.use_flag == 1 && entry.line_font != 0
+            entry.status.subordinate != Subordinate::Independent
+                && entry.status.use_flag == UseFlag::Annotation
+                && entry.line_font != 0
         }
         GlobalTable::Legacy | GlobalTable::V5Later => {
-            entry.status.subordinate == 0
-                && entry.status.use_flag == 2
+            entry.status.subordinate == Subordinate::Independent
+                && entry.status.use_flag == UseFlag::Definition
                 && entry.structure == 0
                 && entry.line_font == 0
                 && entry.view == 0
                 && entry.transform == 0
                 && entry.label_display == 0
                 && entry.line_weight == 0
-                && entry.status.hierarchy == 0
+                && entry.status.hierarchy == Hierarchy::GlobalTopDown
         }
     }
 }
@@ -169,7 +171,8 @@ fn text_font_definition(
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<TextFontDefinition> {
     let parameter_end = record.parameter_end();
-    let directory_valid = entry.status.subordinate == 0 && entry.status.use_flag == 2;
+    let directory_valid = entry.status.subordinate == Subordinate::Independent
+        && entry.status.use_flag == UseFlag::Definition;
     if !directory_valid
         || record.integer(1).is_none_or(|value| value < 0)
         || record.string(2).is_none_or(<[u8]>::is_empty)
@@ -435,8 +438,8 @@ pub(super) fn project(
                 continue;
             }
         };
-        let directory_valid = entry.status.subordinate == 0
-            && entry.status.use_flag == 2
+        let directory_valid = entry.status.subordinate == Subordinate::Independent
+            && entry.status.use_flag == UseFlag::Definition
             && matches!(entry.color, 0..=8);
         if !directory_valid {
             losses.push(loss(entry, "color definition Directory fields are invalid"));
@@ -552,7 +555,7 @@ pub(super) fn project(
             continue;
         };
         body.color = Some(color);
-        body.visible = Some(blank == 0);
+        body.visible = Some(blank == BlankStatus::Visible);
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: format!("iges:model:appearance-binding#body-D{sequence}").into(),
             target: AppearanceTarget::Body(body_id),
@@ -567,7 +570,7 @@ pub(super) fn project(
         if body.visible.is_none() {
             body.visible = source_sequence(&body.id.as_str())
                 .and_then(|sequence| entries.get(&sequence))
-                .map(|entry| entry.status.blank == 0);
+                .map(|entry| entry.status.blank == BlankStatus::Visible);
         }
     }
 

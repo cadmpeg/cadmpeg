@@ -2,6 +2,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::{BlankStatus, Hierarchy, Subordinate, UseFlag};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -22,10 +23,10 @@ fn subordinate_switch_dependency_bits_follow_the_four_defined_values() {
         (3, true, true),
     ] {
         let status = Status {
-            blank: 0,
-            subordinate,
-            use_flag: 0,
-            hierarchy: 0,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::parse(subordinate),
+            use_flag: UseFlag::Geometry,
+            hierarchy: Hierarchy::GlobalTopDown,
         };
         assert_eq!(status.is_physically_dependent(), physical);
         assert_eq!(status.is_logically_dependent(), logical);
@@ -41,12 +42,12 @@ fn entity_use_flag_range_follows_the_declared_dialect() {
         (GlobalTable::V5_0, 7, false),
     ] {
         let status = Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag,
-            hierarchy: 0,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::Independent,
+            use_flag: UseFlag::parse(use_flag, global_table),
+            hierarchy: Hierarchy::GlobalTopDown,
         };
-        assert_eq!(status.is_use_flag_valid(global_table), expected);
+        assert_eq!(status.use_flag.is_admitted(), expected);
     }
 }
 
@@ -54,10 +55,10 @@ fn entity_use_flag_range_follows_the_declared_dialect() {
 fn early_dialects_left_pad_right_justified_status_numbers() {
     for global_table in [GlobalTable::Legacy, GlobalTable::V4_0, GlobalTable::V5_0] {
         let status = status(*b"     201", global_table).unwrap();
-        assert_eq!(status.blank, 0);
-        assert_eq!(status.subordinate, 0);
-        assert_eq!(status.use_flag, 2);
-        assert_eq!(status.hierarchy, 1);
+        assert_eq!(status.blank, BlankStatus::Visible);
+        assert_eq!(status.subordinate, Subordinate::Independent);
+        assert_eq!(status.use_flag, UseFlag::Definition);
+        assert_eq!(status.hierarchy, Hierarchy::GlobalDefer);
     }
 
     assert!(status(*b"     201", GlobalTable::V5Later).is_err());
@@ -189,4 +190,31 @@ fn decode_treats_subordinate_switch_three_as_physically_dependent() {
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn residual_status_fields_preserve_numeric_wire_values() {
+    for global_table in [GlobalTable::V4_0, GlobalTable::V5Later] {
+        let parsed = status(*b"99999999", global_table).unwrap();
+        assert!(!parsed.use_flag.is_admitted());
+        assert!(!parsed.is_physically_dependent());
+        assert!(!parsed.is_logically_dependent());
+        assert_eq!(
+            serde_json::to_value(parsed).unwrap(),
+            serde_json::json!({
+                "blank_status": 99,
+                "subordinate_status": 99,
+                "use_flag": 99,
+                "hierarchy_status": 99,
+            })
+        );
+    }
+    let early = status(*b"00000600", GlobalTable::V4_0).unwrap();
+    let later = status(*b"00000600", GlobalTable::V5Later).unwrap();
+    assert!(!early.use_flag.is_admitted());
+    assert_eq!(later.use_flag, UseFlag::Construction);
+    assert_eq!(
+        serde_json::to_value(early).unwrap(),
+        serde_json::to_value(later).unwrap()
+    );
 }

@@ -5,7 +5,7 @@
 //! counted-tail verdicts.
 
 use super::OverdeclaredCounts;
-use crate::directory::DirectoryEntry;
+use crate::directory::{DirectoryEntry, UseFlag};
 use crate::entities::annotation::{
     classify, parameterized_curve_type, section_boundary_type, AnnotationKind,
 };
@@ -336,7 +336,7 @@ impl Subject<'_> {
                     |target| {
                         parameterized_curve_type(target)
                             && target.status.is_physically_dependent()
-                            && target.status.use_flag == 1
+                            && target.status.use_flag == UseFlag::Annotation
                     },
                 )
             })
@@ -383,7 +383,7 @@ impl Subject<'_> {
                             (target.entity_type, target.form),
                             (100 | 102, 0) | (106, 63)
                         ) && target.status.is_physically_dependent()
-                            && target.status.use_flag == 1
+                            && target.status.use_flag == UseFlag::Annotation
                     },
                 )
             })
@@ -399,7 +399,10 @@ impl Subject<'_> {
                     index,
                     sequence,
                     ReferenceExpectation::SubordinateAnnotationGeometry,
-                    |target| target.status.is_physically_dependent() && target.status.use_flag == 1,
+                    |target| {
+                        target.status.is_physically_dependent()
+                            && target.status.use_flag == UseFlag::Annotation
+                    },
                 )
             })
             .map(|sequence| format!("iges:entity:directory#{sequence}"))

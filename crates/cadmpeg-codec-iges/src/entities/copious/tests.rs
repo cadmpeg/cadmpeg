@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::UseFlag;
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
@@ -17,11 +19,32 @@ use super::presentation_use_flag_valid;
 #[test]
 fn presentation_copious_forms_require_the_annotation_use_flag() {
     for form in [20, 21, 31, 32, 33, 34, 35, 36, 37, 38, 40] {
-        assert!(presentation_use_flag_valid(form, 1), "{form}");
-        assert!(!presentation_use_flag_valid(form, 0), "{form}");
-        assert!(!presentation_use_flag_valid(form, 2), "{form}");
+        assert!(
+            presentation_use_flag_valid(
+                form,
+                UseFlag::parse(1, crate::global::GlobalTable::V5Later)
+            ),
+            "{form}"
+        );
+        assert!(
+            !presentation_use_flag_valid(
+                form,
+                UseFlag::parse(0, crate::global::GlobalTable::V5Later)
+            ),
+            "{form}"
+        );
+        assert!(
+            !presentation_use_flag_valid(
+                form,
+                UseFlag::parse(2, crate::global::GlobalTable::V5Later)
+            ),
+            "{form}"
+        );
     }
-    assert!(presentation_use_flag_valid(11, 0));
+    assert!(presentation_use_flag_valid(
+        11,
+        UseFlag::parse(0, crate::global::GlobalTable::V5Later)
+    ));
 }
 
 #[test]

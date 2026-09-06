@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::{BlankStatus, Hierarchy, Subordinate, UseFlag};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -38,10 +39,10 @@ fn source_entry(entity_type: i64, form: i64) -> DirectoryEntry {
         transform: 0,
         label_display: 0,
         status: Status {
-            blank: 0,
-            subordinate: 1,
-            use_flag: 0,
-            hierarchy: 0,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::Physically,
+            use_flag: UseFlag::Geometry,
+            hierarchy: Hierarchy::GlobalTopDown,
         },
         line_weight: 0,
         color: 0,
@@ -201,7 +202,8 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
         },
         Vertex {
             id: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
-            point: PointId::mint("test:model:point#matching-start-point").expect("identity grammar"),
+            point: PointId::mint("test:model:point#matching-start-point")
+                .expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
@@ -231,7 +233,12 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
 
     let source = &ir.model.curves[0];
     assert_eq!(
-        super::source_parameter_range(&ir, &source_id, source.geometry.solved_cache().unwrap_or(&source.geometry), EPS_OFFSET_ENDPOINT_MATCH,),
+        super::source_parameter_range(
+            &ir,
+            &source_id,
+            source.geometry.solved_cache().unwrap_or(&source.geometry),
+            EPS_OFFSET_ENDPOINT_MATCH,
+        ),
         Some([0.0, 2.0])
     );
 }
@@ -525,7 +532,9 @@ fn decode_solves_a_parameter_linear_line_offset() {
             .iter()
             .find(|curve| curve.id.0 == "iges:model:curve#D3")
             .unwrap();
-        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = offset.geometry.solved_cache().unwrap_or(&offset.geometry) else {
+        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
+            offset.geometry.solved_cache().unwrap_or(&offset.geometry)
+        else {
             panic!("expected an exact degree-one offset carrier");
         };
         assert_eq!(nurbs.knots(), [0.0, 0.0, 10.0, 10.0]);

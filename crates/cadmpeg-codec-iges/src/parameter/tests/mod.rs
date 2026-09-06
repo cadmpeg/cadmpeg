@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::{BlankStatus, DirectoryEntry, Hierarchy, Status, Subordinate, UseFlag};
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -13,7 +14,6 @@ use super::{
     structural_pointer_group_candidates, ParameterRecord, Token, TokenValue,
 };
 use crate::card::{scan, Section};
-use crate::directory::{DirectoryEntry, Status};
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
@@ -82,10 +82,10 @@ fn directory_target(sequence: u32, entity_type: i64) -> DirectoryEntry {
         transform: 0,
         label_display: 0,
         status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 0,
-            hierarchy: 0,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::Independent,
+            use_flag: UseFlag::Geometry,
+            hierarchy: Hierarchy::GlobalTopDown,
         },
         line_weight: 0,
         color: 0,

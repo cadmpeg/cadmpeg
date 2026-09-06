@@ -8,7 +8,7 @@ use super::geometry::{
     planar_polylines_intersect, plane_coordinates, source_object, BoundaryEndpoint,
     BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
 };
-use crate::directory::DirectoryEntry;
+use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
@@ -575,7 +575,7 @@ fn source_curve_control_intervals(
     precision: RealPrecision,
     factor: f64,
     active: &mut BTreeSet<CurveId>,
-) -> Option<Vec<[DeclaredInterval; 3]>>{
+) -> Option<Vec<[DeclaredInterval; 3]>> {
     if !active.insert(curve_id.clone()) {
         return None;
     }
@@ -1591,7 +1591,7 @@ pub(super) fn project(
         if pcurve.is_some_and(|pcurve| {
             entries
                 .get(&pcurve)
-                .is_none_or(|entry| entry.status.use_flag != 5)
+                .is_none_or(|entry| entry.status.use_flag != UseFlag::Parametric)
         }) {
             losses.push(entity_loss(
                 entry,
@@ -1685,7 +1685,7 @@ pub(super) fn project(
                 };
                 if entries
                     .get(&pcurve)
-                    .is_none_or(|entry| entry.status.use_flag != 5)
+                    .is_none_or(|entry| entry.status.use_flag != UseFlag::Parametric)
                 {
                     losses.push(entity_loss(
                         entry,
@@ -1881,10 +1881,13 @@ pub(super) fn project(
         }
         let surface_id = SurfaceId::mint(format!("iges:model:surface#D{surface_sequence}"))
             .expect("identity grammar");
-        let Some(support_geometry) = carrier_index
-            .surfaces(&surface_id.0)
-            .map(|surface| surface.geometry.solved_cache().unwrap_or(&surface.geometry).clone())
-        else {
+        let Some(support_geometry) = carrier_index.surfaces(&surface_id.0).map(|surface| {
+            surface
+                .geometry
+                .solved_cache()
+                .unwrap_or(&surface.geometry)
+                .clone()
+        }) else {
             losses.push(entity_loss(
                 entry,
                 "trimmed-surface support carrier is missing",

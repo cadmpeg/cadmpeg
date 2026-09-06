@@ -3,7 +3,7 @@
 
 use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
 use super::geometry::{entity_loss, resolve_transform, source_object, WireProjectionOutcome};
-use crate::directory::DirectoryEntry;
+use crate::directory::{DirectoryEntry, Hierarchy, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
@@ -48,25 +48,31 @@ fn composite_child_type_allowed(entity_type: i64, form: i64, global_table: Globa
     )
 }
 
-fn composite_use_flag_valid(use_flag: u8, global_table: GlobalTable) -> bool {
+fn composite_use_flag_valid(use_flag: UseFlag, global_table: GlobalTable) -> bool {
     match global_table {
-        GlobalTable::V4_0 => use_flag == 0,
-        _ => use_flag <= 6,
+        GlobalTable::V4_0 => use_flag == UseFlag::Geometry,
+        _ => use_flag.is_admitted(),
     }
 }
 
-fn composite_line_font_valid(line_font: i64, hierarchy: u8, global_table: GlobalTable) -> bool {
-    !matches!(global_table, GlobalTable::V4_0) || hierarchy == 1 || line_font != 0
+fn composite_line_font_valid(
+    line_font: i64,
+    hierarchy: Hierarchy,
+    global_table: GlobalTable,
+) -> bool {
+    !matches!(global_table, GlobalTable::V4_0)
+        || hierarchy == Hierarchy::GlobalDefer
+        || line_font != 0
 }
 
 fn composite_logical_connector_use_valid(
-    use_flag: u8,
+    use_flag: UseFlag,
     is_logical_connector: bool,
     global_table: GlobalTable,
 ) -> bool {
     !is_logical_connector
         || !matches!(global_table, GlobalTable::V5_0 | GlobalTable::V5Later)
-        || use_flag == 4
+        || use_flag == UseFlag::LogicalPositional
 }
 
 fn composite_point_member(entry: &DirectoryEntry) -> bool {
@@ -967,7 +973,7 @@ fn bounded_nurbs_for_id(
     join_tolerance: Option<f64>,
     ctx: Option<&DecodeContext<'_>>,
     index: Option<&CompositeIndex>,
-) -> Option<(NurbsCurve, [f64; 2])>{
+) -> Option<(NurbsCurve, [f64; 2])> {
     let _nested = ctx
         .map(|ctx| ctx.enter_nested("iges_composite_flatten", None))
         .transpose()

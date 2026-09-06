@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::{BlankStatus, DirectoryEntry, Hierarchy, Status, Subordinate, UseFlag};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::directory::{DirectoryEntry, Status};
 use crate::global::GlobalTable;
 use crate::test_support::*;
 use crate::IgesCodec;
@@ -29,10 +29,10 @@ fn v4_flow_associativity_requires_entity_use_flag_three() {
         transform: 0,
         label_display: 0,
         status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag,
-            hierarchy: 0,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::Independent,
+            use_flag: UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later),
+            hierarchy: Hierarchy::GlobalTopDown,
         },
         line_weight: 0,
         color: 0,
@@ -122,10 +122,10 @@ fn v4_type402_structure_is_ignored_for_each_predefined_associativity_path() {
         transform: 0,
         label_display: 0,
         status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 2,
-            hierarchy: 0,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::Independent,
+            use_flag: UseFlag::Definition,
+            hierarchy: Hierarchy::GlobalTopDown,
         },
         line_weight: 0,
         color: 0,
@@ -163,10 +163,10 @@ fn v4_flow_uses_only_the_v4_target_classes() {
         transform: 0,
         label_display: 0,
         status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 0,
-            hierarchy: 0,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::Independent,
+            use_flag: UseFlag::Geometry,
+            hierarchy: Hierarchy::GlobalTopDown,
         },
         line_weight: 0,
         color: 0,

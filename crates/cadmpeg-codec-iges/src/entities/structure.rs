@@ -6,7 +6,7 @@ use super::geometry::{
     curve_geometry_coplanar, entity_loss, linear_nurbs_parameters,
     planar_polyline_has_self_intersection, plane_coordinates, resolve_transform, ProjectionOutcome,
 };
-use crate::directory::DirectoryEntry;
+use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::parameter::{
     connect_node_layout, signal_string_layout, text_node_layout, ParameterRecord, TokenValue,
@@ -137,10 +137,10 @@ fn subfigure_definition_directory_fields_valid(
     entry: &DirectoryEntry,
     global_table: GlobalTable,
 ) -> bool {
-    entry.status.use_flag == 2
+    entry.status.use_flag == UseFlag::Definition
         && (!matches!(global_table, GlobalTable::V4_0)
-            || (entry.status.subordinate == 0
-                && (entry.status.hierarchy == 1 || entry.line_font != 0)))
+            || (entry.status.subordinate == Subordinate::Independent
+                && (entry.status.hierarchy == Hierarchy::GlobalDefer || entry.line_font != 0)))
 }
 
 fn subfigure_definition_label_display_valid(
@@ -255,7 +255,7 @@ pub(crate) fn signal_string_geometry_target(entity_type: i64, form: i64) -> bool
 
 pub(crate) fn flow_join_target_valid(target: &DirectoryEntry) -> bool {
     target.entity_type == 408
-        || (target.status.use_flag == 0
+        || (target.status.use_flag == UseFlag::Geometry
             && !matches!(
                 target.entity_type,
                 0 | 132
@@ -315,7 +315,7 @@ fn flow_associativity_directory_valid(entry: &DirectoryEntry, global_table: Glob
         return false;
     }
     match global_table {
-        GlobalTable::V4_0 => entry.form == 18 && entry.status.use_flag == 3,
+        GlobalTable::V4_0 => entry.form == 18 && entry.status.use_flag == UseFlag::Other,
         _ => matches!(entry.form, 18 | 20),
     }
 }
@@ -588,7 +588,7 @@ fn legacy_associativity_valid(
                 point_target,
                 true,
             );
-            entry.status.use_flag == 4
+            entry.status.use_flag == UseFlag::LogicalPositional
                 && layout.geometry_count > 0
                 && points_valid
                 && numeric_fields_valid
@@ -603,7 +603,7 @@ fn legacy_associativity_valid(
             };
             let data_valid = (0..layout.data_count)
                 .all(|offset| record.value(layout.data_start + offset).is_some());
-            entry.status.use_flag == 4
+            entry.status.use_flag == UseFlag::LogicalPositional
                 && layout.point_count > 0
                 && context.pointer_list_valid(
                     record,
@@ -2054,7 +2054,8 @@ pub(super) fn project(
             })
             .collect::<Vec<_>>();
         let fields_valid = property_fields_valid(entry, record, record.parameter_end(), &entries);
-        let attachment_valid = entry.status.subordinate == 0 || !owners.is_empty();
+        let attachment_valid =
+            entry.status.subordinate == Subordinate::Independent || !owners.is_empty();
         let reference_designator_valid = entry.form != 7
             || owners.iter().all(|owner| {
                 entries
@@ -2399,7 +2400,8 @@ pub(super) fn project(
                             .is_some_and(|scale| scale.is_finite() && scale > 0.0)
                 })
         });
-        let directory_valid = entry.status.subordinate == 0 && entry.status.use_flag == 2;
+        let directory_valid = entry.status.subordinate == Subordinate::Independent
+            && entry.status.use_flag == UseFlag::Definition;
         if units_valid && directory_valid {
             decoded.insert(entry.sequence);
         } else {
@@ -2436,8 +2438,8 @@ pub(super) fn project(
             classes_valid &= item_count.is_some();
         }
         let directory_valid = matches!(entry.form, 5001..=9999)
-            && entry.status.subordinate == 0
-            && entry.status.use_flag == 2;
+            && entry.status.subordinate == Subordinate::Independent
+            && entry.status.use_flag == UseFlag::Definition;
         if directory_valid && classes_valid && cursor == record.parameter_end() {
             decoded.insert(entry.sequence);
         } else {
@@ -2820,7 +2822,7 @@ pub(super) fn project(
             && swap_valid
             && owner_valid
             && transform_valid
-            && entry.status.use_flag == 4
+            && entry.status.use_flag == UseFlag::LogicalPositional
         {
             decoded.insert(entry.sequence);
         } else {
@@ -2977,7 +2979,7 @@ pub(super) fn project(
             ctx,
         )
         .is_ok();
-        if entry.status.use_flag != 2
+        if entry.status.use_flag != UseFlag::Definition
             || (assembly.form == 1) != has_brep
             || !items_valid
             || cyclic

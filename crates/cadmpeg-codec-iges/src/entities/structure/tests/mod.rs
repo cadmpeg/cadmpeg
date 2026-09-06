@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::{BlankStatus, DirectoryEntry, Hierarchy, Status, Subordinate, UseFlag};
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -13,7 +14,6 @@ use super::{
     network_connectivity_valid, signal_string_geometry_target,
     subfigure_definition_directory_fields_valid,
 };
-use crate::directory::{DirectoryEntry, Status};
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
@@ -59,10 +59,10 @@ fn flow_join_targets_use_geometry_classification_or_subfigure_instance_type() {
         transform: 0,
         label_display: 0,
         status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag,
-            hierarchy: 0,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::Independent,
+            use_flag: UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later),
+            hierarchy: Hierarchy::GlobalTopDown,
         },
         line_weight: 0,
         color: 0,

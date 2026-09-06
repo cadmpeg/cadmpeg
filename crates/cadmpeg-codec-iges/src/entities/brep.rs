@@ -4,7 +4,7 @@
 use super::evaluation;
 use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use super::trimming::pcurve_geometry;
-use crate::directory::DirectoryEntry;
+use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
@@ -429,7 +429,7 @@ pub(super) fn project(
                 };
                 if entries
                     .get(&sequence)
-                    .is_none_or(|entry| entry.status.use_flag != 5)
+                    .is_none_or(|entry| entry.status.use_flag != UseFlag::Parametric)
                 {
                     pcurves.clear();
                     break;

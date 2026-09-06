@@ -2,7 +2,7 @@
 //! Point and analytic curve entity projection.
 
 use super::curve_conversion::angularly_equal;
-use crate::directory::DirectoryEntry;
+use crate::directory::{BlankStatus, DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
@@ -233,12 +233,15 @@ fn base_geometry_table_entry(entity_type: i64, form: i64) -> bool {
 fn base_geometry_use_flag_valid(
     entity_type: i64,
     form: i64,
-    use_flag: u8,
+    use_flag: UseFlag,
     global_table: GlobalTable,
 ) -> bool {
     !base_geometry_table_entry(entity_type, form)
         || !matches!(global_table, GlobalTable::V4_0)
-        || matches!(use_flag, 0 | 1 | 2 | 5)
+        || matches!(
+            use_flag,
+            UseFlag::Geometry | UseFlag::Annotation | UseFlag::Definition | UseFlag::Parametric
+        )
 }
 
 fn base_geometry_line_font_required(entity_type: i64, form: i64) -> bool {
@@ -1179,7 +1182,7 @@ pub(super) fn source_object(entry: &DirectoryEntry) -> SourceObjectAssociation {
             .filter(|value| !value.is_empty())
             .map(str::to_owned),
         color: None,
-        visible: Some(entry.status.blank == 0),
+        visible: Some(entry.status.blank == BlankStatus::Visible),
         layer: Some(entry.level.to_string()),
         instance_path: Vec::new(),
     }
@@ -1195,7 +1198,7 @@ pub(crate) fn project_geometry(
 ) -> Result<Projection, CodecError> {
     let global_table = global.global_table();
     let admitted = |entry: &DirectoryEntry| {
-        entry.status.is_use_flag_valid(global_table)
+        entry.status.use_flag.is_admitted()
             && base_geometry_use_flag_valid(
                 entry.entity_type,
                 entry.form,
@@ -1212,12 +1215,12 @@ pub(crate) fn project_geometry(
     };
     let mut losses = Vec::new();
     for entry in directory {
-        if !entry.status.is_use_flag_valid(global_table) {
+        if !entry.status.use_flag.is_admitted() {
             losses.push(entity_loss(
                 entry,
                 format!(
                     "Entity Use Flag {:02} is outside the effective specification family",
-                    entry.status.use_flag
+                    entry.status.use_flag.code()
                 ),
             ));
         } else if !base_geometry_use_flag_valid(
@@ -1230,7 +1233,7 @@ pub(crate) fn project_geometry(
                 entry,
                 format!(
                     "Entity Use Flag {:02} is outside the IGES 4.0 base geometry values 00, 01, 02, and 05",
-                    entry.status.use_flag
+                    entry.status.use_flag.code()
                 ),
             ));
         } else if !base_geometry_line_font_valid(
@@ -1515,7 +1518,9 @@ pub(crate) fn project_geometry(
             id: point.clone(),
             position,
         });
-        if entry.status.subordinate == 0 || !analytic_surface_locations.contains(&entry.sequence) {
+        if entry.status.subordinate == Subordinate::Independent
+            || !analytic_surface_locations.contains(&entry.sequence)
+        {
             let vertex = VertexId::mint(format!("iges:model:vertex#D{}", entry.sequence))
                 .expect("identity grammar");
             ir.model.vertices.push(Vertex {
@@ -1602,7 +1607,9 @@ pub(crate) fn project_geometry(
             id: point.clone(),
             position,
         });
-        if entry.status.subordinate == 0 || !analytic_surface_locations.contains(&entry.sequence) {
+        if entry.status.subordinate == Subordinate::Independent
+            || !analytic_surface_locations.contains(&entry.sequence)
+        {
             let vertex = VertexId::mint(format!("iges:model:vertex#D{}", entry.sequence))
                 .expect("identity grammar");
             ir.model.vertices.push(Vertex {

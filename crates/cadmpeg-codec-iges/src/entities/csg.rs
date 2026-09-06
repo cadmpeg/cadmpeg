@@ -5,7 +5,7 @@ use super::geometry::{
     declared_orthogonal_vectors, declared_unit_vector, entity_loss, resolve_transform,
     ProjectionOutcome,
 };
-use crate::directory::DirectoryEntry;
+use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
@@ -479,7 +479,7 @@ pub(super) fn project(
         let point = (2..=4)
             .map(|index| record.number(index).filter(|value| value.is_finite()))
             .collect::<Option<Vec<_>>>();
-        if point.is_none() || entry.status.use_flag != 3 {
+        if point.is_none() || entry.status.use_flag != UseFlag::Other {
             losses.push(entity_loss(
                 entry,
                 "selected-component point or entity-use flag is invalid",

@@ -2,7 +2,7 @@
 //! Versioned `native.iges` physical cards and entity records.
 
 use crate::card::{CardScan, ScannedLine, Section};
-use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, Status};
+use crate::directory::{BlankStatus, DirectoryEntry, QuarantinedDirectoryRecord, Status, UseFlag};
 use crate::entities::drawing::drawing_property_value;
 use crate::entities::geometry::{
     resolve_transform, Affine, BoundaryEndpoint, BoundaryVertexDerivation,
@@ -2242,7 +2242,7 @@ pub(crate) fn store(
         .map(|entry| NativeDisplayAttributes {
             id: format!("iges:presentation:display-attributes#D{}", entry.sequence),
             source_entity: format!("iges:entity:directory#{}", entry.sequence),
-            visible: entry.status.blank == 0,
+            visible: entry.status.blank == BlankStatus::Visible,
             line_font: resolve_display_ref(
                 references,
                 entry.sequence,
@@ -4954,7 +4954,7 @@ pub(crate) fn store(
                                     sequence,
                                     ReferenceExpectation::DrawingSpaceAnnotation,
                                     |target| {
-                                        target.status.use_flag == 1
+                                        target.status.use_flag == UseFlag::Annotation
                                             && target.status.is_physically_dependent()
                                     },
                                 )

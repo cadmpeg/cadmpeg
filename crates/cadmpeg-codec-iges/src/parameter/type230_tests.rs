@@ -2,12 +2,12 @@
 //! Type 230 parameter-table boundary tests.
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::{BlankStatus, DirectoryEntry, Hierarchy, Status, Subordinate, UseFlag};
 use std::collections::BTreeMap;
 
 use super::{
     analyze_trailing_pointer_groups, entity_primary_end, ParameterRecord, Token, TokenValue,
 };
-use crate::directory::{DirectoryEntry, Status};
 
 fn directory_target(sequence: u32, entity_type: i64, form: i64) -> DirectoryEntry {
     DirectoryEntry {
@@ -22,10 +22,10 @@ fn directory_target(sequence: u32, entity_type: i64, form: i64) -> DirectoryEntr
         transform: 0,
         label_display: 0,
         status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 0,
-            hierarchy: 0,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::Independent,
+            use_flag: UseFlag::Geometry,
+            hierarchy: Hierarchy::GlobalTopDown,
         },
         line_weight: 0,
         color: 0,

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::{BlankStatus, DirectoryEntry, Hierarchy, Status, Subordinate, UseFlag};
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -11,7 +12,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
-use crate::directory::{DirectoryEntry, Status};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, Token, TokenValue};
 use crate::test_support::*;
@@ -609,10 +609,10 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         transform: 0,
         label_display: 0,
         status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 0,
-            hierarchy: 0,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::Independent,
+            use_flag: UseFlag::Geometry,
+            hierarchy: Hierarchy::GlobalTopDown,
         },
         line_weight: 0,
         color: 0,
@@ -717,10 +717,10 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         transform: 0,
         label_display: 0,
         status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 0,
-            hierarchy: 0,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::Independent,
+            use_flag: UseFlag::Geometry,
+            hierarchy: Hierarchy::GlobalTopDown,
         },
         line_weight: 0,
         color: 0,
@@ -840,10 +840,10 @@ fn leader_entry(form: i64) -> DirectoryEntry {
         transform: 0,
         label_display: 0,
         status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 1,
-            hierarchy: 0,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::Independent,
+            use_flag: UseFlag::Annotation,
+            hierarchy: Hierarchy::GlobalTopDown,
         },
         line_weight: 0,
         color: 0,

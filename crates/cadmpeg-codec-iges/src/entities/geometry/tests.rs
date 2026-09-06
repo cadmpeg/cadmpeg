@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::{BlankStatus, Hierarchy, Subordinate, UseFlag};
 use std::io::Cursor;
 
 use cadmpeg_core::decode::ResourceDimension;
@@ -121,7 +122,7 @@ fn base_geometry_use_flag_follows_the_declared_dialect() {
         assert!(base_geometry_use_flag_valid(
             110,
             0,
-            use_flag,
+            UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later),
             GlobalTable::V4_0
         ));
     }
@@ -129,13 +130,28 @@ fn base_geometry_use_flag_follows_the_declared_dialect() {
         assert!(!base_geometry_use_flag_valid(
             110,
             0,
-            use_flag,
+            UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later),
             GlobalTable::V4_0
         ));
     }
-    assert!(base_geometry_use_flag_valid(110, 0, 3, GlobalTable::V5_0));
-    assert!(!base_geometry_use_flag_valid(116, 0, 3, GlobalTable::V4_0));
-    assert!(base_geometry_use_flag_valid(125, 0, 3, GlobalTable::V4_0));
+    assert!(base_geometry_use_flag_valid(
+        110,
+        0,
+        UseFlag::parse(3, crate::global::GlobalTable::V5Later),
+        GlobalTable::V5_0
+    ));
+    assert!(!base_geometry_use_flag_valid(
+        116,
+        0,
+        UseFlag::parse(3, crate::global::GlobalTable::V5Later),
+        GlobalTable::V4_0
+    ));
+    assert!(base_geometry_use_flag_valid(
+        125,
+        0,
+        UseFlag::parse(3, crate::global::GlobalTable::V5Later),
+        GlobalTable::V4_0
+    ));
 }
 
 #[test]
@@ -487,10 +503,10 @@ fn transform_depth_overflow_is_a_structured_resource_refusal() {
             transform,
             label_display: 0,
             status: crate::directory::Status {
-                blank: 0,
-                subordinate: 0,
-                use_flag: 0,
-                hierarchy: 0,
+                blank: BlankStatus::Visible,
+                subordinate: Subordinate::Independent,
+                use_flag: UseFlag::Geometry,
+                hierarchy: Hierarchy::GlobalTopDown,
             },
             line_weight: 0,
             color: 0,

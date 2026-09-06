@@ -4,6 +4,8 @@
 
 mod nurbs;
 
+use crate::directory::UseFlag;
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::ResourceDimension;
@@ -54,55 +56,87 @@ fn composite_child_count_follows_the_declared_dialect() {
 
 #[test]
 fn composite_entity_use_flag_follows_the_declared_dialect() {
-    assert!(composite_use_flag_valid(0, GlobalTable::V4_0));
+    assert!(composite_use_flag_valid(
+        UseFlag::parse(0, crate::global::GlobalTable::V5Later),
+        GlobalTable::V4_0
+    ));
     for use_flag in [1, 2, 3, 4, 5] {
         assert!(
-            !composite_use_flag_valid(use_flag, GlobalTable::V4_0),
+            !composite_use_flag_valid(
+                UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later),
+                GlobalTable::V4_0
+            ),
             "{use_flag}"
         );
     }
     for use_flag in 0..=6 {
         assert!(
-            composite_use_flag_valid(use_flag, GlobalTable::V5_0),
+            composite_use_flag_valid(
+                UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later),
+                GlobalTable::V5_0
+            ),
             "{use_flag}"
         );
     }
-    assert!(!composite_use_flag_valid(7, GlobalTable::V5_0));
+    assert!(!composite_use_flag_valid(
+        UseFlag::parse(7, crate::global::GlobalTable::V5Later),
+        GlobalTable::V5_0
+    ));
 }
 
 #[test]
 fn composite_line_font_follows_the_declared_dialect_and_hierarchy() {
-    assert!(composite_line_font_valid(1, 0, GlobalTable::V4_0));
-    assert!(composite_line_font_valid(-3, 2, GlobalTable::V4_0));
-    assert!(!composite_line_font_valid(0, 0, GlobalTable::V4_0));
-    assert!(composite_line_font_valid(0, 1, GlobalTable::V4_0));
-    assert!(composite_line_font_valid(0, 0, GlobalTable::V5_0));
+    assert!(composite_line_font_valid(
+        1,
+        crate::directory::Hierarchy::parse(0),
+        GlobalTable::V4_0
+    ));
+    assert!(composite_line_font_valid(
+        -3,
+        crate::directory::Hierarchy::parse(2),
+        GlobalTable::V4_0
+    ));
+    assert!(!composite_line_font_valid(
+        0,
+        crate::directory::Hierarchy::parse(0),
+        GlobalTable::V4_0
+    ));
+    assert!(composite_line_font_valid(
+        0,
+        crate::directory::Hierarchy::parse(1),
+        GlobalTable::V4_0
+    ));
+    assert!(composite_line_font_valid(
+        0,
+        crate::directory::Hierarchy::parse(0),
+        GlobalTable::V5_0
+    ));
 }
 
 #[test]
 fn composite_logical_connector_use_flag_is_a_v5_rule() {
     assert!(composite_logical_connector_use_valid(
-        0,
+        UseFlag::parse(0, crate::global::GlobalTable::V5Later),
         true,
         GlobalTable::V4_0
     ));
     assert!(!composite_logical_connector_use_valid(
-        0,
+        UseFlag::parse(0, crate::global::GlobalTable::V5Later),
         true,
         GlobalTable::V5_0
     ));
     assert!(composite_logical_connector_use_valid(
-        4,
+        UseFlag::parse(4, crate::global::GlobalTable::V5Later),
         true,
         GlobalTable::V5Later
     ));
     assert!(!composite_logical_connector_use_valid(
-        5,
+        UseFlag::parse(5, crate::global::GlobalTable::V5Later),
         true,
         GlobalTable::V5_0
     ));
     assert!(composite_logical_connector_use_valid(
-        0,
+        UseFlag::parse(0, crate::global::GlobalTable::V5Later),
         false,
         GlobalTable::V5_0
     ));
@@ -912,7 +946,8 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
 
     let mut child_id = base_id;
     for level in 0..65 {
-        let composite_id = CurveId::mint(format!("test:model:curve#composite-{level}")).expect("identity grammar");
+        let composite_id =
+            CurveId::mint(format!("test:model:curve#composite-{level}")).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: composite_id.clone(),
             geometry: CurveGeometry::Composite {
@@ -988,7 +1023,8 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
         },
         Vertex {
             id: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
-            point: PointId::mint("test:model:point#matching-start-point").expect("identity grammar"),
+            point: PointId::mint("test:model:point#matching-start-point")
+                .expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
@@ -1041,10 +1077,14 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
         source_object: None,
     });
     for (index, end) in [(0, 1.0), (1, 2.0)] {
-        let start_point = PointId::mint(format!("test:model:point#start-point-{index}")).expect("identity grammar");
-        let end_point = PointId::mint(format!("test:model:point#end-point-{index}")).expect("identity grammar");
-        let start_vertex = VertexId::mint(format!("test:model:vertex#start-{index}")).expect("identity grammar");
-        let end_vertex = VertexId::mint(format!("test:model:vertex#end-{index}")).expect("identity grammar");
+        let start_point = PointId::mint(format!("test:model:point#start-point-{index}"))
+            .expect("identity grammar");
+        let end_point =
+            PointId::mint(format!("test:model:point#end-point-{index}")).expect("identity grammar");
+        let start_vertex =
+            VertexId::mint(format!("test:model:vertex#start-{index}")).expect("identity grammar");
+        let end_vertex =
+            VertexId::mint(format!("test:model:vertex#end-{index}")).expect("identity grammar");
         ir.model.points.extend([
             Point {
                 id: start_point.clone(),
@@ -1587,8 +1627,10 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
         ir.model.edges.push(Edge {
             id: EdgeId::mint(format!("test:model:edge#edge-{index}")).expect("identity grammar"),
             curve: Some(curve),
-            start: VertexId::mint(format!("test:model:vertex#start-{index}")).expect("identity grammar"),
-            end: VertexId::mint(format!("test:model:vertex#end-{index}")).expect("identity grammar"),
+            start: VertexId::mint(format!("test:model:vertex#start-{index}"))
+                .expect("identity grammar"),
+            end: VertexId::mint(format!("test:model:vertex#end-{index}"))
+                .expect("identity grammar"),
             param_range: Some([0.0, 1.0]),
             tolerance: None,
         });
@@ -1662,8 +1704,10 @@ fn decode_concatenates_ordered_composite_curve_children() {
         .iter()
         .find(|curve| curve.id.0 == "iges:model:curve#D5")
         .unwrap();
-    let CurveGeometry::Nurbs(nurbs) =
-        composite.geometry.solved_cache().unwrap_or(&composite.geometry)
+    let CurveGeometry::Nurbs(nurbs) = composite
+        .geometry
+        .solved_cache()
+        .unwrap_or(&composite.geometry)
     else {
         panic!("expected a concatenated NURBS cache");
     };
@@ -1694,7 +1738,10 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         .find(|curve| curve.id.0 == "iges:model:curve#D5")
         .expect("Type 102 curve within the Global resolution");
     assert!(matches!(
-        *within_curve.geometry.solved_cache().unwrap_or(&within_curve.geometry),
+        *within_curve
+            .geometry
+            .solved_cache()
+            .unwrap_or(&within_curve.geometry),
         cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
     ));
     assert!(within_resolution.report().losses.is_empty());
@@ -1747,7 +1794,10 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         .find(|curve| curve.id.0 == "iges:model:curve#D5")
         .expect("Type 102 curve at the Global resolution");
     assert!(matches!(
-        *at_or_beyond_resolution_curve.geometry.solved_cache().unwrap_or(&at_or_beyond_resolution_curve.geometry),
+        *at_or_beyond_resolution_curve
+            .geometry
+            .solved_cache()
+            .unwrap_or(&at_or_beyond_resolution_curve.geometry),
         cadmpeg_ir::geometry::CurveGeometry::Composite { .. }
     ));
     assert_eq!(
@@ -1800,8 +1850,10 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
         .iter()
         .find(|curve| curve.id.0 == "iges:model:curve#D5")
         .unwrap();
-    let CurveGeometry::Nurbs(nurbs) =
-        composite.geometry.solved_cache().unwrap_or(&composite.geometry)
+    let CurveGeometry::Nurbs(nurbs) = composite
+        .geometry
+        .solved_cache()
+        .unwrap_or(&composite.geometry)
     else {
         panic!("expected an exact quadratic composite cache");
     };
@@ -1829,8 +1881,10 @@ fn decode_converts_heterogeneous_composite_curve_children_to_an_exact_carrier() 
         .iter()
         .find(|curve| curve.id.0 == "iges:model:curve#D5")
         .unwrap();
-    let CurveGeometry::Nurbs(nurbs) =
-        composite.geometry.solved_cache().unwrap_or(&composite.geometry)
+    let CurveGeometry::Nurbs(nurbs) = composite
+        .geometry
+        .solved_cache()
+        .unwrap_or(&composite.geometry)
     else {
         panic!("expected an exact heterogeneous composite carrier");
     };
@@ -1922,7 +1976,10 @@ fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_chil
         .find(|curve| curve.id.0 == "iges:model:curve#D3")
         .expect("composite curve should be projected after its spline child");
     assert!(matches!(
-        *composite.geometry.solved_cache().unwrap_or(&composite.geometry),
+        *composite
+            .geometry
+            .solved_cache()
+            .unwrap_or(&composite.geometry),
         cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
     ));
     assert_eq!(result.report().losses.len(), 2);

@@ -2,7 +2,7 @@
 //! Views, drawings, and view-dependent presentation relationships.
 
 use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
-use crate::directory::DirectoryEntry;
+use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
@@ -57,11 +57,11 @@ fn standard_color_valid(value: i64) -> bool {
 fn drawing_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
     entry.entity_type == 404
         && matches!(entry.form, 0 | 1)
-        && entry.status.subordinate == 0
+        && entry.status.subordinate == Subordinate::Independent
         && match global_table {
-            GlobalTable::V4_0 | GlobalTable::Legacy => entry.status.use_flag != 0,
+            GlobalTable::V4_0 | GlobalTable::Legacy => entry.status.use_flag != UseFlag::Geometry,
             GlobalTable::V5_0 | GlobalTable::V5Later => {
-                entry.status.use_flag == 1
+                entry.status.use_flag == UseFlag::Annotation
                     && entry.structure == 0
                     && entry.line_font == 0
                     && entry.line_weight == 0
@@ -74,8 +74,10 @@ fn view_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bo
     entry.entity_type == 410
         && matches!(entry.form, 0 | 1)
         && match global_table {
-            GlobalTable::V4_0 | GlobalTable::Legacy => entry.status.use_flag != 0,
-            GlobalTable::V5_0 | GlobalTable::V5Later => entry.status.use_flag == 1,
+            GlobalTable::V4_0 | GlobalTable::Legacy => entry.status.use_flag != UseFlag::Geometry,
+            GlobalTable::V5_0 | GlobalTable::V5Later => {
+                entry.status.use_flag == UseFlag::Annotation
+            }
         }
 }
 
@@ -85,16 +87,19 @@ fn views_visible_directory_valid(entry: &DirectoryEntry, global_table: GlobalTab
             GlobalTable::V4_0 => matches!(entry.form, 3 | 4),
             _ => matches!(entry.form, 3 | 4 | 19),
         }
-        && entry.status.subordinate == 0
+        && entry.status.subordinate == Subordinate::Independent
         && (!matches!(global_table, GlobalTable::V5_0 | GlobalTable::V5Later)
-            || entry.status.use_flag == 1)
+            || entry.status.use_flag == UseFlag::Annotation)
 }
 
 fn clipping_plane_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
     entry.entity_type == 108
         && match global_table {
-            GlobalTable::V4_0 => matches!(entry.status.use_flag, 0 | 1 | 2 | 5),
-            _ => entry.status.use_flag == 1,
+            GlobalTable::V4_0 => matches!(
+                entry.status.use_flag,
+                UseFlag::Geometry | UseFlag::Annotation | UseFlag::Definition | UseFlag::Parametric
+            ),
+            _ => entry.status.use_flag == UseFlag::Annotation,
         }
 }
 
@@ -267,7 +272,7 @@ pub(super) fn project(
                     .and_then(|value| u32::try_from(value).ok())
                     .and_then(|sequence| entries.get(&sequence).copied())
                     .is_some_and(|annotation| {
-                        annotation.status.use_flag == 1
+                        annotation.status.use_flag == UseFlag::Annotation
                             && annotation.status.is_physically_dependent()
                     })
             })

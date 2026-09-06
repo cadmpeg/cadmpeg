@@ -13,30 +13,184 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub(crate) struct Status {
     #[serde(rename = "blank_status")]
-    pub(crate) blank: u8,
+    pub(crate) blank: BlankStatus,
     #[serde(rename = "subordinate_status")]
-    pub(crate) subordinate: u8,
-    pub(crate) use_flag: u8,
+    pub(crate) subordinate: Subordinate,
+    pub(crate) use_flag: UseFlag,
     #[serde(rename = "hierarchy_status")]
-    pub(crate) hierarchy: u8,
+    pub(crate) hierarchy: Hierarchy,
+}
+
+/// A status value retained without an admitted semantic interpretation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ResidualStatus(u8);
+
+/// Display status, including uninterpreted source values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BlankStatus {
+    Visible,
+    Blanked,
+    Residual(ResidualStatus),
+}
+
+impl BlankStatus {
+    pub(crate) fn parse(value: u8) -> Self {
+        match value {
+            0 => Self::Visible,
+            1 => Self::Blanked,
+            value => Self::Residual(ResidualStatus(value)),
+        }
+    }
+
+    pub(crate) fn code(self) -> u8 {
+        match self {
+            Self::Visible => 0,
+            Self::Blanked => 1,
+            Self::Residual(value) => value.0,
+        }
+    }
+}
+
+impl Serialize for BlankStatus {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(self.code())
+    }
+}
+
+/// Directory attribute hierarchy, including uninterpreted source values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Hierarchy {
+    GlobalTopDown,
+    GlobalDefer,
+    Property,
+    Residual(ResidualStatus),
+}
+
+impl Hierarchy {
+    pub(crate) fn parse(value: u8) -> Self {
+        match value {
+            0 => Self::GlobalTopDown,
+            1 => Self::GlobalDefer,
+            2 => Self::Property,
+            value => Self::Residual(ResidualStatus(value)),
+        }
+    }
+
+    pub(crate) fn code(self) -> u8 {
+        match self {
+            Self::GlobalTopDown => 0,
+            Self::GlobalDefer => 1,
+            Self::Property => 2,
+            Self::Residual(value) => value.0,
+        }
+    }
+}
+
+impl Serialize for Hierarchy {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(self.code())
+    }
+}
+
+/// Dependency switch, including retained undefined source values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Subordinate {
+    Independent,
+    Physically,
+    Logically,
+    Both,
+    Residual(ResidualStatus),
+}
+
+impl Subordinate {
+    pub(crate) fn parse(value: u8) -> Self {
+        match value {
+            0 => Self::Independent,
+            1 => Self::Physically,
+            2 => Self::Logically,
+            3 => Self::Both,
+            value => Self::Residual(ResidualStatus(value)),
+        }
+    }
+
+    pub(crate) fn code(self) -> u8 {
+        match self {
+            Self::Independent => 0,
+            Self::Physically => 1,
+            Self::Logically => 2,
+            Self::Both => 3,
+            Self::Residual(value) => value.0,
+        }
+    }
+}
+
+impl Serialize for Subordinate {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(self.code())
+    }
+}
+
+/// Entity use admitted by the declared profile, or its retained residual value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum UseFlag {
+    Geometry,
+    Annotation,
+    Definition,
+    Other,
+    LogicalPositional,
+    Parametric,
+    Construction,
+    Residual(ResidualStatus),
+}
+
+impl UseFlag {
+    pub(crate) fn parse(value: u8, global_table: GlobalTable) -> Self {
+        match value {
+            0 => Self::Geometry,
+            1 => Self::Annotation,
+            2 => Self::Definition,
+            3 => Self::Other,
+            4 => Self::LogicalPositional,
+            5 => Self::Parametric,
+            6 if !matches!(global_table, GlobalTable::V4_0) => Self::Construction,
+            value => Self::Residual(ResidualStatus(value)),
+        }
+    }
+
+    pub(crate) fn code(self) -> u8 {
+        match self {
+            Self::Geometry => 0,
+            Self::Annotation => 1,
+            Self::Definition => 2,
+            Self::Other => 3,
+            Self::LogicalPositional => 4,
+            Self::Parametric => 5,
+            Self::Construction => 6,
+            Self::Residual(value) => value.0,
+        }
+    }
+
+    pub(crate) fn is_admitted(self) -> bool {
+        !matches!(self, Self::Residual(_))
+    }
+}
+
+impl Serialize for UseFlag {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(self.code())
+    }
 }
 
 impl Status {
-    pub(crate) fn is_use_flag_valid(self, global_table: GlobalTable) -> bool {
-        self.use_flag
-            <= if matches!(global_table, GlobalTable::V4_0) {
-                5
-            } else {
-                6
-            }
-    }
-
     pub(crate) fn is_physically_dependent(self) -> bool {
-        matches!(self.subordinate, 1 | 3)
+        matches!(
+            self.subordinate,
+            Subordinate::Physically | Subordinate::Both
+        )
     }
 
     pub(crate) fn is_logically_dependent(self) -> bool {
-        matches!(self.subordinate, 2 | 3)
+        matches!(self.subordinate, Subordinate::Logically | Subordinate::Both)
     }
 }
 
@@ -189,10 +343,10 @@ fn directory_integer(
 fn status(field: [u8; 8], global_table: GlobalTable) -> Result<Status, DirectoryDefect> {
     if field.iter().all(|byte| *byte == b' ') {
         return Ok(Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 0,
-            hierarchy: 0,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::Independent,
+            use_flag: UseFlag::Geometry,
+            hierarchy: Hierarchy::GlobalTopDown,
         });
     }
     let mut digits = [b'0'; 8];
@@ -221,10 +375,10 @@ fn status(field: [u8; 8], global_table: GlobalTable) -> Result<Status, Directory
     let digit = |at: usize| digits[at] - b'0';
     let pair = |at: usize| digit(at) * 10 + digit(at + 1);
     Ok(Status {
-        blank: pair(0),
-        subordinate: pair(2),
-        use_flag: pair(4),
-        hierarchy: pair(6),
+        blank: BlankStatus::parse(pair(0)),
+        subordinate: Subordinate::parse(pair(2)),
+        use_flag: UseFlag::parse(pair(4), global_table),
+        hierarchy: Hierarchy::parse(pair(6)),
     })
 }
 

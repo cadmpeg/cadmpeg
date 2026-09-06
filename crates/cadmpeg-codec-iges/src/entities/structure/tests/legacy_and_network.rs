@@ -1,4 +1,5 @@
 use super::*;
+use crate::directory::{BlankStatus, Subordinate, UseFlag};
 
 #[test]
 fn decode_resolves_legacy_text_node_font_pointer() {
@@ -974,10 +975,10 @@ fn subfigure_definition_directory_fields_use_the_v4_table_rules() {
         transform: 0,
         label_display: 0,
         status: Status {
-            blank: 0,
-            subordinate,
-            use_flag,
-            hierarchy,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::parse(subordinate),
+            use_flag: UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later),
+            hierarchy: crate::directory::Hierarchy::parse(hierarchy),
         },
         line_weight: 0,
         color: 0,

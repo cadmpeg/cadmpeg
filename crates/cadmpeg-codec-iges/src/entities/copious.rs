@@ -2,7 +2,7 @@
 //! Copious point, linear-path, and presentation tuple projection.
 
 use super::geometry::{entity_loss, resolve_transform, source_object};
-use crate::directory::DirectoryEntry;
+use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
@@ -53,8 +53,8 @@ fn presentation_form(form: i64) -> bool {
     matches!(form, 20 | 21 | 31..=38 | 40)
 }
 
-fn presentation_use_flag_valid(form: i64, use_flag: u8) -> bool {
-    !presentation_form(form) || use_flag == 1
+fn presentation_use_flag_valid(form: i64, use_flag: UseFlag) -> bool {
+    !presentation_form(form) || use_flag == UseFlag::Annotation
 }
 
 fn presentation_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {

@@ -6,7 +6,7 @@ use super::presentation::{
     general_note_font_valid_for_global_table, new_general_note_charset_valid,
     new_general_note_font_valid,
 };
-use crate::directory::DirectoryEntry;
+use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::parameter::{DefaultTailCount, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
@@ -461,7 +461,7 @@ fn child_valid(
         entry.entity_type == entity_type
             && forms(entry.form)
             && entry.status.is_physically_dependent()
-            && entry.status.use_flag == 1
+            && entry.status.use_flag == UseFlag::Annotation
             && records
                 .get(&sequence)
                 .is_some_and(|record| match entity_type {
@@ -488,7 +488,7 @@ fn general_note_child_valid(
         entry.entity_type == 212
             && crate::profile::general_note_form_admitted(entry.form)
             && entry.status.is_physically_dependent()
-            && entry.status.use_flag == 1
+            && entry.status.use_flag == UseFlag::Annotation
             && records.get(&sequence).is_some_and(|record| {
                 general_note_valid_for_global_table(record, entries, global_table, entry.form)
             })
@@ -617,13 +617,13 @@ fn dimension_valid(
             let curves_valid = curve_entries[0].is_some_and(|curve| {
                 parameterized_curve_type(curve)
                     && curve.status.is_physically_dependent()
-                    && curve.status.use_flag == 1
+                    && curve.status.use_flag == UseFlag::Annotation
             }) && match record.integer(3) {
                 Some(0) => true,
                 Some(_) => curve_entries[1].is_some_and(|curve| {
                     parameterized_curve_type(curve)
                         && curve.status.is_physically_dependent()
-                        && curve.status.use_flag == 1
+                        && curve.status.use_flag == UseFlag::Annotation
                         && !(curve.entity_type == 110
                             && curve_entries[0].is_some_and(|first| first.entity_type == 110))
                 }),
@@ -795,7 +795,7 @@ fn dimension_valid(
                             entry.form,
                             global_table,
                         ) && entry.status.is_physically_dependent()
-                            && entry.status.use_flag == 1
+                            && entry.status.use_flag == UseFlag::Annotation
                     })
                 }),
                 None => false,
@@ -914,7 +914,8 @@ fn general_symbol_valid(
     let geometry_valid = (0..geometry_count).all(|offset| {
         pointer(record, 3 + offset, entries).is_some_and(|sequence| {
             entries.get(&sequence).is_some_and(|target| {
-                target.status.is_physically_dependent() && target.status.use_flag == 1
+                target.status.is_physically_dependent()
+                    && target.status.use_flag == UseFlag::Annotation
             })
         })
     });
@@ -1086,7 +1087,7 @@ pub(super) fn project(
             )
             .ok();
             let transform_valid = resolved_transform.is_some();
-            entry.status.use_flag == 1
+            entry.status.use_flag == UseFlag::Annotation
                 && transform_valid
                 && match kind {
                     AnnotationKind::AngularDimension

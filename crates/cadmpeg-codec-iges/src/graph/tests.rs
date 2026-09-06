@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::ReferenceOrigin;
+use crate::directory::{BlankStatus, DirectoryEntry, Hierarchy, Status, Subordinate, UseFlag};
 use crate::graph::expectation::ReferenceExpectation;
 use std::collections::BTreeMap;
 use std::io::Cursor;
@@ -12,7 +13,6 @@ use super::{
     build, cyclic_transform_nodes, ParameterResolver, ReferenceEdge, ReferenceKind, Resolution,
     MAX_POINTER_SEQUENCE,
 };
-use crate::directory::{DirectoryEntry, Status};
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
@@ -30,10 +30,10 @@ fn directory_entry(sequence: u32, entity_type: i64) -> DirectoryEntry {
         transform: 0,
         label_display: 0,
         status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 0,
-            hierarchy: 0,
+            blank: BlankStatus::Visible,
+            subordinate: Subordinate::Independent,
+            use_flag: UseFlag::Geometry,
+            hierarchy: Hierarchy::GlobalTopDown,
         },
         line_weight: 0,
         color: 0,
