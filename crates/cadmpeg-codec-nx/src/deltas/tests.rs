@@ -46,7 +46,7 @@ fn deltas_walks_complete_status_prefixed_entity_51_records() {
     assert_eq!(census.records[0].kind(), 81);
     assert_eq!(census.records[0].xmt, 10);
     assert_eq!(census.records[0].family.node_id(), None);
-    assert_eq!(census.records[0].references, [3, 4, 5, 6, 7, 8]);
+    assert_eq!(census.records[0].family.references(), [3, 4, 5, 6, 7, 8]);
     assert_eq!(census.records[0].end, entity_len);
     assert_eq!(census.full_counts["ENTITY_51"], 1);
     assert_eq!(census.bytes_decoded, stream.len());
@@ -381,7 +381,7 @@ fn deltas_walks_complete_type_91_records() {
     assert_eq!(census.records[0].kind(), 91);
     assert_eq!(census.records[0].xmt, 10);
     assert_eq!(census.records[0].family.node_id(), None);
-    assert_eq!(census.records[0].references, [3, 4, 5, 6, 7, 8]);
+    assert_eq!(census.records[0].family.references(), [3, 4, 5, 6, 7, 8]);
     assert_eq!(census.records[0].canonical_bytes, direct);
     assert_eq!(census.records[1].xmt, 11);
     assert_eq!(census.records[1].canonical_bytes, escaped);
@@ -422,7 +422,7 @@ fn deltas_walks_complete_group_records() {
     assert_eq!(census.records[0].kind(), 90);
     assert_eq!(census.records[0].xmt, 32_769);
     assert_eq!(census.records[0].family.node_id(), Some(7));
-    assert_eq!(census.records[0].references, [3, 4, 5, 6, 8]);
+    assert_eq!(census.records[0].family.references(), [3, 4, 5, 6, 8]);
     assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
     assert_eq!(census.full_counts["GROUP"], 1);
     assert_eq!(census.bytes_decoded, direct_len);
@@ -475,7 +475,7 @@ fn deltas_walks_group_records_without_leading_statuses() {
     assert_eq!(census.records[0].kind(), 90);
     assert_eq!(census.records[0].xmt, 10);
     assert_eq!(census.records[0].family.node_id(), Some(11));
-    assert_eq!(census.records[0].references, [3, 4, 5, 6, 8]);
+    assert_eq!(census.records[0].family.references(), [3, 4, 5, 6, 8]);
     assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
     assert_eq!(census.records[0].end, direct_len);
     assert_eq!(census.full_counts["GROUP"], 1);
@@ -501,7 +501,7 @@ fn deltas_walks_group_records_without_leading_statuses() {
     let census = crate::deltas::walk(&escaped);
     assert_eq!(census.records.len(), 1);
     assert_eq!(census.records[0].xmt, 10);
-    assert_eq!(census.records[0].references, [3, 4, 5, 6, 8]);
+    assert_eq!(census.records[0].family.references(), [3, 4, 5, 6, 8]);
     assert_eq!(census.records[0].end, escaped.len());
 }
 
@@ -524,7 +524,7 @@ fn deltas_walks_complete_attdef_lists() {
     assert_eq!(census.records[0].kind(), 74);
     assert_eq!(census.records[0].xmt, 10);
     assert_eq!(census.records[0].family.node_id(), None);
-    assert_eq!(census.records[0].references, [1, 20, 21, 1]);
+    assert_eq!(census.records[0].family.references(), [1, 20, 21, 1]);
     assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
     assert_eq!(census.full_counts["ATTDEF_LIST"], 1);
     assert_eq!(census.bytes_decoded, direct_len);
@@ -573,7 +573,7 @@ fn deltas_walks_complete_type_101_records() {
     assert_eq!(census.records[0].kind(), 101);
     assert_eq!(census.records[0].xmt, 2);
     assert_eq!(census.records[0].family.node_id(), None);
-    assert_eq!(census.records[0].references, (3u32..18).collect::<Vec<_>>());
+    assert_eq!(census.records[0].family.references(), (3u32..18).collect::<Vec<_>>());
     assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
     assert_eq!(census.full_counts["TYPE_101"], 1);
     assert_eq!(census.bytes_decoded, direct_len);
@@ -806,7 +806,7 @@ fn deltas_walks_complete_single_byte_intersection_data_records() {
     assert_eq!(census.records[0].xmt, 12);
     assert_eq!(census.records[0].offset, record_offset);
     assert_eq!(
-        census.records[0].references,
+        census.records[0].family.references(),
         [1, 2, 3, 4, 5, 6, 6, 1, 1, 1, 1]
     );
     assert_eq!(
@@ -1017,7 +1017,7 @@ fn deltas_walks_status_framed_blend_bound_records() {
     assert_eq!(census.bytes_decoded, stream.len());
     assert_eq!(census.records[0].canonical_bytes, direct);
     assert_eq!(
-        census.records[0].references,
+        census.records[0].family.references(),
         [1, 3, 40_001, 1, 40_002, 0, 40_003]
     );
     assert_eq!(census.records[1].canonical_bytes, escaped);
@@ -1226,10 +1226,10 @@ fn deltas_walks_complete_type_141_records() {
     assert_eq!(census.records[1].xmt, 33_000);
     assert_eq!(census.records[2].canonical_bytes, escaped);
     assert_eq!(census.records[2].xmt, 40_000);
-    assert_eq!(census.records[2].references, [40_001, 1, 0, 40_002]);
+    assert_eq!(census.records[2].family.references(), [40_001, 1, 0, 40_002]);
     assert_eq!(census.records[3].canonical_bytes, ambiguous_escaped);
     assert_eq!(census.records[3].xmt, 325);
-    assert_eq!(census.records[3].references, [317, 44, 44, 8]);
+    assert_eq!(census.records[3].family.references(), [317, 44, 44, 8]);
 
     let residual = crate::deltas::semantic_residual(&stream);
     assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
@@ -1359,7 +1359,7 @@ fn deltas_walks_complete_type_70_records() {
     assert_eq!(census.bytes_decoded, stream.len());
     assert_eq!(census.records[0].canonical_bytes, direct);
     assert_eq!(census.records[0].family.node_id(), Some(0));
-    assert_eq!(census.records[0].references, [3, 1, 1, 0, 52, 52]);
+    assert_eq!(census.records[0].family.references(), [3, 1, 1, 0, 52, 52]);
     assert_eq!(census.records[1].canonical_bytes, escaped);
     assert_eq!(census.records[1].xmt, 40_000);
 

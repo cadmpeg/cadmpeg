@@ -40,9 +40,8 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
     let record = crate::native::parasolid::ParasolidDeltasRecord {
         id: "nx:test:deltas#0".into(),
         stream_ordinal: 1,
-        family: crate::deltas::RecordFamily::Face { node_id: 42 },
+        family: crate::deltas::RecordFamily::Face { node_id: 42, references: [1; 11] },
         xmt: 99,
-        references: Vec::new(),
         byte_len: 1,
         inflated_offset: 0,
     };

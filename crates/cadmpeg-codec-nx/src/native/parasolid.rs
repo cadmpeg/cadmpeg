@@ -129,8 +129,7 @@ pub(crate) fn parasolid_group_records(
             continue;
         };
         for record in crate::deltas::walk(&stream.inflated).records {
-            let crate::deltas::RecordFamily::Group { node_id, selector, linked_reference_status } = record.family else { continue; };
-            let Ok(references) = record.references.try_into() else { continue; };
+            let crate::deltas::RecordFamily::Group { node_id, selector, linked_reference_status, references } = record.family else { continue; };
             groups.push(ParasolidGroupRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:parasolid-group#{}-{}",
@@ -152,19 +151,19 @@ pub(crate) fn parasolid_group_records(
             node_id,
             selector,
             linked_reference_status,
-        } = record.family
+            references,
+        } = &record.family
         else {
             continue;
         };
-        let Ok(references) = record.references.as_slice().try_into() else { continue; };
         groups.push(ParasolidGroupRecord {
             id: record.id.replacen("deltas-record", "parasolid-group", 1),
             origin: GroupOrigin::Deltas { stream_ordinal: record.stream_ordinal, partition_stream_ordinal: usize::try_from(record.stream_ordinal).ok().and_then(|delta| paired_partition.get(&delta).copied()) },
             xmt: record.xmt,
-            node_id,
-            references,
-            selector,
-            linked_reference_status,
+            node_id: *node_id,
+            references: *references,
+            selector: *selector,
+            linked_reference_status: *linked_reference_status,
             byte_len: record.byte_len,
             inflated_offset: record.inflated_offset,
         });
@@ -185,18 +184,15 @@ fn group_members_from_records(
         Some([record]) => Some(*record),
         _ => None,
     };
-    let mut groups_by_node = BTreeMap::<u32, Vec<&crate::deltas::Record>>::new();
+    let mut groups_by_node = BTreeMap::<u32, Vec<(u32, u32)>>::new();
     for record in records {
-        if let crate::deltas::RecordFamily::Group { node_id, .. } = record.family {
-            groups_by_node.entry(node_id).or_default().push(record);
+        if let crate::deltas::RecordFamily::Group { node_id, references, .. } = &record.family {
+            groups_by_node.entry(*node_id).or_default().push((record.xmt, references[4]));
         }
     }
     let mut members = Vec::new();
     for (&group_node_id, groups) in &groups_by_node {
-        let [group] = groups.as_slice() else {
-            continue;
-        };
-        let Some(&tail) = group.references.get(4) else {
+        let &[(group_xmt, tail)] = groups.as_slice() else {
             continue;
         };
         let mut reverse_chain = Vec::new();
@@ -213,26 +209,26 @@ fn group_members_from_records(
                 complete = false;
                 break;
             };
-            if !matches!(list_record.family, crate::deltas::RecordFamily::Type91)
-                || list_record.references.len() != 6
-                || list_record.references[0] != group.xmt
-                || list_record.references[5] != expected_next
-            {
+            let crate::deltas::RecordFamily::Type91 { references } = &list_record.family else {
+                complete = false;
+                break;
+            };
+            if references[0] != group_xmt || references[5] != expected_next {
                 complete = false;
                 break;
             }
-            let member_xmt = list_record.references[1];
+            let member_xmt = references[1];
             let Some(member_record) = unique_record(member_xmt) else {
                 complete = false;
                 break;
             };
-            let Some(target) = GroupMemberTarget::from_record(member_record.family) else {
+            let Some(target) = GroupMemberTarget::from_record(&member_record.family) else {
                 complete = false;
                 break;
             };
             reverse_chain.push((current, member_xmt, target));
             expected_next = current;
-            current = list_record.references[4];
+            current = references[4];
         }
         if !complete || reverse_chain.is_empty() {
             continue;
@@ -243,10 +239,10 @@ fn group_members_from_records(
                 Some(ParasolidGroupMember {
                     id: format!(
                         "nx:s{partition_stream_ordinal}:parasolid-group-member#{group_node_id}-{}-{ordinal}",
-                        group.xmt
+                        group_xmt
                     ),
                     partition_stream_ordinal,
-                    group_xmt: group.xmt,
+                    group_xmt,
                     group_node_id,
                     ordinal: u32::try_from(ordinal).ok()?,
                     list_record_xmt,
@@ -336,8 +332,6 @@ pub struct ParasolidDeltasRecord {
     pub family: crate::deltas::RecordFamily,
     /// Stream-local XMT identity.
     pub xmt: u32,
-    /// Ordered decoded XMT references.
-    pub references: Vec<u32>,
     /// Exact serialized record length.
     pub byte_len: u64,
     /// Record tag offset in the inflated stream.
@@ -381,12 +375,12 @@ struct ParasolidDeltasRecordWire {
 
 impl From<ParasolidDeltasRecord> for ParasolidDeltasRecordWire {
     fn from(value: ParasolidDeltasRecord) -> Self {
-        let (group_selector, group_linked_reference_status) = match value.family {
+        let (group_selector, group_linked_reference_status) = match &value.family {
             crate::deltas::RecordFamily::Group {
                 selector,
                 linked_reference_status,
                 ..
-            } => (Some(selector), Some(linked_reference_status)),
+            } => (Some(*selector), Some(*linked_reference_status)),
             _ => (None, None),
         };
         Self {
@@ -396,7 +390,7 @@ impl From<ParasolidDeltasRecord> for ParasolidDeltasRecordWire {
             kind: value.family.kind(),
             xmt: value.xmt,
             node_id: value.family.node_id(),
-            references: value.references,
+            references: value.family.references().to_vec(),
             group_selector,
             group_linked_reference_status,
             position: value.family.position(),
@@ -417,17 +411,43 @@ impl TryFrom<ParasolidDeltasRecordWire> for ParasolidDeltasRecord {
             wire.position,
             wire.group_selector,
             wire.group_linked_reference_status,
+            wire.references,
         )
-        .ok_or_else(|| "deltas record family disagrees with kind and payload".to_owned())?;
+        .ok_or_else(|| "deltas record family disagrees with kind, references, or payload".to_owned())?;
         Ok(Self {
             id: wire.id,
             stream_ordinal: wire.stream_ordinal,
             family,
             xmt: wire.xmt,
-            references: wire.references,
             byte_len: wire.byte_len,
             inflated_offset: wire.inflated_offset,
         })
+    }
+}
+
+#[cfg(test)]
+mod deltas_record_wire_tests {
+    use super::ParasolidDeltasRecord;
+
+    #[test]
+    fn record_family_owns_fixed_and_empty_reference_payloads() {
+        for json in [
+            r#"{"id":"group","stream_ordinal":0,"family":"GROUP","kind":90,"xmt":10,"node_id":7,"references":[3,4,5,6,30],"group_selector":4,"group_linked_reference_status":0,"position":null,"byte_len":22,"inflated_offset":0}"#,
+            r#"{"id":"list","stream_ordinal":0,"family":"TYPE_91","kind":91,"xmt":30,"node_id":null,"references":[10,100,3,4,20,1],"position":null,"byte_len":26,"inflated_offset":0}"#,
+            r#"{"id":"value","stream_ordinal":0,"family":"ENTITY_52","kind":82,"xmt":40,"node_id":null,"references":[],"position":null,"byte_len":10,"inflated_offset":0}"#,
+        ] {
+            let record: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
+            assert_eq!(serde_json::to_string(&record).unwrap(), json);
+            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            let references = wire["references"].as_array_mut().unwrap();
+            if references.is_empty() {
+                references.push(serde_json::json!(1));
+            } else {
+                references.pop();
+            }
+            assert!(serde_json::from_value::<ParasolidDeltasRecord>(wire)
+                .unwrap_err().to_string().contains("references"));
+        }
     }
 }
 
@@ -857,7 +877,6 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                 stream_ordinal: stream_ordinal as u32,
                 family: record.family,
                 xmt: record.xmt,
-                references: record.references,
                 byte_len: (record.end - record.offset) as u64,
                 inflated_offset: record.offset as u64,
             });
@@ -3250,23 +3269,25 @@ mod tests {
         use crate::deltas::RecordFamily;
         let family = match kind {
             14 => RecordFamily::Face {
+                references: [1; 11],
                 node_id: node_id.expect("face node"),
             },
             16 => RecordFamily::Edge {
+                references: [1; 8],
                 node_id: node_id.expect("edge node"),
             },
             90 => RecordFamily::Group {
+                references: references.try_into().unwrap(),
                 node_id: node_id.expect("group node"),
                 selector: GroupSelector::Form4,
                 linked_reference_status: GroupReferenceStatus::Form0,
             },
-            91 => RecordFamily::Type91,
+            91 => RecordFamily::Type91 { references: references.try_into().unwrap() },
             other => panic!("unexpected test kind {other}"),
         };
         crate::deltas::Record {
             family,
             xmt,
-            references,
             canonical_bytes: if kind == 90 { vec![0, 90] } else { Vec::new() },
             offset: 0,
             end: 1,
@@ -3299,7 +3320,7 @@ mod tests {
         assert!(matches!(members[1].target, GroupMemberTarget::Node { node_id: 50, .. }));
 
         let mut broken = records;
-        broken[2].references[5] = 99;
+        broken[2].family = crate::deltas::RecordFamily::Type91 { references: [10, 101, 3, 4, 1, 99] };
         assert!(super::group_members_from_records(4, &broken).is_empty());
     }
 

@@ -23,19 +23,19 @@ pub(crate) enum GroupMemberTarget {
     Node { family: GroupNodeFamily, node_id: u32, current_xmt: Option<u32> },
 }
 impl GroupMemberTarget {
-    pub(super) fn from_record(record: RecordFamily) -> Option<Self> {
+    pub(super) fn from_record(record: &RecordFamily) -> Option<Self> {
         let (family, node_id) = match record {
-            RecordFamily::Fin => return Some(Self::Fin),
-            RecordFamily::Body { node_id } => (GroupNodeFamily::Body, node_id),
-            RecordFamily::Shell { node_id } => (GroupNodeFamily::Shell, node_id),
-            RecordFamily::Face { node_id } => (GroupNodeFamily::Face, node_id),
-            RecordFamily::Loop { node_id } => (GroupNodeFamily::Loop, node_id),
-            RecordFamily::Edge { node_id } => (GroupNodeFamily::Edge, node_id),
-            RecordFamily::Vertex { node_id } => (GroupNodeFamily::Vertex, node_id),
-            RecordFamily::Region { node_id } => (GroupNodeFamily::Region, node_id),
+            RecordFamily::Fin { .. } => return Some(Self::Fin),
+            RecordFamily::Body { node_id, .. } => (GroupNodeFamily::Body, node_id),
+            RecordFamily::Shell { node_id, .. } => (GroupNodeFamily::Shell, node_id),
+            RecordFamily::Face { node_id, .. } => (GroupNodeFamily::Face, node_id),
+            RecordFamily::Loop { node_id, .. } => (GroupNodeFamily::Loop, node_id),
+            RecordFamily::Edge { node_id, .. } => (GroupNodeFamily::Edge, node_id),
+            RecordFamily::Vertex { node_id, .. } => (GroupNodeFamily::Vertex, node_id),
+            RecordFamily::Region { node_id, .. } => (GroupNodeFamily::Region, node_id),
             _ => return None,
         };
-        Some(Self::Node { family, node_id, current_xmt: None })
+        Some(Self::Node { family, node_id: *node_id, current_xmt: None })
     }
 
     pub(super) fn resolve(self, graph: &Graph, member_xmt: u32) -> Self {
