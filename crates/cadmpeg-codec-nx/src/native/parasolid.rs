@@ -2080,7 +2080,7 @@ pub struct ParasolidEntity51NumericUse {
     #[serde(rename = "reference_ordinal")]
     pub position: FieldPosition,
     /// Stream-local referenced xmt.
-    pub referenced_xmt: u32,
+    pub referenced_xmt: NonNullXmt,
     /// Numeric record family.
     pub kind: ParasolidEntity51NumericKind,
     /// Uniquely resolved numeric record.
@@ -2102,7 +2102,7 @@ pub struct ParasolidEntity51StringUse {
     #[serde(rename = "reference_ordinal")]
     pub position: FieldPosition,
     /// Stream-local referenced xmt.
-    pub referenced_xmt: u32,
+    pub referenced_xmt: NonNullXmt,
     /// Uniquely resolved type-84 string record.
     pub string_record: String,
     /// Offset of the owning type-81 record in the inflated stream.
@@ -2122,7 +2122,7 @@ pub struct ParasolidEntity51StructuredUse {
     #[serde(rename = "reference_ordinal")]
     pub position: FieldPosition,
     /// Stream-local referenced xmt.
-    pub referenced_xmt: u32,
+    pub referenced_xmt: NonNullXmt,
     /// Structured value-record family.
     pub kind: StructuredValueKind,
     /// Uniquely resolved structured value record.
@@ -2671,24 +2671,24 @@ pub fn parasolid_entity_51_numeric_uses(
     integers: &[ParasolidEntity52IntegerRecord],
     doubles: &[ParasolidEntity53DoubleRecord],
 ) -> Vec<ParasolidEntity51NumericUse> {
-    let mut values = BTreeMap::<(u32, u32), Vec<(ParasolidEntity51NumericKind, &str)>>::new();
+    let mut values = BTreeMap::<(u32, u32), Vec<(ParasolidEntity51NumericKind, NonNullXmt, &str)>>::new();
     for record in integers {
         values
             .entry((record.stream_ordinal, u32::from(record.xmt)))
             .or_default()
-            .push((ParasolidEntity51NumericKind::UnsignedIntegers, &record.id));
+            .push((ParasolidEntity51NumericKind::UnsignedIntegers, record.xmt, &record.id));
     }
     for record in doubles {
         values
             .entry((record.stream_ordinal, u32::from(record.xmt)))
             .or_default()
-            .push((ParasolidEntity51NumericKind::Doubles, &record.id));
+            .push((ParasolidEntity51NumericKind::Doubles, record.xmt, &record.id));
     }
     let mut uses = Vec::new();
     for entity in entities {
         for (position, &referenced_xmt) in entity.trailing_references.fields() {
             let reference_ordinal = position.reference_ordinal();
-            let Some([(kind, value_record)]) = values
+            let Some([(kind, target_xmt, value_record)]) = values
                 .get(&(entity.stream_ordinal, referenced_xmt))
                 .map(Vec::as_slice)
             else {
@@ -2702,7 +2702,7 @@ pub fn parasolid_entity_51_numeric_uses(
                 stream_ordinal: entity.stream_ordinal,
                 entity_51_record: entity.id.clone(),
                 position,
-                referenced_xmt,
+                referenced_xmt: *target_xmt,
                 kind: *kind,
                 value_record: (*value_record).to_string(),
                 inflated_offset: entity.inflated_offset,
@@ -2718,12 +2718,12 @@ pub fn parasolid_entity_51_string_uses(
     entities: &[ParasolidEntity51Record],
     strings: &[ParasolidEntity54StringRecord],
 ) -> Vec<ParasolidEntity51StringUse> {
-    let mut strings_by_identity = BTreeMap::<(u32, u32), Vec<&str>>::new();
+    let mut strings_by_identity = BTreeMap::<(u32, u32), Vec<&ParasolidEntity54StringRecord>>::new();
     for string in strings {
         strings_by_identity
             .entry((string.stream_ordinal, u32::from(string.xmt)))
             .or_default()
-            .push(string.id.as_str());
+            .push(string);
     }
     let mut uses = Vec::new();
     for entity in entities {
@@ -2743,8 +2743,8 @@ pub fn parasolid_entity_51_string_uses(
                 stream_ordinal: entity.stream_ordinal,
                 entity_51_record: entity.id.clone(),
                 position,
-                referenced_xmt,
-                string_record: (*string).to_string(),
+                referenced_xmt: string.xmt,
+                string_record: string.id.clone(),
                 inflated_offset: entity.inflated_offset,
             });
         }
@@ -2761,7 +2761,7 @@ pub fn parasolid_entity_51_structured_uses(
     tags: &[ParasolidEntity58TagRecord],
     unicode: &[ParasolidEntity62UnicodeRecord],
 ) -> Vec<ParasolidEntity51StructuredUse> {
-    let mut values = BTreeMap::<(u32, u32), Vec<(StructuredValueKind, &str)>>::new();
+    let mut values = BTreeMap::<(u32, u32), Vec<(StructuredValueKind, NonNullXmt, &str)>>::new();
     for record in vectors {
         let kind = match record.kind {
             ParasolidVectorValueKind::Points => StructuredValueKind::Points,
@@ -2771,7 +2771,7 @@ pub fn parasolid_entity_51_structured_uses(
         values
             .entry((record.stream_ordinal, u32::from(record.xmt)))
             .or_default()
-            .push((kind, record.id.as_str()));
+            .push((kind, record.xmt, record.id.as_str()));
     }
     for (kind, stream_ordinal, xmt, id) in axes
         .iter()
@@ -2803,13 +2803,13 @@ pub fn parasolid_entity_51_structured_uses(
         values
             .entry((stream_ordinal, u32::from(xmt)))
             .or_default()
-            .push((kind, id));
+            .push((kind, xmt, id));
     }
     let mut uses = Vec::new();
     for entity in entities {
         for (position, &referenced_xmt) in entity.trailing_references.fields() {
             let reference_ordinal = position.reference_ordinal();
-            let Some([(kind, value_record)]) = values
+            let Some([(kind, target_xmt, value_record)]) = values
                 .get(&(entity.stream_ordinal, referenced_xmt))
                 .map(Vec::as_slice)
             else {
@@ -2823,7 +2823,7 @@ pub fn parasolid_entity_51_structured_uses(
                 stream_ordinal: entity.stream_ordinal,
                 entity_51_record: entity.id.clone(),
                 position,
-                referenced_xmt,
+                referenced_xmt: *target_xmt,
                 kind: *kind,
                 value_record: (*value_record).to_string(),
                 inflated_offset: entity.inflated_offset,
@@ -3905,7 +3905,7 @@ mod tests {
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
             position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
-            referenced_xmt: 12,
+            referenced_xmt: NonNullXmt::try_from(12).unwrap(),
             kind: ParasolidEntity51NumericKind::UnsignedIntegers,
             value_record: "integers".into(),
             inflated_offset: 48,
@@ -3922,7 +3922,7 @@ mod tests {
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
             position: crate::parasolid::entity_references::FieldPosition::try_from(7).unwrap(),
-            referenced_xmt: 14,
+            referenced_xmt: NonNullXmt::try_from(14).unwrap(),
             string_record: "string".into(),
             inflated_offset: 48,
         };
@@ -4121,7 +4121,7 @@ mod tests {
                 stream_ordinal: 2,
                 entity_51_record: "entity".into(),
                 position: crate::parasolid::entity_references::FieldPosition::try_from(u32::try_from(ordinal).expect("test ordinal fits u32") + 5).unwrap(),
-                referenced_xmt: u32::try_from(ordinal).expect("test ordinal fits u32") + 20,
+                referenced_xmt: NonNullXmt::try_from(u32::try_from(ordinal).expect("test ordinal fits u32") + 20).unwrap(),
                 kind: *kind,
                 value_record: format!("value-{ordinal}"),
                 inflated_offset: 48,
@@ -4713,13 +4713,13 @@ mod tests {
             super::parasolid_entity_51_numeric_uses(std::slice::from_ref(&entity), &integers, &[]);
         assert_eq!(numeric_uses.len(), 1);
         assert_eq!(numeric_uses[0].position.reference_ordinal(), 5);
-        assert_eq!(numeric_uses[0].referenced_xmt, 70);
+        assert_eq!(u32::from(numeric_uses[0].referenced_xmt), 70);
 
         let string_uses =
             super::parasolid_entity_51_string_uses(std::slice::from_ref(&entity), &strings);
         assert_eq!(string_uses.len(), 1);
         assert_eq!(string_uses[0].position.reference_ordinal(), 6);
-        assert_eq!(string_uses[0].referenced_xmt, 71);
+        assert_eq!(u32::from(string_uses[0].referenced_xmt), 71);
     }
     mod carrier_and_attribute_resolution;
 mod attribute_wire;

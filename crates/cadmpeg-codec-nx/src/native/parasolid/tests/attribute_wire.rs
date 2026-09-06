@@ -11,6 +11,10 @@ fn value_relation_positions_preserve_wire_and_reject_leading_slots() {
         assert_eq!(serde_json::to_string(&relation).unwrap(), wire);
         let invalid = wire.replace("\"reference_ordinal\":5", "\"reference_ordinal\":4");
         assert!(serde_json::from_str::<T>(&invalid).is_err());
+        for target in [0, 1] {
+            let invalid = wire.replace("\"referenced_xmt\":10", &format!("\"referenced_xmt\":{target}"));
+            assert!(serde_json::from_str::<T>(&invalid).is_err());
+        }
     }
 
     let numeric = r#"{"id":"use","stream_ordinal":0,"entity_51_record":"entity","reference_ordinal":5,"referenced_xmt":10,"kind":"doubles","value_record":"value","inflated_offset":8}"#;
