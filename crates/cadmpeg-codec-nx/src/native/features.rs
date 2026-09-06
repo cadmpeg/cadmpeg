@@ -1861,8 +1861,16 @@ pub struct FeatureDatumCsysBlockUse {
     pub input_slot: u8,
 }
 
+/// A construction reference paired with its uniquely resolved source block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureConstructionMember {
+    pub reference: String,
+    pub data_block: String,
+}
+
 /// Completely resolved counted-reference field of one sketch construction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureSketchConstructionInputsWire", into = "FeatureSketchConstructionInputsWire")]
 pub struct FeatureSketchConstructionInputs {
     /// Globally unique construction-input identity.
     pub id: String,
@@ -1870,15 +1878,50 @@ pub struct FeatureSketchConstructionInputs {
     pub operation_label: String,
     /// Joined typed sketch record.
     pub sketch_record: String,
-    /// Ordered references preceding the field separator.
-    pub member_references: Vec<String>,
-    /// Ordered uniquely resolved member blocks.
-    pub member_data_blocks: Vec<String>,
+    /// Ordered references and their uniquely resolved source blocks.
+    pub members: Vec<FeatureConstructionMember>,
     /// Reference following the field separator.
     pub terminal_reference: String,
     /// Uniquely resolved terminal block.
     pub terminal_data_block: String,
 }
+
+#[derive(Serialize, Deserialize)]
+struct FeatureSketchConstructionInputsWire {
+    id: String,
+    operation_label: String,
+    sketch_record: String,
+    member_references: Vec<String>,
+    member_data_blocks: Vec<String>,
+    terminal_reference: String,
+    terminal_data_block: String,
+}
+
+impl From<FeatureSketchConstructionInputs> for FeatureSketchConstructionInputsWire {
+    fn from(value: FeatureSketchConstructionInputs) -> Self {
+        let (member_references, member_data_blocks) = value.members.into_iter()
+            .map(|member| (member.reference, member.data_block)).unzip();
+        Self { id: value.id, operation_label: value.operation_label, sketch_record: value.sketch_record,
+            member_references, member_data_blocks, terminal_reference: value.terminal_reference,
+            terminal_data_block: value.terminal_data_block }
+    }
+}
+
+impl TryFrom<FeatureSketchConstructionInputsWire> for FeatureSketchConstructionInputs {
+    type Error = String;
+    fn try_from(wire: FeatureSketchConstructionInputsWire) -> Result<Self, Self::Error> {
+        if wire.member_references.len() != wire.member_data_blocks.len() {
+            return Err("member_references and member_data_blocks must have equal lengths".to_owned());
+        }
+        let members = wire.member_references.into_iter().zip(wire.member_data_blocks)
+            .map(|(reference, data_block)| FeatureConstructionMember { reference, data_block })
+            .collect::<Vec<_>>();
+        Ok(Self { id: wire.id, operation_label: wire.operation_label, sketch_record: wire.sketch_record,
+            members, terminal_reference: wire.terminal_reference,
+            terminal_data_block: wire.terminal_data_block })
+    }
+}
+
 
 /// Exact logical payload reconstructed from ordered feature-construction blocks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -5125,6 +5168,7 @@ pub struct FeatureBlockConstructionReference {
 
 /// Completely resolved construction-reference field of one `BLOCK` feature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureBlockConstructionWire", into = "FeatureBlockConstructionWire")]
 pub struct FeatureBlockConstruction {
     /// Globally unique construction identity.
     pub id: String,
@@ -5132,15 +5176,50 @@ pub struct FeatureBlockConstruction {
     pub operation_label: String,
     /// Payload control byte preceding the construction field.
     pub control: u8,
-    /// Eighteen ordered references preceding the separator.
-    pub member_references: Vec<String>,
-    /// Eighteen uniquely resolved member blocks.
-    pub member_data_blocks: Vec<String>,
+    /// Ordered references and their uniquely resolved source blocks.
+    pub members: [FeatureConstructionMember; 18],
     /// Reference following the separator.
     pub terminal_reference: String,
     /// Uniquely resolved terminal block.
     pub terminal_data_block: String,
 }
+
+#[derive(Serialize, Deserialize)]
+struct FeatureBlockConstructionWire {
+    id: String,
+    operation_label: String,
+    control: u8,
+    member_references: Vec<String>,
+    member_data_blocks: Vec<String>,
+    terminal_reference: String,
+    terminal_data_block: String,
+}
+
+impl From<FeatureBlockConstruction> for FeatureBlockConstructionWire {
+    fn from(value: FeatureBlockConstruction) -> Self {
+        let (member_references, member_data_blocks) = value.members.into_iter()
+            .map(|member| (member.reference, member.data_block)).unzip();
+        Self { id: value.id, operation_label: value.operation_label, control: value.control,
+            member_references, member_data_blocks, terminal_reference: value.terminal_reference,
+            terminal_data_block: value.terminal_data_block }
+    }
+}
+
+impl TryFrom<FeatureBlockConstructionWire> for FeatureBlockConstruction {
+    type Error = String;
+    fn try_from(wire: FeatureBlockConstructionWire) -> Result<Self, Self::Error> {
+        if wire.member_references.len() != wire.member_data_blocks.len() {
+            return Err("member_references and member_data_blocks must have equal lengths".to_owned());
+        }
+        let members = wire.member_references.into_iter().zip(wire.member_data_blocks)
+            .map(|(reference, data_block)| FeatureConstructionMember { reference, data_block })
+            .collect::<Vec<_>>();
+        Ok(Self { id: wire.id, operation_label: wire.operation_label, control: wire.control,
+            members: members.try_into().map_err(|_| "member_references must contain eighteen entries".to_owned())?, terminal_reference: wire.terminal_reference,
+            terminal_data_block: wire.terminal_data_block })
+    }
+}
+
 
 /// One complete compact-code name field in a reconstructed `BLOCK` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -8154,9 +8233,11 @@ pub fn feature_sketch_construction_inputs(
         let Some((terminal, members)) = field.split_last() else {
             continue;
         };
-        let Some(member_data_blocks) = members
+        let Some(members) = members
             .iter()
-            .map(|reference| reference.data_block.clone())
+            .map(|reference| Some(FeatureConstructionMember {
+                reference: reference.id.clone(), data_block: reference.data_block.clone()?,
+            }))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -8170,11 +8251,7 @@ pub fn feature_sketch_construction_inputs(
                 .replacen("sketch-record", "sketch-construction-inputs", 1),
             operation_label: sketch.operation_label.clone(),
             sketch_record: sketch.id.clone(),
-            member_references: members
-                .iter()
-                .map(|reference| reference.id.clone())
-                .collect(),
-            member_data_blocks,
+            members,
             terminal_reference: terminal.id.clone(),
             terminal_data_block,
         });
@@ -8192,7 +8269,7 @@ pub fn feature_sketch_construction_payloads(
     constructions
         .iter()
         .filter_map(|construction| {
-            let mut data_blocks = construction.member_data_blocks.clone();
+            let mut data_blocks = construction.members.iter().map(|member| member.data_block.clone()).collect::<Vec<_>>();
             data_blocks.push(construction.terminal_data_block.clone());
             let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             Some(FeatureConstructionPayload {
@@ -8366,7 +8443,7 @@ pub fn feature_sketch_payload_scalars(
     constructions
         .iter()
         .filter_map(|construction| {
-            let mut data_blocks = construction.member_data_blocks.clone();
+            let mut data_blocks = construction.members.iter().map(|member| member.data_block.clone()).collect::<Vec<_>>();
             data_blocks.push(construction.terminal_data_block.clone());
             let (payload, block_payload_offsets, block_byte_lengths, block_source_offsets) =
                 join_data_block_bytes(data_blocks.iter(), &blocks)?;
@@ -8464,7 +8541,7 @@ pub fn feature_sketch_payload_names(
     constructions
         .iter()
         .flat_map(|construction| {
-            let mut data_blocks = construction.member_data_blocks.clone();
+            let mut data_blocks = construction.members.iter().map(|member| member.data_block.clone()).collect::<Vec<_>>();
             data_blocks.push(construction.terminal_data_block.clone());
             let Some((payload, block_payload_offsets, block_byte_lengths, block_source_offsets)) =
                 join_data_block_bytes(data_blocks.iter(), &blocks)
@@ -11419,8 +11496,8 @@ pub fn feature_block_constructions(
     let mut constructions = Vec::new();
     for (operation_label, mut field) in by_operation {
         field.sort_by_key(|reference| reference.ordinal);
-        if field.len() != 19
-            || field.iter().enumerate().any(|(ordinal, reference)| {
+        let Ok(field): Result<[_; 19], _> = field.try_into() else { continue; };
+        if field.iter().enumerate().any(|(ordinal, reference)| {
                 reference.ordinal != ordinal as u32
                     || reference.control != field[0].control
                     || reference.terminal != (ordinal == 18)
@@ -11428,10 +11505,12 @@ pub fn feature_block_constructions(
         {
             continue;
         }
-        let (terminal, members) = field.split_last().expect("nineteen references");
-        let Some(member_data_blocks) = members
+        let [members @ .., terminal] = &field;
+        let Some(members) = members
             .iter()
-            .map(|reference| reference.data_block.clone())
+            .map(|reference| Some(FeatureConstructionMember {
+                reference: reference.id.clone(), data_block: reference.data_block.clone()?,
+            }))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -11439,15 +11518,12 @@ pub fn feature_block_constructions(
         let Some(terminal_data_block) = terminal.data_block.clone() else {
             continue;
         };
+        let Ok(members) = members.try_into() else { continue; };
         constructions.push(FeatureBlockConstruction {
             id: operation_label.replacen("operation-label", "block-construction", 1),
             operation_label: operation_label.to_string(),
             control: field[0].control,
-            member_references: members
-                .iter()
-                .map(|reference| reference.id.clone())
-                .collect(),
-            member_data_blocks,
+            members,
             terminal_reference: terminal.id.clone(),
             terminal_data_block,
         });
@@ -11464,7 +11540,7 @@ pub fn feature_block_construction_payloads(
     constructions
         .iter()
         .filter_map(|construction| {
-            let mut data_blocks = construction.member_data_blocks.clone();
+            let mut data_blocks = construction.members.iter().map(|member| member.data_block.clone()).collect::<Vec<_>>();
             data_blocks.push(construction.terminal_data_block.clone());
             let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             Some(FeatureConstructionPayload {

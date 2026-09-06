@@ -134,8 +134,9 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
         id: "nx:feature-history:block-construction#0-1".into(),
         operation_label: operation.into(),
         control: 0,
-        member_references: Vec::new(),
-        member_data_blocks: Vec::new(),
+        members: std::array::from_fn(|ordinal| super::FeatureConstructionMember {
+            reference: format!("reference#{ordinal}"), data_block: format!("block#{ordinal}"),
+        }),
         terminal_reference: "terminal-reference".into(),
         terminal_data_block: "terminal-block".into(),
     };
@@ -631,11 +632,11 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     let construction = super::feature_sketch_construction_inputs(&sketches, &references);
     assert_eq!(construction.len(), 1);
     assert_eq!(
-        construction[0].member_references,
+        construction[0].members.iter().map(|member| member.reference.as_str()).collect::<Vec<_>>(),
         ["nx:feature-history:sketch-reference#0-7-0"]
     );
     assert_eq!(
-        construction[0].member_data_blocks,
+        construction[0].members.iter().map(|member| member.data_block.as_str()).collect::<Vec<_>>(),
         ["nx:om-data-blocks-2:block#96"]
     );
     assert_eq!(
@@ -1533,7 +1534,7 @@ fn nx_block_construction_requires_complete_resolved_reference_field() {
     let constructions = super::feature_block_constructions(&references);
     assert_eq!(constructions.len(), 1);
     assert_eq!(constructions[0].control, 0x26);
-    assert_eq!(constructions[0].member_references.len(), 18);
+    assert_eq!(constructions[0].members.len(), 18);
     assert_eq!(constructions[0].terminal_reference, "reference#18");
     assert_eq!(constructions[0].terminal_data_block, "block#18");
 

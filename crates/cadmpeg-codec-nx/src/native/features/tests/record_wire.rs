@@ -108,3 +108,31 @@ fn symbolic_thread_text_frame_derives_marker() {
         assert!(error.to_string().contains("marker"));
     }
 }
+
+#[test]
+fn sketch_construction_members_preserve_wire_and_reject_unpaired_blocks() {
+    let json = r#"{"id":"inputs","operation_label":"operation","sketch_record":"sketch","member_references":["reference"],"member_data_blocks":["block"],"terminal_reference":"terminal","terminal_data_block":"last"}"#;
+    let inputs: super::FeatureSketchConstructionInputs = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&inputs).unwrap(), json);
+    for field in ["member_references", "member_data_blocks"] {
+        let mut invalid: serde_json::Value = serde_json::from_str(json).unwrap();
+        invalid[field] = serde_json::json!([]);
+        let error = serde_json::from_value::<super::FeatureSketchConstructionInputs>(invalid).unwrap_err();
+        assert!(error.to_string().contains(field));
+    }
+}
+
+#[test]
+fn block_construction_members_have_eighteen_paired_entries() {
+    let references = serde_json::to_string(&(0..18).map(|n| format!("reference{n}")).collect::<Vec<_>>()).unwrap();
+    let blocks = serde_json::to_string(&(0..18).map(|n| format!("block{n}")).collect::<Vec<_>>()).unwrap();
+    let json = format!(r#"{{"id":"construction","operation_label":"operation","control":38,"member_references":{references},"member_data_blocks":{blocks},"terminal_reference":"terminal","terminal_data_block":"last"}}"#);
+    let construction: super::FeatureBlockConstruction = serde_json::from_str(&json).unwrap();
+    assert_eq!(serde_json::to_string(&construction).unwrap(), json);
+    for fields in [vec!["member_references"], vec!["member_data_blocks"], vec!["member_references", "member_data_blocks"]] {
+        let mut invalid: serde_json::Value = serde_json::from_str(&json).unwrap();
+        for field in fields { invalid[field].as_array_mut().unwrap().pop(); }
+        let error = serde_json::from_value::<super::FeatureBlockConstruction>(invalid).unwrap_err();
+        assert!(error.to_string().contains("member_references"));
+    }
+}
