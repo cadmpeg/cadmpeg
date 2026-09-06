@@ -35,7 +35,7 @@ fn sketch_fixed_pair_parser_reads_scaled_shifted_binary64_atoms() {
     assert_eq!(pairs.len(), 1);
     assert_sketch_fixed_pair_values(pairs[0].values.map(crate::om::sketch_scalar::SketchScaledAtom::value), [0.5, 0.75]);
     assert_eq!(
-        pairs[0].value_offsets,
+        pairs[0].value_offsets(),
         [discriminator.len(), discriminator.len() + 9]
     );
     let mut malformed = bytes;

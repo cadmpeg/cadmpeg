@@ -11,6 +11,8 @@ pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 use branch_items::BranchItems;
 pub(crate) mod parameter_name;
+pub(crate) mod scalar_pair;
+use scalar_pair::{SketchPairForm, DatumPairForm};
 pub(crate) mod scalar_run;
 use scalar_run::FramedScalarRun;
 pub(crate) mod sketch_scalar;
@@ -2468,10 +2470,16 @@ pub struct SketchPayloadFixedPair {
     pub offset: usize,
     /// Ordered values reconstructed from the `30` shifted-binary64 atoms and scaled by `1/4`.
     pub values: [SketchScaledAtom; 2],
-    /// Payload-relative offsets of the two `30` atom markers.
-    pub value_offsets: [usize; 2],
     /// Exact discriminator and branch prefix selecting the pair layout.
-    pub discriminator: Vec<u8>,
+    pub form: SketchPairForm,
+}
+
+impl SketchPayloadFixedPair {
+    pub fn discriminator(&self) -> &'static [u8] { self.form.discriminator() }
+    pub fn value_offsets(&self) -> [usize; 2] {
+        let first = self.offset + self.discriminator().len();
+        [first, first + 8 + self.form.separator_width()]
+    }
 }
 
 /// Exact mixed scaled shifted-binary64 and shifted-binary32 pair in a sketch payload.
@@ -2481,10 +2489,14 @@ pub struct SketchPayloadMixedPair {
     pub offset: usize,
     /// Exact scaled binary64 and binary32 atoms.
     pub scalars: SketchMixedScalars,
-    /// Payload-relative offsets of the two atom markers.
-    pub value_offsets: [usize; 2],
-    /// Exact discriminator selecting the mixed pair layout.
-    pub discriminator: Vec<u8>,
+}
+
+impl SketchPayloadMixedPair {
+    pub fn discriminator(&self) -> &'static [u8] { SketchPairForm::Legacy.discriminator() }
+    pub fn value_offsets(&self) -> [usize; 2] {
+        let first = self.offset + self.discriminator().len();
+        [first, first + 8 + 1]
+    }
 }
 
 /// Exact pair of signed Q1.55 atoms following a datum-CSYS branch discriminator.
@@ -2494,10 +2506,16 @@ pub struct DatumCsysPayloadFixedPair {
     pub offset: usize,
     /// Ordered dimensionless Q1.55 values.
     pub values: [Q155; 2],
-    /// Payload-relative offsets of the two `30` atom markers.
-    pub value_offsets: [usize; 2],
     /// Exact discriminator selecting the pair branch.
-    pub discriminator: Vec<u8>,
+    pub form: DatumPairForm,
+}
+
+impl DatumCsysPayloadFixedPair {
+    pub fn discriminator(&self) -> &'static [u8] { self.form.discriminator() }
+    pub fn value_offsets(&self) -> [usize; 2] {
+        let first = self.offset + self.discriminator().len();
+        [first, first + 8 + 1]
+    }
 }
 
 /// One bounded datum-CSYS descriptor block with a unique hexadecimal identity.
@@ -5984,24 +6002,10 @@ pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<FramedScalarRun<SketchSc
 
 /// Decode every exactly framed scaled shifted-binary64 pair in a reconstructed sketch payload.
 pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
-    const LEGACY: [u8; 8] = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
-    const SHORT: [u8; 15] = [
-        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x01,
-    ];
-    const EXTENDED: [u8; 17] = [
-        0x08, 0x02, 0x03, 0x01, 0xc0, 0x40, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
-        0x00, 0x01,
-    ];
-    const THREE_MEMBER: [u8; 15] = [
-        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
-    ];
     let mut pairs = Vec::new();
-    for (discriminator, separator_width) in [
-        (LEGACY.as_slice(), 1usize),
-        (SHORT.as_slice(), 0),
-        (EXTENDED.as_slice(), 0),
-        (THREE_MEMBER.as_slice(), 1),
-    ] {
+    for form in SketchPairForm::ALL {
+        let discriminator = form.discriminator();
+        let separator_width = form.separator_width();
         for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
             if window != discriminator {
                 continue;
@@ -6023,8 +6027,7 @@ pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
             pairs.push(SketchPayloadFixedPair {
                 offset,
                 values: [first_value, second_value],
-                value_offsets: [first, second],
-                discriminator: discriminator.to_vec(),
+                form,
             });
         }
     }
@@ -6034,13 +6037,13 @@ pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
 
 /// Decode every exactly framed mixed scaled shifted-binary64/binary32 pair in a sketch payload.
 pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
-    const DISCRIMINATOR: [u8; 8] = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
+    let discriminator = SketchPairForm::Legacy.discriminator();
     let mut pairs = Vec::new();
-    for (offset, window) in bytes.windows(DISCRIMINATOR.len()).enumerate() {
-        if window != DISCRIMINATOR {
+    for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
+        if window != discriminator {
             continue;
         }
-        let fixed_offset = offset + DISCRIMINATOR.len();
+        let fixed_offset = offset + discriminator.len();
         let binary32_offset = fixed_offset + 9;
         if bytes.get(fixed_offset) != Some(&0x30) || bytes.get(fixed_offset + 8) != Some(&0x00) {
             continue;
@@ -6061,8 +6064,6 @@ pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
         pairs.push(SketchPayloadMixedPair {
             offset,
             scalars: SketchMixedScalars { fixed, binary32: binary32_atom },
-            value_offsets: [fixed_offset, binary32_offset],
-            discriminator: DISCRIMINATOR.to_vec(),
         });
     }
     pairs
@@ -6074,19 +6075,9 @@ fn sketch_fixed_atom(bytes: &[u8], offset: usize) -> Option<SketchScaledAtom> {
 
 /// Decode every exactly framed signed Q1.55 pair in a datum-CSYS payload.
 pub fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadFixedPair> {
-    const DISCRIMINATORS: [&[u8]; 2] = [
-        &[
-            0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00,
-            0x03,
-        ],
-        &[
-            0x80, 0x8d, 0x00, 0xff, 0x80, 0x81, 0x01, 0x02, 0x01, 0x00, 0x00, 0x00, 0x87, 0xd7,
-            0x01, 0x01, 0x01, 0x01, 0x02, 0xa5, 0x30, 0x21, 0xa5, 0x30, 0x21, 0x01, 0x00, 0x01,
-            0xaf, 0xff, 0xdf, 0x02, 0x01, 0x02,
-        ],
-    ];
     let mut pairs = Vec::new();
-    for discriminator in DISCRIMINATORS {
+    for form in DatumPairForm::ALL {
+        let discriminator = form.discriminator();
         for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
             if window != discriminator {
                 continue;
@@ -6114,8 +6105,7 @@ pub fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadFixed
             pairs.push(DatumCsysPayloadFixedPair {
                 offset,
                 values: [Q155::from_raw(first_raw), Q155::from_raw(second_raw)],
-                value_offsets: [first, second],
-                discriminator: discriminator.to_vec(),
+                form,
             });
         }
     }

@@ -303,7 +303,7 @@ fn datum_csys_fixed_pair_requires_its_exact_branch_discriminator() {
     let pairs = super::datum_csys_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].values.map(crate::om::fixed::Q155::value), [0.5, -0.5]);
-    assert_eq!(pairs[0].value_offsets, [15, 24]);
+    assert_eq!(pairs[0].value_offsets(), [15, 24]);
     assert_eq!(pairs[0].values[0].raw(), [0x40, 0, 0, 0, 0, 0, 0]);
 
     bytes[0] = 0x08;
@@ -327,10 +327,10 @@ fn datum_csys_fixed_pair_accepts_the_continuation_branch() {
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].values.map(crate::om::fixed::Q155::value), [0.5, -0.5]);
     assert_eq!(
-        pairs[0].value_offsets,
+        pairs[0].value_offsets(),
         [discriminator.len(), discriminator.len() + 9]
     );
-    assert_eq!(pairs[0].discriminator, discriminator);
+    assert_eq!(pairs[0].discriminator(), discriminator);
 
     bytes[1] = 0x8c;
     assert!(super::datum_csys_payload_fixed_pairs(&bytes).is_empty());
