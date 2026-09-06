@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-history record extractors and their record types.
 
+mod reference;
+use reference::ConstructionReference;
+
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::printable_string::PrintableString;
@@ -733,6 +736,7 @@ impl TryFrom<FeatureSimpleHoleConstructionGroupWire> for FeatureSimpleHoleConstr
 
 /// Exact four-block construction-group lane carried by a `HOLE PACKAGE` operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureHolePackageConstructionGroupLaneWire", into = "FeatureHolePackageConstructionGroupLaneWire")]
 pub struct FeatureHolePackageConstructionGroupLane {
     /// Globally unique lane identity.
     pub id: String,
@@ -742,19 +746,81 @@ pub struct FeatureHolePackageConstructionGroupLane {
     pub selector: u8,
     /// Branch byte repeated between the two reference pairs.
     pub branch: u8,
-    /// Ordered serialized offset-store block indices.
-    pub object_indices: [u32; 4],
-    /// Exact variable-width object-index tokens.
-    pub raw_object_indices: [Vec<u8>; 4],
-    /// Uniquely resolved offset-store blocks.
-    pub data_blocks: [String; 4],
+    /// Four checked references with their resolved targets and source offsets.
+    pub references: [ConstructionReference<String>; 4],
     /// Payload-relative offset of the lane prefix.
     pub payload_offset: u64,
     /// Absolute file offset of the lane prefix.
     pub source_offset: u64,
-    /// Absolute file offsets of the four reference tokens.
-    pub reference_source_offsets: [u64; 4],
 }
+
+#[derive(Serialize, Deserialize)]
+struct FeatureHolePackageConstructionGroupLaneWire {
+    /// Globally unique lane identity.
+    id: String,
+    /// Owning `HOLE PACKAGE` operation label.
+    operation_label: String,
+    /// Compact selector preceding the repeated branch byte.
+    selector: u8,
+    /// Branch byte repeated between the two reference pairs.
+    branch: u8,
+    /// Ordered serialized offset-store block indices.
+    object_indices: [u32; 4],
+    /// Exact variable-width object-index tokens.
+    raw_object_indices: [Vec<u8>; 4],
+    /// Uniquely resolved offset-store blocks.
+    data_blocks: [String; 4],
+    /// Payload-relative offset of the lane prefix.
+    payload_offset: u64,
+    /// Absolute file offset of the lane prefix.
+    source_offset: u64,
+    /// Absolute file offsets of the four reference tokens.
+    reference_source_offsets: [u64; 4],
+}
+
+impl From<FeatureHolePackageConstructionGroupLane> for FeatureHolePackageConstructionGroupLaneWire {
+    fn from(value: FeatureHolePackageConstructionGroupLane) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            selector: value.selector,
+            branch: value.branch,
+            object_indices: value.references.each_ref().map(|reference| reference.token.value()),
+            raw_object_indices: value.references.each_ref().map(|reference| reference.token.raw().to_vec()),
+            data_blocks: value.references.each_ref().map(|reference| reference.data_block.clone()),
+            payload_offset: value.payload_offset,
+            source_offset: value.source_offset,
+            reference_source_offsets: value.references.each_ref().map(|reference| reference.source_offset),
+        }
+    }
+}
+
+impl TryFrom<FeatureHolePackageConstructionGroupLaneWire> for FeatureHolePackageConstructionGroupLane {
+    type Error = String;
+
+    fn try_from(wire: FeatureHolePackageConstructionGroupLaneWire) -> Result<Self, Self::Error> {
+        let [a, b, c, d] = [0, 1, 2, 3].map(|slot| {
+            crate::om::reference_index::ReferenceIndexToken::from_wire(
+                wire.object_indices[slot], &wire.raw_object_indices[slot],
+            ).map_err(|error| format!("object_indices/raw_object_indices[{slot}]: {error}"))
+            .map(|token| ConstructionReference {
+                token,
+                data_block: wire.data_blocks[slot].clone(),
+                source_offset: wire.reference_source_offsets[slot],
+            })
+        });
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            selector: wire.selector,
+            branch: wire.branch,
+            references: [a?, b?, c?, d?],
+            payload_offset: wire.payload_offset,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+
 
 /// Exact relation between one hole package and one simple-hole construction group.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1304,6 +1370,7 @@ pub struct FeatureSketchRecord {
 
 /// Completely resolved native construction lane of a datum coordinate system.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureDatumCsysConstructionWire", into = "FeatureDatumCsysConstructionWire")]
 pub struct FeatureDatumCsysConstruction {
     /// Globally unique construction identity.
     pub id: String,
@@ -1311,14 +1378,56 @@ pub struct FeatureDatumCsysConstruction {
     pub operation_label: String,
     /// Payload control byte preceding the fixed construction header suffix.
     pub control: u8,
-    /// Eight object indices in serialized lane order.
-    pub object_indices: [u32; 8],
-    /// Exact serialized object-index tokens in lane order.
-    pub raw_object_indices: [Vec<u8>; 8],
-    /// Eight uniquely resolved same-store blocks in lane order.
-    pub data_blocks: [String; 8],
-    /// Absolute offsets of the eight canonical reference markers.
-    pub source_offsets: [u64; 8],
+    /// Eight checked references with their resolved targets and source offsets.
+    pub references: [ConstructionReference<String>; 8],
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureDatumCsysConstructionWire {
+    id: String,
+    operation_label: String,
+    control: u8,
+    object_indices: [u32; 8],
+    raw_object_indices: [Vec<u8>; 8],
+    data_blocks: [String; 8],
+    source_offsets: [u64; 8],
+}
+
+impl From<FeatureDatumCsysConstruction> for FeatureDatumCsysConstructionWire {
+    fn from(value: FeatureDatumCsysConstruction) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            control: value.control,
+            object_indices: value.references.each_ref().map(|reference| reference.token.value()),
+            raw_object_indices: value.references.each_ref().map(|reference| reference.token.raw().to_vec()),
+            data_blocks: value.references.each_ref().map(|reference| reference.data_block.clone()),
+            source_offsets: value.references.each_ref().map(|reference| reference.source_offset),
+        }
+    }
+}
+
+impl TryFrom<FeatureDatumCsysConstructionWire> for FeatureDatumCsysConstruction {
+    type Error = String;
+
+    fn try_from(wire: FeatureDatumCsysConstructionWire) -> Result<Self, Self::Error> {
+        let [a, b, c, d, e, f, g, h] = [0, 1, 2, 3, 4, 5, 6, 7].map(|slot| {
+            crate::om::reference_index::ReferenceIndexToken::from_wire(
+                wire.object_indices[slot], &wire.raw_object_indices[slot],
+            ).map_err(|error| format!("object_indices/raw_object_indices[{slot}]: {error}"))
+            .map(|token| ConstructionReference {
+                token,
+                data_block: wire.data_blocks[slot].clone(),
+                source_offset: wire.source_offsets[slot],
+            })
+        });
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            control: wire.control,
+            references: [a?, b?, c?, d?, e?, f?, g?, h?],
+        })
+    }
 }
 
 /// Exact reuse of one datum-CSYS construction block by a column-row slot.
@@ -2871,6 +2980,7 @@ pub struct FeatureProjectedCurveConstructionString {
 
 /// Exact two-group object-reference graph carried by an `FSET` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureFsetReferenceGraphWire", into = "FeatureFsetReferenceGraphWire")]
 pub struct FeatureFsetReferenceGraph {
     /// Globally unique graph identity.
     pub id: String,
@@ -2878,25 +2988,96 @@ pub struct FeatureFsetReferenceGraph {
     pub operation_label: String,
     /// Exact nonempty printable selector preceding the first group.
     pub selector: String,
-    /// Serialized object indices in the bounded first group.
-    pub first_object_indices: [u32; 2],
-    /// Exact variable-width object-index tokens in the first group.
-    pub raw_first_object_indices: [Vec<u8>; 2],
-    /// Unique native data-block targets for the first group.
-    pub first_data_blocks: [Option<String>; 2],
-    /// Serialized object indices in the trailing second group.
-    pub second_object_indices: [u32; 3],
-    /// Exact variable-width object-index tokens in the second group.
-    pub raw_second_object_indices: [Vec<u8>; 3],
-    /// Unique native data-block targets for the second group.
-    pub second_data_blocks: [Option<String>; 3],
+    /// Two references inside the byte-counted group.
+    pub first: [ConstructionReference<Option<String>>; 2],
+    /// Three references in the trailing group.
+    pub second: [ConstructionReference<Option<String>>; 3],
     /// Absolute source offset of the graph's `01` marker.
     pub source_offset: u64,
-    /// Absolute source offsets of the first-group width markers.
-    pub first_source_offsets: [u64; 2],
-    /// Absolute source offsets of the second-group width markers.
-    pub second_source_offsets: [u64; 3],
 }
+
+#[derive(Serialize, Deserialize)]
+struct FeatureFsetReferenceGraphWire {
+    /// Globally unique graph identity.
+    id: String,
+    /// Owning `FSET` operation label.
+    operation_label: String,
+    /// Exact nonempty printable selector preceding the first group.
+    selector: String,
+    /// Serialized object indices in the bounded first group.
+    first_object_indices: [u32; 2],
+    /// Exact variable-width object-index tokens in the first group.
+    raw_first_object_indices: [Vec<u8>; 2],
+    /// Unique native data-block targets for the first group.
+    first_data_blocks: [Option<String>; 2],
+    /// Serialized object indices in the trailing second group.
+    second_object_indices: [u32; 3],
+    /// Exact variable-width object-index tokens in the second group.
+    raw_second_object_indices: [Vec<u8>; 3],
+    /// Unique native data-block targets for the second group.
+    second_data_blocks: [Option<String>; 3],
+    /// Absolute source offset of the graph's `01` marker.
+    source_offset: u64,
+    /// Absolute source offsets of the first-group width markers.
+    first_source_offsets: [u64; 2],
+    /// Absolute source offsets of the second-group width markers.
+    second_source_offsets: [u64; 3],
+}
+
+impl From<FeatureFsetReferenceGraph> for FeatureFsetReferenceGraphWire {
+    fn from(value: FeatureFsetReferenceGraph) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            selector: value.selector,
+            first_object_indices: value.first.each_ref().map(|reference| reference.token.value()),
+            raw_first_object_indices: value.first.each_ref().map(|reference| reference.token.raw().to_vec()),
+            first_data_blocks: value.first.each_ref().map(|reference| reference.data_block.clone()),
+            second_object_indices: value.second.each_ref().map(|reference| reference.token.value()),
+            raw_second_object_indices: value.second.each_ref().map(|reference| reference.token.raw().to_vec()),
+            second_data_blocks: value.second.each_ref().map(|reference| reference.data_block.clone()),
+            source_offset: value.source_offset,
+            first_source_offsets: value.first.each_ref().map(|reference| reference.source_offset),
+            second_source_offsets: value.second.each_ref().map(|reference| reference.source_offset),
+        }
+    }
+}
+
+impl TryFrom<FeatureFsetReferenceGraphWire> for FeatureFsetReferenceGraph {
+    type Error = String;
+
+    fn try_from(wire: FeatureFsetReferenceGraphWire) -> Result<Self, Self::Error> {
+        let [a, b] = [0, 1].map(|slot| {
+            crate::om::reference_index::ReferenceIndexToken::from_wire(
+                wire.first_object_indices[slot], &wire.raw_first_object_indices[slot],
+            ).map_err(|error| format!("first_object_indices/raw_first_object_indices[{slot}]: {error}"))
+            .map(|token| ConstructionReference {
+                token,
+                data_block: wire.first_data_blocks[slot].clone(),
+                source_offset: wire.first_source_offsets[slot],
+            })
+        });
+        let [c, d, e] = [0, 1, 2].map(|slot| {
+            crate::om::reference_index::ReferenceIndexToken::from_wire(
+                wire.second_object_indices[slot], &wire.raw_second_object_indices[slot],
+            ).map_err(|error| format!("second_object_indices/raw_second_object_indices[{slot}]: {error}"))
+            .map(|token| ConstructionReference {
+                token,
+                data_block: wire.second_data_blocks[slot].clone(),
+                source_offset: wire.second_source_offsets[slot],
+            })
+        });
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            selector: wire.selector,
+            first: [a?, b?],
+            second: [c?, d?, e?],
+            source_offset: wire.source_offset,
+        })
+    }
+}
+
 
 /// Serialized reference group selecting one logical `FSET` construction payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -7249,13 +7430,14 @@ pub fn feature_hole_package_construction_group_lanes(
             let Some(lane) = crate::om::hole_package_construction_group_lane(record) else {
                 return;
             };
-            let data_blocks = lane
-                .references
-                .iter()
-                .map(|reference| unique_offset_data_block(&indexed, reference.token.value()))
-                .collect::<Option<Vec<_>>>()
-                .and_then(|blocks| blocks.try_into().ok());
-            let Some(data_blocks) = data_blocks else {
+            let [a, b, c, d] = lane.references.map(|reference| {
+                Some(ConstructionReference {
+                    token: reference.token,
+                    data_block: unique_offset_data_block(&indexed, reference.token.value())?,
+                    source_offset: entry_offset + reference.offset as u64,
+                })
+            });
+            let [Some(a), Some(b), Some(c), Some(d)] = [a, b, c, d] else {
                 return;
             };
             let operation_label =
@@ -7267,17 +7449,9 @@ pub fn feature_hole_package_construction_group_lanes(
                 operation_label,
                 selector: lane.selector,
                 branch: lane.branch,
-                object_indices: lane.references.clone().map(|reference| reference.token.value()),
-                raw_object_indices: lane
-                    .references
-                    .clone()
-                    .map(|reference| reference.token.raw().to_vec()),
-                data_blocks,
+                references: [a, b, c, d],
                 payload_offset: lane.offset as u64,
                 source_offset: entry_offset + record.payload_offset as u64 + lane.offset as u64,
-                reference_source_offsets: lane
-                    .references
-                    .map(|reference| entry_offset + reference.offset as u64),
             });
         },
     );
@@ -7307,7 +7481,7 @@ pub fn feature_hole_package_construction_group_uses(
     let mut lanes_by_blocks = BTreeMap::<[String; 4], Vec<_>>::new();
     for lane in lanes {
         lanes_by_blocks
-            .entry(lane.data_blocks.clone())
+            .entry(lane.references.each_ref().map(|reference| reference.data_block.clone()))
             .or_default()
             .push(lane);
     }
@@ -7849,10 +8023,11 @@ pub fn feature_datum_csys_column_row_uses(
         .iter()
         .flat_map(|construction| {
             construction
-                .data_blocks
+                .references
                 .iter()
                 .enumerate()
-                .flat_map(|(construction_slot, data_block)| {
+                .flat_map(|(construction_slot, reference)| {
+                    let data_block = &reference.data_block;
                     slots_by_block
                         .get(data_block.as_str())
                         .into_iter()
@@ -7879,8 +8054,7 @@ pub fn feature_datum_csys_column_row_uses(
                                     .map(str::to_string),
                                 row_slot: *row_slot as u8,
                                 data_block: data_block.clone(),
-                                construction_source_offset: construction.source_offsets
-                                    [construction_slot],
+                                construction_source_offset: reference.source_offset,
                                 row_source_offset: *row_source_offset,
                             }
                         })
@@ -8007,20 +8181,19 @@ pub fn feature_datum_csys_constructions(
             };
             let resolved = field.references.map(|reference| {
                 unique_offset_data_block(&indexed, reference.token.value()).map(|data_block| {
-                    (
-                        reference.token.value(),
-                        reference.token.raw().to_vec(),
+                    ConstructionReference {
+                        token: reference.token,
                         data_block,
-                        entry_offset + reference.offset as u64,
-                    )
+                        source_offset: entry_offset + reference.offset as u64,
+                    }
                 })
             });
             let [Some(a), Some(b), Some(c), Some(d), Some(e), Some(f), Some(g), Some(h)] = resolved else {
                 return;
             };
             let resolved = [a, b, c, d, e, f, g, h];
-            if resolved.iter().any(|(_, _, data_block, _)| {
-                data_block
+            if resolved.iter().any(|reference| {
+                reference.data_block
                     .rsplit_once(":block#")
                     .is_none_or(|(prefix, _)| prefix != input_prefix)
             }) {
@@ -8032,10 +8205,7 @@ pub fn feature_datum_csys_constructions(
                 ),
                 operation_label,
                 control: field.control,
-                object_indices: resolved.each_ref().map(|(object_index, _, _, _)| *object_index),
-                raw_object_indices: resolved.each_ref().map(|(_, raw_object_index, _, _)| raw_object_index.clone()),
-                data_blocks: resolved.each_ref().map(|(_, _, data_block, _)| data_block.clone()),
-                source_offsets: resolved.each_ref().map(|(_, _, _, source_offset)| *source_offset),
+                references: resolved,
             });
         },
     );
@@ -8101,8 +8271,8 @@ pub fn feature_datum_csys_payloads(
         .iter()
         .filter_map(|construction| {
             let data_blocks = [
-                construction.data_blocks[0].clone(),
-                construction.data_blocks[1].clone(),
+                construction.references[0].data_block.clone(),
+                construction.references[1].data_block.clone(),
             ];
             let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             Some(FeatureDatumCsysPayload {
@@ -8245,7 +8415,7 @@ pub fn feature_datum_csys_descriptors(
                 .into_iter()
                 .filter_map(|slot| {
                     let reference_ordinal = u8::from(slot);
-                    let data_block = &construction.data_blocks[usize::from(reference_ordinal)];
+                    let data_block = &construction.references[usize::from(reference_ordinal)].data_block;
                     let &(bytes, source_offset) = blocks.get(data_block)?;
                     let descriptor = crate::om::datum_csys_descriptor_block(bytes)?;
                     Some(FeatureDatumCsysDescriptor {
@@ -8408,7 +8578,8 @@ pub fn feature_datum_csys_block_uses(
 ) -> Vec<FeatureDatumCsysBlockUse> {
     let mut uses = Vec::new();
     for construction in constructions {
-        for (reference_ordinal, data_block) in construction.data_blocks.iter().enumerate() {
+        for (reference_ordinal, reference) in construction.references.iter().enumerate() {
+            let data_block = &reference.data_block;
             for input in inputs
                 .iter()
                 .filter(|input| input.data_block == *data_block)
@@ -9347,8 +9518,9 @@ pub fn feature_sketch_datum_csys_dependencies(
                 continue;
             };
             for shared_block in construction
-                .data_blocks
+                .references
                 .iter()
+                .map(|reference| &reference.data_block)
                 .filter(|block| point.data_blocks.contains(block))
             {
                 let relation = FeatureSketchDatumCsysBlockRelation::Shared {
@@ -9370,9 +9542,7 @@ pub fn feature_sketch_datum_csys_dependencies(
             let Some(point_last_block) = point.data_blocks.last() else {
                 continue;
             };
-            let Some(construction_first_block) = construction.data_blocks.first() else {
-                continue;
-            };
+            let construction_first_block = &construction.references[0].data_block;
             if let (
                 Some((point_store, point_ordinal)),
                 Some((construction_store, construction_ordinal)),
@@ -9578,39 +9748,17 @@ pub fn feature_fset_reference_graphs(container: &Container) -> Vec<FeatureFsetRe
                 ),
                 operation_label,
                 selector: graph.selector,
-                first_object_indices: graph
-                    .first
-                    .each_ref()
-                    .map(|reference| reference.token.value()),
-                raw_first_object_indices: graph
-                    .first
-                    .each_ref()
-                    .map(|reference| reference.token.raw().to_vec()),
-                first_data_blocks: graph
-                    .first
-                    .each_ref()
-                    .map(|reference| unique_offset_data_block(&indexed, reference.token.value())),
-                second_object_indices: graph
-                    .second
-                    .each_ref()
-                    .map(|reference| reference.token.value()),
-                raw_second_object_indices: graph
-                    .second
-                    .each_ref()
-                    .map(|reference| reference.token.raw().to_vec()),
-                second_data_blocks: graph
-                    .second
-                    .each_ref()
-                    .map(|reference| unique_offset_data_block(&indexed, reference.token.value())),
+                first: graph.first.map(|reference| ConstructionReference {
+                    token: reference.token,
+                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
+                    source_offset: entry_offset + reference.offset as u64,
+                }),
+                second: graph.second.map(|reference| ConstructionReference {
+                    token: reference.token,
+                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
+                    source_offset: entry_offset + reference.offset as u64,
+                }),
                 source_offset: entry_offset + graph.offset as u64,
-                first_source_offsets: graph
-                    .first
-                    .each_ref()
-                    .map(|reference| entry_offset + reference.offset as u64),
-                second_source_offsets: graph
-                    .second
-                    .each_ref()
-                    .map(|reference| entry_offset + reference.offset as u64),
             });
         },
     );
@@ -9631,16 +9779,16 @@ pub fn feature_fset_construction_payloads(
             [
                 (
                     FeatureFsetReferenceGroup::First,
-                    graph.first_data_blocks.iter(),
+                    graph.first.iter(),
                 ),
                 (
                     FeatureFsetReferenceGroup::Second,
-                    graph.second_data_blocks.iter(),
+                    graph.second.iter(),
                 ),
             ]
             .into_iter()
             .filter_map(move |(group, source_blocks)| {
-                let data_blocks = source_blocks.cloned().collect::<Option<Vec<_>>>()?;
+                let data_blocks = source_blocks.map(|reference| reference.data_block.clone()).collect::<Option<Vec<_>>>()?;
                 let store = data_blocks.first()?.rsplit_once(":block#")?.0;
                 if data_blocks.iter().any(|block| {
                     block

@@ -286,3 +286,25 @@ fn construction_reference_records_preserve_wire_and_check_tokens() {
     check::<super::FeatureExtrudeProfileReference>(r#"{"id":"r","operation_label":"o","ordinal":0,"field_tag":1,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
     check::<super::FeatureBlockConstructionReference>(r#"{"id":"r","operation_label":"o","control":1,"ordinal":0,"terminal":true,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
 }
+
+#[test]
+fn fixed_reference_groups_preserve_wire_and_check_each_token() {
+    fn check<T: serde::Serialize + serde::de::DeserializeOwned>(json: &str, raw_field: &str) {
+        let record: T = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        let wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        for slot in 0..wire[raw_field].as_array().unwrap().len() {
+            let mut malformed = wire.clone();
+            malformed[raw_field][slot] = serde_json::json!([255]);
+            match serde_json::from_value::<T>(malformed) {
+                Err(error) => assert!(error.to_string().contains(raw_field)),
+                Ok(_) => panic!("invalid grouped reference token accepted"),
+            }
+        }
+    }
+    check::<super::FeatureDatumCsysConstruction>(r#"{"id":"c","operation_label":"o","control":19,"object_indices":[0,1,2,3,4,5,6,7],"raw_object_indices":[[0],[1],[2],[3],[4],[5],[6],[7]],"data_blocks":["a","b","c","d","e","f","g","h"],"source_offsets":[10,11,12,13,14,15,16,17]}"#, "raw_object_indices");
+    check::<super::FeatureHolePackageConstructionGroupLane>(r#"{"id":"c","operation_label":"o","selector":70,"branch":17,"object_indices":[1,2,3,4],"raw_object_indices":[[240,1],[240,2],[240,3],[240,4]],"data_blocks":["a","b","c","d"],"payload_offset":20,"source_offset":120,"reference_source_offsets":[132,134,141,143]}"#, "raw_object_indices");
+    let fset = r#"{"id":"g","operation_label":"o","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":[[144,0,1],[144,0,2]],"first_data_blocks":["a",null],"second_object_indices":[3,4,5],"raw_second_object_indices":[[144,0,3],[144,0,4],[144,0,5]],"second_data_blocks":[null,"d","e"],"source_offset":10,"first_source_offsets":[11,14],"second_source_offsets":[17,20,23]}"#;
+    check::<super::FeatureFsetReferenceGraph>(fset, "raw_first_object_indices");
+    check::<super::FeatureFsetReferenceGraph>(fset, "raw_second_object_indices");
+}

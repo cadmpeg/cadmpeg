@@ -1004,10 +1004,11 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         id: "construction".to_string(),
         operation_label: "csys".to_string(),
         control: 19,
-        object_indices: [0; 8],
-        raw_object_indices: std::array::from_fn(|_| vec![0]),
-        data_blocks: blocks,
-        source_offsets: [400; 8],
+        references: blocks.map(|data_block| crate::native::features::reference::ConstructionReference {
+            token: crate::om::reference_index::ReferenceIndexToken::from_wire(0, &[0]).unwrap(),
+            data_block,
+            source_offset: 400,
+        }),
     };
     let scalar = FeaturePayloadScalar {
         id: "csys-scalar".to_string(),
@@ -1080,7 +1081,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
     };
     let mut consecutive_construction = construction.clone();
     consecutive_construction.id = "consecutive-construction".to_string();
-    consecutive_construction.data_blocks[0] = "nx:om:offset-store#7:block#12".to_string();
+    consecutive_construction.references[0].data_block = "nx:om:offset-store#7:block#12".to_string();
     let consecutive_dependencies = super::feature_sketch_datum_csys_dependencies(
         &labels,
         &[consecutive_point],
@@ -1169,10 +1170,11 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
         id: "construction".to_string(),
         operation_label: "operation#0".to_string(),
         control: 0x13,
-        object_indices: std::array::from_fn(|index| index as u32 + 40),
-        raw_object_indices: std::array::from_fn(|index| vec![index as u8 + 40]),
-        data_blocks: std::array::from_fn(|index| format!("block#{}", index + 40)),
-        source_offsets: std::array::from_fn(|index| index as u64 + 100),
+        references: std::array::from_fn(|index| crate::native::features::reference::ConstructionReference {
+            token: crate::om::reference_index::ReferenceIndexToken::from_wire(index as u32 + 40, &[index as u8 + 40]).unwrap(),
+            data_block: format!("block#{}", index + 40),
+            source_offset: index as u64 + 100,
+        }),
     };
     let input = |id: &str, operation: &str, slot: u8, block: &str| super::FeatureInputBlock {
         id: id.to_string(),
@@ -1831,10 +1833,11 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
         id: "construction#1".into(),
         operation_label: "operation#1".into(),
         control: 0x16,
-        object_indices: std::array::from_fn(|slot| slot as u32),
-        raw_object_indices: std::array::from_fn(|slot| vec![slot as u8]),
-        data_blocks: std::array::from_fn(|slot| format!("block#{slot}")),
-        source_offsets: std::array::from_fn(|slot| 200 + slot as u64),
+        references: std::array::from_fn(|slot| crate::native::features::reference::ConstructionReference {
+            token: crate::om::reference_index::ReferenceIndexToken::from_wire(slot as u32, &[slot as u8]).unwrap(),
+            data_block: format!("block#{slot}"),
+            source_offset: 200 + slot as u64,
+        }),
     };
     let row = DataBlockTargetIndexRow {
         id: "target-row#3".into(),

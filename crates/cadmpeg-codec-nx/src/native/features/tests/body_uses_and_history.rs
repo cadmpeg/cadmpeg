@@ -825,12 +825,13 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
         operation_label: "package-operation".into(),
         selector: 0x46,
         branch: 0x11,
-        object_indices: [1, 2, 3, 4],
-        raw_object_indices: std::array::from_fn(|index| vec![0xf0, index as u8 + 1]),
-        data_blocks: blocks.clone(),
+        references: std::array::from_fn(|index| crate::native::features::reference::ConstructionReference {
+            token: crate::om::reference_index::ReferenceIndexToken::from_wire(index as u32 + 1, &[0xf0, index as u8 + 1]).unwrap(),
+            data_block: blocks[index].clone(),
+            source_offset: [132, 134, 141, 143][index],
+        }),
         payload_offset: 20,
         source_offset: 120,
-        reference_source_offsets: [132, 134, 141, 143],
     };
     let group = FeatureSimpleHoleConstructionGroup {
         id: "simple-hole-group".into(),
