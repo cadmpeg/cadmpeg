@@ -544,105 +544,24 @@ pub fn walk(stream: &[u8]) -> Census {
             census.reference_type_maps.push(map);
             continue;
         }
-        if let Some(record) = consume_shared_record(
+        let complete_record = consume_shared_record(
             stream,
             offset,
             &census.records,
             intersection_schema_anchor_seen,
-        ) {
+        )
+        .or_else(|| consume_intersection_auxiliary(stream, offset))
+        .or_else(|| consume_nurbs_auxiliary(stream, offset))
+        .or_else(|| consume_type_141(stream, offset))
+        .or_else(|| consume_type_45(stream, offset))
+        .or_else(|| consume_type_67(stream, offset))
+        .or_else(|| consume_type_70(stream, offset))
+        .or_else(|| consume_attdef_list(stream, offset))
+        .or_else(|| consume_type_101(stream, offset))
+        .or_else(|| consume_intersection_data(stream, offset, intersection_schema_anchor_seen));
+        if let Some(record) = complete_record {
             census.bytes_decoded += record.end - offset;
-            let name = record.family_name();
-            *census.full_counts.entry(name).or_default() += 1;
-            offset = record.end;
-            value_boundary = true;
-            census.records.push(record);
-            continue;
-        }
-        if let Some(record) = consume_intersection_auxiliary(stream, offset) {
-            census.bytes_decoded += record.end - record.offset;
-            let family = match record.kind() {
-                40 => "CHART",
-                41 => "TERM_USE",
-                59 => "BLEND_BOUND",
-                204 => "SUPPORT_UV",
-                _ => unreachable!("intersection auxiliary parser returns owned auxiliary types"),
-            };
-            *census.full_counts.entry(family).or_default() += 1;
-            offset = record.end;
-            value_boundary = true;
-            census.records.push(record);
-            continue;
-        }
-        if let Some(record) = consume_nurbs_auxiliary(stream, offset) {
-            census.bytes_decoded += record.end - record.offset;
-            let family = match record.kind() {
-                125 => "B_SURFACE_DATA",
-                126 => "B_SURFACE_DESCRIPTOR",
-                127 => "MULTIPLICITIES",
-                128 => "KNOTS",
-                135 => "B_CURVE_DATA",
-                136 => "B_CURVE_DESCRIPTOR",
-                _ => unreachable!("NURBS auxiliary parser returns owned auxiliary types"),
-            };
-            *census.full_counts.entry(family).or_default() += 1;
-            offset = record.end;
-            value_boundary = true;
-            census.records.push(record);
-            continue;
-        }
-        if let Some(record) = consume_type_141(stream, offset) {
-            census.bytes_decoded += record.end - record.offset;
-            *census.full_counts.entry("TYPE_141").or_default() += 1;
-            offset = record.end;
-            value_boundary = true;
-            census.records.push(record);
-            continue;
-        }
-        if let Some(record) = consume_type_45(stream, offset) {
-            census.bytes_decoded += record.end - record.offset;
-            *census.full_counts.entry("TYPE_45").or_default() += 1;
-            offset = record.end;
-            value_boundary = true;
-            census.records.push(record);
-            continue;
-        }
-        if let Some(record) = consume_type_67(stream, offset) {
-            census.bytes_decoded += record.end - record.offset;
-            *census.full_counts.entry("TYPE_67").or_default() += 1;
-            offset = record.end;
-            value_boundary = true;
-            census.records.push(record);
-            continue;
-        }
-        if let Some(record) = consume_type_70(stream, offset) {
-            census.bytes_decoded += record.end - record.offset;
-            *census.full_counts.entry("TYPE_70").or_default() += 1;
-            offset = record.end;
-            value_boundary = true;
-            census.records.push(record);
-            continue;
-        }
-        if let Some(record) = consume_attdef_list(stream, offset) {
-            census.bytes_decoded += record.end - record.offset;
-            *census.full_counts.entry("ATTDEF_LIST").or_default() += 1;
-            offset = record.end;
-            value_boundary = true;
-            census.records.push(record);
-            continue;
-        }
-        if let Some(record) = consume_type_101(stream, offset) {
-            census.bytes_decoded += record.end - record.offset;
-            *census.full_counts.entry("TYPE_101").or_default() += 1;
-            offset = record.end;
-            value_boundary = true;
-            census.records.push(record);
-            continue;
-        }
-        if let Some(record) =
-            consume_intersection_data(stream, offset, intersection_schema_anchor_seen)
-        {
-            census.bytes_decoded += record.end - record.offset;
-            *census.full_counts.entry("INTERSECTION_DATA").or_default() += 1;
+            *census.full_counts.entry(record.family_name()).or_default() += 1;
             offset = record.end;
             value_boundary = true;
             census.records.push(record);
@@ -1832,7 +1751,6 @@ fn consume_shared_record(
         return Some(record);
     }
     let kind = u16::from(*stream.get(offset)?);
-    family_name(kind)?;
     fixed_signature(kind)
         .and_then(|signature| consume_fixed(stream, record_offset, kind, signature))
         .or_else(|| consume_variable(stream, record_offset, kind))
