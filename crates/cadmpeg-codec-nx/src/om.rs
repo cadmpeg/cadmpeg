@@ -28,6 +28,8 @@ pub(crate) mod nonempty;
 pub(crate) mod state_tagged_value;
 pub(crate) mod state_index;
 pub(crate) mod state_slots;
+pub(crate) mod source_span;
+use source_span::SourceSpan;
 use state_slots::StateSlots;
 pub(crate) mod state_link;
 use state_link::StateLinkCode;
@@ -1488,8 +1490,8 @@ pub struct OperationTerminalFrame {
 /// One row in the operation-state object counter map.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationStateCounter {
-    /// Absolute byte offset of the row's `05` marker.
-    pub offset: usize,
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
     /// Row-kind byte following `05`; modern files use `01` and `02`.
     pub row_kind: OperationStateCounterKind,
     /// Object whose state-counter pair is recorded.
@@ -1498,8 +1500,6 @@ pub struct OperationStateCounter {
     pub introduced_state: u8,
     /// Journal state at which the object was last modified.
     pub modified_state: u8,
-    /// Exclusive absolute end offset after the `4e` terminator.
-    pub end_offset: usize,
 }
 
 /// Contiguous object state-counter map at the end of a feature-history area.
@@ -1518,16 +1518,14 @@ pub struct OperationStateCounterMap<'a> {
 /// One diagnostic/message record in the operation-state block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationStateMessage<'a> {
-    /// Absolute byte offset of the opening `03` marker.
-    pub offset: usize,
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
     /// Exact byte-length-framed ASCII Part Navigator text.
     pub text: StateMessageText<&'a str>,
     /// Tagged value following the four zero bytes.
     pub value: StateTaggedValue,
     /// Big-endian count or severity word following the tagged value.
     pub count_or_severity: u16,
-    /// Exclusive absolute end offset after the count/severity word.
-    pub end_offset: usize,
 }
 
 /// Payload form of one per-object operation-state status row.
@@ -1557,16 +1555,14 @@ pub enum OperationStateStatusPayload<'a> {
 /// One per-object status row in the operation-state block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationStateStatus<'a> {
-    /// Absolute byte offset of the status-code token.
-    pub offset: usize,
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
     /// Exact non-null status-code token and decoded value.
     pub status_code: NonNullStateIndex,
     /// Object carrying this status.
     pub object_index: NonNullStateIndex,
     /// Status payload, retained without naming suppression codes.
     pub payload: OperationStateStatusPayload<'a>,
-    /// Exclusive absolute end offset after the payload.
-    pub end_offset: usize,
 }
 
 /// A bounded sequence of operation-state status rows.
@@ -1587,12 +1583,10 @@ pub struct OperationStateStatusTable<'a> {
 /// One standalone feature-record slot lane in the operation-state block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationStateSlotLane {
-    /// Absolute byte offset of the `02 01 11` lane prefix.
-    pub offset: usize,
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
     /// Null or object-index slots in serialized order.
     pub slots: StateSlots<OperationStateIndex>,
-    /// Exclusive absolute end offset after the `02 11` terminator.
-    pub end_offset: usize,
 }
 
 struct OperationStateBlock<'a> {
@@ -1633,14 +1627,12 @@ pub enum OperationStateGroupRow {
 /// One counted `m_rollForwardStates` group.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationStateGroup {
-    /// Absolute byte offset of the two-byte group opener.
-    pub offset: usize,
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
     /// Admitted two-byte group opener.
     pub opener: OperationStateGroupOpener,
     /// Ordered rows with their exact count-header form.
     pub members: StateGroupMembers<OperationStateGroupRow>,
-    /// Exclusive absolute end offset after the final group row.
-    pub end_offset: usize,
 }
 
 /// A bounded sequence of `m_rollForwardStates` groups.
@@ -1659,8 +1651,8 @@ pub struct OperationStateGroupTable<'a> {
 /// One state-journal row preceding feature operation records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationStateJournalRow {
-    /// Absolute byte offset of the row's `e0` timestamp marker.
-    pub offset: usize,
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
     /// Big-endian Unix timestamp.
     pub timestamp: u32,
     /// Tagged schema value stored by the journal.
@@ -1669,21 +1661,17 @@ pub struct OperationStateJournalRow {
     pub schema_id: NonNullStateIndex,
     /// Monotone state ordinal varint.
     pub ordinal: NonNullStateIndex,
-    /// Exclusive absolute end offset after the `13` terminator.
-    pub end_offset: usize,
 }
 
 /// One state-journal group.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationStateJournalGroup {
-    /// Absolute byte offset of the `04` group opener.
-    pub offset: usize,
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
     /// Two opener selector bytes.
     pub selector: [u8; 2],
     /// Journal rows in serialized order.
     pub rows: Vec<OperationStateJournalRow>,
-    /// Exclusive absolute end offset after the final row.
-    pub end_offset: usize,
 }
 
 /// One complete row in an audit-trail record area.
@@ -1694,8 +1682,8 @@ pub struct OperationStateJournalGroup {
 /// meaning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AuditTrailRow<'a> {
-    /// Absolute byte offset of the opening `04` marker.
-    pub offset: usize,
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
     /// Monotone audit-row ordinal and its exact token.
     pub ordinal: NonNullStateIndex,
     /// Optional selector byte in the exact `04 05 selector 00` envelope.
@@ -1706,8 +1694,6 @@ pub struct AuditTrailRow<'a> {
     pub value: StateTaggedValue,
     /// Exact complete row bytes.
     pub raw: &'a [u8],
-    /// Exclusive absolute end offset after the tagged value.
-    pub end_offset: usize,
 }
 
 /// One length-framed UTF-8 string in a bounded operation payload.
@@ -2816,7 +2802,7 @@ impl<'a> Section<'a> {
         let block = self.operation_state_block()?;
         let status_after = block.status_end_offset.checked_sub(base_offset)?;
         let message_start = match block.messages.first() {
-            Some(message) => message.offset.checked_sub(base_offset)?,
+            Some(message) => message.span.local_start(),
             None => status_after,
         };
         (!block.rows.is_empty() || !block.slot_lanes.is_empty()).then_some(
@@ -6391,12 +6377,11 @@ fn operation_state_counter_row(
     let modified_state = *bytes.get(state_at + 1)?;
     let end = state_at.checked_add(3)?;
     (bytes.get(end - 1) == Some(&0x4e)).then_some(OperationStateCounter {
-        offset: base_offset.checked_add(at)?,
+        span: SourceSpan::new(base_offset, at, end)?,
         row_kind,
         object_index,
         introduced_state,
         modified_state,
-        end_offset: base_offset.checked_add(end)?,
     })
 }
 
@@ -6422,10 +6407,7 @@ pub fn operation_state_counter_map(
         let Some(row) = operation_state_counter_row(bytes, at, base_offset) else {
             continue;
         };
-        let row_end = row
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("counter row offset is based on the same record area");
+        let row_end = row.span.local_end();
         if at == run_end {
             run_end = row_end;
             run_len += 1;
@@ -6446,10 +6428,7 @@ pub fn operation_state_counter_map(
     let mut cursor = start;
     while cursor < end {
         let row = operation_state_counter_row(bytes, cursor, base_offset)?;
-        cursor = row
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("counter row offset is based on the same record area");
+        cursor = row.span.local_end();
         rows.push(row);
     }
     (cursor == end).then_some(OperationStateCounterMap {
@@ -6482,11 +6461,10 @@ fn operation_state_message_at(
     let count_or_severity = View::u16_be_at(bytes, count_at)?;
     let end = count_at.checked_add(2)?;
     Some(OperationStateMessage {
-        offset: base_offset.checked_add(at)?,
+        span: SourceSpan::new(base_offset, at, end)?,
         text,
         value,
         count_or_severity,
-        end_offset: base_offset.checked_add(end)?,
     })
 }
 
@@ -6503,7 +6481,7 @@ fn operation_state_status_end_at(
         precomputed_end.or_else(|| operation_state_slot_lane_end_at(bytes, at, end))
     } else {
         operation_state_status_row_at(bytes, at, end, base_offset, opaque_lane_starts)
-            .and_then(|row| row.end_offset.checked_sub(base_offset))
+            .map(|row| row.span.local_end())
     }
 }
 
@@ -6558,7 +6536,7 @@ fn operation_state_block_before_boundary(
     let mut message_paths = Vec::new();
     for at in (start..end).rev() {
         if let Some(message) = operation_state_message_at(bytes, at, base_offset) {
-            let next = message.end_offset.checked_sub(base_offset)?;
+            let next = message.span.local_end();
             if next > at && next <= end {
                 let continuation = (next < end)
                     .then(|| operation_state_path_at(&message_paths, next))
@@ -6629,7 +6607,7 @@ fn operation_state_block_before_boundary(
     while at < path_end {
         if in_messages {
             let message = operation_state_message_at(bytes, at, base_offset)?;
-            let next = message.end_offset.checked_sub(base_offset)?;
+            let next = message.span.local_end();
             (next > at && next <= path_end).then_some(())?;
             messages.push(message);
             at = next;
@@ -6659,7 +6637,7 @@ fn operation_state_block_before_boundary(
         let message = operation_state_message_at(bytes, at, base_offset);
         let message_next = message
             .as_ref()
-            .and_then(|message| message.end_offset.checked_sub(base_offset));
+            .map(|message| message.span.local_end());
         let message_length = operation_state_path_at(&message_paths, at)
             .filter(|path| path.end == path_end)
             .map_or(0, |path| path.length);
@@ -6668,9 +6646,9 @@ fn operation_state_block_before_boundary(
             let next = status_next?;
             if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
                 let lane = operation_state_slot_lane_at(bytes, at, end, base_offset)?;
-                let lane_end = lane.end_offset.checked_sub(base_offset)?;
+                let lane_end = lane.span.local_end();
                 (lane_end == next).then_some(())?;
-                let lane_end_offset = lane.end_offset;
+                let lane_end_offset = lane.span.end_offset();
                 slot_lanes.push(lane);
                 at = next;
                 status_end_offset = lane_end_offset;
@@ -6682,11 +6660,11 @@ fn operation_state_block_before_boundary(
                     base_offset,
                     Some(&opaque_lane_starts),
                 )?;
-                let row_end = row.end_offset.checked_sub(base_offset)?;
+                let row_end = row.span.local_end();
                 (row_end == next).then_some(())?;
                 rows.push(row);
                 at = next;
-                status_end_offset = row.end_offset;
+                status_end_offset = row.span.end_offset();
             }
         } else {
             let message = message?;
@@ -6719,10 +6697,7 @@ pub fn operation_state_messages(
             at += 1;
             continue;
         };
-        at = message
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("message offset is based on the same bounded region");
+        at = message.span.local_end();
         messages.push(message);
     }
     messages
@@ -6787,9 +6762,8 @@ fn operation_state_slot_lane_at(
         if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
             let lane_end = cursor + 2;
             return Some(OperationStateSlotLane {
-                offset: base_offset.checked_add(at)?,
+                span: SourceSpan::new(base_offset, at, lane_end)?,
                 slots: StateSlots::new(slots).ok()?,
-                end_offset: base_offset.checked_add(lane_end)?,
             });
         }
         let slot = OperationStateIndex::read_at(bytes, cursor, base_offset)?;
@@ -6833,10 +6807,7 @@ fn operation_state_status_row_at<'a>(
         0x3f => (OperationStateStatusPayload::Plain, payload_at + 1),
         0x03 => {
             let message = operation_state_message_at(bytes, payload_at, base_offset)?;
-            let payload_end = message
-                .end_offset
-                .checked_sub(base_offset)
-                .expect("message offset is based on the same bounded region");
+            let payload_end = message.span.local_end();
             (
                 OperationStateStatusPayload::Diagnostic { message },
                 payload_end,
@@ -6857,11 +6828,10 @@ fn operation_state_status_row_at<'a>(
         _ => operation_state_link_payload(bytes, payload_at, end, base_offset)?,
     };
     (payload_end <= end).then_some(OperationStateStatus {
-        offset: base_offset.checked_add(at)?,
+        span: SourceSpan::new(base_offset, at, payload_end)?,
         status_code,
         object_index,
         payload,
-        end_offset: base_offset.checked_add(payload_end)?,
     })
 }
 
@@ -6885,20 +6855,14 @@ pub fn operation_state_status_table(
         }
         if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
             let lane = operation_state_slot_lane_at(bytes, at, end, base_offset)?;
-            at = lane
-                .end_offset
-                .checked_sub(base_offset)
-                .expect("slot-lane offset is based on the same bounded region");
+            at = lane.span.local_end();
             slot_lanes.push(lane);
             continue;
         }
         let Some(row) = operation_state_status_row_at(bytes, at, end, base_offset, None) else {
             break;
         };
-        at = row
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("status offset is based on the same bounded region");
+        at = row.span.local_end();
         rows.push(row);
     }
     (!rows.is_empty()).then_some(OperationStateStatusTable {
@@ -7001,10 +6965,9 @@ fn operation_state_group_at(
         cursor = row_end;
     }
     (cursor <= end).then_some(OperationStateGroup {
-        offset: base_offset.checked_add(at)?,
+        span: SourceSpan::new(base_offset, at, cursor)?,
         opener,
         members: StateGroupMembers::new(count, rows).ok()?,
-        end_offset: base_offset.checked_add(cursor)?,
     })
 }
 
@@ -7112,10 +7075,7 @@ pub fn operation_state_group_table(
             }
             return None;
         };
-        at = group
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("group offset is based on the same bounded region");
+        at = group.span.local_end();
         groups.push(group);
     }
     (!groups.is_empty() && at == end).then_some(OperationStateGroupTable {
@@ -7147,12 +7107,11 @@ fn operation_state_journal_row_at(
     }
     let row_end = terminator_at + 1;
     Some(OperationStateJournalRow {
-        offset: base_offset.checked_add(at)?,
+        span: SourceSpan::new(base_offset, at, row_end)?,
         timestamp,
         value,
         schema_id,
         ordinal,
-        end_offset: base_offset.checked_add(row_end)?,
     })
 }
 
@@ -7192,13 +7151,12 @@ fn audit_trail_row_at(
     let value = StateTaggedValue::read_at(bytes, cursor)?;
     let row_end = cursor.checked_add(value.raw().len())?;
     Some(AuditTrailRow {
-        offset: base_offset.checked_add(at)?,
+        span: SourceSpan::new(base_offset, at, row_end)?,
         ordinal,
         frame_selector,
         timestamp,
         value,
         raw: bytes.get(at..row_end)?,
-        end_offset: base_offset.checked_add(row_end)?,
     })
 }
 
@@ -7230,7 +7188,7 @@ pub fn audit_trail_rows(
             return None;
         }
         previous_ordinal = Some(ordinal);
-        at = row.end_offset.checked_sub(base_offset)?;
+        at = row.span.local_end();
         rows.push(row);
     }
     Some(rows)
@@ -7258,17 +7216,13 @@ fn operation_state_journal_group_at(
         let Some(row) = operation_state_journal_row_at(bytes, cursor, end, base_offset) else {
             break;
         };
-        cursor = row
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("journal offset is based on the same bounded region");
+        cursor = row.span.local_end();
         rows.push(row);
     }
     (!rows.is_empty()).then_some(OperationStateJournalGroup {
-        offset: base_offset.checked_add(at)?,
+        span: SourceSpan::new(base_offset, at, cursor)?,
         selector,
         rows,
-        end_offset: base_offset.checked_add(cursor)?,
     })
 }
 
@@ -7337,10 +7291,7 @@ fn operation_state_journal_groups_before_boundary(
             }
             previous_ordinal = Some(ordinal);
         }
-        at = group
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("journal offset is based on the same bounded region");
+        at = group.span.local_end();
         groups.push(group);
     }
     (!groups.is_empty()).then_some(groups)
@@ -7361,10 +7312,7 @@ pub fn operation_state_journal(
     let mut at = start;
     while at < end {
         let group = operation_state_journal_group_at(bytes, at, end, base_offset)?;
-        at = group
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("journal offset is based on the same bounded region");
+        at = group.span.local_end();
         groups.push(group);
     }
     (!groups.is_empty() && at == end).then_some(groups)

@@ -512,8 +512,8 @@ pub fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
                         value: row.value,
                         raw: row.raw.to_vec(),
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + row.offset as u64,
-                        end_offset: entry_offset + row.end_offset as u64,
+                        source_offset: entry_offset + row.span.offset() as u64,
+                        end_offset: entry_offset + row.span.end_offset() as u64,
                     }
                 })
                 .collect()
@@ -560,7 +560,7 @@ pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCo
                         modified_state: row.modified_state,
                         object_index_source_offset: entry_offset + row.object_index.offset() as u64,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + row.offset as u64,
+                        source_offset: entry_offset + row.span.offset() as u64,
                     })
                 })
                 .collect()
@@ -604,8 +604,8 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
                                 value: row.value,
                                 schema_id: row.schema_id.token(),
                                 state_ordinal: row.ordinal.token(),
-                                source_offset: entry_offset + row.offset as u64,
-                                end_offset: entry_offset + row.end_offset as u64,
+                                source_offset: entry_offset + row.span.offset() as u64,
+                                end_offset: entry_offset + row.span.end_offset() as u64,
                             }
                         })
                         .collect();
@@ -618,8 +618,8 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
                         selector: group.selector,
                         rows,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + group.offset as u64,
-                        end_offset: entry_offset + group.end_offset as u64,
+                        source_offset: entry_offset + group.span.offset() as u64,
+                        end_offset: entry_offset + group.span.end_offset() as u64,
                     })
                 })
                 .collect()
@@ -689,7 +689,7 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                         members,
                         table_trailing_bytes: table.trailing_bytes.to_vec(),
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + group.offset as u64,
+                        source_offset: entry_offset + group.span.offset() as u64,
                         table_end_offset: entry_offset + table.end_offset as u64,
                     })
                 })
@@ -737,7 +737,7 @@ pub fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMe
                             count_or_severity: message.count_or_severity,
                         },
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + message.offset as u64,
+                        source_offset: entry_offset + message.span.offset() as u64,
                     })
                 })
                 .collect()
@@ -807,8 +807,8 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                         object_index,
                         payload,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + row.offset as u64,
-                        end_offset: entry_offset + row.end_offset as u64,
+                        source_offset: entry_offset + row.span.offset() as u64,
+                        end_offset: entry_offset + row.span.end_offset() as u64,
                     })
                 })
                 .collect()
@@ -853,8 +853,8 @@ pub fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationState
                         ordinal,
                         slots,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + lane.offset as u64,
-                        end_offset: entry_offset + lane.end_offset as u64,
+                        source_offset: entry_offset + lane.span.offset() as u64,
+                        end_offset: entry_offset + lane.span.end_offset() as u64,
                     })
                 })
                 .collect()

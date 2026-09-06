@@ -98,13 +98,13 @@ fn operation_state_messages_decode_text_value_and_severity() {
     let bytes = message_bytes(b"hello", &[0xc0, 0x01, 0x02, 0x03], [0, 3]);
     let messages = super::operation_state_messages(&bytes, 500);
     assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].offset, 500);
+    assert_eq!(messages[0].span.offset(), 500);
     assert_eq!(messages[0].text.declared_length(), 7);
     assert_eq!(messages[0].text.as_str(), "hello");
     assert_eq!(messages[0].value.raw().len(), 4);
     assert_eq!(messages[0].value.value(), 0x0001_0203);
     assert_eq!(messages[0].count_or_severity, 3);
-    assert_eq!(messages[0].end_offset, 500 + bytes.len());
+    assert_eq!(messages[0].span.end_offset(), 500 + bytes.len());
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn operation_state_messages_accept_terminal_count_shared_with_group_opener() {
         .messages;
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].text.as_str(), "terminal");
-    assert_eq!(messages[0].end_offset, 500 + group_start + 2);
+    assert_eq!(messages[0].span.end_offset(), 500 + group_start + 2);
     assert_eq!(table.offset, 500 + group_start);
     assert_eq!(table.groups[0].opener.bytes(), [0x01, 0x00]);
 }
@@ -374,14 +374,14 @@ fn audit_trail_rows_retain_optional_selector_variable_value_width_and_raw_bytes(
     assert_eq!(rows[0].timestamp, 0x6553_4d20);
     assert_eq!(rows[0].value.raw().len(), 5);
     assert_eq!(rows[0].value.value(), 0x0102_0304);
-    assert_eq!(rows[0].offset, 900 + 7);
+    assert_eq!(rows[0].span.offset(), 900 + 7);
     assert_eq!(rows[0].raw, &bytes[7..20]);
     assert_eq!(Some(rows[1].ordinal.value()), Some(3));
     assert_eq!(rows[1].frame_selector, Some(7));
     assert_eq!(rows[1].value.raw().len(), 4);
     assert_eq!(rows[1].value.value(), 0x0001_0203);
     assert_eq!(rows[1].raw, &bytes[20..36]);
-    assert_eq!(rows[1].end_offset, 900 + 36);
+    assert_eq!(rows[1].span.end_offset(), 900 + 36);
 
     let truncated = super::audit_trail_rows(&bytes, 2, 35, 900).expect("bounded audit rows");
     assert_eq!(truncated.len(), 1);
