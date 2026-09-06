@@ -60,11 +60,11 @@ pub enum RecordKind {
 }
 
 impl RecordKind {
-    pub fn code(self) -> u8 {
+    pub const fn code(self) -> u8 {
         self as u8
     }
 
-    pub fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             Self::Body => "BODY",
             Self::Shell => "SHELL",
