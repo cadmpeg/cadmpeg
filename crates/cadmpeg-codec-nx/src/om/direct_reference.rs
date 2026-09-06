@@ -65,6 +65,10 @@ pub(crate) fn operation_reference_fields(record: OperationRecord<'_>, kind: Refe
 
 #[cfg(test)]
 mod tests {
+    // Preserve the fixture suite's existing unwrap lint policy.
+    #![allow(clippy::unwrap_used)]
+    mod tagged_references;
+    mod operation_data_block_references;
     use super::*;
 
     #[test]
