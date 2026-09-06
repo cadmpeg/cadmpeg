@@ -675,7 +675,7 @@ fn resolve_rm_face_color_bindings(
             continue;
         };
         colors_by_object
-            .entry(*object_index)
+            .entry(object_index.atom.value())
             .or_default()
             .insert(assignment.color_definition.clone());
     }
@@ -687,7 +687,7 @@ fn resolve_rm_face_color_bindings(
             continue;
         };
         source_offsets_by_object
-            .entry(*object_index)
+            .entry(object_index.atom.value())
             .and_modify(|offset| *offset = (*offset).min(assignment.source_offset))
             .or_insert(assignment.source_offset);
     }

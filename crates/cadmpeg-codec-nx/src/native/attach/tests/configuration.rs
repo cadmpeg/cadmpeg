@@ -3,6 +3,7 @@
 use cadmpeg_ir::math::Point2;
 
 use super::*;
+use crate::om::compact::{CompactIndexAtom, LocatedCompactIndex};
 
 #[test]
 fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
@@ -22,16 +23,10 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
         id: "nx:test:assignment#0".into(),
         ordinal: 0,
         encoding: crate::native::om::RmDisplayColorAssignmentEncoding::Linked {
-            object_index: 42,
-            raw_object_index: vec![42],
-            object_index_source_offset: 22,
+            object_index: LocatedCompactIndex { atom: CompactIndexAtom::read(&[42]).unwrap(), offset: 22 },
             discriminator: crate::om::discriminators::LinkedIndexDiscriminator::Form16,
-            target_index: 7,
-            raw_target_index: vec![7],
-            target_index_source_offset: 23,
-            indices: [1, 2, 3],
-            raw_indices: [vec![1], vec![2], vec![3]],
-            index_source_offsets: [24, 25, 26],
+            target_index: LocatedCompactIndex { atom: CompactIndexAtom::read(&[7]).unwrap(), offset: 23 },
+            indices: [(1, 24), (2, 25), (3, 26)].map(|(value, offset)| LocatedCompactIndex { atom: CompactIndexAtom::read(&[value]).unwrap(), offset }),
             flag: crate::om::discriminators::LinkedIndexFlag::Form03,
             mode: crate::om::discriminators::IndexRowMode::Form04,
         },
@@ -89,12 +84,8 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
 
     let mut target_assignment = assignment.clone();
     target_assignment.encoding = crate::native::om::RmDisplayColorAssignmentEncoding::Target {
-        target_index: 7,
-        raw_target_index: vec![7],
-        target_index_source_offset: 23,
-        indices: [1, 2, 3],
-        raw_indices: [vec![1], vec![2], vec![3]],
-        index_source_offsets: [24, 25, 26],
+        target_index: LocatedCompactIndex { atom: CompactIndexAtom::read(&[7]).unwrap(), offset: 23 },
+        indices: [(1, 24), (2, 25), (3, 26)].map(|(value, offset)| LocatedCompactIndex { atom: CompactIndexAtom::read(&[value]).unwrap(), offset }),
         mode: crate::om::discriminators::IndexRowMode::Form04,
     };
     assert_eq!(
@@ -131,12 +122,8 @@ fn rm_source_color_bindings_require_one_palette_per_source_identity() {
             id: id.into(),
             ordinal: 0,
             encoding: crate::native::om::RmDisplayColorAssignmentEncoding::Target {
-                target_index: 7,
-                raw_target_index: vec![7],
-                target_index_source_offset: offset,
-                indices: [1, 2, 3],
-                raw_indices: [vec![1], vec![2], vec![3]],
-                index_source_offsets: [offset + 1, offset + 2, offset + 3],
+                target_index: LocatedCompactIndex { atom: CompactIndexAtom::read(&[7]).unwrap(), offset },
+                indices: [(1, offset + 1), (2, offset + 2), (3, offset + 3)].map(|(value, offset)| LocatedCompactIndex { atom: CompactIndexAtom::read(&[value]).unwrap(), offset }),
                 mode: crate::om::discriminators::IndexRowMode::Form04,
             },
             target_object_id: source_id.map(str::to_owned),

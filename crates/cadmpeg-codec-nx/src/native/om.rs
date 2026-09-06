@@ -2412,37 +2412,23 @@ pub struct DataBlockTargetIndexRow {
 pub enum RmCreationDisplayDataEncoding {
     /// Self-framed index row whose fourth post-flag index selects the class.
     Index {
-        first_index: u32,
-        raw_first_index: Vec<u8>,
-        first_index_source_offset: u64,
-        flag: u8,
-        indices: [u32; 4],
-        raw_indices: [Vec<u8>; 4],
-        index_source_offsets: [u64; 4],
+        first_index: LocatedCompactIndex<u64>,
+        flag: crate::om::discriminators::LinkedIndexFlag,
+        indices: [LocatedCompactIndex<u64>; 4],
     },
     /// Self-framed linked row whose third post-marker index selects the class.
     Linked {
-        first_index: u32,
-        raw_first_index: Vec<u8>,
-        first_index_source_offset: u64,
+        first_index: LocatedCompactIndex<u64>,
         discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
-        target_index: u32,
-        raw_target_index: Vec<u8>,
-        target_index_source_offset: u64,
-        indices: [u32; 3],
-        raw_indices: [Vec<u8>; 3],
-        index_source_offsets: [u64; 3],
+        target_index: LocatedCompactIndex<u64>,
+        indices: [LocatedCompactIndex<u64>; 3],
         flag: crate::om::discriminators::LinkedIndexFlag,
         mode: crate::om::discriminators::IndexRowMode,
     },
     /// Self-framed target row whose third post-marker index selects the class.
     Target {
-        target_index: u32,
-        raw_target_index: Vec<u8>,
-        target_index_source_offset: u64,
-        indices: [u32; 3],
-        raw_indices: [Vec<u8>; 3],
-        index_source_offsets: [u64; 3],
+        target_index: LocatedCompactIndex<u64>,
+        indices: [LocatedCompactIndex<u64>; 3],
         mode: crate::om::discriminators::IndexRowMode,
     },
 }
@@ -2529,71 +2515,57 @@ impl From<RmCreationDisplayDataRelation> for RmCreationDisplayDataRelationWire {
             match value.encoding {
                 RmCreationDisplayDataEncoding::Index {
                     first_index,
-                    raw_first_index,
-                    first_index_source_offset,
                     flag,
                     indices,
-                    raw_indices,
-                    index_source_offsets,
                 } => (
-                    Some(first_index),
-                    Some(raw_first_index),
-                    Some(first_index_source_offset),
+                    Some(first_index.atom.value()),
+                    Some(first_index.atom.raw().to_vec()),
+                    Some(first_index.offset),
                     RmCreationDisplayDataEncodingWire::Index {
-                        flag,
-                        indices,
-                        raw_indices,
-                        index_source_offsets,
+                        flag: u8::from(flag),
+                        indices: indices.map(|token| token.atom.value()),
+                        raw_indices: indices.map(|token| token.atom.raw().to_vec()),
+                        index_source_offsets: indices.map(|token| token.offset),
                     },
                 ),
                 RmCreationDisplayDataEncoding::Linked {
                     first_index,
-                    raw_first_index,
-                    first_index_source_offset,
                     discriminator,
                     target_index,
-                    raw_target_index,
-                    target_index_source_offset,
                     indices,
-                    raw_indices,
-                    index_source_offsets,
                     flag,
                     mode,
                 } => (
-                    Some(first_index),
-                    Some(raw_first_index),
-                    Some(first_index_source_offset),
+                    Some(first_index.atom.value()),
+                    Some(first_index.atom.raw().to_vec()),
+                    Some(first_index.offset),
                     RmCreationDisplayDataEncodingWire::Linked {
                         discriminator,
-                        target_index,
-                        raw_target_index,
-                        target_index_source_offset,
-                        indices,
-                        raw_indices,
-                        index_source_offsets,
+                        target_index: target_index.atom.value(),
+                        raw_target_index: target_index.atom.raw().to_vec(),
+                        target_index_source_offset: target_index.offset,
+                        indices: indices.map(|token| token.atom.value()),
+                        raw_indices: indices.map(|token| token.atom.raw().to_vec()),
+                        index_source_offsets: indices.map(|token| token.offset),
                         flag,
                         mode,
                     },
                 ),
                 RmCreationDisplayDataEncoding::Target {
                     target_index,
-                    raw_target_index,
-                    target_index_source_offset,
                     indices,
-                    raw_indices,
-                    index_source_offsets,
                     mode,
                 } => (
                     None,
                     None,
                     None,
                     RmCreationDisplayDataEncodingWire::Target {
-                        target_index,
-                        raw_target_index,
-                        target_index_source_offset,
-                        indices,
-                        raw_indices,
-                        index_source_offsets,
+                        target_index: target_index.atom.value(),
+                        raw_target_index: target_index.atom.raw().to_vec(),
+                        target_index_source_offset: target_index.offset,
+                        indices: indices.map(|token| token.atom.value()),
+                        raw_indices: indices.map(|token| token.atom.raw().to_vec()),
+                        index_source_offsets: indices.map(|token| token.offset),
                         mode,
                     },
                 ),
@@ -2635,13 +2607,9 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
                 Some(raw_first_index),
                 Some(first_index_source_offset),
             ) => RmCreationDisplayDataEncoding::Index {
-                first_index,
-                raw_first_index,
-                first_index_source_offset,
-                flag,
-                indices,
-                raw_indices,
-                index_source_offsets,
+                first_index: row_wire::located_index(first_index, &raw_first_index, first_index_source_offset, "first_index/raw_first_index")?,
+                flag: crate::om::discriminators::LinkedIndexFlag::try_from(flag).map_err(|_| "flag: must be 3 or 7")?,
+                indices: row_wire::located_indices(indices, raw_indices, index_source_offsets)?,
             },
             (
                 RmCreationDisplayDataEncodingWire::Linked {
@@ -2659,16 +2627,10 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
                 Some(raw_first_index),
                 Some(first_index_source_offset),
             ) => RmCreationDisplayDataEncoding::Linked {
-                first_index,
-                raw_first_index,
-                first_index_source_offset,
+                first_index: row_wire::located_index(first_index, &raw_first_index, first_index_source_offset, "first_index/raw_first_index")?,
                 discriminator,
-                target_index,
-                raw_target_index,
-                target_index_source_offset,
-                indices,
-                raw_indices,
-                index_source_offsets,
+                target_index: row_wire::located_index(target_index, &raw_target_index, target_index_source_offset, "target_index/raw_target_index")?,
+                indices: row_wire::located_indices(indices, raw_indices, index_source_offsets)?,
                 flag,
                 mode,
             },
@@ -2686,12 +2648,8 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
                 None,
                 None,
             ) => RmCreationDisplayDataEncoding::Target {
-                target_index,
-                raw_target_index,
-                target_index_source_offset,
-                indices,
-                raw_indices,
-                index_source_offsets,
+                target_index: row_wire::located_index(target_index, &raw_target_index, target_index_source_offset, "target_index/raw_target_index")?,
+                indices: row_wire::located_indices(indices, raw_indices, index_source_offsets)?,
                 mode,
             },
             _ => return Err(
@@ -2750,50 +2708,21 @@ pub struct PartColorDefinition {
 
 /// Exact row encoding carrying one `RMFastLoad` display-color assignment.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(try_from = "row_wire::RmDisplayColorAssignmentEncodingWire", into = "row_wire::RmDisplayColorAssignmentEncodingWire")]
 pub enum RmDisplayColorAssignmentEncoding {
     /// Linked row with an unresolved leading object identity.
     Linked {
-        /// Unresolved leading object identity.
-        object_index: u32,
-        /// Exact leading-object token.
-        raw_object_index: Vec<u8>,
-        /// Absolute leading-object token offset.
-        object_index_source_offset: u64,
-        /// Row discriminator.
+        object_index: LocatedCompactIndex<u64>,
         discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
-        /// Target index.
-        target_index: u32,
-        /// Exact target-index token.
-        raw_target_index: Vec<u8>,
-        /// Absolute target-index token offset.
-        target_index_source_offset: u64,
-        /// Three post-marker indices.
-        indices: [u32; 3],
-        /// Exact post-marker index tokens.
-        raw_indices: [Vec<u8>; 3],
-        /// Absolute post-marker token offsets.
-        index_source_offsets: [u64; 3],
-        /// Row flag.
+        target_index: LocatedCompactIndex<u64>,
+        indices: [LocatedCompactIndex<u64>; 3],
         flag: crate::om::discriminators::LinkedIndexFlag,
-        /// Row mode.
         mode: crate::om::discriminators::IndexRowMode,
     },
     /// Target-index row without a leading object identity.
     Target {
-        /// Target index.
-        target_index: u32,
-        /// Exact target-index token.
-        raw_target_index: Vec<u8>,
-        /// Absolute target-index token offset.
-        target_index_source_offset: u64,
-        /// Three post-marker indices.
-        indices: [u32; 3],
-        /// Exact post-marker index tokens.
-        raw_indices: [Vec<u8>; 3],
-        /// Absolute post-marker token offsets.
-        index_source_offsets: [u64; 3],
-        /// Row mode.
+        target_index: LocatedCompactIndex<u64>,
+        indices: [LocatedCompactIndex<u64>; 3],
         mode: crate::om::discriminators::IndexRowMode,
     },
 }
@@ -4913,15 +4842,9 @@ pub fn rm_creation_display_data_relations(
                 class_name: CLASS_NAME.to_string(),
                 class_definition: class_definition.clone(),
                 encoding: RmCreationDisplayDataEncoding::Index {
-                    first_index: row.first_index.atom.value(),
-                    raw_first_index: row.first_index.atom.raw().to_vec(),
-                    first_index_source_offset: source_base + row.first_index.offset as u64,
-                    flag: u8::from(row.flag),
-                    indices: row.indices.map(|token| token.atom.value()),
-                    raw_indices: row.indices.map(|token| token.atom.raw().to_vec()),
-                    index_source_offsets: row
-                        .indices
-                        .map(|token| source_base + token.offset as u64),
+                    first_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
+                    flag: row.flag,
+                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
                 },
                 target_object_id: None,
                 source_entry: entry.name.clone(),
@@ -4938,18 +4861,10 @@ pub fn rm_creation_display_data_relations(
                 class_name: CLASS_NAME.to_string(),
                 class_definition: class_definition.clone(),
                 encoding: RmCreationDisplayDataEncoding::Linked {
-                    first_index: row.first_index.atom.value(),
-                    raw_first_index: row.first_index.atom.raw().to_vec(),
-                    first_index_source_offset: source_base + row.first_index.offset as u64,
+                    first_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
                     discriminator: row.discriminator,
-                    target_index: row.target_index.atom.value(),
-                    raw_target_index: row.target_index.atom.raw().to_vec(),
-                    target_index_source_offset: source_base + row.target_index.offset as u64,
-                    indices: row.indices.map(|token| token.atom.value()),
-                    raw_indices: row.indices.map(|token| token.atom.raw().to_vec()),
-                    index_source_offsets: row
-                        .indices
-                        .map(|token| source_base + token.offset as u64),
+                    target_index: LocatedCompactIndex { atom: row.target_index.atom, offset: source_base + row.target_index.offset as u64 },
+                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
                     flag: row.flag,
                     mode: row.mode,
                 },
@@ -4968,14 +4883,8 @@ pub fn rm_creation_display_data_relations(
                 class_name: CLASS_NAME.to_string(),
                 class_definition: class_definition.clone(),
                 encoding: RmCreationDisplayDataEncoding::Target {
-                    target_index: row.target_index.atom.value(),
-                    raw_target_index: row.target_index.atom.raw().to_vec(),
-                    target_index_source_offset: source_base + row.target_index.offset as u64,
-                    indices: row.indices.map(|token| token.atom.value()),
-                    raw_indices: row.indices.map(|token| token.atom.raw().to_vec()),
-                    index_source_offsets: row
-                        .indices
-                        .map(|token| source_base + token.offset as u64),
+                    target_index: LocatedCompactIndex { atom: row.target_index.atom, offset: source_base + row.target_index.offset as u64 },
+                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
                     mode: row.mode,
                 },
                 target_object_id: rmfastload_target_object_id(object_ids, row.target_index.atom.value()),
@@ -5089,18 +4998,10 @@ pub fn rm_display_color_assignments(
                 id: String::new(),
                 ordinal: 0,
                 encoding: RmDisplayColorAssignmentEncoding::Linked {
-                    object_index: row.first_index.atom.value(),
-                    raw_object_index: row.first_index.atom.raw().to_vec(),
-                    object_index_source_offset: source_base + row.first_index.offset as u64,
+                    object_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
                     discriminator: row.discriminator,
-                    target_index: row.target_index.atom.value(),
-                    raw_target_index: row.target_index.atom.raw().to_vec(),
-                    target_index_source_offset: source_base + row.target_index.offset as u64,
-                    indices: row.indices.map(|token| token.atom.value()),
-                    raw_indices: row.indices.map(|token| token.atom.raw().to_vec()),
-                    index_source_offsets: row
-                        .indices
-                        .map(|token| source_base + token.offset as u64),
+                    target_index: LocatedCompactIndex { atom: row.target_index.atom, offset: source_base + row.target_index.offset as u64 },
+                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
                     flag: row.flag,
                     mode: row.mode,
                 },
@@ -5129,14 +5030,8 @@ pub fn rm_display_color_assignments(
                 id: String::new(),
                 ordinal: 0,
                 encoding: RmDisplayColorAssignmentEncoding::Target {
-                    target_index: row.target_index.atom.value(),
-                    raw_target_index: row.target_index.atom.raw().to_vec(),
-                    target_index_source_offset: source_base + row.target_index.offset as u64,
-                    indices: row.indices.map(|token| token.atom.value()),
-                    raw_indices: row.indices.map(|token| token.atom.raw().to_vec()),
-                    index_source_offsets: row
-                        .indices
-                        .map(|token| source_base + token.offset as u64),
+                    target_index: LocatedCompactIndex { atom: row.target_index.atom, offset: source_base + row.target_index.offset as u64 },
+                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
                     mode: row.mode,
                 },
                 target_object_id: rmfastload_target_object_id(object_ids, row.target_index.atom.value()),
