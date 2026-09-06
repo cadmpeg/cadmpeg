@@ -530,7 +530,7 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     assert_eq!(uses.len(), 4);
     assert_eq!(uses[0].id, "nx:external-reference:record-string-use#7-0");
     assert_eq!(
-        uses.iter().map(|use_| use_.slot).collect::<Vec<_>>(),
+        uses.iter().map(|use_| u8::from(use_.slot)).collect::<Vec<_>>(),
         [0, 1, 2, 3]
     );
     assert_eq!(

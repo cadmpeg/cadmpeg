@@ -18,6 +18,7 @@ mod row_wire;
 mod membership_wire;
 use crate::container::membership::ObjectIdMembers;
 use crate::container::extref_handles::ExtrefHandles;
+use crate::container::extref_slot::ExtrefSlot;
 use crate::om::color::{ColorComponent, PaletteIndex, PALETTE_SIZE, BACKGROUND_NAME};
 mod color_wire;
 pub(crate) mod column_index;
@@ -3087,7 +3088,7 @@ pub struct ExternalReferenceRecordStringUse {
     /// Owning record in the native `external_reference_records` arena.
     pub external_record: String,
     /// Zero-based slot in the record's four-value lane.
-    pub slot: u8,
+    pub slot: ExtrefSlot,
     /// Serialized string-table index.
     pub string_index: u32,
     /// Target in the native `external_references` arena.
@@ -3379,7 +3380,7 @@ pub fn external_reference_record_string_uses(
     records
         .iter()
         .flat_map(|record| {
-            if record.source_offset.checked_add(19).is_none() {
+            if record.source_offset.checked_add(ExtrefSlot::Fourth.offset()).is_none() {
                 return Vec::new();
             }
             let resolved = record
@@ -3394,21 +3395,19 @@ pub fn external_reference_record_string_uses(
             let Some(resolved) = resolved else {
                 return Vec::new();
             };
-            resolved
-                .into_iter()
-                .enumerate()
+            ExtrefSlot::ALL.into_iter().zip(resolved)
                 .map(|(slot, reference)| {
                     let record_key = record
                         .id
                         .split_once('#')
                         .map_or(record.id.as_str(), |(_, key)| key);
                     ExternalReferenceRecordStringUse {
-                        id: format!("nx:external-reference:record-string-use#{record_key}-{slot}"),
+                        id: format!("nx:external-reference:record-string-use#{record_key}-{}", u8::from(slot)),
                         external_record: record.id.clone(),
-                        slot: slot as u8,
-                        string_index: record.id_slots[slot],
+                        slot,
+                        string_index: record.id_slots[slot.index()],
                         external_reference: reference.id.clone(),
-                        source_offset: record.source_offset + 7 + slot as u64 * 4,
+                        source_offset: record.source_offset + slot.offset(),
                     }
                 })
                 .collect()
@@ -3440,7 +3439,7 @@ pub fn external_reference_record_children(
             let [slot0, slot1, slot2, slot3] = record_uses.as_slice() else {
                 return None;
             };
-            if [slot0.slot, slot1.slot, slot2.slot, slot3.slot] != [0, 1, 2, 3] {
+            if [slot0.slot, slot1.slot, slot2.slot, slot3.slot] != ExtrefSlot::ALL {
                 return None;
             }
             let resolved = record_uses

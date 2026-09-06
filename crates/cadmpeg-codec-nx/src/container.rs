@@ -11,6 +11,7 @@
 
 use cadmpeg_core::container::ContainerRole;
 
+pub(crate) mod extref_slot;
 pub(crate) mod extref_handles;
 use extref_handles::ExtrefHandles;
 pub(crate) mod membership;
