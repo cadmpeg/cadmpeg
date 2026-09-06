@@ -165,7 +165,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
-    let joints = match namespace.arena_as::<native::JointRecord>("joints") {
+    let joints = match namespace.arena_as::<native::joint::JointRecord>("joints") {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };

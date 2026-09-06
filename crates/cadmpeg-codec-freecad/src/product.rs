@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product containers and link occurrences recovered from the application graph.
 
+use crate::native::joint::JointRecord;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::brep::ShapePayloadRecord;
 use crate::layout::link_array_side_entry_header as link_array;
 use crate::native::{
-    ContainerNode, JointRecord, LinkOccurrence, ObjectRecord, ProductNode, ProductNodeRecord,
-    PropertyRecord,
+    ContainerNode, LinkOccurrence, ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord,
 };
-use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     CopyOnChange, CopyOnChangePolicy, ExternalDocumentReference, LinkState, Occurrence,
@@ -146,7 +146,7 @@ pub(crate) fn transfer(
                 return Err(malformed(format!(
                     "product object {} has unknown product kind {kind}",
                     object.id
-                )))
+                )));
             }
         };
         output.push(ProductNodeRecord {
