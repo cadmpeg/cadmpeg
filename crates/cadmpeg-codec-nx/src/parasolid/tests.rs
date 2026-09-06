@@ -236,7 +236,7 @@ fn parasolid_entity_53_doubles_require_complete_finite_values() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].offset, 1);
     assert_eq!(records[0].xmt, 18);
-    assert_eq!(records[0].values, [0.001, 0.25]);
+    assert_eq!(records[0].values.as_slice(), [0.001, 0.25]);
     assert_eq!(records[0].byte_len, 25);
     assert_eq!(
         crate::parasolid::entity_53_double_record_at(&bytes, 1),
@@ -272,21 +272,21 @@ fn parasolid_transformable_attribute_values_preserve_vector_and_axis_grouping() 
 
     let points = crate::parasolid::entity_value_records(&vector_record(0x55, 20, &vectors)).points;
     assert_eq!(points.len(), 1);
-    assert_eq!(points[0].values, vectors);
+    assert_eq!(points[0].values.as_slice(), vectors);
     let vector_values =
         crate::parasolid::entity_value_records(&vector_record(0x56, 21, &vectors)).vectors;
     assert_eq!(vector_values.len(), 1);
-    assert_eq!(vector_values[0].values, vectors);
+    assert_eq!(vector_values[0].values.as_slice(), vectors);
     let directions =
         crate::parasolid::entity_value_records(&vector_record(0x59, 22, &vectors)).directions;
     assert_eq!(directions.len(), 1);
-    assert_eq!(directions[0].values, vectors);
+    assert_eq!(directions[0].values.as_slice(), vectors);
 
     let four_vectors = [vectors[0], vectors[1], [7.0, 8.0, 9.0], [0.0, 1.0, 0.0]];
     let axes = crate::parasolid::entity_value_records(&vector_record(0x57, 23, &four_vectors)).axes;
     assert_eq!(axes.len(), 1);
     assert_eq!(
-        axes[0].values,
+        axes[0].values.as_slice(),
         [
             [four_vectors[0], four_vectors[1]],
             [four_vectors[2], four_vectors[3]],
@@ -375,9 +375,9 @@ fn parasolid_entity_value_records_dispatches_all_value_families() {
     assert_eq!(records.directions.len(), 1);
     assert_eq!(records.unicode.len(), 1);
     assert_eq!(records.integers[0].values, [3, u32::MAX]);
-    assert_eq!(records.doubles[0].values, [0.25]);
+    assert_eq!(records.doubles[0].values.as_slice(), [0.25]);
     assert_eq!(records.strings[0].value.as_str(), "label");
-    assert_eq!(records.axes[0].values.len(), 1);
+    assert_eq!(records.axes[0].values.as_slice().len(), 1);
     assert_eq!(records.tags[0].values, [17]);
     assert_eq!(records.unicode[0].value, "NX");
 }

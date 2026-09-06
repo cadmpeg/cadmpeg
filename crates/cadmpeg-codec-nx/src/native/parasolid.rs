@@ -9,6 +9,7 @@ use crate::deltas::Census;
 mod entity51_wire;
 use entity51_wire::Entity51Wire;
 use crate::parasolid::entity_references::EntityReferences;
+use crate::parasolid::finite_values::FiniteValues;
 use crate::parasolid::printable_string::PrintableString;
 pub(crate) mod named_fields;
 use named_fields::NamedField;
@@ -1889,7 +1890,7 @@ pub struct ParasolidEntity53DoubleRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered finite big-endian binary64 values.
-    pub values: Vec<f64>,
+    pub values: FiniteValues<f64>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1920,7 +1921,7 @@ pub struct ParasolidEntityVectorRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered finite xyz values.
-    pub values: Vec<[f64; 3]>,
+    pub values: FiniteValues<[f64; 3]>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1937,7 +1938,7 @@ pub struct ParasolidEntity57AxisRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered axes, each retaining its two serialized xyz vectors.
-    pub values: Vec<[[f64; 3]; 2]>,
+    pub values: FiniteValues<[[f64; 3]; 2]>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -4025,7 +4026,7 @@ mod tests {
             stream_ordinal: 2,
             kind: ParasolidVectorValueKind::Points,
             xmt: 12,
-            values: vec![[1.0, 2.0, 3.0]],
+            values: crate::parasolid::finite_values::FiniteValues::new(vec![[1.0, 2.0, 3.0]]).unwrap(),
             byte_len: 36,
             inflated_offset: 80,
         };

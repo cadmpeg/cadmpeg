@@ -1229,7 +1229,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         id: "doubles".into(),
         stream_ordinal: 3,
         xmt: 71,
-        values: vec![0.25, 7.5],
+        values: crate::parasolid::finite_values::FiniteValues::new(vec![0.25, 7.5]).unwrap(),
         byte_len: 26,
         inflated_offset: 500,
     };
@@ -1707,7 +1707,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             id: "head-value".into(),
             stream_ordinal: 3,
             xmt: 70,
-            values: vec![1.0],
+            values: crate::parasolid::finite_values::FiniteValues::new(vec![1.0]).unwrap(),
             byte_len: 18,
             inflated_offset: 400,
         },
@@ -1715,7 +1715,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             id: "child-value".into(),
             stream_ordinal: 3,
             xmt: 71,
-            values: vec![2.0],
+            values: crate::parasolid::finite_values::FiniteValues::new(vec![2.0]).unwrap(),
             byte_len: 18,
             inflated_offset: 410,
         },
@@ -1820,7 +1820,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         stream_ordinal: 3,
         kind,
         xmt: 70,
-        values: vec![value],
+        values: crate::parasolid::finite_values::FiniteValues::new(vec![value]).unwrap(),
         byte_len: 36,
         inflated_offset: 400,
     });
@@ -1828,7 +1828,9 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         id: "axis".into(),
         stream_ordinal: 3,
         xmt: 73,
-        values: vec![[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]],
+        values: crate::parasolid::finite_values::FiniteValues::new(vec![
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        ]).unwrap(),
         byte_len: 60,
         inflated_offset: 430,
     };

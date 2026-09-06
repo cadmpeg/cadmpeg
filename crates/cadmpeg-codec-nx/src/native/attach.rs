@@ -4706,6 +4706,7 @@ fn attach_parasolid_topology_numeric_attributes(
                     (
                         record
                             .values
+                            .as_slice()
                             .iter()
                             .copied()
                             .map(AttributeValue::Float)
@@ -4821,6 +4822,7 @@ fn attach_parasolid_topology_structured_attributes(
                     (
                         record
                             .values
+                            .as_slice()
                             .iter()
                             .map(|value| AttributeValue::Vector(value.to_vec()))
                             .collect(),
@@ -4836,6 +4838,7 @@ fn attach_parasolid_topology_structured_attributes(
                     (
                         record
                             .values
+                            .as_slice()
                             .iter()
                             .map(|axis| {
                                 AttributeValue::Vector(
