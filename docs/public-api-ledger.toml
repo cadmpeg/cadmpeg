@@ -5713,3 +5713,17 @@ crate = "cadmpeg-asm"
 kind = "signature"
 item = "cadmpeg_asm::nurbs::proc_curve::CompoundDefinition"
 reason = "IR-85: pair each compound curve scalar with its component and preserve the flat JSON through checked conversion."
+
+[[change]]
+commit = "81b0d11bc85a994b2adba67c29bd0417c04217eb"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Circle"
+reason = "IR-85: replace the circle form and variable twist vector with fixed-size twist variants; derive the wire form and reject incompatible legacy payloads."
+
+[[change]]
+commit = "81b0d11bc85a994b2adba67c29bd0417c04217eb"
+crate = "cadmpeg-asm"
+kind = "variant"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Circle"
+reason = "IR-85: replace the circle form and variable twist vector with fixed-size twist variants; derive the wire form and reject incompatible legacy payloads."

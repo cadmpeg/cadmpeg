@@ -1425,13 +1425,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && boundary.fullness.is_finite()
                     && match &boundary.geometry {
                         crate::geometry::VertexBlendBoundaryGeometry::Circle {
-                            form,
                             twists,
                             parameters,
                             ..
                         } => {
-                            matches!((*form, twists.len()), (0, 0) | (1, 1) | (3, 2))
-                                && twists.iter().all(&point_finite)
+                            twists.entries().iter().all(&point_finite)
                                 && parameters.iter().all(|value| value.is_finite())
                         }
                         crate::geometry::VertexBlendBoundaryGeometry::Degenerate {

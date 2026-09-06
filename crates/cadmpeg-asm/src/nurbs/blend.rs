@@ -8,24 +8,24 @@ use crate::nurbs::core::{
     decode_owned_curve_cache_resolving_refs_at, decode_owned_surface_cache_at,
     decode_owned_surface_cache_resolving_refs_at, decode_surface_block, surface_block,
 };
-use crate::nurbs::pcurve::{NurbsPcurve, pcurve_block_with_end};
+use crate::nurbs::pcurve::{pcurve_block_with_end, NurbsPcurve};
 use crate::nurbs::proc_curve::{
     decode_embedded_surface_with_ranges, decode_par_int_cur_isoline,
     embedded_base_curve_resolving_refs, embedded_surface, embedded_surface_with_ranges,
     optional_embedded_surface_with_bounds, par_int_cur_isoline,
 };
 use crate::nurbs::proc_surface::{
+    decode_nullable_embedded_pcurve, nullable_embedded_pcurve, revision_surface_tail,
     DecodedProceduralSurface, DecodedProceduralSurfaceDefinition, EmbeddedRollingBall,
     EmbeddedRollingBallSide, EmbeddedRollingBallThirdSide, EmbeddedVariableBlend,
     EmbeddedVertexBlend, EmbeddedVertexBlendBoundary, EmbeddedVertexBlendBoundaryGeometry,
-    RevisionSurfaceTail, decode_nullable_embedded_pcurve, nullable_embedded_pcurve,
-    revision_surface_tail,
+    RevisionSurfaceTail,
 };
 use crate::nurbs::reader::{
-    LEN_TO_MM, marker_at, take_bool, take_f64, take_native_ident, take_native_string,
-    take_native_vec3, take_optional_range_value, take_tagged_int, unit_vector,
+    marker_at, take_bool, take_f64, take_native_ident, take_native_string, take_native_vec3,
+    take_optional_range_value, take_tagged_int, unit_vector, LEN_TO_MM,
 };
-use crate::nurbs::subtypes::{SubtypeTables, subtype_span};
+use crate::nurbs::subtypes::{subtype_span, SubtypeTables};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::geometry::{
@@ -1192,27 +1192,25 @@ fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundar
             let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
             cur.set_pos(curve_end);
             let form = cur.take_enum()?;
-            let twist_count = match form {
-                0 => 0,
-                1 => 1,
-                3 => 2,
-                _ => return None,
-            };
-            let mut twists = Vec::with_capacity(twist_count);
-            for _ in 0..twist_count {
+            let mut read_twist = || {
                 let twist = cur.take_position()?;
-                twists.push(Point3::new(
+                Some(Point3::new(
                     twist[0] * LEN_TO_MM,
                     twist[1] * LEN_TO_MM,
                     twist[2] * LEN_TO_MM,
-                ));
-            }
+                ))
+            };
+            let twists = match form {
+                0 => cadmpeg_ir::geometry::VertexBlendTwists::None,
+                1 => cadmpeg_ir::geometry::VertexBlendTwists::One(read_twist()?),
+                3 => cadmpeg_ir::geometry::VertexBlendTwists::Two([read_twist()?, read_twist()?]),
+                _ => return None,
+            };
             let parameters = [cur.take_f64()?, cur.take_f64()?];
             let sense = cur.take_bool()?;
             EmbeddedVertexBlendBoundaryGeometry::Circle {
                 curve: CurveGeometry::Nurbs(curve),
                 curve_endpoints: [None; 2],
-                form,
                 twists,
                 parameters,
                 sense,
@@ -1296,27 +1294,25 @@ fn revision_vertex_blend_boundary(
                 cur.take_optional_range_value()?.value(),
             ];
             let form = cur.take_enum()?;
-            let twist_count = match form {
-                0 => 0,
-                1 => 1,
-                3 => 2,
-                _ => return None,
-            };
-            let mut twists = Vec::with_capacity(twist_count);
-            for _ in 0..twist_count {
+            let mut read_twist = || {
                 let twist = cur.take_vector3()?;
-                twists.push(Point3::new(
+                Some(Point3::new(
                     twist[0] * LEN_TO_MM,
                     twist[1] * LEN_TO_MM,
                     twist[2] * LEN_TO_MM,
-                ));
-            }
+                ))
+            };
+            let twists = match form {
+                0 => cadmpeg_ir::geometry::VertexBlendTwists::None,
+                1 => cadmpeg_ir::geometry::VertexBlendTwists::One(read_twist()?),
+                3 => cadmpeg_ir::geometry::VertexBlendTwists::Two([read_twist()?, read_twist()?]),
+                _ => return None,
+            };
             let parameters = [cur.take_f64()?, cur.take_f64()?];
             let sense = cur.take_bool()?;
             EmbeddedVertexBlendBoundaryGeometry::Circle {
                 curve: CurveGeometry::Nurbs(curve),
                 curve_endpoints,
-                form,
                 twists,
                 parameters,
                 sense,

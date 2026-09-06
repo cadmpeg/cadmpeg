@@ -709,3 +709,5 @@ fn solved_caches_reject_procedural_carriers_below_transform_chains() {
 
 mod compound_components;
 mod compound_loft;
+
+mod vertex_blend_twists;

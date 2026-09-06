@@ -4844,6 +4844,69 @@ pub struct VertexBlendBoundary {
     pub geometry: VertexBlendBoundaryGeometry,
 }
 
+/// Twist payload selected by a vertex-blend circle form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "VertexBlendTwistsWire", into = "VertexBlendTwistsWire")]
+pub enum VertexBlendTwists {
+    /// Form zero has no twist entries.
+    None,
+    /// Form one has one twist entry.
+    One(Point3),
+    /// Form three has two ordered twist entries.
+    Two([Point3; 2]),
+}
+
+impl VertexBlendTwists {
+    /// Native form selected by the twist payload.
+    #[must_use]
+    pub const fn form(&self) -> i64 {
+        match self {
+            Self::None => 0,
+            Self::One(_) => 1,
+            Self::Two(_) => 3,
+        }
+    }
+
+    /// Ordered twist entries. Their coordinate semantics depend on the layout revision.
+    #[must_use]
+    pub fn entries(&self) -> &[Point3] {
+        match self {
+            Self::None => &[],
+            Self::One(point) => std::slice::from_ref(point),
+            Self::Two(points) => points,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct VertexBlendTwistsWire {
+    form: i64,
+    twists: Vec<Point3>,
+}
+
+impl TryFrom<VertexBlendTwistsWire> for VertexBlendTwists {
+    type Error = &'static str;
+    fn try_from(wire: VertexBlendTwistsWire) -> Result<Self, Self::Error> {
+        match (wire.form, wire.twists.as_slice()) {
+            (0, []) => Ok(Self::None),
+            (1, [point]) => Ok(Self::One(*point)),
+            (3, [first, second]) => Ok(Self::Two([*first, *second])),
+            _ => Err("vertex-blend circle forms 0, 1, and 3 require zero, one, and two twists"),
+        }
+    }
+}
+
+impl From<VertexBlendTwists> for VertexBlendTwistsWire {
+    fn from(value: VertexBlendTwists) -> Self {
+        Self {
+            form: value.form(),
+            twists: value.entries().to_vec(),
+        }
+    }
+}
+
 /// Type-specific geometry of a vertex-blend boundary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4857,12 +4920,10 @@ pub enum VertexBlendBoundaryGeometry {
         /// revision-gated layout.
         #[serde(default)]
         curve_endpoints: [Option<f64>; 2],
-        /// Native circle-form enum.
-        form: i64,
-        /// Zero, one, or two twist entries selected by `form`. Pre-revision
-        /// layouts store model-space locations; the revision-gated layout
-        /// stores unscaled twist vectors.
-        twists: Vec<Point3>,
+        /// Twist payload. Pre-revision layouts store model-space locations;
+        /// the revision-gated layout stores unscaled twist vectors.
+        #[serde(flatten)]
+        twists: VertexBlendTwists,
         /// Two ordered curve parameters.
         parameters: [f64; 2],
         /// Native sense flag, a logical on the wire.

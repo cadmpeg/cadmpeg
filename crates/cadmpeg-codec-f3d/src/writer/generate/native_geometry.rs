@@ -3449,26 +3449,10 @@ fn native_vertex_blend_boundary(
         VertexBlendBoundaryGeometry::Circle {
             curve,
             curve_endpoints,
-            form,
             twists,
             parameters,
             sense,
         } => {
-            let expected_twists = match form {
-                0 => 0,
-                1 => 1,
-                3 => 2,
-                _ => {
-                    return Err(CodecError::Malformed(
-                        "vertex-blend circle form must be 0, 1, or 3".into(),
-                    ));
-                }
-            };
-            if twists.len() != expected_twists {
-                return Err(CodecError::Malformed(
-                    "vertex-blend circle twist count conflicts with its form".into(),
-                ));
-            }
             let range = if revision { None } else { Some(*parameters) };
             let curve = native_loft_curve_in_range(target, curve, range)?;
             native_nurbs_curve(bytes, &curve)?;
@@ -3477,8 +3461,8 @@ fn native_vertex_blend_boundary(
                     native_optional_f64(bytes, *endpoint);
                 }
             }
-            native_enum(bytes, *form);
-            for twist in twists {
+            native_enum(bytes, twists.form());
+            for twist in twists.entries() {
                 if revision {
                     native_vector(
                         bytes,

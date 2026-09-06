@@ -772,7 +772,6 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         assert_eq!(construction.grid_size, 17);
         assert_eq!(construction.fit_tolerance, 0.03);
         let VertexBlendBoundaryGeometry::Circle {
-            form,
             twists,
             parameters,
             sense,
@@ -781,8 +780,11 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         else {
             panic!("expected circle boundary")
         };
-        assert_eq!(*form, 1);
-        assert_eq!(twists, &[cadmpeg_ir::math::Point3::new(20.0, 30.0, 40.0)]);
+        assert_eq!(twists.form(), 1);
+        assert_eq!(
+            twists.entries(),
+            &[cadmpeg_ir::math::Point3::new(20.0, 30.0, 40.0)]
+        );
         assert_eq!(*parameters, [0.1, 0.9]);
         assert!(!*sense);
         assert!(matches!(

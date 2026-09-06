@@ -323,10 +323,8 @@ pub enum EmbeddedVertexBlendBoundaryGeometry {
         curve: CurveGeometry,
         /// Optional endpoint bounds of the boundary curve.
         curve_endpoints: [Option<f64>; 2],
-        /// The form integer serialized after the endpoints.
-        form: i64,
-        /// Counted list of twist points.
-        twists: Vec<Point3>,
+        /// Twist payload selected by the native circle form.
+        twists: cadmpeg_ir::geometry::VertexBlendTwists,
         /// Two parameters closing the circle form.
         parameters: [f64; 2],
         /// The sense boolean of the boundary.

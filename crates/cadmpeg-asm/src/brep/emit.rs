@@ -2304,7 +2304,6 @@ fn emit_vertex_blend_surface(
             EmbeddedVertexBlendBoundaryGeometry::Circle {
                 curve,
                 curve_endpoints,
-                form,
                 twists,
                 parameters,
                 sense,
@@ -2318,7 +2317,6 @@ fn emit_vertex_blend_surface(
                 VertexBlendBoundaryGeometry::Circle {
                     curve: id,
                     curve_endpoints,
-                    form,
                     twists,
                     parameters,
                     sense,
