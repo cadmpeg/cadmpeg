@@ -66,14 +66,6 @@ impl StateSlotLane {
         }
         None
     }
-
-    pub(crate) fn into_absolute(self, base: u64) -> Option<StateSlotLane<u64>> {
-        StateSlotLane::new(
-            base.checked_add(u64::try_from(self.offset).ok()?)?,
-            self.slots,
-        )
-        .ok()
-    }
 }
 
 impl StateSlotLane<u64> {
@@ -103,10 +95,17 @@ mod tests {
         assert_eq!(lane.offset(), 100);
         assert_eq!(lane.end_offset(), 112);
         assert_eq!(StateSlotLane::end_at(&bytes, 0, bytes.len()), Some(12));
-        let native = lane.clone().into_absolute(200).unwrap();
+        let native =
+            StateSlotLane::new(200 + lane.offset() as u64, lane.clone().into_slots()).unwrap();
         assert_eq!((native.offset(), native.end_offset()), (300, 312));
-        assert!(lane.clone().into_absolute(u64::MAX - 112).is_some());
-        assert!(lane.into_absolute(u64::MAX - 111).is_none());
+        assert!(StateSlotLane::new(
+            u64::MAX - 112 + lane.offset() as u64,
+            lane.clone().into_slots()
+        )
+        .is_ok());
+        assert!(
+            StateSlotLane::new(u64::MAX - 111 + lane.offset() as u64, lane.into_slots()).is_err()
+        );
         assert!(StateSlotLane::read(&bytes, 0, bytes.len(), usize::MAX - 11).is_none());
     }
 }

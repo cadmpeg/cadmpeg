@@ -117,15 +117,18 @@ impl<'a> OperationStateMessage<'a> {
         let value = StateTaggedValue::read_at(bytes, zeros_end)?;
         let count_at = zeros_end.checked_add(value.raw().len())?;
         let count_or_severity = View::u16_be_at(bytes, count_at)?;
-        base.checked_add(count_at.checked_add(2)?)?;
-        Some(Self {
-            offset: base.checked_add(at)?,
-            body: StateMessage {
+        Self::new(
+            base.checked_add(at)?,
+            StateMessage {
                 text,
                 value,
                 count_or_severity,
             },
-        })
+        )
+    }
+    pub(super) fn new(offset: usize, body: StateMessage<&'a str>) -> Option<Self> {
+        offset.checked_add(body.byte_len())?;
+        Some(Self { offset, body })
     }
     pub(crate) fn offset(self) -> usize {
         self.offset

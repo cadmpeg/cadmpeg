@@ -6,6 +6,7 @@ use super::*;
 use crate::om::control_leading_value::ControlLeadingValue;
 use crate::om::reference_value::{DirectReference, RecordReference};
 use crate::om::state_message::StateMessage;
+use crate::om::state_table::StateTableEntry;
 use crate::printable_string::PrintableString;
 pub(crate) mod material_texture;
 pub(crate) mod object_uuid;
@@ -436,18 +437,21 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
             table
-                .rows
-                .into_iter()
+                .into_entries()
+                .filter_map(|(offset, entry)| match entry {
+                    StateTableEntry::Status(row) => Some((offset, row)),
+                    StateTableEntry::Slots(_) => None,
+                })
                 .enumerate()
-                .filter_map(move |(ordinal, row)| {
+                .filter_map(move |(ordinal, (offset, row))| {
                     let ordinal = u32::try_from(ordinal).ok()?;
                     OmOperationStateStatus::new(
                         format!("nx:feature-history:operation-state-status#{section_key}-{ordinal:010}"),
                         link.id.clone(),
                         ordinal,
-                        row.body().into_owned(),
+                        row.into_owned(),
                         entry.name.clone(),
-                        entry_offset.checked_add(row.offset() as u64)?,
+                        entry_offset.checked_add(offset as u64)?,
                     )
                 })
                 .collect()
@@ -478,10 +482,13 @@ pub fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationState
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
             table
-                .slot_lanes
-                .into_iter()
+                .into_entries()
+                .filter_map(|(offset, entry)| match entry {
+                    StateTableEntry::Status(_) => None,
+                    StateTableEntry::Slots(slots) => Some((offset, slots)),
+                })
                 .enumerate()
-                .filter_map(move |(ordinal, lane)| {
+                .filter_map(move |(ordinal, (offset, slots))| {
                     let ordinal = u32::try_from(ordinal).ok()?;
                     Some(OmOperationStateSlotLane {
                         id: format!(
@@ -489,7 +496,7 @@ pub fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationState
                         ),
                         section_link: link.id.clone(),
                         ordinal,
-                        frame: lane.into_absolute(entry_offset)?,
+                        frame: crate::om::state_slot_lane::StateSlotLane::new(entry_offset.checked_add(offset as u64)?, slots).ok()?,
                         source_entry: entry.name.clone(),
                     })
                 })

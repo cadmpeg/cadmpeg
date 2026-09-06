@@ -75,6 +75,7 @@ pub(crate) struct OperationStateStatus<'a> {
 }
 
 impl<'a> OperationStateStatus<'a> {
+    #[cfg(test)]
     pub(crate) fn offset(self) -> usize {
         self.offset
     }

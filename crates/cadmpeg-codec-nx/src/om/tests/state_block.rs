@@ -1,5 +1,7 @@
 use crate::om::roll_forward::OperationStateGroupRow;
+use crate::om::state_block::operation_state_block_before_boundary;
 use crate::om::state_status::StateStatusPayload;
+use crate::om::state_table::operation_state_status_table;
 
 #[test]
 fn operation_state_indices_retain_each_admitted_form() {
@@ -80,9 +82,10 @@ fn operation_state_messages_accept_terminal_count_shared_with_group_opener() {
     bytes.extend([0x01, 0x02, 0x4a, 0x83, 0x20, 0x01, 0xff]);
     let table = super::operation_state_group_table(&bytes, group_start, bytes.len(), 500)
         .expect("group table");
-    let messages = super::operation_state_block_before_boundary(&bytes, 0, group_start + 2, 500)
+    let messages = operation_state_block_before_boundary(&bytes, 0, group_start + 2, 500)
         .expect("terminal message")
-        .messages;
+        .into_messages()
+        .unwrap();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].body().text.as_str(), "terminal");
     assert_eq!(messages[0].end_offset(), 500 + group_start + 2);
@@ -101,37 +104,32 @@ fn operation_state_status_table_retains_plain_link_diagnostic_and_opaque_rows() 
     ]);
     bytes.extend([0x02, 0x01, 0x11, 0xff, 0x83, 0xad, 0xff, 0x02, 0x11]);
 
-    let table =
-        super::operation_state_status_table(&bytes, 0, bytes.len(), 700).expect("status table");
-    assert_eq!(table.rows.len(), 4);
-    assert_eq!(table.rows[0].body().status_code.value(), 0x41);
+    let table = operation_state_status_table(&bytes, 0, bytes.len(), 700).expect("status table");
+    assert_eq!(table.rows().len(), 4);
+    assert_eq!(table.rows()[0].status_code.value(), 0x41);
+    assert!(matches!(table.rows()[0].payload, StateStatusPayload::Plain));
     assert!(matches!(
-        table.rows[0].body().payload,
-        StateStatusPayload::Plain
-    ));
-    assert!(matches!(
-        table.rows[1].body().payload,
+        table.rows()[1].payload,
         StateStatusPayload::Linked {
             link_code,
             ..
         } if u8::from(link_code) == 0x45
     ));
-    let StateStatusPayload::Diagnostic(message) = table.rows[2].body().payload else {
+    let StateStatusPayload::Diagnostic(message) = table.rows()[2].payload else {
         panic!("diagnostic row was not typed");
     };
     assert_eq!(message.text.as_str(), "bad curve");
-    let StateStatusPayload::Opaque { raw } = table.rows[3].body().payload else {
+    let StateStatusPayload::Opaque { raw } = table.rows()[3].payload else {
         panic!("opaque state lane was not retained");
     };
     assert_eq!(raw, &[0x1e, 0x01, 0x41, 0xff, 0x83, 0xad, 0xff, 0x02, 0x11]);
-    assert_eq!(table.slot_lanes.len(), 1);
-    assert_eq!(table.slot_lanes[0].slots().len(), 3);
+    assert_eq!(table.slot_lanes().len(), 1);
+    assert_eq!(table.slot_lanes()[0].len(), 3);
     assert_eq!(
-        table.slot_lanes[0].slots().as_slice()[1]
-            .map(crate::om::state_index::StateIndexToken::value),
+        table.slot_lanes()[0].as_slice()[1].map(crate::om::state_index::StateIndexToken::value),
         Some(0x3ad)
     );
-    assert_eq!(table.trailing_bytes, &b""[..]);
+    assert_eq!(&bytes[table.end_offset() - 700..], &b""[..]);
 }
 
 #[test]
@@ -141,16 +139,16 @@ fn operation_state_block_keeps_inline_diagnostics_out_of_standalone_messages() {
     bytes.extend_from_slice(&diagnostic);
     bytes.extend(message_bytes(b"standalone", &[0xaa, 0x39, 0x4e], [0, 2]));
 
-    let block = super::operation_state_block_before_boundary(&bytes, 0, bytes.len(), 500)
+    let block = operation_state_block_before_boundary(&bytes, 0, bytes.len(), 500)
         .expect("complete operation-state block");
-    assert_eq!(block.rows.len(), 1);
+    assert_eq!(block.rows().len(), 1);
     assert!(matches!(
-        block.rows[0].body().payload,
+        block.rows()[0].payload,
         StateStatusPayload::Diagnostic(..)
     ));
-    assert_eq!(block.messages.len(), 1);
-    assert_eq!(block.messages[0].body().text.as_str(), "standalone");
-    assert_eq!(block.status_end_offset, 500 + 3 + diagnostic.len());
+    assert_eq!(block.messages().len(), 1);
+    assert_eq!(block.messages()[0].text.as_str(), "standalone");
+    assert_eq!(block.status_end_offset(), 500 + 3 + diagnostic.len());
 }
 
 #[test]
@@ -163,13 +161,13 @@ fn operation_state_status_table_ignores_incomplete_preceding_operation_lane() {
     let boundary = bytes.len();
     bytes.extend(message);
 
-    let block = super::operation_state_block_before_boundary(&bytes, 0, boundary, 500)
+    let block = operation_state_block_before_boundary(&bytes, 0, boundary, 500)
         .expect("complete status chain");
-    assert_eq!(block.offset, 500 + 13);
-    assert_eq!(block.rows.len(), 2);
-    assert_eq!(Some(block.rows[0].body().object_index.value()), Some(0x20));
-    assert_eq!(block.rows[1].body().status_code.value(), 0x44);
-    assert_eq!(block.status_end_offset, 500 + boundary);
+    assert_eq!(block.offset(), 500 + 13);
+    assert_eq!(block.rows().len(), 2);
+    assert_eq!(Some(block.rows()[0].object_index.value()), Some(0x20));
+    assert_eq!(block.rows()[1].status_code.value(), 0x44);
+    assert_eq!(block.status_end_offset(), 500 + boundary);
 }
 
 #[test]
@@ -180,12 +178,12 @@ fn operation_state_block_stops_before_untyped_tail() {
     let status_end = bytes.len();
     bytes.extend([0x31, 0x80, 0x01, 0x01, 0x02, 0x55, 0x99]);
 
-    let block = super::operation_state_block_before_boundary(&bytes, 0, bytes.len(), 500)
+    let block = operation_state_block_before_boundary(&bytes, 0, bytes.len(), 500)
         .expect("status chain before bounded tail");
-    assert_eq!(block.offset, 500);
-    assert_eq!(block.rows.len(), 2);
-    assert!(block.messages.is_empty());
-    assert_eq!(block.status_end_offset, 500 + status_end);
+    assert_eq!(block.offset(), 500);
+    assert_eq!(block.rows().len(), 2);
+    assert!(block.messages().is_empty());
+    assert_eq!(block.status_end_offset(), 500 + status_end);
 }
 
 #[test]
@@ -198,12 +196,12 @@ fn operation_state_block_keeps_a_large_opaque_prefix_sparse() {
     ]);
     let boundary = bytes.len();
 
-    let block = super::operation_state_block_before_boundary(&bytes, 0, boundary, 500)
+    let block = operation_state_block_before_boundary(&bytes, 0, boundary, 500)
         .expect("status chain after large opaque prefix");
-    assert_eq!(block.offset, 500 + status_start);
-    assert_eq!(block.rows.len(), 2);
-    assert!(block.messages.is_empty());
-    assert_eq!(block.status_end_offset, 500 + boundary);
+    assert_eq!(block.offset(), 500 + status_start);
+    assert_eq!(block.rows().len(), 2);
+    assert!(block.messages().is_empty());
+    assert_eq!(block.status_end_offset(), 500 + boundary);
 }
 
 #[test]
@@ -216,12 +214,12 @@ fn operation_state_block_prefers_boundary_closed_path() {
     bytes.extend([0x44, 0x80, 0x05, 0x3f]);
     bytes.extend(message_bytes(b"closed", &[0xaa, 0x01, 0x02], [0, 1]));
 
-    let block = super::operation_state_block_before_boundary(&bytes, 0, bytes.len(), 500)
+    let block = operation_state_block_before_boundary(&bytes, 0, bytes.len(), 500)
         .expect("boundary-closed state path");
-    assert_eq!(block.offset, 500 + closed_path_start);
-    assert_eq!(block.rows.len(), 1);
-    assert_eq!(block.messages.len(), 1);
-    assert_eq!(block.messages[0].body().text.as_str(), "closed");
+    assert_eq!(block.offset(), 500 + closed_path_start);
+    assert_eq!(block.rows().len(), 1);
+    assert_eq!(block.messages().len(), 1);
+    assert_eq!(block.messages()[0].text.as_str(), "closed");
 }
 
 #[test]
