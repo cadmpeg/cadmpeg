@@ -45,7 +45,7 @@ pub struct FeatureDraftConstructionReference {
     pub ordinal: u32,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: crate::om::reference_index::ReferenceIndexToken,
+    pub token: crate::om::reference_index::PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -662,21 +662,11 @@ impl TryFrom<FeatureDraftConstructionTerminalLaneWire> for FeatureDraftConstruct
 pub fn feature_draft_construction_references(
     container: &Container,
 ) -> Vec<FeatureDraftConstructionReference> {
-    resolved_feature_payload_references(
-        container,
-        |record, base| {
-            crate::om::draft_feature_payload_references(record).and_then(|field| {
-                field
-                    .references
-                    .into_iter()
-                    .map(|reference| {
-                        Some((reference.token, base.checked_add(reference.offset as u64)?))
-                    })
-                    .collect()
-            })
-        },
-        crate::om::reference_index::ReferenceIndexToken::value,
-    )
+    resolved_feature_payload_references(container, |record, base| {
+        crate::om::draft_references::draft_feature_payload_references(record)
+            .and_then(|field| field.relocate(base))
+            .map(|field| field.references().into_iter().collect())
+    })
     .into_iter()
     .map(|reference| {
         let operation_label = format!(
@@ -710,14 +700,14 @@ pub fn feature_draft_construction_index_lanes(
             let Some(lane) = crate::om::draft_leading::scan(record.payload_view()) else {
                 return;
             };
-            let section_ordinal = crate::om::draft_feature_payload_references(
+            let section_ordinal = crate::om::draft_references::draft_feature_payload_references(
                 record.payload_view(),
             )
             .and_then(|graph| {
                 let complete_indices = graph
-                    .references
-                    .iter()
-                    .map(|reference| reference.token.value())
+                    .references()
+                    .into_iter()
+                    .map(|(token, _)| token.value())
                     .chain(lane.indices().map(|token| token.atom.value()))
                     .collect::<Vec<_>>();
                 unique_offset_data_store(&indexed, &complete_indices)

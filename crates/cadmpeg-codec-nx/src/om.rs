@@ -17,6 +17,7 @@ pub(crate) mod datum_index;
 pub(crate) mod datum_plane_header;
 pub(crate) mod draft_identity;
 pub(crate) mod draft_leading;
+pub(crate) mod draft_references;
 pub(crate) mod draft_terminal;
 pub(crate) mod header_references;
 pub(crate) mod operation_record;
@@ -752,13 +753,6 @@ impl PointFeatureScalarLane {
     pub fn value_offsets(&self) -> [usize; 6] {
         std::array::from_fn(|i| self.offset + i * 8)
     }
-}
-
-/// Exact construction-reference graph in a draft-feature payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DraftFeaturePayloadReferenceField {
-    /// Four construction references in serialized order.
-    pub references: [PayloadObjectReference; 4],
 }
 
 /// Exact leading construction branch in a `SWP104` payload.
@@ -2046,59 +2040,6 @@ pub fn point_feature_scalar_lane(
         values,
         offset: preceding_start,
     })
-}
-
-/// Decode the unique exactly framed construction-reference graph in a bounded `DRAFT` payload.
-pub fn draft_feature_payload_references(
-    record: OperationPayload<'_>,
-) -> Option<DraftFeaturePayloadReferenceField> {
-    const PAYLOAD_PREFIX: [u8; 14] = [
-        0x67, 0x00, 0x00, 0x01, 0x00, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0x03,
-    ];
-    const GRAPH_PREFIX: [u8; 2] = [0x01, 0x02];
-    const MIDDLE: [u8; 35] = [
-        0x68, 0x2f, 0x70, 0x62, 0x4d, 0xd2, 0xf1, 0xa9, 0xfc, 0x03, 0x50, 0x44, 0x00, 0x00, 0x01,
-        0x46, 0x8a, 0x2a, 0x01, 0xa3, 0x60, 0x10, 0x01, 0x01, 0x01, 0x04, 0x02, 0x01, 0x02, 0x01,
-        0x00, 0x00, 0x00, 0x00, 0x01,
-    ];
-    if record.name() != "DRAFT"
-        || record.payload().get(..PAYLOAD_PREFIX.len()) != Some(&PAYLOAD_PREFIX)
-    {
-        return None;
-    }
-    let decode = |start: usize| {
-        let mut at = start + GRAPH_PREFIX.len();
-        let decode_reference = |at: &mut usize| {
-            let offset = *at;
-            let (object_index, width) = payload_object_index(record.payload().get(offset..)?)?;
-            *at += width;
-            Some(PayloadObjectReference {
-                offset: record.payload_offset() + offset,
-                token: object_index,
-            })
-        };
-        let first = decode_reference(&mut at)?;
-        (record.payload().get(at..at + GRAPH_PREFIX.len()) == Some(&GRAPH_PREFIX)).then_some(())?;
-        at += GRAPH_PREFIX.len();
-        let second = decode_reference(&mut at)?;
-        (record.payload().get(at..at + MIDDLE.len()) == Some(&MIDDLE)).then_some(())?;
-        at += MIDDLE.len();
-        let third = decode_reference(&mut at)?;
-        (record.payload().get(at..at + 4) == Some(&[0xff, 0x00, 0x00, 0x00])).then_some(())?;
-        at += 4;
-        let fourth = decode_reference(&mut at)?;
-        (record.payload().get(at) == Some(&0xff)).then_some(())?;
-        Some(DraftFeaturePayloadReferenceField {
-            references: [first, second, third, fourth],
-        })
-    };
-    unique_candidate(
-        (PAYLOAD_PREFIX.len()..=record.payload().len().saturating_sub(GRAPH_PREFIX.len()))
-            .filter(|&start| {
-                record.payload().get(start..start + GRAPH_PREFIX.len()) == Some(&GRAPH_PREFIX)
-            })
-            .filter_map(decode),
-    )
 }
 
 /// Decode the exact leading construction branch in a bounded `SWP104`

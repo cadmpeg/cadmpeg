@@ -6756,20 +6756,22 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
     references
 }
 
-struct ResolvedFeaturePayloadReference<T> {
+struct ResolvedFeaturePayloadReference {
     section_key: String,
     operation_ordinal: usize,
     ordinal: usize,
-    token: T,
+    token: PayloadIndexToken,
     data_block: Option<String>,
     source_offset: u64,
 }
 
-fn resolved_feature_payload_references<T: Copy>(
+fn resolved_feature_payload_references(
     container: &Container,
-    decode: impl Fn(crate::om::operation_record::OperationPayload<'_>, u64) -> Option<Vec<(T, u64)>>,
-    value: impl Fn(T) -> u32,
-) -> Vec<ResolvedFeaturePayloadReference<T>> {
+    decode: impl Fn(
+        crate::om::operation_record::OperationPayload<'_>,
+        u64,
+    ) -> Option<Vec<(PayloadIndexToken, u64)>>,
+) -> Vec<ResolvedFeaturePayloadReference> {
     let indexed = container.indexed_om_sections();
     let mut references = Vec::new();
     visit_feature_history_operation_records(
@@ -6784,7 +6786,7 @@ fn resolved_feature_payload_references<T: Copy>(
                     operation_ordinal,
                     ordinal,
                     token,
-                    data_block: unique_offset_data_block(&indexed, value(token)),
+                    data_block: unique_offset_data_block(&indexed, token.value()),
                     source_offset,
                 },
             ));
@@ -6798,23 +6800,17 @@ fn resolved_feature_payload_references<T: Copy>(
 pub fn feature_projected_curve_references(
     container: &Container,
 ) -> Vec<FeatureProjectedCurveReference> {
-    resolved_feature_payload_references(
-        container,
-        |record, base| {
-            crate::om::projected_references::ProjectedCurveReferences::read(record).and_then(
-                |field| {
-                    field
-                        .into_references()
-                        .into_iter()
-                        .map(|reference| {
-                            Some((reference.token, base.checked_add(reference.offset as u64)?))
-                        })
-                        .collect()
-                },
-            )
-        },
-        PayloadIndexToken::value,
-    )
+    resolved_feature_payload_references(container, |record, base| {
+        crate::om::projected_references::ProjectedCurveReferences::read(record).and_then(|field| {
+            field
+                .into_references()
+                .into_iter()
+                .map(|reference| {
+                    Some((reference.token, base.checked_add(reference.offset as u64)?))
+                })
+                .collect()
+        })
+    })
     .into_iter()
     .map(|reference| {
         let operation_label = format!(
@@ -7039,20 +7035,16 @@ pub fn feature_point_construction_scalar_lanes(
 pub fn feature_surface_construction_references(
     container: &Container,
 ) -> Vec<FeatureSurfaceConstructionReference> {
-    resolved_feature_payload_references(
-        container,
-        |record, base| {
-            crate::om::surface_envelope::surface_feature_payload_references(record)
-                .and_then(|field| field.relocate(base))
-                .map(|field| field.references().into_iter().collect())
-                .or_else(|| {
-                    crate::om::surface_envelope::thru_curve_payload_references(record)
-                        .and_then(|field| field.relocate(base))
-                        .map(|field| field.references().into_iter().collect())
-                })
-        },
-        PayloadIndexToken::value,
-    )
+    resolved_feature_payload_references(container, |record, base| {
+        crate::om::surface_envelope::surface_feature_payload_references(record)
+            .and_then(|field| field.relocate(base))
+            .map(|field| field.references().into_iter().collect())
+            .or_else(|| {
+                crate::om::surface_envelope::thru_curve_payload_references(record)
+                    .and_then(|field| field.relocate(base))
+                    .map(|field| field.references().into_iter().collect())
+            })
+    })
     .into_iter()
     .map(|reference| {
         let operation_label = format!(

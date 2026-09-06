@@ -959,3 +959,14 @@ fn surface_reference_requires_the_payload_token_grammar() {
     invalid["raw_object_index"] = serde_json::json!([0]);
     assert!(serde_json::from_value::<super::FeatureSurfaceConstructionReference>(invalid).is_err());
 }
+
+#[test]
+fn draft_reference_requires_the_payload_token_grammar() {
+    use crate::native::features::draft::FeatureDraftConstructionReference;
+    let wire = r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":0,"raw_object_index":[240,0],"data_block":"","source_offset":10}"#;
+    let reference: FeatureDraftConstructionReference = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&reference).unwrap(), wire);
+    let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
+    invalid["raw_object_index"] = serde_json::json!([0]);
+    assert!(serde_json::from_value::<FeatureDraftConstructionReference>(invalid).is_err());
+}
