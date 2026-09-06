@@ -539,12 +539,15 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(branch.descriptor.atom.value(), 76);
-    assert_eq!(branch.descriptor.atom.raw().to_vec(), [0x80, 0x4c]);
-    assert_eq!(branch.descriptor.offset, 110);
-    assert_eq!(branch.object.token.value(), 699);
-    assert_eq!(branch.object.token.raw().to_vec(), [0xf1, 0x02, 0xbb]);
-    assert_eq!(branch.object.offset, 113);
+    assert_eq!(branch.descriptor().unwrap().0.value(), 76);
+    assert_eq!(branch.descriptor().unwrap().0.raw().to_vec(), [0x80, 0x4c]);
+    assert_eq!(branch.descriptor().unwrap().2, 110);
+    assert_eq!(branch.objects().next().unwrap().0.value(), 699);
+    assert_eq!(
+        branch.objects().next().unwrap().0.raw().to_vec(),
+        [0xf1, 0x02, 0xbb]
+    );
+    assert_eq!(branch.objects().next().unwrap().2, 113);
 
     let double_payload = [
         0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x02, 0x29, 0x01, 0x02, 0xf1, 0x02, 0x77, 0x01, 0x01,
@@ -563,16 +566,16 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
     .unwrap();
     assert_eq!(
         double
-            .references
-            .each_ref()
-            .map(|reference| reference.token.value()),
+            .objects()
+            .map(|(token, _, _)| token.value())
+            .collect::<Vec<_>>(),
         [631, 632]
     );
     assert_eq!(
         double
-            .references
-            .each_ref()
-            .map(|reference| reference.offset),
+            .objects()
+            .map(|(_, _, offset)| offset)
+            .collect::<Vec<_>>(),
         [110, 124]
     );
 
@@ -593,16 +596,16 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
     .unwrap();
     assert_eq!(
         count_three
-            .references
-            .each_ref()
-            .map(|reference| reference.token.value()),
+            .objects()
+            .map(|(token, _, _)| token.value())
+            .collect::<Vec<_>>(),
         [719, 720]
     );
     assert_eq!(
         count_three
-            .references
-            .each_ref()
-            .map(|reference| reference.offset),
+            .objects()
+            .map(|(_, _, offset)| offset)
+            .collect::<Vec<_>>(),
         [110, 118]
     );
 
@@ -622,14 +625,22 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
             .unwrap(),
         )
         .unwrap();
-    assert_eq!(descriptor_count_three.descriptor.atom.value(), 77);
+    assert_eq!(descriptor_count_three.descriptor().unwrap().0.value(), 77);
     assert_eq!(
-        descriptor_count_three.descriptor.atom.raw().to_vec(),
+        descriptor_count_three
+            .descriptor()
+            .unwrap()
+            .0
+            .raw()
+            .to_vec(),
         [0x80, 0x4d]
     );
-    assert_eq!(descriptor_count_three.descriptor.offset, 110);
-    assert_eq!(descriptor_count_three.object.token.value(), 721);
-    assert_eq!(descriptor_count_three.object.offset, 116);
+    assert_eq!(descriptor_count_three.descriptor().unwrap().2, 110);
+    assert_eq!(
+        descriptor_count_three.objects().next().unwrap().0.value(),
+        721
+    );
+    assert_eq!(descriptor_count_three.objects().next().unwrap().2, 116);
 }
 
 #[test]
