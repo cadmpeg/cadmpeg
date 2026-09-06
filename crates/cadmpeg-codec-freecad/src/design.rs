@@ -393,7 +393,7 @@ pub(crate) fn transfer(
                 body_ids
                     .iter()
                     .filter(move |body| {
-                        body.0
+                        body.as_str()
                             .starts_with(&crate::native::model_id("body", &payload.id, ""))
                     })
                     .cloned()

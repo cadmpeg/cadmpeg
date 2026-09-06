@@ -427,7 +427,12 @@ impl<'a> Builder<'a> {
             root_kind,
             TextShapeKind::Compound | TextShapeKind::CompSolid
         ) {
-            self.bind_topology(root_kind, root.shape, Transform::identity(), body_id.0);
+            self.bind_topology(
+                root_kind,
+                root.shape,
+                Transform::identity(),
+                body_id.into_string(),
+            );
         }
         Ok(())
     }
@@ -494,7 +499,7 @@ impl<'a> Builder<'a> {
                     TextShapeKind::Solid,
                     shape_index,
                     transform,
-                    region_id.0.clone(),
+                    region_id.as_str().to_owned(),
                 );
             }
             output.push(region_id);
@@ -574,7 +579,7 @@ impl<'a> Builder<'a> {
                     TextShapeKind::Shell,
                     shape_index,
                     transform,
-                    component_id.0.clone(),
+                    component_id.as_str().to_owned(),
                 );
                 shell_ids.push(component_id);
             }
@@ -640,7 +645,12 @@ impl<'a> Builder<'a> {
             free_vertices: Vec::new(),
         });
         if shape.kind() == TextShapeKind::Wire {
-            self.bind_topology(shape.kind(), shape_index, transform, shell_id.0.clone());
+            self.bind_topology(
+                shape.kind(),
+                shape_index,
+                transform,
+                shell_id.as_str().to_owned(),
+            );
         }
         Ok(vec![shell_id])
     }
@@ -876,7 +886,7 @@ impl<'a> Builder<'a> {
                 TextShapeKind::Wire,
                 wire_use.shape,
                 wire_transform,
-                loop_id.0.clone(),
+                loop_id.as_str().to_owned(),
             );
             loops.push(loop_id);
         }
@@ -894,7 +904,7 @@ impl<'a> Builder<'a> {
             TextShapeKind::Face,
             face_use.shape,
             face_transform,
-            face_id.0.clone(),
+            face_id.as_str().to_owned(),
         );
         Ok(Some(face_id))
     }
@@ -908,7 +918,12 @@ impl<'a> Builder<'a> {
         let transform = parent.compose(self.tables.location(edge_use.location));
         let key = OccurrenceKey::new(edge_use.shape, self.body_scope.compose(transform));
         if let Some(id) = self.edges.get(&key).cloned() {
-            self.bind_topology(TextShapeKind::Edge, edge_use.shape, transform, id.0.clone());
+            self.bind_topology(
+                TextShapeKind::Edge,
+                edge_use.shape,
+                transform,
+                id.as_str().to_owned(),
+            );
             return Ok(id);
         }
         let shape = self.shape(edge_use.shape)?.clone();
@@ -978,7 +993,12 @@ impl<'a> Builder<'a> {
             param_range,
             tolerance: positive_tolerance(tolerance),
         });
-        self.bind_topology(TextShapeKind::Edge, edge_use.shape, transform, id.0.clone());
+        self.bind_topology(
+            TextShapeKind::Edge,
+            edge_use.shape,
+            transform,
+            id.as_str().to_owned(),
+        );
         self.edges.insert(key, id.clone());
         Ok(id)
     }
@@ -1019,7 +1039,7 @@ impl<'a> Builder<'a> {
             }
         };
         let id =
-            CurveId::mint(format!("{}:polygon:{}", edge.0, ordinal + 1)).expect("identity grammar");
+            CurveId::mint(format!("{edge}:polygon:{}", ordinal + 1)).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry: CurveGeometry::Polyline(
@@ -1044,7 +1064,7 @@ impl<'a> Builder<'a> {
             let (points, parameters, deflection) =
                 self.indexed_polygon(polygons[1], *triangulation)?;
             ir.model.curves.push(Curve {
-                id: CurveId::mint(format!("{}:polygon:{}:secondary", edge.0, ordinal + 1))
+                id: CurveId::mint(format!("{edge}:polygon:{}:secondary", ordinal + 1))
                     .expect("identity grammar"),
                 geometry: CurveGeometry::Polyline(
                     PolylineCurve::new(
@@ -1120,7 +1140,7 @@ impl<'a> Builder<'a> {
                 TextShapeKind::Vertex,
                 vertex_use.shape,
                 transform,
-                id.0.clone(),
+                id.as_str().to_owned(),
             );
             return Ok(id);
         }
@@ -1161,7 +1181,7 @@ impl<'a> Builder<'a> {
             TextShapeKind::Vertex,
             vertex_use.shape,
             transform,
-            vertex_id.0.clone(),
+            vertex_id.as_str().to_owned(),
         );
         self.vertices.insert(key, vertex_id.clone());
         Ok(vertex_id)
@@ -1252,7 +1272,7 @@ impl<'a> Builder<'a> {
                     .add_procedural_surface(
                         id.clone(),
                         ProceduralSurface::new(
-                            ProceduralSurfaceId::mint(format!("{}:construction", id.0))
+                            ProceduralSurfaceId::mint(format!("{id}:construction"))
                                 .expect("identity grammar"),
                             ProceduralSurfaceDefinition::Replica {
                                 source: base_id,

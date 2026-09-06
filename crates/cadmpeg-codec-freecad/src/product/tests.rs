@@ -160,7 +160,7 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     assert!(matches!(
         &link_occurrences[0].prototype,
         cadmpeg_ir::PrototypeReference::Local { definition }
-            if definition.0.contains("Prototype")
+            if definition.as_str().contains("Prototype")
     ));
     let prototype = result
         .ir()

@@ -499,7 +499,9 @@ fn transfer_schema_one(
         });
         for (index, body) in body_ids.into_iter().enumerate() {
             plan.bindings.push(AppearanceBinding {
-                id: format!("fcstd:appearance:binding#{name}:{index}").into(),
+                id: format!("fcstd:appearance:binding#{name}:{index}")
+                    .try_into()
+                    .expect("valid identity"),
                 target: AppearanceTarget::Body(body),
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
@@ -817,7 +819,9 @@ fn transfer_edge_appearance(
     });
     for (index, edge) in edges.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
-            id: format!("fcstd:appearance:binding#edge:{provider_name}:{index}").into(),
+            id: format!("fcstd:appearance:binding#edge:{provider_name}:{index}")
+                .try_into()
+                .expect("valid identity"),
             target: AppearanceTarget::Edge(edge),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
@@ -871,7 +875,9 @@ fn transfer_vertex_appearance(
     });
     for (index, vertex) in vertices.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
-            id: format!("fcstd:appearance:binding#vertex:{provider_name}:{index}").into(),
+            id: format!("fcstd:appearance:binding#vertex:{provider_name}:{index}")
+                .try_into()
+                .expect("valid identity"),
             target: AppearanceTarget::Vertex(vertex),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
@@ -3542,7 +3548,8 @@ fn transfer_shape_appearances(
                             "fcstd:appearance:binding#shape-material:{}:{body_index}",
                             provider.name
                         )
-                        .into(),
+                        .try_into()
+                        .expect("valid identity"),
                         target: AppearanceTarget::Body(body.clone()),
                         appearance: appearance_id.clone(),
                         source_entity_id: Some(object_id.to_owned()),
@@ -3707,7 +3714,7 @@ fn bind_material_faces(
             .model
             .faces
             .iter()
-            .find(|face| face.id.0 == *topology_id)
+            .find(|face| face.id.as_str() == *topology_id)
             .map(|face| face.id.clone())
         else {
             continue;
@@ -3715,7 +3722,8 @@ fn bind_material_faces(
         let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
         plan.bindings.push(AppearanceBinding {
             id: format!("fcstd:appearance:binding#shape-material:{provider_name}:{binding_index}")
-                .into(),
+                .try_into()
+                .expect("valid identity"),
             target: AppearanceTarget::Face(face),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
@@ -3825,11 +3833,17 @@ fn transfer_topology_colors(
             .flat_map(|name| &name.topology_ids)
             .filter(|id| bound_topology.insert((*id).clone()))
             .filter(|id| match kind {
-                TopologyColorKind::Face => ir.model.faces.iter().any(|face| face.id.0 == **id),
-                TopologyColorKind::Edge => ir.model.edges.iter().any(|edge| edge.id.0 == **id),
-                TopologyColorKind::Vertex => {
-                    ir.model.vertices.iter().any(|vertex| vertex.id.0 == **id)
+                TopologyColorKind::Face => {
+                    ir.model.faces.iter().any(|face| face.id.as_str() == **id)
                 }
+                TopologyColorKind::Edge => {
+                    ir.model.edges.iter().any(|edge| edge.id.as_str() == **id)
+                }
+                TopologyColorKind::Vertex => ir
+                    .model
+                    .vertices
+                    .iter()
+                    .any(|vertex| vertex.id.as_str() == **id),
             })
         {
             if !emitted_appearance {
@@ -3869,7 +3883,8 @@ fn transfer_topology_colors(
                     index + 1,
                     crate::native::id_key(topology_id)
                 )
-                .into(),
+                .try_into()
+                .expect("valid identity"),
                 target,
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),

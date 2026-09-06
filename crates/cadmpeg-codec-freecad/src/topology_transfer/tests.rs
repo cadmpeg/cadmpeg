@@ -821,7 +821,7 @@ Co 1001000 +2 0 *
         .model
         .coedges
         .iter()
-        .any(|coedge| { coedge.pcurves[0].pcurve.0.ends_with("3%3A2%3A1") }));
+        .any(|coedge| { coedge.pcurves[0].pcurve.as_str().ends_with("3%3A2%3A1") }));
     assert_eq!(result.ir().model.appearances.len(), 3);
     assert_eq!(result.ir().model.appearance_bindings.len(), 5);
     assert_eq!(
@@ -1127,7 +1127,7 @@ Ed 0.001 1 1 0 1 1 0 0 1 1 2 0 0 1 0 1001000 +3 0 -2 0 *
     assert!(result.ir().model.edges[0]
         .curve
         .as_ref()
-        .is_some_and(|curve| curve.0.ends_with(":1")));
+        .is_some_and(|curve| curve.as_str().ends_with(":1")));
 }
 
 #[test]

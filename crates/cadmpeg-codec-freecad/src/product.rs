@@ -476,7 +476,7 @@ pub(crate) fn transfer_neutral(
     for occurrence in &mut occurrences {
         let parent = match &occurrence.parent {
             OccurrenceParent::Root => None,
-            OccurrenceParent::Occurrence { occurrence } => Some(occurrence.0.clone()),
+            OccurrenceParent::Occurrence { occurrence } => Some(occurrence.as_str().to_owned()),
         };
         let ordinal = next_ordinal.entry(parent).or_default();
         occurrence.ordinal = *ordinal;

@@ -1620,11 +1620,12 @@ Co 1001000 +2 0 *
             .iter()
             .flatten()
             .flat_map(|name| &name.topology_ids)
+            .map(String::as_str)
             .collect::<std::collections::HashSet<_>>();
         assert!(result.ir().model.appearance_bindings.iter().any(|binding| {
         matches!(
             &binding.target,
-            cadmpeg_ir::appearance::AppearanceTarget::Face(face) if shape_face_ids.contains(&face.0)
+            cadmpeg_ir::appearance::AppearanceTarget::Face(face) if shape_face_ids.contains(face.as_str())
         ) && binding.channels.get("precedence").map(String::as_str) == Some("face_over_object")
     }));
         assert_eq!(
