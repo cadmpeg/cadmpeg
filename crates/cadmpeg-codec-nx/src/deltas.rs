@@ -539,7 +539,7 @@ pub struct Tombstone {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BodyRevision {
     /// Stream-local BODY XMT identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Monotonic kernel revision identity.
     pub node_id: u32,
     /// Eight ordered BODY references decoded from status-framed XMT fields.
@@ -2320,7 +2320,7 @@ fn has_shareable_terminal(stream: &[u8], record: &Record) -> bool {
 
 fn body_revision_prefix(stream: &[u8], offset: usize) -> Option<BodyRevision> {
     let (xmt, consumed) = read_xmt(stream, offset + 2)?;
-    (xmt > 1).then_some(())?;
+    let xmt = NonNullXmt::try_from(xmt).ok()?;
     let node_id_at = offset + 2 + consumed;
     let node_id = View::u32_be_at(stream, node_id_at)?;
     let mut at = node_id_at + 4;
@@ -2602,7 +2602,7 @@ fn current_revision_scopes(census: &Census, stream_len: usize) -> Vec<RevisionSc
         .body_revisions
         .iter()
         .enumerate()
-        .filter(|(_, revision)| revision.xmt == 3)
+        .filter(|(_, revision)| u32::from(revision.xmt) == 3)
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
     if snapshot_revisions.is_empty() {

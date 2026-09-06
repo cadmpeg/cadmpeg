@@ -41,7 +41,7 @@ impl From<ParasolidDeltasBodyRevision> for RevisionWire {
         Self {
             id: value.id,
             stream_ordinal: value.stream_ordinal,
-            xmt: value.xmt,
+            xmt: value.xmt.into(),
             node_id: value.node_id,
             references: value.references,
             byte_len: value.lengths.total(),
@@ -63,7 +63,7 @@ impl TryFrom<RevisionWire> for ParasolidDeltasBodyRevision {
         Ok(Self {
             id: wire.id,
             stream_ordinal: wire.stream_ordinal,
-            xmt: wire.xmt,
+            xmt: wire.xmt.try_into()?,
             node_id: wire.node_id,
             references: wire.references,
             lengths: RevisionLengths { prefix: wire.prefix_byte_len, tail: wire.state_tail_byte_len },
@@ -82,6 +82,12 @@ mod tests {
         let json = r#"{"id":"revision","stream_ordinal":0,"xmt":3,"node_id":9,"references":[2,3,4,5,6,7,8,9],"byte_len":36,"prefix_byte_len":32,"state_tail_byte_len":4,"state_tail_sha256":"hash","inflated_offset":10}"#;
         let value: ParasolidDeltasBodyRevision = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        for xmt in [0, 1] {
+            let mut wire = serde_json::to_value(&value).unwrap();
+            wire["xmt"] = xmt.into();
+            let error = serde_json::from_value::<ParasolidDeltasBodyRevision>(wire).unwrap_err();
+            assert!(error.to_string().contains("xmt"));
+        }
         for (prefix, tail, total) in [(32, 4, 35), (u64::MAX, 1, 0)] {
             let mut wire = serde_json::to_value(&value).unwrap();
             wire["prefix_byte_len"] = prefix.into();

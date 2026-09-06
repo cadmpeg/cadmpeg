@@ -487,7 +487,7 @@ pub struct ParasolidDeltasBodyRevision {
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local BODY XMT identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Monotonic kernel revision identity.
     pub node_id: u32,
     /// Eight ordered BODY references.
@@ -3434,7 +3434,7 @@ mod tests {
         let events = super::parasolid_deltas_events_with_censuses(&streams, vec![Some(census)]);
 
         assert_eq!(events.body_revisions.len(), 1);
-        assert_eq!(events.body_revisions[0].xmt, 3);
+        assert_eq!(u32::from(events.body_revisions[0].xmt), 3);
         assert_eq!(events.body_revisions[0].node_id, 9);
         assert_eq!(
             events.body_revisions[0].references,
