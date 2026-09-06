@@ -1355,8 +1355,8 @@ struct SegmentBulkRecordWire {
     form: u16,
     compressed_len: u64,
     compressed_sha256: String,
-    expanded_len: Option<u64>,
-    expanded_sha256: Option<String>,
+    expanded_len: u64,
+    expanded_sha256: String,
     record_state: String,
     record_count: u64,
     stream_trailer_len: Option<u64>,
@@ -1390,8 +1390,8 @@ impl From<SegmentBulkRecord> for SegmentBulkRecordWire {
             form: value.form,
             compressed_len: value.compressed_len,
             compressed_sha256: value.compressed_sha256,
-            expanded_len: Some(value.expanded_len),
-            expanded_sha256: Some(value.expanded_sha256),
+            expanded_len: value.expanded_len,
+            expanded_sha256: value.expanded_sha256,
             record_state,
             record_count,
             stream_trailer_len,
@@ -1405,10 +1405,8 @@ impl TryFrom<SegmentBulkRecordWire> for SegmentBulkRecord {
     type Error = String;
 
     fn try_from(wire: SegmentBulkRecordWire) -> Result<Self, Self::Error> {
-        let expanded_len = wire.expanded_len.unwrap_or(0);
-        let expanded_sha256 = wire.expanded_sha256.unwrap_or_default();
         let records = match wire.record_state.as_str() {
-            "framed" => SegmentBulkFrame::Framed {
+            "framed" if wire.record_detail.is_none() => SegmentBulkFrame::Framed {
                 record_count: wire.record_count,
                 stream_trailer_len: wire
                     .stream_trailer_len
@@ -1417,9 +1415,21 @@ impl TryFrom<SegmentBulkRecordWire> for SegmentBulkRecord {
                     .stream_trailer_sha256
                     .ok_or_else(|| "framed bulk requires stream_trailer_sha256".to_owned())?,
             },
-            "unavailable" | "not_expanded" => SegmentBulkFrame::Unavailable {
-                detail: wire.record_detail.unwrap_or_else(|| "not_expanded".into()),
-            },
+            "framed" => return Err("framed bulk cannot carry record_detail".to_owned()),
+            "unavailable"
+                if wire.record_count == 0
+                    && wire.stream_trailer_len.is_none()
+                    && wire.stream_trailer_sha256.is_none() =>
+            {
+                SegmentBulkFrame::Unavailable {
+                    detail: wire
+                        .record_detail
+                        .ok_or_else(|| "unavailable bulk requires record_detail".to_owned())?,
+                }
+            }
+            "unavailable" => {
+                return Err("unavailable bulk cannot carry framed record fields".to_owned())
+            }
             other => return Err(format!("unknown bulk record_state {other}")),
         };
         Ok(Self {
@@ -1429,8 +1439,8 @@ impl TryFrom<SegmentBulkRecordWire> for SegmentBulkRecord {
             form: wire.form,
             compressed_len: wire.compressed_len,
             compressed_sha256: wire.compressed_sha256,
-            expanded_len,
-            expanded_sha256,
+            expanded_len: wire.expanded_len,
+            expanded_sha256: wire.expanded_sha256,
             records,
         })
     }
@@ -1510,8 +1520,6 @@ enum ActiveCarrierRecordState {
     NotApplicable,
     Selected,
     Unavailable,
-    #[serde(other)]
-    NotExpanded,
 }
 
 impl From<ActiveCarrierRecord> for ActiveCarrierRecordWire {
@@ -1602,12 +1610,29 @@ impl TryFrom<ActiveCarrierRecordWire> for ActiveCarrierRecord {
     type Error = String;
 
     fn try_from(wire: ActiveCarrierRecordWire) -> Result<Self, Self::Error> {
+        let has_selected_fields = wire.segment_token.is_some()
+            || wire.record_ordinal.is_some()
+            || wire.segment_version_major.is_some()
+            || wire.family.is_some()
+            || wire.header_state.is_some()
+            || wire.header_kind.is_some()
+            || wire.header_value.is_some()
+            || wire.schema.is_some()
+            || wire.carrier_len.is_some()
+            || wire.carrier_offset.is_some()
+            || wire.carrier_sha256.is_some()
+            || wire.selected_key.is_some()
+            || wire.enabled.is_some()
+            || wire.delta_state.is_some()
+            || wire.history_reference.is_some();
+        if !matches!(wire.state, ActiveCarrierRecordState::Selected) && has_selected_fields {
+            return Err("inactive carrier cannot carry selected fields".to_owned());
+        }
+        if !matches!(wire.state, ActiveCarrierRecordState::Unavailable) && wire.detail.is_some() {
+            return Err("active carrier detail requires unavailable state".to_owned());
+        }
         match wire.state {
             ActiveCarrierRecordState::NotApplicable => Ok(Self::NotApplicable { id: wire.id }),
-            ActiveCarrierRecordState::NotExpanded => Ok(Self::Unavailable {
-                id: wire.id,
-                detail: "not_expanded".into(),
-            }),
             ActiveCarrierRecordState::Unavailable => {
                 let detail = wire
                     .detail
@@ -1693,4 +1718,103 @@ pub(crate) struct SegmentBulkIssueRecord {
     pub(crate) id: String,
     pub(crate) token: String,
     pub(crate) detail: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ActiveCarrierRecord, SegmentBulkFrame, SegmentBulkRecord};
+
+    #[test]
+    fn bulk_wire_requires_expansion_and_preserves_exclusive_frame_fields() {
+        let record = SegmentBulkRecord {
+            id: "inventor:rse:bulk#1".into(),
+            token: "segment".into(),
+            prefix: "RSe".into(),
+            form: 1,
+            compressed_len: 0,
+            compressed_sha256: cadmpeg_ir::hash::sha256_hex(&[]),
+            expanded_len: 0,
+            expanded_sha256: cadmpeg_ir::hash::sha256_hex(&[]),
+            records: SegmentBulkFrame::Framed {
+                record_count: 0,
+                stream_trailer_len: 0,
+                stream_trailer_sha256: cadmpeg_ir::hash::sha256_hex(&[]),
+            },
+        };
+        let wire = serde_json::to_value(&record).unwrap();
+        assert_eq!(
+            serde_json::from_value::<SegmentBulkRecord>(wire.clone()).unwrap(),
+            record
+        );
+        for field in [
+            "expanded_len",
+            "expanded_sha256",
+            "stream_trailer_len",
+            "stream_trailer_sha256",
+        ] {
+            let mut missing = wire.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            assert!(
+                serde_json::from_value::<SegmentBulkRecord>(missing).is_err(),
+                "{field}"
+            );
+        }
+        let mut mixed = wire.clone();
+        mixed["record_detail"] = serde_json::json!("unavailable");
+        assert!(serde_json::from_value::<SegmentBulkRecord>(mixed).is_err());
+        for state in ["not_expanded", "future"] {
+            let mut invalid = wire.clone();
+            invalid["record_state"] = serde_json::json!(state);
+            assert!(serde_json::from_value::<SegmentBulkRecord>(invalid).is_err());
+        }
+        let unavailable = SegmentBulkRecord {
+            records: SegmentBulkFrame::Unavailable {
+                detail: "no frame".into(),
+            },
+            ..record
+        };
+        let mut wire = serde_json::to_value(&unavailable).unwrap();
+        assert_eq!(
+            serde_json::from_value::<SegmentBulkRecord>(wire.clone()).unwrap(),
+            unavailable
+        );
+        wire["record_count"] = serde_json::json!(1);
+        assert!(serde_json::from_value::<SegmentBulkRecord>(wire).is_err());
+    }
+
+    #[test]
+    fn inactive_carrier_wire_rejects_selected_payload_and_unknown_states() {
+        let record = ActiveCarrierRecord::NotApplicable {
+            id: "inventor:rse:active-carrier#1".into(),
+        };
+        let wire = serde_json::to_value(&record).unwrap();
+        assert_eq!(
+            serde_json::from_value::<ActiveCarrierRecord>(wire.clone()).unwrap(),
+            record
+        );
+        for (field, value) in [
+            ("state", serde_json::json!("not_expanded")),
+            ("state", serde_json::json!("future")),
+            ("carrier_len", serde_json::json!(1)),
+            ("detail", serde_json::json!("unavailable")),
+        ] {
+            let mut invalid = wire.clone();
+            invalid[field] = value;
+            assert!(
+                serde_json::from_value::<ActiveCarrierRecord>(invalid).is_err(),
+                "{field}"
+            );
+        }
+        let unavailable = ActiveCarrierRecord::Unavailable {
+            id: "inventor:rse:active-carrier#1".into(),
+            detail: "no selection".into(),
+        };
+        let mut wire = serde_json::to_value(&unavailable).unwrap();
+        assert_eq!(
+            serde_json::from_value::<ActiveCarrierRecord>(wire.clone()).unwrap(),
+            unavailable
+        );
+        wire["segment_token"] = serde_json::json!("segment");
+        assert!(serde_json::from_value::<ActiveCarrierRecord>(wire).is_err());
+    }
 }
