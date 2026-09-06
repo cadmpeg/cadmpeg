@@ -66,10 +66,12 @@ fn deltas_walks_complete_status_prefixed_entity_51_records() {
         1
     );
     stream[entity_len - 1] = 2;
-    assert!(crate::deltas::walk(&stream)
-        .records
-        .iter()
-        .all(|record| record.kind() != 81));
+    assert!(
+        crate::deltas::walk(&stream)
+            .records
+            .iter()
+            .all(|record| record.kind() != 81)
+    );
 }
 
 #[test]
@@ -106,9 +108,11 @@ fn deltas_walks_attribute_records_that_share_a_terminal_zero() {
     assert_eq!(census.records[1].offset, census.records[0].end - 1);
     assert_eq!(census.records[2].offset, census.records[1].end - 1);
     assert_eq!(census.bytes_decoded, stream.len());
-    assert!(crate::deltas::semantic_residual(&stream)[..stream.len()]
-        .iter()
-        .all(|byte| *byte == 0xff));
+    assert!(
+        crate::deltas::semantic_residual(&stream)[..stream.len()]
+            .iter()
+            .all(|byte| *byte == 0xff)
+    );
 }
 
 #[test]
@@ -611,10 +615,12 @@ fn deltas_walks_auxiliary_family_tombstones() {
     let census = crate::deltas::walk(&stream);
     assert_eq!(census.records.len(), 0);
     assert_eq!(census.tombstones.len(), 6);
-    assert!(census
-        .tombstones
-        .iter()
-        .all(|tombstone| tombstone.xmt == 32_769));
+    assert!(
+        census
+            .tombstones
+            .iter()
+            .all(|tombstone| tombstone.xmt == 32_769)
+    );
     for family in [
         "TERM_USE",
         "TYPE_45",
@@ -626,9 +632,11 @@ fn deltas_walks_auxiliary_family_tombstones() {
         assert_eq!(census.tombstone_counts[family], 1);
     }
     assert_eq!(census.bytes_decoded, stream.len());
-    assert!(crate::deltas::semantic_residual(&stream)
-        .iter()
-        .all(|byte| *byte == 0xff));
+    assert!(
+        crate::deltas::semantic_residual(&stream)
+            .iter()
+            .all(|byte| *byte == 0xff)
+    );
 }
 
 #[test]
@@ -692,9 +700,11 @@ fn deltas_tagged_reference_lanes_require_complete_known_kind_and_xmt_pairs() {
         &[0x00, 0x4f, 0x00, 0x01],
         &[0x00, 0x50, 0xff, 0xff, 0x00],
     ] {
-        assert!(crate::deltas::walk(invalid)
-            .tagged_reference_lanes
-            .is_empty());
+        assert!(
+            crate::deltas::walk(invalid)
+                .tagged_reference_lanes
+                .is_empty()
+        );
     }
 }
 
@@ -813,9 +823,11 @@ fn deltas_walks_complete_single_byte_intersection_data_records() {
     assert_eq!(curves[0].references, [6, 6, 1, 1, 1, 1]);
 
     let residual = crate::deltas::semantic_residual(&stream);
-    assert!(residual[record_offset..record_end]
-        .iter()
-        .all(|byte| *byte == 0xff));
+    assert!(
+        residual[record_offset..record_end]
+            .iter()
+            .all(|byte| *byte == 0xff)
+    );
     let prefix_len = crate::topology::TYPE_38_SCHEMA_HEADER.len() - 1;
     let appended_start = residual.len() - prefix_len - (record_end - record_offset);
     assert_eq!(
@@ -913,10 +925,12 @@ fn deltas_rejects_denormal_point_payload_coincidences() {
         point[position + ordinal * 8..position + (ordinal + 1) * 8]
             .copy_from_slice(&value.to_be_bytes());
     }
-    assert!(crate::deltas::walk(&point)
-        .records
-        .iter()
-        .all(|record| record.kind() != 29));
+    assert!(
+        crate::deltas::walk(&point)
+            .records
+            .iter()
+            .all(|record| record.kind() != 29)
+    );
 
     point[position..position + 8].copy_from_slice(&1.0e-200f64.to_be_bytes());
     point[position + 8..].fill(0);
@@ -1378,17 +1392,21 @@ fn deltas_offset_surface_normalizes_exact_record_envelope() {
         .position(|window| window == [0, 60, 0, 12])
         .expect("OFFSET_SURF record");
     invalid_status[offset + 28] = 2;
-    assert!(!crate::deltas::walk(&invalid_status)
-        .records
-        .iter()
-        .any(|record| record.kind() == 60));
+    assert!(
+        !crate::deltas::walk(&invalid_status)
+            .records
+            .iter()
+            .any(|record| record.kind() == 60)
+    );
 
     let mut truncated = stream;
     truncated.pop();
-    assert!(!crate::deltas::walk(&truncated)
-        .records
-        .iter()
-        .any(|record| record.kind() == 60));
+    assert!(
+        !crate::deltas::walk(&truncated)
+            .records
+            .iter()
+            .any(|record| record.kind() == 60)
+    );
 }
 
 #[test]
@@ -1416,9 +1434,11 @@ fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
             .find(|record| record.kind() == kind)
             .expect("procedural wrapper");
         assert_eq!(record.canonical_bytes.len(), byte_len);
-        assert!(crate::topology::Graph::parse(&record.canonical_bytes)
-            .get(kind as u8, 12)
-            .is_some());
+        assert!(
+            crate::topology::Graph::parse(&record.canonical_bytes)
+                .get(kind as u8, 12)
+                .is_some()
+        );
     }
 
     let mut invalid_blend = deltas_blend_surface_partition_stream();
@@ -1427,10 +1447,12 @@ fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
         .position(|window| window == [0, 56, 0, 12])
         .expect("BLEND_SURF record");
     invalid_blend[blend + 24] = b'X';
-    assert!(!crate::deltas::walk(&invalid_blend)
-        .records
-        .iter()
-        .any(|record| record.kind() == 56));
+    assert!(
+        !crate::deltas::walk(&invalid_blend)
+            .records
+            .iter()
+            .any(|record| record.kind() == 56)
+    );
 }
 
 #[test]
@@ -1525,7 +1547,7 @@ fn merged_tombstone_preserves_a_topology_referenced_carrier() {
     tombstone.extend_from_slice(&[0, 1]);
     let census = crate::deltas::walk(&tombstone);
     assert_eq!(census.tombstones.len(), 1);
-    assert_eq!(census.tombstones[0].kind, 29);
+    assert_eq!(census.tombstones[0].kind.code(), 29);
     assert_eq!(census.tombstones[0].xmt, 11);
     let merged = crate::deltas::merge_full_records(&partition, &tombstone);
     assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_some());
@@ -1595,18 +1617,26 @@ fn body_revision_scopes_keep_each_monotonic_sequence_current() {
     assert!(graph.get(29, 50).is_some());
     assert!(graph.get(29, 51).is_some());
     let points = crate::geometry::points(&merged);
-    assert!(points
-        .iter()
-        .any(|point| (point.position.x - 2.0).abs() <= 1.0e-12));
-    assert!(points
-        .iter()
-        .any(|point| (point.position.x - 4.0).abs() <= 1.0e-12));
-    assert!(!points
-        .iter()
-        .any(|point| (point.position.x - 1.0).abs() <= 1.0e-12));
-    assert!(!points
-        .iter()
-        .any(|point| (point.position.x - 3.0).abs() <= 1.0e-12));
+    assert!(
+        points
+            .iter()
+            .any(|point| (point.position.x - 2.0).abs() <= 1.0e-12)
+    );
+    assert!(
+        points
+            .iter()
+            .any(|point| (point.position.x - 4.0).abs() <= 1.0e-12)
+    );
+    assert!(
+        !points
+            .iter()
+            .any(|point| (point.position.x - 1.0).abs() <= 1.0e-12)
+    );
+    assert!(
+        !points
+            .iter()
+            .any(|point| (point.position.x - 3.0).abs() <= 1.0e-12)
+    );
 }
 
 #[test]
@@ -1625,18 +1655,26 @@ fn body_revision_scopes_accept_reverse_serialized_counter_direction() {
     assert!(graph.get(29, 50).is_some());
     assert!(graph.get(29, 51).is_some());
     let points = crate::geometry::points(&merged);
-    assert!(points
-        .iter()
-        .any(|point| (point.position.x - 2.0).abs() <= 1.0e-12));
-    assert!(points
-        .iter()
-        .any(|point| (point.position.x - 4.0).abs() <= 1.0e-12));
-    assert!(!points
-        .iter()
-        .any(|point| (point.position.x - 1.0).abs() <= 1.0e-12));
-    assert!(!points
-        .iter()
-        .any(|point| (point.position.x - 3.0).abs() <= 1.0e-12));
+    assert!(
+        points
+            .iter()
+            .any(|point| (point.position.x - 2.0).abs() <= 1.0e-12)
+    );
+    assert!(
+        points
+            .iter()
+            .any(|point| (point.position.x - 4.0).abs() <= 1.0e-12)
+    );
+    assert!(
+        !points
+            .iter()
+            .any(|point| (point.position.x - 1.0).abs() <= 1.0e-12)
+    );
+    assert!(
+        !points
+            .iter()
+            .any(|point| (point.position.x - 3.0).abs() <= 1.0e-12)
+    );
 }
 
 #[test]
@@ -1690,9 +1728,11 @@ fn semantic_residual_masks_historical_body_revisions() {
     deltas.extend_from_slice(&[0, 38, 0x11, 0x22, 0x33]);
 
     let residual = crate::deltas::semantic_residual(&deltas);
-    assert!(residual[..historical_len + 5]
-        .iter()
-        .all(|byte| *byte == 0xff));
+    assert!(
+        residual[..historical_len + 5]
+            .iter()
+            .all(|byte| *byte == 0xff)
+    );
     assert!(residual.ends_with(&[0, 38, 0x11, 0x22, 0x33]));
 }
 
@@ -1737,12 +1777,16 @@ fn merge_masks_historical_interleaved_body_sequences() {
         .clone();
     expected.extend_from_slice(&crate::deltas::walk(&second_current).records[0].canonical_bytes);
     assert!(merged.ends_with(&expected));
-    assert!(!merged
-        .windows(first_historical.len())
-        .any(|window| window == first_historical));
-    assert!(!merged
-        .windows(second_historical.len())
-        .any(|window| window == second_historical));
+    assert!(
+        !merged
+            .windows(first_historical.len())
+            .any(|window| window == first_historical)
+    );
+    assert!(
+        !merged
+            .windows(second_historical.len())
+            .any(|window| window == second_historical)
+    );
 }
 
 #[test]

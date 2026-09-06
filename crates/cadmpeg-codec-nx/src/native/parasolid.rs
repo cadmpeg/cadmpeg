@@ -495,21 +495,73 @@ impl TryFrom<ParasolidDeltasRecordWire> for ParasolidDeltasRecord {
 
 /// One compact deletion in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "ParasolidDeltasTombstoneWire",
+    into = "ParasolidDeltasTombstoneWire"
+)]
 pub struct ParasolidDeltasTombstone {
     /// Globally unique event identity.
     pub id: String,
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
-    /// Stable Parasolid record-family name.
-    pub family: String,
     /// Numeric Parasolid node type.
-    pub kind: u16,
+    pub kind: crate::deltas::record_kind::RecordKind,
     /// Stream-local deleted XMT identity.
     pub xmt: u32,
     /// Exact compact tombstone length.
     pub byte_len: u64,
     /// Record tag offset in the inflated stream.
     pub inflated_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ParasolidDeltasTombstoneWire {
+    /// Globally unique event identity.
+    id: String,
+    /// Zero-based source stream ordinal.
+    stream_ordinal: u32,
+    /// Stable Parasolid record-family name.
+    family: String,
+    /// Numeric Parasolid node type.
+    kind: u16,
+    /// Stream-local deleted XMT identity.
+    xmt: u32,
+    /// Exact compact tombstone length.
+    byte_len: u64,
+    /// Record tag offset in the inflated stream.
+    inflated_offset: u64,
+}
+
+impl From<ParasolidDeltasTombstone> for ParasolidDeltasTombstoneWire {
+    fn from(value: ParasolidDeltasTombstone) -> Self {
+        Self {
+            family: value.kind.name().into(),
+            kind: u16::from(value.kind.code()),
+            id: value.id,
+            stream_ordinal: value.stream_ordinal,
+            xmt: value.xmt,
+            byte_len: value.byte_len,
+            inflated_offset: value.inflated_offset,
+        }
+    }
+}
+
+impl TryFrom<ParasolidDeltasTombstoneWire> for ParasolidDeltasTombstone {
+    type Error = &'static str;
+    fn try_from(wire: ParasolidDeltasTombstoneWire) -> Result<Self, Self::Error> {
+        let kind = crate::deltas::record_kind::RecordKind::try_from(wire.kind)?;
+        if kind.name() != wire.family {
+            return Err("deltas tombstone family disagrees with its node kind");
+        }
+        Ok(Self {
+            kind,
+            id: wire.id,
+            stream_ordinal: wire.stream_ordinal,
+            xmt: wire.xmt,
+            byte_len: wire.byte_len,
+            inflated_offset: wire.inflated_offset,
+        })
+    }
 }
 
 /// BODY revision envelope in a Parasolid deltas stream.
@@ -1021,15 +1073,12 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
             });
         }
         for tombstone in census.tombstones {
-            let family = crate::deltas::family_name(tombstone.kind)
-                .expect("the deltas walker admits only named tombstone families");
             events.tombstones.push(ParasolidDeltasTombstone {
                 id: format!(
                     "nx:s{stream_ordinal}:deltas-tombstone#{}-{}",
                     tombstone.offset, tombstone.xmt
                 ),
                 stream_ordinal: stream_ordinal as u32,
-                family: family.to_string(),
                 kind: tombstone.kind,
                 xmt: tombstone.xmt,
                 byte_len: 6,
@@ -3689,7 +3738,7 @@ mod tests {
         assert_eq!(events.records[0].inflated_offset, type_45_offset as u64);
         assert_eq!(events.records[0].byte_len, 24);
         assert_eq!(events.tombstones.len(), 1);
-        assert_eq!(events.tombstones[0].family, "POINT");
+        assert_eq!(events.tombstones[0].kind.name(), "POINT");
         assert_eq!(events.tombstones[0].xmt, 11);
         assert_eq!(events.tombstones[0].byte_len, 6);
         assert_eq!(

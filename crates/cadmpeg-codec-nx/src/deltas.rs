@@ -4,6 +4,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(crate) mod record_kind;
+use record_kind::RecordKind;
+
 use crate::framing::read_xmt_width as read_xmt;
 use crate::vec3_at::vec3_be_at;
 use cadmpeg_core::decode::View;
@@ -497,8 +500,8 @@ impl Record {
 /// One compact deletion carrying an explicit Parasolid type and XMT identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tombstone {
-    /// Parasolid node type.
-    pub kind: u16,
+    /// Admitted Parasolid node kind.
+    pub kind: RecordKind,
     /// Stream-local XMT identifier.
     pub xmt: u32,
     /// Record start offset in the inflated deltas stream.
@@ -1240,11 +1243,12 @@ pub fn walk(stream: &[u8]) -> Census {
         let Some(kind) = View::u16_be_at(stream, offset) else {
             break;
         };
-        let Some(name) = family_name(kind) else {
+        let Ok(record_kind) = RecordKind::try_from(kind) else {
             offset += 1;
             value_boundary = false;
             continue;
         };
+        let name = record_kind.name();
         if kind == 12 {
             if let Some(revision) = body_revision_prefix(stream, offset) {
                 census.bytes_decoded += revision.prefix_end - revision.offset;
@@ -1294,7 +1298,11 @@ pub fn walk(stream: &[u8]) -> Census {
         {
             if xmt > 1 {
                 *census.tombstone_counts.entry(name).or_default() += 1;
-                census.tombstones.push(Tombstone { kind, xmt, offset });
+                census.tombstones.push(Tombstone {
+                    kind: record_kind,
+                    xmt,
+                    offset,
+                });
                 census.bytes_decoded += 6;
                 offset += 6;
                 value_boundary = true;
@@ -1552,7 +1560,7 @@ fn reference_type_maps(stream: &[u8], census: &Census) -> Vec<ReferenceTypeMap> 
                         census
                             .tombstones
                             .iter()
-                            .map(|tombstone| (tombstone.offset, tombstone.kind)),
+                            .map(|tombstone| (tombstone.offset, u16::from(tombstone.kind.code()))),
                     )
                     .find_map(|(event_offset, kind)| (event_offset == end).then_some(kind))?;
                 let shared_end = end.checked_add(2)?;
@@ -2692,7 +2700,7 @@ pub(crate) struct MergeFullRecordsResult {
 #[derive(Clone, Copy)]
 enum MergeEvent {
     Full { offset: usize },
-    Tombstone { offset: usize },
+    Tombstone { offset: usize, kind: RecordKind },
 }
 
 /// Overlay supported complete deltas records onto one paired partition stream.
@@ -2744,16 +2752,16 @@ pub(crate) fn merge_full_records_with_census(
         .iter()
         .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
     {
-        if let Ok(kind) = u8::try_from(tombstone.kind) {
-            tombstones.insert((kind, tombstone.xmt), tombstone);
-            if let Some(events) = &mut unmatched_events {
-                events
-                    .entry((kind, tombstone.xmt))
-                    .or_insert_with(Vec::new)
-                    .push(MergeEvent::Tombstone {
-                        offset: tombstone.offset,
-                    });
-            }
+        let kind = tombstone.kind.code();
+        tombstones.insert((kind, tombstone.xmt), tombstone);
+        if let Some(events) = &mut unmatched_events {
+            events
+                .entry((kind, tombstone.xmt))
+                .or_insert_with(Vec::new)
+                .push(MergeEvent::Tombstone {
+                    offset: tombstone.offset,
+                    kind: tombstone.kind,
+                });
         }
     }
 
@@ -2875,14 +2883,13 @@ fn collect_unmatched_events(
         .iter()
         .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
     {
-        let Ok(kind) = u8::try_from(tombstone.kind) else {
-            continue;
-        };
+        let kind = tombstone.kind.code();
         events
             .entry((kind, tombstone.xmt))
             .or_default()
             .push(MergeEvent::Tombstone {
                 offset: tombstone.offset,
+                kind: tombstone.kind,
             });
     }
     events
@@ -2895,9 +2902,13 @@ fn count_unmatched_events(
     let mut unmatched = BTreeMap::new();
     for ((kind, xmt), mut events) in events {
         events.sort_by_key(|event| match event {
-            MergeEvent::Full { offset } | MergeEvent::Tombstone { offset } => *offset,
+            MergeEvent::Full { offset } | MergeEvent::Tombstone { offset, .. } => *offset,
         });
-        let Some(MergeEvent::Tombstone { offset }) = events.last().copied() else {
+        let Some(MergeEvent::Tombstone {
+            offset,
+            kind: tombstone_kind,
+        }) = events.last().copied()
+        else {
             continue;
         };
         if graph.get(kind, xmt).is_none()
@@ -2905,8 +2916,7 @@ fn count_unmatched_events(
                 matches!(event, MergeEvent::Full { offset: full_offset } if *full_offset < offset)
             })
         {
-            let name = family_name(u16::from(kind))
-                .expect("event families originate from the accepted deltas census");
+            let name = tombstone_kind.name();
             *unmatched.entry(name).or_default() += 1;
         }
     }
@@ -3825,61 +3835,7 @@ fn is_next_kind(kind: u16) -> bool {
 }
 
 pub(crate) fn family_name(kind: u16) -> Option<&'static str> {
-    Some(match kind {
-        12 => "BODY",
-        13 => "SHELL",
-        14 => "FACE",
-        15 => "LOOP",
-        16 => "EDGE",
-        17 => "FIN",
-        18 => "VERTEX",
-        19 => "REGION",
-        29 => "POINT",
-        30 => "LINE",
-        31 => "CIRCLE",
-        32 => "ELLIPSE",
-        38 => "INTERSECTION",
-        40 => "CHART",
-        41 => "TERM_USE",
-        45 => "TYPE_45",
-        50 => "PLANE",
-        51 => "CYLINDER",
-        52 => "CONE",
-        53 => "SPHERE",
-        54 => "TORUS",
-        56 => "BLEND_SURF",
-        59 => "BLEND_BOUND",
-        60 => "OFFSET_SURF",
-        67 => "TYPE_67",
-        70 => "TYPE_70",
-        74 => "ATTDEF_LIST",
-        81 => "ENTITY_51",
-        82 => "ENTITY_52",
-        83 => "ENTITY_53",
-        84 => "ENTITY_54",
-        85 => "ENTITY_55",
-        86 => "ENTITY_56",
-        87 => "ENTITY_57",
-        88 => "ENTITY_58",
-        89 => "ENTITY_59",
-        98 => "ENTITY_62",
-        90 => "GROUP",
-        91 => "TYPE_91",
-        101 => "TYPE_101",
-        124 => "B_SURFACE",
-        125 => "B_SURFACE_DATA",
-        126 => "B_SURFACE_DESCRIPTOR",
-        127 => "MULTIPLICITIES",
-        128 => "KNOTS",
-        133 => "TRIMMED_CURVE",
-        134 => "B_CURVE",
-        135 => "B_CURVE_DATA",
-        136 => "B_CURVE_DESCRIPTOR",
-        137 => "SP_CURVE",
-        141 => "TYPE_141",
-        204 => "SUPPORT_UV",
-        _ => return None,
-    })
+    RecordKind::try_from(kind).ok().map(RecordKind::name)
 }
 
 /// Resolve the semantic family after the record-form discriminator is known.
@@ -4223,12 +4179,14 @@ mod inline_schema_tests {
 
         assert_eq!(declaration.fields, InlineSchemaFields::BodyHeader);
         assert_eq!(declaration.end, BODY_SCHEMA_HEADER.len());
-        assert!(inline_schema_declaration(
-            &BODY_SCHEMA_HEADER[..BODY_SCHEMA_HEADER.len() - 1],
-            0,
-            BODY_SCHEMA_HEADER.len() - 1,
-        )
-        .is_none());
+        assert!(
+            inline_schema_declaration(
+                &BODY_SCHEMA_HEADER[..BODY_SCHEMA_HEADER.len() - 1],
+                0,
+                BODY_SCHEMA_HEADER.len() - 1,
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -4580,7 +4538,9 @@ mod inline_schema_tests {
                 fields: InlineSchemaFields::Type100 {
                     xmt: 48,
                     references: [2, 49, 1],
-                    transform: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,],
+                    transform: [
+                        1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,
+                    ],
                 },
                 offset: 0,
                 end: bytes.len(),
@@ -5056,7 +5016,7 @@ mod reference_type_map_tests {
         assert_eq!(
             census.tombstones,
             [Tombstone {
-                kind: 81,
+                kind: RecordKind::Entity51,
                 xmt: 9,
                 offset: 6,
             }]
@@ -5239,9 +5199,11 @@ mod transmit_header_tests {
         let nonconsecutive = header(&[0x04, 0x27, 0x04, 0x29]);
         let complete = header(&[0x04, 0x27, 0x04, 0x28]);
         assert!(walk(&nonconsecutive).transmit_header.is_none());
-        assert!(walk(&complete[..complete.len() - 1])
-            .transmit_header
-            .is_none());
+        assert!(
+            walk(&complete[..complete.len() - 1])
+                .transmit_header
+                .is_none()
+        );
     }
 }
 
