@@ -124,3 +124,31 @@ impl DraftBinary32Branch {
         }
     }
 }
+
+/// Admitted mode values for a surface construction branch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+#[repr(u8)]
+pub enum SurfaceBranchMode {
+    /// Serialized `0x16` form.
+    Form16 = 0x16,
+    /// Serialized `0x40` form.
+    Form40 = 0x40,
+}
+
+impl From<SurfaceBranchMode> for u8 {
+    fn from(value: SurfaceBranchMode) -> Self {
+        value as Self
+    }
+}
+
+impl TryFrom<u8> for SurfaceBranchMode {
+    type Error = &'static str;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x16 => Ok(Self::Form16),
+            0x40 => Ok(Self::Form40),
+            _ => Err("SurfaceBranchMode.mode is not an admitted discriminator"),
+        }
+    }
+}

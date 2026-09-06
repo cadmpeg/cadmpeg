@@ -4163,7 +4163,7 @@ pub struct FeatureSurfaceConstructionBranch {
     /// Serialized branch-group header code.
     pub header_code: u8,
     /// Serialized `16` or `40` branch mode.
-    pub mode: u8,
+    pub mode: crate::om::discriminators::SurfaceBranchMode,
     /// Count including the terminal reference.
     pub declared_count: u8,
     /// Whether the payload repeats the declared count before its zero lane.

@@ -632,7 +632,7 @@ fn om_surface_feature_branches_require_one_complete_counted_group() {
     assert_eq!(group.family, 0x14);
     assert_eq!(group.header_code, 0x13);
     assert_eq!(group.branches.len(), 2);
-    assert_eq!(group.branches[0].mode, 0x40);
+    assert_eq!(u8::from(group.branches[0].mode), 0x40);
     assert_eq!(group.branches[0].declared_count, 4);
     assert!(group.branches[0].witnessed);
     assert_eq!(group.branches[0].members.len(), 3);

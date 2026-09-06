@@ -2368,7 +2368,7 @@ pub struct SurfaceFeaturePayloadBranch {
     /// Absolute offset of the branch mode byte.
     pub offset: usize,
     /// Serialized `16` or `40` branch mode.
-    pub mode: u8,
+    pub mode: discriminators::SurfaceBranchMode,
     /// Count including the terminal reference.
     pub declared_count: u8,
     /// Whether the count is repeated before the zero lane.
@@ -5198,10 +5198,16 @@ fn surface_feature_branch_paths(
     remaining: u8,
     terminator: &[u8],
 ) -> Vec<Vec<SurfaceFeaturePayloadBranch>> {
-    if remaining == 0 || !matches!(payload.get(at), Some(0x16 | 0x40)) {
+    if remaining == 0 {
         return Vec::new();
     }
-    let mode = payload[at];
+    let Some(mode) = payload
+        .get(at)
+        .copied()
+        .and_then(|value| discriminators::SurfaceBranchMode::try_from(value).ok())
+    else {
+        return Vec::new();
+    };
     if payload.get(at + 1) != Some(&0x01) {
         return Vec::new();
     }
