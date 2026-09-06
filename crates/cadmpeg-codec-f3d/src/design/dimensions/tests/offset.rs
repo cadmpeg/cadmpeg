@@ -357,11 +357,14 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
             radius: Length(4.0),
         },
         SpatialSketchGeometry::Nurbs {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(70.0, -5.0, 3.0), Point3::new(74.0, -2.0, 6.0)],
-            weights: None,
-            periodic: false,
+            curve: cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(70.0, -5.0, 3.0), Point3::new(74.0, -2.0, 6.0)],
+                None,
+                false,
+            )
+            .unwrap(),
         },
     ]
     .into_iter()

@@ -1489,8 +1489,8 @@ fn scale_spatial_sketch_geometry(geometry: &mut SpatialSketchGeometry, scale: f6
             scale_point3(center, scale);
             radius.0 *= scale;
         }
-        SpatialSketchGeometry::Nurbs { control_points, .. } => {
-            for point in control_points {
+        SpatialSketchGeometry::Nurbs { curve } => {
+            for point in curve.control_points_mut() {
                 scale_point3(point, scale);
             }
         }

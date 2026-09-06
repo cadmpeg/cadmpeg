@@ -95,29 +95,22 @@ fn spatial_oriented_endpoints(
             };
             (at(start_angle.0), at(end_angle.0))
         }
-        SpatialSketchGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic: false,
-        } => {
-            let degree_index = usize::try_from(*degree).ok()?;
-            let start = *knots.get(degree_index)?;
-            let end = *knots.get(knots.len().checked_sub(degree_index + 1)?)?;
+        SpatialSketchGeometry::Nurbs { curve } if !curve.periodic() => {
+            let start = curve.knots()[curve.degree() as usize];
+            let end = curve.knots()[curve.control_points().len()];
             (
                 crate::eval::nurbs_curve_point(
-                    *degree,
-                    knots,
-                    control_points,
-                    weights.as_deref(),
+                    curve.degree(),
+                    curve.knots(),
+                    curve.control_points(),
+                    curve.weights(),
                     start,
                 )?,
                 crate::eval::nurbs_curve_point(
-                    *degree,
-                    knots,
-                    control_points,
-                    weights.as_deref(),
+                    curve.degree(),
+                    curve.knots(),
+                    curve.control_points(),
+                    curve.weights(),
                     end,
                 )?,
             )
@@ -904,24 +897,14 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     }
                 }
             }
-            SpatialSketchGeometry::Nurbs {
-                degree,
-                knots,
-                control_points,
-                weights,
-                ..
-            } => {
-                let expected = control_points.len().checked_add(*degree as usize + 1);
-                if *degree == 0
-                    || control_points.len() <= *degree as usize
-                    || expected != Some(knots.len())
-                    || knots.iter().any(|value| !value.is_finite())
-                    || !knots_nondecreasing(knots)
-                    || control_points.iter().any(|point| !finite3(*point))
-                    || weights.as_ref().is_some_and(|weights| {
-                        weights.len() != control_points.len()
-                            || weights.iter().any(|weight| nonpositive(*weight))
-                    })
+            SpatialSketchGeometry::Nurbs { curve } => {
+                if curve.degree() == 0
+                    || curve.knots().iter().any(|value| !value.is_finite())
+                    || !knots_nondecreasing(curve.knots())
+                    || curve.control_points().iter().any(|point| !finite3(*point))
+                    || curve
+                        .weights()
+                        .is_some_and(|weights| weights.iter().any(|weight| nonpositive(*weight)))
                 {
                     finding(
                         findings,

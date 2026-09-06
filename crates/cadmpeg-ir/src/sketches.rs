@@ -913,18 +913,9 @@ pub enum SpatialSketchGeometry {
     },
     /// Model-space NURBS curve.
     Nurbs {
-        /// Curve degree.
-        degree: u32,
-        /// Full knot vector.
-        knots: Vec<f64>,
-        /// Control points in parameter order.
-        control_points: Vec<Point3>,
-        /// Per-pole weights; absent for non-rational curves.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        weights: Option<Vec<f64>>,
-        /// Whether the curve is periodic.
-        #[serde(default)]
-        periodic: bool,
+        /// Checked model-space knot, pole, and weight payload.
+        #[serde(flatten)]
+        curve: crate::geometry::NurbsCurve,
     },
     /// Tensor-product NURBS surface embedded in model space.
     NurbsSurface {

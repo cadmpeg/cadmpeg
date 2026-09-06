@@ -549,18 +549,21 @@ pub fn project_spatial_sketch_design(
                             .is_ok_and(|degree| poles.point_count() > degree) =>
                     {
                         SpatialSketchGeometry::Nurbs {
-                            degree: *degree,
-                            knots: knots.clone(),
-                            control_points: poles
-                                .points()
-                                .map(|point| transform_point(placement, point))
-                                .collect(),
-                            weights: poles
-                                .weights()
-                                .next()
-                                .is_some()
-                                .then(|| poles.weights().copied().collect()),
-                            periodic: false,
+                            curve: cadmpeg_ir::geometry::NurbsCurve::new(
+                                *degree,
+                                knots.clone(),
+                                poles
+                                    .points()
+                                    .map(|point| transform_point(placement, point))
+                                    .collect(),
+                                poles
+                                    .weights()
+                                    .next()
+                                    .is_some()
+                                    .then(|| poles.weights().copied().collect()),
+                                false,
+                            )
+                            .ok()?,
                         }
                     }
                     _ => return None,

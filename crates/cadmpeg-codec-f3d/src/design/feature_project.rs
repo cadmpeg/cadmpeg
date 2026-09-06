@@ -37,13 +37,12 @@ use crate::layout::{
 use crate::records::{
     ConstructionRecipeKind, DesignBodyBinding, DesignBodyRecipeOperand, DesignCoilExtent,
     DesignCoilSection, DesignCoilSectionPlacement, DesignConstructionOperandGroup,
-    DesignEdgeIdentityOperand, DesignEdgeOperand,
-    DesignEdgeTreatmentVertexOperand, DesignExtrudeExtent, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
-    DesignFaceOperand, DesignFeatureTimeline, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
-    DesignFixedExtrudeDistance, DesignLoftLegacyBodyCarrier, DesignParameter, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope,
-    DesignSketchPlacement, DesignSurfaceOffsetOperation,
+    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEdgeTreatmentVertexOperand,
+    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignExtrudePrologue, DesignExtrudeStart, DesignFaceOperand, DesignFeatureTimeline,
+    DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignFixedExtrudeDistance,
+    DesignLoftLegacyBodyCarrier, DesignParameter, DesignParameterKind, DesignParameterOwner,
+    DesignParameterScope, DesignSketchPlacement, DesignSurfaceOffsetOperation,
     DesignSurfaceOffsetSupport, DesignSurfaceTrimOperation, SketchCurveGeometry,
     SketchCurveIdentity,
 };
@@ -525,21 +524,30 @@ pub fn project_parameter_design(
     let mut streams = Vec::<(&str, Vec<crate::records::Located<u64>>)>::new();
     for scope in scopes {
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
-        let item = crate::records::Located { value: u64::from(scope.record_index), offset: 0 };
-        if let Some((_, items)) = streams.iter_mut().find(|(candidate, _)| *candidate == stream) {
+        let item = crate::records::Located {
+            value: u64::from(scope.record_index),
+            offset: 0,
+        };
+        if let Some((_, items)) = streams
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == stream)
+        {
             items.push(item);
         } else {
             streams.push((stream, vec![item]));
         }
     }
-    let timelines = streams.into_iter().map(|(stream, items)| DesignFeatureTimeline {
-        frame: crate::records::DesignTimelineFrame::test_items(0, items),
-        id: ids::native_design_feature_timeline_id_in_stream(stream, 0),
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index: std::num::NonZeroU64::new(1).unwrap(),
-        source_ordinal: 0,
-        context_record_index: std::num::NonZeroU64::new(1).unwrap(),
-    }).collect::<Vec<_>>();
+    let timelines = streams
+        .into_iter()
+        .map(|(stream, items)| DesignFeatureTimeline {
+            frame: crate::records::DesignTimelineFrame::test_items(0, items),
+            id: ids::native_design_feature_timeline_id_in_stream(stream, 0),
+            class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+            record_index: std::num::NonZeroU64::new(1).unwrap(),
+            source_ordinal: 0,
+            context_record_index: std::num::NonZeroU64::new(1).unwrap(),
+        })
+        .collect::<Vec<_>>();
     project_parameter_design_with_edge_identities(&ProjectInputs {
         native,
         owners,
@@ -648,9 +656,13 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::Assemble) => scope
                     .assembly_alignment()
                     .filter(|alignment| {
-                        matches!(alignment.form,
-                            Some(crate::records::DesignAssemblyAlignmentForm::LegacyAsBuilt421 { .. }
-                                | crate::records::DesignAssemblyAlignmentForm::Qualified(_)))
+                        matches!(
+                            alignment.form,
+                            Some(
+                                crate::records::DesignAssemblyAlignmentForm::LegacyAsBuilt421 { .. }
+                                    | crate::records::DesignAssemblyAlignmentForm::Qualified(_)
+                            )
+                        )
                     })
                     .map_or_else(
                         || FeatureDefinition::Native {
@@ -1023,75 +1035,91 @@ pub fn project_parameter_design_with_edge_identities(
                         }
                     },
                 ),
-                Some(DesignFeatureFamily::Thread) => scope.thread_construction()
-                    .and_then(|construction| construction.nominal_size.value().ok().map(|size| (construction, size)))
+                Some(DesignFeatureFamily::Thread) => scope
+                    .thread_construction()
+                    .and_then(|construction| {
+                        construction
+                            .nominal_size
+                            .value()
+                            .ok()
+                            .map(|size| (construction, size))
+                    })
                     .map_or_else(
-                    || FeatureDefinition::Native {
-                        kind: scope.kind_name().into(),
-                        parameters: parameters
-                            .iter()
-                            .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
-                            })
-                            .collect(),
-                    },
-                    |(construction, nominal_size)| {
-                        let face = project_thread_face_selection(
-                            scope,
-                            &construction.face_group_record_indices,
-                            construction_groups,
-                            face_operands,
-                        );
-                        let has_parameter_owners = owners.iter().any(|owner| {
-                            native_stream(&owner.id) == Some(native_scope)
-                                && owner.scope_record_index == scope.record_index
-                        });
-                        let face_reference_count = construction
-                            .face_group_record_indices
-                            .len()
-                            .saturating_mul(2);
-                        let full_face_extent = !has_parameter_owners
-                            && scope.reference_members.len() == face_reference_count
-                            && construction
-                                .face_group_record_indices
+                        || FeatureDefinition::Native {
+                            kind: scope.kind_name().into(),
+                            parameters: parameters
                                 .iter()
-                                .enumerate()
-                                .all(|(group_ordinal, group_record_index)| {
-                                    let pair_at = group_ordinal.saturating_mul(2);
-                                    let Some(member_record_index) = scope
-                                        .reference_members.values().nth(pair_at.saturating_add(1))
-                                        .copied()
-                                    else {
-                                        return false;
-                                    };
-                                    scope.reference_members.values().nth(pair_at) == Some(group_record_index)
-                                        && construction_groups.iter().any(|group| {
-                                            native_stream(&group.id) == Some(native_scope)
-                                                && group.scope_record_index == scope.record_index
-                                                && group.record_index == *group_record_index
-                                                && group.role == ROLE_0X10
-                                                && group.members.iter().map(|member| member.value).eq([member_record_index])
-                                        })
-                                });
-                        let extent = parameters
-                            .iter()
-                            .find(|(ordinal, _)| *ordinal == 1)
-                            .and_then(|(_, parameter)| design_length(parameter))
-                            .filter(|length| length.0 > 0.0)
-                            .map(|length| cadmpeg_ir::features::CosmeticThreadExtent::Blind {
-                                length,
-                            })
-                            .or_else(|| {
-                                full_face_extent
-                                    .then_some(cadmpeg_ir::features::CosmeticThreadExtent::Through)
+                                .map(|(_, parameter)| {
+                                    (parameter.name.clone(), parameter.expression.clone())
+                                })
+                                .collect(),
+                        },
+                        |(construction, nominal_size)| {
+                            let face = project_thread_face_selection(
+                                scope,
+                                &construction.face_group_record_indices,
+                                construction_groups,
+                                face_operands,
+                            );
+                            let has_parameter_owners = owners.iter().any(|owner| {
+                                native_stream(&owner.id) == Some(native_scope)
+                                    && owner.scope_record_index == scope.record_index
                             });
-                        FeatureDefinition::CosmeticThread {
-                            face,
-                            diameter: Some(Length(nominal_size)),
-                            extent,
-                        }
-                    },
-                ),
+                            let face_reference_count = construction
+                                .face_group_record_indices
+                                .len()
+                                .saturating_mul(2);
+                            let full_face_extent = !has_parameter_owners
+                                && scope.reference_members.len() == face_reference_count
+                                && construction
+                                    .face_group_record_indices
+                                    .iter()
+                                    .enumerate()
+                                    .all(|(group_ordinal, group_record_index)| {
+                                        let pair_at = group_ordinal.saturating_mul(2);
+                                        let Some(member_record_index) = scope
+                                            .reference_members
+                                            .values()
+                                            .nth(pair_at.saturating_add(1))
+                                            .copied()
+                                        else {
+                                            return false;
+                                        };
+                                        scope.reference_members.values().nth(pair_at)
+                                            == Some(group_record_index)
+                                            && construction_groups.iter().any(|group| {
+                                                native_stream(&group.id) == Some(native_scope)
+                                                    && group.scope_record_index
+                                                        == scope.record_index
+                                                    && group.record_index == *group_record_index
+                                                    && group.role == ROLE_0X10
+                                                    && group
+                                                        .members
+                                                        .iter()
+                                                        .map(|member| member.value)
+                                                        .eq([member_record_index])
+                                            })
+                                    });
+                            let extent = parameters
+                                .iter()
+                                .find(|(ordinal, _)| *ordinal == 1)
+                                .and_then(|(_, parameter)| design_length(parameter))
+                                .filter(|length| length.0 > 0.0)
+                                .map(|length| cadmpeg_ir::features::CosmeticThreadExtent::Blind {
+                                    length,
+                                })
+                                .or_else(|| {
+                                    full_face_extent.then_some(
+                                        cadmpeg_ir::features::CosmeticThreadExtent::Through,
+                                    )
+                                });
+                            FeatureDefinition::CosmeticThread {
+                                face,
+                                diameter: Some(Length(nominal_size)),
+                                extent,
+                            }
+                        },
+                    ),
                 Some(DesignFeatureFamily::SheetMetalEdgeFlange) => {
                     project_edge_flange(scope, inputs).unwrap_or_else(|| {
                         FeatureDefinition::Native {
@@ -1275,7 +1303,10 @@ pub fn project_parameter_design_with_edge_identities(
                             |operation| FeatureDefinition::InsertBodies {
                                 bodies: design_body_selection(
                                     scope,
-                                    operation.bodies.iter().map(|body| u64::from(body.copied.value)),
+                                    operation
+                                        .bodies
+                                        .iter()
+                                        .map(|body| u64::from(body.copied.value)),
                                     body_bindings,
                                 ),
                             },
@@ -1662,95 +1693,96 @@ pub fn project_parameter_design_with_edge_identities(
     Ok((features, parameters))
 }
 
-fn project_solid_primitive(scope: &DesignParameterScope) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+fn project_solid_primitive(
+    scope: &DesignParameterScope,
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{Angle, FeatureDefinition, Length, PrimitiveSolid};
     use cadmpeg_ir::math::{Point3, Vector3};
-                        let operation = |operation| match operation {
-                            DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
-                            DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
-                            DesignExtrudeOperation::Intersect => {
-                                cadmpeg_ir::features::BooleanOp::Intersect
-                            }
-                            DesignExtrudeOperation::NewBody => {
-                                cadmpeg_ir::features::BooleanOp::NewBody
-                            }
-                        };
-                        Some(match &scope.payload {
-                            crate::records::DesignScopePayload::BoxPrimitive(Some(crate::records::DesignBoxPrimitive {
-                                length,
-                                width,
-                                height,
-                                offset_x,
-                                offset_y,
-                                operation: result,
-                                ..
-                            })) => {
-                                let placement = cadmpeg_ir::transform::Transform::affine([
-                                    [1.0, 0.0, 0.0, *offset_x * 10.0],
-                                    [0.0, 1.0, 0.0, *offset_y * 10.0],
-                                    [0.0, 0.0, 1.0, 0.0],
-                                ])
-                                ?;
-                                FeatureDefinition::Block {
-                                    dimensions: Some([
-                                        Length(*length * 10.0),
-                                        Length(*width * 10.0),
-                                        Length(*height * 10.0),
-                                    ]),
-                                    placement: Some(placement),
-                                    op: operation(*result),
-                                }
-                            }
-                            crate::records::DesignScopePayload::CylinderPrimitive(Some(crate::records::DesignCylinderPrimitive {
-                                height,
-                                diameter,
-                                operation: result,
-                                ..
-                            })) => FeatureDefinition::Primitive {
-                                solid: PrimitiveSolid::Cylinder {
-                                    radius: Length(*diameter * 5.0),
-                                    height: Length(*height * 10.0),
-                                    angle: Angle(std::f64::consts::TAU),
-                                },
-                                op: operation(*result),
-                            },
-                            crate::records::DesignScopePayload::SpherePrimitive(Some(crate::records::DesignSpherePrimitive {
-                                transform,
-                                diameter,
-                                operation: result,
-                                ..
-                            })) => FeatureDefinition::Sphere {
-                                center: Point3::new(
-                                    transform[0][3] * 10.0,
-                                    transform[1][3] * 10.0,
-                                    transform[2][3] * 10.0,
-                                ),
-                                radius: Length(*diameter * 5.0),
-                                op: operation(*result),
-                            },
-                            crate::records::DesignScopePayload::TorusPrimitive(Some(crate::records::DesignTorusPrimitive {
-                                transform,
-                                major_diameter,
-                                minor_diameter,
-                                operation: result,
-                                ..
-                            })) => FeatureDefinition::Torus {
-                                center: Point3::new(
-                                    transform[0][3] * 10.0,
-                                    transform[1][3] * 10.0,
-                                    transform[2][3] * 10.0,
-                                ),
-                                axis: Vector3::new(
-                                    transform[0][2],
-                                    transform[1][2],
-                                    transform[2][2],
-                                ),
-                                major_radius: Length(*major_diameter * 5.0),
-                                minor_radius: Length(*minor_diameter * 5.0),
-                                op: operation(*result),
-                            },
-                        _ => return None,
-})
+    let operation = |operation| match operation {
+        DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
+        DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
+        DesignExtrudeOperation::Intersect => cadmpeg_ir::features::BooleanOp::Intersect,
+        DesignExtrudeOperation::NewBody => cadmpeg_ir::features::BooleanOp::NewBody,
+    };
+    Some(match &scope.payload {
+        crate::records::DesignScopePayload::BoxPrimitive(Some(
+            crate::records::DesignBoxPrimitive {
+                length,
+                width,
+                height,
+                offset_x,
+                offset_y,
+                operation: result,
+                ..
+            },
+        )) => {
+            let placement = cadmpeg_ir::transform::Transform::affine([
+                [1.0, 0.0, 0.0, *offset_x * 10.0],
+                [0.0, 1.0, 0.0, *offset_y * 10.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])?;
+            FeatureDefinition::Block {
+                dimensions: Some([
+                    Length(*length * 10.0),
+                    Length(*width * 10.0),
+                    Length(*height * 10.0),
+                ]),
+                placement: Some(placement),
+                op: operation(*result),
+            }
+        }
+        crate::records::DesignScopePayload::CylinderPrimitive(Some(
+            crate::records::DesignCylinderPrimitive {
+                height,
+                diameter,
+                operation: result,
+                ..
+            },
+        )) => FeatureDefinition::Primitive {
+            solid: PrimitiveSolid::Cylinder {
+                radius: Length(*diameter * 5.0),
+                height: Length(*height * 10.0),
+                angle: Angle(std::f64::consts::TAU),
+            },
+            op: operation(*result),
+        },
+        crate::records::DesignScopePayload::SpherePrimitive(Some(
+            crate::records::DesignSpherePrimitive {
+                transform,
+                diameter,
+                operation: result,
+                ..
+            },
+        )) => FeatureDefinition::Sphere {
+            center: Point3::new(
+                transform[0][3] * 10.0,
+                transform[1][3] * 10.0,
+                transform[2][3] * 10.0,
+            ),
+            radius: Length(*diameter * 5.0),
+            op: operation(*result),
+        },
+        crate::records::DesignScopePayload::TorusPrimitive(Some(
+            crate::records::DesignTorusPrimitive {
+                transform,
+                major_diameter,
+                minor_diameter,
+                operation: result,
+                ..
+            },
+        )) => FeatureDefinition::Torus {
+            center: Point3::new(
+                transform[0][3] * 10.0,
+                transform[1][3] * 10.0,
+                transform[2][3] * 10.0,
+            ),
+            axis: Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
+            major_radius: Length(*major_diameter * 5.0),
+            minor_radius: Length(*minor_diameter * 5.0),
+            op: operation(*result),
+        },
+        _ => return None,
+    })
 }
 
 fn work_point_edge_operand<'a>(
@@ -1812,7 +1844,9 @@ pub(crate) fn work_plane_recipe_state_id(scope: &DesignParameterScope) -> Option
     inputs
         .iter()
         .all(|recipe| {
-            recipe.resolution.is_some_and(|resolution| resolution.state_id == state)
+            recipe
+                .resolution
+                .is_some_and(|resolution| resolution.state_id == state)
         })
         .then_some(state)
 }
@@ -1824,7 +1858,9 @@ fn project_work_point_construction(
     edge_operands: &[DesignEdgeOperand],
     scope_ids: &HashMap<(&str, u32), cadmpeg_ir::features::FeatureId>,
 ) -> Option<cadmpeg_ir::features::DatumPointConstruction> {
-    use crate::records::{DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRuleForm};
+    use crate::records::{
+        DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRuleForm,
+    };
     use cadmpeg_ir::features::{
         DatumPlaneReference, DatumPointConstruction, EdgeSelection, VertexSelection,
     };
@@ -1879,26 +1915,24 @@ fn project_work_point_construction(
             else {
                 return None;
             };
-            let vertex = recipe
-                .resolution
-                .map_or_else(
-                    || VertexSelection::Native(recipe.recipe_id.clone()),
-                    |resolution| {
-                        let state_id = resolution.state_id;
-                        let vertex_slot = resolution.vertex_slot();
-                        let feature_id = neutral_feature_id(scope);
-                        let feature_key = feature_id
-                            .0
-                            .split_once('#')
-                            .map_or(feature_id.0.as_str(), |(_, key)| key);
-                        let prefix = ids::history_input_prefix(feature_key, state_id);
-                        VertexSelection::Historical {
-                            state: feature_input_topology_id(&feature_id, state_id),
-                            vertex: ids::history_input_vertex_id(&prefix, vertex_slot),
-                            native: recipe.recipe_id.clone(),
-                        }
-                    },
-                );
+            let vertex = recipe.resolution.map_or_else(
+                || VertexSelection::Native(recipe.recipe_id.clone()),
+                |resolution| {
+                    let state_id = resolution.state_id;
+                    let vertex_slot = resolution.vertex_slot();
+                    let feature_id = neutral_feature_id(scope);
+                    let feature_key = feature_id
+                        .0
+                        .split_once('#')
+                        .map_or(feature_id.0.as_str(), |(_, key)| key);
+                    let prefix = ids::history_input_prefix(feature_key, state_id);
+                    VertexSelection::Historical {
+                        state: feature_input_topology_id(&feature_id, state_id),
+                        vertex: ids::history_input_vertex_id(&prefix, vertex_slot),
+                        native: recipe.recipe_id.clone(),
+                    }
+                },
+            );
             DatumPointConstruction::Vertex { vertex }
         }
         DesignWorkPointRuleForm::EdgePlaneIntersection { inputs } => {
@@ -1939,9 +1973,7 @@ fn project_work_plane(
     );
     let normal = Vector3::new(transform[0][2], transform[1][2], transform[2][2]);
     let u_axis = Vector3::new(transform[0][0], transform[1][0], transform[2][0]);
-    let Some(DesignWorkPlaneConstruction { inputs, .. }) =
-        scope.work_plane_construction()
-    else {
+    let Some(DesignWorkPlaneConstruction { inputs, .. }) = scope.work_plane_construction() else {
         return FeatureDefinition::DatumPlane {
             origin,
             normal,
@@ -2301,7 +2333,12 @@ fn project_thread_face_selection(
             state: group_state,
             faces: group_faces,
             ..
-        }) = resolved_historical_face_group(scope, scope.previous_history_state_id, group, face_operands)
+        }) = resolved_historical_face_group(
+            scope,
+            scope.previous_history_state_id,
+            group,
+            face_operands,
+        )
         else {
             return FaceSelection::Native(native);
         };
@@ -2688,10 +2725,14 @@ pub fn bind_work_point_sketch_point_constructions(
             continue;
         };
         let crate::records::DesignWorkPointRuleForm::Vertex {
-            input: crate::records::DesignWorkPointInput {
-                carrier: Some(carrier), record_index, ..
-            },
-        } = point.rule.form() else {
+            input:
+                crate::records::DesignWorkPointInput {
+                    carrier: Some(carrier),
+                    record_index,
+                    ..
+                },
+        } = point.rule.form()
+        else {
             continue;
         };
         let crate::records::DesignWorkPointInputCarrier::SketchPoint { selection } =
@@ -2832,10 +2873,21 @@ fn project_draft(
     let member_of_scope = |group: &DesignConstructionOperandGroup| {
         group
             .members
-            .iter().map(|member| &member.value)
-            .all(|member| scope.reference_members.values().any(|value| value == member))
+            .iter()
+            .map(|member| &member.value)
+            .all(|member| {
+                scope
+                    .reference_members
+                    .values()
+                    .any(|value| value == member)
+            })
     };
-    if !scope.reference_members.values().any(|value| value == &faces.record_index) || !member_of_scope(faces) {
+    if !scope
+        .reference_members
+        .values()
+        .any(|value| value == &faces.record_index)
+        || !member_of_scope(faces)
+    {
         return None;
     }
     match role_groups.as_slice() {
@@ -3002,15 +3054,16 @@ fn project_face_selection(
                 .map_or(&[][..], |transition| {
                     transition.topology.faces.updated.as_slice()
                 });
-            resolved_historical_face_group(scope, Some(previous_state_id), group, face_operands).or_else(|| {
-                resolved_historical_split_face_target_group_with_updated_faces(
-                    scope,
-                    Some(previous_state_id),
-                    group,
-                    face_operands,
-                    updated_face_slots,
-                )
-            })
+            resolved_historical_face_group(scope, Some(previous_state_id), group, face_operands)
+                .or_else(|| {
+                    resolved_historical_split_face_target_group_with_updated_faces(
+                        scope,
+                        Some(previous_state_id),
+                        group,
+                        face_operands,
+                        updated_face_slots,
+                    )
+                })
         });
     historical
         .or_else(|| resolved_face_group(group, face_operands))
@@ -3042,7 +3095,8 @@ fn group_has_entity_selection(
     };
     group
         .members
-        .iter().map(|member| &member.value)
+        .iter()
+        .map(|member| &member.value)
         .enumerate()
         .any(|(ordinal, record_index)| {
             let Ok(ordinal) = u32::try_from(ordinal) else {
@@ -3150,9 +3204,7 @@ fn resolved_split_face_path(
                 && selection.record_index == *member
         });
         let selection = selections.next()?;
-        if selections.next().is_some()
-            || selection.secondary.is_some()
-        {
+        if selections.next().is_some() || selection.secondary.is_some() {
             return None;
         }
         let edge_slot = selection.resolved_edge_slot?;
@@ -3208,7 +3260,9 @@ pub(crate) fn project_offset_faces(
     };
     let fixed_distance = match &scope.payload {
         crate::records::DesignScopePayload::OffsetFaces(value)
-        | crate::records::DesignScopePayload::DecalerLesFaces(value) => value.as_ref().map(|value| Length(value.distance * 10.0)),
+        | crate::records::DesignScopePayload::DecalerLesFaces(value) => {
+            value.as_ref().map(|value| Length(value.distance * 10.0))
+        }
         _ => return None,
     };
     let distance = match (parameter_distance, fixed_distance) {
@@ -3240,7 +3294,8 @@ pub(crate) fn project_thicken(
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ThickenSide};
 
     let crate::records::DesignScopePayload::Thicken(Some(crate::records::DesignThickenOperation {
-        signed_thickness, ..
+        signed_thickness,
+        ..
     })) = &scope.payload
     else {
         return None;
@@ -3277,9 +3332,14 @@ pub(crate) fn project_shell(
     use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, Length};
 
     let (crate::records::DesignScopePayload::Shell(Some(crate::records::DesignShellOperation {
-        thickness, outward, ..
-    })) | crate::records::DesignScopePayload::Schale(Some(crate::records::DesignShellOperation {
-        thickness, outward, ..
+        thickness,
+        outward,
+        ..
+    }))
+    | crate::records::DesignScopePayload::Schale(Some(crate::records::DesignShellOperation {
+        thickness,
+        outward,
+        ..
     }))) = &scope.payload
     else {
         return None;
@@ -3358,7 +3418,11 @@ fn project_base_flange(
     if profile_group.scope_reference_ordinal != 0
         || profile_group.record_index != operation.profile_group_record_index
         || profile_group.role != 0x0000_0041_0000_0000
-        || !profile_group.members.iter().map(|member| member.value).eq([operation.profile_record_index])
+        || !profile_group
+            .members
+            .iter()
+            .map(|member| member.value)
+            .eq([operation.profile_record_index])
     {
         return None;
     }
@@ -3445,7 +3509,11 @@ pub(crate) fn project_edge_flange(
                         && group.scope_record_index == scope.record_index
                         && group.record_index == *target_group_record_index
                         && group.role == 0x0000_0021_0000_0000
-                        && group.members.iter().map(|member| member.value).eq([*target_operand_record_index])
+                        && group
+                            .members
+                            .iter()
+                            .map(|member| member.value)
+                            .eq([*target_operand_record_index])
                 })
                 .collect::<Vec<_>>();
             let [target_group] = target_group.as_slice() else {
@@ -3497,11 +3565,14 @@ pub(crate) fn project_edge_flange(
 
     let width = match &operation.shape {
         crate::records::DesignEdgeFlangeShape::FullEdge { .. } => SheetMetalFlangeWidth::FullEdge,
-        crate::records::DesignEdgeFlangeShape::Symmetric { owner, .. } => SheetMetalFlangeWidth::Symmetric {
-            width: design_length(parameter(*owner, "EdgeWidth")?)?,
-        },
+        crate::records::DesignEdgeFlangeShape::Symmetric { owner, .. } => {
+            SheetMetalFlangeWidth::Symmetric {
+                width: design_length(parameter(*owner, "EdgeWidth")?)?,
+            }
+        }
         crate::records::DesignEdgeFlangeShape::SymmetricPerEdge(edges) => {
-            let widths = edges.iter()
+            let widths = edges
+                .iter()
                 .map(|row| design_length(parameter(row.owners, "EdgeWidth")?))
                 .collect::<Option<Vec<_>>>()?;
             let [first, rest @ ..] = widths.as_slice() else {
@@ -3515,7 +3586,9 @@ pub(crate) fn project_edge_flange(
         crate::records::DesignEdgeFlangeShape::TwoSidesPerEdge { edges, source } => {
             let (first_kind, second_kind) = match source {
                 DesignEdgeFlangeWidthParameterSource::EdgeWidth => ("EdgeWidth_1", "EdgeWidth_2"),
-                DesignEdgeFlangeWidthParameterSource::EdgeOffset => ("EdgeOffset_1", "EdgeOffset_2"),
+                DesignEdgeFlangeWidthParameterSource::EdgeOffset => {
+                    ("EdgeOffset_1", "EdgeOffset_2")
+                }
             };
             let width_length = |owner, kind| {
                 let length = design_length(parameter(owner, kind)?)?;
@@ -3524,20 +3597,24 @@ pub(crate) fn project_edge_flange(
                     DesignEdgeFlangeWidthParameterSource::EdgeOffset => Length(length.0.abs()),
                 })
             };
-            let widths = edges.iter().map(|row| {
-                Some(SheetMetalFlangeTwoSidedWidth {
-                    first: width_length(row.owners[0], first_kind)?,
-                    second: width_length(row.owners[1], second_kind)?,
+            let widths = edges
+                .iter()
+                .map(|row| {
+                    Some(SheetMetalFlangeTwoSidedWidth {
+                        first: width_length(row.owners[0], first_kind)?,
+                        second: width_length(row.owners[1], second_kind)?,
+                    })
                 })
-            }).collect::<Option<Vec<_>>>()?;
+                .collect::<Option<Vec<_>>>()?;
             SheetMetalFlangeWidth::TwoSidesPerEdge { widths }
         }
-        crate::records::DesignEdgeFlangeShape::TwoSides { owners: [first, second], .. } => {
-            SheetMetalFlangeWidth::TwoSides {
-                first: design_length(parameter(*first, "EdgeWidth_1")?)?,
-                second: design_length(parameter(*second, "EdgeWidth_2")?)?,
-            }
-        }
+        crate::records::DesignEdgeFlangeShape::TwoSides {
+            owners: [first, second],
+            ..
+        } => SheetMetalFlangeWidth::TwoSides {
+            first: design_length(parameter(*first, "EdgeWidth_1")?)?,
+            second: design_length(parameter(*second, "EdgeWidth_2")?)?,
+        },
     };
 
     let height_datum = match operation.height_datum {
@@ -3558,7 +3635,9 @@ pub(crate) fn project_edge_flange(
     if operation.shape.edges().next().is_none() {
         return None;
     }
-    let selections = operation.shape.edges()
+    let selections = operation
+        .shape
+        .edges()
         .map(|edge| {
             let mut matching = groups.iter().filter(|group| {
                 native_stream(&group.id) == Some(stream)
@@ -3678,7 +3757,11 @@ pub(crate) fn project_hem(
     let edge_group = edge_groups.next()?;
     let edge_has_extra = edge_groups.next().is_some();
     let edge_role_ok = edge_group.role == 0x0000_0008_0000_0000;
-    let edge_members_ok = edge_group.members.iter().map(|member| member.value).eq([operation.edge_operand_record_index]);
+    let edge_members_ok = edge_group
+        .members
+        .iter()
+        .map(|member| member.value)
+        .eq([operation.edge_operand_record_index]);
     if edge_has_extra || !edge_role_ok || !edge_members_ok {
         return None;
     }
@@ -3691,8 +3774,11 @@ pub(crate) fn project_hem(
     let aggregate_group = aggregate_groups.next()?;
     let aggregate_has_extra = aggregate_groups.next().is_some();
     let aggregate_role_ok = aggregate_group.role == 0x0000_0043_0000_0000;
-    let aggregate_members_ok =
-        aggregate_group.members.iter().map(|member| member.value).eq([operation.aggregate_operand_record_index]);
+    let aggregate_members_ok = aggregate_group
+        .members
+        .iter()
+        .map(|member| member.value)
+        .eq([operation.aggregate_operand_record_index]);
     if aggregate_has_extra || !aggregate_role_ok || !aggregate_members_ok {
         return None;
     }
@@ -3766,15 +3852,26 @@ pub(crate) fn project_surface_stitch(
         .collect::<Vec<_>>();
     matching.sort_by_key(|group| group.scope_reference_ordinal);
     if matching.len().checked_mul(2)? != input_end
-        || matching.iter().enumerate().zip(
-            scope.reference_members.values().step_by(2)
-                .zip(scope.reference_members.values().skip(1).step_by(2))
-        ).any(|((ordinal, group), (group_reference, member_reference))| {
-            u32::try_from(ordinal * 2) != Ok(group.scope_reference_ordinal)
-                || group.record_index != *group_reference
-                || !group.members.iter().map(|member| member.value).eq([*member_reference])
-                || group.role != ROLE_0X5
-        })
+        || matching
+            .iter()
+            .enumerate()
+            .zip(
+                scope
+                    .reference_members
+                    .values()
+                    .step_by(2)
+                    .zip(scope.reference_members.values().skip(1).step_by(2)),
+            )
+            .any(|((ordinal, group), (group_reference, member_reference))| {
+                u32::try_from(ordinal * 2) != Ok(group.scope_reference_ordinal)
+                    || group.record_index != *group_reference
+                    || !group
+                        .members
+                        .iter()
+                        .map(|member| member.value)
+                        .eq([*member_reference])
+                    || group.role != ROLE_0X5
+            })
     {
         return None;
     }
@@ -3846,7 +3943,8 @@ pub(crate) fn project_ruled_surface(
         }
         let reference_ordinal = usize::try_from(group.scope_reference_ordinal).ok()?;
         if scope.reference_members.values().nth(reference_ordinal) != Some(record_index)
-            || scope.reference_members.values().nth(reference_ordinal + 1) != group.members.first().map(|member| &member.value)
+            || scope.reference_members.values().nth(reference_ordinal + 1)
+                != group.members.first().map(|member| &member.value)
         {
             return None;
         }
@@ -5014,7 +5112,11 @@ fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignPa
 }
 
 pub(crate) fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Length> {
-    (parameter.unit.as_ref().map(|field| field.value.as_str()).is_some_and(design_length_unit)
+    (parameter
+        .unit
+        .as_ref()
+        .map(|field| field.value.as_str())
+        .is_some_and(design_length_unit)
         && parameter.evaluated_value.is_finite())
     .then_some(cadmpeg_ir::features::Length(
         parameter.evaluated_value * 10.0,
@@ -5208,7 +5310,9 @@ pub(crate) fn untyped_parameter_unit_count(parameters: &[DesignParameter]) -> us
         .iter()
         .filter(|parameter| {
             parameter
-                .unit.as_ref().map(|field| field.value.as_str())
+                .unit
+                .as_ref()
+                .map(|field| field.value.as_str())
                 .is_some_and(|unit| !design_length_unit(unit) && !design_angle_unit(unit))
         })
         .count()
@@ -5494,9 +5598,11 @@ pub(crate) fn project_fixed_revolve_with_entities(
         RevolveConstruction, RevolveExtent,
     };
 
-    let crate::records::DesignScopePayload::Revolve(Some(crate::records::DesignRevolveConstruction {
-        operation, angle, ..
-    })) = &scope.payload
+    let crate::records::DesignScopePayload::Revolve(Some(
+        crate::records::DesignRevolveConstruction {
+            operation, angle, ..
+        },
+    )) = &scope.payload
     else {
         return None;
     };
@@ -5530,7 +5636,10 @@ pub(crate) fn project_fixed_revolve_with_entities(
     let [_] = profile.members.as_slice() else {
         return None;
     };
-    let [crate::records::Located { value: axis_member, .. }] = axis_group.members.as_slice() else {
+    let [crate::records::Located {
+        value: axis_member, ..
+    }] = axis_group.members.as_slice()
+    else {
         return None;
     };
     let matches = edge_operands
@@ -5886,7 +5995,10 @@ pub(crate) fn project_fixed_loft(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, LoftPointSection, LoftSection, ProfileRef};
 
-    let crate::records::DesignScopePayload::Loft(Some(crate::records::DesignLoftConstruction { operation, .. })) = &scope.payload
+    let crate::records::DesignScopePayload::Loft(Some(crate::records::DesignLoftConstruction {
+        operation,
+        ..
+    })) = &scope.payload
     else {
         return None;
     };
@@ -6234,8 +6346,13 @@ pub(crate) fn project_circular_pattern(
     };
     let seed = if group.role == 0x0000_0004_0000_0000 {
         PatternSeed::Faces(
-            resolved_historical_face_group(scope, scope.previous_history_state_id, group, face_operands)
-                .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())),
+            resolved_historical_face_group(
+                scope,
+                scope.previous_history_state_id,
+                group,
+                face_operands,
+            )
+            .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())),
         )
     } else {
         PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
@@ -6321,9 +6438,11 @@ fn project_rectangular_pattern_scalars(
         .as_ref()
         .and_then(|instances| match instances {
             crate::records::DesignRectangularPatternInstances::Bodies(_) => None,
-            crate::records::DesignRectangularPatternInstances::Components { seed, .. } => Some(
-                PatternSeed::Occurrences(vec![crate::ids::neutral_component_occurrence_id(&seed.occurrence_guid)])
-            ),
+            crate::records::DesignRectangularPatternInstances::Components { seed, .. } => {
+                Some(PatternSeed::Occurrences(vec![
+                    crate::ids::neutral_component_occurrence_id(&seed.occurrence_guid),
+                ]))
+            }
         });
     let group_seed = native_stream(&scope.id).and_then(|stream| {
         let matching_groups = groups
@@ -6340,9 +6459,13 @@ fn project_rectangular_pattern_scalars(
         };
         Some(if group.role == 0x0000_0004_0000_0000 {
             PatternSeed::Faces(
-                resolved_historical_face_group(scope, scope.previous_history_state_id, group, face_operands).unwrap_or_else(|| {
-                    cadmpeg_ir::features::FaceSelection::Native(group.id.clone())
-                }),
+                resolved_historical_face_group(
+                    scope,
+                    scope.previous_history_state_id,
+                    group,
+                    face_operands,
+                )
+                .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())),
             )
         } else {
             PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
@@ -6400,7 +6523,10 @@ pub(crate) fn project_mirror(
     let ([seed_group], [_plane_group]) = (seed_groups.as_slice(), plane_groups.as_slice()) else {
         return None;
     };
-    let seed = if let Some(record_index) = construction.seed_feature_scope_record_index.map(|reference| reference.value) {
+    let seed = if let Some(record_index) = construction
+        .seed_feature_scope_record_index
+        .map(|reference| reference.value)
+    {
         let matching_scopes = scopes
             .iter()
             .filter(|candidate| {
@@ -6418,9 +6544,13 @@ pub(crate) fn project_mirror(
         ))
     } else {
         PatternSeed::Faces(
-            resolved_historical_face_group(scope, scope.previous_history_state_id, seed_group, face_operands).unwrap_or_else(|| {
-                cadmpeg_ir::features::FaceSelection::Native(seed_group.id.clone())
-            }),
+            resolved_historical_face_group(
+                scope,
+                scope.previous_history_state_id,
+                seed_group,
+                face_operands,
+            )
+            .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(seed_group.id.clone())),
         )
     };
     let (plane_origin, plane_normal, scale_origin) = match construction.plane {
@@ -6474,9 +6604,13 @@ pub(crate) fn project_fixed_sweep(
         SweepOrientation, SweepPathExtent,
     };
 
-    let crate::records::DesignScopePayload::Sweep(Some(crate::records::DesignSweepScope { construction: Some(crate::records::DesignSweepConstruction {
-        operation, values, ..
-    }), .. })) = &scope.payload
+    let crate::records::DesignScopePayload::Sweep(Some(crate::records::DesignSweepScope {
+        construction:
+            Some(crate::records::DesignSweepConstruction {
+                operation, values, ..
+            }),
+        ..
+    })) = &scope.payload
     else {
         return None;
     };
@@ -6514,24 +6648,40 @@ pub(crate) fn project_fixed_sweep(
         let sweep_profile = scope.sweep_profile()?;
         let carriers = profiles
             .iter()
-            .filter(|group| group.members.iter().map(|member| member.value).eq([sweep_profile.record_index]))
+            .filter(|group| {
+                group
+                    .members
+                    .iter()
+                    .map(|member| member.value)
+                    .eq([sweep_profile.record_index])
+            })
             .collect::<Vec<_>>();
         let selections = profiles
             .iter()
-            .filter(|group| !group.members.iter().map(|member| member.value).eq([sweep_profile.record_index]))
+            .filter(|group| {
+                !group
+                    .members
+                    .iter()
+                    .map(|member| member.value)
+                    .eq([sweep_profile.record_index])
+            })
             .collect::<Vec<_>>();
         let ([_carrier], [selection]) = (carriers.as_slice(), selections.as_slice()) else {
             return None;
         };
         if selection.members.is_empty()
-            || !selection.members.iter().map(|member| &member.value).all(|member| {
-                entity_selection_operands.iter().any(|operand| {
-                    native_stream(&operand.id) == Some(stream)
-                        && operand.scope_record_index == scope.record_index
-                        && operand.group_record_index == selection.record_index
-                        && operand.record_index == *member
+            || !selection
+                .members
+                .iter()
+                .map(|member| &member.value)
+                .all(|member| {
+                    entity_selection_operands.iter().any(|operand| {
+                        native_stream(&operand.id) == Some(stream)
+                            && operand.scope_record_index == scope.record_index
+                            && operand.group_record_index == selection.record_index
+                            && operand.record_index == *member
+                    })
                 })
-            })
         {
             return None;
         }
@@ -6580,8 +6730,13 @@ pub(crate) fn project_fixed_sweep(
     let orientation = guide_surfaces
         .first()
         .map(|group| SweepOrientation::GuideSurface {
-            faces: resolved_historical_face_group(scope, scope.previous_history_state_id, group, face_operands)
-                .unwrap_or_else(|| FaceSelection::Native(group.id.clone())),
+            faces: resolved_historical_face_group(
+                scope,
+                scope.previous_history_state_id,
+                group,
+                face_operands,
+            )
+            .unwrap_or_else(|| FaceSelection::Native(group.id.clone())),
         });
     Some(FeatureDefinition::Sweep {
         section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Native(
@@ -6704,14 +6859,22 @@ fn project_fixed_pipe(
             || !claimed.insert(path_group.record_index)
             || path_group
                 .members
-                .iter().map(|member| &member.value)
+                .iter()
+                .map(|member| &member.value)
                 .any(|record_index| !claimed.insert(*record_index))
             || scope.reference_members.len() != path_group.members.len() + 6
-            || scope.reference_members.values().collect::<HashSet<_>>().len()
+            || scope
+                .reference_members
+                .values()
+                .collect::<HashSet<_>>()
+                .len()
                 != scope.reference_members.len()
-            || claimed
-                .iter()
-                .any(|record_index| !scope.reference_members.values().any(|value| value == record_index))
+            || claimed.iter().any(|record_index| {
+                !scope
+                    .reference_members
+                    .values()
+                    .any(|value| value == record_index)
+            })
         {
             return None;
         }
@@ -6725,7 +6888,14 @@ fn project_fixed_pipe(
             || scope.reference_members.values().nth(5) != Some(&path_group.record_index)
             || path_group.members.is_empty()
             || scope.reference_members.len() != path_group.members.len() + 8
-            || !path_group.members.iter().map(|member| member.value).eq(scope.reference_members.values_in(6..scope.reference_members.len() - 2)?.copied())
+            || !path_group
+                .members
+                .iter()
+                .map(|member| member.value)
+                .eq(scope
+                    .reference_members
+                    .values_in(6..scope.reference_members.len() - 2)?
+                    .copied())
         {
             return None;
         }
@@ -6824,7 +6994,10 @@ pub(crate) fn project_surface_patch(
             || group.record_index != *scope.reference_members.values().next()?
             || group.role != ROLE_0X4
             || group.members.is_empty()
-            || !group.members.iter().map(|member| member.value).eq(scope.reference_members.values_in(1..scope.reference_members.len() - 1)?.copied())
+            || !group.members.iter().map(|member| member.value).eq(scope
+                .reference_members
+                .values_in(1..scope.reference_members.len() - 1)?
+                .copied())
         {
             return None;
         }
@@ -6874,7 +7047,12 @@ pub(crate) fn project_surface_patch(
         if settings_ordinal >= scope.reference_members.len()
             || boundary.record_index != *scope.reference_members.values().nth(group_ordinal)?
             || boundary.role != boundary_role
-            || !boundary.members.iter().map(|member| member.value).eq(scope.reference_members.values().nth(member_ordinal).into_iter().copied())
+            || !boundary.members.iter().map(|member| member.value).eq(scope
+                .reference_members
+                .values()
+                .nth(member_ordinal)
+                .into_iter()
+                .copied())
             || occupied[group_ordinal]
             || occupied[member_ordinal]
             || occupied[settings_ordinal]
@@ -6969,7 +7147,11 @@ pub(crate) fn project_boundary_fill(
             .unwrap_or(scope.reference_members.len() - 1);
         if start >= end
             || group.record_index != *scope.reference_members.values().nth(start)?
-            || !group.members.iter().map(|member| member.value).eq(scope.reference_members.values_in(start + 1..end)?.copied())
+            || !group
+                .members
+                .iter()
+                .map(|member| member.value)
+                .eq(scope.reference_members.values_in(start + 1..end)?.copied())
             || (index > 0 && group.role != ROLE_0X5)
         {
             return None;
@@ -7116,21 +7298,37 @@ fn project_replace_face(
     let [replacement_group, target_group] = groups.as_slice() else {
         return None;
     };
-    let references = scope.reference_members.values_array::<4>()?.map(|value| *value);
+    let references = scope
+        .reference_members
+        .values_array::<4>()?
+        .map(|value| *value);
     if replacement_group.scope_reference_ordinal != 0
         || replacement_group.record_index != references[0]
         || replacement_group.role != ROLE_0X9
-        || !replacement_group.members.iter().map(|member| member.value).eq(references[1..2].iter().copied())
+        || !replacement_group
+            .members
+            .iter()
+            .map(|member| member.value)
+            .eq(references[1..2].iter().copied())
         || target_group.scope_reference_ordinal != 2
         || target_group.record_index != references[2]
         || target_group.role != ROLE_0X10
-        || !target_group.members.iter().map(|member| member.value).eq(references[3..4].iter().copied())
+        || !target_group
+            .members
+            .iter()
+            .map(|member| member.value)
+            .eq(references[3..4].iter().copied())
     {
         return None;
     }
     let replacements =
         resolved_body_recipe_selection(scope, replacement_group, body_recipe_operands)?;
-    let targets = resolved_historical_face_group(scope, scope.previous_history_state_id, target_group, face_operands)?;
+    let targets = resolved_historical_face_group(
+        scope,
+        scope.previous_history_state_id,
+        target_group,
+        face_operands,
+    )?;
     Some(FeatureDefinition::ReplaceFace {
         targets,
         replacements,
@@ -7156,7 +7354,10 @@ pub(crate) fn project_surface_trim(
         return None;
     }
     let stream = native_stream(&scope.id)?;
-    let references = scope.reference_members.values_array::<4>()?.map(|value| *value);
+    let references = scope
+        .reference_members
+        .values_array::<4>()?
+        .map(|value| *value);
     let mut groups = construction_groups
         .iter()
         .filter(|group| {
@@ -7171,11 +7372,19 @@ pub(crate) fn project_surface_trim(
     if target_group.scope_reference_ordinal != 0
         || target_group.record_index != references[0]
         || target_group.role != ROLE_0X4
-        || !target_group.members.iter().map(|member| member.value).eq(references[1..2].iter().copied())
+        || !target_group
+            .members
+            .iter()
+            .map(|member| member.value)
+            .eq(references[1..2].iter().copied())
         || tool_group.scope_reference_ordinal != 2
         || tool_group.record_index != references[2]
         || tool_group.role != ROLE_0X21
-        || !tool_group.members.iter().map(|member| member.value).eq(references[3..4].iter().copied())
+        || !tool_group
+            .members
+            .iter()
+            .map(|member| member.value)
+            .eq(references[3..4].iter().copied())
     {
         return None;
     }
@@ -7261,18 +7470,30 @@ pub(crate) fn project_split(
     if tool_group.scope_reference_ordinal != 0
         || tool_group.record_index != *scope.reference_members.values().next()?
         || tool_group.members.is_empty()
-        || !tool_group.members.iter().map(|member| member.value).eq(tool_members.copied())
+        || !tool_group
+            .members
+            .iter()
+            .map(|member| member.value)
+            .eq(tool_members.copied())
         || usize::try_from(targets.scope_reference_ordinal).ok()? != target_ordinal
         || targets.record_index != target_record_index
         || targets.role != ROLE_0X4
         || targets.members.is_empty()
-        || !targets.members.iter().map(|member| member.value).eq(target_members.copied())
+        || !targets
+            .members
+            .iter()
+            .map(|member| member.value)
+            .eq(target_members.copied())
     {
         return None;
     }
     let tools = match tool_group.role {
         ROLE_0X9 => {
-            let [crate::records::Located { value: tool_record_index, .. }] = tool_group.members.as_slice() else {
+            let [crate::records::Located {
+                value: tool_record_index,
+                ..
+            }] = tool_group.members.as_slice()
+            else {
                 return None;
             };
             let matching_tools = face_operands
@@ -7352,12 +7573,19 @@ fn project_split_face(
         || tool.record_index != *scope.reference_members.values().next()?
         || tool.role != ROLE_0X21
         || tool.members.is_empty()
-        || !tool.members.iter().map(|member| member.value).eq(scope.reference_members.values_in(1..target_ordinal)?.copied())
+        || !tool.members.iter().map(|member| member.value).eq(scope
+            .reference_members
+            .values_in(1..target_ordinal)?
+            .copied())
         || usize::try_from(targets.scope_reference_ordinal).ok()? != target_ordinal
         || targets.record_index != *scope.reference_members.values().nth(target_ordinal)?
         || targets.role != 0x0000_0010_0000_0000
         || targets.members.is_empty()
-        || !targets.members.iter().map(|member| member.value).eq(scope.reference_members.values().skip(target_ordinal + 1).copied())
+        || !targets.members.iter().map(|member| member.value).eq(scope
+            .reference_members
+            .values()
+            .skip(target_ordinal + 1)
+            .copied())
     {
         return None;
     }
@@ -7465,13 +7693,22 @@ fn project_delete_face(
     if group.scope_reference_ordinal != 0
         || group.record_index != *scope.reference_members.values().next()?
         || group.role != ROLE_0X10
-        || !group.members.iter().map(|member| member.value).eq(scope.reference_members.values().skip(1).copied())
+        || !group.members.iter().map(|member| member.value).eq(scope
+            .reference_members
+            .values()
+            .skip(1)
+            .copied())
     {
         return None;
     }
-    let faces = resolved_historical_face_group(scope, scope.previous_history_state_id, group, face_operands)
-        .or_else(|| resolved_face_group(group, face_operands))
-        .unwrap_or_else(|| FaceSelection::Native(group.id.clone()));
+    let faces = resolved_historical_face_group(
+        scope,
+        scope.previous_history_state_id,
+        group,
+        face_operands,
+    )
+    .or_else(|| resolved_face_group(group, face_operands))
+    .unwrap_or_else(|| FaceSelection::Native(group.id.clone()));
     Some(FeatureDefinition::DeleteFace { faces, heal })
 }
 
@@ -7744,9 +7981,14 @@ pub(crate) fn project_extrude(
             };
             let offset = profile_offset?;
             ExtrudeStart::FromFace {
-                face: resolved_historical_face_group(scope, scope.previous_history_state_id, start, face_operands)
-                    .or_else(|| resolved_face_group(start, face_operands))
-                    .unwrap_or_else(|| FaceSelection::Native(start.id.clone())),
+                face: resolved_historical_face_group(
+                    scope,
+                    scope.previous_history_state_id,
+                    start,
+                    face_operands,
+                )
+                .or_else(|| resolved_face_group(start, face_operands))
+                .unwrap_or_else(|| FaceSelection::Native(start.id.clone())),
                 offset: (offset.0 != 0.0).then_some(offset),
             }
         }
@@ -7812,9 +8054,14 @@ pub(crate) fn project_extrude(
                         length: Length(along.0.abs()),
                     },
                     second: LinearTermination::ToFace {
-                        face: resolved_historical_face_group(scope, scope.previous_history_state_id, termination, face_operands)
-                            .or_else(|| resolved_face_group(termination, face_operands))
-                            .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
+                        face: resolved_historical_face_group(
+                            scope,
+                            scope.previous_history_state_id,
+                            termination,
+                            face_operands,
+                        )
+                        .or_else(|| resolved_face_group(termination, face_operands))
+                        .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
                         offset: side_two_offset.filter(|offset| offset.0 != 0.0),
                     },
                 },
@@ -7833,15 +8080,25 @@ pub(crate) fn project_extrude(
             (
                 ExtentShape::TwoSided {
                     first: LinearTermination::ToFace {
-                        face: resolved_historical_face_group(scope, scope.previous_history_state_id, first, face_operands)
-                            .or_else(|| resolved_face_group(first, face_operands))
-                            .unwrap_or_else(|| FaceSelection::Native(first.id.clone())),
+                        face: resolved_historical_face_group(
+                            scope,
+                            scope.previous_history_state_id,
+                            first,
+                            face_operands,
+                        )
+                        .or_else(|| resolved_face_group(first, face_operands))
+                        .unwrap_or_else(|| FaceSelection::Native(first.id.clone())),
                         offset: side_one_offset.filter(|offset| offset.0 != 0.0),
                     },
                     second: LinearTermination::ToFace {
-                        face: resolved_historical_face_group(scope, scope.previous_history_state_id, second, face_operands)
-                            .or_else(|| resolved_face_group(second, face_operands))
-                            .unwrap_or_else(|| FaceSelection::Native(second.id.clone())),
+                        face: resolved_historical_face_group(
+                            scope,
+                            scope.previous_history_state_id,
+                            second,
+                            face_operands,
+                        )
+                        .or_else(|| resolved_face_group(second, face_operands))
+                        .unwrap_or_else(|| FaceSelection::Native(second.id.clone())),
                         offset: side_two_offset.filter(|offset| offset.0 != 0.0),
                     },
                 },
@@ -7880,9 +8137,14 @@ pub(crate) fn project_extrude(
                     let offset = face_side_one_offset?;
                     (
                         ExtentShape::OneSided(LinearTermination::ToFace {
-                            face: resolved_historical_face_group(scope, scope.previous_history_state_id, termination, face_operands)
-                                .or_else(|| resolved_face_group(termination, face_operands))
-                                .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
+                            face: resolved_historical_face_group(
+                                scope,
+                                scope.previous_history_state_id,
+                                termination,
+                                face_operands,
+                            )
+                            .or_else(|| resolved_face_group(termination, face_operands))
+                            .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
                             offset: (offset.0 != 0.0).then_some(offset),
                         }),
                         prologue.direction_reversed(),
@@ -8016,29 +8278,22 @@ pub(crate) fn spatial_sketch_entity_endpoints(
             };
             Some([at(start_angle.0), at(end_angle.0)])
         }
-        SpatialSketchGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic: false,
-        } => {
-            let degree_index = usize::try_from(*degree).ok()?;
-            let start = *knots.get(degree_index)?;
-            let end = *knots.get(knots.len().checked_sub(degree_index + 1)?)?;
+        SpatialSketchGeometry::Nurbs { curve } if !curve.periodic() => {
+            let start = curve.knots()[curve.degree() as usize];
+            let end = curve.knots()[curve.control_points().len()];
             Some([
                 cadmpeg_ir::eval::nurbs_curve_point(
-                    *degree,
-                    knots,
-                    control_points,
-                    weights.as_deref(),
+                    curve.degree(),
+                    curve.knots(),
+                    curve.control_points(),
+                    curve.weights(),
                     start,
                 )?,
                 cadmpeg_ir::eval::nurbs_curve_point(
-                    *degree,
-                    knots,
-                    control_points,
-                    weights.as_deref(),
+                    curve.degree(),
+                    curve.knots(),
+                    curve.control_points(),
+                    curve.weights(),
                     end,
                 )?,
             ])
@@ -8246,9 +8501,9 @@ fn project_coil(
         ),
     };
     if parameters.len() != expected_parameter_kinds.len()
-        || parameters.iter().any(|(_, parameter)| {
-            !expected_parameter_kinds.contains(&parameter.source_kind())
-        })
+        || parameters
+            .iter()
+            .any(|(_, parameter)| !expected_parameter_kinds.contains(&parameter.source_kind()))
     {
         return None;
     }

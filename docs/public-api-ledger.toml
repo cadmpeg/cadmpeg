@@ -5734,3 +5734,10 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::sketches::SketchGeometry::Nurbs"
 reason = "IR-85: use the checked PcurveNurbs payload to prevent independent pole, knot, and weight cardinalities; preserve the flat JSON representation."
+
+[[change]]
+commit = "957429cafe7b0d8205cce4a64186fe567a5b0f69"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::sketches::SpatialSketchGeometry::Nurbs"
+reason = "IR-85: use the existing checked NurbsCurve payload to prevent independent knot, pole, and weight cardinalities while preserving the flat JSON."
