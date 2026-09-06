@@ -389,85 +389,57 @@ fn decode_selects_dominant_rmfastload_body() {
 
 #[test]
 fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
-    use super::super::{
-        data_block_column_index_tables, DataBlockLinkedIndexRow, DataBlockTargetIndexRow,
-    };
+    use super::super::data_block_column_index_tables;
+    use crate::native::om::column_row::{DataBlockLinkedIndexRow, DataBlockTargetIndexRow};
+    use crate::om::column_row::{LinkedRow, TargetRow};
+    use crate::om::compact::CompactIndexTarget;
 
-    let linked = |id: &str,
-                  target: u32,
-                  mode: crate::om::discriminators::IndexRowMode,
-                  offset: u64| DataBlockLinkedIndexRow {
+    let linked = |id: &str, target: u32, mode, offset: u64| DataBlockLinkedIndexRow {
         id: id.into(),
         section_ordinal: 2,
         ordinal: 0,
-        first_index: crate::om::compact::LocatedCompactIndex {
-            atom: crate::om::compact::CompactIndexAtom::from_wire(20, &[20]).unwrap(),
-            offset: offset + 2,
-        },
-        discriminator: crate::om::discriminators::LinkedIndexDiscriminator::Form16,
-        target: crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget {
+        frame: LinkedRow::<String, u64>::new(
+            crate::om::compact::CompactIndexAtom::from_wire(20, &[128, 20]).unwrap(),
+            crate::om::discriminators::LinkedIndexDiscriminator::Form16,
+            CompactIndexTarget {
                 atom: crate::om::compact::CompactIndexAtom::from_wire(target, &[target as u8])
                     .unwrap(),
-                data_block: format!("block#{target}"),
+                target: format!("block#{target}"),
             },
-            source_offset: offset + 7,
-        },
-        indices: [
-            (5, [5], "block#5", offset + 12),
-            (6, [6], "block#6", offset + 13),
-            (7, [7], "block#7", offset + 14),
-        ]
-        .map(|(index, raw, data_block, source_offset)| {
-            crate::native::om::DataBlockIndexToken {
-                target: crate::native::om::DataBlockIndexTarget {
-                    atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(),
-                    data_block: data_block.into(),
-                },
-                source_offset,
-            }
-        }),
-        flag: crate::om::discriminators::LinkedIndexFlag::Form03,
-        mode,
+            [5, 6, 7].map(|value| CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(),
+                target: format!("block#{value}"),
+            }),
+            crate::om::discriminators::LinkedIndexFlag::Form03,
+            mode,
+            offset,
+        )
+        .unwrap(),
         source_entry: "entry".into(),
         opening_data_block: format!("opening-block-{id}"),
         opening_block_offset: 8,
-        source_offset: offset,
     };
-    let target = |id: &str,
-                  index: u32,
-                  mode: crate::om::discriminators::IndexRowMode,
-                  offset: u64| DataBlockTargetIndexRow {
+    let target = |id: &str, index: u32, mode, offset: u64| DataBlockTargetIndexRow {
         id: id.into(),
         section_ordinal: 2,
         ordinal: 0,
-        target: crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget {
+        frame: TargetRow::<String, u64>::new(
+            CompactIndexTarget {
                 atom: crate::om::compact::CompactIndexAtom::from_wire(index, &[index as u8])
                     .unwrap(),
-                data_block: format!("block#{index}"),
+                target: format!("block#{index}"),
             },
-            source_offset: offset + 5,
-        },
-        indices: [
-            (5, [5], "block#5", offset + 10),
-            (6, [6], "block#6", offset + 11),
-            (7, [7], "block#7", offset + 12),
-        ]
-        .map(|(index, raw, data_block, source_offset)| {
-            crate::native::om::DataBlockIndexToken {
-                target: crate::native::om::DataBlockIndexTarget {
-                    atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(),
-                    data_block: data_block.into(),
-                },
-                source_offset,
-            }
-        }),
-        mode,
+            [5, 6, 7].map(|value| CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(),
+                target: format!("block#{value}"),
+            }),
+            mode,
+            offset,
+        )
+        .unwrap(),
         source_entry: "entry".into(),
         opening_data_block: format!("opening-block-{id}"),
         opening_block_offset: 8,
-        source_offset: offset,
     };
     let linked_rows = [
         linked(
@@ -527,10 +499,20 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
     assert_eq!(tables[0].source_offset, 100);
 
     let mut gap = target_rows.clone();
-    gap[1].target.target.atom = crate::om::compact::CompactIndexAtom::read(&[60]).unwrap();
+    gap[1] = target(
+        "target-61",
+        60,
+        crate::om::discriminators::IndexRowMode::Form07,
+        150,
+    );
     assert!(data_block_column_index_tables(&linked_rows, &gap).is_empty());
     let mut incomplete_mode = target_rows.clone();
-    incomplete_mode[2].mode = crate::om::discriminators::IndexRowMode::Form07;
+    incomplete_mode[2] = target(
+        "target-60",
+        60,
+        crate::om::discriminators::IndexRowMode::Form07,
+        175,
+    );
     assert!(data_block_column_index_tables(&linked_rows, &incomplete_mode).is_empty());
 }
 

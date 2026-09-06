@@ -17,10 +17,12 @@ pub(crate) mod object_frame;
 pub(crate) mod operation_record;
 pub(crate) mod swp104_branch;
 pub(crate) mod unlabeled_record;
+use crate::native::om::column_row::{
+    DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockTargetIndexRow,
+};
 use crate::native::om::{
-    data_blocks, DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow,
-    DataBlockReference, DataBlockRole, DataBlockTargetIndexRow, Expression, ExpressionDeclaration,
-    OmOperationStateJournalGroup, OmSchemaRole,
+    data_blocks, DataBlockColumnIndexTable, DataBlockReference, DataBlockRole, Expression,
+    ExpressionDeclaration, OmOperationStateJournalGroup, OmSchemaRole,
 };
 use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
 use crate::om::branch_items::BranchItems;
@@ -1471,7 +1473,7 @@ pub struct FeatureDatumPlanePayload {
     /// Ordered source blocks and the hash of their concatenated bytes.
     pub content: FeaturePayloadContent<Vec<FeaturePayloadBlock>>,
     /// Unique terminal index lane, when the payload has exactly one.
-    pub index_lane: Option<crate::om::DatumPlaneObjectIndexLane<u64>>,
+    pub index_lane: Option<crate::om::datum_index::DatumIndexLane<u64>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1507,24 +1509,14 @@ impl From<FeatureDatumPlanePayload> for FeatureDatumPlanePayloadWire {
         ) = match value.index_lane {
             None => (None, None, Vec::new(), Vec::new(), Vec::new(), None),
             Some(lane) => (
-                Some(lane.offset),
-                Some(usize::from(lane.indices.declared_count())),
-                lane.indices
-                    .as_slice()
-                    .iter()
-                    .map(|entry| entry.atom.value())
-                    .collect(),
-                lane.indices
-                    .as_slice()
-                    .iter()
+                Some(lane.offset()),
+                Some(usize::from(lane.declared_count())),
+                lane.indices().map(|entry| entry.atom.value()).collect(),
+                lane.indices()
                     .map(|entry| entry.atom.raw().to_vec())
                     .collect(),
-                lane.indices
-                    .as_slice()
-                    .iter()
-                    .map(|entry| entry.offset)
-                    .collect(),
-                Some(lane.trailer),
+                lane.indices().map(|entry| entry.offset).collect(),
+                Some(lane.trailer()),
             ),
         };
         Self {
@@ -1568,22 +1560,27 @@ impl TryFrom<FeatureDatumPlanePayloadWire> for FeatureDatumPlanePayload {
                     .index_lane_values
                     .into_iter()
                     .zip(wire.index_lane_raw_indices)
-                    .zip(wire.index_lane_value_offsets)
                     .enumerate()
-                    .map(|(slot, ((value, raw), offset))| {
-                        Ok(LocatedCompactIndex {
-                            atom: CompactIndexAtom::from_wire(value, &raw)
-                                .map_err(|error| format!("index_lane_values[{slot}]: {error}"))?,
-                            offset,
-                        })
+                    .map(|(slot, (value, raw))| {
+                        CompactIndexAtom::from_wire(value, &raw)
+                            .map_err(|error| format!("index_lane_values[{slot}]: {error}"))
                     })
                     .collect::<Result<Vec<_>, String>>()?;
-                Some(crate::om::DatumPlaneObjectIndexLane {
-                    offset,
-                    trailer,
-                    indices: CountedIndexMembers::new(indices)
+                let lane = crate::om::datum_index::DatumIndexLane::<u64>::new(
+                    CountedIndexMembers::new(indices)
                         .map_err(|error| format!("index_lane_declared_count: {error}"))?,
-                })
+                    trailer,
+                    offset,
+                )
+                .ok_or("index_lane_offset overflows the terminal frame")?;
+                if !lane
+                    .indices()
+                    .map(|token| token.offset)
+                    .eq(wire.index_lane_value_offsets)
+                {
+                    return Err("index_lane_value_offsets must follow the terminal frame".into());
+                }
+                Some(lane)
             }
             _ => {
                 return Err(
@@ -5847,42 +5844,39 @@ fn column_relations_by_block<'a>(
     }
     let mut slots_by_block = ColumnSlotsByBlock::new();
     for row in index_rows {
-        for (slot, token) in row.indices.iter().enumerate() {
-            slots_by_block
-                .entry(&token.target.data_block)
-                .or_default()
-                .push((
-                    row.id.as_str(),
-                    ColumnIndexRowKind::Index,
-                    slot,
-                    token.source_offset,
-                ));
+        for (slot, token) in row.frame.indices().into_iter().enumerate() {
+            slots_by_block.entry(token.target).or_default().push((
+                row.id.as_str(),
+                ColumnIndexRowKind::Index,
+                slot,
+                token.offset,
+            ));
         }
     }
     for row in linked_rows {
-        for (slot, token) in std::iter::once(&row.target).chain(&row.indices).enumerate() {
-            slots_by_block
-                .entry(&token.target.data_block)
-                .or_default()
-                .push((
-                    row.id.as_str(),
-                    ColumnIndexRowKind::LinkedIndex,
-                    slot,
-                    token.source_offset,
-                ));
+        for (slot, token) in std::iter::once(row.frame.target_index())
+            .chain(row.frame.indices())
+            .enumerate()
+        {
+            slots_by_block.entry(token.target).or_default().push((
+                row.id.as_str(),
+                ColumnIndexRowKind::LinkedIndex,
+                slot,
+                token.offset,
+            ));
         }
     }
     for row in target_rows {
-        for (slot, token) in std::iter::once(&row.target).chain(&row.indices).enumerate() {
-            slots_by_block
-                .entry(&token.target.data_block)
-                .or_default()
-                .push((
-                    row.id.as_str(),
-                    ColumnIndexRowKind::TargetIndex,
-                    slot,
-                    token.source_offset,
-                ));
+        for (slot, token) in std::iter::once(row.frame.target_index())
+            .chain(row.frame.indices())
+            .enumerate()
+        {
+            slots_by_block.entry(token.target).or_default().push((
+                row.id.as_str(),
+                ColumnIndexRowKind::TargetIndex,
+                slot,
+                token.offset,
+            ));
         }
     }
     (table_by_row, slots_by_block)
@@ -6024,19 +6018,15 @@ pub fn feature_input_column_targets(
                         };
                         (
                             FeatureInputColumnTargetRow::Linked {
-                                leading_index: row.first_index.atom.value(),
-                                leading_index_source_offset: row.first_index.offset,
-                                discriminator: row.discriminator,
-                                flag: row.flag,
+                                leading_index: row.frame.first_index().atom.value(),
+                                leading_index_source_offset: row.frame.first_index().offset,
+                                discriminator: row.frame.discriminator(),
+                                flag: row.frame.flag(),
                             },
-                            row.indices
-                                .each_ref()
-                                .map(|token| token.target.atom.value()),
-                            row.indices
-                                .each_ref()
-                                .map(|token| token.target.data_block.clone()),
-                            row.indices.each_ref().map(|token| token.source_offset),
-                            row.mode,
+                            row.frame.indices().map(|token| token.atom.value()),
+                            row.frame.indices().map(|token| token.target.clone()),
+                            row.frame.indices().map(|token| token.offset),
+                            row.frame.mode(),
                         )
                     }
                     ColumnIndexRowKind::TargetIndex => {
@@ -6049,14 +6039,10 @@ pub fn feature_input_column_targets(
                         };
                         (
                             FeatureInputColumnTargetRow::Target,
-                            row.indices
-                                .each_ref()
-                                .map(|token| token.target.atom.value()),
-                            row.indices
-                                .each_ref()
-                                .map(|token| token.target.data_block.clone()),
-                            row.indices.each_ref().map(|token| token.source_offset),
-                            row.mode,
+                            row.frame.indices().map(|token| token.atom.value()),
+                            row.frame.indices().map(|token| token.target.clone()),
+                            row.frame.indices().map(|token| token.offset),
+                            row.frame.mode(),
                         )
                     }
                     ColumnIndexRowKind::Index => return None,
@@ -6168,7 +6154,7 @@ pub fn feature_datum_plane_payloads(
                 .cloned()
                 .collect::<Vec<_>>();
             let (payload, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
-            let lanes = crate::om::datum_plane_object_index_lanes(&payload);
+            let lanes = crate::om::datum_index::scan(&payload);
             let lane = <[_; 1]>::try_from(lanes).ok().map(|[lane]| lane);
             let key = header.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
             Some(FeatureDatumPlanePayload {
@@ -6176,14 +6162,7 @@ pub fn feature_datum_plane_payloads(
                 operation_label: header.operation_label.clone(),
                 datum_plane_header: header.id.clone(),
                 content,
-                index_lane: lane.map(|lane| crate::om::DatumPlaneObjectIndexLane {
-                    offset: lane.offset as u64,
-                    trailer: lane.trailer,
-                    indices: lane.indices.map(|token| LocatedCompactIndex {
-                        atom: token.atom,
-                        offset: token.offset as u64,
-                    }),
-                }),
+                index_lane: lane.map(crate::om::datum_index::DatumIndexLane::into_u64),
             })
         })
         .collect()

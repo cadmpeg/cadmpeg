@@ -42,6 +42,27 @@ impl CompactIndexAtom {
     }
 }
 
+/// One source index paired with its resolved target, or `()` before resolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CompactIndexTarget<T> {
+    pub(crate) atom: CompactIndexAtom,
+    pub(crate) target: T,
+}
+
+impl From<CompactIndexAtom> for CompactIndexTarget<()> {
+    fn from(atom: CompactIndexAtom) -> Self {
+        Self { atom, target: () }
+    }
+}
+
+/// Read-only projection of one compact index and its derived source position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PositionedIndex<'a, T, O> {
+    pub(crate) atom: CompactIndexAtom,
+    pub(crate) target: &'a T,
+    pub(crate) offset: O,
+}
+
 /// Non-null compact index restricted to its two-byte encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ExtendedCompactIndex([u8; 2]);

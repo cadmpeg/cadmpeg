@@ -3,8 +3,60 @@
 use cadmpeg_ir::math::Point2;
 
 use super::*;
-use crate::om::compact::{CompactIndexAtom, LocatedCompactIndex};
+use crate::native::om::display_color::{
+    DisplayColorFrame, RmDisplayColorAssignment, RmDisplayColorAssignmentEncoding,
+};
+use crate::om::column_row::{LinkedRow, TargetRow};
+use crate::om::compact::CompactIndexAtom;
 
+#[test]
+fn rm_source_color_bindings_require_one_palette_per_source_identity() {
+    let assignment = |id: &str, source_id: Option<&str>, color_definition: &str, offset: u64| {
+        RmDisplayColorAssignment {
+            id: id.into(),
+            ordinal: 0,
+            frame: DisplayColorFrame::new(
+                RmDisplayColorAssignmentEncoding::Target(
+                    TargetRow::<(), u64>::new(
+                        CompactIndexAtom::read(&[7]).unwrap().into(),
+                        [1, 2, 3].map(|value| CompactIndexAtom::read(&[value]).unwrap().into()),
+                        crate::om::discriminators::IndexRowMode::Form04,
+                        offset + 2,
+                    )
+                    .unwrap(),
+                ),
+                crate::om::color::PaletteIndex::new(201).unwrap(),
+            )
+            .unwrap(),
+            target_object_id: source_id.map(str::to_owned),
+            color_definition: color_definition.into(),
+            source_entry: "/Root/FastLoad/RMFastLoad".into(),
+        }
+    };
+    let assignments = [
+        assignment("assignment-b", Some("source-a"), "color-a", 20),
+        assignment("assignment-a", Some("source-a"), "color-a", 10),
+        assignment("assignment-c", Some("source-b"), "color-a", 30),
+        assignment("assignment-d", Some("source-c"), "color-a", 40),
+        assignment("assignment-e", Some("source-c"), "color-b", 50),
+        assignment("assignment-f", None, "color-a", 60),
+    ];
+    assert_eq!(
+        resolve_rm_source_color_bindings(&assignments),
+        vec![
+            RmSourceColorBinding {
+                source_id: "source-a".into(),
+                color_definition: "color-a".into(),
+                source_offset: 10,
+            },
+            RmSourceColorBinding {
+                source_id: "source-b".into(),
+                color_definition: "color-a".into(),
+                source_offset: 30,
+            },
+        ]
+    );
+}
 #[test]
 fn ungrouped_simple_holes_follow_authoritative_history_order() {
     use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;

@@ -9,6 +9,7 @@
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
 use crate::native::features::object_frame::DataBlockObjectFrame;
+use crate::native::om::compact_lane::DataBlockAbrReferenceLane;
 use crate::native::om::material_texture::MaterialTextureAsset;
 use crate::native::om::object_uuid::ObjectUuidValue;
 use std::collections::BTreeMap;
@@ -284,7 +285,7 @@ impl ContainerNoted for FeatureSketchDatumCsysDependency {
 }
 impl ContainerNoted for DataBlockAbrReferenceLane {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.frame.offset())
     }
 }
 impl ContainerNoted for SegmentOmLink {

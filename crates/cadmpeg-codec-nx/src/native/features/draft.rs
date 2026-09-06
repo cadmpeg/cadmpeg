@@ -583,7 +583,7 @@ pub struct FeatureDraftConstructionTerminalLane {
     /// Owning `DRAFT` operation label.
     pub operation_label: String,
     /// Checked terminal indices and tail with absolute source offsets.
-    pub lane: crate::om::DraftFeatureTerminalLane<u64>,
+    pub lane: crate::om::draft_terminal::DraftTerminalLane<u64>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -609,11 +609,11 @@ impl From<FeatureDraftConstructionTerminalLane> for FeatureDraftConstructionTerm
         Self {
             id: lane.id,
             operation_label: lane.operation_label,
-            indices: lane.lane.indices.map(|token| token.atom.value()),
-            raw_indices: lane.lane.indices.map(|token| *token.atom.raw()),
-            tail: lane.lane.tail,
-            index_source_offsets: lane.lane.indices.map(|token| token.offset),
-            source_offset: lane.lane.indices[0].offset,
+            indices: lane.lane.indices().map(|token| token.atom.value()),
+            raw_indices: lane.lane.indices().map(|token| *token.atom.raw()),
+            tail: lane.lane.tail(),
+            index_source_offsets: lane.lane.indices().map(|token| token.offset),
+            source_offset: lane.lane.offset(),
         }
     }
 }
@@ -622,23 +622,25 @@ impl TryFrom<FeatureDraftConstructionTerminalLaneWire> for FeatureDraftConstruct
     type Error = String;
 
     fn try_from(wire: FeatureDraftConstructionTerminalLaneWire) -> Result<Self, Self::Error> {
-        if wire.source_offset != wire.index_source_offsets[0] {
-            return Err("source_offset must equal the first index_source_offsets entry".into());
-        }
-        let [first, second] = [0, 1].map(|slot| -> Result<_, String> {
-            Ok(LocatedCompactIndex {
-                atom: ExtendedCompactIndex::from_wire(wire.indices[slot], &wire.raw_indices[slot])
-                    .map_err(|error| format!("indices[{slot}]: {error}"))?,
-                offset: wire.index_source_offsets[slot],
-            })
+        let [first, second] = [0, 1].map(|slot| {
+            ExtendedCompactIndex::from_wire(wire.indices[slot], &wire.raw_indices[slot])
+                .map_err(|error| format!("indices[{slot}]: {error}"))
         });
+        let lane = crate::om::draft_terminal::DraftTerminalLane::<u64>::new(
+            [first?, second?],
+            wire.tail,
+            wire.source_offset,
+        )
+        .ok_or("source_offset overflows the terminal frame")?;
+        if lane.indices().map(|token| token.offset) != wire.index_source_offsets {
+            return Err(
+                "index_source_offsets must follow source_offset in the terminal frame".into(),
+            );
+        }
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            lane: crate::om::DraftFeatureTerminalLane {
-                indices: [first?, second?],
-                tail: wire.tail,
-            },
+            lane,
         })
     }
 }
@@ -968,7 +970,9 @@ pub fn feature_draft_construction_terminal_lanes(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::draft_feature_terminal_lane(record.payload_view()) else {
+            let Some(lane) = crate::om::draft_terminal::scan(record.payload_view())
+                .and_then(|lane| lane.into_absolute(entry_offset))
+            else {
                 return;
             };
             lanes.push(FeatureDraftConstructionTerminalLane {
@@ -978,13 +982,7 @@ pub fn feature_draft_construction_terminal_lanes(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                lane: crate::om::DraftFeatureTerminalLane {
-                    indices: lane.indices.map(|token| LocatedCompactIndex {
-                        atom: token.atom,
-                        offset: entry_offset + token.offset as u64,
-                    }),
-                    tail: lane.tail,
-                },
+                lane,
             });
         },
     );

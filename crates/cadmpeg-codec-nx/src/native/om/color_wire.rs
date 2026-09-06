@@ -46,32 +46,6 @@ pub(super) struct PartColorDefinitionWire {
     pub component_source_offsets: [u64; 3],
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(super) struct RmDisplayColorAssignmentWire {
-    /// Globally unique assignment identity.
-    pub id: String,
-    /// Zero-based source order.
-    pub ordinal: u32,
-    /// Complete self-framed row carrying the color token.
-    pub encoding: RmDisplayColorAssignmentEncoding,
-    /// Member addressed by the row target index when it resolves in the
-    /// `RMFastLoad` object-ID table.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_object_id: Option<String>,
-    /// One-based part palette index.
-    pub color_index: u16,
-    /// Target in `part_color_definitions`.
-    pub color_definition: String,
-    /// Exact color-index token.
-    pub raw_color_index: Vec<u8>,
-    /// Owning directory entry.
-    pub source_entry: String,
-    /// Absolute color-token offset.
-    pub source_offset: u64,
-    /// Absolute row-opener offset.
-    pub row_source_offset: u64,
-}
-
 fn components_from_wire(
     rgb: [f32; 3],
     raw: &[Vec<u8>; 3],
@@ -161,44 +135,6 @@ impl From<PartColorDefinition> for PartColorDefinitionWire {
                 .map(|(component, _)| component.raw().to_vec()),
             source_offset: value.source_offset,
             component_source_offsets: value.components.map(|(_, offset)| offset),
-        }
-    }
-}
-
-impl TryFrom<RmDisplayColorAssignmentWire> for RmDisplayColorAssignment {
-    type Error = String;
-    fn try_from(wire: RmDisplayColorAssignmentWire) -> Result<Self, Self::Error> {
-        let color_index =
-            PaletteIndex::new(wire.color_index).ok_or("color_index: must be in 1..=216")?;
-        if color_index.display_raw() != wire.raw_color_index {
-            return Err("raw_color_index: differs from color_index display token".into());
-        }
-        Ok(Self {
-            id: wire.id,
-            ordinal: wire.ordinal,
-            encoding: wire.encoding,
-            target_object_id: wire.target_object_id,
-            color_index,
-            color_definition: wire.color_definition,
-            source_entry: wire.source_entry,
-            source_offset: wire.source_offset,
-            row_source_offset: wire.row_source_offset,
-        })
-    }
-}
-impl From<RmDisplayColorAssignment> for RmDisplayColorAssignmentWire {
-    fn from(value: RmDisplayColorAssignment) -> Self {
-        Self {
-            id: value.id,
-            ordinal: value.ordinal,
-            encoding: value.encoding,
-            target_object_id: value.target_object_id,
-            color_index: value.color_index.value(),
-            color_definition: value.color_definition,
-            raw_color_index: value.color_index.display_raw(),
-            source_entry: value.source_entry,
-            source_offset: value.source_offset,
-            row_source_offset: value.row_source_offset,
         }
     }
 }

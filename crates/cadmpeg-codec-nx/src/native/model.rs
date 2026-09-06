@@ -14,6 +14,18 @@ use crate::native::features::datum_plane_header::{
 };
 use crate::native::features::object_frame::DataBlockObjectFrame;
 use crate::native::features::swp104_branch::FeatureSwp104LeadingBranch;
+use crate::native::om::column_row::{
+    data_block_index_rows, data_block_linked_index_rows, data_block_target_index_rows,
+    DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockTargetIndexRow,
+};
+use crate::native::om::compact_lane::{
+    data_block_abr_reference_lanes, data_block_counted_index_lanes, DataBlockAbrReferenceLane,
+    DataBlockCountedIndexLane,
+};
+use crate::native::om::creation_display::{
+    rm_creation_display_data_relations, RmCreationDisplayDataRelation,
+};
+use crate::native::om::display_color::{rm_display_color_assignments, RmDisplayColorAssignment};
 use crate::native::om::material_texture::{material_texture_assets, MaterialTextureAsset};
 use crate::native::om::object_uuid::{object_uuid_values, ObjectUuidValue};
 use crate::parasolid::Stream;

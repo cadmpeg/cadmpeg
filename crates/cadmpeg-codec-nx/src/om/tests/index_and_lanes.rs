@@ -91,88 +91,6 @@ fn om_data_block_object_frame_requires_complete_discriminator() {
 }
 
 #[test]
-fn om_offset_store_counted_index_lane_requires_complete_non_null_members() {
-    let bytes = [
-        0xaa, 0x01, 0x06, 0x42, 0x62, 0x80, 0x48, 0x80, 0x50, 0x7c, 0x01, 0x11, 0xbb,
-    ];
-    let lanes = super::offset_store_counted_index_lanes(&bytes);
-    assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].offset, 1);
-    assert_eq!(lanes[0].members.declared_count(), 6);
-    assert_eq!(lanes[0].anchor.atom.value(), 0x42);
-    assert_eq!(lanes[0].anchor.atom.raw(), [0x42]);
-    assert_eq!(lanes[0].anchor.offset, 3);
-    assert_eq!(
-        lanes[0]
-            .members
-            .as_slice()
-            .iter()
-            .map(|token| (token.atom.value(), token.offset))
-            .collect::<Vec<_>>(),
-        vec![(0x62, 4), (0x48, 5), (0x50, 7), (0x7c, 9)]
-    );
-    assert_eq!(
-        lanes[0]
-            .members
-            .as_slice()
-            .iter()
-            .map(|token| token.atom.raw().to_vec())
-            .collect::<Vec<_>>(),
-        [vec![0x62], vec![0x80, 0x48], vec![0x80, 0x50], vec![0x7c]]
-    );
-
-    assert!(
-        super::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0xff, 0x01, 0x11,]).is_empty()
-    );
-    assert!(
-        super::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0x80, 0x01, 0x11,]).is_empty()
-    );
-    assert!(
-        super::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0x62, 0x01, 0x10,]).is_empty()
-    );
-}
-
-#[test]
-fn om_offset_store_abr_lane_requires_sixteen_slots_and_exact_terminator() {
-    let mut bytes = vec![0xaa, 0x11];
-    bytes.extend_from_slice(&[0xff; 6]);
-    bytes.extend_from_slice(&[0x82, 0x83]);
-    bytes.extend_from_slice(&[0xff; 9]);
-    bytes.extend_from_slice(&[0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03, 0xbb]);
-
-    let lanes = super::offset_store_abr_reference_lanes(&bytes);
-    assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].offset, 1);
-    assert_eq!(lanes[0].slots.len(), 16);
-    assert_eq!(
-        (
-            lanes[0].slots[6]
-                .atom
-                .map(crate::om::compact::CompactIndexAtom::value),
-            lanes[0].slots[6].offset
-        ),
-        (Some(643), 8)
-    );
-    assert_eq!(lanes[0].slots[6].raw(), [0x82, 0x83]);
-    assert!(lanes[0]
-        .slots
-        .iter()
-        .enumerate()
-        .all(|(slot, token)| slot == 6 || token.raw() == [0xff]));
-    assert!(lanes[0]
-        .slots
-        .iter()
-        .enumerate()
-        .all(|(slot, token)| slot == 6 || token.atom.is_none()));
-
-    bytes[23] = b'X';
-    assert!(super::offset_store_abr_reference_lanes(&bytes).is_empty());
-    bytes[23] = b'R';
-    bytes.remove(18);
-    assert!(super::offset_store_abr_reference_lanes(&bytes).is_empty());
-}
-
-#[test]
 fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
     let bytes = [
         0xaa, 0x50, 0x59, 0x66, 0x64, 0x00, 0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72, 0xbb,
@@ -766,33 +684,29 @@ fn om_datum_plane_object_index_lane_ends_at_logical_payload_boundary() {
     let bytes = [
         0x80, 0xab, 0x01, 0x04, 0x81, 0x01, 0x01, 0x01, 0x00, 0x12, 0x34, 0x56, 0x78,
     ];
-    let lanes = super::datum_plane_object_index_lanes(&bytes);
+    let lanes = crate::om::datum_index::scan(&bytes);
     assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].offset, 2);
-    assert_eq!(lanes[0].indices.as_slice().len() + 1, 4);
+    assert_eq!(lanes[0].offset(), 2);
+    assert_eq!(usize::from(lanes[0].declared_count()), 4);
     assert_eq!(
         lanes[0]
-            .indices
-            .as_slice()
-            .iter()
+            .indices()
             .map(|token| (token.atom.value(), token.offset))
             .collect::<Vec<_>>(),
         [(257, 4), (1, 6), (1, 7)]
     );
     assert_eq!(
         lanes[0]
-            .indices
-            .as_slice()
-            .iter()
+            .indices()
             .map(|token| token.atom.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x81, 0x01], vec![1], vec![1]]
     );
-    assert_eq!(lanes[0].trailer, 0x1234_5678);
+    assert_eq!(lanes[0].trailer(), 0x1234_5678);
 
     let mut trailing = bytes.to_vec();
     trailing.push(0);
-    assert!(super::datum_plane_object_index_lanes(&trailing).is_empty());
+    assert!(crate::om::datum_index::scan(&trailing).is_empty());
 }
 
 #[test]

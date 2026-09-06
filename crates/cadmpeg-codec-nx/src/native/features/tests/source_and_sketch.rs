@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::om::column_row::{IndexRow, LinkedRow, TargetRow};
+use crate::om::compact::CompactIndexTarget;
+
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -1337,7 +1340,7 @@ fn feature_input_identity_groups_require_distinct_operations_and_preserve_order(
 #[test]
 fn feature_input_column_row_uses_preserve_index_row_slots() {
     use super::{feature_input_column_row_uses, ColumnIndexRowKind, FeatureInputBlock};
-    use crate::native::om::DataBlockIndexRow;
+    use crate::native::om::column_row::DataBlockIndexRow;
 
     let input = FeatureInputBlock {
         id: "input#0000000001".into(),
@@ -1351,30 +1354,19 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
         id: "row#3".into(),
         section_ordinal: 0,
         ordinal: 3,
-        first_index: crate::om::compact::LocatedCompactIndex {
-            atom: crate::om::compact::CompactIndexAtom::from_wire(20, &[20]).unwrap(),
-            offset: 103,
-        },
-        flag: crate::om::discriminators::LinkedIndexFlag::Form03,
-        indices: [
-            (4, [4], "block#4", 108),
-            (4, [4], "block#4", 109),
-            (5, [5], "block#5", 110),
-            (6, [6], "block#6", 111),
-        ]
-        .map(|(index, raw, data_block, source_offset)| {
-            crate::native::om::DataBlockIndexToken {
-                target: crate::native::om::DataBlockIndexTarget {
-                    atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(),
-                    data_block: data_block.into(),
-                },
-                source_offset,
-            }
-        }),
+        frame: IndexRow::<String, u64>::new(
+            crate::om::compact::CompactIndexAtom::from_wire(20, &[128, 20]).unwrap(),
+            crate::om::discriminators::LinkedIndexFlag::Form03,
+            [4, 4, 5, 6].map(|value| CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(),
+                target: format!("block#{value}"),
+            }),
+            100,
+        )
+        .unwrap(),
         source_entry: "entry".into(),
         opening_data_block: "opening-block".into(),
         opening_block_offset: 8,
-        source_offset: 100,
     };
 
     let uses = feature_input_column_row_uses(&[input], &[row], &[], &[], &[]);
@@ -1396,7 +1388,8 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
         feature_input_column_row_uses, feature_input_column_targets, ColumnIndexRowKind,
         FeatureInputBlock, FeatureInputColumnTargetRow,
     };
-    use crate::native::om::{DataBlockColumnIndexTable, DataBlockLinkedIndexRow};
+    use crate::native::om::column_row::DataBlockLinkedIndexRow;
+    use crate::native::om::DataBlockColumnIndexTable;
 
     let input = FeatureInputBlock {
         id: "input#0000000001".into(),
@@ -1410,38 +1403,25 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
         id: "linked-row#3".into(),
         section_ordinal: 0,
         ordinal: 3,
-        first_index: crate::om::compact::LocatedCompactIndex {
-            atom: crate::om::compact::CompactIndexAtom::from_wire(20, &[20]).unwrap(),
-            offset: 102,
-        },
-        discriminator: crate::om::discriminators::LinkedIndexDiscriminator::Form16,
-        target: crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget {
-                atom: crate::om::compact::CompactIndexAtom::from_wire(4, &[4]).unwrap(),
-                data_block: "block#4".into(),
+        frame: LinkedRow::<String, u64>::new(
+            crate::om::compact::CompactIndexAtom::from_wire(20, &[128, 20]).unwrap(),
+            crate::om::discriminators::LinkedIndexDiscriminator::Form16,
+            CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::read(&[4]).unwrap(),
+                target: "block#4".into(),
             },
-            source_offset: 107,
-        },
-        indices: [
-            (5, [5], "block#5", 112),
-            (6, [6], "block#6", 113),
-            (4, [4], "block#4", 114),
-        ]
-        .map(|(index, raw, data_block, source_offset)| {
-            crate::native::om::DataBlockIndexToken {
-                target: crate::native::om::DataBlockIndexTarget {
-                    atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(),
-                    data_block: data_block.into(),
-                },
-                source_offset,
-            }
-        }),
-        flag: crate::om::discriminators::LinkedIndexFlag::Form03,
-        mode: crate::om::discriminators::IndexRowMode::Form04,
+            [5, 6, 4].map(|value| CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(),
+                target: format!("block#{value}"),
+            }),
+            crate::om::discriminators::LinkedIndexFlag::Form03,
+            crate::om::discriminators::IndexRowMode::Form04,
+            100,
+        )
+        .unwrap(),
         source_entry: "entry".into(),
         opening_data_block: "opening-block".into(),
         opening_block_offset: 8,
-        source_offset: 100,
     };
 
     let table = DataBlockColumnIndexTable {
@@ -1495,7 +1475,8 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
         feature_input_column_row_uses, feature_input_column_targets, ColumnIndexRowKind,
         FeatureInputBlock, FeatureInputColumnTargetRow,
     };
-    use crate::native::om::{DataBlockColumnIndexTable, DataBlockTargetIndexRow};
+    use crate::native::om::column_row::DataBlockTargetIndexRow;
+    use crate::native::om::DataBlockColumnIndexTable;
 
     let input = FeatureInputBlock {
         id: "input#0000000001".into(),
@@ -1509,32 +1490,22 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
         id: "target-row#3".into(),
         section_ordinal: 0,
         ordinal: 3,
-        target: crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget {
-                atom: crate::om::compact::CompactIndexAtom::from_wire(4, &[4]).unwrap(),
-                data_block: "block#4".into(),
+        frame: TargetRow::<String, u64>::new(
+            CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::read(&[4]).unwrap(),
+                target: "block#4".into(),
             },
-            source_offset: 105,
-        },
-        indices: [
-            (5, [5], "block#5", 110),
-            (6, [6], "block#6", 111),
-            (4, [4], "block#4", 112),
-        ]
-        .map(|(index, raw, data_block, source_offset)| {
-            crate::native::om::DataBlockIndexToken {
-                target: crate::native::om::DataBlockIndexTarget {
-                    atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(),
-                    data_block: data_block.into(),
-                },
-                source_offset,
-            }
-        }),
-        mode: crate::om::discriminators::IndexRowMode::Form07,
+            [5, 6, 4].map(|value| CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(),
+                target: format!("block#{value}"),
+            }),
+            crate::om::discriminators::IndexRowMode::Form07,
+            100,
+        )
+        .unwrap(),
         source_entry: "entry".into(),
         opening_data_block: "opening-block".into(),
         opening_block_offset: 8,
-        source_offset: 100,
     };
 
     let table = DataBlockColumnIndexTable {
@@ -1604,7 +1575,8 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
     use super::{
         feature_datum_csys_column_row_uses, ColumnIndexRowKind, FeatureDatumCsysConstruction,
     };
-    use crate::native::om::{DataBlockColumnIndexTable, DataBlockTargetIndexRow};
+    use crate::native::om::column_row::DataBlockTargetIndexRow;
+    use crate::native::om::DataBlockColumnIndexTable;
 
     let construction = FeatureDatumCsysConstruction {
         id: "construction#1".into(),
@@ -1626,32 +1598,22 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
         id: "target-row#3".into(),
         section_ordinal: 0,
         ordinal: 3,
-        target: crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget {
-                atom: crate::om::compact::CompactIndexAtom::from_wire(5, &[5]).unwrap(),
-                data_block: "block#5".into(),
+        frame: TargetRow::<String, u64>::new(
+            CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::read(&[5]).unwrap(),
+                target: "block#5".into(),
             },
-            source_offset: 105,
-        },
-        indices: [
-            (6, [6], "block#6", 110),
-            (7, [7], "block#7", 111),
-            (5, [5], "block#5", 112),
-        ]
-        .map(|(index, raw, data_block, source_offset)| {
-            crate::native::om::DataBlockIndexToken {
-                target: crate::native::om::DataBlockIndexTarget {
-                    atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(),
-                    data_block: data_block.into(),
-                },
-                source_offset,
-            }
-        }),
-        mode: crate::om::discriminators::IndexRowMode::Form07,
+            [6, 7, 5].map(|value| CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(),
+                target: format!("block#{value}"),
+            }),
+            crate::om::discriminators::IndexRowMode::Form07,
+            100,
+        )
+        .unwrap(),
         source_entry: "entry".into(),
         opening_data_block: "opening-block".into(),
         opening_block_offset: 8,
-        source_offset: 100,
     };
     let table = DataBlockColumnIndexTable {
         id: "column-table".into(),
