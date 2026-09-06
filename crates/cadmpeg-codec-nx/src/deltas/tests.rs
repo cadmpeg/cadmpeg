@@ -664,11 +664,11 @@ fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
     assert_eq!(census.records.len(), 2);
     assert_eq!(census.term_use_numeric_tails.len(), 2);
     assert_eq!(census.term_use_numeric_tails[0].term_use_xmt, 20);
-    assert_eq!(census.term_use_numeric_tails[0].term_use_count, 1);
-    assert_eq!(census.term_use_numeric_tails[0].values.len(), 8);
+    assert_eq!(census.term_use_numeric_tails[0].values().term_use_count(), 1);
+    assert_eq!(census.term_use_numeric_tails[0].values().values().len(), 8);
     assert_eq!(census.term_use_numeric_tails[1].term_use_xmt, 21);
-    assert_eq!(census.term_use_numeric_tails[1].term_use_count, 2);
-    assert_eq!(census.term_use_numeric_tails[1].values.len(), 19);
+    assert_eq!(census.term_use_numeric_tails[1].values().term_use_count(), 2);
+    assert_eq!(census.term_use_numeric_tails[1].values().values().len(), 19);
     assert_eq!(census.bytes_decoded, stream.len());
 
     let mut nonfinite = term_use(1, 22, *b"L?", 8);

@@ -3,12 +3,13 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use cadmpeg_core::decode::alloc_filled;
 
 use crate::deltas::Census;
 
 mod support_uv_wire;
 mod chart_wire;
+mod tail_wire;
+use crate::deltas::tails::{NullTailForm, NumericTailValues};
 pub(crate) mod group_member;
 use group_member::GroupMemberTarget;
 pub(crate) mod group_record;
@@ -513,23 +514,21 @@ pub struct ParasolidDeltasTransmitHeader {
 
 /// Null references at the boundary of a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "tail_wire::NullTailWire", into = "tail_wire::NullTailWire")]
 pub struct ParasolidDeltasTerminalNullReferences {
     /// Globally unique trailer identity.
     pub id: String,
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
-    /// Ordered null XMT references.
-    pub references: Vec<u32>,
-    /// Exact trailer byte length.
-    pub byte_len: u64,
-    /// SHA-256 of the exact trailer bytes.
-    pub sha256: String,
+    /// Complete two- or four-reference trailer form.
+    pub form: NullTailForm,
     /// First trailer byte offset in the inflated stream.
     pub inflated_offset: u64,
 }
 
 /// Count-selected numeric lane following one deltas `term_use` endpoint.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "tail_wire::NumericTailWire", into = "tail_wire::NumericTailWire")]
 pub struct ParasolidDeltasTermUseNumericTail {
     /// Globally unique numeric-tail identity.
     pub id: String,
@@ -537,14 +536,8 @@ pub struct ParasolidDeltasTermUseNumericTail {
     pub stream_ordinal: u32,
     /// XMT identity of the owning `term_use` record.
     pub term_use_xmt: u32,
-    /// Serialized endpoint count selecting the numeric-tail cardinality.
-    pub term_use_count: u32,
-    /// Ordered finite binary64 values without assigned semantic roles.
-    pub values: Vec<f64>,
-    /// Exact numeric-tail byte length.
-    pub byte_len: u64,
-    /// SHA-256 of the exact numeric-tail bytes.
-    pub sha256: String,
+    /// Complete finite numeric tail for its endpoint count.
+    pub values: NumericTailValues,
     /// First numeric byte following the complete `term_use` record.
     pub inflated_offset: u64,
 }
@@ -937,26 +930,16 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
             });
         }
         if let Some(trailer) = census.terminal_null_references {
-            let bytes = &stream.inflated[trailer.offset..trailer.end];
-            let Ok(references) = alloc_filled(
-                trailer.count.into(),
-                1_u32,
-                "nx Parasolid terminal null references",
-            ) else {
-                continue;
-            };
             events
                 .terminal_null_references
                 .push(ParasolidDeltasTerminalNullReferences {
                     id: format!(
                         "nx:s{stream_ordinal}:deltas-terminal-null-references#{}",
-                        trailer.offset
+                        trailer.offset()
                     ),
                     stream_ordinal: stream_ordinal as u32,
-                    references,
-                    byte_len: bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
-                    inflated_offset: trailer.offset as u64,
+                    form: trailer.form(),
+                    inflated_offset: trailer.offset() as u64,
                 });
         }
         for record in census.records {
@@ -1005,21 +988,17 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
             });
         }
         for tail in census.term_use_numeric_tails {
-            let bytes = &stream.inflated[tail.offset..tail.end];
             events
                 .term_use_numeric_tails
                 .push(ParasolidDeltasTermUseNumericTail {
                     id: format!(
                         "nx:s{stream_ordinal}:deltas-term-use-tail#{}-{}",
-                        tail.offset, tail.term_use_xmt
+                        tail.offset(), tail.term_use_xmt
                     ),
                     stream_ordinal: stream_ordinal as u32,
                     term_use_xmt: tail.term_use_xmt,
-                    term_use_count: tail.term_use_count,
-                    values: tail.values,
-                    byte_len: bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
-                    inflated_offset: tail.offset as u64,
+                    inflated_offset: tail.offset() as u64,
+                    values: tail.into_values(),
                 });
         }
         for lane in census.tagged_reference_lanes {
@@ -3764,9 +3743,9 @@ mod tests {
         assert_eq!(events.term_use_numeric_tails.len(), 1);
         let tail = &events.term_use_numeric_tails[0];
         assert_eq!(tail.term_use_xmt, 20);
-        assert_eq!(tail.term_use_count, 1);
-        assert_eq!(tail.values.len(), 8);
-        assert_eq!(tail.byte_len, 64);
+        assert_eq!(tail.values.term_use_count(), 1);
+        assert_eq!(tail.values.values().len(), 8);
+        assert_eq!(tail.values.byte_len(), 64);
         assert_eq!(tail.inflated_offset, tail_offset as u64);
         assert_eq!(events.residual_spans.len(), 2);
         assert_eq!(events.residual_spans[0].byte_len, 2);
@@ -3876,11 +3855,11 @@ mod tests {
 
         assert_eq!(events.terminal_null_references.len(), 1);
         let trailer = &events.terminal_null_references[0];
-        assert_eq!(trailer.references, [1; 4]);
-        assert_eq!(trailer.byte_len, 8);
+        assert_eq!(trailer.form.references(), [1; 4]);
+        assert_eq!(trailer.form.raw().len(), 8);
         assert_eq!(trailer.inflated_offset, trailer_offset as u64);
         assert_eq!(
-            trailer.sha256,
+            serde_json::to_value(trailer).unwrap()["sha256"],
             cadmpeg_ir::hash::sha256_hex(&bytes[trailer_offset..])
         );
         assert_eq!(events.residual_spans.len(), 1);

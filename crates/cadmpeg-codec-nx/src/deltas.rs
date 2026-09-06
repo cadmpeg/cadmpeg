@@ -6,6 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod record_kind;
 pub(crate) mod group;
+pub(crate) mod tails;
+use tails::{TerminalNullReferences, TermUseNumericTail};
 use group::{GroupSelector, GroupReferenceStatus};
 use record_kind::RecordKind;
 
@@ -532,32 +534,6 @@ pub struct TransmitHeader {
     /// Consecutive stream-local header identities.
     pub references: [u32; 2],
     /// First byte following the header.
-    pub end: usize,
-}
-
-/// Null references closing a deltas stream.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TerminalNullReferences {
-    /// First byte of the first null reference.
-    pub offset: usize,
-    /// Stream boundary following the final null reference.
-    pub end: usize,
-    /// Number of compact null references.
-    pub count: u8,
-}
-
-/// Count-selected binary64 lane immediately following one deltas `term_use`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TermUseNumericTail {
-    /// XMT identity of the owning `term_use` record.
-    pub term_use_xmt: u32,
-    /// Serialized endpoint count selecting the numeric-tail cardinality.
-    pub term_use_count: u32,
-    /// Ordered finite binary64 values without assigned semantic roles.
-    pub values: Vec<f64>,
-    /// First numeric byte following the complete `term_use` record.
-    pub offset: usize,
-    /// First byte following the numeric lane.
     pub end: usize,
 }
 
@@ -1090,10 +1066,10 @@ const COMPOSITE_CURVE: &[Token] = &[
 pub fn walk(stream: &[u8]) -> Census {
     let transmit_header = transmit_header(stream);
     let header_byte_len = transmit_header.as_ref().map_or(0, |header| header.end);
-    let terminal_null_references = terminal_null_references(stream);
+    let terminal_null_references = TerminalNullReferences::at_end(stream);
     let trailer_byte_len = terminal_null_references
         .as_ref()
-        .map_or(0, |trailer| trailer.end - trailer.offset);
+        .map_or(0, |trailer| trailer.end() - trailer.offset());
     let mut census = Census {
         transmit_header,
         terminal_null_references,
@@ -1313,29 +1289,12 @@ pub fn walk(stream: &[u8]) -> Census {
     census.bytes_decoded += census
         .term_use_numeric_tails
         .iter()
-        .map(|tail| tail.end - tail.offset)
+        .map(|tail| tail.values().byte_len())
         .sum::<usize>();
     populate_gap_events(stream, &mut census);
     let body_revision_state_bytes = populate_body_revision_state_tails(stream, &mut census);
     census.bytes_decoded += body_revision_state_bytes;
     census
-}
-
-fn terminal_null_references(stream: &[u8]) -> Option<TerminalNullReferences> {
-    const FOUR_REFERENCES: &[u8] = &[0, 1, 0, 1, 0, 1, 0, 1];
-    const TWO_REFERENCES: &[u8] = &[0, 1, 0, 1];
-    let (byte_len, count) = if stream.ends_with(FOUR_REFERENCES) {
-        (FOUR_REFERENCES.len(), 4)
-    } else if stream.ends_with(TWO_REFERENCES) {
-        (TWO_REFERENCES.len(), 2)
-    } else {
-        return None;
-    };
-    Some(TerminalNullReferences {
-        offset: stream.len().checked_sub(byte_len)?,
-        end: stream.len(),
-        count,
-    })
 }
 
 fn populate_gap_events(stream: &[u8], census: &mut Census) {
@@ -1492,31 +1451,14 @@ fn term_use_numeric_tails(stream: &[u8], census: &Census) -> Vec<TermUseNumericT
     census
         .records
         .iter()
-        .filter(|record| record.kind() == 41)
+        .filter(|record| matches!(record.family, RecordFamily::TermUse))
         .filter_map(|record| {
             let (term_use, parsed_end) = crate::intersection::term_use_at(stream, record.offset)?;
             (parsed_end == record.end && term_use.xmt == record.xmt).then_some(())?;
-            let value_count = match term_use.form {
-                crate::intersection::TermUseForm::LQuestion => 8,
-                crate::intersection::TermUseForm::Tf | crate::intersection::TermUseForm::Ts => 19,
-            };
-            let end = record.end.checked_add(value_count * 8)?;
-            let bytes = stream.get(record.end..end)?;
-            let values = (0..value_count)
-                .map(|ordinal| View::f64_be_at(bytes, ordinal * 8))
-                .collect::<Option<Vec<_>>>()?;
-            values.iter().all(|value| value.is_finite()).then_some(())?;
+            let tail = TermUseNumericTail::read(stream, record.end, term_use.xmt, term_use.form)?;
             let next_event =
                 event_starts.get(event_starts.partition_point(|start| *start <= record.end));
-            next_event
-                .is_none_or(|start| *start >= end)
-                .then_some(TermUseNumericTail {
-                    term_use_xmt: record.xmt,
-                    term_use_count: term_use.form.count(),
-                    values,
-                    offset: record.end,
-                    end,
-                })
+            next_event.is_none_or(|start| *start >= tail.end()).then_some(tail)
         })
         .collect()
 }
@@ -2510,7 +2452,7 @@ fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usi
             census
                 .terminal_null_references
                 .iter()
-                .map(|trailer| (trailer.offset, trailer.end)),
+                .map(|trailer| (trailer.offset(), trailer.end())),
         )
         .chain(
             census
@@ -2534,7 +2476,7 @@ fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usi
             census
                 .term_use_numeric_tails
                 .iter()
-                .map(|tail| (tail.offset, tail.end)),
+                .map(|tail| (tail.offset(), tail.end())),
         )
         .collect::<Vec<_>>();
     if include_derived_events {
@@ -5093,23 +5035,15 @@ mod terminal_null_reference_tests {
         let census = walk(&four_references);
 
         assert_eq!(
-            census.terminal_null_references,
-            Some(TerminalNullReferences {
-                offset: 0,
-                end: four_references.len(),
-                count: 4,
-            })
+            census.terminal_null_references.map(|tail| (tail.offset(), tail.end(), tail.form().references().len())),
+            Some((0, four_references.len(), 4))
         );
         assert_eq!(census.bytes_decoded, four_references.len());
 
         let two_references = [0, 1, 0, 1];
         assert_eq!(
-            walk(&two_references).terminal_null_references,
-            Some(TerminalNullReferences {
-                offset: 0,
-                end: two_references.len(),
-                count: 2,
-            })
+            walk(&two_references).terminal_null_references.map(|tail| (tail.offset(), tail.end(), tail.form().references().len())),
+            Some((0, two_references.len(), 2))
         );
 
         let mut nonterminal = four_references.to_vec();
