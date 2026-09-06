@@ -29,6 +29,8 @@ impl ShiftedBinary64 {
 
     pub(crate) fn raw(self) -> [u8; 8] { self.0 }
 
+    pub(crate) fn as_bytes(&self) -> &[u8; 8] { &self.0 }
+
     pub(crate) fn value(self) -> f64 {
         let mut bytes = self.0;
         bytes[0] += 0x10;
@@ -75,10 +77,37 @@ impl ShiftedBinary32 {
 
     pub(crate) fn raw(self) -> [u8; 4] { self.0 }
 
+    pub(crate) fn as_bytes(&self) -> &[u8; 4] { &self.0 }
+
     pub(crate) fn value(self) -> f64 {
         let mut bytes = self.0;
         bytes[0] -= 0x10;
         f64::from(f32::from_be_bytes(bytes))
+    }
+}
+
+/// One shifted binary32 or binary64 atom.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShiftedScalar {
+    Binary32(ShiftedBinary32),
+    Binary64(ShiftedBinary64),
+}
+
+impl ShiftedScalar {
+    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+        match PayloadScalarAtom::read(bytes)? {
+            PayloadScalarAtom::Zero => None,
+            PayloadScalarAtom::Binary32(atom) => Some(Self::Binary32(atom)),
+            PayloadScalarAtom::Binary64(atom) => Some(Self::Binary64(atom)),
+        }
+    }
+
+    pub(crate) fn value(self) -> f64 {
+        match self { Self::Binary32(atom) => atom.value(), Self::Binary64(atom) => atom.value() }
+    }
+
+    pub(crate) fn raw(&self) -> &[u8] {
+        match self { Self::Binary32(atom) => atom.as_bytes(), Self::Binary64(atom) => atom.as_bytes() }
     }
 }
 

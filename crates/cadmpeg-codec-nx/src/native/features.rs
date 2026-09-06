@@ -12,8 +12,9 @@ use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLin
 use std::borrow::Cow;
 use std::num::NonZeroU8;
 use crate::om::swp104_state::Swp104StateLane;
-use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, ShiftedBinary64};
+use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, ShiftedBinary64, ShiftedScalar};
 use crate::om::branch_items::BranchItems;
+use crate::om::pattern::{PatternRow, PatternRows, PatternScalarEncoding, PatternTerminal, PatternValue, PatternWideValues};
 use crate::om::thru_curve_state::ThruCurveBranchItems;
 use crate::om::thru_curve_controls::ThruCurveControls;
 use crate::om::thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
@@ -3212,18 +3213,6 @@ impl TryFrom<FeaturePatternConstructionFixedLaneWire> for FeaturePatternConstruc
     }
 }
 
-/// Scalar width selected by one exact pattern-transform row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FeaturePatternTransformEncoding {
-    /// Single-byte exact one used by a wide row terminal value.
-    ExactOne,
-    /// Four-byte shifted IEEE-754 binary32 atom.
-    Binary32,
-    /// Eight-byte shifted IEEE-754 binary64 atom.
-    Binary64,
-}
-
 /// Byte layout selected by one exact pattern-transform lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -3243,28 +3232,8 @@ pub enum FeaturePatternTransformLayout {
 pub struct FeaturePatternTransformLane {
     pub id: String,
     pub operation_label: String,
-    pub row_schema_index: u8,
-    pub rows: FeaturePatternTransformRows,
-    pub source_offset: u64,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum FeaturePatternTransformRows {
-    Scalar(Vec<FeaturePatternTransformRow<1>>),
-    Wide(Vec<FeaturePatternTransformRow<5>>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FeaturePatternTransformRow<const N: usize> {
-    pub values: [FeaturePatternScalarToken; N],
-    pub selector: FeatureIndexToken,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FeaturePatternScalarToken {
-    pub encoding: FeaturePatternTransformEncoding,
-    pub value: f64,
-    pub raw: Vec<u8>,
+    pub row_schema_index: NonZeroU8,
+    pub rows: PatternRows<FeatureIndexToken, u64>,
     pub source_offset: u64,
 }
 
@@ -3275,14 +3244,14 @@ struct FeaturePatternTransformLaneWire {
     /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
     operation_label: String,
     /// Schema index framing every row in the lane.
-    row_schema_index: u8,
+    row_schema_index: NonZeroU8,
     /// Row byte layout selected by the terminal mode.
     layout: FeaturePatternTransformLayout,
     /// Count including the implicit seed row.
     #[serde(deserialize_with = "deserialize_reference_lane_count")]
     declared_count: usize,
     /// Scalar encodings selected independently in row order.
-    encodings: Vec<FeaturePatternTransformEncoding>,
+    encodings: Vec<PatternScalarEncoding>,
     /// Ordered finite row scalars.
     values: Vec<f64>,
     /// Exact scalar encodings in row order.
@@ -3299,33 +3268,33 @@ struct FeaturePatternTransformLaneWire {
     selector_source_offsets: Vec<u64>,
 }
 
+impl FeaturePatternTransformLaneWire {
+    fn push_scalar(&mut self, encoding: PatternScalarEncoding, value: f64, raw: &[u8], source_offset: u64) {
+        self.encodings.push(encoding);
+        self.values.push(value);
+        self.raw_values.push(raw.to_vec());
+        self.value_source_offsets.push(source_offset);
+    }
+
+    fn push_selector(&mut self, selector: FeatureIndexToken) {
+        self.selectors.push(selector.value);
+        self.raw_selectors.push(selector.raw);
+        self.selector_source_offsets.push(selector.source_offset);
+    }
+}
+
 impl From<FeaturePatternTransformLane> for FeaturePatternTransformLaneWire {
     fn from(lane: FeaturePatternTransformLane) -> Self {
-        let (layout, scalar, wide): (
-            _,
-            &[FeaturePatternTransformRow<1>],
-            &[FeaturePatternTransformRow<5>],
-        ) = match &lane.rows {
-            FeaturePatternTransformRows::Scalar(rows) => {
-                (FeaturePatternTransformLayout::ScalarRows, rows, &[])
-            }
-            FeaturePatternTransformRows::Wide(rows) => {
-                (FeaturePatternTransformLayout::WideRows, &[], rows)
-            }
+        let layout = match &lane.rows {
+            PatternRows::Scalar(_) => FeaturePatternTransformLayout::ScalarRows,
+            PatternRows::Wide(_) => FeaturePatternTransformLayout::WideRows,
         };
-        let rows = scalar
-            .iter()
-            .map(|row| (row.values.as_slice(), &row.selector))
-            .chain(
-                wide.iter()
-                    .map(|row| (row.values.as_slice(), &row.selector)),
-            );
         let mut wire = Self {
             id: lane.id,
             operation_label: lane.operation_label,
             row_schema_index: lane.row_schema_index,
             layout,
-            declared_count: scalar.len() + wide.len() + 1,
+            declared_count: usize::from(lane.rows.declared_count()),
             encodings: Vec::new(),
             values: Vec::new(),
             raw_values: Vec::new(),
@@ -3335,18 +3304,68 @@ impl From<FeaturePatternTransformLane> for FeaturePatternTransformLaneWire {
             value_source_offsets: Vec::new(),
             selector_source_offsets: Vec::new(),
         };
-        for (values, selector) in rows {
-            for token in values {
-                wire.encodings.push(token.encoding);
-                wire.values.push(token.value);
-                wire.raw_values.push(token.raw.clone());
-                wire.value_source_offsets.push(token.source_offset);
+        match lane.rows {
+            PatternRows::Scalar(rows) => {
+                for row in rows.into_vec() {
+                    let encoding = match row.values.scalar {
+                        ShiftedScalar::Binary32(_) => PatternScalarEncoding::Binary32,
+                        ShiftedScalar::Binary64(_) => PatternScalarEncoding::Binary64,
+                    };
+                    wire.push_scalar(encoding, row.values.scalar.value(), row.values.scalar.raw(), row.values.offset);
+                    wire.push_selector(row.selector);
+                }
             }
-            wire.selectors.push(selector.value);
-            wire.raw_selectors.push(selector.raw.clone());
-            wire.selector_source_offsets.push(selector.source_offset);
+            PatternRows::Wide(rows) => {
+                for row in rows.into_vec() {
+                    for value in row.values.first {
+                        wire.push_scalar(PatternScalarEncoding::Binary64, value.scalar.value(), value.scalar.as_bytes(), value.offset);
+                    }
+                    let terminal = row.values.terminal;
+                    wire.push_scalar(terminal.scalar.encoding(), terminal.scalar.value(), terminal.scalar.raw(), terminal.offset);
+                    wire.push_selector(row.selector);
+                }
+            }
         }
         wire
+    }
+}
+
+struct PatternScalarWire {
+    encoding: PatternScalarEncoding,
+    value: f64,
+    raw: Vec<u8>,
+    source_offset: u64,
+}
+
+impl PatternScalarWire {
+    fn shifted(&self) -> Result<PatternValue<ShiftedScalar, u64>, String> {
+        let scalar = ShiftedScalar::read(&self.raw).ok_or("raw_values must contain shifted scalar atoms")?;
+        let encoding = match scalar {
+            ShiftedScalar::Binary32(_) => PatternScalarEncoding::Binary32,
+            ShiftedScalar::Binary64(_) => PatternScalarEncoding::Binary64,
+        };
+        if self.encoding != encoding || self.raw.len() != scalar.raw().len() || self.value.to_bits() != scalar.value().to_bits() {
+            return Err("encodings and values must match each exact raw_values atom".into());
+        }
+        Ok(PatternValue { scalar, offset: self.source_offset })
+    }
+
+    fn binary64(&self) -> Result<PatternValue<ShiftedBinary64, u64>, String> {
+        if self.encoding != PatternScalarEncoding::Binary64 {
+            return Err("encodings must select binary64 for the first four wide-row scalars".into());
+        }
+        let raw = self.raw.as_slice().try_into().map_err(|_| "raw_values wide-row scalars must contain eight bytes")?;
+        let scalar = ShiftedBinary64::from_wire(self.value, raw)
+            .map_err(|error| format!("values/raw_values: {error}"))?;
+        Ok(PatternValue { scalar, offset: self.source_offset })
+    }
+
+    fn terminal(&self) -> Result<PatternValue<PatternTerminal, u64>, String> {
+        let scalar = PatternTerminal::read(&self.raw).ok_or("raw_values wide-row terminal must contain exact one or binary32")?;
+        if self.encoding != scalar.encoding() || self.raw.len() != scalar.raw().len() || self.value.to_bits() != scalar.value().to_bits() {
+            return Err("encodings and values must match the exact raw_values terminal atom".into());
+        }
+        Ok(PatternValue { scalar, offset: self.source_offset })
     }
 }
 
@@ -3369,61 +3388,32 @@ impl TryFrom<FeaturePatternTransformLaneWire> for FeaturePatternTransformLane {
             || wire.raw_selectors.len() != wire.selectors.len()
             || wire.selector_source_offsets.len() != wire.selectors.len()
         {
-            return Err(
-                "pattern transform columns must contain complete rows for the selected layout"
-                    .into(),
-            );
+            return Err("pattern transform columns must contain complete rows for the selected layout".into());
         }
-        let values = wire
-            .encodings
-            .into_iter()
-            .zip(wire.values)
-            .zip(wire.raw_values)
-            .zip(wire.value_source_offsets)
-            .map(
-                |(((encoding, value), raw), source_offset)| FeaturePatternScalarToken {
-                    encoding,
-                    value,
-                    raw,
-                    source_offset,
-                },
-            )
+        let values = wire.encodings.into_iter().zip(wire.values).zip(wire.raw_values).zip(wire.value_source_offsets)
+            .map(|(((encoding, value), raw), source_offset)| PatternScalarWire { encoding, value, raw, source_offset })
             .collect::<Vec<_>>();
-        let selectors = wire
-            .selectors
-            .into_iter()
-            .zip(wire.raw_selectors)
-            .zip(wire.selector_source_offsets)
-            .map(|((value, raw), source_offset)| FeatureIndexToken {
-                value,
-                raw,
-                source_offset,
-            });
+        let selectors = wire.selectors.into_iter().zip(wire.raw_selectors).zip(wire.selector_source_offsets)
+            .map(|((value, raw), source_offset)| FeatureIndexToken { value, raw, source_offset });
         let rows = match wire.layout {
-            FeaturePatternTransformLayout::ScalarRows => FeaturePatternTransformRows::Scalar(
-                values
-                    .as_chunks::<1>()
-                    .0
-                    .iter()
-                    .zip(selectors)
-                    .map(|(values, selector)| FeaturePatternTransformRow {
-                        values: values.clone(),
+            FeaturePatternTransformLayout::ScalarRows => {
+                let rows = values.as_chunks::<1>().0.iter().zip(selectors)
+                    .map(|([value], selector)| Ok(PatternRow { values: value.shifted()?, selector }))
+                    .collect::<Result<Vec<_>, String>>()?;
+                PatternRows::Scalar(BranchItems::new(rows)?)
+            }
+            FeaturePatternTransformLayout::WideRows => {
+                let rows = values.as_chunks::<5>().0.iter().zip(selectors)
+                    .map(|([a, b, c, d, terminal], selector)| Ok(PatternRow {
+                        values: PatternWideValues {
+                            first: [a.binary64()?, b.binary64()?, c.binary64()?, d.binary64()?],
+                            terminal: terminal.terminal()?,
+                        },
                         selector,
-                    })
-                    .collect(),
-            ),
-            FeaturePatternTransformLayout::WideRows => FeaturePatternTransformRows::Wide(
-                values
-                    .as_chunks::<5>()
-                    .0
-                    .iter()
-                    .zip(selectors)
-                    .map(|(values, selector)| FeaturePatternTransformRow {
-                        values: values.clone(),
-                        selector,
-                    })
-                    .collect(),
-            ),
+                    }))
+                    .collect::<Result<Vec<_>, String>>()?;
+                PatternRows::Wide(BranchItems::new(rows)?)
+            }
         };
         Ok(Self {
             id: wire.id,
@@ -10372,46 +10362,19 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 row_schema_index: lane.row_schema_index,
-                rows: match lane.rows {
-                    crate::om::PatternTransformRows::Scalar(rows) => FeaturePatternTransformRows::Scalar(
-                        rows.into_iter().map(|row| native_pattern_transform_row(row, entry_offset)).collect()),
-                    crate::om::PatternTransformRows::Wide(rows) => FeaturePatternTransformRows::Wide(
-                        rows.into_iter().map(|row| native_pattern_transform_row(row, entry_offset)).collect()),
-                },
+                rows: lane.rows.map(
+                    |selector| FeatureIndexToken {
+                        value: selector.value,
+                        raw: selector.raw,
+                        source_offset: entry_offset + selector.offset as u64,
+                    },
+                    |offset| entry_offset + offset as u64,
+                ),
                 source_offset: entry_offset + lane.offset as u64,
             });
         },
     );
     lanes
-}
-
-fn native_pattern_transform_row<const N: usize>(
-    row: crate::om::PatternTransformRow<N>,
-    entry_offset: u64,
-) -> FeaturePatternTransformRow<N> {
-    FeaturePatternTransformRow {
-        values: row.values.map(|token| FeaturePatternScalarToken {
-            encoding: match token.encoding {
-                crate::om::PatternTransformEncoding::ExactOne => {
-                    FeaturePatternTransformEncoding::ExactOne
-                }
-                crate::om::PatternTransformEncoding::Binary32 => {
-                    FeaturePatternTransformEncoding::Binary32
-                }
-                crate::om::PatternTransformEncoding::Binary64 => {
-                    FeaturePatternTransformEncoding::Binary64
-                }
-            },
-            value: token.value,
-            raw: token.raw,
-            source_offset: entry_offset + token.offset as u64,
-        }),
-        selector: FeatureIndexToken {
-            value: row.selector.value,
-            raw: row.selector.raw,
-            source_offset: entry_offset + row.selector.offset as u64,
-        },
-    }
 }
 
 /// Decode exact counted output lanes from bounded multi-instance payloads.

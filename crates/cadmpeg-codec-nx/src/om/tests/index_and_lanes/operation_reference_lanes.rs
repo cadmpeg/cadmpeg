@@ -1,22 +1,37 @@
-use crate::om::{
-    LaneToken, PatternPayloadTransformLane, PatternScalarToken, PatternTransformRow,
-    PatternTransformRows,
-};
+use crate::om::{LaneToken, PatternPayloadTransformLane};
+use crate::om::pattern::{PatternRows, PatternScalarEncoding};
+use crate::om::scalar::ShiftedScalar;
+
+struct ObservedPatternScalar {
+    encoding: PatternScalarEncoding,
+    value: f64,
+    offset: usize,
+}
 
 impl PatternPayloadTransformLane {
-    fn rows(&self) -> impl Iterator<Item = (&[PatternScalarToken], &LaneToken<u32>)> {
-        let (scalar, wide): (&[PatternTransformRow<1>], &[PatternTransformRow<5>]) =
-            match &self.rows {
-                PatternTransformRows::Scalar(rows) => (rows, &[]),
-                PatternTransformRows::Wide(rows) => (&[], rows),
-            };
-        scalar
-            .iter()
-            .map(|row| (row.values.as_slice(), &row.selector))
-            .chain(
-                wide.iter()
-                    .map(|row| (row.values.as_slice(), &row.selector)),
-            )
+    fn rows(&self) -> impl Iterator<Item = (Vec<ObservedPatternScalar>, &LaneToken<u32>)> {
+        match &self.rows {
+            PatternRows::Scalar(rows) => rows.as_slice().iter().map(|row| {
+                let encoding = match row.values.scalar {
+                    ShiftedScalar::Binary32(_) => PatternScalarEncoding::Binary32,
+                    ShiftedScalar::Binary64(_) => PatternScalarEncoding::Binary64,
+                };
+                (vec![ObservedPatternScalar { encoding, value: row.values.scalar.value(), offset: row.values.offset }], &row.selector)
+            }).collect::<Vec<_>>(),
+            PatternRows::Wide(rows) => rows.as_slice().iter().map(|row| {
+                let mut values = row.values.first.iter().map(|value| ObservedPatternScalar {
+                    encoding: PatternScalarEncoding::Binary64,
+                    value: value.scalar.value(),
+                    offset: value.offset,
+                }).collect::<Vec<_>>();
+                values.push(ObservedPatternScalar {
+                    encoding: row.values.terminal.scalar.encoding(),
+                    value: row.values.terminal.scalar.value(),
+                    offset: row.values.terminal.offset,
+                });
+                (values, &row.selector)
+            }).collect(),
+        }.into_iter()
     }
 }
 
@@ -249,10 +264,10 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     };
     let lane = super::super::pattern_payload_transform_lane(record).expect("feature lane");
     assert_eq!(lane.offset, 201);
-    assert_eq!(lane.row_schema_index, 0x60);
+    assert_eq!(lane.row_schema_index.get(), 0x60);
     assert!(matches!(
         lane.rows,
-        super::super::PatternTransformRows::Scalar(_)
+        PatternRows::Scalar(_)
     ));
     assert_eq!(lane.rows().count() + 1, 3);
     assert_eq!(
@@ -261,8 +276,8 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
             .map(|token| token.encoding)
             .collect::<Vec<_>>(),
         [
-            super::super::PatternTransformEncoding::Binary32,
-            super::super::PatternTransformEncoding::Binary32,
+            PatternScalarEncoding::Binary32,
+            PatternScalarEncoding::Binary32,
         ]
     );
     assert_eq!(
@@ -313,10 +328,10 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     };
     let lane =
         super::super::pattern_payload_transform_lane(geometry_record).expect("geometry lane");
-    assert_eq!(lane.row_schema_index, 0x60);
+    assert_eq!(lane.row_schema_index.get(), 0x60);
     assert!(matches!(
         lane.rows,
-        super::super::PatternTransformRows::Scalar(_)
+        PatternRows::Scalar(_)
     ));
     assert_eq!(
         lane.rows()
@@ -324,8 +339,8 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
             .map(|token| token.encoding)
             .collect::<Vec<_>>(),
         [
-            super::super::PatternTransformEncoding::Binary64,
-            super::super::PatternTransformEncoding::Binary64,
+            PatternScalarEncoding::Binary64,
+            PatternScalarEncoding::Binary64,
         ]
     );
     assert_eq!(
@@ -369,10 +384,10 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
             ..record
         })
         .expect("schema-relative feature lane");
-    assert_eq!(relative_lane.row_schema_index, 0x3d);
+    assert_eq!(relative_lane.row_schema_index.get(), 0x3d);
     assert!(matches!(
         relative_lane.rows,
-        super::super::PatternTransformRows::Scalar(_)
+        PatternRows::Scalar(_)
     ));
     assert_eq!(relative_lane.rows().count() + 1, 4);
     assert_eq!(
@@ -382,9 +397,9 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
             .map(|token| token.encoding)
             .collect::<Vec<_>>(),
         [
-            super::super::PatternTransformEncoding::Binary32,
-            super::super::PatternTransformEncoding::Binary32,
-            super::super::PatternTransformEncoding::Binary64,
+            PatternScalarEncoding::Binary32,
+            PatternScalarEncoding::Binary32,
+            PatternScalarEncoding::Binary64,
         ]
     );
     assert_eq!(
@@ -406,10 +421,10 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         ..record
     })
     .expect("wide feature lane");
-    assert_eq!(wide_lane.row_schema_index, 0x35);
+    assert_eq!(wide_lane.row_schema_index.get(), 0x35);
     assert!(matches!(
         wide_lane.rows,
-        super::super::PatternTransformRows::Wide(_)
+        PatternRows::Wide(_)
     ));
     assert_eq!(wide_lane.rows().count() + 1, 3);
     assert_eq!(
@@ -426,16 +441,16 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
             .map(|token| token.encoding)
             .collect::<Vec<_>>(),
         [
-            super::super::PatternTransformEncoding::Binary64,
-            super::super::PatternTransformEncoding::Binary64,
-            super::super::PatternTransformEncoding::Binary64,
-            super::super::PatternTransformEncoding::Binary64,
-            super::super::PatternTransformEncoding::ExactOne,
-            super::super::PatternTransformEncoding::Binary64,
-            super::super::PatternTransformEncoding::Binary64,
-            super::super::PatternTransformEncoding::Binary64,
-            super::super::PatternTransformEncoding::Binary64,
-            super::super::PatternTransformEncoding::Binary32,
+            PatternScalarEncoding::Binary64,
+            PatternScalarEncoding::Binary64,
+            PatternScalarEncoding::Binary64,
+            PatternScalarEncoding::Binary64,
+            PatternScalarEncoding::ExactOne,
+            PatternScalarEncoding::Binary64,
+            PatternScalarEncoding::Binary64,
+            PatternScalarEncoding::Binary64,
+            PatternScalarEncoding::Binary64,
+            PatternScalarEncoding::Binary32,
         ]
     );
     assert_eq!(

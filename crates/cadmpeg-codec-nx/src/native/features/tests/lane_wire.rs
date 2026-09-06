@@ -186,11 +186,11 @@ fn pattern_transform_lane_preserves_wire_and_requires_complete_rows() {
         "selector_source_offsets",
     ];
     check_lane_wire::<FeaturePatternTransformLane>(
-        r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":3,"encodings":["binary32","binary64"],"values":[2.5,4.0],"raw_values":[[1,2,3,4],[1,2,3,4,5,6,7,8]],"selectors":[7,8],"raw_selectors":[[7],[8]],"source_offset":100,"value_source_offsets":[110,120],"selector_source_offsets":[114,128]}"#,
+        r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":3,"encodings":["binary32","binary64"],"values":[2.5,4.0],"raw_values":[[80,32,0,0],[48,16,0,0,0,0,0,0]],"selectors":[7,8],"raw_selectors":[[7],[8]],"source_offset":100,"value_source_offsets":[110,120],"selector_source_offsets":[114,128]}"#,
         columns,
     );
     check_lane_wire::<FeaturePatternTransformLane>(
-        r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[2.5,4.0,5.0,6.0,1.0],"raw_values":[[1,2,3,4,5,6,7,8],[2,3,4,5,6,7,8,9],[3,4,5,6,7,8,9,10],[4,5,6,7,8,9,10,11],[1]],"selectors":[7],"raw_selectors":[[7]],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#,
+        r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[2.5,4.0,5.0,6.0,1.0],"raw_values":[[48,4,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0],[1]],"selectors":[7],"raw_selectors":[[7]],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#,
         columns,
     );
 }
@@ -245,4 +245,20 @@ fn draft_terminal_lane_derives_its_source_offset() {
     let error = serde_json::from_value::<FeatureDraftConstructionTerminalLane>(malformed)
         .unwrap_err();
     assert!(error.to_string().contains("source_offset"));
+}
+
+#[test]
+fn pattern_rows_reject_scalar_families_outside_their_layout() {
+    let narrow = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":2,"encodings":["exact_one"],"values":[1.0],"raw_values":[[1]],"selectors":[7],"raw_selectors":[[7]],"source_offset":100,"value_source_offsets":[110],"selector_source_offsets":[111]}"#;
+    assert!(serde_json::from_str::<FeaturePatternTransformLane>(narrow).is_err());
+    let wide = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[2.5,4.0,5.0,6.0,1.0],"raw_values":[[48,4,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0],[1]],"selectors":[7],"raw_selectors":[[7]],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#;
+    let mut wrong_first: serde_json::Value = serde_json::from_str(wide).unwrap();
+    wrong_first["encodings"][0] = serde_json::json!("binary32");
+    wrong_first["raw_values"][0] = serde_json::json!([80,32,0,0]);
+    assert!(serde_json::from_value::<FeaturePatternTransformLane>(wrong_first).is_err());
+    let mut wrong_terminal: serde_json::Value = serde_json::from_str(wide).unwrap();
+    wrong_terminal["encodings"][4] = serde_json::json!("binary64");
+    wrong_terminal["raw_values"][4] = serde_json::json!([47,240,0,0,0,0,0,0]);
+    assert!(serde_json::from_value::<FeaturePatternTransformLane>(wrong_terminal).is_err());
+    assert!(serde_json::from_str::<FeaturePatternTransformLane>(&wide.replace("\"row_schema_index\":3", "\"row_schema_index\":0")).is_err());
 }

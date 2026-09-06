@@ -11,9 +11,11 @@ pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 use branch_items::BranchItems;
 pub(crate) mod parameter_name;
+pub(crate) mod pattern;
+use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWideValues};
 pub(crate) mod swp104_state;
 pub(crate) mod scalar;
-use scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, ShiftedBinary32, ShiftedBinary64, shifted_ieee_f64, is_shifted_ieee_f64_marker};
+use scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, ShiftedBinary32, ShiftedBinary64, ShiftedScalar, shifted_ieee_f64, is_shifted_ieee_f64_marker};
 pub(crate) mod thru_curve_endings;
 pub(crate) mod thru_curve_controls;
 use thru_curve_controls::ThruCurveControls;
@@ -2136,48 +2138,14 @@ pub struct DeletePayloadReferenceField {
     pub offset: usize,
 }
 
-/// Scalar width selected by one pattern-transform row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PatternTransformEncoding {
-    /// Single-byte exact one used by a wide row terminal value.
-    ExactOne,
-    /// Four-byte shifted IEEE-754 binary32 atom.
-    Binary32,
-    /// Eight-byte shifted IEEE-754 binary64 atom.
-    Binary64,
-}
-
-/// One pattern-transform scalar and its source encoding.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PatternScalarToken {
-    pub encoding: PatternTransformEncoding,
-    pub value: f64,
-    pub raw: Vec<u8>,
-    pub offset: usize,
-}
-
-/// One pattern row with a fixed number of scalar atoms and one selector.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PatternTransformRow<const N: usize> {
-    pub values: [PatternScalarToken; N],
-    pub selector: LaneToken<u32>,
-}
-
-/// Uniform scalar or wide rows selected by the terminal mode.
-#[derive(Debug, Clone, PartialEq)]
-pub enum PatternTransformRows {
-    Scalar(Vec<PatternTransformRow<1>>),
-    Wide(Vec<PatternTransformRow<5>>),
-}
-
 /// One exact counted transform lane in a pattern operation payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PatternPayloadTransformLane {
     /// Absolute offset of the opening `01, count` field.
     pub offset: usize,
     /// Schema index framing every row in the lane.
-    pub row_schema_index: u8,
-    pub rows: PatternTransformRows,
+    pub row_schema_index: NonZeroU8,
+    pub rows: PatternRows<LaneToken<u32>, usize>,
 }
 
 /// One multi-instance output row and its compact selector token.
@@ -4146,111 +4114,22 @@ pub fn pattern_payload_transform_lane(
         ),
         _ => return None,
     };
-    let validate_scalar = |start: usize| {
-        (record.payload.get(start) == Some(&0x01)).then_some(())?;
-        let declared_count = *record.payload.get(start + 1)?;
-        (declared_count >= 2).then_some(())?;
-        let mut at = start + 2;
-        let row_schema_index = *record.payload.get(at)?;
-        for ordinal in 1..declared_count {
-            (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
-            (record.payload.get(at + 1..at + 1 + prefix_tail.len()) == Some(prefix_tail))
-                .then_some(())?;
-            at += 1 + prefix_tail.len();
-            let atom = PayloadScalarAtom::read(record.payload.get(at..)?)?;
-            let (encoding, width) = (atom.encoding(), atom.raw().len());
-            (encoding != PayloadScalarEncoding::Zero).then_some(())?;
-            at += width;
-            (record.payload.get(at..at + scalar_suffix.len()) == Some(scalar_suffix))
-                .then_some(())?;
-            at += scalar_suffix.len();
-            let (CompactIndex::Value(_), width) = compact_index(record.payload.get(at..)?)? else {
-                return None;
-            };
-            at += width;
-            (record.payload.get(at) == Some(&0x01)).then_some(())?;
-            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
-            (record.payload.get(at + 2..at + 2 + ROW_TAIL.len()) == Some(&ROW_TAIL))
-                .then_some(())?;
-            at += 2 + ROW_TAIL.len();
-        }
-        let terminal_schema_index = row_schema_index.checked_sub(1)?;
-        (record.payload.get(at) == Some(&terminal_schema_index)).then_some(())?;
-        (record.payload.get(at + 1..at + 3) == Some(&[0x00, 0x00])).then_some(())?;
-        (record.payload.get(at + 3) == Some(&0x01)).then_some(())?;
-        Some((declared_count, row_schema_index))
-    };
-    let validate_wide = |start: usize| {
-        (record.label.value == "Pattern Feature").then_some(())?;
-        (record.payload.get(start) == Some(&0x01)).then_some(())?;
-        let declared_count = *record.payload.get(start + 1)?;
-        (declared_count >= 2).then_some(())?;
-        let mut at = start + 2;
-        let row_schema_index = *record.payload.get(at)?;
-        for ordinal in 1..declared_count {
-            (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
-            at += 1;
-            for value_ordinal in 0..4 {
-                let atom = PayloadScalarAtom::read(record.payload.get(at..)?)?;
-            let (encoding, width) = (atom.encoding(), atom.raw().len());
-                (encoding == PayloadScalarEncoding::Binary64 && width == 8).then_some(())?;
-                at += width;
-                if value_ordinal == 1 {
-                    (record.payload.get(at..at + 2) == Some(&[0x00, 0x00])).then_some(())?;
-                    at += 2;
-                }
-            }
-            (record.payload.get(at..at + 4) == Some(&[0x00; 4])).then_some(())?;
-            at += 4;
-            let width = if record.payload.get(at) == Some(&0x01) {
-                1
-            } else {
-                let atom = PayloadScalarAtom::read(record.payload.get(at..)?)?;
-            let (encoding, width) = (atom.encoding(), atom.raw().len());
-                (encoding == PayloadScalarEncoding::Binary32).then_some(())?;
-                width
-            };
-            at += width;
-            (record.payload.get(at..at + 7) == Some(&[0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03]))
-                .then_some(())?;
-            at += 7;
-            let (CompactIndex::Value(_), width) = compact_index(record.payload.get(at..)?)? else {
-                return None;
-            };
-            at += width;
-            (record.payload.get(at) == Some(&0x01)).then_some(())?;
-            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
-            (record.payload.get(at + 2..at + 2 + ROW_TAIL.len()) == Some(&ROW_TAIL))
-                .then_some(())?;
-            at += 2 + ROW_TAIL.len();
-        }
-        let terminal_schema_index = row_schema_index.checked_sub(1)?;
-        (record.payload.get(at) == Some(&terminal_schema_index)).then_some(())?;
-        (record.payload.get(at + 1..at + 4) == Some(&[0x00, 0x00, 0x02])).then_some(())?;
-        Some((declared_count, row_schema_index))
-    };
     let decode = |start: usize| {
-        let (declared_count, row_schema_index) = validate_scalar(start)?;
-        let row_count = usize::from(declared_count - 1);
+        (record.payload.get(start) == Some(&0x01)).then_some(())?;
+        let declared_count @ 2.. = *record.payload.get(start + 1)? else { return None; };
+        let row_schema_index = NonZeroU8::new(*record.payload.get(start + 2)?)?;
         let mut at = start + 2;
-        let mut rows = Vec::with_capacity(row_count);
+        let mut rows = Vec::new();
         for ordinal in 1..declared_count {
-            (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
+            (record.payload.get(at) == Some(&row_schema_index.get())).then_some(())?;
             (record.payload.get(at + 1..at + 1 + prefix_tail.len()) == Some(prefix_tail))
                 .then_some(())?;
             at += 1 + prefix_tail.len();
-            let atom = PayloadScalarAtom::read(record.payload.get(at..)?)?;
-            let (value, actual_encoding, width) = (atom.value(), atom.encoding(), atom.raw().len());
-            let encoding = match actual_encoding {
-                PayloadScalarEncoding::Zero => return None,
-                PayloadScalarEncoding::Binary32 => PatternTransformEncoding::Binary32,
-                PayloadScalarEncoding::Binary64 => PatternTransformEncoding::Binary64,
-            };
-            let value = PatternScalarToken {
-                encoding,
-                value,
+            let scalar = ShiftedScalar::read(record.payload.get(at..)?)?;
+            let width = scalar.raw().len();
+            let value = PatternValue {
+                scalar,
                 offset: record.payload_offset + at,
-                raw: record.payload.get(at..at + width)?.to_vec(),
             };
             at += width;
             (record.payload.get(at..at + scalar_suffix.len()) == Some(scalar_suffix))
@@ -4266,8 +4145,8 @@ pub fn pattern_payload_transform_lane(
                 raw: record.payload[at..at + width].to_vec(),
                 offset: record.payload_offset + selector_offset,
             };
-            rows.push(PatternTransformRow {
-                values: [value],
+            rows.push(PatternRow {
+                values: value,
                 selector,
             });
             at += width;
@@ -4277,36 +4156,34 @@ pub fn pattern_payload_transform_lane(
                 .then_some(())?;
             at += 2 + ROW_TAIL.len();
         }
-        let terminal_schema_index = row_schema_index.checked_sub(1)?;
+        let terminal_schema_index = row_schema_index.get() - 1;
         (record.payload.get(at) == Some(&terminal_schema_index)).then_some(())?;
         (record.payload.get(at + 1..at + 3) == Some(&[0x00, 0x00])).then_some(())?;
         (record.payload.get(at + 3) == Some(&0x01)).then_some(())?;
         Some(PatternPayloadTransformLane {
             offset: record.payload_offset + start,
             row_schema_index,
-            rows: PatternTransformRows::Scalar(rows),
+            rows: PatternRows::Scalar(BranchItems::new(rows).ok()?),
         })
     };
     let decode_wide = |start: usize| {
-        let (declared_count, row_schema_index) = validate_wide(start)?;
-        let row_count = usize::from(declared_count - 1);
+        (record.label.value == "Pattern Feature").then_some(())?;
+        (record.payload.get(start) == Some(&0x01)).then_some(())?;
+        let declared_count @ 2.. = *record.payload.get(start + 1)? else { return None; };
+        let row_schema_index = NonZeroU8::new(*record.payload.get(start + 2)?)?;
         let mut at = start + 2;
-        let mut rows = Vec::with_capacity(row_count);
+        let mut rows = Vec::new();
         for ordinal in 1..declared_count {
-            (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
+            (record.payload.get(at) == Some(&row_schema_index.get())).then_some(())?;
             at += 1;
             let mut decode_value = |value_ordinal| {
                 let value_offset = at;
-                let atom = PayloadScalarAtom::read(record.payload.get(at..)?)?;
-                let (value, encoding, width) = (atom.value(), atom.encoding(), atom.raw().len());
-                (encoding == PayloadScalarEncoding::Binary64 && width == 8).then_some(())?;
-                let value = PatternScalarToken {
-                    encoding: PatternTransformEncoding::Binary64,
-                    value,
+                let scalar = ShiftedBinary64::read(record.payload.get(at..at + 8)?)?;
+                let value = PatternValue {
+                    scalar,
                     offset: record.payload_offset + value_offset,
-                    raw: record.payload.get(at..at + width)?.to_vec(),
                 };
-                at += width;
+                at += 8;
                 if value_ordinal == 1 {
                     (record.payload.get(at..at + 2) == Some(&[0x00, 0x00])).then_some(())?;
                     at += 2;
@@ -4322,22 +4199,11 @@ pub fn pattern_payload_transform_lane(
             (record.payload.get(at..at + 4) == Some(&[0x00; 4])).then_some(())?;
             at += 4;
             let terminal_value_offset = at;
-            let (terminal_value, encoding, width) = if record.payload.get(at) == Some(&0x01) {
-                (1.0, PatternTransformEncoding::ExactOne, 1)
-            } else {
-                let atom = PayloadScalarAtom::read(record.payload.get(at..)?)?;
-                let (value, encoding, width) = (atom.value(), atom.encoding(), atom.raw().len());
-                let encoding = match encoding {
-                    PayloadScalarEncoding::Binary32 => PatternTransformEncoding::Binary32,
-                    _ => return None,
-                };
-                (value, encoding, width)
-            };
-            let terminal = PatternScalarToken {
-                encoding,
-                value: terminal_value,
+            let scalar = PatternTerminal::read(record.payload.get(at..)?)?;
+            let width = scalar.raw().len();
+            let terminal = PatternValue {
+                scalar,
                 offset: record.payload_offset + terminal_value_offset,
-                raw: record.payload.get(at..at + width)?.to_vec(),
             };
             at += width;
             (record.payload.get(at..at + 7) == Some(&[0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03]))
@@ -4353,9 +4219,8 @@ pub fn pattern_payload_transform_lane(
                 raw: record.payload.get(at..at + width)?.to_vec(),
                 offset: record.payload_offset + selector_offset,
             };
-            let [a, b, c, d] = first;
-            rows.push(PatternTransformRow {
-                values: [a, b, c, d, terminal],
+            rows.push(PatternRow {
+                values: PatternWideValues { first, terminal },
                 selector,
             });
             at += width;
@@ -4365,13 +4230,13 @@ pub fn pattern_payload_transform_lane(
                 .then_some(())?;
             at += 2 + ROW_TAIL.len();
         }
-        let terminal_schema_index = row_schema_index.checked_sub(1)?;
+        let terminal_schema_index = row_schema_index.get() - 1;
         (record.payload.get(at) == Some(&terminal_schema_index)).then_some(())?;
         (record.payload.get(at + 1..at + 4) == Some(&[0x00, 0x00, 0x02])).then_some(())?;
         Some(PatternPayloadTransformLane {
             offset: record.payload_offset + start,
             row_schema_index,
-            rows: PatternTransformRows::Wide(rows),
+            rows: PatternRows::Wide(BranchItems::new(rows).ok()?),
         })
     };
     unique_candidate(
