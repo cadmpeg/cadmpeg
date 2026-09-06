@@ -6,6 +6,13 @@ use super::*;
 
 use crate::deltas::Census;
 
+mod entity51_wire;
+use entity51_wire::Entity51Wire;
+use crate::parasolid::entity_references::EntityReferences;
+use crate::parasolid::finite_values::FiniteValues;
+use crate::parasolid::printable_string::PrintableString;
+pub(crate) mod named_fields;
+use named_fields::NamedField;
 mod support_uv_wire;
 mod chart_wire;
 mod tail_wire;
@@ -487,7 +494,7 @@ pub struct ParasolidDeltasBodyRevision {
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local BODY XMT identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Monotonic kernel revision identity.
     pub node_id: u32,
     /// Eight ordered BODY references.
@@ -1217,12 +1224,8 @@ pub struct ParasolidTrimmedCurveRecord {
     pub stream_ordinal: u32,
     /// Cross-reference index of the trimmed curve.
     pub xmt: u32,
-    /// Cross-reference index of the basis curve.
-    pub basis_xmt: u32,
-    /// Stored start and end points in millimetres.
-    pub points: [[f64; 3]; 2],
-    /// Stored start and end parameters in basis-curve units.
-    pub parameters: [f64; 2],
+    #[serde(flatten)]
+    pub state: crate::topology::trimmed_curve_state::TrimmedCurveState,
     /// Record tag offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -1249,9 +1252,7 @@ impl ParasolidStreamRecords for ParasolidTrimmedCurveRecord {
             id,
             stream_ordinal,
             xmt: row.xmt,
-            basis_xmt: row.basis,
-            points: row.points,
-            parameters: row.parameters,
+            state: row.state,
             inflated_offset: row.pos as u64,
         }
     }
@@ -1269,14 +1270,8 @@ pub struct ParasolidSurfaceCurveRecord {
     pub stream_ordinal: u32,
     /// Cross-reference index of the surface curve.
     pub xmt: u32,
-    /// Cross-reference index of the support surface.
-    pub surface_xmt: u32,
-    /// Cross-reference index of the parameter-space B-curve.
-    pub pcurve_xmt: u32,
-    /// Nullable cross-reference index of the original model-space curve.
-    pub original_curve_xmt: u32,
-    /// Serialized tolerance to the original curve in Parasolid metres.
-    pub tolerance_to_original: f64,
+    #[serde(flatten)]
+    pub state: crate::topology::surface_curve_state::SurfaceCurveState,
     /// Record tag offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -1303,10 +1298,7 @@ impl ParasolidStreamRecords for ParasolidSurfaceCurveRecord {
             id,
             stream_ordinal,
             xmt: row.xmt,
-            surface_xmt: row.surface,
-            pcurve_xmt: row.pcurve,
-            original_curve_xmt: row.original,
-            tolerance_to_original: row.tolerance,
+            state: row.state,
             inflated_offset: row.pos as u64,
         }
     }
@@ -1322,16 +1314,8 @@ pub struct ParasolidBlendBoundRecord {
     pub id: String,
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
-    /// Cross-reference index of the bridge.
-    pub xmt: u32,
-    /// Five ordered common-header references.
-    pub header_references: [u32; 5],
-    /// Serialized orientation sense.
-    pub sense: bool,
-    /// Zero- or one-valued blend boundary index.
-    pub boundary_index: u32,
-    /// Cross-reference index of the blend surface.
-    pub blend_surface_xmt: u32,
+    #[serde(flatten)]
+    pub state: crate::intersection::blend_bound_state::BlendBoundState,
     /// Serialized partition/deltas and direct/escaped framing.
     pub framing: crate::intersection::BlendBoundFraming,
     /// Record tag offset in the inflated stream.
@@ -1351,17 +1335,13 @@ impl ParasolidScanRecords for ParasolidBlendBoundRecord {
         crate::intersection::blend_bounds(bytes)
     }
     fn xmt(row: &Self::Row) -> u32 {
-        row.xmt
+        row.state.xmt()
     }
     fn record(id: String, stream_ordinal: u32, row: Self::Row) -> Self::Record {
         ParasolidBlendBoundRecord {
             id,
             stream_ordinal,
-            xmt: row.xmt,
-            header_references: row.header_references,
-            sense: row.sense,
-            boundary_index: row.boundary_index,
-            blend_surface_xmt: row.blend_surface,
+            state: row.state,
             framing: row.framing,
             inflated_offset: row.pos as u64,
         }
@@ -1808,6 +1788,7 @@ pub struct ParasolidFieldNamesRecord {
 
 /// Complete type-80 declaration-to-field-name-list relation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "named_fields::FieldNamesWire", into = "named_fields::FieldNamesWire")]
 pub struct ParasolidAttributeFieldNames {
     /// Globally unique relation identity.
     pub id: String,
@@ -1817,10 +1798,8 @@ pub struct ParasolidAttributeFieldNames {
     pub attribute_definition: String,
     /// Uniquely resolved type-99 field-name record.
     pub field_names_record: String,
-    /// Ordered uniquely resolved type-84 or type-98 records.
-    pub value_records: Vec<String>,
-    /// Ordered exact field names.
-    pub names: Vec<String>,
+    /// Ordered exact names paired with their resolved value records.
+    pub fields: Vec<NamedField>,
 }
 
 /// Explicit topology-record ownership of one Parasolid attribute list.
@@ -1845,6 +1824,7 @@ pub struct ParasolidTopologyAttributeListReference {
 
 /// Framed Parasolid type-81 entity/attribute-list record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "Entity51Wire", into = "Entity51Wire")]
 pub struct ParasolidEntity51Record {
     /// Globally unique record identity.
     pub id: String,
@@ -1852,8 +1832,6 @@ pub struct ParasolidEntity51Record {
     pub stream_ordinal: u32,
     /// Stream-local record identity.
     pub xmt: u32,
-    /// Exact record flags.
-    pub flags: u32,
     /// Serialized sequence value.
     pub sequence: u32,
     /// Stream-local type-80 attribute-definition identity.
@@ -1861,7 +1839,7 @@ pub struct ParasolidEntity51Record {
     /// Five fixed leading stream-local references.
     pub leading_references: [u32; 5],
     /// Variable trailing stream-local references counted by `flags`.
-    pub trailing_references: Vec<u32>,
+    pub trailing_references: EntityReferences,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1878,7 +1856,7 @@ pub struct ParasolidEntity54StringRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Exact nonempty printable value.
-    pub value: String,
+    pub value: PrintableString<String>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1912,7 +1890,7 @@ pub struct ParasolidEntity53DoubleRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered finite big-endian binary64 values.
-    pub values: Vec<f64>,
+    pub values: FiniteValues<f64>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1943,7 +1921,7 @@ pub struct ParasolidEntityVectorRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered finite xyz values.
-    pub values: Vec<[f64; 3]>,
+    pub values: FiniteValues<[f64; 3]>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1960,7 +1938,7 @@ pub struct ParasolidEntity57AxisRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered axes, each retaining its two serialized xyz vectors.
-    pub values: Vec<[[f64; 3]; 2]>,
+    pub values: FiniteValues<[[f64; 3]; 2]>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -2338,7 +2316,7 @@ pub fn parasolid_attribute_field_names(
                     else {
                         return None;
                     };
-                    Some(*name)
+                    Some(NamedField { value_record: name.0.to_string(), name: name.1.to_string() })
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(ParasolidAttributeFieldNames {
@@ -2349,11 +2327,7 @@ pub fn parasolid_attribute_field_names(
                 stream_ordinal: definition.stream_ordinal,
                 attribute_definition: definition.id.clone(),
                 field_names_record: list.id.clone(),
-                value_records: resolved.iter().map(|(id, _)| (*id).to_string()).collect(),
-                names: resolved
-                    .iter()
-                    .map(|(_, value)| (*value).to_string())
-                    .collect(),
+                fields: resolved,
             })
         })
         .collect::<Vec<_>>();
@@ -2468,7 +2442,6 @@ pub fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51R
                     ),
                     stream_ordinal: stream_ordinal as u32,
                     xmt: record.xmt,
-                    flags: record.flags,
                     sequence: record.sequence,
                     definition_xmt: record.definition_xmt,
                     leading_references: record.leading_references,
@@ -2551,7 +2524,7 @@ pub(crate) fn parasolid_entity_value_records(
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
-                value: record.value.to_string(),
+                value: record.value.into_owned(),
                 byte_len: record.byte_len as u64,
                 inflated_offset: record.offset as u64,
             });
@@ -2683,7 +2656,7 @@ pub fn parasolid_entity_51_numeric_uses(
     let mut uses = Vec::new();
     for entity in entities {
         for (trailing_ordinal, referenced_xmt) in
-            entity.trailing_references.iter().copied().enumerate()
+            entity.trailing_references.values().iter().copied().enumerate()
         {
             let reference_ordinal = trailing_ordinal + 5;
             let Some([(kind, value_record)]) = values
@@ -2726,7 +2699,7 @@ pub fn parasolid_entity_51_string_uses(
     let mut uses = Vec::new();
     for entity in entities {
         for (trailing_ordinal, referenced_xmt) in
-            entity.trailing_references.iter().copied().enumerate()
+            entity.trailing_references.values().iter().copied().enumerate()
         {
             let reference_ordinal = trailing_ordinal + 5;
             let Some([string]) = strings_by_identity
@@ -2808,7 +2781,7 @@ pub fn parasolid_entity_51_structured_uses(
     let mut uses = Vec::new();
     for entity in entities {
         for (trailing_ordinal, referenced_xmt) in
-            entity.trailing_references.iter().copied().enumerate()
+            entity.trailing_references.values().iter().copied().enumerate()
         {
             let reference_ordinal = trailing_ordinal + 5;
             let Some([(kind, value_record)]) = values
@@ -3143,7 +3116,7 @@ pub fn parasolid_topology_attribute_fields_have_untransferred_values(
                 if matches!(field_code, 0 | 9) {
                     return false;
                 }
-                let Some(&referenced_xmt) = entity.trailing_references.get(field_ordinal) else {
+                let Some(&referenced_xmt) = entity.trailing_references.values().get(field_ordinal) else {
                     return true;
                 };
                 if referenced_xmt == 1 {
@@ -3186,10 +3159,10 @@ mod tests {
         use crate::deltas::inline_schema_fields::InlineSchemaFields;
         let base = serde_json::json!({
             "schema": "type38", "xmt": 3, "node_id": 7,
-            "leading_references": [1, 2, 3, 4, 5], "marker": 4,
-            "linked_references": [], "state_references": [], "numeric_values": null
+            "leading_references": [1, 2, 3, 4, 5], "marker": 45,
+            "linked_references": [2, 3], "state_references": [6, 7, 8], "numeric_values": null
         });
-        for statuses in [None, Some([1; 5]), Some([0, 1, 2, 1, 1])] {
+        for statuses in [None, Some([1; 5]), Some([1, 1, 1, 1, 0])] {
             let mut wire = base.clone();
             if let Some(statuses) = statuses {
                 wire["leading_statuses"] = serde_json::json!(statuses);
@@ -3197,13 +3170,13 @@ mod tests {
             let fields: InlineSchemaFields =
                 serde_json::from_value(wire.clone()).unwrap();
             let InlineSchemaFields::Type38 {
-                leading_statuses, ..
+                state,
             } = &fields
             else {
                 panic!("type38 wire must decode as Type38");
             };
-            assert_eq!(*leading_statuses, statuses.unwrap_or([1; 5]));
-            if *leading_statuses == [1; 5] {
+            assert_eq!(state.leading_statuses(), statuses.unwrap_or([1; 5]));
+            if state.leading_statuses() == [1; 5] {
                 wire.as_object_mut().unwrap().remove("leading_statuses");
             }
             assert_eq!(serde_json::to_value(fields).unwrap(), wire);
@@ -3434,7 +3407,7 @@ mod tests {
         let events = super::parasolid_deltas_events_with_censuses(&streams, vec![Some(census)]);
 
         assert_eq!(events.body_revisions.len(), 1);
-        assert_eq!(events.body_revisions[0].xmt, 3);
+        assert_eq!(u32::from(events.body_revisions[0].xmt), 3);
         assert_eq!(events.body_revisions[0].node_id, 9);
         assert_eq!(
             events.body_revisions[0].references,
@@ -4041,11 +4014,10 @@ mod tests {
             id: "entity".into(),
             stream_ordinal: 2,
             xmt: 10,
-            flags: 1,
             sequence: 0,
             definition_xmt: 9,
             leading_references: [1; 5],
-            trailing_references: vec![12],
+            trailing_references: EntityReferences::new(vec![12]).unwrap(),
             byte_len: 32,
             inflated_offset: 40,
         };
@@ -4054,7 +4026,7 @@ mod tests {
             stream_ordinal: 2,
             kind: ParasolidVectorValueKind::Points,
             xmt: 12,
-            values: vec![[1.0, 2.0, 3.0]],
+            values: crate::parasolid::finite_values::FiniteValues::new(vec![[1.0, 2.0, 3.0]]).unwrap(),
             byte_len: 36,
             inflated_offset: 80,
         };
@@ -4187,11 +4159,10 @@ mod tests {
             id: "entity".into(),
             stream_ordinal: 0,
             xmt: 30,
-            flags: 1,
             sequence: 0,
             definition_xmt: 20,
             leading_references: [1; 5],
-            trailing_references: vec![40],
+            trailing_references: EntityReferences::new(vec![40]).unwrap(),
             byte_len: 32,
             inflated_offset: 30,
         };
@@ -4262,7 +4233,7 @@ mod tests {
         );
         // Null values and always-empty pointer fields require no value relation.
         let mut null_entity = entity.clone();
-        null_entity.trailing_references[0] = 1;
+        null_entity.trailing_references.values_mut()[0] = 1;
         assert!(
             !parasolid_topology_attribute_fields_have_untransferred_values(
                 &[definition(1, vec![4])],
@@ -4331,7 +4302,7 @@ mod tests {
             id: format!("string-{xmt}"),
             stream_ordinal: 3,
             xmt,
-            value: (xmt - 27).to_string(),
+            value: PrintableString::new((xmt - 27).to_string()).unwrap(),
             byte_len: 10,
             inflated_offset: u64::from(xmt),
         });
@@ -4351,7 +4322,7 @@ mod tests {
             std::slice::from_ref(&unicode),
         );
         assert_eq!(relations.len(), 1);
-        assert_eq!(relations[0].names, ["1", "μ", "3"]);
+        assert_eq!(relations[0].fields.iter().map(|field| field.name.as_str()).collect::<Vec<_>>(), ["1", "μ", "3"]);
 
         let mut incomplete = list.clone();
         incomplete.name_xmts.pop();
@@ -4575,11 +4546,10 @@ mod tests {
             id: "entity".into(),
             stream_ordinal: 3,
             xmt: 50,
-            flags: 1,
             sequence: 7,
             definition_xmt: 34,
             leading_references: [60, 61, 1, 62, 63],
-            trailing_references: vec![64],
+            trailing_references: EntityReferences::new(vec![64]).unwrap(),
             byte_len: 26,
             inflated_offset: 200,
         };
@@ -4655,11 +4625,10 @@ mod tests {
             id: "head".into(),
             stream_ordinal: 0,
             xmt: 30,
-            flags: 1,
             sequence: 1,
             definition_xmt: 20,
             leading_references: [40, 1, 1, 1, 1],
-            trailing_references: vec![50],
+            trailing_references: EntityReferences::new(vec![50]).unwrap(),
             byte_len: 26,
             inflated_offset: 30,
         };
@@ -4707,11 +4676,10 @@ mod tests {
             id: "entity".into(),
             stream_ordinal: 3,
             xmt: 50,
-            flags: 2,
             sequence: 7,
             definition_xmt: 34,
             leading_references: [60, 61, 70, 71, 72],
-            trailing_references: vec![70, 71],
+            trailing_references: EntityReferences::new(vec![70, 71]).unwrap(),
             byte_len: 28,
             inflated_offset: 200,
         };
@@ -4727,7 +4695,7 @@ mod tests {
             id: "string".into(),
             stream_ordinal: 3,
             xmt: 71,
-            value: "value".into(),
+            value: PrintableString::new("value".to_owned()).unwrap(),
             byte_len: 14,
             inflated_offset: 400,
         }];

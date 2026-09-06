@@ -8,6 +8,8 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 
+pub(crate) mod blend_bound_state;
+use blend_bound_state::BlendBoundState;
 pub(crate) mod chart_samples;
 pub(crate) mod support_uv_values;
 use support_uv_values::{SupportUvPacking, SupportUvValues};
@@ -77,16 +79,7 @@ pub struct ChartSourceRecord {
 /// A complete type-59 second-support bridge record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlendBound {
-    /// Cross-reference index of the bridge record.
-    pub xmt: u32,
-    /// Five ordered common-header references.
-    pub header_references: [u32; 5],
-    /// Serialized orientation sense.
-    pub sense: bool,
-    /// Zero- or one-valued blend boundary index.
-    pub boundary_index: u32,
-    /// Cross-reference index of the blend surface.
-    pub blend_surface: u32,
+    pub state: BlendBoundState,
     /// Serialized partition/deltas and direct/escaped framing.
     pub framing: BlendBoundFraming,
     /// Type-tag offset in the inflated stream.
@@ -565,7 +558,7 @@ fn construction_has_endpoint_witnesses(
 fn blend_bound_records(stream: &[u8]) -> BTreeMap<u32, u32> {
     blend_bounds(stream)
         .into_iter()
-        .map(|b| (b.xmt, b.blend_surface))
+        .map(|b| (b.state.xmt(), b.state.blend_surface()))
         .collect()
 }
 
@@ -575,7 +568,7 @@ pub fn blend_bounds(stream: &[u8]) -> Vec<BlendBound> {
     let mut duplicates = BTreeSet::new();
     for tag in find_tags(stream, [0, 59]) {
         if let Some((bound, _)) = blend_bound_at(stream, tag) {
-            insert_unique(&mut out, &mut duplicates, bound.xmt, bound);
+            insert_unique(&mut out, &mut duplicates, bound.state.xmt(), bound);
         }
     }
     out.into_values().collect()
@@ -623,7 +616,6 @@ fn blend_bound_layout(
     );
     let mut at = tag.checked_add(2 + usize::from(escaped))?;
     let (xmt, consumed) = read_xmt(stream, at)?;
-    (xmt > 1).then_some(())?;
     at = at.checked_add(consumed + 4)?;
     let mut header = [0u32; 5];
     for reference in &mut header {
@@ -635,7 +627,6 @@ fn blend_bound_layout(
             at += 1;
         }
     }
-    (header[0] == 1).then_some(())?;
     let sense = match stream.get(at) {
         Some(b'+') => true,
         Some(b'-') => false,
@@ -643,10 +634,8 @@ fn blend_bound_layout(
     };
     at += 1;
     let (boundary, consumed) = read_xmt(stream, at)?;
-    (boundary <= 1).then_some(())?;
     at += consumed;
     let (surface, consumed) = read_xmt(stream, at)?;
-    (surface > 1).then_some(())?;
     at += consumed;
     if status_framed {
         (stream.get(at) == Some(&1)).then_some(())?;
@@ -654,11 +643,7 @@ fn blend_bound_layout(
     }
     Some((
         BlendBound {
-            xmt,
-            header_references: header,
-            sense,
-            boundary_index: boundary,
-            blend_surface: surface,
+            state: BlendBoundState::new(xmt, header, sense, boundary, surface).ok()?,
             framing,
             pos: tag,
         },

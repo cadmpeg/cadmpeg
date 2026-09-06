@@ -268,8 +268,8 @@ fn deltas_walks_complete_entity_value_records() {
     assert_eq!(&residual[decoded_len..stream.len()], &[0xfe, 0xdc, 0xba]);
     let value_records = crate::parasolid::entity_value_records(&residual);
     assert_eq!(value_records.integers[0].values, [u32::MAX]);
-    assert_eq!(value_records.doubles[0].values, [0.25]);
-    assert_eq!(value_records.strings[0].value, "abc");
+    assert_eq!(value_records.doubles[0].values.as_slice(), [0.25]);
+    assert_eq!(value_records.strings[0].value.as_str(), "abc");
 }
 
 #[test]

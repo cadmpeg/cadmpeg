@@ -179,10 +179,10 @@ fn decode_resolves_surface_curve_to_its_basis_curve() {
         .arena_as::<super::super::ParasolidSurfaceCurveRecord>("parasolid_surface_curve_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].surface_xmt, 6);
-    assert_eq!(records[0].pcurve_xmt, 9);
-    assert_eq!(records[0].original_curve_xmt, 9);
-    assert_eq!(records[0].tolerance_to_original, 0.000_01);
+    assert_eq!(records[0].state.surface(), 6);
+    assert_eq!(records[0].state.pcurve(), 9);
+    assert_eq!(records[0].state.original(), Some(9));
+    assert_eq!(records[0].state.tolerance(), 0.000_01);
     assert_eq!(
         result.ir().model.edges[0].curve.as_ref(),
         Some(&result.ir().model.curves[0].id)
@@ -463,10 +463,10 @@ fn decode_resolves_intersection_second_support_through_blend_bound() {
         .arena_as::<super::super::ParasolidBlendBoundRecord>("parasolid_blend_bound_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].header_references, [1; 5]);
-    assert!(records[0].sense);
-    assert_eq!(records[0].boundary_index, 0);
-    assert_eq!(records[0].blend_surface_xmt, 13);
+    assert_eq!(records[0].state.header_references(), [1; 5]);
+    assert!(records[0].state.sense());
+    assert_eq!(records[0].state.boundary_index(), 0);
+    assert_eq!(records[0].state.blend_surface(), 13);
     assert_eq!(
         records[0].framing,
         crate::intersection::BlendBoundFraming::PartitionDirect
@@ -499,8 +499,8 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
         .arena_as::<super::super::ParasolidTrimmedCurveRecord>("parasolid_trimmed_curve_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].basis_xmt, 9);
-    assert_eq!(records[0].points, [[0.0; 3]; 2]);
-    assert_eq!(records[0].parameters, [0.000_25, 0.000_75]);
+    assert_eq!(records[0].state.basis(), 9);
+    assert_eq!(records[0].state.points(), [[0.0; 3]; 2]);
+    assert_eq!(records[0].state.parameters(), [0.000_25, 0.000_75]);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }

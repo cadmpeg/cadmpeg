@@ -16,9 +16,17 @@ use cadmpeg_core::bytes::{contains, find};
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 
+pub(crate) mod finite_values;
+use finite_values::{FiniteLane, FiniteValues};
+
+pub(crate) mod printable_string;
+use printable_string::PrintableString;
+
+pub(crate) mod entity_references;
+use entity_references::EntityReferences;
+
 use crate::container::Container;
 use crate::framing::read_and_advance as read_xmt;
-use crate::vec3_at::vec3_be_at;
 
 /// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -161,8 +169,6 @@ pub struct Entity51Record {
     pub offset: usize,
     /// Exact framed record length.
     pub byte_len: usize,
-    /// Record flags preceding the identity.
-    pub flags: u32,
     /// Stream-local record identity.
     pub xmt: u32,
     /// Serialized sequence value.
@@ -172,7 +178,7 @@ pub struct Entity51Record {
     /// Five fixed leading stream-local references.
     pub leading_references: [u32; 5],
     /// Variable trailing stream-local references counted by `flags`.
-    pub trailing_references: Vec<u32>,
+    pub trailing_references: EntityReferences,
 }
 
 /// One self-framed printable type-84 string record.
@@ -185,7 +191,7 @@ pub struct Entity54StringRecord<'a> {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Nonempty printable string value.
-    pub value: &'a str,
+    pub value: PrintableString<&'a str>,
 }
 
 /// One counted type-82 unsigned-integer value record.
@@ -211,7 +217,7 @@ pub struct Entity53DoubleRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered finite big-endian binary64 values.
-    pub values: Vec<f64>,
+    pub values: FiniteValues<f64>,
 }
 
 /// One counted type-85 point-value record.
@@ -224,7 +230,7 @@ pub struct Entity55PointRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered finite xyz point values.
-    pub values: Vec<[f64; 3]>,
+    pub values: FiniteValues<[f64; 3]>,
 }
 
 /// One counted type-86 vector-value record.
@@ -237,7 +243,7 @@ pub struct Entity56VectorRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered finite xyz vector values.
-    pub values: Vec<[f64; 3]>,
+    pub values: FiniteValues<[f64; 3]>,
 }
 
 /// One counted type-87 axis-value record.
@@ -250,7 +256,7 @@ pub struct Entity57AxisRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered axes, each serialized as two finite xyz vectors.
-    pub values: Vec<[[f64; 3]; 2]>,
+    pub values: FiniteValues<[[f64; 3]; 2]>,
 }
 
 /// One counted type-88 tag-value record.
@@ -276,7 +282,7 @@ pub struct Entity59DirectionRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered finite xyz direction values.
-    pub values: Vec<[f64; 3]>,
+    pub values: FiniteValues<[f64; 3]>,
 }
 
 /// One counted type-98 Unicode-value record.
@@ -412,7 +418,7 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
         }
         for record in records {
             referenced.extend(record.leading_references);
-            referenced.extend(record.trailing_references);
+            referenced.extend(record.trailing_references.into_values());
         }
     }
 
@@ -479,27 +485,52 @@ pub(crate) fn entity_value_record_identity_at(
 }
 
 #[derive(Clone, Copy)]
+enum CountedValuePayload<'a> {
+    Integers(&'a [[u8; 4]]),
+    Doubles(FiniteLane<'a, f64>),
+    Points(FiniteLane<'a, [f64; 3]>),
+    Vectors(FiniteLane<'a, [f64; 3]>),
+    Axes(FiniteLane<'a, [[f64; 3]; 2]>),
+    Tags(&'a [[u8; 4]]),
+    Directions(FiniteLane<'a, [f64; 3]>),
+    Unicode(&'a [[u8; 2]]),
+}
+
+impl CountedValuePayload<'_> {
+    fn tag(self) -> u8 {
+        match self {
+            Self::Integers(_) => 0x52,
+            Self::Doubles(_) => 0x53,
+            Self::Points(_) => 0x55,
+            Self::Vectors(_) => 0x56,
+            Self::Axes(_) => 0x57,
+            Self::Tags(_) => 0x58,
+            Self::Directions(_) => 0x59,
+            Self::Unicode(_) => 0x62,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 enum ValueRecordFrame<'a> {
     Counted {
-        tag: u8,
         offset: usize,
         end: usize,
         xmt: u32,
-        value_width: usize,
-        raw: &'a [u8],
+        payload: CountedValuePayload<'a>,
     },
     String {
         offset: usize,
         end: usize,
         xmt: u32,
-        value: &'a str,
+        value: PrintableString<&'a str>,
     },
 }
 
 impl ValueRecordFrame<'_> {
     fn tag(self) -> u8 {
         match self {
-            Self::Counted { tag, .. } => tag,
+            Self::Counted { payload, .. } => payload.tag(),
             Self::String { .. } => 0x54,
         }
     }
@@ -529,78 +560,48 @@ impl ValueRecordFrame<'_> {
 
 fn value_record_frame_at(bytes: &[u8], offset: usize) -> Option<ValueRecordFrame<'_>> {
     let tag = *bytes.get(offset.checked_add(1)?)?;
-    match tag {
-        0x52 | 0x58 => {
-            let frame = counted_value_frame_at(bytes, offset, tag, 4)?;
-            Some(ValueRecordFrame::Counted {
-                tag,
-                offset: frame.offset,
-                end: frame.end,
-                xmt: frame.xmt,
-                value_width: frame.value_width,
-                raw: frame.raw,
-            })
-        }
-        0x53 => {
-            let frame = counted_value_frame_at(bytes, offset, tag, 8)?;
-            finite_scalar_lane(frame.raw)?;
-            Some(ValueRecordFrame::Counted {
-                tag,
-                offset: frame.offset,
-                end: frame.end,
-                xmt: frame.xmt,
-                value_width: frame.value_width,
-                raw: frame.raw,
-            })
-        }
-        0x54 => {
-            let frame = string_value_frame_at(bytes, offset)?;
-            Some(ValueRecordFrame::String {
-                offset: frame.offset,
-                end: frame.end,
-                xmt: frame.xmt,
-                value: frame.value,
-            })
-        }
-        0x55 | 0x56 | 0x59 => {
-            let frame = counted_value_frame_at(bytes, offset, tag, 24)?;
-            finite_vector_lane(frame.raw)?;
-            Some(ValueRecordFrame::Counted {
-                tag,
-                offset: frame.offset,
-                end: frame.end,
-                xmt: frame.xmt,
-                value_width: frame.value_width,
-                raw: frame.raw,
-            })
-        }
-        0x57 => {
-            let frame = counted_value_frame_at(bytes, offset, tag, 24)?;
-            frame.count.is_multiple_of(2).then_some(())?;
-            finite_vector_lane(frame.raw)?;
-            Some(ValueRecordFrame::Counted {
-                tag,
-                offset: frame.offset,
-                end: frame.end,
-                xmt: frame.xmt,
-                value_width: frame.value_width,
-                raw: frame.raw,
-            })
-        }
-        0x62 => {
-            let frame = counted_value_frame_at(bytes, offset, tag, 2)?;
-            valid_utf16_lane(frame.raw)?;
-            Some(ValueRecordFrame::Counted {
-                tag,
-                offset: frame.offset,
-                end: frame.end,
-                xmt: frame.xmt,
-                value_width: frame.value_width,
-                raw: frame.raw,
-            })
-        }
-        _ => None,
+    if tag == 0x54 {
+        let frame = string_value_frame_at(bytes, offset)?;
+        return Some(ValueRecordFrame::String {
+            offset: frame.offset,
+            end: frame.end,
+            xmt: frame.xmt,
+            value: frame.value,
+        });
     }
+    let width = match tag {
+        0x52 | 0x58 => 4,
+        0x53 => 8,
+        0x55 | 0x56 | 0x57 | 0x59 => 24,
+        0x62 => 2,
+        _ => return None,
+    };
+    let frame = counted_value_frame_at(bytes, offset, tag, width)?;
+    let payload = match tag {
+        0x52 => CountedValuePayload::Integers(frame.raw.as_chunks().0),
+        0x53 => CountedValuePayload::Doubles(FiniteLane::new(frame.raw)?),
+        0x55 | 0x56 | 0x59 => {
+            let lane = FiniteLane::new(frame.raw)?;
+            match tag {
+                0x55 => CountedValuePayload::Points(lane),
+                0x56 => CountedValuePayload::Vectors(lane),
+                _ => CountedValuePayload::Directions(lane),
+            }
+        }
+        0x57 => CountedValuePayload::Axes(FiniteLane::new(frame.raw)?),
+        0x58 => CountedValuePayload::Tags(frame.raw.as_chunks().0),
+        0x62 => {
+            valid_utf16_lane(frame.raw)?;
+            CountedValuePayload::Unicode(frame.raw.as_chunks().0)
+        }
+        _ => return None,
+    };
+    Some(ValueRecordFrame::Counted {
+        offset: frame.offset,
+        end: frame.end,
+        xmt: frame.xmt,
+        payload,
+    })
 }
 
 fn append_value_record<'a>(
@@ -620,64 +621,57 @@ fn append_value_record<'a>(
             value,
         }),
         ValueRecordFrame::Counted {
-            tag,
             offset,
             end,
             xmt,
-            value_width,
-            raw,
-        } => match tag {
-            0x52 => records.integers.push(Entity52IntegerRecord {
+            payload,
+        } => match payload {
+            CountedValuePayload::Integers(raw) => records.integers.push(Entity52IntegerRecord {
                 offset,
                 byte_len: end.checked_sub(offset)?,
                 xmt,
-                values: materialize_values(raw, value_width, |value| View::u32_be_at(value, 0))?,
+                values: materialize_values(raw, |value| View::u32_be_at(value, 0))?,
             }),
-            0x53 => records.doubles.push(Entity53DoubleRecord {
+            CountedValuePayload::Doubles(raw) => records.doubles.push(Entity53DoubleRecord {
                 offset,
                 byte_len: end.checked_sub(offset)?,
                 xmt,
-                values: materialize_values(raw, value_width, |value| View::f64_be_at(value, 0))?,
+                values: raw.materialize()?,
             }),
-            0x55 => records.points.push(Entity55PointRecord {
+            CountedValuePayload::Points(raw) => records.points.push(Entity55PointRecord {
                 offset,
                 byte_len: end.checked_sub(offset)?,
                 xmt,
-                values: materialize_values(raw, value_width, finite_vector)?,
+                values: raw.materialize()?,
             }),
-            0x56 => records.vectors.push(Entity56VectorRecord {
+            CountedValuePayload::Vectors(raw) => records.vectors.push(Entity56VectorRecord {
                 offset,
                 byte_len: end.checked_sub(offset)?,
                 xmt,
-                values: materialize_values(raw, value_width, finite_vector)?,
+                values: raw.materialize()?,
             }),
-            0x57 => {
-                let vectors = materialize_values(raw, value_width, finite_vector)?;
+            CountedValuePayload::Axes(raw) => {
                 records.axes.push(Entity57AxisRecord {
                     offset,
                     byte_len: end.checked_sub(offset)?,
                     xmt,
-                    values: vectors
-                        .chunks_exact(2)
-                        .map(|axis| [axis[0], axis[1]])
-                        .collect(),
+                    values: raw.materialize()?,
                 });
             }
-            0x58 => records.tags.push(Entity58TagRecord {
+            CountedValuePayload::Tags(raw) => records.tags.push(Entity58TagRecord {
                 offset,
                 byte_len: end.checked_sub(offset)?,
                 xmt,
-                values: materialize_values(raw, value_width, |value| View::u32_be_at(value, 0))?,
+                values: materialize_values(raw, |value| View::u32_be_at(value, 0))?,
             }),
-            0x59 => records.directions.push(Entity59DirectionRecord {
+            CountedValuePayload::Directions(raw) => records.directions.push(Entity59DirectionRecord {
                 offset,
                 byte_len: end.checked_sub(offset)?,
                 xmt,
-                values: materialize_values(raw, value_width, finite_vector)?,
+                values: raw.materialize()?,
             }),
-            0x62 => {
-                let code_units =
-                    materialize_values(raw, value_width, |value| View::u16_be_at(value, 0))?;
+            CountedValuePayload::Unicode(raw) => {
+                let code_units = materialize_values(raw, |value| View::u16_be_at(value, 0))?;
                 records.unicode.push(Entity62UnicodeRecord {
                     offset,
                     byte_len: end.checked_sub(offset)?,
@@ -685,18 +679,16 @@ fn append_value_record<'a>(
                     value: String::from_utf16(&code_units).ok()?,
                 });
             }
-            _ => return None,
         },
     }
     Some(())
 }
 
-fn materialize_values<T>(
-    raw: &[u8],
-    value_width: usize,
+fn materialize_values<T, const N: usize>(
+    raw: &[[u8; N]],
     decode: impl Fn(&[u8]) -> Option<T>,
 ) -> Option<Vec<T>> {
-    raw.chunks_exact(value_width).map(decode).collect()
+    raw.iter().map(|value| decode(value)).collect()
 }
 
 /// Decode counted type-99 attribute field-name records.
@@ -791,38 +783,20 @@ pub(crate) fn entity_53_double_record_at(
     bytes: &[u8],
     offset: usize,
 ) -> Option<Entity53DoubleRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x53, 8, |value| {
-        let value = View::f64_be_at(value, 0)?;
-        value.is_finite().then_some(value)
-    })?;
+    let ValueRecordFrame::Counted {
+        offset,
+        end,
+        xmt,
+        payload: CountedValuePayload::Doubles(lane),
+    } = value_record_frame_at(bytes, offset)? else {
+        return None;
+    };
     Some(Entity53DoubleRecord {
-        offset: record.offset,
-        byte_len: record.byte_len,
-        xmt: record.xmt,
-        values: record.values,
+        offset,
+        byte_len: end.checked_sub(offset)?,
+        xmt,
+        values: lane.materialize()?,
     })
-}
-
-fn finite_vector(value: &[u8]) -> Option<[f64; 3]> {
-    let values = vec3_be_at(value, 0)?;
-    values
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(values)
-}
-
-fn finite_scalar_lane(raw: &[u8]) -> Option<()> {
-    for value in raw.chunks_exact(8) {
-        View::f64_be_at(value, 0)?.is_finite().then_some(())?;
-    }
-    Some(())
-}
-
-fn finite_vector_lane(raw: &[u8]) -> Option<()> {
-    for value in raw.chunks_exact(24) {
-        finite_vector(value)?;
-    }
-    Some(())
 }
 
 fn valid_utf16_lane(raw: &[u8]) -> Option<()> {
@@ -854,8 +828,6 @@ struct CountedValueFrame<'a> {
     offset: usize,
     end: usize,
     xmt: u32,
-    count: usize,
-    value_width: usize,
     raw: &'a [u8],
 }
 
@@ -883,8 +855,6 @@ fn counted_value_frame_at(
         offset,
         end: values_end,
         xmt,
-        count,
-        value_width,
         raw,
     })
 }
@@ -931,7 +901,7 @@ struct StringValueFrame<'a> {
     offset: usize,
     end: usize,
     xmt: u32,
-    value: &'a str,
+    value: PrintableString<&'a str>,
 }
 
 fn string_value_frame_at(bytes: &[u8], offset: usize) -> Option<StringValueFrame<'_>> {
@@ -940,19 +910,13 @@ fn string_value_frame_at(bytes: &[u8], offset: usize) -> Option<StringValueFrame
     if bytes.get(at) == Some(&0xff) {
         at += 1;
     }
-    let length = View::u32_be_at(bytes, at)
-        .map(|value| value as usize)
-        .filter(|length| *length > 0)?;
+    let length = View::u32_be_at(bytes, at)? as usize;
     at += 4;
     let xmt = read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1)?;
     let end = at.checked_add(length)?;
-    let value = bytes.get(at..end).filter(|value| {
-        value
-            .iter()
-            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-    })?;
+    let value = bytes.get(at..end)?;
     (bytes.get(end) == Some(&0)).then_some(())?;
-    let value = std::str::from_utf8(value).ok()?;
+    let value = PrintableString::new(std::str::from_utf8(value).ok()?).ok()?;
     Some(StringValueFrame {
         offset,
         end: end.checked_add(1)?,
@@ -990,7 +954,6 @@ pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity5
 struct Entity51Frame {
     offset: usize,
     end: usize,
-    flags: u32,
     xmt: u32,
     sequence: u32,
     definition_xmt: u32,
@@ -1028,7 +991,6 @@ fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
     Some(Entity51Frame {
         offset,
         end,
-        flags,
         xmt,
         sequence,
         definition_xmt,
@@ -1042,11 +1004,10 @@ fn entity_51_record_from_frame(bytes: &[u8], frame: Entity51Frame) -> Option<Ent
     let mut at = frame.references_at;
     let references = entity_51_references(bytes, &mut at, frame.reference_count)?;
     let leading_references = references.get(..5)?.try_into().ok()?;
-    let trailing_references = references.get(5..)?.to_vec();
+    let trailing_references = EntityReferences::new(references.get(5..)?.to_vec()).ok()?;
     Some(Entity51Record {
         offset: frame.offset,
         byte_len: frame.end - frame.offset,
-        flags: frame.flags,
         xmt: frame.xmt,
         sequence: frame.sequence,
         definition_xmt: frame.definition_xmt,

@@ -4322,7 +4322,7 @@ fn attach_parasolid_topology_string_attributes(
                             .map(|class_name| format!("{class_name}.{generic_name}"))
                     })
                     .unwrap_or(generic_name),
-                values: vec![AttributeValue::String(string.value.clone())],
+                values: vec![AttributeValue::String(string.value.as_str().to_owned())],
             });
         }
     }
@@ -4434,8 +4434,9 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
                 self.field_names_by_definition
                     .get(definition.id.as_str())
                     .and_then(Option::as_ref)?
-                    .names
+                    .fields
                     .get(field_use.field_ordinal as usize)?
+                    .name
                     .clone()
             }
             _ => format!(
@@ -4705,6 +4706,7 @@ fn attach_parasolid_topology_numeric_attributes(
                     (
                         record
                             .values
+                            .as_slice()
                             .iter()
                             .copied()
                             .map(AttributeValue::Float)
@@ -4820,6 +4822,7 @@ fn attach_parasolid_topology_structured_attributes(
                     (
                         record
                             .values
+                            .as_slice()
                             .iter()
                             .map(|value| AttributeValue::Vector(value.to_vec()))
                             .collect(),
@@ -4835,6 +4838,7 @@ fn attach_parasolid_topology_structured_attributes(
                     (
                         record
                             .values
+                            .as_slice()
                             .iter()
                             .map(|axis| {
                                 AttributeValue::Vector(

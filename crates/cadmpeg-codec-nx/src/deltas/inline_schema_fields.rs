@@ -7,6 +7,7 @@ use super::precision_state::PrecisionState;
 use super::type101_state::Type101State;
 use super::attdef_state::AttdefState;
 use super::type70_state::Type70State;
+use super::type38_state::Type38State;
 
 /// Body of an inline schema declaration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -47,27 +48,8 @@ pub(crate) enum InlineSchemaFields {
     Type101Compact,
     /// Type 38 intersection-data declaration state.
     Type38 {
-        /// Non-null stream-local declaration identity.
-        xmt: u32,
-        /// Serialized node identity.
-        node_id: u32,
-        /// Five leading XMT references.
-        leading_references: [u32; 5],
-        /// Serialized statuses of the five leading references.
-        #[serde(
-            default = "default_type38_leading_statuses",
-            deserialize_with = "deserialize_type38_leading_statuses",
-            skip_serializing_if = "type38_leading_statuses_are_default"
-        )]
-        leading_statuses: [u8; 5],
-        /// Intersection-state discriminator.
-        marker: u8,
-        /// Non-null status-one XMT references selected by the marker.
-        linked_references: Vec<u32>,
-        /// Non-null status-zero declaration-state references.
-        state_references: Vec<u32>,
-        /// Eleven finite binary64 values from the optional nested term-use state.
-        numeric_values: Option<TermUseValues>,
+        #[serde(flatten)]
+        state: Type38State,
     },
     /// Type 41 term-use declaration state.
     Type41 {
@@ -97,23 +79,6 @@ pub(crate) enum InlineBodyStateFields {
         state_bytes: BodyStateBytes,
     },
 }
-
-fn default_type38_leading_statuses() -> [u8; 5] {
-    [1; 5]
-}
-
-fn type38_leading_statuses_are_default(statuses: &[u8; 5]) -> bool {
-    *statuses == default_type38_leading_statuses()
-}
-
-fn deserialize_type38_leading_statuses<'de, D>(deserializer: D) -> Result<[u8; 5], D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    Ok(Option::<[u8; 5]>::deserialize(deserializer)?
-        .unwrap_or_else(default_type38_leading_statuses))
-}
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 11]", into = "[f64; 11]")]

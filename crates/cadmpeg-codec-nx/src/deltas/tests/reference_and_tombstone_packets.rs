@@ -40,7 +40,7 @@ fn deltas_body_revision_retains_prefix_identities_and_bounded_state_tail() {
 
     assert!(census.records.is_empty());
     assert_eq!(census.body_revisions.len(), 1);
-    assert_eq!(census.body_revisions[0].xmt, 784);
+    assert_eq!(u32::from(census.body_revisions[0].xmt), 784);
     assert_eq!(census.body_revisions[0].node_id, 223);
     assert_eq!(
         census.body_revisions[0].references,
