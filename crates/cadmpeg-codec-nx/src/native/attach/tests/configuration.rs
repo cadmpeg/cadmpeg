@@ -201,9 +201,18 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
         id: "group".into(),
         first_data_blocks: ["a".into(), "b".into()],
         second_data_blocks: ["c".into(), "d".into()],
-        operation_labels: vec!["operation#newer".into(), "operation#older".into()],
-        scalar_lanes: vec!["lane-newer".into(), "lane-older".into()],
-        block_references: vec!["blocks-newer".into(), "blocks-older".into()],
+        members: vec![
+            crate::native::features::FeatureSimpleHoleConstructionMember {
+                operation_label: "operation#newer".into(),
+                scalar_lane: "lane-newer".into(),
+                block_reference: "blocks-newer".into(),
+            },
+            crate::native::features::FeatureSimpleHoleConstructionMember {
+                operation_label: "operation#older".into(),
+                scalar_lane: "lane-older".into(),
+                block_reference: "blocks-older".into(),
+            },
+        ],
     };
     assert!(
         simple_hole_operations(&templates, &[unordered_group], &operation_positions,).is_none()
@@ -235,13 +244,23 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
         id: "duplicate-group".into(),
         first_data_blocks: ["a".into(), "b".into()],
         second_data_blocks: ["c".into(), "d".into()],
-        operation_labels: vec![
-            "operation#older".into(),
-            "operation#newer".into(),
-            "operation#older".into(),
+        members: vec![
+            crate::native::features::FeatureSimpleHoleConstructionMember {
+                operation_label: "operation#older".into(),
+                scalar_lane: "lane-a".into(),
+                block_reference: "refs-a".into(),
+            },
+            crate::native::features::FeatureSimpleHoleConstructionMember {
+                operation_label: "operation#newer".into(),
+                scalar_lane: "lane-b".into(),
+                block_reference: "refs-b".into(),
+            },
+            crate::native::features::FeatureSimpleHoleConstructionMember {
+                operation_label: "operation#older".into(),
+                scalar_lane: "lane-a".into(),
+                block_reference: "refs-a".into(),
+            },
         ],
-        scalar_lanes: vec!["lane-a".into(), "lane-b".into()],
-        block_references: vec!["refs-a".into(), "refs-b".into()],
     };
     assert!(
         simple_hole_operations(&templates, &[duplicate_group], &operation_positions,).is_none()
@@ -276,9 +295,18 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         id: "group".into(),
         first_data_blocks: ["a".into(), "b".into()],
         second_data_blocks: ["c".into(), "d".into()],
-        operation_labels: operations.to_vec(),
-        scalar_lanes: vec!["lane-a".into(), "lane-b".into()],
-        block_references: vec!["blocks-a".into(), "blocks-b".into()],
+        members: vec![
+            crate::native::features::FeatureSimpleHoleConstructionMember {
+                operation_label: operations[0].clone(),
+                scalar_lane: "lane-a".into(),
+                block_reference: "blocks-a".into(),
+            },
+            crate::native::features::FeatureSimpleHoleConstructionMember {
+                operation_label: operations[1].clone(),
+                scalar_lane: "lane-b".into(),
+                block_reference: "blocks-b".into(),
+            },
+        ],
     };
     let use_ = FeatureHolePackageConstructionGroupUse {
         id: "use".into(),

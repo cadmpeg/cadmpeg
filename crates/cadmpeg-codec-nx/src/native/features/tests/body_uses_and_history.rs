@@ -659,10 +659,11 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
     let lane = |operation: &str| FeatureSimpleHoleRepeatedScalarLane {
         id: format!("lane-{operation}"),
         operation_label: operation.into(),
-        values: vec![25.4],
-        raw_values: vec![[0x30; 8]],
-        first_witness_offsets: vec![1],
-        second_witness_offsets: vec![2],
+        values: vec![crate::native::features::FeatureRepeatedScalarToken {
+            value: 25.4,
+            raw: [0x30; 8],
+            witness_offsets: [1, 2],
+        }],
     };
     let reference =
         |operation: &str, last: &str| FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
@@ -695,15 +696,27 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
     let groups = feature_simple_hole_construction_groups(&labels, &lanes, &references);
     assert_eq!(groups.len(), 1);
     assert_eq!(
-        groups[0].operation_labels,
+        groups[0]
+            .members
+            .iter()
+            .map(|member| member.operation_label.as_str())
+            .collect::<Vec<_>>(),
         ["operation#1-3", "operation#1-2"]
     );
     assert_eq!(
-        groups[0].scalar_lanes,
+        groups[0]
+            .members
+            .iter()
+            .map(|member| member.scalar_lane.as_str())
+            .collect::<Vec<_>>(),
         ["lane-operation#1-3", "lane-operation#1-2"]
     );
     assert_eq!(
-        groups[0].block_references,
+        groups[0]
+            .members
+            .iter()
+            .map(|member| member.block_reference.as_str())
+            .collect::<Vec<_>>(),
         ["reference-operation#1-3", "reference-operation#1-2"]
     );
 
@@ -770,9 +783,18 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
         id: "simple-hole-group".into(),
         first_data_blocks: [blocks[0].clone(), blocks[1].clone()],
         second_data_blocks: [blocks[2].clone(), blocks[3].clone()],
-        operation_labels: vec!["simple-hole-1".into(), "simple-hole-2".into()],
-        scalar_lanes: vec!["scalar-1".into(), "scalar-2".into()],
-        block_references: vec!["references-1".into(), "references-2".into()],
+        members: vec![
+            crate::native::features::FeatureSimpleHoleConstructionMember {
+                operation_label: "simple-hole-1".into(),
+                scalar_lane: "scalar-1".into(),
+                block_reference: "references-1".into(),
+            },
+            crate::native::features::FeatureSimpleHoleConstructionMember {
+                operation_label: "simple-hole-2".into(),
+                scalar_lane: "scalar-2".into(),
+                block_reference: "references-2".into(),
+            },
+        ],
     };
 
     let uses = feature_hole_package_construction_group_uses(

@@ -1328,9 +1328,9 @@ fn attach_feature_operations(
         .iter()
         .flat_map(|group| {
             group
-                .input_blocks
+                .members
                 .iter()
-                .map(move |input| (input.as_str(), group.id.as_str()))
+                .map(move |member| (member.input_block.as_str(), group.id.as_str()))
         })
         .collect::<BTreeMap<_, _>>();
     let datum_csys_constructions_by_operation = datum_csys_constructions
@@ -2660,9 +2660,9 @@ fn attach_feature_operations(
                 );
             } else if group.is_some_and(|group| {
                 group
-                    .operation_labels
+                    .members
                     .iter()
-                    .any(|operation| operation == &label.id)
+                    .any(|member| member.operation_label == label.id)
             }) {
                 source_properties.insert(
                     "hole_package_construction_group_use".to_string(),
@@ -5575,8 +5575,9 @@ fn simple_hole_native_properties(
     }
     if let Some(group) = construction_groups.iter().find(|group| {
         group
-            .operation_labels
+            .members
             .iter()
+            .map(|member| &member.operation_label)
             .any(|label| label == operation_label)
     }) {
         properties.insert(
@@ -6402,9 +6403,9 @@ fn simple_hole_operations(
         .iter()
         .filter(|group| {
             let group_operations = group
-                .operation_labels
+                .members
                 .iter()
-                .map(String::as_str)
+                .map(|member| member.operation_label.as_str())
                 .collect::<BTreeSet<_>>();
             group_operations == template_operations
         })
@@ -6419,23 +6420,29 @@ fn simple_hole_operations(
             .collect::<Vec<_>>(),
         [group] => {
             let group_operations = group
-                .operation_labels
+                .members
                 .iter()
-                .map(String::as_str)
+                .map(|member| member.operation_label.as_str())
                 .collect::<BTreeSet<_>>();
-            if group_operations.len() != group.operation_labels.len()
+            if group_operations.len() != group.members.len()
                 || template_operations != group_operations
                 || group
-                    .operation_labels
+                    .members
                     .iter()
+                    .map(|member| &member.operation_label)
                     .any(|operation| !operation_positions.contains_key(operation.as_str()))
-                || group.operation_labels.windows(2).any(|pair| {
-                    operation_positions[pair[0].as_str()] >= operation_positions[pair[1].as_str()]
+                || group.members.windows(2).any(|pair| {
+                    operation_positions[pair[0].operation_label.as_str()]
+                        >= operation_positions[pair[1].operation_label.as_str()]
                 })
             {
                 return None;
             }
-            group.operation_labels.clone()
+            group
+                .members
+                .iter()
+                .map(|member| member.operation_label.clone())
+                .collect()
         }
         _ => unreachable!(),
     })
@@ -6570,19 +6577,26 @@ fn hole_package_projection(
         else {
             continue;
         };
-        if group.operation_labels.is_empty()
-            || group.operation_labels.iter().collect::<BTreeSet<_>>().len()
-                != group.operation_labels.len()
+        if group.members.is_empty()
             || group
-                .operation_labels
+                .members
                 .iter()
+                .map(|member| &member.operation_label)
+                .collect::<BTreeSet<_>>()
+                .len()
+                != group.members.len()
+            || group
+                .members
+                .iter()
+                .map(|member| &member.operation_label)
                 .any(|operation| projection.internal_operations.contains(operation))
         {
             continue;
         }
         let child_templates = group
-            .operation_labels
+            .members
             .iter()
+            .map(|member| &member.operation_label)
             .map(|operation| {
                 templates
                     .iter()
@@ -6598,14 +6612,15 @@ fn hole_package_projection(
             continue;
         }
         let child_outputs = group
-            .operation_labels
+            .members
             .iter()
+            .map(|member| &member.operation_label)
             .filter_map(|operation| outputs.get(operation))
             .collect::<Vec<_>>();
         let Some([body]) = child_outputs.first().map(|bodies| bodies.as_slice()) else {
             continue;
         };
-        if child_outputs.len() != group.operation_labels.len()
+        if child_outputs.len() != group.members.len()
             || child_outputs
                 .iter()
                 .any(|candidate| candidate.as_slice() != [body.clone()])
@@ -6613,16 +6628,18 @@ fn hole_package_projection(
             continue;
         }
         let Some(diameter) = group
-            .operation_labels
+            .members
             .first()
+            .map(|member| &member.operation_label)
             .and_then(|operation| diameters.get(operation))
             .copied()
         else {
             continue;
         };
         if group
-            .operation_labels
+            .members
             .iter()
+            .map(|member| &member.operation_label)
             .any(|operation| diameters.get(operation).copied() != Some(diameter))
         {
             continue;
@@ -6643,16 +6660,18 @@ fn hole_package_projection(
         }
         let chamfer = if requests_chamfer {
             let Some(chamfer) = group
-                .operation_labels
+                .members
                 .first()
+                .map(|member| &member.operation_label)
                 .and_then(|operation| chamfers.get(operation))
                 .copied()
             else {
                 continue;
             };
             if group
-                .operation_labels
+                .members
                 .iter()
+                .map(|member| &member.operation_label)
                 .any(|operation| chamfers.get(operation).copied() != Some(chamfer))
             {
                 continue;
@@ -6661,9 +6680,12 @@ fn hole_package_projection(
         } else {
             None
         };
-        projection
-            .internal_operations
-            .extend(group.operation_labels.iter().cloned());
+        projection.internal_operations.extend(
+            group
+                .members
+                .iter()
+                .map(|member| member.operation_label.clone()),
+        );
         projection
             .outputs
             .insert(use_.operation_label.clone(), vec![body.clone()]);
@@ -6676,7 +6698,7 @@ fn hole_package_projection(
                 .insert(use_.operation_label.clone(), chamfer);
         }
         let placements = hole_axis_placements_for_body(ir, body);
-        if placements.len() == group.operation_labels.len() {
+        if placements.len() == group.members.len() {
             projection
                 .placements
                 .insert(use_.operation_label.clone(), placements);

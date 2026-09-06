@@ -1525,10 +1525,38 @@ fn feature_input_identity_groups_require_distinct_operations_and_preserve_order(
 
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].data_block, "block-7");
-    assert_eq!(groups[0].input_blocks, ["early", "late"]);
-    assert_eq!(groups[0].operation_labels, ["operation-a", "operation-b"]);
-    assert_eq!(groups[0].input_slots, [2, 1]);
-    assert_eq!(groups[0].source_offsets, [20, 30]);
+    assert_eq!(
+        groups[0]
+            .members
+            .iter()
+            .map(|member| member.input_block.as_str())
+            .collect::<Vec<_>>(),
+        ["early", "late"]
+    );
+    assert_eq!(
+        groups[0]
+            .members
+            .iter()
+            .map(|member| member.operation_label.as_str())
+            .collect::<Vec<_>>(),
+        ["operation-a", "operation-b"]
+    );
+    assert_eq!(
+        groups[0]
+            .members
+            .iter()
+            .map(|member| member.input_slot)
+            .collect::<Vec<_>>(),
+        [2, 1]
+    );
+    assert_eq!(
+        groups[0]
+            .members
+            .iter()
+            .map(|member| member.source_offset)
+            .collect::<Vec<_>>(),
+        [20, 30]
+    );
 }
 
 #[test]

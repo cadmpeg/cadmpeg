@@ -21,10 +21,18 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
     let lane = FeatureSimpleHoleRepeatedScalarLane {
         id: "lane".to_string(),
         operation_label: operation.to_string(),
-        values: vec![508.0, 38.1],
-        raw_values: vec![[0x30; 8], [0x31; 8]],
-        first_witness_offsets: vec![10, 18],
-        second_witness_offsets: vec![30, 38],
+        values: vec![
+            crate::native::features::FeatureRepeatedScalarToken {
+                value: 508.0,
+                raw: [0x30; 8],
+                witness_offsets: [10, 30],
+            },
+            crate::native::features::FeatureRepeatedScalarToken {
+                value: 38.1,
+                raw: [0x31; 8],
+                witness_offsets: [18, 38],
+            },
+        ],
     };
     let blocks = FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
         id: "blocks".to_string(),
@@ -40,9 +48,18 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         id: "group".into(),
         first_data_blocks: blocks.first_data_blocks.clone(),
         second_data_blocks: blocks.second_data_blocks.clone(),
-        operation_labels: vec![operation.into(), "other-operation".into()],
-        scalar_lanes: vec!["lane".into(), "other-lane".into()],
-        block_references: vec!["blocks".into(), "other-blocks".into()],
+        members: vec![
+            crate::native::features::FeatureSimpleHoleConstructionMember {
+                operation_label: operation.into(),
+                scalar_lane: "lane".into(),
+                block_reference: "blocks".into(),
+            },
+            crate::native::features::FeatureSimpleHoleConstructionMember {
+                operation_label: "other-operation".into(),
+                scalar_lane: "other-lane".into(),
+                block_reference: "other-blocks".into(),
+            },
+        ],
     };
     let properties = super::super::simple_hole_native_properties(
         operation,
@@ -103,9 +120,18 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         id: "group".into(),
         first_data_blocks: ["a".into(), "b".into()],
         second_data_blocks: ["c".into(), "d".into()],
-        operation_labels: operations.to_vec(),
-        scalar_lanes: vec!["lane-a".into(), "lane-b".into()],
-        block_references: vec!["refs-a".into(), "refs-b".into()],
+        members: vec![
+            crate::native::features::FeatureSimpleHoleConstructionMember {
+                operation_label: operations[0].clone(),
+                scalar_lane: "lane-a".into(),
+                block_reference: "refs-a".into(),
+            },
+            crate::native::features::FeatureSimpleHoleConstructionMember {
+                operation_label: operations[1].clone(),
+                scalar_lane: "lane-b".into(),
+                block_reference: "refs-b".into(),
+            },
+        ],
     };
     let mut model = Model::default();
     for ordinal in 0..2 {

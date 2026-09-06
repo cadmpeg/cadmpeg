@@ -523,19 +523,86 @@ pub struct FeatureThreadedHoleTemplate {
 
 /// Exact nonempty redundantly witnessed scalar lane in a simple-hole payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureSimpleHoleRepeatedScalarLaneWire",
+    into = "FeatureSimpleHoleRepeatedScalarLaneWire"
+)]
 pub struct FeatureSimpleHoleRepeatedScalarLane {
     /// Globally unique repeated-lane identity.
     pub id: String,
     /// Owning `SIMPLE HOLE` operation label.
     pub operation_label: String,
-    /// Ordered finite shifted-binary64 values.
-    pub values: Vec<f64>,
-    /// Exact scalar encodings shared by both witnesses.
-    pub raw_values: Vec<[u8; 8]>,
-    /// Absolute offsets of the first scalar lane.
-    pub first_witness_offsets: Vec<u64>,
-    /// Absolute offsets of the byte-identical repeated scalar lane.
-    pub second_witness_offsets: Vec<u64>,
+    /// Ordered scalars with both source witnesses.
+    pub values: Vec<FeatureRepeatedScalarToken>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeatureRepeatedScalarToken {
+    pub value: f64,
+    pub raw: [u8; 8],
+    pub witness_offsets: [u64; 2],
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureSimpleHoleRepeatedScalarLaneWire {
+    id: String,
+    operation_label: String,
+    values: Vec<f64>,
+    raw_values: Vec<[u8; 8]>,
+    first_witness_offsets: Vec<u64>,
+    second_witness_offsets: Vec<u64>,
+}
+
+impl From<FeatureSimpleHoleRepeatedScalarLane> for FeatureSimpleHoleRepeatedScalarLaneWire {
+    fn from(lane: FeatureSimpleHoleRepeatedScalarLane) -> Self {
+        Self {
+            id: lane.id,
+            operation_label: lane.operation_label,
+            values: lane.values.iter().map(|token| token.value).collect(),
+            raw_values: lane.values.iter().map(|token| token.raw).collect(),
+            first_witness_offsets: lane
+                .values
+                .iter()
+                .map(|token| token.witness_offsets[0])
+                .collect(),
+            second_witness_offsets: lane
+                .values
+                .iter()
+                .map(|token| token.witness_offsets[1])
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<FeatureSimpleHoleRepeatedScalarLaneWire> for FeatureSimpleHoleRepeatedScalarLane {
+    type Error = String;
+    fn try_from(wire: FeatureSimpleHoleRepeatedScalarLaneWire) -> Result<Self, Self::Error> {
+        let count = wire.values.len();
+        if wire.raw_values.len() != count
+            || wire.first_witness_offsets.len() != count
+            || wire.second_witness_offsets.len() != count
+        {
+            return Err("simple-hole values, raw_values, first_witness_offsets, and second_witness_offsets must have equal lengths".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            values: wire
+                .values
+                .into_iter()
+                .zip(wire.raw_values)
+                .zip(wire.first_witness_offsets)
+                .zip(wire.second_witness_offsets)
+                .map(
+                    |(((value, raw), first), second)| FeatureRepeatedScalarToken {
+                        value,
+                        raw,
+                        witness_offsets: [first, second],
+                    },
+                )
+                .collect(),
+        })
+    }
 }
 
 /// Offset-store blocks linked after both repeated scalar-lane witnesses.
@@ -563,6 +630,10 @@ pub struct FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
 
 /// Distinct simple-hole operations sharing one four-block construction identity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureSimpleHoleConstructionGroupWire",
+    into = "FeatureSimpleHoleConstructionGroupWire"
+)]
 pub struct FeatureSimpleHoleConstructionGroup {
     /// Globally unique group identity.
     pub id: String,
@@ -570,12 +641,79 @@ pub struct FeatureSimpleHoleConstructionGroup {
     pub first_data_blocks: [String; 2],
     /// Shared repeated-witness block pair.
     pub second_data_blocks: [String; 2],
-    /// Operation labels in feature-history order.
-    pub operation_labels: Vec<String>,
-    /// Scalar lanes aligned with `operation_labels`.
-    pub scalar_lanes: Vec<String>,
-    /// Block-reference lanes aligned with `operation_labels`.
-    pub block_references: Vec<String>,
+    /// Operations and their construction lanes in feature-history order.
+    pub members: Vec<FeatureSimpleHoleConstructionMember>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureSimpleHoleConstructionMember {
+    pub operation_label: String,
+    pub scalar_lane: String,
+    pub block_reference: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureSimpleHoleConstructionGroupWire {
+    id: String,
+    first_data_blocks: [String; 2],
+    second_data_blocks: [String; 2],
+    operation_labels: Vec<String>,
+    scalar_lanes: Vec<String>,
+    block_references: Vec<String>,
+}
+
+impl From<FeatureSimpleHoleConstructionGroup> for FeatureSimpleHoleConstructionGroupWire {
+    fn from(group: FeatureSimpleHoleConstructionGroup) -> Self {
+        Self {
+            id: group.id,
+            first_data_blocks: group.first_data_blocks,
+            second_data_blocks: group.second_data_blocks,
+            operation_labels: group
+                .members
+                .iter()
+                .map(|member| member.operation_label.clone())
+                .collect(),
+            scalar_lanes: group
+                .members
+                .iter()
+                .map(|member| member.scalar_lane.clone())
+                .collect(),
+            block_references: group
+                .members
+                .iter()
+                .map(|member| member.block_reference.clone())
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<FeatureSimpleHoleConstructionGroupWire> for FeatureSimpleHoleConstructionGroup {
+    type Error = String;
+    fn try_from(wire: FeatureSimpleHoleConstructionGroupWire) -> Result<Self, Self::Error> {
+        if wire.operation_labels.len() != wire.scalar_lanes.len()
+            || wire.operation_labels.len() != wire.block_references.len()
+        {
+            return Err("simple-hole operation_labels, scalar_lanes, and block_references must have equal lengths".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            first_data_blocks: wire.first_data_blocks,
+            second_data_blocks: wire.second_data_blocks,
+            members: wire
+                .operation_labels
+                .into_iter()
+                .zip(wire.scalar_lanes)
+                .zip(wire.block_references)
+                .map(|((operation_label, scalar_lane), block_reference)| {
+                    FeatureSimpleHoleConstructionMember {
+                        operation_label,
+                        scalar_lane,
+                        block_reference,
+                    }
+                })
+                .collect(),
+        })
+    }
 }
 
 /// Exact four-block construction-group lane carried by a `HOLE PACKAGE` operation.
@@ -743,19 +881,98 @@ pub struct FeatureInputBlock {
 
 /// Input-block bindings from distinct operations that resolve to one data block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureInputBlockIdentityGroupWire",
+    into = "FeatureInputBlockIdentityGroupWire"
+)]
 pub struct FeatureInputBlockIdentityGroup {
     /// Globally unique group identity.
     pub id: String,
     /// Shared target in the native `data_blocks` arena.
     pub data_block: String,
     /// Input bindings in ascending source-offset order.
-    pub input_blocks: Vec<String>,
-    /// Operation labels aligned with `input_blocks`.
-    pub operation_labels: Vec<String>,
-    /// Header slots aligned with `input_blocks`.
-    pub input_slots: Vec<u8>,
-    /// Object-index token offsets aligned with `input_blocks`.
-    pub source_offsets: Vec<u64>,
+    pub members: Vec<FeatureInputBlockIdentityMember>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureInputBlockIdentityMember {
+    pub input_block: String,
+    pub operation_label: String,
+    pub input_slot: u8,
+    pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureInputBlockIdentityGroupWire {
+    id: String,
+    data_block: String,
+    input_blocks: Vec<String>,
+    operation_labels: Vec<String>,
+    input_slots: Vec<u8>,
+    source_offsets: Vec<u64>,
+}
+
+impl From<FeatureInputBlockIdentityGroup> for FeatureInputBlockIdentityGroupWire {
+    fn from(group: FeatureInputBlockIdentityGroup) -> Self {
+        Self {
+            id: group.id,
+            data_block: group.data_block,
+            input_blocks: group
+                .members
+                .iter()
+                .map(|member| member.input_block.clone())
+                .collect(),
+            operation_labels: group
+                .members
+                .iter()
+                .map(|member| member.operation_label.clone())
+                .collect(),
+            input_slots: group
+                .members
+                .iter()
+                .map(|member| member.input_slot)
+                .collect(),
+            source_offsets: group
+                .members
+                .iter()
+                .map(|member| member.source_offset)
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<FeatureInputBlockIdentityGroupWire> for FeatureInputBlockIdentityGroup {
+    type Error = String;
+    fn try_from(wire: FeatureInputBlockIdentityGroupWire) -> Result<Self, Self::Error> {
+        let count = wire.input_blocks.len();
+        if wire.operation_labels.len() != count
+            || wire.input_slots.len() != count
+            || wire.source_offsets.len() != count
+        {
+            return Err("input_blocks, operation_labels, input_slots, and source_offsets must have equal lengths".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            data_block: wire.data_block,
+            members: wire
+                .input_blocks
+                .into_iter()
+                .zip(wire.operation_labels)
+                .zip(wire.input_slots)
+                .zip(wire.source_offsets)
+                .map(
+                    |(((input_block, operation_label), input_slot), source_offset)| {
+                        FeatureInputBlockIdentityMember {
+                            input_block,
+                            operation_label,
+                            input_slot,
+                            source_offset,
+                        }
+                    },
+                )
+                .collect(),
+        })
+    }
 }
 
 /// Serialized column-row grammar carrying a reused feature input block.
@@ -1686,6 +1903,10 @@ pub struct FeatureSketchPayloadScalar {
 
 /// Exact scalar-vector frame retained from one reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureSketchPayloadScalarLaneWire",
+    into = "FeatureSketchPayloadScalarLaneWire"
+)]
 pub struct FeatureSketchPayloadScalarLane {
     /// Globally unique scalar-lane identity.
     pub id: String,
@@ -1697,20 +1918,115 @@ pub struct FeatureSketchPayloadScalarLane {
     pub ordinal: u32,
     /// Exact discriminator selecting the lane form.
     pub discriminator: Vec<u8>,
-    /// Ordered finite scalar values after the discriminator.
-    pub values: Vec<f64>,
-    /// Exact nonzero scalar atoms in serialized order.
-    pub raw_values: Vec<Vec<u8>>,
-    /// Payload-relative offsets of the scalar atoms.
-    pub value_payload_offsets: Vec<u64>,
+    /// Ordered scalar atoms with their source locations.
+    pub values: Vec<FeaturePayloadScalarToken>,
     /// Payload-relative offset of the terminating zero atom.
     pub terminator_payload_offset: u64,
     /// Absolute source offset of the discriminator.
     pub source_offset: u64,
-    /// Absolute source offsets of the scalar atoms.
-    pub value_source_offsets: Vec<u64>,
     /// Absolute source offset of the terminating zero atom.
     pub terminator_source_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeaturePayloadScalarToken {
+    pub value: f64,
+    pub raw: Vec<u8>,
+    pub payload_offset: u64,
+    pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureSketchPayloadScalarLaneWire {
+    /// Globally unique scalar-lane identity.
+    id: String,
+    /// Owning `SKETCH` operation label.
+    operation_label: String,
+    /// Reconstructed sketch payload carrying this lane.
+    construction_payload: String,
+    /// Zero-based lane order within the reconstructed payload.
+    ordinal: u32,
+    /// Exact discriminator selecting the lane form.
+    discriminator: Vec<u8>,
+    /// Ordered finite scalar values after the discriminator.
+    values: Vec<f64>,
+    /// Exact nonzero scalar atoms in serialized order.
+    raw_values: Vec<Vec<u8>>,
+    /// Payload-relative offsets of the scalar atoms.
+    value_payload_offsets: Vec<u64>,
+    /// Payload-relative offset of the terminating zero atom.
+    terminator_payload_offset: u64,
+    /// Absolute source offset of the discriminator.
+    source_offset: u64,
+    /// Absolute source offsets of the scalar atoms.
+    value_source_offsets: Vec<u64>,
+    /// Absolute source offset of the terminating zero atom.
+    terminator_source_offset: u64,
+}
+
+impl From<FeatureSketchPayloadScalarLane> for FeatureSketchPayloadScalarLaneWire {
+    fn from(lane: FeatureSketchPayloadScalarLane) -> Self {
+        Self {
+            id: lane.id,
+            operation_label: lane.operation_label,
+            construction_payload: lane.construction_payload,
+            ordinal: lane.ordinal,
+            discriminator: lane.discriminator,
+            values: lane.values.iter().map(|token| token.value).collect(),
+            raw_values: lane.values.iter().map(|token| token.raw.clone()).collect(),
+            value_payload_offsets: lane
+                .values
+                .iter()
+                .map(|token| token.payload_offset)
+                .collect(),
+            terminator_payload_offset: lane.terminator_payload_offset,
+            source_offset: lane.source_offset,
+            value_source_offsets: lane
+                .values
+                .iter()
+                .map(|token| token.source_offset)
+                .collect(),
+            terminator_source_offset: lane.terminator_source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureSketchPayloadScalarLaneWire> for FeatureSketchPayloadScalarLane {
+    type Error = String;
+    fn try_from(wire: FeatureSketchPayloadScalarLaneWire) -> Result<Self, Self::Error> {
+        let count = wire.values.len();
+        if wire.raw_values.len() != count
+            || wire.value_payload_offsets.len() != count
+            || wire.value_source_offsets.len() != count
+        {
+            return Err("sketch values, raw_values, value_payload_offsets, and value_source_offsets must have equal lengths".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            construction_payload: wire.construction_payload,
+            ordinal: wire.ordinal,
+            discriminator: wire.discriminator,
+            values: wire
+                .values
+                .into_iter()
+                .zip(wire.raw_values)
+                .zip(wire.value_payload_offsets)
+                .zip(wire.value_source_offsets)
+                .map(
+                    |(((value, raw), payload_offset), source_offset)| FeaturePayloadScalarToken {
+                        value,
+                        raw,
+                        payload_offset,
+                        source_offset,
+                    },
+                )
+                .collect(),
+            terminator_payload_offset: wire.terminator_payload_offset,
+            source_offset: wire.source_offset,
+            terminator_source_offset: wire.terminator_source_offset,
+        })
+    }
 }
 
 /// Compact type code on a reconstructed payload name that is not payload-leading.
@@ -2364,8 +2680,29 @@ pub struct FeaturePatternConstructionString {
     pub source_offset: u64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeatureFixedScalarToken {
+    pub value: f64,
+    pub marker: u8,
+    pub raw: [u8; 7],
+    pub payload_offset: u64,
+    pub source_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeatureBinary32ScalarToken {
+    pub value: f64,
+    pub raw: [u8; 4],
+    pub payload_offset: u64,
+    pub source_offset: u64,
+}
+
 /// Complete signed Q1.55 lane in a reconstructed pattern payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeaturePatternConstructionFixedLaneWire",
+    into = "FeaturePatternConstructionFixedLaneWire"
+)]
 pub struct FeaturePatternConstructionFixedLane {
     /// Globally unique lane identity.
     pub id: String,
@@ -2375,20 +2712,107 @@ pub struct FeaturePatternConstructionFixedLane {
     pub construction_payload: String,
     /// Zero-based lane order within the payload.
     pub ordinal: u32,
-    /// Ordered dimensionless Q1.55 values.
-    pub values: Vec<f64>,
-    /// Exact atom markers in value order.
-    pub markers: Vec<u8>,
-    /// Exact seven-byte two's-complement payloads.
-    pub raw_values: Vec<[u8; 7]>,
+    /// Ordered scalar tokens with their source locations.
+    pub values: Vec<FeatureFixedScalarToken>,
     /// Payload-relative offset of the fixed discriminator.
     pub payload_offset: u64,
-    /// Payload-relative offsets of the atom markers.
-    pub value_payload_offsets: Vec<u64>,
     /// Absolute source offset of the fixed discriminator.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeaturePatternConstructionFixedLaneWire {
+    /// Globally unique lane identity.
+    id: String,
+    /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
+    operation_label: String,
+    /// Reconstructed pattern payload carrying the lane.
+    construction_payload: String,
+    /// Zero-based lane order within the payload.
+    ordinal: u32,
+    /// Ordered dimensionless Q1.55 values.
+    values: Vec<f64>,
+    /// Exact atom markers in value order.
+    markers: Vec<u8>,
+    /// Exact seven-byte two's-complement payloads.
+    raw_values: Vec<[u8; 7]>,
+    /// Payload-relative offset of the fixed discriminator.
+    payload_offset: u64,
+    /// Payload-relative offsets of the atom markers.
+    value_payload_offsets: Vec<u64>,
+    /// Absolute source offset of the fixed discriminator.
+    source_offset: u64,
     /// Absolute source offsets of the atom markers.
-    pub value_source_offsets: Vec<u64>,
+    value_source_offsets: Vec<u64>,
+}
+
+impl From<FeaturePatternConstructionFixedLane> for FeaturePatternConstructionFixedLaneWire {
+    fn from(lane: FeaturePatternConstructionFixedLane) -> Self {
+        Self {
+            id: lane.id,
+            operation_label: lane.operation_label,
+            construction_payload: lane.construction_payload,
+            ordinal: lane.ordinal,
+            payload_offset: lane.payload_offset,
+            source_offset: lane.source_offset,
+            values: lane.values.iter().map(|token| token.value).collect(),
+            markers: lane.values.iter().map(|token| token.marker).collect(),
+            raw_values: lane.values.iter().map(|token| token.raw).collect(),
+            value_payload_offsets: lane
+                .values
+                .iter()
+                .map(|token| token.payload_offset)
+                .collect(),
+            value_source_offsets: lane
+                .values
+                .iter()
+                .map(|token| token.source_offset)
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<FeaturePatternConstructionFixedLaneWire> for FeaturePatternConstructionFixedLane {
+    type Error = String;
+    fn try_from(wire: FeaturePatternConstructionFixedLaneWire) -> Result<Self, Self::Error> {
+        let count = wire.values.len();
+        if wire.markers.len() != count
+            || wire.raw_values.len() != count
+            || wire.value_payload_offsets.len() != count
+            || wire.value_source_offsets.len() != count
+        {
+            return Err(
+                "FeaturePatternConstructionFixedLane scalar columns must have equal lengths".into(),
+            );
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            construction_payload: wire.construction_payload,
+            ordinal: wire.ordinal,
+            payload_offset: wire.payload_offset,
+            source_offset: wire.source_offset,
+            values: wire
+                .values
+                .into_iter()
+                .zip(wire.markers)
+                .zip(wire.raw_values)
+                .zip(wire.value_payload_offsets)
+                .zip(wire.value_source_offsets)
+                .map(
+                    |((((value, marker), raw), payload_offset), source_offset)| {
+                        FeatureFixedScalarToken {
+                            value,
+                            marker,
+                            raw,
+                            payload_offset,
+                            source_offset,
+                        }
+                    },
+                )
+                .collect(),
+        })
+    }
 }
 
 /// Scalar width selected by one exact pattern-transform row.
@@ -2629,6 +3053,10 @@ pub struct FeatureDraftConstructionGraphPayload {
 
 /// Complete signed Q1.55 lane in a reconstructed draft graph payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureDraftConstructionFixedLaneWire",
+    into = "FeatureDraftConstructionFixedLaneWire"
+)]
 pub struct FeatureDraftConstructionFixedLane {
     /// Globally unique lane identity.
     pub id: String,
@@ -2638,24 +3066,115 @@ pub struct FeatureDraftConstructionFixedLane {
     pub graph_payload: String,
     /// Zero-based lane order in the reconstructed payload.
     pub ordinal: u32,
-    /// Ordered dimensionless Q1.55 values.
-    pub values: Vec<f64>,
-    /// Exact atom markers in value order.
-    pub markers: Vec<u8>,
-    /// Exact seven-byte two's-complement payloads.
-    pub raw_values: Vec<[u8; 7]>,
+    /// Ordered scalar tokens with their source locations.
+    pub values: Vec<FeatureFixedScalarToken>,
     /// Payload-relative offset of the fixed discriminator.
     pub payload_offset: u64,
-    /// Payload-relative offsets of the atom markers.
-    pub value_payload_offsets: Vec<u64>,
     /// Absolute source offset of the fixed discriminator.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureDraftConstructionFixedLaneWire {
+    /// Globally unique lane identity.
+    id: String,
+    /// Owning `DRAFT` operation label.
+    operation_label: String,
+    /// Reconstructed graph payload carrying the lane.
+    graph_payload: String,
+    /// Zero-based lane order in the reconstructed payload.
+    ordinal: u32,
+    /// Ordered dimensionless Q1.55 values.
+    values: Vec<f64>,
+    /// Exact atom markers in value order.
+    markers: Vec<u8>,
+    /// Exact seven-byte two's-complement payloads.
+    raw_values: Vec<[u8; 7]>,
+    /// Payload-relative offset of the fixed discriminator.
+    payload_offset: u64,
+    /// Payload-relative offsets of the atom markers.
+    value_payload_offsets: Vec<u64>,
+    /// Absolute source offset of the fixed discriminator.
+    source_offset: u64,
     /// Absolute source offsets of the atom markers.
-    pub value_source_offsets: Vec<u64>,
+    value_source_offsets: Vec<u64>,
+}
+
+impl From<FeatureDraftConstructionFixedLane> for FeatureDraftConstructionFixedLaneWire {
+    fn from(lane: FeatureDraftConstructionFixedLane) -> Self {
+        Self {
+            id: lane.id,
+            operation_label: lane.operation_label,
+            graph_payload: lane.graph_payload,
+            ordinal: lane.ordinal,
+            payload_offset: lane.payload_offset,
+            source_offset: lane.source_offset,
+            values: lane.values.iter().map(|token| token.value).collect(),
+            markers: lane.values.iter().map(|token| token.marker).collect(),
+            raw_values: lane.values.iter().map(|token| token.raw).collect(),
+            value_payload_offsets: lane
+                .values
+                .iter()
+                .map(|token| token.payload_offset)
+                .collect(),
+            value_source_offsets: lane
+                .values
+                .iter()
+                .map(|token| token.source_offset)
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<FeatureDraftConstructionFixedLaneWire> for FeatureDraftConstructionFixedLane {
+    type Error = String;
+    fn try_from(wire: FeatureDraftConstructionFixedLaneWire) -> Result<Self, Self::Error> {
+        let count = wire.values.len();
+        if wire.markers.len() != count
+            || wire.raw_values.len() != count
+            || wire.value_payload_offsets.len() != count
+            || wire.value_source_offsets.len() != count
+        {
+            return Err(
+                "FeatureDraftConstructionFixedLane scalar columns must have equal lengths".into(),
+            );
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            graph_payload: wire.graph_payload,
+            ordinal: wire.ordinal,
+            payload_offset: wire.payload_offset,
+            source_offset: wire.source_offset,
+            values: wire
+                .values
+                .into_iter()
+                .zip(wire.markers)
+                .zip(wire.raw_values)
+                .zip(wire.value_payload_offsets)
+                .zip(wire.value_source_offsets)
+                .map(
+                    |((((value, marker), raw), payload_offset), source_offset)| {
+                        FeatureFixedScalarToken {
+                            value,
+                            marker,
+                            raw,
+                            payload_offset,
+                            source_offset,
+                        }
+                    },
+                )
+                .collect(),
+        })
+    }
 }
 
 /// Complete shifted-binary32 lane in a reconstructed draft graph payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureDraftConstructionBinary32LaneWire",
+    into = "FeatureDraftConstructionBinary32LaneWire"
+)]
 pub struct FeatureDraftConstructionBinary32Lane {
     /// Globally unique lane identity.
     pub id: String,
@@ -2669,18 +3188,108 @@ pub struct FeatureDraftConstructionBinary32Lane {
     pub discriminator: [u8; 18],
     /// Exact `03` or `04` branch byte.
     pub branch: u8,
-    /// Ordered finite shifted-IEEE binary32 values.
-    pub values: Vec<f64>,
-    /// Exact four-byte shifted encodings.
-    pub raw_values: Vec<[u8; 4]>,
+    /// Ordered scalar tokens with their source locations.
+    pub values: Vec<FeatureBinary32ScalarToken>,
     /// Payload-relative offset of the discriminator.
     pub payload_offset: u64,
-    /// Payload-relative offsets of the scalar encodings.
-    pub value_payload_offsets: Vec<u64>,
     /// Absolute source offset of the discriminator.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureDraftConstructionBinary32LaneWire {
+    /// Globally unique lane identity.
+    id: String,
+    /// Owning `DRAFT` operation label.
+    operation_label: String,
+    /// Reconstructed graph payload carrying the lane.
+    graph_payload: String,
+    /// Zero-based lane order in the reconstructed payload.
+    ordinal: u32,
+    /// Exact discriminator selecting the lane form.
+    discriminator: [u8; 18],
+    /// Exact `03` or `04` branch byte.
+    branch: u8,
+    /// Ordered finite shifted-IEEE binary32 values.
+    values: Vec<f64>,
+    /// Exact four-byte shifted encodings.
+    raw_values: Vec<[u8; 4]>,
+    /// Payload-relative offset of the discriminator.
+    payload_offset: u64,
+    /// Payload-relative offsets of the scalar encodings.
+    value_payload_offsets: Vec<u64>,
+    /// Absolute source offset of the discriminator.
+    source_offset: u64,
     /// Absolute source offsets of the scalar encodings.
-    pub value_source_offsets: Vec<u64>,
+    value_source_offsets: Vec<u64>,
+}
+
+impl From<FeatureDraftConstructionBinary32Lane> for FeatureDraftConstructionBinary32LaneWire {
+    fn from(lane: FeatureDraftConstructionBinary32Lane) -> Self {
+        Self {
+            id: lane.id,
+            operation_label: lane.operation_label,
+            graph_payload: lane.graph_payload,
+            ordinal: lane.ordinal,
+            discriminator: lane.discriminator,
+            branch: lane.branch,
+            payload_offset: lane.payload_offset,
+            source_offset: lane.source_offset,
+            values: lane.values.iter().map(|token| token.value).collect(),
+            raw_values: lane.values.iter().map(|token| token.raw).collect(),
+            value_payload_offsets: lane
+                .values
+                .iter()
+                .map(|token| token.payload_offset)
+                .collect(),
+            value_source_offsets: lane
+                .values
+                .iter()
+                .map(|token| token.source_offset)
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<FeatureDraftConstructionBinary32LaneWire> for FeatureDraftConstructionBinary32Lane {
+    type Error = String;
+    fn try_from(wire: FeatureDraftConstructionBinary32LaneWire) -> Result<Self, Self::Error> {
+        let count = wire.values.len();
+        if wire.raw_values.len() != count
+            || wire.value_payload_offsets.len() != count
+            || wire.value_source_offsets.len() != count
+        {
+            return Err(
+                "FeatureDraftConstructionBinary32Lane scalar columns must have equal lengths"
+                    .into(),
+            );
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            graph_payload: wire.graph_payload,
+            ordinal: wire.ordinal,
+            discriminator: wire.discriminator,
+            branch: wire.branch,
+            payload_offset: wire.payload_offset,
+            source_offset: wire.source_offset,
+            values: wire
+                .values
+                .into_iter()
+                .zip(wire.raw_values)
+                .zip(wire.value_payload_offsets)
+                .zip(wire.value_source_offsets)
+                .map(
+                    |(((value, raw), payload_offset), source_offset)| FeatureBinary32ScalarToken {
+                        value,
+                        raw,
+                        payload_offset,
+                        source_offset,
+                    },
+                )
+                .collect(),
+        })
+    }
 }
 
 /// Canonical printable string in a reconstructed draft graph payload.
@@ -4757,16 +5366,11 @@ pub fn feature_simple_hole_repeated_scalar_lanes(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                values: pair.values.iter().map(|token| token.value).collect(),
-                raw_values: pair.values.iter().map(|token| token.raw).collect(),
-                first_witness_offsets: pair.values
-                    .iter()
-                    .map(|token| entry_offset + token.witness_offsets[0] as u64)
-                    .collect(),
-                second_witness_offsets: pair.values
-                    .iter()
-                    .map(|token| entry_offset + token.witness_offsets[1] as u64)
-                    .collect(),
+                values: pair.values.into_iter().map(|token| FeatureRepeatedScalarToken {
+                    value: token.value,
+                    raw: token.raw,
+                    witness_offsets: token.witness_offsets.map(|offset| entry_offset + offset as u64),
+                }).collect(),
             });
         },
     );
@@ -4919,14 +5523,13 @@ pub fn feature_simple_hole_construction_groups(
                 id: format!("nx:feature-history:simple-hole-construction-group#{id_key}"),
                 first_data_blocks: first.first_data_blocks.clone(),
                 second_data_blocks: first.second_data_blocks.clone(),
-                operation_labels: members
-                    .iter()
-                    .map(|(reference, _)| reference.operation_label.clone())
-                    .collect(),
-                scalar_lanes: members.iter().map(|(_, lane)| lane.id.clone()).collect(),
-                block_references: members
-                    .iter()
-                    .map(|(reference, _)| reference.id.clone())
+                members: members
+                    .into_iter()
+                    .map(|(reference, lane)| FeatureSimpleHoleConstructionMember {
+                        operation_label: reference.operation_label.clone(),
+                        scalar_lane: lane.id.clone(),
+                        block_reference: reference.id.clone(),
+                    })
                     .collect(),
             })
         })
@@ -5431,13 +6034,15 @@ pub fn feature_input_block_identity_groups(
             |(ordinal, (data_block, members))| FeatureInputBlockIdentityGroup {
                 id: format!("nx:feature-history:input-block-identity-group#{ordinal:010}"),
                 data_block: data_block.to_string(),
-                input_blocks: members.iter().map(|member| member.id.clone()).collect(),
-                operation_labels: members
-                    .iter()
-                    .map(|member| member.operation_label.clone())
+                members: members
+                    .into_iter()
+                    .map(|member| FeatureInputBlockIdentityMember {
+                        input_block: member.id.clone(),
+                        operation_label: member.operation_label.clone(),
+                        input_slot: member.input_slot,
+                        source_offset: member.source_offset,
+                    })
                     .collect(),
-                input_slots: members.iter().map(|member| member.input_slot).collect(),
-                source_offsets: members.iter().map(|member| member.source_offset).collect(),
             },
         )
         .collect()
@@ -6668,15 +7273,17 @@ pub fn feature_sketch_payload_scalar_lanes(
         |payload| &payload.data_blocks,
         crate::om::sketch_payload_scalar_lanes,
         |payload, ordinal, lane, source_offset| {
-            let value_payload_offsets = lane
+            let values = lane
                 .values
-                .iter()
-                .map(|token| token.offset as u64)
-                .collect::<Vec<_>>();
-            let value_source_offsets = lane
-                .values
-                .iter()
-                .map(|token| source_offset(token.offset))
+                .into_iter()
+                .map(|token| {
+                    Some(FeaturePayloadScalarToken {
+                        value: token.value,
+                        raw: token.raw,
+                        payload_offset: token.offset as u64,
+                        source_offset: source_offset(token.offset)?,
+                    })
+                })
                 .collect::<Option<Vec<_>>>()?;
             Some(FeatureSketchPayloadScalarLane {
                 id: format!("{}-scalar-lane-{ordinal:010}", payload.id),
@@ -6684,12 +7291,9 @@ pub fn feature_sketch_payload_scalar_lanes(
                 construction_payload: payload.id.clone(),
                 ordinal: ordinal as u32,
                 discriminator: lane.discriminator,
-                values: lane.values.iter().map(|token| token.value).collect(),
-                raw_values: lane.values.into_iter().map(|token| token.raw).collect(),
-                value_payload_offsets,
+                values,
                 terminator_payload_offset: lane.terminator_offset as u64,
                 source_offset: source_offset(lane.offset)?,
-                value_source_offsets,
                 terminator_source_offset: source_offset(lane.terminator_offset)?,
             })
         },
@@ -8067,15 +8671,22 @@ pub fn feature_pattern_construction_fixed_lanes(
                 .enumerate()
                 .filter_map(|(ordinal, lane)| {
                     let payload_offset = lane.offset as u64;
-                    let value_payload_offsets = lane
+                    let values = lane
                         .values
-                        .iter()
-                        .map(|token| token.offset as u64)
-                        .collect::<Vec<_>>();
-                    let value_source_offsets = value_payload_offsets
-                        .iter()
-                        .map(|offset| {
-                            joined_payload_source_offset(*offset, &starts, &lengths, &sources)
+                        .into_iter()
+                        .map(|token| {
+                            Some(FeatureFixedScalarToken {
+                                value: token.value,
+                                marker: token.marker,
+                                raw: token.raw,
+                                payload_offset: token.offset as u64,
+                                source_offset: joined_payload_source_offset(
+                                    token.offset as u64,
+                                    &starts,
+                                    &lengths,
+                                    &sources,
+                                )?,
+                            })
                         })
                         .collect::<Option<Vec<_>>>()?;
                     Some(FeaturePatternConstructionFixedLane {
@@ -8083,18 +8694,14 @@ pub fn feature_pattern_construction_fixed_lanes(
                         operation_label: payload.operation_label.clone(),
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        values: lane.values.iter().map(|token| token.value).collect(),
-                        markers: lane.values.iter().map(|token| token.marker).collect(),
-                        raw_values: lane.values.iter().map(|token| token.raw).collect(),
+                        values,
                         payload_offset,
-                        value_payload_offsets,
                         source_offset: joined_payload_source_offset(
                             payload_offset,
                             &starts,
                             &lengths,
                             &sources,
                         )?,
-                        value_source_offsets,
                     })
                 })
                 .collect()
@@ -8541,15 +9148,22 @@ pub fn feature_draft_construction_fixed_lanes(
                 .enumerate()
                 .filter_map(|(ordinal, lane)| {
                     let payload_offset = lane.offset as u64;
-                    let value_payload_offsets = lane
+                    let values = lane
                         .values
-                        .iter()
-                        .map(|token| token.offset as u64)
-                        .collect::<Vec<_>>();
-                    let value_source_offsets = value_payload_offsets
-                        .iter()
-                        .map(|offset| {
-                            joined_payload_source_offset(*offset, &starts, &lengths, &sources)
+                        .into_iter()
+                        .map(|token| {
+                            Some(FeatureFixedScalarToken {
+                                value: token.value,
+                                marker: token.marker,
+                                raw: token.raw,
+                                payload_offset: token.offset as u64,
+                                source_offset: joined_payload_source_offset(
+                                    token.offset as u64,
+                                    &starts,
+                                    &lengths,
+                                    &sources,
+                                )?,
+                            })
                         })
                         .collect::<Option<Vec<_>>>()?;
                     Some(FeatureDraftConstructionFixedLane {
@@ -8557,18 +9171,14 @@ pub fn feature_draft_construction_fixed_lanes(
                         operation_label: payload.operation_label.clone(),
                         graph_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        values: lane.values.iter().map(|token| token.value).collect(),
-                        markers: lane.values.iter().map(|token| token.marker).collect(),
-                        raw_values: lane.values.iter().map(|token| token.raw).collect(),
+                        values,
                         payload_offset,
-                        value_payload_offsets,
                         source_offset: joined_payload_source_offset(
                             payload_offset,
                             &starts,
                             &lengths,
                             &sources,
                         )?,
-                        value_source_offsets,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -8595,15 +9205,21 @@ pub fn feature_draft_construction_binary32_lanes(
                 .enumerate()
                 .filter_map(|(ordinal, lane)| {
                     let payload_offset = lane.offset as u64;
-                    let value_payload_offsets = lane
+                    let values = lane
                         .values
-                        .iter()
-                        .map(|token| token.offset as u64)
-                        .collect::<Vec<_>>();
-                    let value_source_offsets = value_payload_offsets
-                        .iter()
-                        .map(|offset| {
-                            joined_payload_source_offset(*offset, &starts, &lengths, &sources)
+                        .into_iter()
+                        .map(|token| {
+                            Some(FeatureBinary32ScalarToken {
+                                value: token.value,
+                                raw: token.raw,
+                                payload_offset: token.offset as u64,
+                                source_offset: joined_payload_source_offset(
+                                    token.offset as u64,
+                                    &starts,
+                                    &lengths,
+                                    &sources,
+                                )?,
+                            })
                         })
                         .collect::<Option<Vec<_>>>()?;
                     Some(FeatureDraftConstructionBinary32Lane {
@@ -8613,17 +9229,14 @@ pub fn feature_draft_construction_binary32_lanes(
                         ordinal: ordinal as u32,
                         discriminator: lane.discriminator,
                         branch: lane.branch,
-                        values: lane.values.iter().map(|token| token.value).collect(),
-                        raw_values: lane.values.iter().map(|token| token.raw).collect(),
+                        values,
                         payload_offset,
-                        value_payload_offsets,
                         source_offset: joined_payload_source_offset(
                             payload_offset,
                             &starts,
                             &lengths,
                             &sources,
                         )?,
-                        value_source_offsets,
                     })
                 })
                 .collect::<Vec<_>>()

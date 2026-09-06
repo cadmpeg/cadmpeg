@@ -827,7 +827,7 @@ fn note_features_feature_input_block_identity_groups(
 ) {
     let annotation_stream = a.stream("nx:container");
     for group in &m.features.feature_input_block_identity_groups {
-        a.note(&group.id, annotation_stream, group.source_offsets[0])
+        a.note(&group.id, annotation_stream, group.members[0].source_offset)
             .tag("FEATURE_INPUT_BLOCK_IDENTITY_GROUP");
         a.exactness(&group.id, Exactness::ByteExact);
     }
