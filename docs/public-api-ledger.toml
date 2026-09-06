@@ -5776,3 +5776,10 @@ crate = "cadmpeg-asm"
 kind = "field"
 item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft"
 reason = "IR-85: derive the fixed kind-zero field and pair complete trailing parameter bounds with their required curve; retain the flat JSON through checked conversion."
+
+[[change]]
+commit = "8df075f07132ae4c2e27681b7958e8e4461e1dfc"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet"
+reason = "IR-85: each parameter station owns its knot, multiplicity, and complete jet; remove independently mutable parallel arrays and preserve the flat JSON through checked conversion."

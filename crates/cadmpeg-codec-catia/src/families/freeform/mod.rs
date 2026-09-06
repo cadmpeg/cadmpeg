@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Freeform decode route composing a5a8 and consolidated NURBS record carriers.
 
-use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -1320,40 +1319,34 @@ pub(crate) fn append_freeform_surface_pools(
                 source_object: None,
             });
         }
-        let sites = jet
+        let stations = jet
             .sites
             .iter()
-            .map(|sample| RollingBallJetSite {
-                first_limit: Point3::new(
-                    sample.site.limit1[0],
-                    sample.site.limit1[1],
-                    sample.site.limit1[2],
-                ),
-                second_limit: Point3::new(
-                    sample.site.limit2[0],
-                    sample.site.limit2[1],
-                    sample.site.limit2[2],
-                ),
-                center: Point3::new(
-                    sample.site.center[0],
-                    sample.site.center[1],
-                    sample.site.center[2],
-                ),
-                angle: sample.site.theta,
-                first_derivative: rolling_ball_derivative(sample.first_derivatives),
-                second_derivative: rolling_ball_derivative(sample.second_derivatives),
+            .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
+                knot: sample.knot,
+                multiplicity: crate::families::a5a8::records::A5FreeformCurve::DEGREE + 1,
+                site: RollingBallJetSite {
+                    first_limit: Point3::new(
+                        sample.site.limit1[0],
+                        sample.site.limit1[1],
+                        sample.site.limit1[2],
+                    ),
+                    second_limit: Point3::new(
+                        sample.site.limit2[0],
+                        sample.site.limit2[1],
+                        sample.site.limit2[2],
+                    ),
+                    center: Point3::new(
+                        sample.site.center[0],
+                        sample.site.center[1],
+                        sample.site.center[2],
+                    ),
+                    angle: sample.site.theta,
+                    first_derivative: rolling_ball_derivative(sample.first_derivatives),
+                    second_derivative: rolling_ball_derivative(sample.second_derivatives),
+                },
             })
             .collect::<Vec<_>>();
-        if sites.len() != jet.sites.len() {
-            continue;
-        }
-        let Ok(multiplicities) = alloc_filled(
-            jet.sites.len(),
-            crate::families::a5a8::records::A5FreeformCurve::DEGREE + 1,
-            "catia rolling-ball multiplicities",
-        ) else {
-            continue;
-        };
         let surface_index = ir.model.surfaces.len();
         let surface_id = SurfaceId::mint(format!("catia:rolling-ball:surf#{surface_index}"))
             .expect("identity grammar");
@@ -1391,9 +1384,7 @@ pub(crate) fn append_freeform_surface_pools(
             procedural_id,
             ProceduralSurfaceDefinition::RollingBallJet {
                 degree: crate::families::a5a8::records::A5FreeformCurve::DEGREE,
-                multiplicities,
-                knots: jet.knots(),
-                sites,
+                stations,
             },
             None,
         ));

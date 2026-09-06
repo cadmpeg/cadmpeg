@@ -4595,39 +4595,35 @@ pub fn rolling_ball_jet_point(
     t: f64,
     s: f64,
 ) -> Option<Point3> {
-    let ProceduralSurfaceDefinition::RollingBallJet {
-        degree,
-        knots,
-        multiplicities,
-        sites,
-    } = definition
-    else {
+    let ProceduralSurfaceDefinition::RollingBallJet { degree, stations } = definition else {
         return None;
     };
     if *degree != 5
-        || knots.len() < 2
-        || knots.len() != multiplicities.len()
-        || knots.len() != sites.len()
-        || multiplicities.first() != Some(&(*degree + 1))
-        || multiplicities.last() != Some(&(*degree + 1))
-        || multiplicities
+        || stations.len() < 2
+        || stations.first().map(|station| station.multiplicity) != Some(*degree + 1)
+        || stations.last().map(|station| station.multiplicity) != Some(*degree + 1)
+        || stations
             .iter()
             .skip(1)
-            .take(multiplicities.len().saturating_sub(2))
-            .any(|multiplicity| *multiplicity != 3)
-        || knots.iter().any(|knot| !knot.is_finite())
-        || knots.windows(2).any(|pair| pair[0] >= pair[1])
+            .take(stations.len().saturating_sub(2))
+            .any(|station| station.multiplicity != 3)
+        || stations.iter().any(|station| !station.knot.is_finite())
+        || stations.windows(2).any(|pair| pair[0].knot >= pair[1].knot)
         || !t.is_finite()
         || !s.is_finite()
         || !(0.0..=1.0).contains(&s)
     {
         return None;
     }
-    let radius = sites[0].first_limit.distance(sites[0].center);
+    let radius = stations[0]
+        .site
+        .first_limit
+        .distance(stations[0].site.center);
     if !radius.is_finite() || radius <= 0.0 {
         return None;
     }
-    if sites.iter().any(|site| {
+    if stations.iter().any(|station| {
+        let site = &station.site;
         let first_radius = site.first_limit.distance(site.center);
         let second_radius = site.second_limit.distance(site.center);
         !first_radius.is_finite()
@@ -4676,16 +4672,16 @@ pub fn rolling_ball_jet_point(
     }) {
         return None;
     }
-    let span = knots
+    let span = stations
         .windows(2)
-        .position(|pair| t >= pair[0] && t <= pair[1])?;
-    let span_width = knots[span + 1] - knots[span];
+        .position(|pair| t >= pair[0].knot && t <= pair[1].knot)?;
+    let span_width = stations[span + 1].knot - stations[span].knot;
     if !span_width.is_finite() || span_width <= 0.0 {
         return None;
     }
-    let fraction = ((t - knots[span]) / span_width).clamp(0.0, 1.0);
-    let first = &sites[span];
-    let second = &sites[span + 1];
+    let fraction = ((t - stations[span].knot) / span_width).clamp(0.0, 1.0);
+    let first = &stations[span].site;
+    let second = &stations[span + 1].site;
     let first_limit = rolling_ball_jet_interpolate_point(
         [first.first_limit, second.first_limit],
         [

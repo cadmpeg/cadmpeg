@@ -595,13 +595,11 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
             source: StandardRollingBallSource::E5D8,
             definition: ProceduralSurfaceDefinition::RollingBallJet {
                 degree: 5,
-                knots,
-                multiplicities,
-                sites,
+                stations,
             },
-    }) if knots == &vec![2.0, 5.0]
-            && multiplicities == &vec![6, 6]
-            && sites.len() == 2
+    }) if stations.iter().map(|station| station.knot).collect::<Vec<_>>() == vec![2.0, 5.0]
+            && stations.iter().map(|station| station.multiplicity).collect::<Vec<_>>() == vec![6, 6]
+            && stations.len() == 2
     ));
 
     let mut opposite_records = records.clone();

@@ -717,3 +717,5 @@ mod vertex_blend_twists;
 mod variable_blend_cache;
 
 mod revision_compound_loft_tail;
+
+mod rolling_ball_jet;

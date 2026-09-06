@@ -875,35 +875,37 @@ pub(crate) fn rolling_ball_jet_definition(
         center: Vector3::new(values[6], values[7], values[8]),
         angle: values[9],
     };
-    let sites = jet
+    let stations = jet
         .sites
         .iter()
-        .map(|sample| RollingBallJetSite {
-            first_limit: Point3::new(
-                sample.site.limit1[0],
-                sample.site.limit1[1],
-                sample.site.limit1[2],
-            ),
-            second_limit: Point3::new(
-                sample.site.limit2[0],
-                sample.site.limit2[1],
-                sample.site.limit2[2],
-            ),
-            center: Point3::new(
-                sample.site.center[0],
-                sample.site.center[1],
-                sample.site.center[2],
-            ),
-            angle: sample.site.theta,
-            first_derivative: derivative(sample.first_derivatives),
-            second_derivative: derivative(sample.second_derivatives),
+        .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
+            knot: sample.knot,
+            multiplicity: sample.multiplicity,
+            site: RollingBallJetSite {
+                first_limit: Point3::new(
+                    sample.site.limit1[0],
+                    sample.site.limit1[1],
+                    sample.site.limit1[2],
+                ),
+                second_limit: Point3::new(
+                    sample.site.limit2[0],
+                    sample.site.limit2[1],
+                    sample.site.limit2[2],
+                ),
+                center: Point3::new(
+                    sample.site.center[0],
+                    sample.site.center[1],
+                    sample.site.center[2],
+                ),
+                angle: sample.site.theta,
+                first_derivative: derivative(sample.first_derivatives),
+                second_derivative: derivative(sample.second_derivatives),
+            },
         })
         .collect();
     Some(ProceduralSurfaceDefinition::RollingBallJet {
         degree: A8FreeformCurve::DEGREE,
-        multiplicities: jet.multiplicities(),
-        knots: jet.knots(),
-        sites,
+        stations,
     })
 }
 

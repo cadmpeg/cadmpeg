@@ -465,10 +465,10 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
         procedural.definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
             degree: 5,
-            ref knots,
-            ref multiplicities,
-            ref sites,
-        } if knots == &[2.0, 5.0] && multiplicities == &[6, 6] && sites.len() == 2
+            ref stations,
+        } if stations.iter().map(|station| station.knot).collect::<Vec<_>>() == [2.0, 5.0]
+            && stations.iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
+            && stations.len() == 2
     ));
     assert!(result.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::Topology

@@ -1874,12 +1874,13 @@ pub enum ProceduralSurfaceDefinition {
     RollingBallJet {
         /// Polynomial degree of every scalar channel.
         degree: u32,
-        /// Strictly increasing native parameters, aligned with `sites`.
-        knots: Vec<f64>,
-        /// Native knot multiplicities, aligned with `knots`.
-        multiplicities: Vec<u32>,
-        /// Complete value, first-derivative, and second-derivative rows.
-        sites: Vec<RollingBallJetSite>,
+        /// Ordered knots with their multiplicities and complete derivative jets.
+        #[serde(flatten, with = "rolling_ball_jet_stations_wire")]
+        #[cfg_attr(
+            feature = "schema",
+            schemars(with = "rolling_ball_jet_stations_wire::ReadWire")
+        )]
+        stations: Vec<RollingBallJetStation>,
     },
     /// Preserved construction without a neutral interpretation.
     Unknown {
@@ -2696,6 +2697,75 @@ pub struct BlendSupport {
     /// Selects the opposite surface-normal side when true.
     #[serde(default)]
     pub reversed: bool,
+}
+
+/// One parameter station of a rolling-ball jet, with its complete value rows.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct RollingBallJetStation {
+    /// Native spine parameter.
+    pub knot: f64,
+    /// Multiplicity of this parameter in the native knot vector.
+    pub multiplicity: u32,
+    /// Values and derivatives at this parameter.
+    pub site: RollingBallJetSite,
+}
+
+mod rolling_ball_jet_stations_wire {
+    use super::{RollingBallJetSite, RollingBallJetStation};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize)]
+    struct WriteWire<'a> {
+        knots: Vec<f64>,
+        multiplicities: Vec<u32>,
+        sites: Vec<&'a RollingBallJetSite>,
+    }
+
+    #[derive(Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    pub(super) struct ReadWire {
+        knots: Vec<f64>,
+        multiplicities: Vec<u32>,
+        sites: Vec<RollingBallJetSite>,
+    }
+
+    pub fn serialize<S: Serializer>(
+        stations: &[RollingBallJetStation],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        WriteWire {
+            knots: stations.iter().map(|station| station.knot).collect(),
+            multiplicities: stations
+                .iter()
+                .map(|station| station.multiplicity)
+                .collect(),
+            sites: stations.iter().map(|station| &station.site).collect(),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Vec<RollingBallJetStation>, D::Error> {
+        let wire = ReadWire::deserialize(deserializer)?;
+        if wire.knots.len() != wire.multiplicities.len() || wire.knots.len() != wire.sites.len() {
+            return Err(serde::de::Error::custom(
+                "rolling-ball jet knots, multiplicities, and sites must have equal lengths",
+            ));
+        }
+        Ok(wire
+            .knots
+            .into_iter()
+            .zip(wire.multiplicities)
+            .zip(wire.sites)
+            .map(|((knot, multiplicity), site)| RollingBallJetStation {
+                knot,
+                multiplicity,
+                site,
+            })
+            .collect())
+    }
 }
 
 /// One aligned knot site of an exact rolling-ball surface jet.

@@ -63,12 +63,8 @@ pub struct E5RollingBallJet {
     pub record_id: u32,
     /// Degree of every scalar jet channel.
     pub degree: u32,
-    /// Strictly increasing native spine parameters.
-    pub knots: Vec<f64>,
-    /// Multiplicities aligned with [`Self::knots`].
-    pub multiplicities: Vec<u32>,
-    /// Position and derivative channels at each station.
-    pub sites: Vec<RollingBallJetSite>,
+    /// Knots, multiplicities, and complete derivative channels in native order.
+    pub stations: Vec<cadmpeg_ir::geometry::RollingBallJetStation>,
     /// Native parameter interval repeated in the carrier tail.
     pub parameter_range: [f64; 2],
     /// Native radius repeated in the carrier tail.
@@ -83,9 +79,7 @@ impl E5RollingBallJet {
     pub fn definition(&self) -> ProceduralSurfaceDefinition {
         ProceduralSurfaceDefinition::RollingBallJet {
             degree: self.degree,
-            knots: self.knots.clone(),
-            multiplicities: self.multiplicities.clone(),
-            sites: self.sites.clone(),
+            stations: self.stations.clone(),
         }
     }
 }
@@ -510,7 +504,7 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
     ) {
         return None;
     }
-    let sites = sites
+    let stations = sites
         .into_iter()
         .map(
             |(
@@ -532,14 +526,21 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
                 second_derivative: d8_derivative(second),
             },
         )
+        .zip(knots)
+        .zip(multiplicities)
+        .map(
+            |((site, knot), multiplicity)| cadmpeg_ir::geometry::RollingBallJetStation {
+                knot,
+                multiplicity,
+                site,
+            },
+        )
         .collect();
     Some(E5RollingBallJet {
         pos: record.pos,
         record_id: View::u32_le_at(data, record.pos + 9)?,
         degree,
-        knots,
-        multiplicities,
-        sites,
+        stations,
         parameter_range: [parameter_min, parameter_max],
         radius: tail_radius0,
         sense,
@@ -816,34 +817,38 @@ mod tests {
         let jet = &jets[0];
         assert_eq!(jet.record_id, 42);
         assert_eq!(jet.degree, 5);
-        assert_eq!(jet.knots.len(), 2);
-        assert_close(jet.knots[0], 2.0);
-        assert_close(jet.knots[1], 5.0);
-        assert_eq!(jet.multiplicities, [6, 6]);
+        assert_eq!(jet.stations.len(), 2);
+        assert_close(jet.stations[0].knot, 2.0);
+        assert_close(jet.stations[1].knot, 5.0);
+        assert_eq!(
+            jet.stations
+                .iter()
+                .map(|station| station.multiplicity)
+                .collect::<Vec<_>>(),
+            [6, 6]
+        );
         assert_close(jet.parameter_range[0], 2.0);
         assert_close(jet.parameter_range[1], 5.0);
         assert_close(jet.radius, 2.0);
         assert_eq!(jet.sense, -1);
-        assert_point_close(jet.sites[0].first_limit, Point3::new(2.0, 0.0, 0.0));
-        assert_point_close(jet.sites[1].center, Point3::new(1.0, 0.0, 0.0));
-        assert_close(jet.sites[0].angle, std::f64::consts::FRAC_PI_2);
+        assert_point_close(jet.stations[0].site.first_limit, Point3::new(2.0, 0.0, 0.0));
+        assert_point_close(jet.stations[1].site.center, Point3::new(1.0, 0.0, 0.0));
+        assert_close(jet.stations[0].site.angle, std::f64::consts::FRAC_PI_2);
         assert_vector_close(
-            jet.sites[0].first_derivative.center,
+            jet.stations[0].site.first_derivative.center,
             Vector3::new(0.7, 0.8, 0.9),
         );
         assert_vector_close(
-            jet.sites[0].second_derivative.center,
+            jet.stations[0].site.second_derivative.center,
             Vector3::new(2.7, 2.8, 2.9),
         );
-        assert_close(jet.sites[1].second_derivative.angle, 4.0);
+        assert_close(jet.stations[1].site.second_derivative.angle, 4.0);
         assert!(matches!(
             jet.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
                 degree: 5,
-                ref knots,
-                ref multiplicities,
-                ref sites,
-            } if knots.len() == 2 && multiplicities == &[6, 6] && sites.len() == 2
+                ref stations,
+            } if stations.len() == 2 && stations.iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
         ));
     }
 

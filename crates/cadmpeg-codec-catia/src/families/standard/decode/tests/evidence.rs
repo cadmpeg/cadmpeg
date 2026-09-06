@@ -1378,24 +1378,26 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
         });
     let rolling_ball_definition = ProceduralSurfaceDefinition::RollingBallJet {
         degree: 5,
-        knots: vec![0.0],
-        multiplicities: vec![6],
-        sites: vec![RollingBallJetSite {
-            first_limit: Point3::new(0.0, 0.0, 0.0),
-            second_limit: Point3::new(0.0, 1.0, 0.0),
-            center: Point3::new(0.0, 0.5, 0.0),
-            angle: std::f64::consts::PI,
-            first_derivative: RollingBallJetDerivative {
-                first_limit: Vector3::new(0.0, 0.0, 0.0),
-                second_limit: Vector3::new(0.0, 0.0, 0.0),
-                center: Vector3::new(0.0, 0.0, 0.0),
-                angle: 0.0,
-            },
-            second_derivative: RollingBallJetDerivative {
-                first_limit: Vector3::new(0.0, 0.0, 0.0),
-                second_limit: Vector3::new(0.0, 0.0, 0.0),
-                center: Vector3::new(0.0, 0.0, 0.0),
-                angle: 0.0,
+        stations: vec![cadmpeg_ir::geometry::RollingBallJetStation {
+            knot: 0.0,
+            multiplicity: 6,
+            site: RollingBallJetSite {
+                first_limit: Point3::new(0.0, 0.0, 0.0),
+                second_limit: Point3::new(0.0, 1.0, 0.0),
+                center: Point3::new(0.0, 0.5, 0.0),
+                angle: std::f64::consts::PI,
+                first_derivative: RollingBallJetDerivative {
+                    first_limit: Vector3::new(0.0, 0.0, 0.0),
+                    second_limit: Vector3::new(0.0, 0.0, 0.0),
+                    center: Vector3::new(0.0, 0.0, 0.0),
+                    angle: 0.0,
+                },
+                second_derivative: RollingBallJetDerivative {
+                    first_limit: Vector3::new(0.0, 0.0, 0.0),
+                    second_limit: Vector3::new(0.0, 0.0, 0.0),
+                    center: Vector3::new(0.0, 0.0, 0.0),
+                    angle: 0.0,
+                },
             },
         }],
     };
