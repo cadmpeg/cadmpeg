@@ -540,7 +540,7 @@ impl<'a> Container<'a> {
                 let id_bytes = count.checked_mul(4)?;
                 let ids_start = count_offset.checked_add(4)?;
                 let ids_end = ids_start.checked_add(id_bytes)?;
-                crate::om::is_product_record(bytes.get(ids_end..)?).then_some((
+                crate::om::product::ProductRecord::read(bytes.get(ids_end..)?, crate::om::product::ProductRecordForm::Modern).is_some().then_some((
                     count_offset,
                     count,
                     ids_start,

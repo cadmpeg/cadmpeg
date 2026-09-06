@@ -1561,7 +1561,7 @@ fn om_store_version_can_follow_control_prefix() {
     let bytes = b"\xff\x00prefix\x04\x01\x0eNX 2027.3102\0tail";
     let version = super::store_version(bytes, 100).expect("store version");
     assert_eq!(version.offset, 108);
-    assert_eq!(version.value, "NX 2027.3102");
+    assert_eq!(version.value.as_str(), "NX 2027.3102");
 }
 
 #[test]

@@ -53,7 +53,7 @@ pub struct OmRecordArea {
     /// Three exact little-endian control words.
     pub control_words: [u32; 3],
     /// Exact printable product/version string.
-    pub product_version: String,
+    pub product_version: crate::om::product::ProductText<String>,
     /// Exact record-area byte length.
     pub byte_len: u64,
     /// SHA-256 of the complete pointed record area.
@@ -468,7 +468,7 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
                 section_link: link.id,
                 schema_role: link.schema_role,
                 control_words: header.control_words,
-                product_version: header.product.value.to_string(),
+                product_version: header.product.value.into_owned(),
                 byte_len: bytes.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                 source_offset: entry_offset + header.offset as u64,
@@ -2701,7 +2701,7 @@ pub struct StoreHeader {
     /// Persistent object identity when the header belongs to an ID-bounded record.
     pub object_id: Option<u32>,
     /// Exact printable product/version text.
-    pub version: String,
+    pub version: crate::om::product::ProductText<String>,
     /// Directory entry containing the OM store.
     pub source_entry: String,
     /// Absolute file offset of the `04 01` marker.
@@ -5084,7 +5084,7 @@ pub fn store_headers(container: &Container) -> Vec<StoreHeader> {
                             id: format!("nx:om-store-headers:store#{section_ordinal}"),
                             section_ordinal: section_ordinal as u32,
                             object_id: Some(record.object_id.0),
-                            version: version.value.to_string(),
+                            version: version.value.into_owned(),
                             source_entry: entry.name.clone(),
                             source_offset: entry_offset + version.offset as u64,
                         }
@@ -5100,7 +5100,7 @@ pub fn store_headers(container: &Container) -> Vec<StoreHeader> {
                                 id: format!("nx:om-store-headers:store#{section_ordinal}"),
                                 section_ordinal: section_ordinal as u32,
                                 object_id: None,
-                                version: version.value.to_string(),
+                                version: version.value.into_owned(),
                                 source_entry: entry.name.clone(),
                                 source_offset: entry_offset + version.offset as u64,
                             }
@@ -6847,7 +6847,7 @@ mod tests {
             .arena_as::<super::StoreHeader>("store_headers")
             .expect("required invariant");
         assert_eq!(headers.len(), 1);
-        assert_eq!(headers[0].version, "NX 2027.3102");
+        assert_eq!(headers[0].version.as_str(), "NX 2027.3102");
         assert_eq!(headers[0].object_id, Some(0x101));
         assert_eq!(object_records[1].object_id.map(|(id, _)| id), Some(0x102));
         assert_eq!(

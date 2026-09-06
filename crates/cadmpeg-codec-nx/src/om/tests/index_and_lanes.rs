@@ -1577,7 +1577,7 @@ fn om_feature_section_accepts_the_legacy_record_area_pointer_and_product_frame()
             .record_area_header()
             .expect("record header")
             .product
-            .value,
+            .value.as_str(),
         "NX 1980.1700"
     );
     assert_eq!(section.operation_labels().len(), 1);

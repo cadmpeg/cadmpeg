@@ -828,7 +828,7 @@ fn decode_retains_role_scoped_om_record_area_header() {
         crate::native::om::OmSchemaRole::FeatureHistory
     );
     assert_eq!(areas[0].control_words, [13, 14, 44]);
-    assert_eq!(areas[0].product_version, "NX 2027.3102");
+    assert_eq!(areas[0].product_version.as_str(), "NX 2027.3102");
     assert!(areas[0].byte_len > 12);
     assert_eq!(areas[0].sha256.len(), 64);
     let labels = result

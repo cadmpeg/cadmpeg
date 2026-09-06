@@ -57,6 +57,8 @@ use discriminators::{
 };
 pub(crate) mod registry;
 pub(crate) mod cache;
+pub(crate) mod product;
+use product::{ProductRecord, ProductRecordForm, ProductText};
 mod index_table;
 use index_table::{DescendingU32Edges, FixedIndex, OffsetIndex};
 use parameter_name::ParameterName;
@@ -155,7 +157,7 @@ pub struct StoreVersion<'a> {
     /// Absolute offset of the `04 01` marker.
     pub offset: usize,
     /// Exact printable product/version text, including the `NX ` prefix.
-    pub value: &'a str,
+    pub value: ProductText<&'a str>,
 }
 
 /// Header of an internally pointed size-framed OM record area.
@@ -2370,14 +2372,14 @@ impl<'a> Section<'a> {
             View::u32_le_at(bytes, 8)?,
         ];
         let suffix = bytes.get(12..)?;
-        let layout = product_record_layout(suffix, ProductRecordForm::Modern)
-            .or_else(|| product_record_layout(suffix, ProductRecordForm::LegacyFeature))?;
+        let layout = ProductRecord::read(suffix, ProductRecordForm::Modern)
+            .or_else(|| ProductRecord::read(suffix, ProductRecordForm::LegacyFeature))?;
         Some(RecordAreaHeader {
             offset,
             control_words,
             product: StoreVersion {
                 offset: offset + 12,
-                value: std::str::from_utf8(&suffix[layout.text_start..layout.text_end]).ok()?,
+                value: layout.text(),
             },
         })
     }
@@ -7618,7 +7620,7 @@ fn section_record_area_pointer(
         let relative = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
         let target = section_offset.checked_add(relative)?;
         (target >= at.checked_add(4)? && target.checked_add(15)? <= section_end).then_some(())?;
-        is_product_record(bytes.get(target.checked_add(12)?..section_end)?).then_some((target, at))
+        ProductRecord::read(bytes.get(target.checked_add(12)?..section_end)?, ProductRecordForm::Modern).is_some().then_some((target, at))
     });
     let first = matches.next()?;
     matches.next().is_none().then_some(first)
@@ -7649,50 +7651,13 @@ fn legacy_feature_record_area_pointer(
             View::u32_le_at(bytes, target)?;
             View::u32_le_at(bytes, target + 4)?;
             View::u32_le_at(bytes, target + 8)?;
-            product_record_layout(
+            ProductRecord::read(
                 bytes.get(target + 12..section_end)?,
                 ProductRecordForm::LegacyFeature,
             )?;
             Some((target, at))
         }),
     )
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ProductRecordLayout {
-    text_start: usize,
-    text_end: usize,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ProductRecordForm {
-    Modern,
-    LegacyFeature,
-}
-
-fn product_record_layout(bytes: &[u8], form: ProductRecordForm) -> Option<ProductRecordLayout> {
-    let (length_offset, text_start): (usize, usize) = match form {
-        ProductRecordForm::Modern if matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) => (2, 3),
-        ProductRecordForm::LegacyFeature if bytes.first() == Some(&0x01) => (1, 2),
-        _ => return None,
-    };
-    let text_length = usize::from(*bytes.get(length_offset)?).checked_sub(2)?;
-    let text_end = text_start.checked_add(text_length)?;
-    let text = bytes.get(text_start..text_end)?;
-    (text.starts_with(b"NX ")
-        && text
-            .iter()
-            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-        && bytes.get(text_end) == Some(&0))
-    .then_some(ProductRecordLayout {
-        text_start,
-        text_end,
-    })
-}
-
-/// Validate one self-framed NX product record.
-pub(crate) fn is_product_record(bytes: &[u8]) -> bool {
-    product_record_layout(bytes, ProductRecordForm::Modern).is_some()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -7731,18 +7696,18 @@ impl<'a> IndexedCandidate<'a> {
 
 fn product_record_range_at(bytes: &[u8], offset: usize) -> Option<ProductRecordRange> {
     let suffix = bytes.get(offset..)?;
-    let layout = product_record_layout(suffix, ProductRecordForm::Modern)?;
+    let layout = ProductRecord::read(suffix, ProductRecordForm::Modern)?;
     Some(ProductRecordRange {
         start: offset,
-        end: offset.checked_add(layout.text_end)?.checked_add(1)?,
+        end: offset.checked_add(layout.byte_len())?,
     })
 }
 
 fn record_area_product_end(bytes: &[u8], offset: usize) -> Option<usize> {
     let suffix = bytes.get(offset..)?;
-    let layout = product_record_layout(suffix, ProductRecordForm::Modern)
-        .or_else(|| product_record_layout(suffix, ProductRecordForm::LegacyFeature))?;
-    offset.checked_add(layout.text_end)?.checked_add(1)
+    let layout = ProductRecord::read(suffix, ProductRecordForm::Modern)
+        .or_else(|| ProductRecord::read(suffix, ProductRecordForm::LegacyFeature))?;
+    offset.checked_add(layout.byte_len())
 }
 
 /// Count validated product records fully contained in `[lower, upper]`.
@@ -7937,15 +7902,8 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
 /// Decode the first self-framed NX product/version marker in `bytes`.
 pub fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVersion<'_>> {
     (0..bytes.len().saturating_sub(3)).find_map(|at| {
-        let suffix = &bytes[at..];
-        is_product_record(suffix).then(|| {
-            let length = usize::from(suffix[2]) - 2;
-            StoreVersion {
-                offset: base_offset + at,
-                value: std::str::from_utf8(&suffix[3..3 + length])
-                    .expect("validated printable NX version is UTF-8"),
-            }
-        })
+        let product = ProductRecord::read(&bytes[at..], ProductRecordForm::Modern)?;
+        Some(StoreVersion { offset: base_offset.checked_add(at)?, value: product.text() })
     })
 }
 
@@ -8021,10 +7979,10 @@ fn offset_store_product_anchored_form(
 ) -> Option<OffsetStoreControlForm> {
     let product_offset = unique_candidate(
         (0..control.len())
-            .filter(|offset| is_product_record(&control[*offset..]))
+            .filter(|offset| ProductRecord::read(&control[*offset..], ProductRecordForm::Modern).is_some())
             .chain(
                 (0..first_record.len())
-                    .filter(|offset| is_product_record(&first_record[*offset..]))
+                    .filter(|offset| ProductRecord::read(&first_record[*offset..], ProductRecordForm::Modern).is_some())
                     .map(|offset| control.len() + offset),
             ),
     )?;
