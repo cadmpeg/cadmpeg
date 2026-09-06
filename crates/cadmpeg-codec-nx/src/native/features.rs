@@ -3898,7 +3898,7 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
                     payload_sha256: cadmpeg_ir::hash::sha256_hex(record.payload),
                     stable_identity: None,
                     payload_source_offset: entry_offset + record.payload_offset as u64,
-                    source_offset: entry_offset + record.offset as u64,
+                    source_offset: entry_offset + record.offset() as u64,
                 },
                 stable_identity,
             ));
@@ -4615,7 +4615,7 @@ pub fn feature_symbolic_threads(container: &Container) -> Vec<FeatureSymbolicThr
                 operation_label,
                 operation_record,
                 text_frames,
-                source_offset: entry_offset + record.offset as u64,
+                source_offset: entry_offset + record.offset() as u64,
             });
         },
     );

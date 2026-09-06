@@ -361,7 +361,6 @@ fn om_simple_hole_lane_requires_two_identical_nonempty_scalar_runs() {
         object_index_offsets: [0; 4],
     };
     let record = super::OperationRecord {
-        offset: 100,
         bytes: &payload,
         payload_offset: 200,
         payload: &payload,
@@ -395,7 +394,6 @@ fn om_simple_hole_lane_accepts_one_repeated_scalar() {
     payload.extend_from_slice(&[0x04, 0x08]);
     payload.extend_from_slice(b"Hole_X\0");
     let record = super::OperationRecord {
-        offset: 100,
         bytes: &payload,
         payload_offset: 200,
         payload: &payload,
@@ -438,7 +436,6 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
         object_index_offsets: [0; 4],
     };
     let record = super::OperationRecord {
-        offset: 100,
         bytes: &payload,
         payload_offset: 200,
         payload: &payload,
@@ -507,7 +504,6 @@ fn om_hole_package_lane_retains_the_exact_four_block_group() {
         0xf0, 0xce, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcf, 0xf0, 0xd0, 0x00, 0x00, 0xff, 0x7f,
     ];
     let record = super::OperationRecord {
-        offset: 100,
         bytes: &payload,
         payload_offset: 200,
         payload: &payload,
@@ -567,7 +563,6 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
         object_index_offsets: [0; 4],
     };
     let record = super::OperationRecord {
-        offset: 10,
         bytes: &payload,
         payload_offset: 100,
         payload: &payload,
@@ -634,7 +629,6 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
         object_index_offsets: [0; 4],
     };
     let record = super::OperationRecord {
-        offset: 10,
         bytes: &payload,
         payload_offset: 100,
         payload: &payload,
@@ -955,7 +949,6 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
     };
     let bytes = [0x01, 0x02, 0x10, 0x90, 0x19, 0x42, 0xff];
     let record = super::OperationRecord {
-        offset: 100,
         bytes: &bytes,
         payload_offset: 100,
         payload: &bytes,
@@ -973,7 +966,6 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
     let duplicate = [bytes.as_slice(), bytes.as_slice()].concat();
     assert_eq!(
         super::operation_body_references(super::OperationRecord {
-            offset: 100,
             bytes: &duplicate,
             payload_offset: 100,
             payload: &duplicate,
@@ -993,7 +985,6 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
         ]
     );
     assert!(super::operation_body_reference(super::OperationRecord {
-        offset: 100,
         bytes: &duplicate,
         payload_offset: 100,
         payload: &duplicate,
@@ -1015,7 +1006,6 @@ fn om_operation_body_write_is_not_a_direct_primary_body_reference() {
         0x01, 0x02, 0x0b, 0xa0, 0x66, 0xa4, 0x97, 0x75, 0x01, 0x02, 0x10, 0x43, 0xff,
     ];
     let record = super::OperationRecord {
-        offset: 100,
         bytes: &bytes,
         payload_offset: 100,
         payload: &bytes,
@@ -1051,7 +1041,7 @@ fn om_operation_body_write_is_not_a_direct_primary_body_reference() {
 #[test]
 fn om_operation_object_relation_requires_complete_canonical_endpoints() {
     let label = super::OperationLabel {
-        header_offset: 100,
+        header_offset: 50,
         offset: 100,
         value: "EXTRUDE",
         object_indices: [None; 4],
@@ -1062,7 +1052,6 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
         0x10, 0x81, 0x23, 0xff,
     ];
     let record = super::OperationRecord {
-        offset: 50,
         bytes: &payload,
         payload_offset: 100,
         payload: &payload,
@@ -1138,7 +1127,6 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
         0x00, 0x81, 0x23, 0x81, 0x23, 0xff, 0x00,
     ];
     let record = super::OperationRecord {
-        offset: 100,
         bytes: &bytes,
         payload_offset: 104,
         payload: &bytes,
@@ -1157,13 +1145,16 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
         })
     );
 
+    let label = super::OperationLabel {
+        header_offset: 0,
+        ..label
+    };
     let direct = [
         0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
         0x00, 0x29, 0x29, 0x41, 0x00,
     ];
     assert_eq!(
         super::operation_terminal_frame(super::OperationRecord {
-            offset: 0,
             bytes: &direct,
             payload_offset: 200,
             payload: &direct,
@@ -1185,7 +1176,6 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
         0x00, 0x80, 0x01, 0x80, 0x01, 0xff, 0x00,
     ];
     assert!(super::operation_terminal_frame(super::OperationRecord {
-        offset: 0,
         bytes: &noncanonical,
         payload_offset: 0,
         payload: &noncanonical,
@@ -1197,7 +1187,6 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
         0x00, 0x23, 0x24, 0xff, 0x00,
     ];
     assert!(super::operation_terminal_frame(super::OperationRecord {
-        offset: 0,
         bytes: &mismatched,
         payload_offset: 0,
         payload: &mismatched,
@@ -1210,7 +1199,6 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
         0x29, 0x41, 0x00,
     ];
     let delete_frame = super::operation_terminal_frame(super::OperationRecord {
-        offset: 0,
         bytes: &delete,
         payload_offset: 300,
         payload: &delete,
@@ -1222,7 +1210,6 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
     .expect("DELETE common-frame variant");
     assert_eq!(delete_frame.immediate_common_frame_offset, Some(300));
     let [delete_common] = super::operation_common_frames(super::OperationRecord {
-        offset: 0,
         bytes: &delete,
         payload_offset: 300,
         payload: &delete,
@@ -1239,7 +1226,6 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
 
     let suffix_only = [0x02, 0x02, 0xff, 0x00];
     let suffix = super::operation_terminal_frame(super::OperationRecord {
-        offset: 0,
         bytes: &suffix_only,
         payload_offset: 400,
         payload: &suffix_only,
@@ -1253,7 +1239,6 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
     let mut embedded = direct.to_vec();
     embedded.extend_from_slice(&[0xaa, 0x02, 0x02, 0xff, 0x00]);
     let embedded_record = super::OperationRecord {
-        offset: 0,
         bytes: &embedded,
         payload_offset: 500,
         payload: &embedded,
@@ -1273,7 +1258,6 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
 fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
     fn record(payload: &[u8]) -> super::OperationRecord<'_> {
         super::OperationRecord {
-            offset: 0,
             bytes: payload,
             payload_offset: 100,
             payload,
@@ -1334,7 +1318,6 @@ fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
 fn om_delete_reference_field_requires_five_canonical_nullable_slots() {
     fn record(payload: &[u8]) -> super::OperationRecord<'_> {
         super::OperationRecord {
-            offset: 0,
             bytes: payload,
             payload_offset: 100,
             payload,
@@ -1587,7 +1570,7 @@ fn om_operation_records_use_consecutive_validated_headers() {
     assert_eq!(records_with_ordinals[0].0, 0);
     assert_eq!(records_with_ordinals[1].0, 1);
     assert_eq!(records.len(), 2);
-    assert_eq!(records[0].offset, 16);
+    assert_eq!(records[0].offset(), 16);
     assert_eq!(records[0].label.value, "UNITE");
     assert!(records[0].bytes.ends_with(b"payload"));
     assert_eq!(records[0].payload, b"payload");
@@ -1608,7 +1591,6 @@ fn om_operation_payload_strings_require_complete_utf8_frames() {
     };
     let payload = b"\x00\x04\x07BLOCK\0\x04\x04\xc3\x97\0\x04\x07BROKEN";
     let record = super::OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset: 200,
         payload,
@@ -1632,7 +1614,6 @@ fn om_operation_payload_text_frames_retain_marker_and_order() {
     };
     let payload = b"\x03\x05CUT\0\x04\x06DONE\0\x03\x0bM Profile\0";
     let record = super::OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset: 200,
         payload,

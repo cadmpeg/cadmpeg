@@ -4,7 +4,6 @@ use super::*;
 
 fn record(payload: &[u8], payload_offset: usize) -> OperationRecord<'_> {
     OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset,
         payload,

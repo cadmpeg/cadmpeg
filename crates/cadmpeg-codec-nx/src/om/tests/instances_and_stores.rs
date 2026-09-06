@@ -60,7 +60,6 @@ fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
         object_index_offsets: [115, 116, 117, 118],
     };
     let record = super::OperationRecord {
-        offset: 100,
         bytes: &payload,
         payload_offset: 200,
         payload: &payload,
@@ -132,7 +131,6 @@ fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
         object_index_offsets: [115, 116, 117, 118],
     };
     let record = super::OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset: 200,
         payload,
@@ -194,7 +192,6 @@ fn om_geometry_instance_reference_requires_one_complete_field() {
     };
     let payload = b"\x44\x45\x00\xff\xff\xf1\x03\x21\x01\x02\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x01\x02";
     let record = super::OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset: 200,
         payload,
@@ -224,7 +221,6 @@ fn om_point_feature_header_requires_the_complete_leading_envelope() {
     };
     let payload = b"\x72\x00\x00\x01\x00\x00\x00\xf1\x1c\x8f\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0d\x01\x02\x01\x00\x00\x00\x89\x02\x01\x01\x01\x00\xa5\x57\x95\x01\x00\x00\xff\x02\xc0\x1f\xff\xfd\x01\x00\x00\x01\x01\x01\x03\x02\x01\x01\x01\x00\x00\x00\x00\x00\xaa";
     let record = super::OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset: 200,
         payload,
@@ -320,7 +316,6 @@ fn om_draft_feature_references_require_one_complete_graph() {
     let terminal = b"\x81\x5e\x80\xb8\x01\x03\x02\x01\x02\x01\x01\x01\x00\x00\x00\x29\x29\x0c\x00";
     let payload = [prefix.as_slice(), graph.as_slice(), terminal.as_slice()].concat();
     let record = super::OperationRecord {
-        offset: 100,
         bytes: &payload,
         payload_offset: 200,
         payload: &payload,
@@ -405,7 +400,6 @@ fn om_surface_feature_references_require_the_complete_common_envelope() {
     };
     let payload = b"\x3f\x00\x00\x01\x00\xf1\x02\x46\xf1\x02\x47\xf1\x02\x48\x01\x09\x03\x03\x04\x05\x02\x01\x01\x01\x01\x09\xf1\x02\x49\xf1\x02\x4a\xf1\x02\x4b\xf1\x02\x4c\xf1\x02\x4d\xf1\x02\x4e\xf1\x02\x4f\xf1\x02\x50\x00\x03\x03\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xf1\x02\x56\xf1\x02\x57\xf1\x02\x58\x01\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x01\x02";
     let record = super::OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset: 200,
         payload,
@@ -467,7 +461,6 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     };
     let payload = b"\x13\x00\x00\x01\x00\xf1\x01\x21\xf1\x01\x22\xf1\x01\x23\x01\x08\x02\x03\x03\x04\x01\x01\x01\x01\x07\xf1\x01\x24\xf1\x01\x25\xf1\x01\x26\xf1\x01\x27\xf1\x01\x28\xf1\x01\x29\x04\x01\xa0\x5e\x38\x13\x01\x03";
     let record = super::OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset: 200,
         payload,
@@ -582,7 +575,6 @@ fn om_surface_feature_branches_require_one_complete_counted_group() {
     };
     let payload = b"\xa0\x5a\x14\x13\x01\x02\x40\x01\x04\xf1\x1b\xf4\xf1\x1b\xf5\xf1\x1b\xf6\x01\x04\x00\x00\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x1b\xf7\x00\x81\x58\x01\x02\x40\x01\x05\xf1\x1b\xf8\xf1\x1b\xf9\xf1\x1b\xfa\xf1\x1b\xfb\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x1b\xfc\x00\x81\x1c\x00\x00\x00\x01\x03\x00\x00\x00\xff\xff\x01";
     let record = super::OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset: 200,
         payload,
@@ -653,7 +645,6 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
     };
     let payload = b"\x01\x00\x01\x05\xf0\xff\xf1\x01\x00\xf1\x01\x01\xf1\x01\x02\x00\x00\xf1\x01\x03\x01\x00\x00\x00";
     let record = super::OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset: 200,
         payload,
@@ -741,7 +732,6 @@ fn om_extrude_profile_references_require_matching_witness_field() {
     };
     let payload = b"\x01\x02\x16\x01\x03\xf0\xff\xf1\x01\x00\x01\x03\x79\xaa\x01\x03\xf0\xff\xf1\x01\x00\x00\x00";
     let record = super::OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset: 200,
         payload,
@@ -809,7 +799,6 @@ fn om_extrude_header_decodes_shifted_ieee_scalars() {
     let payload =
         b"\x0f\x00\x00\x01\x00\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x2f\xa3\x74\xbc\x6a\x7e\xf9\xdb";
     let record = super::OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset: 200,
         payload,
@@ -848,7 +837,6 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
     payload.extend([0, 1, 1, 0, 0, 0, 0]);
     payload.extend([0xff, 1, 2, 0xf0, 0x33, 0, 0xaa]);
     let record = super::OperationRecord {
-        offset: 100,
         bytes: &payload,
         payload_offset: 200,
         payload: &payload,
@@ -924,7 +912,6 @@ fn om_operation_terminal_discriminator_requires_one_complete_lane() {
     };
     let payload = b"\x01\x01\x02\x81\x5f\x80\xab\x01\x03\x02\x01\x01\x02\x01\x01\x00\x00\x00\x29\x29\x05\x80\xff\x00";
     let record = super::OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset: 200,
         payload,
@@ -985,7 +972,6 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
     };
     let bytes = b"\x01\x02\x10\x42\xff\x1c\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\xaa\x01\x02\x10\x43\xff\x11\x30\x00\x00\x00\x00\x00\x00\x00\x00\x00";
     let record = super::OperationRecord {
-        offset: 100,
         bytes,
         payload_offset: 100,
         payload: bytes,
@@ -1047,7 +1033,6 @@ fn om_operation_body_branch_11_decodes_wrapped_member_lane_atomically() {
     };
     let bytes = b"\x01\x02\x10\x42\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\x01\x03\x2e\x7f\x00\x2e\x80\x01\x00";
     let record = super::OperationRecord {
-        offset: 100,
         bytes,
         payload_offset: 100,
         payload: bytes,
@@ -1083,7 +1068,6 @@ fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
     };
     let bytes = b"\x01\x02\x10\x72\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\x01\x02\x2e\x41\x00\x01\x02\x80\x43\x00\x00\x01\x72\x00\x00";
     let record = super::OperationRecord {
-        offset: 100,
         bytes,
         payload_offset: 100,
         payload: bytes,
@@ -1135,7 +1119,6 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
     };
     let compact = b"\x01\x02\x10\x6e\xff\x1c\x00\x00\x00\x01\x03\x80\x0d\x69\x00\x00\x0b\x00";
     let record = super::OperationRecord {
-        offset: 100,
         bytes: compact,
         payload_offset: 100,
         payload: compact,
@@ -1234,7 +1217,6 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     };
     let bytes = b"\x01\x02\x10\x73\xff\x32\x00\x00\x30\x77\x7e\x14\x7a\xe1\x47\xb3\x01\x03\x3d\x82\x56\x00\x3d\x82\x57\x00\x01\x04\x80\x2b\x80\x2d\x80\x2c\x01\x03\x80\x2e\x80\x77\x00\x01\x73\x00\x00";
     let record = super::OperationRecord {
-        offset: 100,
         bytes,
         payload_offset: 100,
         payload: bytes,
@@ -1309,7 +1291,6 @@ fn om_block_construction_field_decodes_ordered_canonical_references() {
     payload.extend([0xff; 11]);
     payload.extend([0; 4]);
     let record = super::OperationRecord {
-        offset: 100,
         bytes: &payload,
         payload_offset: 200,
         payload: &payload,

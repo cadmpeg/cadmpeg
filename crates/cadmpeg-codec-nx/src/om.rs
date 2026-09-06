@@ -1641,8 +1641,6 @@ fn materialize_operation_labels<'a>(
 /// One operation record bounded by consecutive validated operation headers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationRecord<'a> {
-    /// Absolute offset of the fixed operation-header marker.
-    pub offset: usize,
     /// Complete record bytes through the next operation header or section end.
     pub bytes: &'a [u8],
     /// Absolute offset of the first byte after the operation-label terminator.
@@ -1651,6 +1649,13 @@ pub struct OperationRecord<'a> {
     pub payload: &'a [u8],
     /// Label decoded from this record's header.
     pub label: OperationLabel<'a>,
+}
+
+impl OperationRecord<'_> {
+    /// Absolute offset of the fixed operation-header marker.
+    pub fn offset(&self) -> usize {
+        self.label.header_offset
+    }
 }
 
 /// One unlabeled operation record bounded by validated operation headers.
@@ -3513,7 +3518,6 @@ fn operation_records_with_labels_and_ordinals<'a>(
             Some((
                 ordinal,
                 OperationRecord {
-                    offset: label.header_offset,
                     bytes: bytes.get(start..end)?,
                     payload_offset: base_offset + payload_start,
                     payload: bytes.get(payload_start..end)?,
@@ -5598,7 +5602,7 @@ pub fn operation_body_scalar_triples(
         .into_iter()
         .enumerate()
         .filter_map(|(ordinal, reference)| {
-            let token = reference.offset.checked_sub(record.offset)?;
+            let token = reference.offset.checked_sub(record.offset())?;
             let (_, end) = feature_object_index(record.bytes, token)?;
             if record.bytes.get(end) != Some(&0xff) {
                 return None;
@@ -5609,7 +5613,7 @@ pub fn operation_body_scalar_triples(
             for _ in 0..3 {
                 let (value, encoding, width) = payload_scalar(record.bytes.get(at..)?)?;
                 scalars.push(PayloadScalar {
-                    offset: record.offset + at,
+                    offset: record.offset() + at,
                     value,
                     encoding,
                     raw_value: record.bytes.get(at..at + width)?.to_vec(),
@@ -5632,7 +5636,7 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
         .into_iter()
         .enumerate()
         .flat_map(|(body_ordinal, reference)| {
-            let Some(token) = reference.offset.checked_sub(record.offset) else {
+            let Some(token) = reference.offset.checked_sub(record.offset()) else {
                 return Vec::new();
             };
             let Some((_, end)) = feature_object_index(record.bytes, token) else {
@@ -5701,7 +5705,7 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
                     ordinal: ordinal as u32,
                     member_index,
                     raw_member_index: record.bytes[member_at..member_at + width].to_vec(),
-                    offset: record.offset + member_at,
+                    offset: record.offset() + member_at,
                 });
             }
             members
@@ -5720,7 +5724,7 @@ pub fn operation_body_11_continuations(
         .into_iter()
         .enumerate()
         .filter_map(|(body_ordinal, reference)| {
-            let token = reference.offset.checked_sub(record.offset)?;
+            let token = reference.offset.checked_sub(record.offset())?;
             let (_, end) = feature_object_index(record.bytes, token)?;
             if record.bytes.get(end..end + 2) != Some(&[0xff, 0x11]) {
                 return None;
@@ -5782,10 +5786,10 @@ pub fn operation_body_11_continuations(
                 continuation_index,
                 raw_continuation_index: record.bytes[continuation_at..continuation_at + width]
                     .to_vec(),
-                continuation_offset: record.offset + continuation_at,
+                continuation_offset: record.offset() + continuation_at,
                 terminal_object_index,
                 raw_terminal_object_index: record.bytes[terminal_at..next].to_vec(),
-                terminal_offset: record.offset + terminal_at,
+                terminal_offset: record.offset() + terminal_at,
             })
         })
         .collect()
@@ -5799,7 +5803,7 @@ pub fn operation_body_reference_lanes(
         .into_iter()
         .enumerate()
         .filter_map(|(body_ordinal, reference)| {
-            let token = reference.offset.checked_sub(record.offset)?;
+            let token = reference.offset.checked_sub(record.offset())?;
             let (_, end) = feature_object_index(record.bytes, token)?;
             if record.bytes.get(end) != Some(&0xff) {
                 return None;
@@ -5897,7 +5901,7 @@ fn operation_body_reference_lane_values(
             ordinal: ordinal as u32,
             object_index,
             raw_value: record.bytes[value_at..value_at + width].to_vec(),
-            offset: record.offset + value_at,
+            offset: record.offset() + value_at,
         });
     }
     Some(values)
@@ -5909,7 +5913,7 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
         return None;
     }
     let reference = operation_body_reference(record)?;
-    let token = reference.offset.checked_sub(record.offset)?;
+    let token = reference.offset.checked_sub(record.offset())?;
     let (_, end) = feature_object_index(record.bytes, token)?;
     if record.bytes.get(end..end + 4) != Some(&[0xff, 0x32, 0x00, 0x00]) {
         return None;
@@ -5942,14 +5946,14 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
         return None;
     }
     Some(ExtrudePayload32Branch {
-        offset: record.offset + branch_at,
+        offset: record.offset() + branch_at,
         body_object_index: reference.object_index,
         scalar,
         raw_scalar,
         atoms_be,
         atom_offsets: atom_offsets
             .into_iter()
-            .map(|offset| record.offset + offset)
+            .map(|offset| record.offset() + offset)
             .collect(),
         atom_indices,
         first_indices: first.values,
@@ -5957,18 +5961,18 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
         first_index_offsets: first
             .offsets
             .into_iter()
-            .map(|offset| record.offset + offset)
+            .map(|offset| record.offset() + offset)
             .collect(),
         second_indices: second.values,
         raw_second_indices: second.raw_values,
         second_index_offsets: second
             .offsets
             .into_iter()
-            .map(|offset| record.offset + offset)
+            .map(|offset| record.offset() + offset)
             .collect(),
         terminal_object_index,
         raw_terminal_object_index: record.bytes[at + 2..next].to_vec(),
-        terminal_offset: record.offset + at + 2,
+        terminal_offset: record.offset() + at + 2,
     })
 }
 
@@ -7093,7 +7097,7 @@ pub fn operation_body_reference(record: OperationRecord<'_>) -> Option<Operation
 fn operation_body_reference_candidates(
     record: OperationRecord<'_>,
 ) -> impl Iterator<Item = OperationBodyReference> + '_ {
-    let payload_start = record.payload_offset.checked_sub(record.offset);
+    let payload_start = record.payload_offset.checked_sub(record.offset());
     let mut cursor = 0usize;
     std::iter::from_fn(move || loop {
         let window_end = cursor.checked_add(3)?;
@@ -7106,7 +7110,7 @@ fn operation_body_reference_candidates(
                 operation_body_write_frame_at(record.payload, record.payload_offset, payload_marker)
             });
         if let Some(body_write) = body_write {
-            if let Some(end) = body_write.end_offset.checked_sub(record.offset) {
+            if let Some(end) = body_write.end_offset.checked_sub(record.offset()) {
                 cursor = cursor.max(end);
             }
             continue;
@@ -7120,7 +7124,7 @@ fn operation_body_reference_candidates(
                 continue;
             }
             return Some(OperationBodyReference {
-                offset: record.offset + token,
+                offset: record.offset() + token,
                 object_index,
                 raw_object_index: record.bytes[token..end].to_vec(),
             });

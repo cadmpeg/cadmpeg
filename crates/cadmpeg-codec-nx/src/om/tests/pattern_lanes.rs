@@ -16,7 +16,6 @@ fn om_pattern_counted_reference_lane_requires_exact_terminator() {
     payload.extend_from_slice(&TRAILER);
     let payload_offset = 200;
     let record = OperationRecord {
-        offset: 100,
         bytes: &payload,
         payload_offset,
         payload: &payload,

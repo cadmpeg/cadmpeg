@@ -55,7 +55,6 @@ fn every_body_identity_opens_a_body_write_frame() {
         object_index_offsets: [0; 4],
     };
     let record = OperationRecord {
-        offset: 100,
         bytes: &payload,
         payload_offset: 100,
         payload: &payload,

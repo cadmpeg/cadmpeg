@@ -87,7 +87,6 @@ fn nx_symbolic_thread_retains_all_complete_type_three_text_frames() {
     };
     let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5\0\x03\x05CUT\0";
     let record = crate::om::OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset: 500,
         payload,
@@ -116,7 +115,6 @@ fn nx_symbolic_thread_requires_two_complete_type_three_text_frames() {
     };
     let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5";
     let record = crate::om::OperationRecord {
-        offset: 100,
         bytes: payload,
         payload_offset: 500,
         payload,
