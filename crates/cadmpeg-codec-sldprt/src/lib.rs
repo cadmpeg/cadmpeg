@@ -207,7 +207,10 @@ impl SldprtCodec {
                 writer,
             );
         }
-        let Some(record) = records.iter().find(|record| record.id.0 == SOURCE_IMAGE_ID) else {
+        let Some(record) = records
+            .iter()
+            .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
+        else {
             return Self::write_semantic(
                 ir,
                 annotations,
@@ -407,7 +410,7 @@ fn source_records<'a>(
             let reference = reference?;
             let retained = retained_by_id.get(reference.id.as_str()).ok_or_else(|| {
                 cadmpeg_ir::native::NativeConvertError::MissingRetainedSourceRecord(
-                    reference.id.0.clone(),
+                    reference.id.as_str().to_owned(),
                 )
             })?;
             Ok(SourceRecord {
@@ -419,7 +422,7 @@ fn source_records<'a>(
         .collect::<Result<Vec<_>, cadmpeg_ir::native::NativeConvertError>>()?;
     if let Some(source) = source_fidelity.retained_record(SOURCE_IMAGE_ID) {
         records.push(SourceRecord {
-            id: source.id().to_owned().into(),
+            id: source.id().to_owned().try_into().expect("valid identity"),
             sha256: source.sha256(),
             data: source.data(),
         });

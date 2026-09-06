@@ -116,44 +116,75 @@ impl Brep {
             )
         };
         for body in &mut self.bodies {
-            body.id.0 = qualify(&body.id.as_str());
-            body.regions.iter_mut().for_each(|id| id.0 = qualify(&id.0));
+            body.id = qualify(&body.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            body.regions
+                .iter_mut()
+                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
         }
         for region in &mut self.regions {
-            region.id.0 = qualify(&region.id.as_str());
-            region.body.0 = qualify(&region.body.0);
+            region.id = qualify(&region.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            region.body = qualify(region.body.as_str())
+                .try_into()
+                .expect("qualified identity");
             region
                 .shells
                 .iter_mut()
-                .for_each(|id| id.0 = qualify(&id.0));
+                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
         }
         for shell in &mut self.shells {
-            shell.id.0 = qualify(&shell.id.as_str());
-            shell.region.0 = qualify(&shell.region.0);
-            shell.faces.iter_mut().for_each(|id| id.0 = qualify(&id.0));
+            shell.id = qualify(&shell.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            shell.region = qualify(shell.region.as_str())
+                .try_into()
+                .expect("qualified identity");
+            shell
+                .faces
+                .iter_mut()
+                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
             shell
                 .wire_edges
                 .iter_mut()
-                .for_each(|id| id.0 = qualify(&id.0));
+                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
             shell
                 .free_vertices
                 .iter_mut()
-                .for_each(|id| id.0 = qualify(&id.0));
+                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
         }
         for face in &mut self.faces {
-            face.id.0 = qualify(&face.id.as_str());
-            face.shell.0 = qualify(&face.shell.0);
-            face.surface.0 = qualify(&face.surface.0);
-            face.loops.iter_mut().for_each(|id| id.0 = qualify(&id.0));
+            face.id = qualify(&face.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            face.shell = qualify(face.shell.as_str())
+                .try_into()
+                .expect("qualified identity");
+            face.surface = qualify(face.surface.as_str())
+                .try_into()
+                .expect("qualified identity");
+            face.loops
+                .iter_mut()
+                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
         }
         for loop_ in &mut self.loops {
-            loop_.id.0 = qualify(&loop_.id.as_str());
-            loop_.face.0 = qualify(&loop_.face.0);
+            loop_.id = qualify(&loop_.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            loop_.face = qualify(loop_.face.as_str())
+                .try_into()
+                .expect("qualified identity");
             match &mut loop_.boundary {
                 cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, pcurves } => {
-                    vertex.0 = qualify(&vertex.0);
+                    *vertex = qualify(vertex.as_str())
+                        .try_into()
+                        .expect("qualified identity");
                     for pcurve in pcurves {
-                        pcurve.pcurve.0 = qualify(&pcurve.pcurve.0);
+                        pcurve.pcurve = qualify(pcurve.pcurve.as_str())
+                            .try_into()
+                            .expect("qualified identity");
                     }
                 }
                 cadmpeg_ir::topology::LoopBoundary::Ring {
@@ -161,89 +192,139 @@ impl Brep {
                     vertex_uses,
                 } => {
                     for id in coedges {
-                        id.0 = qualify(&id.0);
+                        *id = qualify(id.as_str()).try_into().expect("qualified identity");
                     }
                     for vertex_use in vertex_uses {
-                        vertex_use.vertex.0 = qualify(&vertex_use.vertex.0);
-                        vertex_use.after.0 = qualify(&vertex_use.after.0);
+                        vertex_use.vertex = qualify(vertex_use.vertex.as_str())
+                            .try_into()
+                            .expect("qualified identity");
+                        vertex_use.after = qualify(vertex_use.after.as_str())
+                            .try_into()
+                            .expect("qualified identity");
                         for pcurve in &mut vertex_use.pcurves {
-                            pcurve.pcurve.0 = qualify(&pcurve.pcurve.0);
+                            pcurve.pcurve = qualify(pcurve.pcurve.as_str())
+                                .try_into()
+                                .expect("qualified identity");
                         }
                     }
                 }
             }
         }
         for coedge in &mut self.coedges {
-            coedge.id.0 = qualify(&coedge.id.as_str());
-            coedge.owner_loop.0 = qualify(&coedge.owner_loop.0);
-            coedge.edge.0 = qualify(&coedge.edge.0);
-            coedge.radial_next.0 = qualify(&coedge.radial_next.0);
+            coedge.id = qualify(&coedge.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            coedge.owner_loop = qualify(coedge.owner_loop.as_str())
+                .try_into()
+                .expect("qualified identity");
+            coedge.edge = qualify(coedge.edge.as_str())
+                .try_into()
+                .expect("qualified identity");
+            coedge.radial_next = qualify(coedge.radial_next.as_str())
+                .try_into()
+                .expect("qualified identity");
             for use_ in &mut coedge.pcurves {
-                use_.pcurve.0 = qualify(&use_.pcurve.0);
+                use_.pcurve = qualify(use_.pcurve.as_str())
+                    .try_into()
+                    .expect("qualified identity");
             }
         }
         for edge in &mut self.edges {
-            edge.id.0 = qualify(&edge.id.as_str());
+            edge.id = qualify(&edge.id.as_str())
+                .try_into()
+                .expect("qualified identity");
             if let Some(curve) = &mut edge.curve {
-                curve.0 = qualify(&curve.0);
+                *curve = qualify(curve.as_str())
+                    .try_into()
+                    .expect("qualified identity");
             }
-            edge.start.0 = qualify(&edge.start.0);
-            edge.end.0 = qualify(&edge.end.0);
+            edge.start = qualify(edge.start.as_str())
+                .try_into()
+                .expect("qualified identity");
+            edge.end = qualify(edge.end.as_str())
+                .try_into()
+                .expect("qualified identity");
         }
         for vertex in &mut self.vertices {
-            vertex.id.0 = qualify(&vertex.id.as_str());
-            vertex.point.0 = qualify(&vertex.point.0);
+            vertex.id = qualify(&vertex.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            vertex.point = qualify(vertex.point.as_str())
+                .try_into()
+                .expect("qualified identity");
         }
-        self.points
-            .iter_mut()
-            .for_each(|point| point.id.0 = qualify(&point.id.as_str()));
+        self.points.iter_mut().for_each(|point| {
+            point.id = qualify(&point.id.as_str())
+                .try_into()
+                .expect("qualified identity")
+        });
         for surface in &mut self.surfaces {
-            surface.id.0 = qualify(&surface.id.as_str());
+            surface.id = qualify(&surface.id.as_str())
+                .try_into()
+                .expect("qualified identity");
             match &mut surface.geometry {
                 SurfaceGeometry::Procedural { construction, .. } => {
-                    construction.0 = qualify(&construction.0);
+                    *construction = qualify(construction.as_str())
+                        .try_into()
+                        .expect("qualified identity");
                 }
                 SurfaceGeometry::Unknown {
                     record: Some(record),
                 } => {
-                    record.0 = qualify(&record.0);
+                    *record = qualify(record.as_str())
+                        .try_into()
+                        .expect("qualified identity");
                 }
                 _ => {}
             }
         }
         for procedural in &mut self.procedural_surfaces {
-            procedural.id.0 = qualify(&procedural.id.as_str());
+            procedural.id = qualify(&procedural.id.as_str())
+                .try_into()
+                .expect("qualified identity");
             procedural.edit_definition(|definition| match definition {
                 ProceduralSurfaceDefinition::Blend {
                     supports, spine, ..
                 } => {
                     for support in supports.iter_mut().flatten() {
-                        support.surface.0 = qualify(&support.surface.0);
+                        support.surface = qualify(support.surface.as_str())
+                            .try_into()
+                            .expect("qualified identity");
                     }
                     if let Some(spine) = spine {
-                        spine.0 = qualify(&spine.0);
+                        *spine = qualify(spine.as_str())
+                            .try_into()
+                            .expect("qualified identity");
                     }
                 }
                 ProceduralSurfaceDefinition::Offset { support, .. } => {
-                    support.0 = qualify(&support.0);
+                    *support = qualify(support.as_str())
+                        .try_into()
+                        .expect("qualified identity");
                 }
                 _ => {}
             });
         }
         for curve in &mut self.curves {
-            curve.id.0 = qualify(&curve.id.as_str());
+            curve.id = qualify(&curve.id.as_str())
+                .try_into()
+                .expect("qualified identity");
             if let CurveGeometry::Unknown {
                 record: Some(record),
             } = &mut curve.geometry
             {
-                record.0 = qualify(&record.0);
+                *record = qualify(record.as_str())
+                    .try_into()
+                    .expect("qualified identity");
             }
         }
-        self.pcurves
-            .iter_mut()
-            .for_each(|pcurve| pcurve.id.0 = qualify(&pcurve.id.as_str()));
+        self.pcurves.iter_mut().for_each(|pcurve| {
+            pcurve.id = qualify(&pcurve.id.as_str())
+                .try_into()
+                .expect("qualified identity")
+        });
         for record in &mut self.unknowns {
-            let id = UnknownId::mint(qualify(&record.id().0)).expect("identity grammar");
+            let id = UnknownId::mint(qualify(record.id().as_str())).expect("identity grammar");
             record.set_id(id);
             record
                 .links_mut()
@@ -279,24 +360,24 @@ fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> 
     let candidates = out
         .faces
         .iter()
-        .filter(|face| face.shell.0 == native_shell_id)
+        .filter(|face| face.shell.as_str() == native_shell_id)
         .map(|face| face.id.clone())
         .collect::<Vec<_>>();
     let candidate_ids = candidates
         .iter()
-        .map(|face| face.0.as_str())
+        .map(|face| face.as_str())
         .collect::<HashSet<_>>();
     let loop_faces = out
         .loops
         .iter()
-        .filter(|loop_| candidate_ids.contains(loop_.face.0.as_str()))
-        .map(|loop_| (loop_.id.as_str(), loop_.face.0.as_str()))
+        .filter(|loop_| candidate_ids.contains(loop_.face.as_str()))
+        .map(|loop_| (loop_.id.as_str(), loop_.face.as_str()))
         .collect::<HashMap<_, _>>();
     let mut faces_by_edge = HashMap::<&str, HashSet<&str>>::new();
     for coedge in &out.coedges {
-        if let Some(face) = loop_faces.get(coedge.owner_loop.0.as_str()) {
+        if let Some(face) = loop_faces.get(coedge.owner_loop.as_str()) {
             faces_by_edge
-                .entry(coedge.edge.0.as_str())
+                .entry(coedge.edge.as_str())
                 .or_default()
                 .insert(*face);
         }
@@ -314,11 +395,11 @@ fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> 
     let mut assigned = HashSet::new();
     let mut components = Vec::new();
     for face in &candidates {
-        if !assigned.insert(face.0.as_str()) {
+        if !assigned.insert(face.as_str()) {
             continue;
         }
         let mut component = Vec::new();
-        let mut pending = vec![face.0.as_str()];
+        let mut pending = vec![face.as_str()];
         while let Some(current) = pending.pop() {
             component.push(FaceId::mint(current.to_string()).expect("identity grammar"));
             for &neighbor in neighbors.get(current).into_iter().flatten() {
@@ -327,7 +408,7 @@ fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> 
                 }
             }
         }
-        component.sort_by(|left, right| left.0.cmp(&right.0));
+        component.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         components.push(component);
     }
     components
@@ -601,7 +682,7 @@ fn ensure_surface_support(
                 let mut geometry = geometry.clone();
                 if let Some((_, u_reference, v_reference)) = carrier.frame {
                     fold_surface_frame(&mut geometry, u_reference, v_reference);
-                    annotate_surface_frame(annotations, &id.0, &geometry);
+                    annotate_surface_frame(annotations, id.as_str(), &geometry);
                 }
                 annotations
                     .note(&id, source_stream, carrier.offset as u64)
@@ -1947,7 +2028,7 @@ fn decode_graph(
                 annotate_group(&shell_id, None);
                 let face_ids = faces
                     .iter()
-                    .map(|face| face.0.as_str())
+                    .map(|face| face.as_str())
                     .collect::<HashSet<_>>();
                 for face in &mut out.faces {
                     if face_ids.contains(face.id.as_str()) {
@@ -1991,7 +2072,7 @@ fn decode_graph(
                         );
                         let face_ids = faces
                             .iter()
-                            .map(|face| face.0.as_str())
+                            .map(|face| face.as_str())
                             .collect::<HashSet<_>>();
                         for face in &mut out.faces {
                             if face_ids.contains(face.id.as_str()) {
@@ -2032,7 +2113,7 @@ fn decode_graph(
     for body in &out.bodies {
         let Some(attr) = body
             .id
-            .0
+            .as_str()
             .strip_prefix("sldprt:brep:body#")
             .and_then(|value| value.parse::<u16>().ok())
         else {
@@ -2040,7 +2121,7 @@ fn decode_graph(
         };
         match body_ids_by_attr.entry(attr) {
             std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Some(body.id.0.clone()));
+                entry.insert(Some(body.id.as_str().to_owned()));
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 *entry.get_mut() = None;
@@ -2054,7 +2135,7 @@ fn decode_graph(
     for curve in &out.curves {
         let Some(attr) = curve
             .id
-            .0
+            .as_str()
             .strip_prefix("sldprt:brep:curve#")
             .and_then(|value| value.parse::<u16>().ok())
         else {
@@ -4879,7 +4960,7 @@ fn synthesize_cylinder_seams(
             direction.y / norm,
             direction.z / norm,
         );
-        let suffix = face_id.0.rsplit('#').next().unwrap_or("0");
+        let suffix = face_id.as_str().rsplit('#').next().unwrap_or("0");
         let curve_id =
             CurveId::mint(format!("sldprt:brep:curve#seam:{suffix}")).expect("identity grammar");
         let edge_id =
@@ -4888,7 +4969,12 @@ fn synthesize_cylinder_seams(
             .expect("identity grammar");
         let seam_b = CoedgeId::mint(format!("sldprt:brep:coedge#seam:{suffix}:1"))
             .expect("identity grammar");
-        for id in [&curve_id.0, &edge_id.0, &seam_a.0, &seam_b.0] {
+        for id in [
+            curve_id.as_str(),
+            edge_id.as_str(),
+            seam_a.as_str(),
+            seam_b.as_str(),
+        ] {
             annotations
                 .note(id, source_stream, 0)
                 .tag("derived_periodic_seam");
@@ -5072,9 +5158,9 @@ fn synthesize_sphere_seams(
         let curve_id = CurveId::mint(format!("sldprt:brep:curve#sphere-seam:{suffix}"))
             .expect("identity grammar");
         annotations
-            .note(&curve_id.0, source_stream, 0)
+            .note(curve_id.as_str(), source_stream, 0)
             .tag("derived_sphere_seam");
-        annotations.exactness(&curve_id.0, Exactness::Derived);
+        annotations.exactness(curve_id.as_str(), Exactness::Derived);
         out.curves.push(Curve {
             id: curve_id.clone(),
             source_object: None,
@@ -5149,7 +5235,7 @@ fn synthesize_sphere_seams(
                 })
                 .cloned()
                 .collect::<Vec<_>>();
-            pole_vertices.sort_by(|left, right| left.0.cmp(&right.0));
+            pole_vertices.sort_by(|left, right| left.as_str().cmp(right.as_str()));
             pole_vertices.dedup();
             candidates.push((
                 face_index,
@@ -5183,7 +5269,7 @@ fn synthesize_sphere_seams(
             let vertex_id =
                 VertexId::mint(format!("sldprt:brep:vertex#sphere-seam-face:{face_index}"))
                     .expect("identity grammar");
-            for id in [&point_id.0, &vertex_id.0] {
+            for id in [point_id.as_str(), vertex_id.as_str()] {
                 annotations
                     .note(id, source_stream, 0)
                     .tag("derived_sphere_seam");
@@ -5201,7 +5287,12 @@ fn synthesize_sphere_seams(
             });
             vertex_id
         });
-        for id in [&curve_id.0, &edge_id.0, &coedge_id.0, &pcurve_id.0] {
+        for id in [
+            curve_id.as_str(),
+            edge_id.as_str(),
+            coedge_id.as_str(),
+            pcurve_id.as_str(),
+        ] {
             annotations
                 .note(id, source_stream, 0)
                 .tag("derived_sphere_seam");
@@ -5803,28 +5894,32 @@ mod tests {
         use cadmpeg_ir::topology::{Coedge, Face, Loop, Sense};
 
         let face = |id: &str, lp: &str| Face {
-            id: FaceId::mint(id).expect("identity grammar"),
-            shell: ShellId::mint("shell").expect("identity grammar"),
-            surface: SurfaceId::mint(format!("surface-{id}")).expect("identity grammar"),
+            id: FaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
+            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+            surface: SurfaceId::mint(format!("test:model:entity#surface-{id}"))
+                .expect("identity grammar"),
             sense: Sense::Forward,
-            loops: vec![LoopId::mint(lp).expect("identity grammar")].into(),
+            loops: vec![LoopId::mint(format!("test:model:entity#{lp}")).expect("identity grammar")]
+                .into(),
             name: None,
             color: None,
             tolerance: None,
         };
         let lp = |id: &str, face: &str, coedge: &str| Loop {
-            id: LoopId::mint(id).expect("identity grammar"),
-            face: FaceId::mint(face).expect("identity grammar"),
+            id: LoopId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
+            face: FaceId::mint(format!("test:model:entity#{face}")).expect("identity grammar"),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: vec![CoedgeId::mint(coedge).expect("identity grammar")],
+                coedges: vec![CoedgeId::mint(format!("test:model:entity#{coedge}"))
+                    .expect("identity grammar")],
                 vertex_uses: Vec::new(),
             },
         };
         let coedge = |id: &str, lp: &str, radial: &str, sense| Coedge {
-            id: CoedgeId::mint(id).expect("identity grammar"),
-            owner_loop: LoopId::mint(lp).expect("identity grammar"),
-            edge: EdgeId::mint("edge").expect("identity grammar"),
-            radial_next: CoedgeId::mint(radial).expect("identity grammar"),
+            id: CoedgeId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
+            owner_loop: LoopId::mint(format!("test:model:entity#{lp}")).expect("identity grammar"),
+            edge: EdgeId::mint("test:model:entity#edge").expect("identity grammar"),
+            radial_next: CoedgeId::mint(format!("test:model:entity#{radial}"))
+                .expect("identity grammar"),
             sense,
             use_curve: None,
             pcurves: Vec::new(),
@@ -5980,7 +6075,7 @@ mod tests {
         };
         use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId};
 
-        let spine = CurveId::mint("spine").expect("identity grammar");
+        let spine = CurveId::mint("test:model:entity#spine").expect("identity grammar");
         let mut brep = super::Brep {
             curves: vec![Curve {
                 id: spine.clone(),
@@ -5991,7 +6086,7 @@ mod tests {
                 source_object: None,
             }],
             procedural_surfaces: vec![ProceduralSurface::new(
-                ProceduralSurfaceId::mint("blend").expect("identity grammar"),
+                ProceduralSurfaceId::mint("test:model:entity#blend").expect("identity grammar"),
                 ProceduralSurfaceDefinition::Blend {
                     supports: [None, None],
                     spine: Some(spine.clone()),
@@ -6430,15 +6525,17 @@ mod tests {
         use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, LoopId, PointId, SurfaceId, VertexId};
         use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 
-        let surface_id = SurfaceId::mint("surface").expect("identity grammar");
-        let curve_id = CurveId::mint("curve").expect("identity grammar");
-        let loop_id = LoopId::mint("loop").expect("identity grammar");
-        let edge_id = EdgeId::mint("edge").expect("identity grammar");
-        let start_vertex = VertexId::mint("start-vertex").expect("identity grammar");
-        let end_vertex = VertexId::mint("end-vertex").expect("identity grammar");
-        let start_point = PointId::mint("start-point").expect("identity grammar");
-        let end_point = PointId::mint("end-point").expect("identity grammar");
-        let coedge_id = cadmpeg_ir::ids::CoedgeId::mint("coedge").expect("identity grammar");
+        let surface_id = SurfaceId::mint("test:model:entity#surface").expect("identity grammar");
+        let curve_id = CurveId::mint("test:model:entity#curve").expect("identity grammar");
+        let loop_id = LoopId::mint("test:model:entity#loop").expect("identity grammar");
+        let edge_id = EdgeId::mint("test:model:entity#edge").expect("identity grammar");
+        let start_vertex =
+            VertexId::mint("test:model:entity#start-vertex").expect("identity grammar");
+        let end_vertex = VertexId::mint("test:model:entity#end-vertex").expect("identity grammar");
+        let start_point = PointId::mint("test:model:entity#start-point").expect("identity grammar");
+        let end_point = PointId::mint("test:model:entity#end-point").expect("identity grammar");
+        let coedge_id =
+            cadmpeg_ir::ids::CoedgeId::mint("test:model:entity#coedge").expect("identity grammar");
         let mut brep = super::Brep {
             surfaces: vec![Surface {
                 id: surface_id.clone(),
@@ -6465,8 +6562,9 @@ mod tests {
                 source_object: None,
             }],
             faces: vec![Face {
-                id: FaceId::mint("face").expect("identity grammar"),
-                shell: cadmpeg_ir::ids::ShellId::mint("shell").expect("identity grammar"),
+                id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
+                shell: cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell")
+                    .expect("identity grammar"),
                 surface: surface_id,
                 sense: Sense::Forward,
                 loops: vec![loop_id.clone()].into(),
@@ -6476,7 +6574,7 @@ mod tests {
             }],
             loops: vec![Loop {
                 id: loop_id.clone(),
-                face: FaceId::mint("face").expect("identity grammar"),
+                face: FaceId::mint("test:model:entity#face").expect("identity grammar"),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: vec![coedge_id.clone()],
                     vertex_uses: Vec::new(),
@@ -6486,7 +6584,8 @@ mod tests {
                 id: coedge_id,
                 owner_loop: loop_id,
                 edge: edge_id.clone(),
-                radial_next: cadmpeg_ir::ids::CoedgeId::mint("coedge").expect("identity grammar"),
+                radial_next: cadmpeg_ir::ids::CoedgeId::mint("test:model:entity#coedge")
+                    .expect("identity grammar"),
                 sense: Sense::Forward,
                 pcurves: Vec::new(),
                 use_curve: None,

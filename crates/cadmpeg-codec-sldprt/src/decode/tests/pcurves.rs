@@ -472,7 +472,10 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             .model
             .edges
             .iter()
-            .find(|edge| edge.curve.as_ref().is_some_and(|id| id.0.ends_with("#192")))
+            .find(|edge| edge
+                .curve
+                .as_ref()
+                .is_some_and(|id| id.as_str().ends_with("#192")))
             .and_then(|edge| edge.param_range),
         Some([0.0, 1000.0])
     );
@@ -509,7 +512,10 @@ fn bounded_planar_line_pcurve_keeps_the_curve_parameterization() {
             .model
             .edges
             .iter()
-            .find(|edge| edge.curve.as_ref().is_some_and(|id| id.0.ends_with("#192")))
+            .find(|edge| edge
+                .curve
+                .as_ref()
+                .is_some_and(|id| id.as_str().ends_with("#192")))
             .and_then(|edge| edge.param_range),
         Some([-500.0, 500.0])
     );

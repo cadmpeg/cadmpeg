@@ -168,7 +168,10 @@ fn typed_face_ownership_overrides_compact_bridge_owner() {
         result.ir().model.bodies[0].id.as_str(),
         "sldprt:brep:body#900"
     );
-    assert_eq!(result.ir().model.faces[0].shell.0, "sldprt:brep:shell#901");
+    assert_eq!(
+        result.ir().model.faces[0].shell.as_str(),
+        "sldprt:brep:shell#901"
+    );
 }
 
 #[test]

@@ -170,11 +170,11 @@ fn project_brep(
                             .with_geometry_ref(
                                 edge.curve
                                     .as_ref()
-                                    .map(|id| format!("{stream_ordinal}:{}", id.0)),
+                                    .map(|id| format!("{stream_ordinal}:{}", id.as_str())),
                             )
                             .with_endpoint_refs(vec![
-                                format!("{stream_ordinal}:{}", start_point.0),
-                                format!("{stream_ordinal}:{}", end_point.0),
+                                format!("{stream_ordinal}:{}", start_point.as_str()),
+                                format!("{stream_ordinal}:{}", end_point.as_str()),
                             ]),
                     );
                     edge_entities.insert(&edge.id, id.clone());
@@ -224,7 +224,7 @@ fn project_brep(
                     },
                 )
                 .with_native_ref(Some(format!("{stream_ordinal}:{}", vertex.id.as_str())))
-                .with_endpoint_refs(vec![format!("{stream_ordinal}:{}", vertex.point.0)]),
+                .with_endpoint_refs(vec![format!("{stream_ordinal}:{}", vertex.point.as_str())]),
             );
         }
         if profiles.is_empty() && !entities.iter().any(|entity| entity.sketch == sketch_id) {

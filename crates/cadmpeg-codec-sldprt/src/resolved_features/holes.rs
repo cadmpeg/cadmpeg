@@ -1932,7 +1932,7 @@ pub(crate) fn project_generated_hole_axes(
                 }
                 let Some(surface) = faces_by_id
                     .get(face.as_str())
-                    .and_then(|face| surfaces_by_id.get(face.surface.0.as_str()))
+                    .and_then(|face| surfaces_by_id.get(face.surface.as_str()))
                 else {
                     continue;
                 };

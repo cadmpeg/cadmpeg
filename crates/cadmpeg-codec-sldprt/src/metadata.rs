@@ -297,7 +297,7 @@ fn attribute(
     .expect("identity grammar");
     crate::annotations::note(
         annotations,
-        id.0.clone(),
+        id.as_str().to_owned(),
         section.display_name(),
         offset as u64,
         std::str::from_utf8(token).unwrap_or(name),

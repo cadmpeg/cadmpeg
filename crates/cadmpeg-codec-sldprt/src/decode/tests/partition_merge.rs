@@ -151,7 +151,7 @@ fn merged_opaque_geometry_retains_its_owning_site() {
             else {
                 panic!("site surface is not bound to opaque source bytes");
             };
-            (surface.id.0.clone(), record.clone())
+            (surface.id.as_str().to_owned(), record.clone())
         })
         .collect::<Vec<_>>();
     let curve_bindings = result
@@ -166,7 +166,7 @@ fn merged_opaque_geometry_retains_its_owning_site() {
             else {
                 panic!("site curve is not bound to opaque source bytes");
             };
-            (curve.id.0.clone(), record.clone())
+            (curve.id.as_str().to_owned(), record.clone())
         })
         .collect::<Vec<_>>();
     assert_eq!(surface_bindings.len(), 2);
@@ -235,7 +235,7 @@ fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
 
     assert_eq!(decoded.faces.len(), 1);
     assert_eq!(decoded.faces[0].id.as_str(), "sldprt:brep:face#10");
-    assert_eq!(decoded.faces[0].surface.0, "sldprt:brep:surf#10");
+    assert_eq!(decoded.faces[0].surface.as_str(), "sldprt:brep:surf#10");
 }
 
 #[test]

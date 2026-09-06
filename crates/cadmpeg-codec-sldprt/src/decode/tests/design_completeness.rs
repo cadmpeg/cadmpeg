@@ -81,7 +81,7 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
 #[test]
 fn design_completeness_audits_direct_body_and_shape_families() {
     let mut ir = CadIr::empty();
-    let body = BodyId::mint("body").expect("identity grammar");
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let source = FeatureId("base".into());
     let mut push = |id: &str, ordinal, dependencies, outputs, definition| {
         ir.model.features.push(Feature {
@@ -189,11 +189,12 @@ fn design_completeness_audits_direct_body_and_shape_families() {
 #[test]
 fn design_completeness_audits_typed_construction_families() {
     let mut ir = CadIr::empty();
-    let body = BodyId::mint("body").expect("identity grammar");
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
-    let face = FaceSelection::Faces(vec![
-        cadmpeg_ir::ids::FaceId::mint("face").expect("identity grammar")
-    ]);
+    let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
+        "test:model:entity#face",
+    )
+    .expect("identity grammar")]);
     let definitions = [
         FeatureDefinition::PointGeometry {
             position: Point3::new(0.0, 0.0, 0.0),
@@ -593,9 +594,10 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
     let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
     let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
     let path = PathRef::Sketch(sketch);
-    let face = FaceSelection::Faces(vec![
-        cadmpeg_ir::ids::FaceId::mint("face").expect("identity grammar")
-    ]);
+    let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
+        "test:model:entity#face",
+    )
+    .expect("identity grammar")]);
     let extrude = |direction, termination| FeatureDefinition::Extrude {
         profile: profile.clone(),
         direction,
@@ -772,7 +774,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
             5,
             FeatureDefinition::FilledSurface {
                 boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Edges(vec![
-                    EdgeId::mint("boundary").expect("identity grammar"),
+                    EdgeId::mint("test:model:entity#boundary").expect("identity grammar"),
                 ])),
                 support_faces: FaceSelection::Faces(Vec::new()),
                 continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
@@ -785,7 +787,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
             6,
             FeatureDefinition::RuledSurface {
                 edges: EdgeSelection::Edges(vec![
-                    EdgeId::mint("boundary").expect("identity grammar")
+                    EdgeId::mint("test:model:entity#boundary").expect("identity grammar")
                 ]),
                 support_faces: FaceSelection::Faces(Vec::new()),
                 mode: RuledSurfaceMode::Direction {
@@ -802,7 +804,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
             FeatureDefinition::Fillet {
                 groups: vec![cadmpeg_ir::features::FilletGroup {
                     edges: EdgeSelection::Edges(vec![
-                        EdgeId::mint("edge").expect("identity grammar")
+                        EdgeId::mint("test:model:entity#edge").expect("identity grammar")
                     ]),
                     radius: RadiusSpec::Variable { points: Vec::new() },
                     tangency_weight: None,
@@ -1122,7 +1124,7 @@ fn incoherent_feature_outputs_are_reported_as_design_loss() {
     ir.model.features.push(feature(
         "missing",
         1,
-        vec![BodyId::mint("missing-body").expect("identity grammar")],
+        vec![BodyId::mint("test:model:entity#missing-body").expect("identity grammar")],
     ));
     let mut report = super::empty_report(true);
 

@@ -157,15 +157,15 @@ fn decode_resolves_feature_topology_selections() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let records = &sldprt_native(regenerated.ir()).feature_histories[0].features;
-    assert_eq!(records[0].properties["Edges"], edge_id.0);
-    assert_eq!(records[1].properties["Faces"], face_id.0);
-    assert_eq!(records[2].properties["Target"], body_id.0);
-    assert_eq!(records[2].properties["Tools"], tool_body_id.0);
-    assert_eq!(records[3].properties["Face"], face_id.0);
-    assert_eq!(records[3].properties["Profile"], face_id.0);
-    assert_eq!(records[4].properties["Face"], face_id.0);
-    assert_eq!(records[5].properties["Profile"], face_id.0);
-    assert_eq!(records[5].properties["Path"], edge_id.0);
+    assert_eq!(records[0].properties["Edges"], edge_id.as_str());
+    assert_eq!(records[1].properties["Faces"], face_id.as_str());
+    assert_eq!(records[2].properties["Target"], body_id.as_str());
+    assert_eq!(records[2].properties["Tools"], tool_body_id.as_str());
+    assert_eq!(records[3].properties["Face"], face_id.as_str());
+    assert_eq!(records[3].properties["Profile"], face_id.as_str());
+    assert_eq!(records[4].properties["Face"], face_id.as_str());
+    assert_eq!(records[5].properties["Profile"], face_id.as_str());
+    assert_eq!(records[5].properties["Path"], edge_id.as_str());
 }
 
 #[test]
@@ -403,7 +403,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Alternate"/><Feature Name="Combine" Type="Localized" id="119"/></Keywords>"#,
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Alternate"/><Feature Name="Combine" Type="Localized" id="119" Operation="Join"/></Keywords>"#,
     ));
     source.extend(make_block(
         0x42,
@@ -419,14 +419,18 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::Combine {
-            target: BodySelection::Unresolved,
-            tools: BodySelection::Unresolved,
-            ..
-        }
-    ));
+    assert!(
+        matches!(
+            decoded.ir().model.features[0].definition,
+            FeatureDefinition::Combine {
+                target: BodySelection::Unresolved,
+                tools: BodySelection::Unresolved,
+                ..
+            }
+        ),
+        "feature: {:?}",
+        decoded.ir().model.features[0].definition
+    );
     let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
         &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
@@ -455,7 +459,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Alternate"/><Feature Name="Combine" Type="Localized" id="119"/></Keywords>"#,
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Alternate"/><Feature Name="Combine" Type="Localized" id="119" Operation="Join"/></Keywords>"#,
     ));
     source.extend(make_block(
         0x43,

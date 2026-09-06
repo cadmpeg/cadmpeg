@@ -57,7 +57,7 @@ fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
 #[test]
 fn cylindrical_support_point_defines_its_radial_axis() {
     let surface = Surface {
-        id: SurfaceId::mint("support").expect("identity grammar"),
+        id: SurfaceId::mint("test:model:entity#support").expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(0.0, 0.0, 10.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -83,8 +83,8 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
     origin.z = 20.0;
     let mut faces = [
         Face {
-            id: FaceId::mint("bore").expect("identity grammar"),
-            shell: ShellId::mint("shell").expect("identity grammar"),
+            id: FaceId::mint("test:model:entity#bore").expect("identity grammar"),
+            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surfaces[0].id.clone(),
             sense: Sense::Reversed,
             loops: Vec::new().into(),
@@ -93,8 +93,8 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             tolerance: None,
         },
         Face {
-            id: FaceId::mint("boss").expect("identity grammar"),
-            shell: ShellId::mint("shell").expect("identity grammar"),
+            id: FaceId::mint("test:model:entity#boss").expect("identity grammar"),
+            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surfaces[1].id.clone(),
             sense: Sense::Forward,
             loops: Vec::new().into(),
@@ -103,8 +103,8 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             tolerance: None,
         },
         Face {
-            id: FaceId::mint("coaxial-bore-segment").expect("identity grammar"),
-            shell: ShellId::mint("shell").expect("identity grammar"),
+            id: FaceId::mint("test:model:entity#coaxial-bore-segment").expect("identity grammar"),
+            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surfaces[2].id.clone(),
             sense: Sense::Reversed,
             loops: Vec::new().into(),
@@ -195,8 +195,8 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         .iter()
         .enumerate()
         .map(|(index, surface)| Face {
-            id: FaceId::mint(format!("face-{index}")).expect("identity grammar"),
-            shell: ShellId::mint("shell").expect("identity grammar"),
+            id: FaceId::mint(format!("test:model:entity#face-{index}")).expect("identity grammar"),
+            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surface.id.clone(),
             sense: Sense::Forward,
             loops: Vec::new().into(),
@@ -206,10 +206,10 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         })
         .collect::<Vec<_>>();
     let identities = [
-        (faces[0].id.0.clone(), 7, 2),
-        (faces[1].id.0.clone(), 7, 2),
-        (faces[2].id.0.clone(), 7, 3),
-        (faces[3].id.0.clone(), 7, 2),
+        (faces[0].id.as_str().to_owned(), 7, 2),
+        (faces[1].id.as_str().to_owned(), 7, 2),
+        (faces[2].id.as_str().to_owned(), 7, 3),
+        (faces[3].id.as_str().to_owned(), 7, 2),
     ];
     let mut hole = model_hole();
     project_generated_hole_axes(
@@ -264,8 +264,8 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         .iter()
         .enumerate()
         .map(|(index, surface)| Face {
-            id: FaceId::mint(format!("face-{index}")).expect("identity grammar"),
-            shell: ShellId::mint("shell").expect("identity grammar"),
+            id: FaceId::mint(format!("test:model:entity#face-{index}")).expect("identity grammar"),
+            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surface.id.clone(),
             sense: Sense::Forward,
             loops: Vec::new().into(),
@@ -394,7 +394,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
 #[test]
 fn hole_topology_uses_exact_cylinder_spans() {
     let surface = Surface {
-        id: SurfaceId::mint("surface").expect("identity grammar"),
+        id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -404,7 +404,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         source_object: None,
     };
     let cone = Surface {
-        id: SurfaceId::mint("cone").expect("identity grammar"),
+        id: SurfaceId::mint("test:model:entity#cone").expect("identity grammar"),
         geometry: SurfaceGeometry::Cone {
             origin: Point3::new(0.0, 0.0, -10.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -416,60 +416,60 @@ fn hole_topology_uses_exact_cylinder_spans() {
         source_object: None,
     };
     let face = Face {
-        id: FaceId::mint("face").expect("identity grammar"),
-        shell: ShellId::mint("shell").expect("identity grammar"),
+        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
         sense: Sense::Forward,
-        loops: vec![LoopId::mint("loop").expect("identity grammar")].into(),
+        loops: vec![LoopId::mint("test:model:entity#loop").expect("identity grammar")].into(),
         name: None,
         color: None,
         tolerance: None,
     };
     let loop_ = Loop {
-        id: LoopId::mint("loop").expect("identity grammar"),
+        id: LoopId::mint("test:model:entity#loop").expect("identity grammar"),
         face: face.id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: vec![CoedgeId::mint("coedge").expect("identity grammar")],
+            coedges: vec![CoedgeId::mint("test:model:entity#coedge").expect("identity grammar")],
             vertex_uses: Vec::new(),
         },
     };
     let coedge = Coedge {
-        id: CoedgeId::mint("coedge").expect("identity grammar"),
+        id: CoedgeId::mint("test:model:entity#coedge").expect("identity grammar"),
         owner_loop: loop_.id.clone(),
-        edge: EdgeId::mint("edge").expect("identity grammar"),
-        radial_next: CoedgeId::mint("coedge").expect("identity grammar"),
+        edge: EdgeId::mint("test:model:entity#edge").expect("identity grammar"),
+        radial_next: CoedgeId::mint("test:model:entity#coedge").expect("identity grammar"),
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
     };
     let edge = Edge {
-        id: EdgeId::mint("edge").expect("identity grammar"),
+        id: EdgeId::mint("test:model:entity#edge").expect("identity grammar"),
         curve: None,
-        start: VertexId::mint("start").expect("identity grammar"),
-        end: VertexId::mint("end").expect("identity grammar"),
+        start: VertexId::mint("test:model:entity#start").expect("identity grammar"),
+        end: VertexId::mint("test:model:entity#end").expect("identity grammar"),
         param_range: None,
         tolerance: None,
     };
     let vertices = [
         Vertex {
-            id: VertexId::mint("start").expect("identity grammar"),
-            point: PointId::mint("start-point").expect("identity grammar"),
+            id: VertexId::mint("test:model:entity#start").expect("identity grammar"),
+            point: PointId::mint("test:model:entity#start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId::mint("end").expect("identity grammar"),
-            point: PointId::mint("end-point").expect("identity grammar"),
+            id: VertexId::mint("test:model:entity#end").expect("identity grammar"),
+            point: PointId::mint("test:model:entity#end-point").expect("identity grammar"),
             tolerance: None,
         },
     ];
     let points = [
         Point {
-            id: PointId::mint("start-point").expect("identity grammar"),
+            id: PointId::mint("test:model:entity#start-point").expect("identity grammar"),
             position: Point3::new(2.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId::mint("end-point").expect("identity grammar"),
+            id: PointId::mint("test:model:entity#end-point").expect("identity grammar"),
             position: Point3::new(2.0, 0.0, -10.0),
             source_object: None,
         },
@@ -715,7 +715,8 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         .iter()
         .enumerate()
         .map(|(index, (origin, axis))| Surface {
-            id: SurfaceId::mint(format!("seed-surface-{index}")).expect("identity grammar"),
+            id: SurfaceId::mint(format!("test:model:entity#seed-surface-{index}"))
+                .expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: *origin,
                 axis: *axis,
@@ -733,8 +734,9 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         .iter()
         .enumerate()
         .map(|(index, surface)| Face {
-            id: FaceId::mint(format!("seed-face-{index}")).expect("identity grammar"),
-            shell: ShellId::mint("shell").expect("identity grammar"),
+            id: FaceId::mint(format!("test:model:entity#seed-face-{index}"))
+                .expect("identity grammar"),
+            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surface.id.clone(),
             sense: Sense::Reversed,
             loops: Vec::new().into(),

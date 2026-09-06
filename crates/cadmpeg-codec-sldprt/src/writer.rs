@@ -385,13 +385,13 @@ fn sort_arenas(ir: &mut CadIr) {
     ir.model.attributes.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model
         .appearance_bindings
-        .sort_by_key(|binding| format!("{:?}:{}", binding.target, binding.appearance.0));
+        .sort_by_key(|binding| format!("{:?}:{}", binding.target, binding.appearance.as_str()));
 }
 
 fn source_image<'a>(records: &[SourceRecord<'a>]) -> Option<&'a [u8]> {
     records
         .iter()
-        .find(|record| record.id.0 == "sldprt:file:source-image#0")?
+        .find(|record| record.id.as_str() == "sldprt:file:source-image#0")?
         .data
 }
 
@@ -784,7 +784,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     {
         return Err(CodecError::malformed(format_args!(
             "configuration references missing body {}",
-            id.0
+            id.as_str()
         )));
     }
     let mut subset = ir.clone();
@@ -2362,7 +2362,7 @@ pub(crate) fn brep_body(
             matches!(curve.geometry, CurveGeometry::Degenerate { .. })
                 && curve
                     .id
-                    .0
+                    .as_str()
                     .starts_with("sldprt:brep:curve#sphere-seam-face:")
         })
         .map(|curve| curve.id.clone())
@@ -2526,7 +2526,7 @@ pub(crate) fn brep_body(
         };
         let (next, previous) = cadmpeg_ir::topology::coedge_ring_neighbors(&ir.model.loops, coedge)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "coedge {} is absent from its owning loop ring",
                     coedge.id
                 ))
@@ -2800,7 +2800,7 @@ fn write_typed_body_hierarchy(
             .model
             .regions
             .iter()
-            .find(|region| region.id.0 == body.regions[0].0)
+            .find(|region| region.id.as_str() == body.regions[0].as_str())
             .and_then(|region| region.shells.first())
             .map(|shell| shell_attrs[shell])
             .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;

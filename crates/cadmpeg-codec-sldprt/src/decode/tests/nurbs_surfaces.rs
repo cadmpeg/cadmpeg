@@ -386,7 +386,10 @@ fn face_on_untyped_surface_keeps_topology() {
         .iter()
         .find(|unknown| unknown.id == *record)
         .expect("opaque surface record");
-    assert!(retained.links.contains(&result.ir().model.surfaces[0].id.0));
+    assert!(retained
+        .links
+        .iter()
+        .any(|link| link == result.ir().model.surfaces[0].id.as_str()));
     assert!(result
         .report()
         .losses

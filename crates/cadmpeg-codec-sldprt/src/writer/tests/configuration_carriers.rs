@@ -940,7 +940,7 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.faces[0].surface =
-        cadmpeg_ir::ids::SurfaceId::mint("missing").expect("identity grammar");
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#missing").expect("identity grammar");
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
@@ -1146,7 +1146,7 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
 
     for (geometry, expected) in cases {
         let mut ir = decoded.ir().clone();
-        let surface_id = ir.model.surfaces[0].id.0.clone();
+        let surface_id = ir.model.surfaces[0].id.as_str().to_owned();
         ir.model.surfaces[0].geometry = geometry;
 
         let error = crate::test_support::plan_inherited_write(

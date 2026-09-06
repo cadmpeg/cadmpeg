@@ -673,8 +673,8 @@ mod tests {
             std::iter::once(&selection),
             &feature_sources,
             &[
-                ("intermediate-face".into(), 47, 8),
-                ("terminal-face".into(), 50, 5),
+                ("test:model:entity#intermediate-face".into(), 47, 8),
+                ("test:model:entity#terminal-face".into(), 50, 5),
             ],
         );
         let key = (
@@ -683,9 +683,10 @@ mod tests {
         );
         assert_eq!(
             bindings.get(&key).cloned(),
-            Some(Some(vec![
-                cadmpeg_ir::ids::FaceId::mint("terminal-face").expect("identity grammar")
-            ]))
+            Some(Some(vec![cadmpeg_ir::ids::FaceId::mint(
+                "test:model:entity#terminal-face"
+            )
+            .expect("identity grammar")]))
         );
     }
 
@@ -696,7 +697,10 @@ mod tests {
         let bindings = surface_selection_face_bindings(
             std::iter::once(&selection),
             &feature_sources,
-            &[("first-face".into(), 50, 5), ("second-face".into(), 50, 5)],
+            &[
+                ("test:model:entity#first-face".into(), 50, 5),
+                ("test:model:entity#second-face".into(), 50, 5),
+            ],
         );
         let key = (
             "feature".to_string(),
@@ -713,7 +717,7 @@ mod tests {
         let bindings = surface_selection_face_bindings(
             std::iter::once(&selection),
             &feature_sources,
-            &[("terminal-face".into(), 50, 5)],
+            &[("test:model:entity#terminal-face".into(), 50, 5)],
         );
         let key = (
             "feature".to_string(),
@@ -721,9 +725,10 @@ mod tests {
         );
         assert_eq!(
             bindings.get(&key).cloned(),
-            Some(Some(vec![
-                cadmpeg_ir::ids::FaceId::mint("terminal-face").expect("identity grammar")
-            ]))
+            Some(Some(vec![cadmpeg_ir::ids::FaceId::mint(
+                "test:model:entity#terminal-face"
+            )
+            .expect("identity grammar")]))
         );
     }
 }

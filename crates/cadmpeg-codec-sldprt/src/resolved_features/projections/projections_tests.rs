@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 #[test]
 fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
     let surface = Surface {
-        id: SurfaceId::mint("cylinder").expect("identity grammar"),
+        id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -27,8 +27,8 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
         source_object: None,
     };
     let face = Face {
-        id: FaceId::mint("face").expect("identity grammar"),
-        shell: ShellId::mint("shell").expect("identity grammar"),
+        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
         sense: Sense::Forward,
         loops: Vec::new().into(),
@@ -60,7 +60,7 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
         Some(face.id.clone())
     );
     let mut duplicate = face.clone();
-    duplicate.id = FaceId::mint("other-face").expect("identity grammar");
+    duplicate.id = FaceId::mint("test:model:entity#other-face").expect("identity grammar");
     assert_eq!(
         unique_cylindrical_face(
             4.0,
@@ -78,7 +78,7 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
 #[test]
 fn frame_only_plane_support_requires_one_coincident_face() {
     let surface = Surface {
-        id: SurfaceId::mint("plane").expect("identity grammar"),
+        id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 5.0),
             normal: Vector3::new(0.0, 0.0, -1.0),
@@ -87,8 +87,8 @@ fn frame_only_plane_support_requires_one_coincident_face() {
         source_object: None,
     };
     let face = Face {
-        id: FaceId::mint("face").expect("identity grammar"),
-        shell: ShellId::mint("shell").expect("identity grammar"),
+        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
         sense: Sense::Forward,
         loops: Vec::new().into(),
@@ -116,7 +116,7 @@ fn frame_only_plane_support_requires_one_coincident_face() {
         None
     );
     let mut duplicate = face.clone();
-    duplicate.id = FaceId::mint("other-face").expect("identity grammar");
+    duplicate.id = FaceId::mint("test:model:entity#other-face").expect("identity grammar");
     assert_eq!(
         unique_planar_face(
             Point3::new(0.0, 0.0, 5.0),
@@ -131,7 +131,7 @@ fn frame_only_plane_support_requires_one_coincident_face() {
 #[test]
 fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
     let surface = Surface {
-        id: SurfaceId::mint("plane").expect("identity grammar"),
+        id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 5.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -140,8 +140,8 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         source_object: None,
     };
     let face = Face {
-        id: FaceId::mint("face").expect("identity grammar"),
-        shell: ShellId::mint("shell").expect("identity grammar"),
+        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
         sense: Sense::Forward,
         loops: Vec::new().into(),
@@ -186,14 +186,16 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
     };
     assert_eq!(
         face,
-        &FaceSelection::Faces(vec![FaceId::mint("face").expect("identity grammar")])
+        &FaceSelection::Faces(vec![
+            FaceId::mint("test:model:entity#face").expect("identity grammar")
+        ])
     );
 }
 
 #[test]
 fn generic_native_offset_plane_support_stays_native() {
     let surface = Surface {
-        id: SurfaceId::mint("plane").expect("identity grammar"),
+        id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 5.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -202,8 +204,8 @@ fn generic_native_offset_plane_support_stays_native() {
         source_object: None,
     };
     let face = Face {
-        id: FaceId::mint("face").expect("identity grammar"),
-        shell: ShellId::mint("shell").expect("identity grammar"),
+        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
         sense: Sense::Forward,
         loops: Vec::new().into(),
@@ -381,7 +383,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     assert_eq!(features[1].dependencies, [FeatureId("producer".into())]);
 
     let surface = Surface {
-        id: SurfaceId::mint("cylinder").expect("identity grammar"),
+        id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -391,8 +393,8 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         source_object: None,
     };
     let topology_face = Face {
-        id: FaceId::mint("cylinder-face").expect("identity grammar"),
-        shell: ShellId::mint("shell").expect("identity grammar"),
+        id: FaceId::mint("test:model:entity#cylinder-face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
         sense: Sense::Forward,
         loops: Vec::new().into(),

@@ -67,39 +67,36 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
         check_rigid(transform)?;
         for region_id in &body.regions {
             let region = regions
-                .get(region_id.0.as_str())
+                .get(region_id.as_str())
                 .ok_or_else(|| CodecError::Malformed("body references missing region".into()))?;
             for shell_id in &region.shells {
-                let shell = shells.get(shell_id.0.as_str()).ok_or_else(|| {
+                let shell = shells.get(shell_id.as_str()).ok_or_else(|| {
                     CodecError::Malformed("region references missing shell".into())
                 })?;
                 for face_id in &shell.faces {
-                    let face = faces.get(face_id.0.as_str()).ok_or_else(|| {
+                    let face = faces.get(face_id.as_str()).ok_or_else(|| {
                         CodecError::Malformed("shell references missing face".into())
                     })?;
-                    assign(&mut surface_transforms, &face.surface.0, transform)?;
+                    assign(&mut surface_transforms, face.surface.as_str(), transform)?;
                     for loop_id in &face.loops {
-                        let lp = loops.get(loop_id.0.as_str()).ok_or_else(|| {
+                        let lp = loops.get(loop_id.as_str()).ok_or_else(|| {
                             CodecError::Malformed("face references missing loop".into())
                         })?;
                         for coedge_id in lp.coedges() {
-                            let coedge = coedges.get(coedge_id.0.as_str()).ok_or_else(|| {
+                            let coedge = coedges.get(coedge_id.as_str()).ok_or_else(|| {
                                 CodecError::Malformed("loop references missing coedge".into())
                             })?;
-                            let edge = edges.get(coedge.edge.0.as_str()).ok_or_else(|| {
+                            let edge = edges.get(coedge.edge.as_str()).ok_or_else(|| {
                                 CodecError::Malformed("coedge references missing edge".into())
                             })?;
                             if let Some(curve) = &edge.curve {
-                                assign(&mut curve_transforms, &curve.0, transform)?;
+                                assign(&mut curve_transforms, curve.as_str(), transform)?;
                             }
                             for vertex_id in [&edge.start, &edge.end] {
-                                let vertex =
-                                    vertices.get(vertex_id.0.as_str()).ok_or_else(|| {
-                                        CodecError::Malformed(
-                                            "edge references missing vertex".into(),
-                                        )
-                                    })?;
-                                assign(&mut point_transforms, &vertex.point.0, transform)?;
+                                let vertex = vertices.get(vertex_id.as_str()).ok_or_else(|| {
+                                    CodecError::Malformed("edge references missing vertex".into())
+                                })?;
+                                assign(&mut point_transforms, vertex.point.as_str(), transform)?;
                             }
                         }
                     }

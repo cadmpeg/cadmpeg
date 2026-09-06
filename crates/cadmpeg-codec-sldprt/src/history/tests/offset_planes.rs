@@ -361,7 +361,8 @@ fn coincident_plane_frame_does_not_infer_an_offset_reference() {
 #[test]
 fn planar_face_reference_requires_one_coincident_face() {
     let surface = Surface {
-        id: cadmpeg_ir::ids::SurfaceId::mint("surface").expect("identity grammar"),
+        id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
+            .expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 12.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -370,8 +371,8 @@ fn planar_face_reference_requires_one_coincident_face() {
         source_object: None,
     };
     let face = Face {
-        id: cadmpeg_ir::ids::FaceId::mint("face").expect("identity grammar"),
-        shell: cadmpeg_ir::ids::ShellId::mint("shell").expect("identity grammar"),
+        id: cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
         sense: cadmpeg_ir::topology::Sense::Forward,
         loops: Vec::new().into(),
@@ -407,7 +408,8 @@ fn planar_face_reference_requires_one_coincident_face() {
     );
 
     let mut duplicate = face.clone();
-    duplicate.id = cadmpeg_ir::ids::FaceId::mint("duplicate").expect("identity grammar");
+    duplicate.id =
+        cadmpeg_ir::ids::FaceId::mint("test:model:entity#duplicate").expect("identity grammar");
     let mut ambiguous = FaceSelection::Unresolved;
     resolve_planar_face_selection(
         &mut ambiguous,
@@ -438,7 +440,8 @@ fn planar_face_reference_requires_one_coincident_face() {
 #[test]
 fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
     let surface = Surface {
-        id: cadmpeg_ir::ids::SurfaceId::mint("surface").expect("identity grammar"),
+        id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
+            .expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, -5.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -447,8 +450,8 @@ fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
         source_object: None,
     };
     let face = Face {
-        id: cadmpeg_ir::ids::FaceId::mint("face").expect("identity grammar"),
-        shell: cadmpeg_ir::ids::ShellId::mint("shell").expect("identity grammar"),
+        id: cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
         sense: cadmpeg_ir::topology::Sense::Forward,
         loops: Vec::new().into(),

@@ -202,7 +202,7 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     let source_image = unknowns
         .iter()
-        .position(|record| record.id().0 == "sldprt:file:source-image#0")
+        .position(|record| record.id().as_str() == "sldprt:file:source-image#0")
         .map(|index| unknowns.remove(index));
     source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", unknowns)?;
     if let Some(source_image) = source_image {
@@ -568,10 +568,20 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .configurations
         .iter()
         .filter(|configuration| {
-            configuration
-                .feature_states
-                .keys()
-                .any(|feature| !feature_ids.contains(feature))
+            configuration.feature_states.iter().any(|(id, state)| {
+                !feature_ids.contains(id)
+                    || (configuration.active
+                        && ir
+                            .model
+                            .features
+                            .iter()
+                            .find(|feature| feature.id == *id)
+                            .is_some_and(|feature| {
+                                feature
+                                    .suppressed
+                                    .is_some_and(|suppressed| suppressed != state.suppressed)
+                            }))
+            })
         })
         .count();
     let incoherent_configuration_overrides = ir
@@ -2236,7 +2246,7 @@ fn ensure_display_appearance(
     .expect("identity grammar");
     crate::annotations::note(
         annotations,
-        id.0.clone(),
+        id.as_str().to_owned(),
         definition.source_name.clone(),
         definition.record_offset as u64,
         "displaylist_visual_properties",
@@ -2737,7 +2747,7 @@ fn build_geometry_ir(
         .expect("identity grammar");
         crate::annotations::note(
             &mut annotations,
-            id.0.clone(),
+            id.as_str().to_owned(),
             annotation_source,
             face_color.offset as u64,
             "00_53_color",
@@ -2779,7 +2789,7 @@ fn build_geometry_ir(
                 .any(|binding| binding.id.as_str() == binding_id)
             {
                 ir.model.appearance_bindings.push(AppearanceBinding {
-                    id: binding_id.into(),
+                    id: binding_id.try_into().expect("valid identity"),
                     target: AppearanceTarget::Face(
                         cadmpeg_ir::ids::FaceId::mint(target).expect("identity grammar"),
                     ),
@@ -2797,7 +2807,7 @@ fn build_geometry_ir(
             .expect("identity grammar");
         crate::annotations::note(
             &mut annotations,
-            id.0.clone(),
+            id.as_str().to_owned(),
             definition.source_name,
             definition.record_offset as u64,
             "moVisualProperties_c",
@@ -2887,7 +2897,8 @@ fn build_geometry_ir(
                         display.ordinal(),
                         display_face.table_index
                     )
-                    .into(),
+                    .try_into()
+                    .expect("valid identity"),
                     target: AppearanceTarget::Tessellation(id.clone()),
                     appearance,
                     source_entity_id: Some(format!(
@@ -2971,10 +2982,9 @@ fn build_geometry_ir(
     }
     let mut annotations = annotation_builder.build();
     for source_block in &scan.blocks {
-        if unknowns
-            .iter()
-            .any(|record| record.id().0 == format!("sldprt:file:block#{}", source_block.offset))
-        {
+        if unknowns.iter().any(|record| {
+            record.id().as_str() == format!("sldprt:file:block#{}", source_block.offset)
+        }) {
             continue;
         }
         let id = format!("sldprt:file:block#{}", source_block.offset);
@@ -3020,9 +3030,9 @@ fn build_geometry_ir(
         } = &surface.geometry
         {
             opaque_links
-                .entry(record.0.clone())
+                .entry(record.as_str().to_owned())
                 .or_default()
-                .push(surface.id.0.clone());
+                .push(surface.id.as_str().to_owned());
         }
     }
     for curve in &ir.model.curves {
@@ -3031,15 +3041,15 @@ fn build_geometry_ir(
         } = &curve.geometry
         {
             opaque_links
-                .entry(record.0.clone())
+                .entry(record.as_str().to_owned())
                 .or_default()
-                .push(curve.id.0.clone());
+                .push(curve.id.as_str().to_owned());
         }
     }
     for (record_id, links) in opaque_links {
         let source = unknowns
             .iter_mut()
-            .find(|record| record.id().0 == record_id)
+            .find(|record| record.id().as_str() == record_id)
             .expect("opaque geometry source is retained");
         source.links_mut().extend(links);
     }

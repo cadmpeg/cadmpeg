@@ -299,7 +299,7 @@ pub(crate) fn face_owner_bodies(
         .iter()
         .filter_map(|shell| {
             region_bodies
-                .get(shell.region.0.as_str())
+                .get(shell.region.as_str())
                 .map(|body| (shell.id.as_str(), (*body).clone()))
         })
         .collect::<HashMap<_, _>>();
@@ -307,8 +307,8 @@ pub(crate) fn face_owner_bodies(
         .iter()
         .filter_map(|face| {
             shell_bodies
-                .get(face.shell.0.as_str())
-                .map(|body| (face.id.0.clone(), body.clone()))
+                .get(face.shell.as_str())
+                .map(|body| (face.id.as_str().to_owned(), body.clone()))
         })
         .collect()
 }

@@ -712,7 +712,7 @@ pub(crate) fn bind_mirror_surface_planes(
             };
             let Some(surface) = faces_by_id
                 .get(face_id)
-                .and_then(|face| surfaces_by_id.get(face.surface.0.as_str()))
+                .and_then(|face| surfaces_by_id.get(face.surface.as_str()))
             else {
                 continue;
             };

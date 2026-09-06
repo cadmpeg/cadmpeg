@@ -165,18 +165,29 @@ impl TopologyIdentityIndex {
 
 fn face_id_for_attribute(faces: &[Face], attr: u16) -> Option<FaceId> {
     let prefix = format!("sldprt:brep:face#{attr}");
-    unique_id_for_attribute(faces.iter().map(|face| face.id.0.clone()), &prefix).map(FaceId)
+    unique_id_for_attribute(
+        faces.iter().map(|face| face.id.as_str().to_owned()),
+        &prefix,
+    )
+    .map(|id| FaceId::try_from(id).expect("existing entity identity"))
 }
 
 fn edge_id_for_attribute(edges: &[Edge], attr: u16) -> Option<EdgeId> {
     let prefix = format!("sldprt:brep:edge#{attr}");
-    unique_id_for_attribute(edges.iter().map(|edge| edge.id.0.clone()), &prefix).map(EdgeId)
+    unique_id_for_attribute(
+        edges.iter().map(|edge| edge.id.as_str().to_owned()),
+        &prefix,
+    )
+    .map(|id| EdgeId::try_from(id).expect("existing entity identity"))
 }
 
 fn vertex_id_for_attribute(vertices: &[Vertex], attr: u16) -> Option<VertexId> {
     let prefix = format!("sldprt:brep:vertex#{attr}");
-    unique_id_for_attribute(vertices.iter().map(|vertex| vertex.id.0.clone()), &prefix)
-        .map(VertexId)
+    unique_id_for_attribute(
+        vertices.iter().map(|vertex| vertex.id.as_str().to_owned()),
+        &prefix,
+    )
+    .map(|id| VertexId::try_from(id).expect("existing entity identity"))
 }
 
 fn unique_id_for_attribute<I>(ids: I, prefix: &str) -> Option<String>
@@ -245,13 +256,14 @@ pub(crate) fn annotations(
         .iter()
         .zip(&root.annotations.entities)
     {
-        let prefix = pmi_id(&reference.id).0;
+        let prefix = pmi_id(&reference.id).into_string();
         for annotation in projected.iter().filter(|annotation| {
-            annotation.id.0 == prefix || annotation.id.as_str().starts_with(&format!("{prefix}:"))
+            annotation.id.as_str() == prefix
+                || annotation.id.as_str().starts_with(&format!("{prefix}:"))
         }) {
             crate::annotations::note(
                 annotations,
-                annotation.id.0.clone(),
+                annotation.id.as_str().to_owned(),
                 stream.clone(),
                 entity.offset as u64,
                 "swift_gdt_analysis",
@@ -750,8 +762,11 @@ fn project_tolerance(
     let magnitude = finite_nonnegative(entity.doubles.get("Tolerance").copied()?)?;
     let references = datum_references(entity, datum_ids);
     let system = (!references.is_empty()).then(|| {
-        let id = PmiId::mint(format!("{}:datum-system", pmi_id(&reference.id).0))
-            .expect("identity grammar");
+        let id = PmiId::mint(format!(
+            "{}:datum-system",
+            pmi_id(&reference.id).into_string()
+        ))
+        .expect("identity grammar");
         PmiAnnotation {
             id,
             name: None,
@@ -790,8 +805,11 @@ fn project_lower_profile_tier(
 ) -> Option<PmiAnnotation> {
     let magnitude = finite_nonnegative(entity.doubles.get("ToleranceLowerTier").copied()?)?;
     Some(PmiAnnotation {
-        id: PmiId::mint(format!("{}:lower-tier", pmi_id(&reference.id).0))
-            .expect("identity grammar"),
+        id: PmiId::mint(format!(
+            "{}:lower-tier",
+            pmi_id(&reference.id).into_string()
+        ))
+        .expect("identity grammar"),
         name: object_name(entity).map(|name| format!("{name} lower tier")),
         visible: None,
         targets: targets(entity, feature_index, topology),
@@ -2586,7 +2604,7 @@ mod tests {
         assert_eq!(
             first.targets,
             [PmiTarget::Face {
-                face: "sldprt:brep:face#42".into()
+                face: "sldprt:brep:face#42".try_into().expect("valid identity")
             }]
         );
 
@@ -2877,7 +2895,9 @@ mod tests {
     fn parses_and_projects_semantic_graph() {
         let parsed = parse_unique_root(&encoded_root()).expect("synthetic SWIFT root");
         let annotations = project(&parsed);
-        assert_eq!(annotations.len(), 5);
+        // Datum A, its ordered reference system, position, and angle are admitted.
+        // The zero diameter has no geometric or rendered nominal witness.
+        assert_eq!(annotations.len(), 4);
 
         let position = annotations
             .iter()
@@ -2894,7 +2914,7 @@ mod tests {
         };
         assert_eq!(*magnitude, length(0.25));
         assert_eq!(
-            datum_system.as_ref().map(|id| id.0.as_str()),
+            datum_system.as_ref().map(|id| id.as_str()),
             Some("sldprt:model:pmi#A20:datum-system")
         );
         assert_eq!(

@@ -239,9 +239,9 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         }],
     };
     let face = Face {
-        id: FaceId::mint("face").expect("identity grammar"),
-        shell: ShellId::mint("shell").expect("identity grammar"),
-        surface: SurfaceId::mint("surface").expect("identity grammar"),
+        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         sense: Sense::Forward,
         loops: Vec::new().into(),
         name: None,
@@ -255,7 +255,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     ])
     .expect("affine transform");
     let surface = Surface {
-        id: SurfaceId::mint("surface").expect("identity grammar"),
+        id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Transformed {
             basis: Box::new(SurfaceGeometry::Plane {
                 origin: Point3::new(1.0, 2.0, 3.0),
@@ -271,7 +271,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-        &[("face".into(), 45, 7)],
+        &[("test:model:entity#face".into(), 45, 7)],
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
     );
@@ -304,7 +304,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&nonmirror_history),
         std::slice::from_ref(&lane),
-        &[("face".into(), 45, 7)],
+        &[("test:model:entity#face".into(), 45, 7)],
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
     );
@@ -317,12 +317,15 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     ));
 
     let mut second_face = face.clone();
-    second_face.id = FaceId::mint("other-face").expect("identity grammar");
+    second_face.id = FaceId::mint("test:model:entity#other-face").expect("identity grammar");
     bind_mirror_surface_planes(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-        &[("face".into(), 45, 7), ("other-face".into(), 45, 7)],
+        &[
+            ("test:model:entity#face".into(), 45, 7),
+            ("other-face".into(), 45, 7),
+        ],
         &[face, second_face],
         std::slice::from_ref(&surface),
     );

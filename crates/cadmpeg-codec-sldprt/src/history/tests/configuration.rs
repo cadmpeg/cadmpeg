@@ -39,7 +39,8 @@ fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
 fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId::mint("model-surface").expect("identity grammar"),
+        id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
+            .expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -59,7 +60,8 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
 fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId::mint("model-surface").expect("identity grammar"),
+        id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
+            .expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -1000,7 +1002,7 @@ fn configuration_offset_plane_inherits_shared_reference() {
 
     let base = FeatureDefinition::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face(FaceSelection::Faces(vec![
-            "test:model:face#1".into(),
+            "test:model:face#1".try_into().expect("valid identity"),
         ]))),
         distance: Length(5.0),
     };
@@ -1028,7 +1030,7 @@ fn configuration_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
 
     let base = FeatureDefinition::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face(FaceSelection::Faces(vec![
-            "test:model:face#1".into(),
+            "test:model:face#1".try_into().expect("valid identity"),
         ]))),
         distance: Length(5.0),
     };
@@ -1263,7 +1265,9 @@ fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
     };
     let base = neutral_feature(FeatureDefinition::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face(FaceSelection::Faces(vec![
-            "face#1".into(),
+            "test:model:entity#face%231"
+                .try_into()
+                .expect("valid identity"),
         ]))),
         distance: Length(7.0),
     });
@@ -1433,11 +1437,11 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(feature);
     ir.model.faces.push(Face {
-        id: FaceId::mint("face").expect("identity grammar"),
-        shell: ShellId::mint("shell").expect("identity grammar"),
-        surface: SurfaceId::mint("surface").expect("identity grammar"),
+        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![LoopId::mint("loop").expect("identity grammar")].into(),
+        loops: vec![LoopId::mint("test:model:entity#loop").expect("identity grammar")].into(),
         name: None,
         color: None,
         tolerance: None,
@@ -1458,7 +1462,12 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     let mut lane = feature_input_lane("lane", Some("1"));
     lane.surface_selections.push(selection());
 
-    bind_configuration_topology_selections(&mut ir, &[], &[lane], &[("face".into(), 7, 11)]);
+    bind_configuration_topology_selections(
+        &mut ir,
+        &[],
+        &[lane],
+        &[("test:model:entity#face".into(), 7, 11)],
+    );
 
     assert!(matches!(
         &ir.model.configurations[0].feature_states.values().next().unwrap().definition,
@@ -1468,7 +1477,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
                 native: resolved_native,
             })),
             ..
-        } if faces == &[FaceId::mint("face").expect("identity grammar")] && resolved_native == &native
+        } if faces == &[FaceId::mint("test:model:entity#face").expect("identity grammar")] && resolved_native == &native
     ));
 }
 
@@ -1508,7 +1517,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(feature);
     ir.model.surfaces.push(Surface {
-        id: SurfaceId::mint("surface").expect("identity grammar"),
+        id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 5.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1517,11 +1526,11 @@ fn configuration_frame_alias_binds_without_body_membership() {
         source_object: None,
     });
     ir.model.faces.push(Face {
-        id: FaceId::mint("face").expect("identity grammar"),
-        shell: ShellId::mint("shell").expect("identity grammar"),
-        surface: SurfaceId::mint("surface").expect("identity grammar"),
+        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![LoopId::mint("loop").expect("identity grammar")].into(),
+        loops: vec![LoopId::mint("test:model:entity#loop").expect("identity grammar")].into(),
         name: None,
         color: None,
         tolerance: None,
@@ -1548,6 +1557,6 @@ fn configuration_frame_alias_binds_without_body_membership() {
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Face(FaceSelection::Faces(faces))),
             ..
-        } if faces == &[FaceId::mint("face").expect("identity grammar")]
+        } if faces == &[FaceId::mint("test:model:entity#face").expect("identity grammar")]
     ));
 }

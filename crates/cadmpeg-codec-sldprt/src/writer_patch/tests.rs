@@ -235,7 +235,7 @@ fn native_patch_requires_point_provenance_annotation() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let point_id = decoded.ir().model.points[1].id.0.clone();
+    let point_id = decoded.ir().model.points[1].id.as_str().to_owned();
     assert!(decoded
         .source_fidelity()
         .annotations
@@ -540,7 +540,7 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .iter()
         .find(|unknown| unknown.id == *record)
         .expect("opaque curve record");
-    assert!(retained.links.contains(&curve.id.0));
+    assert!(retained.links.iter().any(|link| link == curve.id.as_str()));
 
     decoded.ir_mut().model.points[1].position.x = 1_500.0;
     let mut encoded = Vec::new();

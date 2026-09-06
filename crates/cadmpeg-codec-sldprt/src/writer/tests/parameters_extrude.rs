@@ -903,7 +903,7 @@ fn semantic_writer_round_trips_feature_output_scope() {
         )
         .unwrap();
     assert_eq!(base.ir().model.bodies.len(), 2);
-    let scope = base.ir().model.bodies[0].id.0.clone();
+    let scope = base.ir().model.bodies[0].id.as_str().to_owned();
     let mut source = sldprt_with_body(&body);
     source.extend(make_block(
         0x42,

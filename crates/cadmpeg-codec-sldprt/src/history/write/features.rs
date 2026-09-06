@@ -300,7 +300,7 @@ pub fn sync_neutral_features(
         .collect::<HashMap<_, _>>();
     let body_sources = bodies
         .iter()
-        .map(|body| (body.id.clone(), body.id.0.clone()))
+        .map(|body| (body.id.clone(), body.id.as_str().to_owned()))
         .collect::<HashMap<_, _>>();
     for feature in features {
         if feature
