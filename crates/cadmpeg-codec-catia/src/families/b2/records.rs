@@ -14,6 +14,7 @@ use std::mem::size_of;
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::families::a5a8::records::FreeformSurface;
 use crate::wire::bytes::persistent_ref;
+use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTerminalControl};
 use crate::wire::bytes::{
     allocation_reference, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
     AllocationReferenceEncoding,
@@ -308,8 +309,10 @@ pub enum B2OwnerChartBridge {
         support_surfaces: [B2OwnerChartBridgeReference; 2],
         /// Pcurves on the two supporting surfaces.
         support_pcurves: [B2OwnerChartBridgeReference; 2],
-        /// Six construction controls in storage order.
-        controls: [u8; 6],
+        /// Independent middle construction controls.
+        middle_controls: [CatiaOwnerChartMiddleControl; 2],
+        /// Independent terminal control.
+        terminal_control: CatiaOwnerChartTerminalControl,
         /// Positive construction radius.
         construction_radius: f64,
     },
@@ -319,10 +322,6 @@ pub enum B2OwnerChartBridge {
         pos: usize,
         /// Counted allocation references in storage order.
         references: [B2OwnerChartBridgeReference; 8],
-        /// Four controls before the zero lane.
-        controls: [u8; 4],
-        /// Two terminal controls after the zero lane.
-        terminal_controls: [u8; 2],
     },
 }
 
@@ -1147,16 +1146,15 @@ fn owner_chart_bridge(
     if count == 5 {
         let unit_token = *data.get(at)?;
         let construction_radius = f64_le(data, at + 1)?;
-        let middle_controls = [*data.get(at + 9)?, *data.get(at + 10)?];
+        let middle_controls = [
+            CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 9)?)?,
+            CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 10)?)?,
+        ];
         let zeros = data.get(at + 11..at + 19)?;
-        let terminal_control = *data.get(at + 19)?;
+        let terminal_control = CatiaOwnerChartTerminalControl::from_byte(*data.get(at + 19)?)?;
         if unit_token != 0x05
             || construction_radius <= 0.0
-            || !middle_controls
-                .into_iter()
-                .all(|control| matches!(control, 0x03 | 0x05))
             || zeros != [0; 8]
-            || !matches!(terminal_control, 0x01 | 0x05)
             || data.get(at + 20) != Some(&0x05)
             || at + 21 != frame.end
         {
@@ -1169,14 +1167,8 @@ fn owner_chart_bridge(
             carrier_surface,
             support_surfaces: [support_surface_0, support_surface_1],
             support_pcurves: [support_pcurve_0, support_pcurve_1],
-            controls: [
-                carrier_selector,
-                unit_token,
-                middle_controls[0],
-                middle_controls[1],
-                terminal_control,
-                0x05,
-            ],
+            middle_controls,
+            terminal_control,
             construction_radius,
         })
     } else {
@@ -1194,13 +1186,6 @@ fn owner_chart_bridge(
         Some(B2OwnerChartBridge::Extended {
             pos: frame.pos,
             references: references.try_into().ok()?,
-            controls: [
-                carrier_selector,
-                control_tokens[0],
-                control_tokens[1],
-                control_tokens[2],
-            ],
-            terminal_controls: [terminal_control, 0x05],
         })
     }
 }

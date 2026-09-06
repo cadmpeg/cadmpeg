@@ -961,8 +961,8 @@ fn native_namespace_retains_source_closed_owner_chart() {
         carrier_surface,
         support_surfaces,
         support_pcurves,
-        controls,
         construction_radius,
+        ..
     } = &chart.bridge
     else {
         panic!("supported-surface owner bridge")
@@ -983,7 +983,10 @@ fn native_namespace_retains_source_closed_owner_chart() {
         carrier_surface.encoding(),
         crate::native::CatiaAllocationReferenceEncoding::BackwardDistance
     );
-    assert_eq!(*controls, [0x09, 0x05, 0x03, 0x05, 0x01, 0x05]);
+    let wire = serde_json::to_value(chart).expect("serialize owner chart");
+    let controls: [u8; 6] = serde_json::from_value(wire["bridge"]["controls"].clone())
+        .expect("six bridge controls");
+    assert_eq!(controls, [0x09, 0x05, 0x03, 0x05, 0x01, 0x05]);
     assert_eq!(*construction_radius, 1.0);
     assert!(chart.parameter_point_byte_offsets[3] < packet.byte_offset);
 

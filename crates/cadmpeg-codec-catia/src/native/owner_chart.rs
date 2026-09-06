@@ -168,11 +168,92 @@ impl TryFrom<CatiaOwnerChartBridgeReferenceWire> for CatiaOwnerChartBridgeRefere
     }
 }
 
+/// Middle construction control in a five-reference owner-chart bridge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatiaOwnerChartMiddleControl {
+    /// Control byte `0x03`.
+    Control03,
+    /// Control byte `0x05`.
+    Control05,
+}
+
+impl CatiaOwnerChartMiddleControl {
+    pub(crate) fn from_byte(value: u8) -> Option<Self> {
+        match value {
+            0x03 => Some(Self::Control03),
+            0x05 => Some(Self::Control05),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_byte(self) -> u8 {
+        match self {
+            Self::Control03 => 0x03,
+            Self::Control05 => 0x05,
+        }
+    }
+}
+
+/// Terminal construction control in a five-reference owner-chart bridge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatiaOwnerChartTerminalControl {
+    /// Control byte `0x01`.
+    Control01,
+    /// Control byte `0x05`.
+    Control05,
+}
+
+impl CatiaOwnerChartTerminalControl {
+    pub(crate) fn from_byte(value: u8) -> Option<Self> {
+        match value {
+            0x01 => Some(Self::Control01),
+            0x05 => Some(Self::Control05),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_byte(self) -> u8 {
+        match self {
+            Self::Control01 => 0x01,
+            Self::Control05 => 0x05,
+        }
+    }
+}
+
 /// Structurally complete class-`0x37` owner-chart bridge.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum CatiaOwnerChartBridge {
+    /// Five-reference supported-surface construction.
+    SupportedSurface {
+        /// Record byte offset.
+        byte_offset: u64,
+        /// Constructed carrier surface.
+        carrier_surface: CatiaOwnerChartBridgeReference,
+        /// Two supporting surfaces.
+        support_surfaces: [CatiaOwnerChartBridgeReference; 2],
+        /// Pcurves on the supporting surfaces.
+        support_pcurves: [CatiaOwnerChartBridgeReference; 2],
+        /// Independent middle construction controls.
+        middle_controls: [CatiaOwnerChartMiddleControl; 2],
+        /// Independent terminal control.
+        terminal_control: CatiaOwnerChartTerminalControl,
+        /// Positive construction radius.
+        construction_radius: f64,
+    },
+    /// Eight-reference A-family production without an assigned object role.
+    Extended {
+        /// Record byte offset.
+        byte_offset: u64,
+        /// Counted allocation references in storage order.
+        references: [CatiaOwnerChartBridgeReference; 8],
+    },
+}
+
+/// Compatibility representation with explicit framing controls.
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CatiaOwnerChartBridge {
+enum CatiaOwnerChartBridgeWire {
     /// Five-reference supported-surface construction.
     SupportedSurface {
         /// Record byte offset.
@@ -199,6 +280,110 @@ pub enum CatiaOwnerChartBridge {
         /// Two terminal controls after the zero lane.
         terminal_controls: [u8; 2],
     },
+}
+
+impl CatiaOwnerChartCarrier {
+    fn selector(self) -> u8 {
+        match self {
+            Self::B28 => 0x05,
+            Self::B2b => 0x09,
+            Self::A32 => 0x11,
+        }
+    }
+}
+
+impl CatiaOwnerChartBridgeWire {
+    fn from_bridge(bridge: CatiaOwnerChartBridge, carrier: CatiaOwnerChartCarrier) -> Self {
+        match bridge {
+            CatiaOwnerChartBridge::SupportedSurface {
+                byte_offset,
+                carrier_surface,
+                support_surfaces,
+                support_pcurves,
+                middle_controls,
+                terminal_control,
+                construction_radius,
+            } => Self::SupportedSurface {
+                byte_offset,
+                carrier_surface,
+                support_surfaces,
+                support_pcurves,
+                controls: [
+                    carrier.selector(),
+                    0x05,
+                    middle_controls[0].as_byte(),
+                    middle_controls[1].as_byte(),
+                    terminal_control.as_byte(),
+                    0x05,
+                ],
+                construction_radius,
+            },
+            CatiaOwnerChartBridge::Extended {
+                byte_offset,
+                references,
+            } => Self::Extended {
+                byte_offset,
+                references,
+                controls: [carrier.selector(), 0x09, 0x05, 0x05],
+                terminal_controls: [0x01, 0x05],
+            },
+        }
+    }
+
+    fn into_bridge(self, carrier: CatiaOwnerChartCarrier) -> Result<CatiaOwnerChartBridge, String> {
+        match self {
+            Self::SupportedSurface {
+                byte_offset,
+                carrier_surface,
+                support_surfaces,
+                support_pcurves,
+                controls,
+                construction_radius,
+            } => {
+                if [controls[0], controls[1], controls[5]] != [carrier.selector(), 0x05, 0x05] {
+                    return Err(
+                        "owner-chart bridge framing controls do not match carrier".to_owned()
+                    );
+                }
+                let middle_controls = [
+                    CatiaOwnerChartMiddleControl::from_byte(controls[2])
+                        .ok_or("invalid first owner-chart middle control")?,
+                    CatiaOwnerChartMiddleControl::from_byte(controls[3])
+                        .ok_or("invalid second owner-chart middle control")?,
+                ];
+                let terminal_control = CatiaOwnerChartTerminalControl::from_byte(controls[4])
+                    .ok_or("invalid owner-chart terminal control")?;
+                Ok(CatiaOwnerChartBridge::SupportedSurface {
+                    byte_offset,
+                    carrier_surface,
+                    support_surfaces,
+                    support_pcurves,
+                    middle_controls,
+                    terminal_control,
+                    construction_radius,
+                })
+            }
+            Self::Extended {
+                byte_offset,
+                references,
+                controls,
+                terminal_controls,
+            } => {
+                if controls != [carrier.selector(), 0x09, 0x05, 0x05]
+                    || terminal_controls != [0x01, 0x05]
+                {
+                    return Err(
+                        "extended owner-chart bridge framing controls do not match carrier"
+                            .to_owned(),
+                    );
+                }
+                Ok(CatiaOwnerChartBridge::Extended {
+                    byte_offset,
+                    references,
+                })
+            }
+        }
+    }
 }
 
 /// Source-closed carrier chart terminated by an owner packet.
@@ -235,7 +420,7 @@ impl CatiaOwnerChartRelation {
 struct CatiaOwnerChartRelationWire {
     carrier_byte_offset: u64,
     carrier: CatiaOwnerChartCarrier,
-    bridge: CatiaOwnerChartBridge,
+    bridge: CatiaOwnerChartBridgeWire,
     side_axis: CatiaOwnerChartSideAxis,
     parameter_point_byte_offsets: [u64; 4],
 }
@@ -246,7 +431,7 @@ impl From<CatiaOwnerChartRelation> for CatiaOwnerChartRelationWire {
         Self {
             carrier_byte_offset: value.carrier_byte_offset,
             carrier: value.carrier,
-            bridge: value.bridge,
+            bridge: CatiaOwnerChartBridgeWire::from_bridge(value.bridge, value.carrier),
             side_axis,
             parameter_point_byte_offsets: value.parameter_point_byte_offsets,
         }
@@ -260,7 +445,7 @@ impl TryFrom<CatiaOwnerChartRelationWire> for CatiaOwnerChartRelation {
         let value = Self {
             carrier_byte_offset: wire.carrier_byte_offset,
             carrier: wire.carrier,
-            bridge: wire.bridge,
+            bridge: wire.bridge.into_bridge(wire.carrier)?,
             parameter_point_byte_offsets: wire.parameter_point_byte_offsets,
         };
         if wire.side_axis != value.side_axis() {
@@ -274,6 +459,34 @@ impl TryFrom<CatiaOwnerChartRelationWire> for CatiaOwnerChartRelation {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn bridge_wire_checks_framing_and_variable_controls() {
+        for bytes in [
+            crate::test_support::b2_owner_chart_stream(0x28),
+            crate::test_support::b2_owner_chart_stream(0x2b),
+            crate::test_support::b2_owner_chart_stream(0x32),
+            crate::test_support::b2_owner_chart_stream_with_extended_bridge(),
+        ] {
+            let native = crate::native::CatiaNative::decode(&bytes);
+            let relation = native.consolidated_owner_packets[0]
+                .owner_chart()
+                .expect("owner chart");
+            let wire = serde_json::to_value(relation).expect("serialize owner chart");
+            let decoded: CatiaOwnerChartRelation =
+                serde_json::from_value(wire.clone()).expect("valid bridge controls");
+            assert_eq!(&decoded, relation);
+            for field in ["controls", "terminal_controls"] {
+                if let Some(controls) = wire["bridge"][field].as_array() {
+                    for index in 0..controls.len() {
+                        let mut invalid = wire.clone();
+                        invalid["bridge"][field][index] = json!(0);
+                        assert!(serde_json::from_value::<CatiaOwnerChartRelation>(invalid).is_err());
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn relation_wire_checks_the_carrier_derived_axis() {

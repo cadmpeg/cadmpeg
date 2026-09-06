@@ -441,7 +441,6 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
             carrier_surface,
             support_surfaces,
             support_pcurves,
-            controls,
             construction_radius,
             ..
         } = chart.bridge
@@ -463,6 +462,10 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
             carrier_surface.encoding,
             crate::wire::bytes::AllocationReferenceEncoding::BackwardDistance
         );
+        let wire = serde_json::to_value(native.consolidated_owner_packets[0].owner_chart())
+            .expect("serialize owner chart");
+        let controls: [u8; 6] = serde_json::from_value(wire["bridge"]["controls"].clone())
+            .expect("six bridge controls");
         assert_eq!(controls, [carrier_selector, 0x05, 0x03, 0x05, 0x01, 0x05]);
         assert_eq!(construction_radius, 1.0);
         assert_eq!(
@@ -541,8 +544,6 @@ fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
         .unwrap_or_else(|charts: Vec<_>| panic!("one extended owner chart, got {charts:?}"));
     let B2OwnerChartBridge::Extended {
         references,
-        controls,
-        terminal_controls,
         ..
     } = chart.bridge
     else {
@@ -552,6 +553,13 @@ fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
         references.map(|reference| reference.value),
         [1, 100, 0, 101, 1, 2, 3, 4]
     );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let wire = serde_json::to_value(native.consolidated_owner_packets[0].owner_chart())
+        .expect("serialize extended owner chart");
+    let controls: [u8; 4] = serde_json::from_value(wire["bridge"]["controls"].clone())
+        .expect("four extended bridge controls");
+    let terminal_controls: [u8; 2] = serde_json::from_value(wire["bridge"]["terminal_controls"].clone())
+        .expect("two extended bridge terminal controls");
     assert_eq!(controls, [0x11, 0x09, 0x05, 0x05]);
     assert_eq!(terminal_controls, [0x01, 0x05]);
 }
