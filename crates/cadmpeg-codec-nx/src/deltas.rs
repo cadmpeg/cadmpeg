@@ -9,6 +9,7 @@ pub(crate) mod record_kind;
 pub(crate) mod reference_lanes;
 pub(crate) mod inline_schema_fields;
 pub(crate) mod precision_state;
+pub(crate) mod type101_state;
 use precision_state::PrecisionState;
 use inline_schema_fields::{InlineBodyStateFields, InlineSchemaFields, TermUseValues};
 use reference_lanes::{MapEntries, TaggedReferences};
@@ -1996,8 +1997,7 @@ fn inline_schema_declaration(
         let (anchor_reference, consumed) = read_xmt(stream, at)?;
         let anchor_reference = match anchor_reference {
             0 => None,
-            value if value > 1 => Some(value),
-            _ => return None,
+            value => Some(value),
         };
         at = at.checked_add(consumed)?;
         let mut state_words = [0; 3];
@@ -2005,24 +2005,16 @@ fn inline_schema_declaration(
             *state_word = View::u32_be_at(stream, at)?;
             at = at.checked_add(4)?;
         }
-        matches!(
-            (prefix_state, state_words[0], state_words[1]),
-            ([3, 4, 1], 19, 9) | ([1, 1, 0], 0, 0)
-        )
-        .then_some(())?;
         let terminal = stream.get(at..at.checked_add(5)?)?;
         let terminal_value = terminal
             .iter()
             .fold(0_u64, |value, byte| (value << 8) | u64::from(*byte));
         at = at.checked_add(5)?;
         (at <= gap_end).then_some(())?;
+        let state = type101_state::Type101State::new(references, anchor_reference, state_words, terminal_value).ok()?;
+        (state.prefix_state() == prefix_state).then_some(())?;
         return Some(InlineSchemaDeclaration {
-            fields: InlineSchemaFields::Type101 {
-                references,
-                anchor_reference,
-                state_words,
-                terminal_value,
-            },
+            fields: InlineSchemaFields::Type101 { state },
             offset,
             end: at,
         });
@@ -4295,10 +4287,7 @@ mod inline_schema_tests {
             census.inline_schema_declarations,
             [InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type101 {
-                    references: [40_000, 3, 1, 9],
-                    anchor_reference: Some(11),
-                    state_words: [19, 9, 27],
-                    terminal_value: 258,
+                    state: type101_state::Type101State::new([40_000, 3, 1, 9], Some(11), [19, 9, 27], 258).unwrap(),
                 },
                 offset: 0,
                 end: bytes.len(),
@@ -4328,10 +4317,8 @@ mod inline_schema_tests {
         assert!(matches!(
             alternate_census.inline_schema_declarations[0].fields,
             InlineSchemaFields::Type101 {
-                state_words: [0, 0, 9],
-                terminal_value: 3,
-                ..
-            }
+                state,
+            } if state.state_words() == [0, 0, 9] && state.terminal_value() == 3
         ));
         assert_eq!(alternate_census.bytes_decoded, alternate.len());
 
@@ -4357,11 +4344,8 @@ mod inline_schema_tests {
         assert!(matches!(
             unanchored_census.inline_schema_declarations[0].fields,
             InlineSchemaFields::Type101 {
-                anchor_reference: None,
-                state_words: [0, 0, 0xc06f],
-                terminal_value: 4,
-                ..
-            }
+                state,
+            } if state.anchor_reference().is_none() && state.state_words() == [0, 0, 0xc06f] && state.terminal_value() == 4
         ));
         assert_eq!(unanchored_census.bytes_decoded, unanchored.len());
 

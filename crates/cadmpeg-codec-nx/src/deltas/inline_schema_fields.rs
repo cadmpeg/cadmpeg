@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 use super::xmt_reference::NonNullXmt;
 use super::precision_state::PrecisionState;
+use super::type101_state::Type101State;
 
 /// Body of an inline schema declaration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -51,14 +52,8 @@ pub(crate) enum InlineSchemaFields {
     },
     /// Type 101 declaration and its schema-bound instance state.
     Type101 {
-        /// Four ordered stream-local XMT references.
-        references: [u32; 4],
-        /// Optional non-null reference following the zero sentinel.
-        anchor_reference: Option<u32>,
-        /// Three serialized big-endian state words.
-        state_words: [u32; 3],
-        /// Terminal unsigned 40-bit state value.
-        terminal_value: u64,
+        #[serde(flatten)]
+        state: Type101State,
     },
     /// Type 101 declaration with the compact fixed state.
     Type101Compact,
