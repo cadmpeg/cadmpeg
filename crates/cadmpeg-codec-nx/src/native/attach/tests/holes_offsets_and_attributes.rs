@@ -293,31 +293,27 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     duplicate_cap.model.shells[0]
         .faces
         .push(FaceId::mint("blind-duplicate-cap-face").expect("identity grammar"));
-    assert!(
-        super::blind_hole_body_projection(
-            &duplicate_cap,
-            std::slice::from_ref(&operation),
-            &outputs,
-        )
-        .is_none()
-    );
+    assert!(super::blind_hole_body_projection(
+        &duplicate_cap,
+        std::slice::from_ref(&operation),
+        &outputs,
+    )
+    .is_none());
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
     assert!(
         super::blind_hole_body_projection(&sheet, std::slice::from_ref(&operation), &outputs,)
             .is_none()
     );
-    assert!(
-        super::blind_hole_body_projection(
-            &ir,
-            &[operation.clone(), "second-operation".into()],
-            &BTreeMap::from([
-                (operation, vec![body.clone()]),
-                ("second-operation".into(), vec![body]),
-            ]),
-        )
-        .is_none()
-    );
+    assert!(super::blind_hole_body_projection(
+        &ir,
+        &[operation.clone(), "second-operation".into()],
+        &BTreeMap::from([
+            (operation, vec![body.clone()]),
+            ("second-operation".into(), vec![body]),
+        ]),
+    )
+    .is_none());
 }
 
 #[test]
@@ -358,13 +354,11 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         form: SimpleHoleForm::Simple,
         ..template.clone()
     };
-    assert!(
-        super::counterbore_operations(
-            &[template.clone(), competing_template],
-            &BTreeMap::from([("counterbore", 0usize)]),
-        )
-        .is_none()
-    );
+    assert!(super::counterbore_operations(
+        &[template.clone(), competing_template],
+        &BTreeMap::from([("counterbore", 0usize)]),
+    )
+    .is_none());
     let mut model = Model::default();
     let mut add_circle_loop =
         |name: &str, shared_edge: Option<&str>, center: Point3, radius: f64| {
@@ -614,17 +608,15 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
     assert!(super::counterbore_body_projection(&sheet, &operations, &outputs).is_none());
-    assert!(
-        super::counterbore_body_projection(
-            &ir,
-            &[operation.clone(), "second-operation".into()],
-            &BTreeMap::from([
-                (operation, vec![body.clone()]),
-                ("second-operation".into(), vec![body]),
-            ]),
-        )
-        .is_none()
-    );
+    assert!(super::counterbore_body_projection(
+        &ir,
+        &[operation.clone(), "second-operation".into()],
+        &BTreeMap::from([
+            (operation, vec![body.clone()]),
+            ("second-operation".into(), vec![body]),
+        ]),
+    )
+    .is_none());
 }
 
 #[test]
@@ -971,27 +963,23 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             vec![support_b.clone()],
         ))
     );
-    assert!(
-        super::blend_support_bipartition(vec![
-            [support_a.clone(), support_b.clone()],
-            [support_b.clone(), support_c.clone()],
-            [support_c, support_a],
-        ])
-        .is_none()
-    );
-    assert!(
-        super::blend_support_bipartition(vec![
-            [
-                SurfaceId::mint("a").expect("identity grammar"),
-                SurfaceId::mint("b").expect("identity grammar")
-            ],
-            [
-                SurfaceId::mint("c").expect("identity grammar"),
-                SurfaceId::mint("d").expect("identity grammar")
-            ],
-        ])
-        .is_none()
-    );
+    assert!(super::blend_support_bipartition(vec![
+        [support_a.clone(), support_b.clone()],
+        [support_b.clone(), support_c.clone()],
+        [support_c, support_a],
+    ])
+    .is_none());
+    assert!(super::blend_support_bipartition(vec![
+        [
+            SurfaceId::mint("a").expect("identity grammar"),
+            SurfaceId::mint("b").expect("identity grammar")
+        ],
+        [
+            SurfaceId::mint("c").expect("identity grammar"),
+            SurfaceId::mint("d").expect("identity grammar")
+        ],
+    ])
+    .is_none());
     let make_blend = |ordinal: u32, radius: BlendRadiusLaw| {
         let owner =
             SurfaceId::mint(format!("nx:s4:blend-surf#{ordinal}")).expect("identity grammar");
@@ -1164,14 +1152,12 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         conic_owner,
         conic,
     );
-    assert!(
-        super::blend_feature_definition(
-            &ir,
-            &[BodyId::mint("nx:s4:body#3").expect("identity grammar")],
-            super::NxBlendFamily::Edge,
-        )
-        .is_none()
-    );
+    assert!(super::blend_feature_definition(
+        &ir,
+        &[BodyId::mint("nx:s4:body#3").expect("identity grammar")],
+        super::NxBlendFamily::Edge,
+    )
+    .is_none());
 }
 
 #[test]
@@ -1206,9 +1192,9 @@ fn nx_construction_dependency_requires_a_preceding_projected_operation() {
 
 #[test]
 fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
-    use cadmpeg_ir::AnnotationBuilder;
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId};
+    use cadmpeg_ir::AnnotationBuilder;
 
     use crate::native::parasolid::{
         ParasolidAttributeDefinition, ParasolidEntity51NumericKind, ParasolidEntity51NumericUse,
@@ -1354,11 +1340,9 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
             AttributeTarget::Loop(LoopId::mint("nx:s3:loop#59").expect("identity grammar")),
         ),
     ] {
-        assert!(
-            attributes
-                .iter()
-                .all(|attribute| attribute.target == target)
-        );
+        assert!(attributes
+            .iter()
+            .all(|attribute| attribute.target == target));
         assert_eq!(
             attributes[1].values,
             [AttributeValue::Float(0.25), AttributeValue::Float(7.5)]
@@ -1505,17 +1489,15 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         id: "duplicate-class-use".into(),
         ..class_use.clone()
     };
-    assert!(
-        attribute_field_name(
-            &reference,
-            "double-use",
-            &[class_use, duplicate_class],
-            &[definition],
-            &[field_use],
-            &[],
-        )
-        .is_none()
-    );
+    assert!(attribute_field_name(
+        &reference,
+        "double-use",
+        &[class_use, duplicate_class],
+        &[definition],
+        &[field_use],
+        &[],
+    )
+    .is_none());
 }
 
 #[test]
@@ -1611,9 +1593,9 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
 
 #[test]
 fn topology_attribute_index_retains_linked_type_81_records() {
-    use cadmpeg_ir::AnnotationBuilder;
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
     use cadmpeg_ir::ids::FaceId;
+    use cadmpeg_ir::AnnotationBuilder;
 
     use crate::native::parasolid::{
         ParasolidAttributeDefinition, ParasolidAttributeFieldUse, ParasolidAttributeFieldValueKind,
@@ -1790,23 +1772,19 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             && attribute.name == "CLASS.field_0.parasolid_type_2"
     }));
     assert_ne!(attributes[0].id, attributes[1].id);
-    assert!(
-        attributes
-            .iter()
-            .any(|attribute| { attribute.values == [AttributeValue::Float(1.0)] })
-    );
-    assert!(
-        attributes
-            .iter()
-            .any(|attribute| { attribute.values == [AttributeValue::Float(2.0)] })
-    );
+    assert!(attributes
+        .iter()
+        .any(|attribute| { attribute.values == [AttributeValue::Float(1.0)] }));
+    assert!(attributes
+        .iter()
+        .any(|attribute| { attribute.values == [AttributeValue::Float(2.0)] }));
 }
 
 #[test]
 fn topology_structured_attribute_values_preserve_serialized_lanes() {
-    use cadmpeg_ir::AnnotationBuilder;
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
     use cadmpeg_ir::ids::FaceId;
+    use cadmpeg_ir::AnnotationBuilder;
 
     use crate::native::parasolid::{
         ParasolidAttributeFieldValueKind as Kind, ParasolidEntity51StructuredUse,
@@ -1864,7 +1842,6 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         id: "unicode".into(),
         stream_ordinal: 3,
         xmt: 75,
-        code_units: vec![0x03bc],
         value: "μ".into(),
         byte_len: 14,
         inflated_offset: 450,

@@ -526,6 +526,10 @@ pub struct DisplayJtCompressedElementSequence {
 
 /// One UTF-16 string property atom in a type-31 JT segment.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DisplayJtStringPropertyAtomWire",
+    into = "DisplayJtStringPropertyAtomWire"
+)]
 pub struct DisplayJtStringPropertyAtom {
     /// Globally unique property-atom identity.
     pub id: String,
@@ -533,12 +537,54 @@ pub struct DisplayJtStringPropertyAtom {
     pub element: String,
     /// Serialized object identifier.
     pub object_id: u32,
-    /// Exact serialized UTF-16 code units.
-    pub code_units: Vec<u16>,
     /// Decoded string value.
     pub value: String,
     /// Absolute source offset of the owning compressed envelope.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtStringPropertyAtomWire {
+    id: String,
+    element: String,
+    object_id: u32,
+    code_units: Vec<u16>,
+    value: String,
+    source_offset: u64,
+}
+
+impl From<DisplayJtStringPropertyAtom> for DisplayJtStringPropertyAtomWire {
+    fn from(value: DisplayJtStringPropertyAtom) -> Self {
+        let code_units = value.value.encode_utf16().collect();
+        Self {
+            id: value.id,
+            element: value.element,
+            object_id: value.object_id,
+            code_units,
+            value: value.value,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<DisplayJtStringPropertyAtomWire> for DisplayJtStringPropertyAtom {
+    type Error = &'static str;
+    fn try_from(wire: DisplayJtStringPropertyAtomWire) -> Result<Self, Self::Error> {
+        if !wire
+            .value
+            .encode_utf16()
+            .eq(wire.code_units.iter().copied())
+        {
+            return Err("DisplayJtStringPropertyAtom.code_units disagrees with value");
+        }
+        Ok(Self {
+            id: wire.id,
+            element: wire.element,
+            object_id: wire.object_id,
+            value: wire.value,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Property-table link from a logical shape node to a late-loaded LOD segment.
@@ -716,8 +762,6 @@ pub struct DisplayJtPartitionNode {
     pub group_version: u16,
     /// Ordered child node object identifiers.
     pub child_object_ids: Vec<u32>,
-    /// Exact partition filename UTF-16 code units.
-    pub file_name_code_units: Vec<u16>,
     /// Decoded partition filename.
     pub file_name: String,
     /// Transformed axis-aligned bounds as minimum and maximum XYZ corners.
@@ -769,7 +813,7 @@ impl From<DisplayJtPartitionNode> for DisplayJtPartitionNodeWire {
             group_version: value.group_version,
             child_object_ids: value.child_object_ids,
             partition_flags,
-            file_name_code_units: value.file_name_code_units,
+            file_name_code_units: value.file_name.encode_utf16().collect(),
             file_name: value.file_name,
             transformed_bounds: value.transformed_bounds,
             area: value.area,
@@ -787,6 +831,15 @@ impl TryFrom<DisplayJtPartitionNodeWire> for DisplayJtPartitionNode {
     type Error = String;
 
     fn try_from(wire: DisplayJtPartitionNodeWire) -> Result<Self, Self::Error> {
+        if !wire
+            .file_name
+            .encode_utf16()
+            .eq(wire.file_name_code_units.iter().copied())
+        {
+            return Err(
+                "DisplayJtPartitionNode.file_name_code_units disagrees with file_name".into(),
+            );
+        }
         let bounds = match (
             wire.partition_flags,
             wire.untransformed_bounds,
@@ -807,7 +860,6 @@ impl TryFrom<DisplayJtPartitionNodeWire> for DisplayJtPartitionNode {
             object_id: wire.object_id,
             group_version: wire.group_version,
             child_object_ids: wire.child_object_ids,
-            file_name_code_units: wire.file_name_code_units,
             file_name: wire.file_name,
             transformed_bounds: wire.transformed_bounds,
             area: wire.area,
@@ -881,7 +933,7 @@ fn parse_jt_element_sequence(payload: &[u8]) -> Option<(Vec<ParsedJtElement<'_>>
     }
 }
 
-pub(crate) fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<(Vec<u16>, String)> {
+pub(crate) fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<String> {
     const PREFIX: [u8; 8] = [1, 0, 0, 0, 0, 0x40, 1, 0];
     if body.get(..8) != Some(PREFIX.as_slice()) {
         return None;
@@ -891,7 +943,7 @@ pub(crate) fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<(Vec<u16
     let count = usize::try_from(view.u32_le()?).ok()?;
     let value = view.utf16_le(count)?;
     view.is_empty().then_some(())?;
-    Some((value.encode_utf16().collect(), value))
+    Some(value)
 }
 
 pub(crate) fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u32, u16, &[u8])> {
@@ -1117,7 +1169,6 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
 pub(crate) struct ParsedJtPartitionNode {
     pub(crate) group_version: u16,
     pub(crate) child_object_ids: Vec<u32>,
-    pub(crate) file_name_code_units: Vec<u16>,
     pub(crate) file_name: String,
     pub(crate) transformed_bounds: [[f32; 3]; 2],
     pub(crate) area: f32,
@@ -1150,7 +1201,6 @@ pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtParti
     }
     let name_count = usize::try_from(view.u32_le()?).ok()?;
     let file_name = view.utf16_le(name_count)?;
-    let file_name_code_units: Vec<u16> = file_name.encode_utf16().collect();
     if file_name.is_empty() || file_name.chars().any(char::is_control) {
         return None;
     }
@@ -1204,7 +1254,6 @@ pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtParti
     (cursor == family.len()).then_some(ParsedJtPartitionNode {
         group_version,
         child_object_ids,
-        file_name_code_units,
         file_name,
         transformed_bounds,
         area,
@@ -2618,14 +2667,13 @@ pub fn display_jt_string_property_atoms(
             {
                 return Vec::new();
             }
-            let Some((code_units, value)) = parse_jt_string_property_atom_body(element.body) else {
+            let Some(value) = parse_jt_string_property_atom_body(element.body) else {
                 return Vec::new();
             };
             atoms.push(DisplayJtStringPropertyAtom {
                 id: format!("{}-string-property-atom-{ordinal}", segment.id),
                 element: format!("{}-inflated-element-{ordinal}", segment.id),
                 object_id: element.object_id,
-                code_units,
                 value,
                 source_offset: segment.source_offset + 24,
             });
@@ -2674,7 +2722,7 @@ pub fn display_jt_shape_lod_bindings(
         let mut late_loaded = BTreeMap::new();
         for atom in property_atoms {
             if atom.object_type_id == STRING_PROPERTY_ATOM_TYPE && atom.object_base_type == 5 {
-                let Some((_, value)) = parse_jt_string_property_atom_body(atom.body) else {
+                let Some(value) = parse_jt_string_property_atom_body(atom.body) else {
                     return Vec::new();
                 };
                 strings.insert(atom.object_id, value);
@@ -3156,7 +3204,6 @@ pub fn display_jt_partition_nodes(
                 object_id: element.object_id,
                 group_version: node.group_version,
                 child_object_ids: node.child_object_ids,
-                file_name_code_units: node.file_name_code_units,
                 file_name: node.file_name,
                 transformed_bounds: node.transformed_bounds,
                 area: node.area,
@@ -3952,6 +3999,15 @@ pub(crate) fn display_jt_tessellations(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn string_property_wire_derives_exact_utf16_and_rejects_disagreement() {
+        let wire = r#"{"id":"atom","element":"element","object_id":1,"code_units":[78,88,55357,56960],"value":"NX🚀","source_offset":0}"#;
+        let record: super::DisplayJtStringPropertyAtom = serde_json::from_str(wire).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        let inconsistent = wire.replace("[78,88,55357,56960]", "[78,88,55357]");
+        assert!(serde_json::from_str::<super::DisplayJtStringPropertyAtom>(&inconsistent).is_err());
+    }
+
     use std::io::Write;
 
     use flate2::write::ZlibEncoder;
@@ -4258,9 +4314,11 @@ mod tests {
         let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
         body.extend_from_slice(&3_u32.to_le_bytes());
         body.extend_from_slice(&[b'N', 0, b'X', 0, 0xa9, 0x03]);
-        let (units, value) =
-            super::parse_jt_string_property_atom_body(&body).expect("required invariant");
-        assert_eq!(units, [0x4e, 0x58, 0x3a9]);
+        let value = super::parse_jt_string_property_atom_body(&body).expect("required invariant");
+        assert_eq!(
+            value.encode_utf16().collect::<Vec<_>>(),
+            [0x4e, 0x58, 0x3a9]
+        );
         assert_eq!(value, "NXΩ");
 
         body.push(0);

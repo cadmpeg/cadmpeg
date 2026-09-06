@@ -439,7 +439,10 @@ fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
     let records = crate::parasolid::entity_value_records(&unicode).unicode;
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].xmt, 32_768);
-    assert_eq!(records[0].code_units, code_units);
+    assert_eq!(
+        records[0].value.encode_utf16().collect::<Vec<_>>(),
+        code_units
+    );
     assert_eq!(records[0].value, "NX🚀");
     assert!(
         crate::parasolid::entity_value_records(&unicode[..unicode.len() - 1])

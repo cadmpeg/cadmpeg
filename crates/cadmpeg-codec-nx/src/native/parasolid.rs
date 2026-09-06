@@ -2378,6 +2378,10 @@ pub struct ParasolidEntity58TagRecord {
 
 /// Counted Parasolid type-98 Unicode-value record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "ParasolidEntity62UnicodeRecordWire",
+    into = "ParasolidEntity62UnicodeRecordWire"
+)]
 pub struct ParasolidEntity62UnicodeRecord {
     /// Globally unique native-record identity.
     pub id: String,
@@ -2385,14 +2389,59 @@ pub struct ParasolidEntity62UnicodeRecord {
     pub stream_ordinal: u32,
     /// Stream-local record identity.
     pub xmt: u32,
-    /// Ordered exact big-endian UTF-16 code units.
-    pub code_units: Vec<u16>,
     /// Validated Unicode scalar string.
     pub value: String,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
     pub inflated_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ParasolidEntity62UnicodeRecordWire {
+    id: String,
+    stream_ordinal: u32,
+    xmt: u32,
+    code_units: Vec<u16>,
+    value: String,
+    byte_len: u64,
+    inflated_offset: u64,
+}
+
+impl From<ParasolidEntity62UnicodeRecord> for ParasolidEntity62UnicodeRecordWire {
+    fn from(value: ParasolidEntity62UnicodeRecord) -> Self {
+        let code_units = value.value.encode_utf16().collect();
+        Self {
+            id: value.id,
+            stream_ordinal: value.stream_ordinal,
+            xmt: value.xmt,
+            code_units,
+            value: value.value,
+            byte_len: value.byte_len,
+            inflated_offset: value.inflated_offset,
+        }
+    }
+}
+
+impl TryFrom<ParasolidEntity62UnicodeRecordWire> for ParasolidEntity62UnicodeRecord {
+    type Error = &'static str;
+    fn try_from(wire: ParasolidEntity62UnicodeRecordWire) -> Result<Self, Self::Error> {
+        if !wire
+            .value
+            .encode_utf16()
+            .eq(wire.code_units.iter().copied())
+        {
+            return Err("ParasolidEntity62UnicodeRecord.code_units disagrees with value");
+        }
+        Ok(Self {
+            id: wire.id,
+            stream_ordinal: wire.stream_ordinal,
+            xmt: wire.xmt,
+            value: wire.value,
+            byte_len: wire.byte_len,
+            inflated_offset: wire.inflated_offset,
+        })
+    }
 }
 
 /// Attribute-value records discovered by one pass over the Parasolid streams.
@@ -2974,7 +3023,6 @@ pub(crate) fn parasolid_entity_value_records(
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
-                code_units: record.code_units,
                 value: record.value,
                 byte_len: record.byte_len as u64,
                 inflated_offset: record.offset as u64,
@@ -3508,6 +3556,17 @@ pub fn parasolid_topology_attribute_fields_have_untransferred_values(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unicode_record_wire_derives_exact_utf16_and_rejects_disagreement() {
+        let wire = r#"{"id":"unicode","stream_ordinal":0,"xmt":1,"code_units":[78,88,55357,56960],"value":"NX🚀","byte_len":8,"inflated_offset":0}"#;
+        let record: super::ParasolidEntity62UnicodeRecord = serde_json::from_str(wire).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        let inconsistent = wire.replace("[78,88,55357,56960]", "[78,88,55357]");
+        assert!(
+            serde_json::from_str::<super::ParasolidEntity62UnicodeRecord>(&inconsistent).is_err()
+        );
+    }
+
     use std::io::Cursor;
 
     use crate::parasolid::Stream;
@@ -4220,9 +4279,9 @@ mod tests {
 
     use cadmpeg_ir::report::LossCategory;
 
-    use crate::NxCodec;
     use crate::parasolid::StreamKind;
     use crate::test_support::*;
+    use crate::NxCodec;
 
     use super::*;
 
@@ -4321,61 +4380,53 @@ mod tests {
             definition_xmt: 11,
             attribute_definition: "other-definition".into(),
         };
-        assert!(
-            parasolid_attribute_field_uses(
-                &[class_use.clone(), duplicate.clone()],
-                std::slice::from_ref(&definition),
-                std::slice::from_ref(&numeric_use),
-                &[],
-                &[],
-            )
-            .is_empty()
-        );
+        assert!(parasolid_attribute_field_uses(
+            &[class_use.clone(), duplicate.clone()],
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&numeric_use),
+            &[],
+            &[],
+        )
+        .is_empty());
 
         let wrong_stream = ParasolidAttributeClassUse {
             stream_ordinal: 3,
             ..duplicate
         };
-        assert!(
-            parasolid_attribute_field_uses(
-                &[wrong_stream],
-                std::slice::from_ref(&definition),
-                std::slice::from_ref(&numeric_use),
-                &[],
-                &[],
-            )
-            .is_empty()
-        );
+        assert!(parasolid_attribute_field_uses(
+            &[wrong_stream],
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&numeric_use),
+            &[],
+            &[],
+        )
+        .is_empty());
 
         let mismatched = ParasolidEntity51NumericUse {
             kind: ParasolidEntity51NumericKind::Doubles,
             ..numeric_use.clone()
         };
-        assert!(
-            parasolid_attribute_field_uses(
-                std::slice::from_ref(&class_use),
-                std::slice::from_ref(&definition),
-                &[mismatched],
-                &[],
-                &[],
-            )
-            .is_empty()
-        );
+        assert!(parasolid_attribute_field_uses(
+            std::slice::from_ref(&class_use),
+            std::slice::from_ref(&definition),
+            &[mismatched],
+            &[],
+            &[],
+        )
+        .is_empty());
 
         let ambiguous_string = ParasolidEntity51StringUse {
             reference_ordinal: 5,
             ..string_use
         };
-        assert!(
-            parasolid_attribute_field_uses(
-                std::slice::from_ref(&class_use),
-                std::slice::from_ref(&definition),
-                std::slice::from_ref(&numeric_use),
-                &[ambiguous_string],
-                &[],
-            )
-            .is_empty()
-        );
+        assert!(parasolid_attribute_field_uses(
+            std::slice::from_ref(&class_use),
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&numeric_use),
+            &[ambiguous_string],
+            &[],
+        )
+        .is_empty());
     }
 
     #[test]
@@ -4421,16 +4472,14 @@ mod tests {
             byte_len: 16,
             inflated_offset: 90,
         };
-        assert!(
-            parasolid_entity_51_structured_uses(
-                std::slice::from_ref(&entity),
-                std::slice::from_ref(&point),
-                &[],
-                std::slice::from_ref(&colliding_tag),
-                &[],
-            )
-            .is_empty()
-        );
+        assert!(parasolid_entity_51_structured_uses(
+            std::slice::from_ref(&entity),
+            std::slice::from_ref(&point),
+            &[],
+            std::slice::from_ref(&colliding_tag),
+            &[],
+        )
+        .is_empty());
 
         let other_stream = ParasolidEntityVectorRecord {
             stream_ordinal: 3,
@@ -4684,7 +4733,6 @@ mod tests {
             id: "unicode-29".into(),
             stream_ordinal: 3,
             xmt: 29,
-            code_units: vec![0x03bc],
             value: "μ".into(),
             byte_len: 12,
             inflated_offset: 29,
@@ -4701,45 +4749,39 @@ mod tests {
 
         let mut incomplete = list.clone();
         incomplete.name_xmts.pop();
-        assert!(
-            parasolid_attribute_field_names(
-                std::slice::from_ref(&definition),
-                &[incomplete],
-                &strings,
-                std::slice::from_ref(&unicode),
-            )
-            .is_empty()
-        );
-        assert!(
-            parasolid_attribute_field_names(
-                &[definition.clone(), definition.clone()],
-                std::slice::from_ref(&list),
-                &strings,
-                std::slice::from_ref(&unicode),
-            )
-            .is_empty()
-        );
+        assert!(parasolid_attribute_field_names(
+            std::slice::from_ref(&definition),
+            &[incomplete],
+            &strings,
+            std::slice::from_ref(&unicode),
+        )
+        .is_empty());
+        assert!(parasolid_attribute_field_names(
+            &[definition.clone(), definition.clone()],
+            std::slice::from_ref(&list),
+            &strings,
+            std::slice::from_ref(&unicode),
+        )
+        .is_empty());
 
         let ambiguous = ParasolidEntity62UnicodeRecord {
             xmt: 28,
             ..unicode.clone()
         };
-        assert!(
-            parasolid_attribute_field_names(
-                std::slice::from_ref(&definition),
-                &[ParasolidFieldNamesRecord {
-                    id: "field-names".into(),
-                    stream_ordinal: 3,
-                    xmt: 25,
-                    name_xmts: vec![28, 29, 30],
-                    byte_len: 15,
-                    inflated_offset: 30,
-                }],
-                &strings,
-                &[unicode, ambiguous],
-            )
-            .is_empty()
-        );
+        assert!(parasolid_attribute_field_names(
+            std::slice::from_ref(&definition),
+            &[ParasolidFieldNamesRecord {
+                id: "field-names".into(),
+                stream_ordinal: 3,
+                xmt: 25,
+                name_xmts: vec![28, 29, 30],
+                byte_len: 15,
+                inflated_offset: 30,
+            }],
+            &strings,
+            &[unicode, ambiguous],
+        )
+        .is_empty());
     }
 
     #[test]
@@ -4963,32 +5005,26 @@ mod tests {
         assert_eq!(uses[0].attribute_class_use, instance_uses[0].id);
         assert_eq!(uses[0].definition_xmt, 34);
         assert_eq!(uses[0].attribute_definition, definition.id);
-        assert!(
-            super::parasolid_topology_attribute_class_uses(
-                std::slice::from_ref(&reference),
-                std::slice::from_ref(&entity),
-                &[instance_uses[0].clone(), instance_uses[0].clone()],
-            )
-            .is_empty()
-        );
+        assert!(super::parasolid_topology_attribute_class_uses(
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&entity),
+            &[instance_uses[0].clone(), instance_uses[0].clone()],
+        )
+        .is_empty());
 
         let mut invalid = entity;
         invalid.definition_xmt = 33;
-        assert!(
-            super::parasolid_attribute_class_uses(
-                std::slice::from_ref(&invalid),
-                std::slice::from_ref(&definition),
-            )
-            .is_empty()
-        );
-        assert!(
-            super::parasolid_topology_attribute_class_uses(
-                &[reference],
-                std::slice::from_ref(&invalid),
-                &super::parasolid_attribute_class_uses(&[invalid.clone()], &[definition]),
-            )
-            .is_empty()
-        );
+        assert!(super::parasolid_attribute_class_uses(
+            std::slice::from_ref(&invalid),
+            std::slice::from_ref(&definition),
+        )
+        .is_empty());
+        assert!(super::parasolid_topology_attribute_class_uses(
+            &[reference],
+            std::slice::from_ref(&invalid),
+            &super::parasolid_attribute_class_uses(&[invalid.clone()], &[definition]),
+        )
+        .is_empty());
     }
 
     #[test]

@@ -12,9 +12,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compression::inflate_zlib_member;
-use cadmpeg_core::CodecError;
 use cadmpeg_core::bytes::{contains, find};
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
+use cadmpeg_core::CodecError;
 
 use crate::container::Container;
 use crate::framing::read_and_advance as read_xmt;
@@ -288,9 +288,7 @@ pub struct Entity62UnicodeRecord {
     pub byte_len: usize,
     /// Stream-local record identity.
     pub xmt: u32,
-    /// Ordered big-endian UTF-16 code units.
-    pub code_units: Vec<u16>,
-    /// Exact Unicode scalar string represented by `code_units`.
+    /// Exact Unicode scalar string decoded from the UTF-16 code units.
     pub value: String,
 }
 
@@ -685,7 +683,6 @@ fn append_value_record<'a>(
                     byte_len: end.checked_sub(offset)?,
                     xmt,
                     value: String::from_utf16(&code_units).ok()?,
-                    code_units,
                 });
             }
             _ => return None,
