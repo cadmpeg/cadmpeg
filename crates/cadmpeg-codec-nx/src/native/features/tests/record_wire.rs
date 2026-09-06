@@ -157,3 +157,26 @@ fn surface_branch_counts_are_derived_on_the_wire() {
     let invalid = surface.replace("\"declared_count\":2", "\"declared_count\":3");
     assert!(serde_json::from_str::<super::FeatureSurfaceConstructionBranch>(&invalid).unwrap_err().to_string().contains("declared_count"));
 }
+
+#[test]
+fn swp104_state_wire_preserves_independent_witness_and_absence() {
+    let member = r#"{"ordinal":0,"object_index":1,"raw_object_index":[1],"source_offset":10}"#;
+    let terminal = r#"{"ordinal":1,"object_index":2,"raw_object_index":[2],"source_offset":20}"#;
+    let raw = "[47,164,122,225,71,174,20,123]";
+    for state in [
+        r#""witnessed_count":4,"state_lane":[0,1,1,0,0,0,0]"#,
+        r#""witnessed_count":2,"state_lane":[0,0,0,0,0]"#,
+        r#""state_lane":[0,0,0,0,0]"#,
+    ] {
+        let json = format!(r#"{{"id":"branch","operation_label":"operation","discriminator":33,"scalars":[0.04,0.04,0.04,0.04],"raw_scalars":[{raw},{raw},{raw},{raw}],"leading_zero":false,"mode":35,"declared_count":2,{state},"members":[{member}],"terminal":{terminal},"byte_len":59,"source_offset":200}}"#);
+        let branch: super::FeatureSwp104LeadingBranch = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_string(&branch).unwrap(), json);
+        let invalid = json.replace("\"declared_count\":2", "\"declared_count\":3");
+        assert!(serde_json::from_str::<super::FeatureSwp104LeadingBranch>(&invalid).unwrap_err().to_string().contains("declared_count"));
+        for field in ["discriminator", "mode"] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&json).unwrap();
+            invalid[field] = serde_json::json!(0);
+            assert!(serde_json::from_value::<super::FeatureSwp104LeadingBranch>(invalid).is_err());
+        }
+    }
+}

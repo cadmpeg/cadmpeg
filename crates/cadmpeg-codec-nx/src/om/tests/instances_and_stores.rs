@@ -507,7 +507,7 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
         label,
     };
     let field = super::thru_curve_payload_references(record).expect("complete envelope");
-    assert_eq!(field.discriminator, 0x13);
+    assert_eq!(field.discriminator.get(), 0x13);
     assert_eq!(field.controls, [2, 3, 3, 4, 1, 1, 1, 1, 7]);
     assert_eq!(
         field
@@ -519,7 +519,7 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     );
     assert_eq!(field.references[0].offset, 205);
     assert_eq!(field.references[8].raw_object_index, [0xf1, 0x01, 0x29]);
-    assert_eq!(field.trailing_control, 1);
+    assert_eq!(field.trailing_control.get(), 1);
     assert_eq!(field.trailing_value, [0x5e, 0x38]);
 
     let mut alternate = payload.to_vec();
@@ -533,9 +533,9 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
         ..record
     })
     .expect("alternate controls");
-    assert_eq!(alternate.discriminator, 0x17);
+    assert_eq!(alternate.discriminator.get(), 0x17);
     assert_eq!(alternate.controls, [7, 3, 3, 4, 1, 2, 4, 1, 7]);
-    assert_eq!(alternate.trailing_control, 6);
+    assert_eq!(alternate.trailing_control.get(), 6);
     assert_eq!(alternate.trailing_value, [0x5d, 0xfc]);
 
     let mut malformed = payload.to_vec();
@@ -577,7 +577,7 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     .expect("complete branch group");
     assert_eq!(group.branches.declared_count(), 3);
     assert_eq!(group.branches.len(), 2);
-    assert_eq!(group.branches.as_slice()[0].mode, 0x15);
+    assert_eq!(group.branches.as_slice()[0].mode.get(), 0x15);
     assert_eq!(group.branches.as_slice()[0].members.declared_count(), 2);
     assert_eq!(group.branches.as_slice()[0].state_lane, [0; 5]);
     assert_eq!(group.branches.as_slice()[0].members.as_slice()[0].object_index, 0x31);
@@ -885,14 +885,14 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
         label,
     };
     let branch = super::swp104_payload_leading_branch(record).expect("leading branch");
-    assert_eq!(branch.discriminator, 0x21);
+    assert_eq!(branch.discriminator.get(), 0x21);
     assert_eq!(branch.scalars, [0.04; 4]);
     assert_eq!(branch.raw_scalars, [raw_scalar; 4]);
     assert!(!branch.leading_zero);
-    assert_eq!(branch.mode, 0x23);
+    assert_eq!(branch.mode.get(), 0x23);
     assert_eq!(branch.members.declared_count(), 3);
-    assert_eq!(branch.witnessed_count, Some(4));
-    assert_eq!(branch.state_lane, [0, 1, 1, 0, 0, 0, 0]);
+    assert_eq!(branch.state_lane.witnessed_count(), Some(4));
+    assert_eq!(branch.state_lane.bytes(), [0, 1, 1, 0, 0, 0, 0]);
     assert_eq!(
         branch
             .members
@@ -930,8 +930,8 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
     })
     .expect("unwitnessed leading branch");
     assert!(branch.leading_zero);
-    assert_eq!(branch.witnessed_count, None);
-    assert_eq!(branch.state_lane, [0; 5]);
+    assert_eq!(branch.state_lane.witnessed_count(), None);
+    assert_eq!(branch.state_lane.bytes(), [0; 5]);
 
     unwitnessed[43] = 1;
     assert!(

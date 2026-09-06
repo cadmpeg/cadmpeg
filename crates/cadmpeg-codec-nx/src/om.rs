@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+use std::num::NonZeroU8;
 
 use cadmpeg_core::decode::{alloc_filled, View};
 
@@ -10,6 +11,8 @@ pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 use branch_items::BranchItems;
 pub(crate) mod parameter_name;
+pub(crate) mod swp104_state;
+use swp104_state::Swp104StateLane;
 use discriminators::{
     DraftBinary32Branch, DraftIdentityBranch, OperationStateCounterKind, OperationStatePairTag,
 };
@@ -2288,13 +2291,13 @@ pub struct SurfaceFeaturePayloadReferenceField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThruCurvePayloadReferenceField {
     /// Nonzero construction discriminator at the payload start.
-    pub discriminator: u8,
+    pub discriminator: NonZeroU8,
     /// Exact opaque controls between the two reference groups.
     pub controls: [u8; 9],
     /// Three header references followed by six construction references.
     pub references: [PayloadObjectReference; 9],
     /// Nonzero control byte following the reference groups.
-    pub trailing_control: u8,
+    pub trailing_control: NonZeroU8,
     /// Exact two-byte value selected by the `a0` marker.
     pub trailing_value: [u8; 2],
     /// Absolute offset immediately after the envelope.
@@ -2307,7 +2310,7 @@ pub struct ThruCurvePayloadBranch {
     /// Absolute offset of the branch mode byte.
     pub offset: usize,
     /// Serialized nonzero branch mode.
-    pub mode: u8,
+    pub mode: NonZeroU8,
     /// Exact state lane after the repeated count.
     pub state_lane: Vec<u8>,
     /// Ordered nonterminal references.
@@ -2333,7 +2336,7 @@ pub struct ThruCurvePayloadBranchGroup {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Swp104PayloadLeadingBranch {
     /// Nonzero construction discriminator at the payload start.
-    pub discriminator: u8,
+    pub discriminator: NonZeroU8,
     /// Four finite shifted-binary64 values in serialized order.
     pub scalars: [f64; 4],
     /// Exact shifted-binary64 encodings.
@@ -2341,11 +2344,9 @@ pub struct Swp104PayloadLeadingBranch {
     /// Whether one zero byte precedes the branch mode.
     pub leading_zero: bool,
     /// Serialized nonzero branch mode.
-    pub mode: u8,
-    /// Optional independent count that bounds the state lane.
-    pub witnessed_count: Option<u8>,
+    pub mode: NonZeroU8,
     /// Exact state lane preceding the terminal marker.
-    pub state_lane: Vec<u8>,
+    pub state_lane: Swp104StateLane,
     /// Ordered nonterminal references.
     pub members: BranchItems<PayloadObjectReference>,
     /// Terminal reference.
@@ -4922,8 +4923,7 @@ pub fn thru_curve_payload_references(
 ) -> Option<ThruCurvePayloadReferenceField> {
     const HEADER: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
     (record.label.value == "THRU_CURVE").then_some(())?;
-    let discriminator = *record.payload.first()?;
-    (discriminator != 0).then_some(())?;
+    let discriminator = NonZeroU8::new(*record.payload.first()?)?;
     (record.payload.get(1..1 + HEADER.len()) == Some(&HEADER)).then_some(())?;
 
     let mut at = 1 + HEADER.len();
@@ -4950,8 +4950,7 @@ pub fn thru_curve_payload_references(
         references.push(decode_reference(&mut at)?);
     }
     (*record.payload.get(at)? == 0x04).then_some(())?;
-    let trailing_control = *record.payload.get(at + 1)?;
-    (trailing_control != 0).then_some(())?;
+    let trailing_control = NonZeroU8::new(*record.payload.get(at + 1)?)?;
     (*record.payload.get(at + 2)? == 0xa0).then_some(())?;
     let trailing_value = record.payload.get(at + 3..at + 5)?.try_into().ok()?;
     (record.payload.get(at + 5..at + 7) == Some(&[0x13, 0x01])).then_some(())?;
@@ -4970,8 +4969,7 @@ fn thru_curve_payload_branch(
     record: OperationRecord<'_>,
     at: usize,
 ) -> Option<(ThruCurvePayloadBranch, usize)> {
-    let mode = *record.payload.get(at)?;
-    (mode != 0).then_some(())?;
+    let mode = NonZeroU8::new(*record.payload.get(at)?)?;
     (*record.payload.get(at + 1)? == 0x01).then_some(())?;
     let declared_count @ 2.. = *record.payload.get(at + 2)? else {
         return None;
@@ -5080,8 +5078,7 @@ pub fn swp104_payload_leading_branch(
 ) -> Option<Swp104PayloadLeadingBranch> {
     const HEADER: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
     (record.label.value == "SWP104").then_some(())?;
-    let discriminator = *record.payload.first()?;
-    (discriminator != 0).then_some(())?;
+    let discriminator = NonZeroU8::new(*record.payload.first()?)?;
     (record.payload.get(1..5) == Some(&HEADER)).then_some(())?;
 
     let mut at = 5;
@@ -5095,8 +5092,7 @@ pub fn swp104_payload_leading_branch(
 
     let leading_zero = record.payload.get(at) == Some(&0x00);
     at += usize::from(leading_zero);
-    let mode = *record.payload.get(at)?;
-    (mode != 0).then_some(())?;
+    let mode = NonZeroU8::new(*record.payload.get(at)?)?;
     (*record.payload.get(at + 1)? == 0x01).then_some(())?;
     let declared_count @ 2.. = *record.payload.get(at + 2)? else {
         return None;
@@ -5128,10 +5124,9 @@ pub fn swp104_payload_leading_branch(
     } else {
         5
     };
-    let state_lane = record.payload.get(at..at + state_len)?.to_vec();
-    if witnessed_count.is_none() && !state_lane.iter().all(|&byte| byte == 0) {
-        return None;
-    }
+    let state_lane = Swp104StateLane::from_parts(
+        witnessed_count, record.payload.get(at..at + state_len)?.to_vec(),
+    ).ok()?;
     at += state_len;
     (record.payload.get(at..at + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
     at += 3;
@@ -5152,7 +5147,6 @@ pub fn swp104_payload_leading_branch(
         raw_scalars,
         leading_zero,
         mode,
-        witnessed_count,
         state_lane,
         members: BranchItems::new(members).ok()?,
         terminal,

@@ -10,6 +10,8 @@ use crate::native::om::{
 };
 use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
 use std::borrow::Cow;
+use std::num::NonZeroU8;
+use crate::om::swp104_state::Swp104StateLane;
 use crate::om::branch_items::BranchItems;
 
 pub(crate) mod datum_plane_header;
@@ -4246,11 +4248,11 @@ pub struct FeatureThruCurveConstructionEnvelope {
     /// Owning `THRU_CURVE` operation label.
     pub operation_label: String,
     /// Nonzero construction discriminator.
-    pub discriminator: u8,
+    pub discriminator: NonZeroU8,
     /// Exact opaque controls between the reference groups.
     pub controls: [u8; 9],
     /// Nonzero control following the second reference group.
-    pub trailing_control: u8,
+    pub trailing_control: NonZeroU8,
     /// Exact two-byte value selected by the `a0` marker.
     pub trailing_value: [u8; 2],
     /// Absolute source offset of the discriminator.
@@ -4264,7 +4266,7 @@ pub struct FeatureThruCurveConstructionBranch {
     /// Zero-based branch order.
     pub ordinal: u32,
     /// Serialized nonzero branch mode.
-    pub mode: u8,
+    pub mode: NonZeroU8,
     /// Exact state lane after the repeated count.
     pub state_lane: Vec<u8>,
     /// Ordered nonterminal references.
@@ -4280,7 +4282,7 @@ pub struct FeatureThruCurveConstructionBranch {
 #[derive(Serialize, Deserialize)]
 struct FeatureThruCurveConstructionBranchWire {
     ordinal: u32,
-    mode: u8,
+    mode: NonZeroU8,
     declared_count: u8,
     state_lane: Vec<u8>,
     members: BranchItems<FeatureSurfaceBranchReference>,
@@ -4388,7 +4390,7 @@ pub struct FeatureSwp104LeadingBranch {
     /// Owning `SWP104` operation label.
     pub operation_label: String,
     /// Nonzero construction discriminator.
-    pub discriminator: u8,
+    pub discriminator: NonZeroU8,
     /// Four finite shifted-binary64 values in serialized order.
     pub scalars: [f64; 4],
     /// Exact shifted-binary64 encodings.
@@ -4396,12 +4398,9 @@ pub struct FeatureSwp104LeadingBranch {
     /// Whether one zero byte precedes the branch mode.
     pub leading_zero: bool,
     /// Serialized nonzero branch mode.
-    pub mode: u8,
-    /// Optional independent count that bounds the state lane.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub witnessed_count: Option<u8>,
+    pub mode: NonZeroU8,
     /// Exact state lane preceding the terminal marker.
-    pub state_lane: Vec<u8>,
+    pub state_lane: Swp104StateLane,
     /// Ordered nonterminal references.
     pub members: BranchItems<FeatureSurfaceBranchReference>,
     /// Terminal reference.
@@ -4416,11 +4415,11 @@ pub struct FeatureSwp104LeadingBranch {
 struct FeatureSwp104LeadingBranchWire {
     id: String,
     operation_label: String,
-    discriminator: u8,
+    discriminator: NonZeroU8,
     scalars: [f64; 4],
     raw_scalars: [[u8; 8]; 4],
     leading_zero: bool,
-    mode: u8,
+    mode: NonZeroU8,
     declared_count: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     witnessed_count: Option<u8>,
@@ -4442,8 +4441,8 @@ impl From<FeatureSwp104LeadingBranch> for FeatureSwp104LeadingBranchWire {
             leading_zero: value.leading_zero,
             mode: value.mode,
             declared_count: value.members.declared_count(),
-            witnessed_count: value.witnessed_count,
-            state_lane: value.state_lane,
+            witnessed_count: value.state_lane.witnessed_count(),
+            state_lane: value.state_lane.bytes().to_vec(),
             members: value.members,
             terminal: value.terminal,
             byte_len: value.byte_len,
@@ -4466,8 +4465,7 @@ impl TryFrom<FeatureSwp104LeadingBranchWire> for FeatureSwp104LeadingBranch {
             raw_scalars: wire.raw_scalars,
             leading_zero: wire.leading_zero,
             mode: wire.mode,
-            witnessed_count: wire.witnessed_count,
-            state_lane: wire.state_lane,
+            state_lane: Swp104StateLane::from_parts(wire.witnessed_count, wire.state_lane)?,
             members: wire.members,
             terminal: wire.terminal,
             byte_len: wire.byte_len,
@@ -10895,7 +10893,6 @@ pub fn feature_swp104_leading_branches(container: &Container) -> Vec<FeatureSwp1
                 raw_scalars: branch.raw_scalars,
                 leading_zero: branch.leading_zero,
                 mode: branch.mode,
-                witnessed_count: branch.witnessed_count,
                 state_lane: branch.state_lane,
                 members,
                 terminal,
