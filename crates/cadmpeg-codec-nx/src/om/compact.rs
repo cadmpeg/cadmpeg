@@ -40,9 +40,35 @@ impl CompactIndexAtom {
     }
 }
 
+/// Extended compact index inside a `3d high low 00` word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct LocatedCompactIndex<O = usize> {
-    pub(crate) atom: CompactIndexAtom,
+pub(crate) struct WrappedCompactIndex([u8; 2]);
+
+impl WrappedCompactIndex {
+    pub(crate) fn read(raw: u32) -> Option<Self> {
+        let [marker, high, low, terminal] = raw.to_be_bytes();
+        (marker == 0x3d && terminal == 0 && (0x80..=0xfe).contains(&high))
+            .then_some(Self([high, low]))
+    }
+
+    pub(crate) fn value(self) -> u32 {
+        u32::from(self.0[0] - 0x80) * 256 + u32::from(self.0[1])
+    }
+
+    pub(crate) fn raw(self) -> u32 {
+        0x3d00_0000 | (u32::from(self.0[0]) << 16) | (u32::from(self.0[1]) << 8)
+    }
+
+    pub(crate) fn from_wire(value: u32, raw: u32) -> Result<Self, &'static str> {
+        let atom = Self::read(raw).ok_or("invalid wrapped compact index")?;
+        if atom.value() != value { return Err("index/raw word: value mismatch"); }
+        Ok(atom)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LocatedCompactIndex<O = usize, T = CompactIndexAtom> {
+    pub(crate) atom: T,
     pub(crate) offset: O,
 }
 
@@ -113,6 +139,19 @@ mod tests {
         assert!(CompactIndexAtom::read(&[128]).is_none());
         assert!(CompactIndexAtom::from_wire(2, &[1]).is_err());
         assert!(CompactIndexAtom::from_wire(1, &[1, 0]).is_err());
+    }
+
+    #[test]
+    fn wrapped_compact_atoms_check_the_word_and_derive_the_index() {
+        for (raw, value) in [(0x3d80_0000, 0), (0x3d82_5600, 598), (0x3dfe_ff00, 32511)] {
+            let atom = WrappedCompactIndex::from_wire(value, raw).unwrap();
+            assert_eq!(atom.value(), value);
+            assert_eq!(atom.raw(), raw);
+        }
+        for raw in [0x3c80_0000, 0x3d7f_0000, 0x3dff_0000, 0x3d80_0001] {
+            assert!(WrappedCompactIndex::read(raw).is_none());
+        }
+        assert!(WrappedCompactIndex::from_wire(1, 0x3d80_0000).is_err());
     }
 
     #[test]

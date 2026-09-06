@@ -20,7 +20,7 @@ use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncodin
 use crate::om::branch_items::BranchItems;
 use crate::om::nonempty::NonEmpty;
 use crate::om::reference_index::ReferenceIndexToken;
-use crate::om::compact::CompactIndexAtom;
+use crate::om::compact::{CompactIndexAtom, WrappedCompactIndex};
 use crate::om::sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLaneForm};
 use crate::om::fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 use crate::om::scalar_run::FramedScalarRun;
@@ -5439,7 +5439,7 @@ pub struct FeatureExtrudePayload32Branch {
     pub id: String,
     pub operation_label: String,
     pub scalar: ShiftedBinary64,
-    pub atoms: Vec<FeatureDataBlockToken<u32>>,
+    pub atoms: Vec<ConstructionReference<Option<String>, WrappedCompactIndex>>,
     pub first_indices: Vec<ConstructionReference<Option<String>, CompactIndexAtom>>,
     pub second_indices: Vec<ConstructionReference<Option<String>, CompactIndexAtom>>,
     pub terminal: ReferenceIndexToken,
@@ -5509,8 +5509,8 @@ impl From<FeatureExtrudePayload32Branch> for FeatureExtrudePayload32BranchWire {
             body_object_index: branch.terminal.value(),
             scalar: branch.scalar.value(),
             raw_scalar: branch.scalar.raw(),
-            atom_indices: branch.atoms.iter().map(|token| token.value).collect(),
-            atoms_be: branch.atoms.iter().map(|token| token.raw).collect(),
+            atom_indices: branch.atoms.iter().map(|token| token.token.value()).collect(),
+            atoms_be: branch.atoms.iter().map(|token| token.token.raw()).collect(),
             atom_source_offsets: branch
                 .atoms
                 .iter()
@@ -5606,14 +5606,14 @@ impl TryFrom<FeatureExtrudePayload32BranchWire> for FeatureExtrudePayload32Branc
                 .zip(wire.atom_source_offsets)
                 .zip(wire.atom_data_blocks)
                 .map(
-                    |(((value, raw), source_offset), data_block)| FeatureDataBlockToken {
-                        value,
-                        raw,
+                    |(((value, raw), source_offset), data_block)| Ok(ConstructionReference {
+                        token: WrappedCompactIndex::from_wire(value, raw)
+                            .map_err(|error| format!("atom_indices/atoms_be: {error}"))?,
                         source_offset,
                         data_block,
-                    },
+                    }),
                 )
-                .collect(),
+                .collect::<Result<_, String>>()?,
             first_indices: wire
                 .first_indices
                 .into_iter()
@@ -11437,11 +11437,10 @@ pub fn feature_extrude_payload_32_branches(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 scalar: branch.scalar,
-                atoms: branch.atoms.into_iter().map(|token| FeatureDataBlockToken {
-                    value: token.value,
-                    raw: token.raw,
+                atoms: branch.atoms.into_iter().map(|token| ConstructionReference {
+                    token: token.atom,
                     source_offset: entry_offset + token.offset as u64,
-                    data_block: unique_offset_data_block(&indexed, token.value),
+                    data_block: unique_offset_data_block(&indexed, token.atom.value()),
                 }).collect(),
                 first_indices: branch.first_indices.into_iter().map(|token| ConstructionReference {
                     token: token.atom,

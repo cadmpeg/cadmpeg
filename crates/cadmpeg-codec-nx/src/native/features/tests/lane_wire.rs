@@ -402,6 +402,10 @@ fn draft_and_pattern_runs_reject_payload_gaps_and_empty_atoms() {
 fn extrude_32_branch_rejects_disagreeing_scalar_and_body_copies() {
     let original: serde_json::Value = serde_json::from_str(r#"{"id":"branch","operation_label":"operation","body_object_index":42,"scalar":1.0,"raw_scalar":[47,240,0,0,0,0,0,0],"atoms_be":[1031799040],"atom_source_offsets":[20],"atom_indices":[1],"atom_data_blocks":["block#1"],"first_indices":[2],"raw_first_indices":[[2]],"first_index_source_offsets":[21],"first_data_blocks":[null],"second_indices":[3],"raw_second_indices":[[3]],"second_index_source_offsets":[22],"second_data_blocks":["block#3"],"terminal_object_index":42,"raw_terminal_object_index":[42],"terminal_source_offset":23,"source_offset":20}"#).unwrap();
     for (field, value) in [
+        ("atom_indices", serde_json::json!([2])),
+        ("atoms_be", serde_json::json!([0x3dff_0100u32])),
+        ("atoms_be", serde_json::json!([0x3d80_0101u32])),
+        ("atoms_be", serde_json::json!([0x3c80_0100u32])),
         ("body_object_index", serde_json::json!(43)),
         ("scalar", serde_json::json!(2.0)),
         ("raw_terminal_object_index", serde_json::json!([43])),

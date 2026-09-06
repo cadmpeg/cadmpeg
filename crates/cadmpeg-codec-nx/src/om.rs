@@ -17,7 +17,7 @@ use cadmpeg_core::decode::{alloc_filled, View};
 use crate::printable_string::PrintableString;
 
 pub(crate) mod compact;
-use compact::{LocatedCompactIndex, NullableCompactIndex, CountedIndexMembers};
+use compact::{WrappedCompactIndex, LocatedCompactIndex, NullableCompactIndex, CountedIndexMembers};
 pub(crate) mod color;
 use color::{ColorComponent, PaletteIndex, PALETTE_SIZE, BACKGROUND_NAME};
 pub(crate) mod branch_items;
@@ -2022,7 +2022,7 @@ pub struct ExtrudePayload32Branch {
     /// Finite shifted-IEEE scalar following the branch marker.
     pub scalar: ShiftedBinary64,
     /// Fixed-width wrapped compact indices with their source words and offsets.
-    pub atoms: Vec<LaneToken<u32, u32>>,
+    pub atoms: Vec<LocatedCompactIndex<usize, WrappedCompactIndex>>,
     /// Ordered values in the first compact-index lane.
     pub first_indices: Vec<LocatedCompactIndex>,
     /// Ordered values in the second compact-index lane.
@@ -5390,35 +5390,15 @@ pub fn data_block_object_frames(bytes: &[u8]) -> Vec<DataBlockObjectFrame> {
     references
 }
 
-fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<Vec<LaneToken<u32, u32>>> {
-    if bytes.get(*at) != Some(&0x01) {
-        return None;
-    }
+fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<Vec<LocatedCompactIndex<usize, WrappedCompactIndex>>> {
+    if bytes.get(*at) != Some(&0x01) { return None; }
     let count = usize::from(*bytes.get(*at + 1)?);
-    if count < 2 {
-        return None;
-    }
+    if count < 2 { return None; }
     *at += 2;
-    let values_start = *at;
-    let mut scan_at = values_start;
-    for _ in 1..count {
-        View::u32_be_at(bytes, scan_at)?;
-        scan_at += 4;
-    }
-
     let mut values = Vec::with_capacity(count - 1);
-    *at = values_start;
     for _ in 1..count {
-        let raw = View::u32_be_at(bytes, *at)?;
-        let word = raw.to_be_bytes();
-        if word[0] != 0x3d || word[3] != 0x00 || !(0x80..=0xfe).contains(&word[1]) {
-            return None;
-        }
-        values.push(LaneToken {
-            value: u32::from(word[1] - 0x80) * 256 + u32::from(word[2]),
-            raw,
-            offset: *at,
-        });
+        let atom = WrappedCompactIndex::read(View::u32_be_at(bytes, *at)?)?;
+        values.push(LocatedCompactIndex { atom, offset: *at });
         *at += 4;
     }
     Some(values)

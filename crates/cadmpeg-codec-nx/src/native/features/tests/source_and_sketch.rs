@@ -1426,9 +1426,8 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
         id: "branch".to_string(),
         operation_label: "operation".to_string(),
         scalar: crate::om::scalar::ShiftedBinary64::read(&[0x2f, 0xf0, 0, 0, 0, 0, 0, 0]).unwrap(),
-        atoms: vec![super::FeatureDataBlockToken {
-            value: 1,
-            raw: 0x3d80_0100,
+        atoms: vec![super::ConstructionReference {
+            token: crate::om::compact::WrappedCompactIndex::from_wire(1, 0x3d80_0100).unwrap(),
             source_offset: 20,
             data_block: Some("block#1".to_string()),
         }],

@@ -1301,7 +1301,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
         branch
             .atoms
             .iter()
-            .map(|token| token.raw)
+            .map(|token| token.atom.raw())
             .collect::<Vec<_>>(),
         [0x3d82_5600, 0x3d82_5700]
     );
@@ -1317,7 +1317,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
         branch
             .atoms
             .iter()
-            .map(|token| token.value)
+            .map(|token| token.atom.value())
             .collect::<Vec<_>>(),
         [598, 599]
     );
