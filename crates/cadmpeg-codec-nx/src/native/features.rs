@@ -10,6 +10,7 @@ use crate::native::om::{
 };
 use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
 use std::borrow::Cow;
+use crate::om::branch_items::BranchItems;
 
 pub(crate) mod datum_plane_header;
 mod payload_content;
@@ -4258,17 +4259,16 @@ pub struct FeatureThruCurveConstructionEnvelope {
 
 /// One exact counted branch in a `THRU_CURVE` construction group.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureThruCurveConstructionBranchWire", into = "FeatureThruCurveConstructionBranchWire")]
 pub struct FeatureThruCurveConstructionBranch {
     /// Zero-based branch order.
     pub ordinal: u32,
     /// Serialized nonzero branch mode.
     pub mode: u8,
-    /// Count including the terminal reference.
-    pub declared_count: u8,
     /// Exact state lane after the repeated count.
     pub state_lane: Vec<u8>,
     /// Ordered nonterminal references.
-    pub members: Vec<FeatureSurfaceBranchReference>,
+    pub members: BranchItems<FeatureSurfaceBranchReference>,
     /// Terminal reference.
     pub terminal: FeatureSurfaceBranchReference,
     /// Exact two-byte branch suffix.
@@ -4277,25 +4277,111 @@ pub struct FeatureThruCurveConstructionBranch {
     pub source_offset: u64,
 }
 
+#[derive(Serialize, Deserialize)]
+struct FeatureThruCurveConstructionBranchWire {
+    ordinal: u32,
+    mode: u8,
+    declared_count: u8,
+    state_lane: Vec<u8>,
+    members: BranchItems<FeatureSurfaceBranchReference>,
+    terminal: FeatureSurfaceBranchReference,
+    suffix: [u8; 2],
+    source_offset: u64,
+}
+
+impl From<FeatureThruCurveConstructionBranch> for FeatureThruCurveConstructionBranchWire {
+    fn from(value: FeatureThruCurveConstructionBranch) -> Self {
+        Self {
+            ordinal: value.ordinal,
+            mode: value.mode,
+            declared_count: value.members.declared_count(),
+            state_lane: value.state_lane,
+            members: value.members,
+            terminal: value.terminal,
+            suffix: value.suffix,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureThruCurveConstructionBranchWire> for FeatureThruCurveConstructionBranch {
+    type Error = String;
+    fn try_from(wire: FeatureThruCurveConstructionBranchWire) -> Result<Self, Self::Error> {
+        if wire.declared_count != wire.members.declared_count() {
+            return Err("declared_count must equal members length plus one".to_owned());
+        }
+        Ok(Self {
+            ordinal: wire.ordinal,
+            mode: wire.mode,
+            state_lane: wire.state_lane,
+            members: wire.members,
+            terminal: wire.terminal,
+            suffix: wire.suffix,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+
+
 /// Exact counted branch group after a `THRU_CURVE` construction envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureThruCurveConstructionBranchGroupWire", into = "FeatureThruCurveConstructionBranchGroupWire")]
 pub struct FeatureThruCurveConstructionBranchGroup {
     /// Globally unique branch-group identity.
     pub id: String,
     /// Owning `THRU_CURVE` operation label.
     pub operation_label: String,
-    /// Serialized group count including the implicit owner slot.
-    pub declared_count: u8,
     /// Ordered explicit branches.
-    pub branches: Vec<FeatureThruCurveConstructionBranch>,
+    pub branches: BranchItems<FeatureThruCurveConstructionBranch>,
     /// Exact group terminator selected by the schema generation.
     pub terminator: Vec<u8>,
     /// Absolute source offset of the group count.
     pub source_offset: u64,
 }
 
+#[derive(Serialize, Deserialize)]
+struct FeatureThruCurveConstructionBranchGroupWire {
+    id: String,
+    operation_label: String,
+    declared_count: u8,
+    branches: BranchItems<FeatureThruCurveConstructionBranch>,
+    terminator: Vec<u8>,
+    source_offset: u64,
+}
+
+impl From<FeatureThruCurveConstructionBranchGroup> for FeatureThruCurveConstructionBranchGroupWire {
+    fn from(value: FeatureThruCurveConstructionBranchGroup) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            declared_count: value.branches.declared_count(),
+            branches: value.branches,
+            terminator: value.terminator,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureThruCurveConstructionBranchGroupWire> for FeatureThruCurveConstructionBranchGroup {
+    type Error = String;
+    fn try_from(wire: FeatureThruCurveConstructionBranchGroupWire) -> Result<Self, Self::Error> {
+        if wire.declared_count != wire.branches.declared_count() {
+            return Err("declared_count must equal branches length plus one".to_owned());
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            branches: wire.branches,
+            terminator: wire.terminator,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+
+
 /// Exact leading construction branch in a `SWP104` payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureSwp104LeadingBranchWire", into = "FeatureSwp104LeadingBranchWire")]
 pub struct FeatureSwp104LeadingBranch {
     /// Globally unique leading-branch identity.
     pub id: String,
@@ -4311,15 +4397,13 @@ pub struct FeatureSwp104LeadingBranch {
     pub leading_zero: bool,
     /// Serialized nonzero branch mode.
     pub mode: u8,
-    /// Count including the terminal reference.
-    pub declared_count: u8,
     /// Optional independent count that bounds the state lane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub witnessed_count: Option<u8>,
     /// Exact state lane preceding the terminal marker.
     pub state_lane: Vec<u8>,
     /// Ordered nonterminal references.
-    pub members: Vec<FeatureSurfaceBranchReference>,
+    pub members: BranchItems<FeatureSurfaceBranchReference>,
     /// Terminal reference.
     pub terminal: FeatureSurfaceBranchReference,
     /// Exact byte length through the terminal zero.
@@ -4327,6 +4411,71 @@ pub struct FeatureSwp104LeadingBranch {
     /// Absolute source offset of the discriminator.
     pub source_offset: u64,
 }
+
+#[derive(Serialize, Deserialize)]
+struct FeatureSwp104LeadingBranchWire {
+    id: String,
+    operation_label: String,
+    discriminator: u8,
+    scalars: [f64; 4],
+    raw_scalars: [[u8; 8]; 4],
+    leading_zero: bool,
+    mode: u8,
+    declared_count: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    witnessed_count: Option<u8>,
+    state_lane: Vec<u8>,
+    members: BranchItems<FeatureSurfaceBranchReference>,
+    terminal: FeatureSurfaceBranchReference,
+    byte_len: u64,
+    source_offset: u64,
+}
+
+impl From<FeatureSwp104LeadingBranch> for FeatureSwp104LeadingBranchWire {
+    fn from(value: FeatureSwp104LeadingBranch) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            discriminator: value.discriminator,
+            scalars: value.scalars,
+            raw_scalars: value.raw_scalars,
+            leading_zero: value.leading_zero,
+            mode: value.mode,
+            declared_count: value.members.declared_count(),
+            witnessed_count: value.witnessed_count,
+            state_lane: value.state_lane,
+            members: value.members,
+            terminal: value.terminal,
+            byte_len: value.byte_len,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureSwp104LeadingBranchWire> for FeatureSwp104LeadingBranch {
+    type Error = String;
+    fn try_from(wire: FeatureSwp104LeadingBranchWire) -> Result<Self, Self::Error> {
+        if wire.declared_count != wire.members.declared_count() {
+            return Err("declared_count must equal members length plus one".to_owned());
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            discriminator: wire.discriminator,
+            scalars: wire.scalars,
+            raw_scalars: wire.raw_scalars,
+            leading_zero: wire.leading_zero,
+            mode: wire.mode,
+            witnessed_count: wire.witnessed_count,
+            state_lane: wire.state_lane,
+            members: wire.members,
+            terminal: wire.terminal,
+            byte_len: wire.byte_len,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+
 
 /// Exact logical payload reconstructed from an ordered surface-construction graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4379,6 +4528,7 @@ pub struct FeatureSurfaceBranchReference {
 
 /// One exact counted branch in a bounded surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureSurfaceConstructionBranchWire", into = "FeatureSurfaceConstructionBranchWire")]
 pub struct FeatureSurfaceConstructionBranch {
     /// Globally unique branch identity.
     pub id: String,
@@ -4392,12 +4542,10 @@ pub struct FeatureSurfaceConstructionBranch {
     pub header_code: u8,
     /// Serialized `16` or `40` branch mode.
     pub mode: crate::om::discriminators::SurfaceBranchMode,
-    /// Count including the terminal reference.
-    pub declared_count: u8,
     /// Whether the payload repeats the declared count before its zero lane.
     pub witnessed: bool,
     /// Ordered nonterminal references.
-    pub members: Vec<FeatureSurfaceBranchReference>,
+    pub members: BranchItems<FeatureSurfaceBranchReference>,
     /// Terminal reference.
     pub terminal: FeatureSurfaceBranchReference,
     /// Opaque bytes separating the terminal from the next branch or terminator.
@@ -4405,6 +4553,64 @@ pub struct FeatureSurfaceConstructionBranch {
     /// Absolute file offset of the branch mode byte.
     pub source_offset: u64,
 }
+
+#[derive(Serialize, Deserialize)]
+struct FeatureSurfaceConstructionBranchWire {
+    id: String,
+    operation_label: String,
+    ordinal: u32,
+    family: u8,
+    header_code: u8,
+    mode: crate::om::discriminators::SurfaceBranchMode,
+    declared_count: u8,
+    witnessed: bool,
+    members: BranchItems<FeatureSurfaceBranchReference>,
+    terminal: FeatureSurfaceBranchReference,
+    suffix: Vec<u8>,
+    source_offset: u64,
+}
+
+impl From<FeatureSurfaceConstructionBranch> for FeatureSurfaceConstructionBranchWire {
+    fn from(value: FeatureSurfaceConstructionBranch) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            ordinal: value.ordinal,
+            family: value.family,
+            header_code: value.header_code,
+            mode: value.mode,
+            declared_count: value.members.declared_count(),
+            witnessed: value.witnessed,
+            members: value.members,
+            terminal: value.terminal,
+            suffix: value.suffix,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureSurfaceConstructionBranchWire> for FeatureSurfaceConstructionBranch {
+    type Error = String;
+    fn try_from(wire: FeatureSurfaceConstructionBranchWire) -> Result<Self, Self::Error> {
+        if wire.declared_count != wire.members.declared_count() {
+            return Err("declared_count must equal members length plus one".to_owned());
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            ordinal: wire.ordinal,
+            family: wire.family,
+            header_code: wire.header_code,
+            mode: wire.mode,
+            witnessed: wire.witnessed,
+            members: wire.members,
+            terminal: wire.terminal,
+            suffix: wire.suffix,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+
 
 /// Ordered profile reference carried by a bounded extrusion payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -10632,36 +10838,24 @@ pub fn feature_thru_curve_construction_branch_groups(
                     source_offset: entry_offset + reference.offset as u64,
                 }
             };
-            let branches = group
-                .branches
-                .into_iter()
-                .enumerate()
-                .map(|(ordinal, branch)| {
-                    let members = branch
-                        .members
-                        .into_iter()
-                        .enumerate()
-                        .map(|(ordinal, reference)| resolve(ordinal, reference))
-                        .collect::<Vec<_>>();
+            let branches = group.branches.map_indexed(|ordinal, branch| {
+                    let members = branch.members.map_indexed(&resolve);
                     let terminal = resolve(members.len(), branch.terminal);
                     FeatureThruCurveConstructionBranch {
                         ordinal: ordinal as u32,
                         mode: branch.mode,
-                        declared_count: branch.declared_count,
                         state_lane: branch.state_lane,
                         members,
                         terminal,
                         suffix: branch.suffix,
                         source_offset: entry_offset + branch.offset as u64,
                     }
-                })
-                .collect();
+                });
             groups.push(FeatureThruCurveConstructionBranchGroup {
                 id: format!(
                     "nx:feature-history:thru-curve-construction-branch-group#{operation_key}"
                 ),
                 operation_label: format!("nx:feature-history:operation-label#{operation_key}"),
-                declared_count: group.declared_count,
                 branches,
                 terminator: group.terminator,
                 source_offset: entry_offset + group.offset as u64,
@@ -10691,12 +10885,7 @@ pub fn feature_swp104_leading_branches(container: &Container) -> Vec<FeatureSwp1
                     source_offset: entry_offset + reference.offset as u64,
                 }
             };
-            let members = branch
-                .members
-                .into_iter()
-                .enumerate()
-                .map(|(ordinal, reference)| resolve(ordinal, reference))
-                .collect::<Vec<_>>();
+            let members = branch.members.map_indexed(&resolve);
             let terminal = resolve(members.len(), branch.terminal);
             branches.push(FeatureSwp104LeadingBranch {
                 id: format!("nx:feature-history:swp104-leading-branch#{operation_key}"),
@@ -10706,7 +10895,6 @@ pub fn feature_swp104_leading_branches(container: &Container) -> Vec<FeatureSwp1
                 raw_scalars: branch.raw_scalars,
                 leading_zero: branch.leading_zero,
                 mode: branch.mode,
-                declared_count: branch.declared_count,
                 witnessed_count: branch.witnessed_count,
                 state_lane: branch.state_lane,
                 members,
@@ -10890,12 +11078,7 @@ pub fn feature_surface_construction_branches(
                         source_offset: entry_offset + reference.offset as u64,
                     }
                 };
-                let members = branch
-                    .members
-                    .into_iter()
-                    .enumerate()
-                    .map(|(ordinal, reference)| resolve(ordinal, reference))
-                    .collect::<Vec<_>>();
+                let members = branch.members.map_indexed(&resolve);
                 let terminal = resolve(members.len(), branch.terminal);
                 FeatureSurfaceConstructionBranch {
                     id: format!(
@@ -10906,7 +11089,6 @@ pub fn feature_surface_construction_branches(
                     family: group.family,
                     header_code: group.header_code,
                     mode: branch.mode,
-                    declared_count: branch.declared_count,
                     witnessed: branch.witnessed,
                     members,
                     terminal,

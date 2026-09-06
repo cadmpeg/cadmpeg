@@ -3059,7 +3059,7 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
-            for member in &branch.members {
+            for member in branch.members.as_slice() {
                 source_properties.insert(
                     format!(
                         "surface_construction_branch.{}.member.{}",

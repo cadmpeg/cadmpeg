@@ -575,14 +575,14 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
         ..record
     })
     .expect("complete branch group");
-    assert_eq!(group.declared_count, 3);
+    assert_eq!(group.branches.declared_count(), 3);
     assert_eq!(group.branches.len(), 2);
-    assert_eq!(group.branches[0].mode, 0x15);
-    assert_eq!(group.branches[0].declared_count, 2);
-    assert_eq!(group.branches[0].state_lane, [0; 5]);
-    assert_eq!(group.branches[0].members[0].object_index, 0x31);
-    assert_eq!(group.branches[0].terminal.object_index, 0x32);
-    assert_eq!(group.branches[0].suffix, [0x81, 0x58]);
+    assert_eq!(group.branches.as_slice()[0].mode, 0x15);
+    assert_eq!(group.branches.as_slice()[0].members.declared_count(), 2);
+    assert_eq!(group.branches.as_slice()[0].state_lane, [0; 5]);
+    assert_eq!(group.branches.as_slice()[0].members.as_slice()[0].object_index, 0x31);
+    assert_eq!(group.branches.as_slice()[0].terminal.object_index, 0x32);
+    assert_eq!(group.branches.as_slice()[0].suffix, [0x81, 0x58]);
     assert_eq!(group.terminator, [0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]);
 
     let mut extended = payload[..payload.len() - 1].to_vec();
@@ -599,8 +599,8 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
         ..record
     })
     .expect("extended branch state");
-    assert_eq!(group.branches[0].state_lane.len(), 18);
-    assert_eq!(group.branches[0].members.len(), 4);
+    assert_eq!(group.branches.as_slice()[0].state_lane.len(), 18);
+    assert_eq!(group.branches.as_slice()[0].members.len(), 4);
     assert_eq!(group.terminator, [0, 0, 0, 0, 0, 0, 0xff, 0xff, 1]);
 }
 
@@ -624,17 +624,17 @@ fn om_surface_feature_branches_require_one_complete_counted_group() {
     assert_eq!(group.family, 0x14);
     assert_eq!(group.header_code, 0x13);
     assert_eq!(group.branches.len(), 2);
-    assert_eq!(u8::from(group.branches[0].mode), 0x40);
-    assert_eq!(group.branches[0].declared_count, 4);
-    assert!(group.branches[0].witnessed);
-    assert_eq!(group.branches[0].members.len(), 3);
-    assert_eq!(group.branches[0].terminal.object_index, 7159);
-    assert_eq!(group.branches[0].suffix, [0x81, 0x58, 0x01, 0x02]);
-    assert_eq!(group.branches[1].declared_count, 5);
-    assert!(!group.branches[1].witnessed);
-    assert_eq!(group.branches[1].members.len(), 4);
-    assert_eq!(group.branches[1].terminal.object_index, 7164);
-    assert_eq!(group.branches[1].suffix, [0x81, 0x1c]);
+    assert_eq!(u8::from(group.branches.as_slice()[0].mode), 0x40);
+    assert_eq!(group.branches.as_slice()[0].members.declared_count(), 4);
+    assert!(group.branches.as_slice()[0].witnessed);
+    assert_eq!(group.branches.as_slice()[0].members.len(), 3);
+    assert_eq!(group.branches.as_slice()[0].terminal.object_index, 7159);
+    assert_eq!(group.branches.as_slice()[0].suffix, [0x81, 0x58, 0x01, 0x02]);
+    assert_eq!(group.branches.as_slice()[1].members.declared_count(), 5);
+    assert!(!group.branches.as_slice()[1].witnessed);
+    assert_eq!(group.branches.as_slice()[1].members.len(), 4);
+    assert_eq!(group.branches.as_slice()[1].terminal.object_index, 7164);
+    assert_eq!(group.branches.as_slice()[1].suffix, [0x81, 0x1c]);
 
     let studio_payload = [
         &payload[..payload.len() - 11],
@@ -890,12 +890,13 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
     assert_eq!(branch.raw_scalars, [raw_scalar; 4]);
     assert!(!branch.leading_zero);
     assert_eq!(branch.mode, 0x23);
-    assert_eq!(branch.declared_count, 3);
+    assert_eq!(branch.members.declared_count(), 3);
     assert_eq!(branch.witnessed_count, Some(4));
     assert_eq!(branch.state_lane, [0, 1, 1, 0, 0, 0, 0]);
     assert_eq!(
         branch
             .members
+            .as_slice()
             .iter()
             .map(|reference| reference.object_index)
             .collect::<Vec<_>>(),

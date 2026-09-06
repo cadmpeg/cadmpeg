@@ -6,7 +6,9 @@ use std::sync::Arc;
 
 use cadmpeg_core::decode::{alloc_filled, View};
 
+pub(crate) mod branch_items;
 pub(crate) mod discriminators;
+use branch_items::BranchItems;
 pub(crate) mod parameter_name;
 use discriminators::{
     DraftBinary32Branch, DraftIdentityBranch, OperationStateCounterKind, OperationStatePairTag,
@@ -2306,12 +2308,10 @@ pub struct ThruCurvePayloadBranch {
     pub offset: usize,
     /// Serialized nonzero branch mode.
     pub mode: u8,
-    /// Count including the terminal reference.
-    pub declared_count: u8,
     /// Exact state lane after the repeated count.
     pub state_lane: Vec<u8>,
     /// Ordered nonterminal references.
-    pub members: Vec<PayloadObjectReference>,
+    pub members: BranchItems<PayloadObjectReference>,
     /// Terminal reference.
     pub terminal: PayloadObjectReference,
     /// Exact two-byte branch suffix.
@@ -2323,10 +2323,8 @@ pub struct ThruCurvePayloadBranch {
 pub struct ThruCurvePayloadBranchGroup {
     /// Absolute offset of the serialized group count.
     pub offset: usize,
-    /// Serialized group count including the implicit owner slot.
-    pub declared_count: u8,
     /// Ordered explicit branches.
-    pub branches: Vec<ThruCurvePayloadBranch>,
+    pub branches: BranchItems<ThruCurvePayloadBranch>,
     /// Exact group terminator selected by the schema generation.
     pub terminator: Vec<u8>,
 }
@@ -2344,14 +2342,12 @@ pub struct Swp104PayloadLeadingBranch {
     pub leading_zero: bool,
     /// Serialized nonzero branch mode.
     pub mode: u8,
-    /// Count including the terminal reference.
-    pub declared_count: u8,
     /// Optional independent count that bounds the state lane.
     pub witnessed_count: Option<u8>,
     /// Exact state lane preceding the terminal marker.
     pub state_lane: Vec<u8>,
     /// Ordered nonterminal references.
-    pub members: Vec<PayloadObjectReference>,
+    pub members: BranchItems<PayloadObjectReference>,
     /// Terminal reference.
     pub terminal: PayloadObjectReference,
     /// Absolute offset immediately after the terminal zero.
@@ -2365,12 +2361,10 @@ pub struct SurfaceFeaturePayloadBranch {
     pub offset: usize,
     /// Serialized `16` or `40` branch mode.
     pub mode: discriminators::SurfaceBranchMode,
-    /// Count including the terminal reference.
-    pub declared_count: u8,
     /// Whether the count is repeated before the zero lane.
     pub witnessed: bool,
     /// Ordered nonterminal references.
-    pub members: Vec<PayloadObjectReference>,
+    pub members: BranchItems<PayloadObjectReference>,
     /// Terminal reference.
     pub terminal: PayloadObjectReference,
     /// Opaque bytes separating the terminal from the next branch or terminator.
@@ -5037,9 +5031,8 @@ fn thru_curve_payload_branch(
         ThruCurvePayloadBranch {
             offset: record.payload_offset + at,
             mode,
-            declared_count,
             state_lane,
-            members,
+            members: BranchItems::new(members).ok()?,
             terminal,
             suffix,
         },
@@ -5075,8 +5068,7 @@ pub fn thru_curve_payload_branch_group(
         .to_vec();
     Some(ThruCurvePayloadBranchGroup {
         offset: record.payload_offset + group_offset,
-        declared_count,
-        branches,
+        branches: BranchItems::new(branches).ok()?,
         terminator,
     })
 }
@@ -5160,10 +5152,9 @@ pub fn swp104_payload_leading_branch(
         raw_scalars,
         leading_zero,
         mode,
-        declared_count,
         witnessed_count,
         state_lane,
-        members,
+        members: BranchItems::new(members).ok()?,
         terminal,
         end_offset: record.payload_offset + at,
     })
@@ -5268,11 +5259,11 @@ fn surface_feature_branch_paths(
             object_index,
             raw_object_index: payload[terminal_offset..terminal_offset + terminal_width].to_vec(),
         };
+        let Ok(members) = BranchItems::new(members) else { return Vec::new(); };
         for mut continuation in continuations {
             let branch = SurfaceFeaturePayloadBranch {
                 offset: payload_offset + at,
                 mode,
-                declared_count,
                 witnessed,
                 members: members.clone(),
                 terminal: terminal.clone(),
