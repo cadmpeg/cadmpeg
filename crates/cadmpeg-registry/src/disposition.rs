@@ -117,12 +117,8 @@ impl TryFrom<String> for ReadDisposition {
             "unclassified-recovered" => return Ok(Self::UnclassifiedRecovered),
             _ => {}
         }
-        if let Some(level) = word
-            .strip_prefix('L')
-            .and_then(|rest| rest.parse::<u8>().ok())
-            .and_then(|level| LadderLevel::try_from(level).ok())
-        {
-            return Ok(Self::Level(level));
+        if let [b'L', digit @ b'0'..=b'9'] = word.as_bytes() {
+            return Ok(Self::Level(LadderLevel(*digit - b'0')));
         }
         Err(UnknownDisposition {
             column: Column::Read,
@@ -212,7 +208,9 @@ mod tests {
                 WriteDisposition::try_from(word.to_owned()).expect("a declared word parses");
             assert_eq!(write.to_string(), word);
         }
-        assert!(ReadDisposition::try_from("L10".to_owned()).is_err());
+        for word in ["L10", "L09", "L+9", "L00", "L 9", "L9 "] {
+            assert!(ReadDisposition::try_from(word.to_owned()).is_err(), "{word}");
+        }
         assert!(ReadDisposition::try_from("L".to_owned()).is_err());
         assert!(ReadDisposition::try_from("verified".to_owned()).is_err());
         assert!(WriteDisposition::try_from("L4".to_owned()).is_err());
