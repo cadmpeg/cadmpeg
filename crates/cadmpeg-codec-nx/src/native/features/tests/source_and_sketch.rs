@@ -947,7 +947,7 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
     assert_eq!(references.len(), 1);
     assert!(references[0].data_block.ends_with(":block#2"));
     assert_ne!(references[0].data_block, inputs[0].data_block);
-    assert_eq!(references[0].object_id, 42);
+    assert_eq!(references[0].object.value(), 42);
     assert_eq!(references[0].target_record, None);
 }
 

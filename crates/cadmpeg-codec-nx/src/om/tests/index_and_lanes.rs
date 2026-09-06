@@ -1465,18 +1465,15 @@ fn om_data_block_object_references_require_complete_field_frames() {
         [
             super::DataBlockObjectReference {
                 offset: 2,
-                object_index: 42,
-                raw_object_index: vec![0x2a],
+                object_index: crate::om::reference_index::FeatureReferenceToken::from_wire(42, &[0x2a]).unwrap(),
             },
             super::DataBlockObjectReference {
                 offset: 8,
-                object_index: 201,
-                raw_object_index: vec![0x80, 0xc9],
+                object_index: crate::om::reference_index::FeatureReferenceToken::from_wire(201, &[0x80, 0xc9]).unwrap(),
             },
             super::DataBlockObjectReference {
                 offset: 14,
-                object_index: 6466,
-                raw_object_index: vec![0x90, 0x19, 0x42],
+                object_index: crate::om::reference_index::FeatureReferenceToken::from_wire(6466, &[0x90, 0x19, 0x42]).unwrap(),
             },
         ]
     );

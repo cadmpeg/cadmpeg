@@ -2077,10 +2077,8 @@ pub struct OperationDataBlockReference {
 pub struct DataBlockObjectReference {
     /// Byte offset of the object-index token within the containing byte range.
     pub offset: usize,
-    /// Referenced OM object ID.
-    pub object_index: u32,
-    /// Exact serialized object-index token.
-    pub raw_object_index: Vec<u8>,
+    /// Required feature index with its exact encoding.
+    pub object_index: reference_index::FeatureReferenceToken,
 }
 
 /// Boolean operation kind stored after an operation label.
@@ -6618,10 +6616,11 @@ pub fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReferenc
             continue;
         }
         let token = at + 2;
-        let Some((Some(object_index), end)) = feature_object_index(bytes, token) else {
+        let Some(object_index) = reference_index::FeatureReferenceToken::read(&bytes[token..]) else {
             at += 1;
             continue;
         };
+        let end = token + object_index.raw().len();
         if bytes.get(end..end + 2) != Some(&[0x02, 0x0b]) {
             at += 1;
             continue;
@@ -6629,7 +6628,6 @@ pub fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReferenc
         references.push(DataBlockObjectReference {
             offset: token,
             object_index,
-            raw_object_index: bytes[token..end].to_vec(),
         });
         at = end + 2;
     }

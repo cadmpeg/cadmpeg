@@ -12103,7 +12103,7 @@ pub fn feature_parameter_bindings(
                     .get(expression_declaration.as_str())
                     .and_then(|matches| matches.as_slice().first().filter(|_| matches.len() == 1))
                     .map(|expression| (*expression).to_string()),
-                object_id: reference.object_id,
+                object_id: reference.object.value(),
                 source_offset: reference.source_offset,
             });
         }
