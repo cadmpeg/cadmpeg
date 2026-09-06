@@ -131,10 +131,10 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             crate::records::SketchPointClosure::Selector4State0,
             None,
             0.0,
+            None,
         ),
         paired_reference: 15,
         coordinates: Point2::new(0.0, 0.0),
-        companion: None,
     };
     let text = SketchText {
         id: "f3d:BulkStream.dat:text#20".into(),
@@ -256,10 +256,10 @@ fn point_closure_does_not_mark_construction_geometry() {
             crate::records::SketchPointClosure::Selector4State0,
             None,
             0.0,
+            None,
         ),
         paired_reference: 11,
         coordinates: Point2::new(0.0, 0.0),
-        companion: None,
     };
     let standalone_point = SketchPoint {
         id: "f3d:BulkStream.dat:point#11".into(),
@@ -273,10 +273,10 @@ fn point_closure_does_not_mark_construction_geometry() {
             crate::records::SketchPointClosure::Selector2State1,
             None,
             0.0,
+            None,
         ),
         paired_reference: 12,
         coordinates: Point2::new(2.0, 0.0),
-        companion: None,
     };
     let curve = SketchCurveIdentity {
         id: "f3d:BulkStream.dat:curve#20".into(),
@@ -344,10 +344,10 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             crate::records::SketchPointClosure::Selector0State0,
             None,
             0.0,
+            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(2.5, 4.0),
-        companion: None,
     };
     let line = SketchCurveIdentity {
         id: "f3d:native:curve#217".into(),
@@ -786,10 +786,10 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             crate::records::SketchPointClosure::Selector0State0,
             None,
             4.5,
+            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(2.5, 3.5),
-        companion: None,
     };
     let mut midpoint_relation = relation.clone();
     midpoint_relation.id = "f3d:Design/BulkStream.dat:relation#106".into();

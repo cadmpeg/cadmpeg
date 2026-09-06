@@ -16660,9 +16660,15 @@ impl SketchPointClosure10Inline {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SketchPointRecordForm {
     /// Class version 0: one flag, two coordinates, and no persistent identity.
-    Version0 { flag: bool },
+    Version0 {
+        flag: bool,
+        /// Incident curves of the paired companion, in source order.
+        companion: Option<Vec<u32>>,
+    },
     /// Class version 8: seven flags and an eight-zero closure lane.
     Version8 {
+        /// Incident curves of the paired companion, in source order.
+        companion: Option<Vec<u32>>,
         persistent_id: u64,
         flags: [bool; 7],
         /// Third sketch coordinate in millimetres.
@@ -16670,6 +16676,8 @@ pub enum SketchPointRecordForm {
     },
     /// Class version 10 with same-segment references and seven flags.
     Version10 {
+        /// Incident curves of the paired companion, in source order.
+        companion: Option<Vec<u32>>,
         /// Third sketch coordinate in millimetres.
         depth: f64,
         persistent_id: u64,
@@ -16678,6 +16686,8 @@ pub enum SketchPointRecordForm {
     },
     /// Class version 10 with inline target-type GUIDs on its references.
     Version10InlineTyped {
+        /// Incident curves of the paired companion, in source order.
+        companion: Option<Vec<u32>>,
         /// Third sketch coordinate in millimetres.
         depth: f64,
         /// Final inline-typed reference following the repeated companion reference.
@@ -16688,6 +16698,8 @@ pub enum SketchPointRecordForm {
     },
     /// Class version 11 with same-segment references and eight flags.
     Version11 {
+        /// Paired reverse curve-incidence companion.
+        companion: Option<SketchPointCompanion>,
         /// Third sketch coordinate in millimetres.
         depth: f64,
         /// Optional origin bitfield preceding the persistent identity.
@@ -16700,6 +16712,8 @@ pub enum SketchPointRecordForm {
     },
     /// Class version 11 with inline target-type GUIDs on its references and eight flags.
     Version11InlineTyped {
+        /// Paired reverse curve-incidence companion.
+        companion: Option<SketchPointCompanion>,
         /// Third sketch coordinate in millimetres.
         depth: f64,
         /// Optional origin bitfield preceding the persistent identity.
@@ -16718,8 +16732,10 @@ impl SketchPointRecordForm {
         closure: SketchPointClosure,
         entity_genesis: Option<u64>,
         depth: f64,
+        companion: Option<SketchPointCompanion>,
     ) -> Self {
         Self::Version11 {
+            companion,
             depth,
             entity_genesis,
             padded_paired_reference: false,
@@ -16727,6 +16743,23 @@ impl SketchPointRecordForm {
             flags: [false; 8],
             closure,
         }
+    }
+
+    pub(crate) fn set_companion(&mut self, value: SketchPointCompanion) -> Result<(), String> {
+        match self {
+            Self::Version0 { companion, .. }
+            | Self::Version8 { companion, .. }
+            | Self::Version10 { companion, .. }
+            | Self::Version10InlineTyped { companion, .. } => {
+                if value.prefix_present_zero {
+                    return Err("sketch point companion.prefix_present_zero requires version 11".into());
+                }
+                *companion = Some(value.incident_curves);
+            }
+            Self::Version11 { companion, .. }
+            | Self::Version11InlineTyped { companion, .. } => *companion = Some(value),
+        }
+        Ok(())
     }
 
     pub(crate) fn depth(&self) -> f64 {
@@ -16781,7 +16814,7 @@ impl SketchPointRecordForm {
     pub(crate) fn flags(&self) -> [u8; 8] {
         let mut flags = [0; 8];
         match self {
-            Self::Version0 { flag } => flags[0] = u8::from(*flag),
+            Self::Version0 { flag, .. } => flags[0] = u8::from(*flag),
             Self::Version8 { flags: source, .. }
             | Self::Version10 { flags: source, .. }
             | Self::Version10InlineTyped { flags: source, .. } => {
@@ -16818,18 +16851,30 @@ pub enum SketchPointCompanionReferenceEncoding {
     InlineTyped,
 }
 
-/// Reverse curve-incidence record paired with one sketch point.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+/// Reverse curve-incidence record paired with a version-11 sketch point.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SketchPointCompanion {
     /// Whether the companion prefix carries the fixed present-zero member.
     pub prefix_present_zero: bool,
-    /// Encoding shared by every incident reference and the inverse point reference.
-    #[serde(default)]
-    pub reference_encoding: SketchPointCompanionReferenceEncoding,
     /// Incident sketch-curve record indexes in serialized order.
-    #[serde(default)]
     pub incident_curves: Vec<u32>,
+}
+
+/// Borrowed companion payload with the prefix derived for older point forms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SketchPointCompanionRef<'a> {
+    pub prefix_present_zero: bool,
+    pub incident_curves: &'a [u32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchPointCompanionWire {
+    prefix_present_zero: bool,
+    #[serde(default)]
+    reference_encoding: SketchPointCompanionReferenceEncoding,
+    #[serde(default)]
+    incident_curves: Vec<u32>,
 }
 
 // Serde requires `skip_serializing_if` predicates to borrow the field.
@@ -16863,11 +16908,30 @@ pub struct SketchPoint {
     pub paired_reference: u32,
     /// First two sketch coordinates in millimetres.
     pub coordinates: Point2,
-    /// Typed reverse curve-incidence record named by `paired_reference`.
-    pub companion: Option<SketchPointCompanion>,
 }
 
 impl SketchPoint {
+    pub(crate) fn companion(&self) -> Option<SketchPointCompanionRef<'_>> {
+        match &self.record_form {
+            SketchPointRecordForm::Version0 { companion, .. }
+            | SketchPointRecordForm::Version8 { companion, .. }
+            | SketchPointRecordForm::Version10 { companion, .. }
+            | SketchPointRecordForm::Version10InlineTyped { companion, .. } => {
+                companion.as_deref().map(|incident_curves| SketchPointCompanionRef {
+                    prefix_present_zero: false,
+                    incident_curves,
+                })
+            }
+            SketchPointRecordForm::Version11 { companion, .. }
+            | SketchPointRecordForm::Version11InlineTyped { companion, .. } => {
+                companion.as_ref().map(|companion| SketchPointCompanionRef {
+                    prefix_present_zero: companion.prefix_present_zero,
+                    incident_curves: &companion.incident_curves,
+                })
+            }
+        }
+    }
+
     pub(crate) fn depth(&self) -> f64 {
         self.record_form.depth()
     }
@@ -16939,7 +17003,7 @@ struct SketchPointSerde {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     closure: Option<SketchPointClosureSerde>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    companion: Option<SketchPointCompanion>,
+    companion: Option<SketchPointCompanionWire>,
 }
 
 impl Default for SketchPointRecordFormSerde {
@@ -16980,8 +17044,9 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
         }
         let flags = wire.flags.map(|flag| flag == 1);
         let closure = wire.closure.map(SketchPointClosure::try_from).transpose()?;
-        let record_form = match (wire.record_form, wire.persistent_id, closure) {
+        let mut record_form = match (wire.record_form, wire.persistent_id, closure) {
             (SketchPointRecordFormSerde::Version0, None, None) => SketchPointRecordForm::Version0 {
+                companion: None,
                 flag: flags[0],
             },
             (
@@ -16989,12 +17054,14 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 Some(persistent_id),
                 Some(SketchPointClosure::Selector0State0),
             ) => SketchPointRecordForm::Version8 {
+                companion: None,
                 depth: wire.depth,
                 persistent_id,
                 flags: seven_flags(flags)?,
             },
             (SketchPointRecordFormSerde::Version10, Some(persistent_id), Some(closure)) => {
                 SketchPointRecordForm::Version10 {
+                    companion: None,
                     depth: wire.depth,
                     persistent_id,
                     flags: seven_flags(flags)?,
@@ -17009,6 +17076,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 Some(persistent_id),
                 Some(closure),
             ) => SketchPointRecordForm::Version10InlineTyped {
+                companion: None,
                 depth: wire.depth,
                 trailing_reference,
                 persistent_id,
@@ -17025,6 +17093,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 Some(persistent_id),
                 Some(closure),
             ) => SketchPointRecordForm::Version11 {
+                companion: None,
                 depth: wire.depth,
                 entity_genesis: wire.entity_genesis,
                 padded_paired_reference,
@@ -17037,6 +17106,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 Some(persistent_id),
                 Some(closure),
             ) => SketchPointRecordForm::Version11InlineTyped {
+                companion: None,
                 depth: wire.depth,
                 entity_genesis: wire.entity_genesis,
                 trailing_reference,
@@ -17055,6 +17125,16 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
         {
             return Err("sketch point flags beyond the form width must be zero".into());
         }
+        if let Some(companion) = wire.companion {
+            let inline_typed = companion.reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped;
+            if inline_typed != record_form.uses_inline_typed_references() {
+                return Err("sketch point companion.reference_encoding disagrees with record_form".into());
+            }
+            record_form.set_companion(SketchPointCompanion {
+                prefix_present_zero: companion.prefix_present_zero,
+                incident_curves: companion.incident_curves,
+            })?;
+        }
         Ok(Self {
             id: wire.id,
             record_index: wire.record_index,
@@ -17065,13 +17145,37 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             record_form,
             paired_reference: wire.paired_reference,
             coordinates: wire.coordinates,
-            companion: wire.companion,
         })
     }
 }
 
 impl From<SketchPoint> for SketchPointSerde {
-    fn from(point: SketchPoint) -> Self {
+    fn from(mut point: SketchPoint) -> Self {
+        let reference_encoding = if point.record_form.uses_inline_typed_references() {
+            SketchPointCompanionReferenceEncoding::InlineTyped
+        } else {
+            SketchPointCompanionReferenceEncoding::SameSegment
+        };
+        let companion = match &mut point.record_form {
+            SketchPointRecordForm::Version0 { companion, .. }
+            | SketchPointRecordForm::Version8 { companion, .. }
+            | SketchPointRecordForm::Version10 { companion, .. }
+            | SketchPointRecordForm::Version10InlineTyped { companion, .. } => {
+                companion.take().map(|incident_curves| SketchPointCompanionWire {
+                    prefix_present_zero: false,
+                    reference_encoding,
+                    incident_curves,
+                })
+            }
+            SketchPointRecordForm::Version11 { companion, .. }
+            | SketchPointRecordForm::Version11InlineTyped { companion, .. } => {
+                companion.take().map(|companion| SketchPointCompanionWire {
+                    prefix_present_zero: companion.prefix_present_zero,
+                    reference_encoding,
+                    incident_curves: companion.incident_curves,
+                })
+            }
+        };
         let depth = point.depth();
         let entity_genesis = point.entity_genesis();
         let persistent_id = point.persistent_id();
@@ -17109,7 +17213,7 @@ impl From<SketchPoint> for SketchPointSerde {
             coordinates: point.coordinates,
             depth,
             closure,
-            companion: point.companion,
+            companion,
         }
     }
 }

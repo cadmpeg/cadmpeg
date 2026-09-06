@@ -3,7 +3,7 @@
 
 use crate::records::{
     ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry,
-    SketchPointCompanionReferenceEncoding, SketchPointRecordForm, SketchText,
+    SketchPointRecordForm, SketchText,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -328,7 +328,7 @@ pub(crate) fn encode_design_bulkstream(
             &companion_class_tag,
             point.paired_reference,
             point.record_index,
-            point.companion.as_ref(),
+            point.companion(),
         )?;
     }
     for curve in &native.sketch_curve_identities {
@@ -495,6 +495,7 @@ fn encode_sketch_point(
     })?;
     let SketchPointRecordForm::Version11 {
         padded_paired_reference,
+        companion: _,
         entity_genesis,
         depth,
         persistent_id,
@@ -548,7 +549,7 @@ fn encode_sketch_point_companion(
     class_tag: &str,
     record_index: u32,
     point_record_index: u32,
-    companion: Option<&crate::records::SketchPointCompanion>,
+    companion: Option<crate::records::SketchPointCompanionRef<'_>>,
 ) -> Result<(), CodecError> {
     let companion = companion.ok_or_else(|| {
         CodecError::malformed(format_args!(
@@ -556,12 +557,7 @@ fn encode_sketch_point_companion(
         ))
     })?;
     let prefix_present_zero = companion.prefix_present_zero;
-    if companion.reference_encoding != SketchPointCompanionReferenceEncoding::SameSegment {
-        return Err(CodecError::NotImplemented(
-            "source-less sketch point companions require same-segment references".into(),
-        ));
-    }
-    let incident_curves = companion.incident_curves.as_slice();
+    let incident_curves = companion.incident_curves;
     let count = u32::try_from(incident_curves.len()).map_err(|_| {
         CodecError::Malformed("source-less sketch point companion exceeds u32::MAX curves".into())
     })?;

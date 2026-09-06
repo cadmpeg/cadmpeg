@@ -3417,6 +3417,31 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
         }
         let point: SketchPoint = serde_json::from_value(base.clone()).expect("omitted zero flags");
         assert_eq!(serde_json::to_value(point).unwrap(), base);
+        for reference_encoding in ["same_segment", "inline_typed"] {
+            for prefix_present_zero in [false, true] {
+                let mut wire = base.clone();
+                wire["companion"] = json!({
+                    "prefix_present_zero": prefix_present_zero,
+                    "reference_encoding": reference_encoding,
+                    "incident_curves": [7, 2]
+                });
+                let decoded = serde_json::from_value::<SketchPoint>(wire.clone());
+                let expected_inline = base["record_form"]["kind"].as_str().unwrap().ends_with("inline_typed");
+                if expected_inline != (reference_encoding == "inline_typed") {
+                    let error = decoded.unwrap_err();
+                    assert!(error.to_string().contains("reference_encoding"), "{error}");
+                } else if prefix_present_zero && count != 8 {
+                    let error = decoded.unwrap_err();
+                    assert!(error.to_string().contains("prefix_present_zero"), "{error}");
+                } else {
+                    let point = decoded.expect("companion matches point form");
+                    let companion = point.companion().expect("present companion");
+                    assert_eq!(companion.prefix_present_zero, prefix_present_zero);
+                    assert_eq!(companion.incident_curves, [7, 2]);
+                    assert_eq!(serde_json::to_value(point).unwrap(), wire);
+                }
+            }
+        }
         for depth in [-7.5, 2.5] {
             let mut wire = base.clone();
             wire["depth"] = json!(depth);

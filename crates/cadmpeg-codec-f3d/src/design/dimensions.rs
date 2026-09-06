@@ -1546,10 +1546,10 @@ pub(crate) fn preceding_incident_angular_dimension_definition(
     for point in points.iter().filter(|point| {
         native_stream(&point.id) == Some(scope) && point.byte_offset < parameter.byte_offset
     }) {
-        let Some(companion) = point.companion.as_ref() else {
+        let Some(companion) = point.companion() else {
             continue;
         };
-        let [first_record, second_record] = companion.incident_curves.as_slice() else {
+        let [first_record, second_record] = companion.incident_curves else {
             continue;
         };
         if first_record == second_record {

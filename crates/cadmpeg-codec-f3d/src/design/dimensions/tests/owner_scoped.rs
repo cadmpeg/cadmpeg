@@ -347,14 +347,13 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
             crate::records::SketchPointClosure::Selector0State0,
             None,
             0.0,
+            Some(crate::records::SketchPointCompanion {
+                prefix_present_zero: false,
+                incident_curves,
+            }),
         ),
         paired_reference: 0,
         coordinates: Point2::new(0.0, 0.0),
-        companion: Some(crate::records::SketchPointCompanion {
-            prefix_present_zero: false,
-            reference_encoding: Default::default(),
-            incident_curves,
-        }),
     };
     let points = vec![point(20, 30, vec![10, 11]), point(21, 130, vec![12, 13])];
     let entity = |record_index, angle: f64| {

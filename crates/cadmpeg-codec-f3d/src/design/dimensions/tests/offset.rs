@@ -768,10 +768,10 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
             crate::records::SketchPointClosure::Selector0State0,
             None,
             0.0,
+            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(0.0, 0.0),
-        companion: None,
     };
     let mut points = vec![
         point("A", 20),

@@ -203,16 +203,16 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
             crate::records::SketchPointClosure::Selector0State0,
             Some(2),
             0.0,
+            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(120.0, 30.0),
-        companion: None,
     };
     let mut identityless_point = point.clone();
     identityless_point.id = "f3d:native:sketch-point#1".into();
     identityless_point.record_index = 21;
     identityless_point.coordinate_offset = 33;
-    identityless_point.record_form = crate::records::SketchPointRecordForm::Version0 { flag: false };
+    identityless_point.record_form = crate::records::SketchPointRecordForm::Version0 { flag: false, companion: None };
 
     // The `EntityGenesis`-flavor frame stores its origin in centimetres
     // while the sketch records carry ten-times-centimetre values; the
@@ -768,10 +768,10 @@ fn sketch_member_run_backfills_relation_free_owners() {
             crate::records::SketchPointClosure::Selector0State0,
             Some(2),
             0.0,
+            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(0.0, 0.0),
-        companion: None,
     };
 
     // Relation-free geometry named by the container's member run binds to

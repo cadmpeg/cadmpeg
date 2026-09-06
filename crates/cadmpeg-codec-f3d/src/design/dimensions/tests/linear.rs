@@ -813,10 +813,10 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             crate::records::SketchPointClosure::Selector0State0,
             None,
             0.0,
+            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(0.0, y),
-        companion: None,
     };
     let points = [point(40, 0.0), point(41, 2.0)];
     let sketch = neutral_sketch_id(&placement);

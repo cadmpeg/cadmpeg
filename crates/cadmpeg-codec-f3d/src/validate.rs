@@ -8134,7 +8134,7 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 entity: Some(point.id.clone()),
             });
         }
-        let companion_curves_unique = point.companion.as_ref().is_none_or(|companion| {
+        let companion_curves_unique = point.companion().is_none_or(|companion| {
             companion
                 .incident_curves
                 .iter()
@@ -8142,22 +8142,8 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .len()
                 == companion.incident_curves.len()
         });
-        let companion_form_valid = point.companion.as_ref().is_some_and(|companion| {
-            let expected_encoding = if point.record_form.uses_inline_typed_references() {
-                crate::records::SketchPointCompanionReferenceEncoding::InlineTyped
-            } else {
-                crate::records::SketchPointCompanionReferenceEncoding::SameSegment
-            };
-            companion.reference_encoding == expected_encoding
-                && (!companion.prefix_present_zero
-                    || matches!(
-                        point.record_form,
-                        crate::records::SketchPointRecordForm::Version11 { .. }
-                            | crate::records::SketchPointRecordForm::Version11InlineTyped { .. }
-                    ))
-        });
         let identity_form_valid = point.persistent_id().is_none_or(|persistent_id| persistent_id != 0);
-        if !companion_curves_unique || !companion_form_valid || !identity_form_valid
+        if !companion_curves_unique || point.companion().is_none() || !identity_form_valid
         {
             findings.push(Finding {
                 check: Check::NativeLinks,

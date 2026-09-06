@@ -859,10 +859,10 @@ fn counted_angular_group_projects_unique_point_selected_line() {
             crate::records::SketchPointClosure::Selector0State0,
             None,
             0.0,
+            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(0.0, 0.0),
-        companion: None,
     };
     let curve = |record_index: u32, start: Point2, end: Point2| {
         let delta_u = end.u - start.u;

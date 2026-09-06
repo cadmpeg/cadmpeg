@@ -501,14 +501,13 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             crate::records::SketchPointClosure::Selector0State1,
             Some(900),
             0.0,
+            Some(crate::records::SketchPointCompanion {
+                prefix_present_zero: false,
+                incident_curves: Vec::new(),
+            }),
         ),
         paired_reference: 101,
         coordinates: Point2::new(12.5, -25.0),
-        companion: Some(crate::records::SketchPointCompanion {
-            prefix_present_zero: false,
-            reference_encoding: crate::records::SketchPointCompanionReferenceEncoding::SameSegment,
-            incident_curves: Vec::new(),
-        }),
     }];
     native.sketch_curve_identities = vec![
         SketchCurveIdentity {
@@ -730,11 +729,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         Some(crate::records::SketchPointClosure::Selector0State1)
     );
     assert_eq!(
-        native.sketch_points[0].companion,
-        Some(crate::records::SketchPointCompanion {
+        native.sketch_points[0].companion(),
+        Some(crate::records::SketchPointCompanionRef {
             prefix_present_zero: false,
-            reference_encoding: crate::records::SketchPointCompanionReferenceEncoding::SameSegment,
-            incident_curves: Vec::new(),
+            incident_curves: &[],
         })
     );
     assert_eq!(
@@ -810,12 +808,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             persistent_id,
             flags: [true, false, false, true, false, true, false, true],
             closure: crate::records::SketchPointClosure::Selector4State0,
+            companion: Some(crate::records::SketchPointCompanion {
+                prefix_present_zero: true,
+                incident_curves: vec![600],
+            }),
         };
-        point.companion = Some(crate::records::SketchPointCompanion {
-            prefix_present_zero: true,
-            reference_encoding: crate::records::SketchPointCompanionReferenceEncoding::SameSegment,
-            incident_curves: vec![600],
-        });
     }
     let mut extended_encoded = Vec::new();
     F3dCodec
@@ -840,11 +837,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         Some(crate::records::SketchPointClosure::Selector4State0)
     );
     assert_eq!(
-        extended_point.companion,
-        Some(crate::records::SketchPointCompanion {
+        extended_point.companion(),
+        Some(crate::records::SketchPointCompanionRef {
             prefix_present_zero: true,
-            reference_encoding: crate::records::SketchPointCompanionReferenceEncoding::SameSegment,
-            incident_curves: vec![600],
+            incident_curves: &[600],
         })
     );
     assert!(crate::validate::validate_native(extended_round_trip.ir()).is_empty());
