@@ -690,3 +690,24 @@ fn multi_instance_groups_preserve_interleaving_and_reject_invalid_ordinals() {
     let error = serde_json::from_value::<FeatureMultiInstanceOutputLane>(incomplete).unwrap_err();
     assert!(error.to_string().contains("trailing_object_indices"));
 }
+
+#[test]
+fn draft_terminal_lane_rejects_detached_second_index_and_frame_overflow() {
+    let json = r#"{"id":"lane","operation_label":"operation","indices":[128,129],"raw_indices":[[128,128],[128,129]],"tail":[1,2,3],"index_source_offsets":[100,102],"source_offset":100}"#;
+    for offsets in [[100, 101], [100, 103], [100, u64::MAX]] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["index_source_offsets"] = serde_json::json!(offsets);
+        let error = serde_json::from_value::<FeatureDraftConstructionTerminalLane>(wire).unwrap_err();
+        assert!(error.to_string().contains("index_source_offsets"));
+    }
+    let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+    let origin = u64::MAX - 19;
+    wire["source_offset"] = serde_json::json!(origin);
+    wire["index_source_offsets"] = serde_json::json!([origin, origin + 2]);
+    let lane: FeatureDraftConstructionTerminalLane = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(lane).unwrap(), wire);
+    wire["source_offset"] = serde_json::json!(origin + 1);
+    wire["index_source_offsets"] = serde_json::json!([origin + 1, origin + 3]);
+    let error = serde_json::from_value::<FeatureDraftConstructionTerminalLane>(wire).unwrap_err();
+    assert!(error.to_string().contains("source_offset"));
+}

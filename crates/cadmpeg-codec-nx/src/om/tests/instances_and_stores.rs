@@ -284,11 +284,11 @@ fn om_draft_feature_references_require_one_complete_graph() {
             .collect::<Vec<_>>(),
         vec![vec![0x80, 0x94], vec![0x82, 0x49]]
     );
-    let terminal_lane = super::draft_feature_terminal_lane(record).expect("complete terminal lane");
-    assert_eq!(terminal_lane.indices.map(|token| token.atom.value()), [350, 184]);
-    assert_eq!(terminal_lane.indices.map(|token| *token.atom.raw()), [[0x81, 0x5e], [0x80, 0xb8]]);
-    assert_eq!(terminal_lane.indices.map(|token| token.offset), [284, 286]);
-    assert_eq!(terminal_lane.tail, [0x29, 0x29, 0x0c]);
+    let terminal_lane = crate::om::draft_terminal::scan(record).expect("complete terminal lane");
+    assert_eq!(terminal_lane.indices().map(|token| token.atom.value()), [350, 184]);
+    assert_eq!(terminal_lane.indices().map(|token| *token.atom.raw()), [[0x81, 0x5e], [0x80, 0xb8]]);
+    assert_eq!(terminal_lane.indices().map(|token| token.offset), [284, 286]);
+    assert_eq!(terminal_lane.tail(), [0x29, 0x29, 0x0c]);
 
     let mut malformed = payload.clone();
     malformed[53] = 0x00;
@@ -311,7 +311,7 @@ fn om_draft_feature_references_require_one_complete_graph() {
         super::draft_feature_payload_references(crate::om::operation_record::OperationPayload::new(&payload[..prefix.len() + graph.len() - 2], record.payload_offset(), record.name()).unwrap())
         .is_none()
     );
-    assert!(super::draft_feature_terminal_lane(crate::om::operation_record::OperationPayload::new(&payload[..payload.len() - 1], record.payload_offset(), record.name()).unwrap())
+    assert!(crate::om::draft_terminal::scan(crate::om::operation_record::OperationPayload::new(&payload[..payload.len() - 1], record.payload_offset(), record.name()).unwrap())
     .is_none());
 }
 

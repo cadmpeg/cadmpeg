@@ -7,6 +7,7 @@ pub(crate) mod reference_value;
 use reference_value::{DirectReference, LocatedReference, RecordReference, Tagged28};
 
 pub(crate) mod draft_identity;
+pub(crate) mod draft_terminal;
 pub(crate) mod plane_descriptor;
 pub(crate) mod csys_descriptor;
 pub(crate) mod reference_index;
@@ -1064,15 +1065,6 @@ pub struct DraftFeaturePayloadReferenceField {
 pub struct DraftFeatureLeadingIndexLane {
     /// Non-null compact indices in serialized order with absolute token offsets.
     pub indices: CountedIndexMembers<LocatedCompactIndex, 1>,
-}
-
-/// End-anchored compact-index lane in a draft-feature payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DraftFeatureTerminalLane<O = usize> {
-    /// Two exact two-byte compact indices and their source offsets.
-    pub indices: [LocatedCompactIndex<O, compact::ExtendedCompactIndex>; 2],
-    /// Three uninterpreted bytes preceding the terminal zero.
-    pub tail: [u8; 3],
 }
 
 /// Exact common construction references in a surface-feature payload.
@@ -2969,31 +2961,6 @@ pub fn draft_feature_leading_index_lane(
 
     Some(DraftFeatureLeadingIndexLane {
         indices: CountedIndexMembers::new(indices).ok()?,
-    })
-}
-
-/// Decode the complete end-anchored terminal lane in a bounded `DRAFT` payload.
-pub fn draft_feature_terminal_lane(
-    record: OperationPayload<'_>,
-) -> Option<DraftFeatureTerminalLane> {
-    const FIXED: [u8; 11] = [
-        0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00,
-    ];
-    if record.name() != "DRAFT" {
-        return None;
-    }
-    let start = record.payload().len().checked_sub(4 + FIXED.len() + 4)?;
-    let first = compact::ExtendedCompactIndex::read(record.payload().get(start..)?)?;
-    let second = compact::ExtendedCompactIndex::read(record.payload().get(start + 2..)?)?;
-    let at = start + 4;
-    (record.payload().get(at..at + FIXED.len()) == Some(&FIXED)).then_some(())?;
-    let at = at + FIXED.len();
-    let tail = record.payload().get(at..at + 3)?.try_into().ok()?;
-    (record.payload().get(at + 3) == Some(&0x00)).then_some(())?;
-    Some(DraftFeatureTerminalLane {
-        indices: [LocatedCompactIndex { atom: first, offset: record.payload_offset() + start },
-            LocatedCompactIndex { atom: second, offset: record.payload_offset() + start + 2 }],
-        tail,
     })
 }
 
