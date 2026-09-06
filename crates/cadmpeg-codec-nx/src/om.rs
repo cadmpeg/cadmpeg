@@ -12,6 +12,8 @@ pub(crate) mod discriminators;
 use branch_items::BranchItems;
 pub(crate) mod parameter_name;
 pub(crate) mod swp104_state;
+pub(crate) mod thru_curve_endings;
+use thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
 use swp104_state::Swp104StateLane;
 use discriminators::{
     DraftBinary32Branch, DraftIdentityBranch, OperationStateCounterKind, OperationStatePairTag,
@@ -2318,7 +2320,7 @@ pub struct ThruCurvePayloadBranch {
     /// Terminal reference.
     pub terminal: PayloadObjectReference,
     /// Exact two-byte branch suffix.
-    pub suffix: [u8; 2],
+    pub suffix: ThruCurveBranchSuffix,
 }
 
 /// Exact counted branch group after a `THRU_CURVE` reference envelope.
@@ -2329,7 +2331,7 @@ pub struct ThruCurvePayloadBranchGroup {
     /// Ordered explicit branches.
     pub branches: BranchItems<ThruCurvePayloadBranch>,
     /// Exact group terminator selected by the schema generation.
-    pub terminator: Vec<u8>,
+    pub terminator: ThruCurveGroupTerminator,
 }
 
 /// Exact leading construction branch in a `SWP104` payload.
@@ -5022,8 +5024,8 @@ fn thru_curve_payload_branch(
     (*record.payload.get(cursor)? == 0x00).then_some(())?;
     cursor += 1;
     let suffix: [u8; 2] = record.payload.get(cursor..cursor + 2)?.try_into().ok()?;
-    (suffix[0] == 0x81 && matches!(suffix[1], 0x48 | 0x58)).then_some(())?;
-    cursor += suffix.len();
+    let suffix = ThruCurveBranchSuffix::try_from(suffix).ok()?;
+    cursor += 2;
 
     Some((
         ThruCurvePayloadBranch {
@@ -5043,10 +5045,6 @@ fn thru_curve_payload_branch(
 pub fn thru_curve_payload_branch_group(
     record: OperationRecord<'_>,
 ) -> Option<ThruCurvePayloadBranchGroup> {
-    const TERMINATORS: [&[u8]; 2] = [
-        &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0x00, 0xff, 0x01],
-        &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01],
-    ];
     let envelope = thru_curve_payload_references(record)?;
     let mut at = envelope.end_offset.checked_sub(record.payload_offset)?;
     let group_offset = at;
@@ -5060,10 +5058,9 @@ pub fn thru_curve_payload_branch_group(
         branches.push(branch);
         at = next;
     }
-    let terminator = TERMINATORS
+    let terminator = ThruCurveGroupTerminator::ALL
         .into_iter()
-        .find(|terminator| record.payload.get(at..at + terminator.len()) == Some(*terminator))?
-        .to_vec();
+        .find(|terminator| record.payload.get(at..at + terminator.bytes().len()) == Some(terminator.bytes()))?;
     Some(ThruCurvePayloadBranchGroup {
         offset: record.payload_offset + group_offset,
         branches: BranchItems::new(branches).ok()?,

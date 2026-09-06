@@ -582,8 +582,8 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     assert_eq!(group.branches.as_slice()[0].state_lane, [0; 5]);
     assert_eq!(group.branches.as_slice()[0].members.as_slice()[0].object_index, 0x31);
     assert_eq!(group.branches.as_slice()[0].terminal.object_index, 0x32);
-    assert_eq!(group.branches.as_slice()[0].suffix, [0x81, 0x58]);
-    assert_eq!(group.terminator, [0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]);
+    assert_eq!(<[u8; 2]>::from(group.branches.as_slice()[0].suffix), [0x81, 0x58]);
+    assert_eq!(group.terminator.bytes(), &[0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]);
 
     let mut extended = payload[..payload.len() - 1].to_vec();
     extended.extend([2, 0x2f, 1, 5]);
@@ -601,7 +601,7 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     .expect("extended branch state");
     assert_eq!(group.branches.as_slice()[0].state_lane.len(), 18);
     assert_eq!(group.branches.as_slice()[0].members.len(), 4);
-    assert_eq!(group.terminator, [0, 0, 0, 0, 0, 0, 0xff, 0xff, 1]);
+    assert_eq!(group.terminator.bytes(), &[0, 0, 0, 0, 0, 0, 0xff, 0xff, 1]);
 }
 
 #[test]

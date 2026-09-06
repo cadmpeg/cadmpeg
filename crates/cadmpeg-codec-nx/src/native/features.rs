@@ -13,6 +13,7 @@ use std::borrow::Cow;
 use std::num::NonZeroU8;
 use crate::om::swp104_state::Swp104StateLane;
 use crate::om::branch_items::BranchItems;
+use crate::om::thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
 
 pub(crate) mod datum_plane_header;
 mod payload_content;
@@ -4274,7 +4275,7 @@ pub struct FeatureThruCurveConstructionBranch {
     /// Terminal reference.
     pub terminal: FeatureSurfaceBranchReference,
     /// Exact two-byte branch suffix.
-    pub suffix: [u8; 2],
+    pub suffix: ThruCurveBranchSuffix,
     /// Absolute source offset of the mode byte.
     pub source_offset: u64,
 }
@@ -4287,7 +4288,7 @@ struct FeatureThruCurveConstructionBranchWire {
     state_lane: Vec<u8>,
     members: BranchItems<FeatureSurfaceBranchReference>,
     terminal: FeatureSurfaceBranchReference,
-    suffix: [u8; 2],
+    suffix: ThruCurveBranchSuffix,
     source_offset: u64,
 }
 
@@ -4336,7 +4337,7 @@ pub struct FeatureThruCurveConstructionBranchGroup {
     /// Ordered explicit branches.
     pub branches: BranchItems<FeatureThruCurveConstructionBranch>,
     /// Exact group terminator selected by the schema generation.
-    pub terminator: Vec<u8>,
+    pub terminator: ThruCurveGroupTerminator,
     /// Absolute source offset of the group count.
     pub source_offset: u64,
 }
@@ -4347,7 +4348,7 @@ struct FeatureThruCurveConstructionBranchGroupWire {
     operation_label: String,
     declared_count: u8,
     branches: BranchItems<FeatureThruCurveConstructionBranch>,
-    terminator: Vec<u8>,
+    terminator: ThruCurveGroupTerminator,
     source_offset: u64,
 }
 
