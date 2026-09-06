@@ -2,12 +2,12 @@
 //! Pattern construction records and extraction.
 
 use crate::om::branch_items::BranchItems;
+use crate::om::counted_pattern_references::CountedPatternReferences;
 use crate::om::pattern_references::{PatternPayloadReferenceLayout, PatternReferences};
 use crate::om::reference_index::PayloadIndexToken;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-use super::reference::ConstructionReference;
 use crate::container::Container;
 
 use super::joined_payload::JoinedPayload;
@@ -30,7 +30,6 @@ use crate::om::pattern::PatternScalarEncoding;
 use crate::om::pattern::PatternTerminal;
 use crate::om::pattern::PatternValue;
 use crate::om::pattern::PatternWideValues;
-use crate::om::reference_index::ReferenceIndexToken;
 use crate::om::scalar::ShiftedBinary64;
 use crate::om::scalar::ShiftedScalar;
 use crate::printable_string::PrintableString;
@@ -72,8 +71,7 @@ pub struct FeaturePatternReference {
 pub struct FeaturePatternCountedReferenceLane {
     pub id: String,
     pub operation_label: String,
-    pub references: Vec<ConstructionReference<Option<String>>>,
-    pub source_offset: u64,
+    pub references: CountedPatternReferences<Option<String>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -102,27 +100,27 @@ impl From<FeaturePatternCountedReferenceLane> for FeaturePatternCountedReference
         Self {
             id: value.id,
             operation_label: value.operation_label,
-            declared_count: value.references.len() + 1,
-            source_offset: value.source_offset,
+            declared_count: usize::from(value.references.declared_count()),
+            source_offset: value.references.offset(),
             object_indices: value
                 .references
                 .iter()
-                .map(|reference| reference.token.value())
+                .map(|(_, token, _)| token.value())
                 .collect(),
             raw_object_indices: value
                 .references
                 .iter()
-                .map(|reference| reference.token.raw().to_vec())
+                .map(|(_, token, _)| token.raw().to_vec())
                 .collect(),
             data_blocks: value
                 .references
                 .iter()
-                .map(|reference| reference.data_block.clone())
+                .map(|(_, _, target)| target.clone())
                 .collect(),
             object_index_source_offsets: value
                 .references
                 .iter()
-                .map(|reference| reference.source_offset)
+                .map(|(offset, _, _)| offset)
                 .collect(),
         }
     }
@@ -143,26 +141,34 @@ impl TryFrom<FeaturePatternCountedReferenceLaneWire> for FeaturePatternCountedRe
         {
             return Err("object_indices, raw_object_indices, data_blocks, and object_index_source_offsets must have equal lengths".into());
         }
+        let entries = wire
+            .object_indices
+            .into_iter()
+            .zip(wire.raw_object_indices)
+            .zip(wire.data_blocks)
+            .map(|((value, raw), target)| {
+                let token = PayloadIndexToken::from_wire(value, &raw)
+                    .map_err(|error| format!("object_indices/raw_object_indices: {error}"))?;
+                Ok((token, target))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let references = CountedPatternReferences::new(
+            wire.source_offset,
+            BranchItems::new(entries).map_err(|error| format!("declared_count: {error}"))?,
+        )?;
+        if references
+            .iter()
+            .map(|(offset, _, _)| offset)
+            .ne(wire.object_index_source_offsets)
+        {
+            return Err(
+                "object_index_source_offsets: must follow the counted reference frame".into(),
+            );
+        }
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            source_offset: wire.source_offset,
-            references: wire
-                .object_indices
-                .into_iter()
-                .zip(wire.raw_object_indices)
-                .zip(wire.data_blocks)
-                .zip(wire.object_index_source_offsets)
-                .map(|(((value, raw), data_block), source_offset)| {
-                    Ok(ConstructionReference {
-                        token: ReferenceIndexToken::from_wire(value, &raw).map_err(|error| {
-                            format!("object_indices/raw_object_indices: {error}")
-                        })?,
-                        data_block,
-                        source_offset,
-                    })
-                })
-                .collect::<Result<_, String>>()?,
+            references,
         })
     }
 }
@@ -953,9 +959,12 @@ pub fn feature_pattern_counted_reference_lanes(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) =
-                crate::om::pattern_payload_counted_reference_lane(record.payload_view())
-            else {
+            let Some(lane) = CountedPatternReferences::read(record.payload_view()) else {
+                return;
+            };
+            let Ok(references) = lane.resolve(entry_offset, |token| {
+                unique_offset_data_block(&indexed, token.value())
+            }) else {
                 return;
             };
             lanes.push(FeaturePatternCountedReferenceLane {
@@ -965,12 +974,7 @@ pub fn feature_pattern_counted_reference_lanes(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                references: lane.references.into_iter().map(|reference| ConstructionReference {
-                    token: reference.token,
-                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
-                    source_offset: entry_offset + reference.offset as u64,
-                }).collect(),
-                source_offset: entry_offset + lane.offset as u64,
+                references,
             });
         },
     );

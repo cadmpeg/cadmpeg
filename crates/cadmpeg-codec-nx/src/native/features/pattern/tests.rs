@@ -203,3 +203,36 @@ fn multi_instance_groups_preserve_interleaving_and_reject_invalid_ordinals() {
     let error = serde_json::from_value::<FeatureMultiInstanceOutputLane>(incomplete).unwrap_err();
     assert!(error.to_string().contains("trailing_object_indices"));
 }
+
+#[test]
+fn pattern_counted_references_require_nonempty_framed_payload_tokens() {
+    let json = r#"{"id":"lane","operation_label":"operation","declared_count":3,"object_indices":[1,258],"raw_object_indices":[[240,1],[241,1,2]],"data_blocks":[null,"block"],"source_offset":18,"object_index_source_offsets":[20,22]}"#;
+    let lane: super::FeaturePatternCountedReferenceLane = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+    for (field, value) in [
+        ("object_index_source_offsets", serde_json::json!([20, 23])),
+        ("source_offset", serde_json::json!(u64::MAX)),
+        ("raw_object_indices", serde_json::json!([[1], [241, 1, 2]])),
+    ] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire[field] = value;
+        let error = serde_json::from_value::<super::FeaturePatternCountedReferenceLane>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(field), "{error}");
+    }
+    let mut empty: serde_json::Value = serde_json::from_str(json).unwrap();
+    empty["declared_count"] = serde_json::json!(1);
+    for field in [
+        "object_indices",
+        "raw_object_indices",
+        "data_blocks",
+        "object_index_source_offsets",
+    ] {
+        empty[field] = serde_json::json!([]);
+    }
+    let error = serde_json::from_value::<super::FeaturePatternCountedReferenceLane>(empty)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("declared_count"), "{error}");
+}

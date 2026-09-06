@@ -81,6 +81,7 @@ use state_message::OperationStateMessage;
 use state_tagged_value::StateTaggedValue;
 pub(crate) mod projected_references;
 pub(crate) mod pattern_references;
+pub(crate) mod counted_pattern_references;
 pub(crate) mod pattern;
 use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWideValues};
 pub(crate) mod scalar;
@@ -668,15 +669,6 @@ pub struct PayloadObjectReference<T = ReferenceIndexToken, O = usize> {
     pub offset: O,
     /// Checked token retaining the exact marker and width.
     pub token: T,
-}
-
-/// Exact counted non-null reference lane in a `Pattern Feature` payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PatternPayloadCountedReferenceLane {
-    /// Absolute offset of the opening `01, count` field.
-    pub offset: usize,
-    /// Ordered non-null object references after the count.
-    pub references: Vec<PayloadObjectReference>,
 }
 
 /// Exact two-group reference graph in an `FSET` payload.
@@ -1902,56 +1894,6 @@ pub fn sketch_payload_references(record: OperationPayload<'_>) -> Option<SketchR
 fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {
     let token = ReferenceIndexToken::read_payload(bytes)?;
     Some((token, token.raw().len()))
-}
-
-/// Decode the unique exactly terminated counted reference lane in a bounded
-/// `Pattern Feature` payload without assigning its reference roles.
-pub fn pattern_payload_counted_reference_lane(
-    record: OperationPayload<'_>,
-) -> Option<PatternPayloadCountedReferenceLane> {
-    const TRAILER: [u8; 19] = [
-        0x00, 0x00, 0x00, 0x37, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x38, 0xff, 0x01, 0xff, 0xff,
-        0xff, 0xff, 0x01, 0xff,
-    ];
-    if record.name() != "Pattern Feature" {
-        return None;
-    }
-    let decode = |start: usize| {
-        (record.payload().get(start) == Some(&0x01)).then_some(())?;
-        let declared_count = *record.payload().get(start + 1)?;
-        (declared_count >= 2).then_some(())?;
-        let reference_count = usize::from(declared_count - 1);
-        let references_start = start.checked_add(2)?;
-        cadmpeg_core::decode::bounded_len(
-            u64::from(declared_count - 1),
-            2,
-            record.payload().len().saturating_sub(references_start),
-        )?;
-        let mut scan_at = references_start;
-        for _ in 0..reference_count {
-            let (_, width) = payload_object_index(record.payload().get(scan_at..)?)?;
-            scan_at = scan_at.checked_add(width)?;
-        }
-        let trailer_end = scan_at.checked_add(TRAILER.len())?;
-        (record.payload().get(scan_at..trailer_end) == Some(&TRAILER)).then_some(())?;
-
-        let mut at = references_start;
-        let mut references = Vec::with_capacity(reference_count);
-        for _ in 0..reference_count {
-            let offset = at;
-            let (object_index, width) = payload_object_index(record.payload().get(offset..)?)?;
-            at = at.checked_add(width)?;
-            references.push(PayloadObjectReference {
-                offset: record.payload_offset() + offset,
-                token: object_index,
-            });
-        }
-        Some(PatternPayloadCountedReferenceLane {
-            offset: record.payload_offset() + start,
-            references,
-        })
-    };
-    unique_candidate((0..record.payload().len()).filter_map(decode))
 }
 
 /// Decode the unique exactly bounded two-group reference graph in an `FSET`

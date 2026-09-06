@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::om::counted_pattern_references::CountedPatternReferences;
 use crate::om::operation_record::OperationPayload;
 
 #[test]
@@ -17,20 +17,18 @@ fn om_pattern_counted_reference_lane_requires_exact_terminator() {
     payload.extend_from_slice(&TRAILER);
     let payload_offset = 200;
     let record = OperationPayload::new(&payload, payload_offset, "Pattern Feature").unwrap();
-    let lane = pattern_payload_counted_reference_lane(record).expect("complete lane");
-    assert_eq!(lane.offset, payload_offset + 1);
-    assert_eq!(lane.references.len() + 1, 4);
+    let lane = CountedPatternReferences::read(record).expect("complete lane");
+    assert_eq!(lane.offset(), (payload_offset + 1) as u64);
+    assert_eq!(usize::from(lane.declared_count()), 4);
     assert_eq!(
-        lane.references
-            .iter()
-            .map(|reference| reference.token.value())
+        lane.iter()
+            .map(|(_, token, ())| token.value())
             .collect::<Vec<_>>(),
         [0x06b1, 0x06b2, 0x06b3]
     );
     assert_eq!(
-        lane.references
-            .iter()
-            .map(|reference| reference.token.raw().to_vec())
+        lane.iter()
+            .map(|(_, token, ())| token.raw().to_vec())
             .collect::<Vec<_>>(),
         references
             .iter()
@@ -40,12 +38,12 @@ fn om_pattern_counted_reference_lane_requires_exact_terminator() {
 
     let mut malformed = payload.clone();
     malformed.pop();
-    assert!(pattern_payload_counted_reference_lane(
+    assert!(CountedPatternReferences::read(
         OperationPayload::new(&malformed, record.payload_offset(), record.name()).unwrap()
     )
     .is_none());
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(pattern_payload_counted_reference_lane(
+    assert!(CountedPatternReferences::read(
         OperationPayload::new(&ambiguous, record.payload_offset(), record.name()).unwrap()
     )
     .is_none());
