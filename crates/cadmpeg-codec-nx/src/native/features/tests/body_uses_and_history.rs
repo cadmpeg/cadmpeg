@@ -933,24 +933,6 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
 }
 
 #[test]
-fn operation_common_frame_types_the_parasolid_modification_field() {
-    let mut state = [0; 8];
-    assert_eq!(operation_modifies_parasolid_data(state), Some(false));
-    state[4] = 1;
-    assert_eq!(operation_modifies_parasolid_data(state), Some(true));
-    state[4] = 2;
-    assert_eq!(operation_modifies_parasolid_data(state), None);
-}
-
-#[test]
-fn operation_common_frame_retains_the_split_tracking_data_field() {
-    assert_eq!(
-        operation_split_tracking_data([1, 2, 3, 0, 1, 0x56, 0xa9, 7]),
-        [0x56, 0xa9]
-    );
-}
-
-#[test]
 fn operation_history_reverses_source_order_within_each_section() {
     let label = |section: &str, ordinal, value: &str| super::FeatureOperationLabel {
         id: format!("{section}-{ordinal}"),
@@ -1056,16 +1038,6 @@ fn operation_history_uses_serialized_offsets_for_section_and_member_order() {
 }
 
 #[test]
-fn operation_common_frame_types_the_legacy_inactive_modules_field() {
-    let mut state = [0; 8];
-    assert_eq!(operation_legacy_inactive_modules(state), Some(false));
-    state[3] = 1;
-    assert_eq!(operation_legacy_inactive_modules(state), Some(true));
-    state[3] = 2;
-    assert_eq!(operation_legacy_inactive_modules(state), None);
-}
-
-#[test]
 fn decoded_operation_frames_resolve_unique_offset_store_targets() {
     let input_slots: &'static [u8] = &[1, 0xff, 0xff, 0xff];
     let common_and_terminal = vec![
@@ -1090,18 +1062,19 @@ fn decoded_operation_frames_resolve_unique_offset_store_targets() {
         .arena_as::<super::FeatureOperationCommonFrame>("feature_operation_common_frames")
         .expect("required invariant");
     assert_eq!(common_frames.len(), 1);
-    assert_eq!(common_frames[0].object_index, Some(65));
+    assert_eq!(common_frames[0].frame.suffix().object_index(), Some(65));
     assert_eq!(
-        common_frames[0].data_block.as_deref(),
+        common_frames[0].frame.suffix().target().and_then(Option::as_deref),
         Some("nx:om-data-blocks-0:block#65")
     );
     let terminal_frames = namespace
         .arena_as::<super::FeatureOperationTerminalFrame>("feature_operation_terminal_frames")
         .expect("required invariant");
     assert_eq!(terminal_frames.len(), 1);
-    assert_eq!(terminal_frames[0].object_index, Some(65));
+    assert_eq!(terminal_frames[0].frame.suffix().object_index(), Some(65));
     assert_eq!(
-        terminal_frames[0].data_block.as_deref(),
+        terminal_frames[0].frame.suffix().target().and_then(Option::as_deref),
         Some("nx:om-data-blocks-0:block#65")
     );
 }
+
