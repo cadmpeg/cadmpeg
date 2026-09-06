@@ -2987,7 +2987,7 @@ reason = "unresolved hole and flex forms retain only payloads owned by their sel
 [[change]]
 commit = "1d633c3e6490d1b6355ec7e4ed22fdaa985558ae"
 crate = "cadmpeg-ir"
-kind = "struct"
+kind = "signature"
 item = "cadmpeg_ir::features::ScaleFactors"
 reason = "ScaleFactors is an enum whose variants represent exactly one unresolved, uniform, or complete per-axis construction"
 
@@ -3029,7 +3029,7 @@ reason = "LoopBoundary structurally selects one unanchored singular vertex or a 
 [[change]]
 commit = "fcf223bcba1a4cb426cf42a945469e2ec81c2601"
 crate = "cadmpeg-ir"
-kind = "struct"
+kind = "signature"
 item = "cadmpeg_ir::topology::VertexUse"
 reason = "AnchoredVertexUse cannot omit its preceding coedge, while LoopBoundary::Vertex carries the only unanchored occurrence"
 
@@ -3153,25 +3153,11 @@ item = "cadmpeg_ir::geometry::LoftProfileMember::{type_code,data}"
 reason = "LoftMemberForm makes the type-selected support and pcurve-pair payloads mutually exclusive"
 
 [[change]]
-commit = "5291e86da36d42fc77c34c08427a368230eaf0ba"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::geometry::LoftMemberForm"
-reason = "the enum owns the discriminator and exactly the fields serialized by each loft member form"
-
-[[change]]
 commit = "5fff27b303e24a926b60dcf6acf931c51bc4323f"
 crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring"
 reason = "SpringLayout owns either context-first replacement ranges or a cache-first support context, and the carrier enums pair every absent support with its required range"
-
-[[change]]
-commit = "5fff27b303e24a926b60dcf6acf931c51bc4323f"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::geometry::{SpringLayout,SpringSupport,SpringPcurve}"
-reason = "the new types make spring layout and null-carrier replacement-range invariants structural"
 
 [[change]]
 commit = "c6eaac086daf92a0dc5b488ca64e7bb2425949c9"
@@ -3209,25 +3195,11 @@ item = "cadmpeg_ir::sketches::{SketchPatternDirection::count,SketchPatternInstan
 reason = "pattern dimensions and instance indices are derived from checked collection positions"
 
 [[change]]
-commit = "9032d94522abdf23b01366b9d4d63e0d7a03d6bb"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::sketches::{SketchRectangularPattern,SketchCircularPattern}"
-reason = "private fields and checked constructors enforce non-empty fixed-arity positional patterns"
-
-[[change]]
 commit = "270dc540c4034074f7facc9024bc7ce337c560a2"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::sketches::{SketchConstraintDefinition::Offset,SpatialSketchConstraintDefinition::Offset}"
 reason = "one optional OffsetParameter now carries the driving id and its sign together"
-
-[[change]]
-commit = "270dc540c4034074f7facc9024bc7ce337c560a2"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::sketches::OffsetParameter"
-reason = "the boolean sign representation restricts the legacy parameter_factor field to minus or plus one"
 
 [[change]]
 commit = "160c59efd93be06d9587e424f1473da0fbe6715e"
@@ -3244,25 +3216,11 @@ item = "cadmpeg_ir::sketches::SketchGeometry::Text"
 reason = "one optional TextPlacement replaces the independently optional anchor and rotation"
 
 [[change]]
-commit = "6577bd73b0de6d7a97080e9d5631f0aa7a1658e9"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::sketches::TextPlacement"
-reason = "the text anchor and rotation are constructed and transformed as one placement"
-
-[[change]]
 commit = "3a5706aa6d57bf472758b5e204bb3ea0714b33e9"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::sketches::SketchPatternDirection"
 reason = "one optional typed distance parameter replaces mutually exclusive spacing and span options"
-
-[[change]]
-commit = "3a5706aa6d57bf472758b5e204bb3ea0714b33e9"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::sketches::SketchPatternDistance"
-reason = "the distance-form variant owns the only parameter meaningful for that form"
 
 [[change]]
 commit = "85e5e334173159b5c9b8d1bf1fa0aebbf5e0f436"
@@ -3284,13 +3242,6 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::sketches::SketchSolverScalar"
 reason = "a closed SolverScalarClass replaces the unrestricted variable_type integer while preserving its numeric wire field"
-
-[[change]]
-commit = "ea7aae5232889264edcbfaf6588e2614623a4f51"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::sketches::SolverScalarClass"
-reason = "the three admitted Creo solver scalar classes are the only constructible values"
 
 [[change]]
 commit = "fadfe112d768c6e12f8842d88ffb1e9081b5a36b"
@@ -3372,7 +3323,7 @@ reason = "the carrier variant owns its optional solved cache so the construction
 [[change]]
 commit = "4b56c1c3a90733ce942ffba4735b5ab92a7a7bf8"
 crate = "cadmpeg-ir"
-kind = "struct"
+kind = "signature"
 item = "cadmpeg_ir::geometry::LoftSubdata"
 reason = "type 211 and ordinary rectangular loft tables are distinct enum variants with checked payloads"
 
@@ -3407,7 +3358,7 @@ reason = "the edge-law curve and its optional revision endpoints are one LoftPat
 [[change]]
 commit = "f275e21e438286673b59c3154835fc332435610f"
 crate = "cadmpeg-ir"
-kind = "struct"
+kind = "signature"
 item = "cadmpeg_ir::geometry::LawFormula"
 reason = "the null law sentinel and named formula payloads are distinct enum variants"
 
@@ -3421,7 +3372,7 @@ reason = "a checked LawFormulaName and variant payload prevent a null law from c
 [[change]]
 commit = "f275e21e438286673b59c3154835fc332435610f"
 crate = "cadmpeg-asm"
-kind = "struct"
+kind = "signature"
 item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula"
 reason = "the ASM parser now represents null and named law formulas as distinct variants"
 
@@ -3484,7 +3435,7 @@ reason = "native thread geometry moved to HoleConstruction::NativeThread so it c
 [[change]]
 commit = "cbe1c6041fee07dc19ae570d3829fc15796971c2"
 crate = "cadmpeg-ir"
-kind = "struct"
+kind = "signature"
 item = "cadmpeg_ir::features::HoleSpecification"
 reason = "clearance and threaded specifications are enum variants that carry only their applicable fit or thread geometry fields"
 
@@ -3505,23 +3456,9 @@ reason = "tree ownership is derived from TreeNode child lists and non-tree regen
 [[change]]
 commit = "fe1668784e9c444bb092b6b074502bf0d57f7255"
 crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::document::Model::{feature_parent,feature_tree_parent,set_feature_regeneration_parent}"
-reason = "callers obtain parent relationships from their single owning representation"
-
-[[change]]
-commit = "fe1668784e9c444bb092b6b074502bf0d57f7255"
-crate = "cadmpeg-ir"
-kind = "struct"
+kind = "field"
 item = "cadmpeg_ir::document::Model"
 reason = "private regeneration ancestry prevents callers from constructing a parent relation that contradicts TreeNode child ownership"
-
-[[change]]
-commit = "8a3943e2064990cb2a514969fd85d13f52a95afe"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::features::BooleanKind"
-reason = "boolean carriers that require an existing target accept only join, cut, or intersect operations"
 
 [[change]]
 commit = "8a3943e2064990cb2a514969fd85d13f52a95afe"
@@ -3561,22 +3498,22 @@ reason = "the unknown-form state is a unit variant and cannot carry an independe
 [[change]]
 commit = "139381644f1ea1e3a6043bff1bbd4bcd735fd9ea"
 crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::features::RadiusSpec::{UnresolvedConstant,UnresolvedChordal,UnresolvedAsymmetric,UnresolvedVariable,is_unresolved}"
+kind = "variant"
+item = "cadmpeg_ir::features::RadiusSpec::{UnresolvedConstant,UnresolvedChordal,UnresolvedAsymmetric,UnresolvedVariable}"
 reason = "known radius-law forms without dimensions are represented directly by the radius enum"
 
 [[change]]
 commit = "139381644f1ea1e3a6043bff1bbd4bcd735fd9ea"
 crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::features::ChamferSpec::{UnresolvedDistance,UnresolvedTwoDistances,UnresolvedDistanceAngle,is_unresolved}"
+kind = "variant"
+item = "cadmpeg_ir::features::ChamferSpec::{UnresolvedDistance,UnresolvedTwoDistances,UnresolvedDistanceAngle}"
 reason = "known chamfer forms without dimensions are represented directly by the chamfer enum"
 
 [[change]]
 commit = "139381644f1ea1e3a6043bff1bbd4bcd735fd9ea"
 crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::features::PatternKind::{UnresolvedLinear,UnresolvedCircular,UnresolvedCurveDriven,UnresolvedMirror,UnresolvedScale,UnresolvedComposite,is_unresolved}"
+kind = "variant"
+item = "cadmpeg_ir::features::PatternKind::{UnresolvedLinear,UnresolvedCircular,UnresolvedCurveDriven,UnresolvedMirror,UnresolvedScale,UnresolvedComposite}"
 reason = "known pattern forms without operands are represented directly by the pattern enum"
 
 [[change]]
@@ -3585,13 +3522,6 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::features::ExtrusionFaceMaker"
 reason = "the face-maker class now determines its persisted mode and cannot disagree with it"
-
-[[change]]
-commit = "8439be785085e49515ef735474e9975a9433842b"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::features::FaceMaker"
-reason = "known FreeCAD face-maker classes are typed and extension class names are non-empty by construction"
 
 [[change]]
 commit = "8439be785085e49515ef735474e9975a9433842b"
@@ -3617,13 +3547,6 @@ reason = "independent optional revolution inputs allowed complete and incomplete
 [[change]]
 commit = "4300f93ef240dbe0366e0650d52286830b9badcf"
 crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::features::{RevolveConstruction,PartialRevolveConstruction}"
-reason = "resolved revolutions carry all required inputs while incomplete decoded records use an opaque partial state"
-
-[[change]]
-commit = "4300f93ef240dbe0366e0650d52286830b9badcf"
-crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::features::FeatureDefinition::Revolve::construction"
 reason = "the revolution construction discriminant now proves whether every required input is present"
@@ -3631,16 +3554,9 @@ reason = "the revolution construction discriminant now proves whether every requ
 [[change]]
 commit = "4300f93ef240dbe0366e0650d52286830b9badcf"
 crate = "cadmpeg-ir"
-kind = "struct"
+kind = "trait_impl"
 item = "cadmpeg_ir::features::RevolutionAxis"
 reason = "the axis owns its optional native reference and is no longer Copy"
-
-[[change]]
-commit = "4300f93ef240dbe0366e0650d52286830b9badcf"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::features::RevolveConstruction::{new,is_resolved,profile,profile_mut,set_profile,axis,axis_mut,set_axis,extent,extent_mut,set_extent,solid,set_solid,face_maker,fuse_order,allow_multi_profile_faces}"
-reason = "checked construction and mutation preserve the resolved or partial revolution state"
 
 [[change]]
 commit = "2d9478befe21368ec890a6e770b8f6a0a686e79b"
@@ -3680,7 +3596,7 @@ reason = "a face-backed datum reference carries only the face identity whose geo
 [[change]]
 commit = "b5b4fbda3685f41b4438ee19cef4adf2afff4069"
 crate = "cadmpeg-ir"
-kind = "addition"
+kind = "variant"
 item = "cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane"
 reason = "a datum reference without a face identity carries one resolved support frame"
 
@@ -3701,7 +3617,7 @@ reason = "source-native attributes have one owner in Feature::source_properties 
 [[change]]
 commit = "dd180c86358b0449c9b4456c98bfc321824b0dae"
 crate = "cadmpeg-ir"
-kind = "struct"
+kind = "signature"
 item = "cadmpeg_ir::report::LossKind"
 reason = "shared and codec-local losses are distinct variants, and codec-local fields are private behind an invariant-bearing payload"
 
@@ -3785,7 +3701,7 @@ reason = "the surface-curve family now owns its support context and its family-s
 [[change]]
 commit = "e219ed8b59c6f707cee2a418d87573bb74a0c743"
 crate = "cadmpeg-ir"
-kind = "enum"
+kind = "variant"
 item = "cadmpeg_ir::geometry::SurfaceCurveFamily"
 reason = "each family variant carries the exact flag shape admitted by that native surface-curve form"
 
@@ -3813,7 +3729,7 @@ reason = "layout selection takes the family discriminant because the invariant-b
 [[change]]
 commit = "02270c20ec5bfe2de7b15d151ec01e61af92ab1c"
 crate = "cadmpeg-ir"
-kind = "enum"
+kind = "signature"
 item = "cadmpeg_ir::geometry::RollingBallRadiusSelector"
 reason = "the selector is generic over the native explicit-value lane so both floating and integer blend layouts use one absence-bearing enum"
 
@@ -5682,7 +5598,7 @@ reason = "IR-85: derive the direct scaled-compound-loft selector from its direct
 [[change]]
 commit = "cfdb2c942ba3ee77186ddbce9ec7acd44cf4404a"
 crate = "cadmpeg-ir"
-kind = "method"
+kind = "deletion"
 item = "cadmpeg_ir::products::PairedJointKind::with_scalars"
 reason = "IR-85: remove the untyped scalar setter that silently discarded fields unsupported by the family; producers construct the typed variant directly."
 
