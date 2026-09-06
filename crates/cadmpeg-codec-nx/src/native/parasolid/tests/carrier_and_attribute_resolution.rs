@@ -463,10 +463,10 @@ fn decode_resolves_intersection_second_support_through_blend_bound() {
         .arena_as::<super::super::ParasolidBlendBoundRecord>("parasolid_blend_bound_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].header_references, [1; 5]);
-    assert!(records[0].sense);
-    assert_eq!(records[0].boundary_index, 0);
-    assert_eq!(records[0].blend_surface_xmt, 13);
+    assert_eq!(records[0].state.header_references(), [1; 5]);
+    assert!(records[0].state.sense());
+    assert_eq!(records[0].state.boundary_index(), 0);
+    assert_eq!(records[0].state.blend_surface(), 13);
     assert_eq!(
         records[0].framing,
         crate::intersection::BlendBoundFraming::PartitionDirect

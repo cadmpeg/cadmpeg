@@ -1322,16 +1322,8 @@ pub struct ParasolidBlendBoundRecord {
     pub id: String,
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
-    /// Cross-reference index of the bridge.
-    pub xmt: u32,
-    /// Five ordered common-header references.
-    pub header_references: [u32; 5],
-    /// Serialized orientation sense.
-    pub sense: bool,
-    /// Zero- or one-valued blend boundary index.
-    pub boundary_index: u32,
-    /// Cross-reference index of the blend surface.
-    pub blend_surface_xmt: u32,
+    #[serde(flatten)]
+    pub state: crate::intersection::blend_bound_state::BlendBoundState,
     /// Serialized partition/deltas and direct/escaped framing.
     pub framing: crate::intersection::BlendBoundFraming,
     /// Record tag offset in the inflated stream.
@@ -1351,17 +1343,13 @@ impl ParasolidScanRecords for ParasolidBlendBoundRecord {
         crate::intersection::blend_bounds(bytes)
     }
     fn xmt(row: &Self::Row) -> u32 {
-        row.xmt
+        row.state.xmt()
     }
     fn record(id: String, stream_ordinal: u32, row: Self::Row) -> Self::Record {
         ParasolidBlendBoundRecord {
             id,
             stream_ordinal,
-            xmt: row.xmt,
-            header_references: row.header_references,
-            sense: row.sense,
-            boundary_index: row.boundary_index,
-            blend_surface_xmt: row.blend_surface,
+            state: row.state,
             framing: row.framing,
             inflated_offset: row.pos as u64,
         }

@@ -3395,9 +3395,9 @@ fn consume_intersection_auxiliary(stream: &[u8], offset: usize) -> Option<Record
     } else if let Some((term, end)) = crate::intersection::term_use_at(stream, offset) {
         (41, term.xmt, Vec::new(), end)
     } else if let Some((bound, end)) = crate::intersection::blend_bound_at(stream, offset) {
-        let mut references = bound.header_references.to_vec();
-        references.extend([bound.boundary_index, bound.blend_surface]);
-        (59, bound.xmt, references, end)
+        let mut references = bound.state.header_references().to_vec();
+        references.extend([bound.state.boundary_index(), bound.state.blend_surface()]);
+        (59, bound.state.xmt(), references, end)
     } else {
         let (support_uv, end) = crate::intersection::support_uv_record_at(stream, offset)?;
         (204, support_uv.xmt, Vec::new(), end)
