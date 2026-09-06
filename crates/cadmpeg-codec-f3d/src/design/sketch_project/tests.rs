@@ -482,7 +482,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     members.push(SketchRelationMember {
         reference: crate::records::SketchRelationReference::Index(175),
         offset: 40,
-        relation_ordinal: 0,
+        relation_ordinal: None,
     });
     curve_point_coincidence.members = members.try_into().expect("uniform member resolution");
     let mut returned = curve_point_coincidence.return_members.to_vec();
@@ -492,7 +492,9 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let mut midpoint = curve_point_coincidence.clone();
     midpoint.record_index = 703;
     midpoint.id = "f3d:native:relation#703".into();
-    midpoint.definition = crate::records::SketchRelationDefinition::new(0x10, midpoint.definition.kind().clone()).expect("valid relation definition");
+    midpoint.definition =
+        crate::records::SketchRelationDefinition::new(0x1000, midpoint.definition.kind().clone())
+            .expect("valid relation definition");
     let mut curvature = curve_point_coincidence.clone();
     curvature.record_index = 704;
     curvature.id = "f3d:native:relation#704".into();
@@ -500,7 +502,18 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let mut spline_group = relation(705, 218);
     // Reverse the first run so only the specified semantic run can satisfy the
     // assertion below.
-    spline_group.members = ([(218, 25), (217, 40)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationMember { reference: crate::records::SketchRelationReference::Index(record_index), offset, relation_ordinal: 0, }).collect::<Vec<_>>()).try_into().expect("uniform member resolution");
+    spline_group.members = ([(218, 25), (217, 40)]
+        .into_iter()
+        .map(
+            |(record_index, offset)| crate::records::SketchRelationMember {
+                reference: crate::records::SketchRelationReference::Index(record_index),
+                offset,
+                relation_ordinal: Some(0),
+            },
+        )
+        .collect::<Vec<_>>())
+    .try_into()
+    .expect("uniform member resolution");
     spline_group.return_members = ([(217, 80), (218, 95)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationReturnMember { reference: crate::records::SketchRelationReference::Index(record_index), offset, }).collect::<Vec<_>>()).try_into().expect("uniform member resolution");
     spline_group.definition = crate::records::SketchRelationDefinition::new(0x8000_0000, spline_group.definition.kind().clone()).expect("valid relation definition");
     let mut horizontal_point = relation(701, 175);
@@ -509,7 +522,11 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchRelationReturnMember::from_index(175),
         SketchRelationReturnMember::from_index(175),
     ]).try_into().expect("uniform member resolution");
-    horizontal_point.definition = crate::records::SketchRelationDefinition::new(0x8000_0040, horizontal_point.definition.kind().clone()).expect("valid relation definition");
+    horizontal_point.definition = crate::records::SketchRelationDefinition::new(
+        0x1_0000_0040,
+        horizontal_point.definition.kind().clone(),
+    )
+    .expect("valid relation definition");
     let constraints = project_sketch_constraints(
         &placements,
         &[],
@@ -534,7 +551,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         constraints[1].definition,
         SketchConstraintDefinition::Native {
             ref native_kind,
-            native_state: Some(0x8000_0040),
+            native_state: Some(0x1_0000_0040),
             native_flags: None,
             ref entities,
             ref operands,

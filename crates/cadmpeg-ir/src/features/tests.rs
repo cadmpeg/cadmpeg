@@ -833,7 +833,7 @@ fn hole_construction_forms_preserve_the_flat_wire_layout() {
 
     let standard = serde_json::json!({
         "definition": "hole",
-        "kind": "simple",
+        "kind": {"kind": "simple"},
         "specification": {
             "standard": "ISO metric",
             "designation": "M8",
@@ -860,11 +860,13 @@ fn hole_construction_forms_preserve_the_flat_wire_layout() {
 
     let native_thread = serde_json::json!({
         "definition": "hole",
-        "kind": "threaded",
-        "major_diameter": 8.0,
-        "thread_depth": 12.0,
-        "pitch": 1.25,
-        "drill_point_angle": 2.0
+        "kind": {
+            "kind": "threaded",
+            "major_diameter": 8.0,
+            "thread_depth": 12.0,
+            "pitch": 1.25,
+            "drill_point_angle": 2.0
+        }
     });
     let definition: FeatureDefinition = serde_json::from_value(native_thread.clone()).unwrap();
     assert!(matches!(
@@ -902,10 +904,12 @@ fn hole_wire_rejects_cross_form_thread_fields() {
 
     let mut native_with_standard = serde_json::json!({
         "definition": "hole",
-        "kind": "threaded",
-        "major_diameter": 8.0,
-        "thread_depth": 12.0,
-        "drill_point_angle": 2.0
+        "kind": {
+            "kind": "threaded",
+            "major_diameter": 8.0,
+            "thread_depth": 12.0,
+            "drill_point_angle": 2.0
+        }
     });
     native_with_standard["specification"] = specification(true);
     assert!(serde_json::from_value::<FeatureDefinition>(native_with_standard).is_err());

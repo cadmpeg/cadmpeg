@@ -12,7 +12,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     let body = |slot| Body {
         id: BodyId::mint(format!("f3d:brep:body#{slot}")).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint(format!("region#{slot}")).expect("identity grammar")],
+        regions: vec![RegionId::mint(format!("test:model:region#{slot}")).expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
@@ -21,28 +21,28 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     let bodies = [body(1), body(2)];
     let regions = [
         Region {
-            id: RegionId::mint("region#1").expect("identity grammar"),
+            id: RegionId::mint("test:model:region#1").expect("identity grammar"),
             body: bodies[0].id.clone(),
-            shells: vec![ShellId::mint("shell#1").expect("identity grammar")],
+            shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
         },
         Region {
-            id: RegionId::mint("region#2").expect("identity grammar"),
+            id: RegionId::mint("test:model:region#2").expect("identity grammar"),
             body: bodies[1].id.clone(),
-            shells: vec![ShellId::mint("shell#2").expect("identity grammar")],
+            shells: vec![ShellId::mint("test:model:shell#2").expect("identity grammar")],
         },
     ];
     let shells = [
         Shell {
-            id: ShellId::mint("shell#1").expect("identity grammar"),
-            region: RegionId::mint("region#1").expect("identity grammar"),
-            faces: vec![FaceId::mint("face#1").expect("identity grammar")],
+            id: ShellId::mint("test:model:shell#1").expect("identity grammar"),
+            region: RegionId::mint("test:model:region#1").expect("identity grammar"),
+            faces: vec![FaceId::mint("test:model:face#1").expect("identity grammar")],
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         },
         Shell {
-            id: ShellId::mint("shell#2").expect("identity grammar"),
-            region: RegionId::mint("region#2").expect("identity grammar"),
-            faces: vec![FaceId::mint("face#2").expect("identity grammar")],
+            id: ShellId::mint("test:model:shell#2").expect("identity grammar"),
+            region: RegionId::mint("test:model:region#2").expect("identity grammar"),
+            faces: vec![FaceId::mint("test:model:face#2").expect("identity grammar")],
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         },
@@ -68,8 +68,8 @@ fn form33_without_unique_body_proof_remains_unresolved() {
             form: 33,
             form_offset: 0,
             candidate_faces: vec![
-                FaceId::mint("face#1").expect("identity grammar"),
-                FaceId::mint("face#2").expect("identity grammar"),
+                FaceId::mint("test:model:face#1").expect("identity grammar"),
+                FaceId::mint("test:model:face#2").expect("identity grammar"),
             ],
             preceding_candidate_faces: Vec::new(),
             preceding_body_slots: Vec::new(),

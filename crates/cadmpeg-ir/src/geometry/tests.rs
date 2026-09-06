@@ -261,7 +261,7 @@ fn variable_blend_shape_rejects_inconsistent_wire_fields() {
 }
 
 fn empty_loft_subdata() -> crate::geometry::LoftSubdata {
-    crate::geometry::LoftSubdata::type_211([0.0, 1.0])
+    crate::geometry::LoftSubdata::type_211([1, 0], [0.0, 1.0])
 }
 
 #[test]
@@ -323,7 +323,7 @@ fn loft_subdata_derives_counts_and_rejects_inconsistent_wire_counts() {
 
 #[test]
 fn loft_subdata_type_211_has_one_row_and_no_columns() {
-    let table = crate::geometry::LoftSubdata::type_211([2.0, 3.0]);
+    let table = crate::geometry::LoftSubdata::type_211([1, 0], [2.0, 3.0]);
     let wire = serde_json::to_value(&table).unwrap();
     assert_eq!(
         wire,
@@ -346,6 +346,18 @@ fn loft_subdata_type_211_has_one_row_and_no_columns() {
     assert!(error
         .to_string()
         .contains("type 211 forbids columns and a trailing pair"));
+}
+
+#[test]
+fn loft_subdata_type_211_preserves_headers_independent_of_payload_size() {
+    let table = crate::geometry::LoftSubdata::type_211([4, 0], [2.0, 3.0]);
+    let wire = serde_json::to_value(&table).unwrap();
+    assert_eq!(wire["row_count"], 4);
+    assert_eq!(wire["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::LoftSubdata>(wire).unwrap(),
+        table
+    );
 }
 
 #[test]
@@ -607,4 +619,34 @@ fn vector_offset_roles_keep_the_fixed_flat_wire_shape() {
     assert!(error
         .to_string()
         .contains("vector-offset labels must be [\"source\", \"offset\"]"));
+}
+
+#[test]
+fn procedural_carrier_serialization_preserves_checked_solved_cache() {
+    use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
+    let curve = CurveGeometry::Procedural {
+        construction: "test:model:procedural_curve#0".into(),
+        cache: Some(
+            SolvedCurveGeometry::new(CurveGeometry::Degenerate {
+                point: crate::math::Point3::new(1.0, 2.0, 3.0),
+            })
+            .unwrap(),
+        ),
+    };
+    let surface = SurfaceGeometry::Procedural {
+        construction: "test:model:procedural_surface#0".into(),
+        cache: Some(SolvedSurfaceGeometry::new(SurfaceGeometry::Unknown { record: None }).unwrap()),
+    };
+    let curve_wire = serde_json::to_value(&curve).unwrap();
+    let surface_wire = serde_json::to_value(&surface).unwrap();
+    assert_eq!(
+        serde_json::from_value::<CurveGeometry>(curve_wire.clone()).unwrap(),
+        curve
+    );
+    assert_eq!(
+        serde_json::from_value::<SurfaceGeometry>(surface_wire.clone()).unwrap(),
+        surface
+    );
+    assert!(serde_json::from_value::<SolvedCurveGeometry>(curve_wire).is_err());
+    assert!(serde_json::from_value::<SolvedSurfaceGeometry>(surface_wire).is_err());
 }

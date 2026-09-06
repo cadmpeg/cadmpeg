@@ -161,7 +161,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     let tags = [
         PersistentSubentityTag {
             id: "matching".into(),
-            target: AttributeTarget::Face(FaceId::mint("face-b").expect("identity grammar")),
+            target: AttributeTarget::Face(FaceId::mint("test:model:face#face-b").expect("identity grammar")),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -169,7 +169,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "other".into(),
-            target: AttributeTarget::Face(FaceId::mint("face-a").expect("identity grammar")),
+            target: AttributeTarget::Face(FaceId::mint("test:model:face#face-a").expect("identity grammar")),
             selector: 1,
             token: "13".into(),
             design_references: vec![999],
@@ -177,7 +177,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "alternate-face".into(),
-            target: AttributeTarget::Face(FaceId::mint("face-c").expect("identity grammar")),
+            target: AttributeTarget::Face(FaceId::mint("test:model:face#face-c").expect("identity grammar")),
             selector: 2,
             token: "13".into(),
             design_references: vec![331],
@@ -185,7 +185,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "matching-edge".into(),
-            target: AttributeTarget::Edge(EdgeId::mint("edge-b").expect("identity grammar")),
+            target: AttributeTarget::Edge(EdgeId::mint("test:model:edge#edge-b").expect("identity grammar")),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -193,7 +193,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "alternate-edge".into(),
-            target: AttributeTarget::Edge(EdgeId::mint("edge-c").expect("identity grammar")),
+            target: AttributeTarget::Edge(EdgeId::mint("test:model:edge#edge-c").expect("identity grammar")),
             selector: 2,
             token: "13".into(),
             design_references: vec![331],
@@ -206,24 +206,24 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     );
     assert_eq!(
         bound.candidate_faces,
-        [FaceId::mint("face-b").expect("identity grammar")]
+        [FaceId::mint("test:model:face#face-b").expect("identity grammar")]
     );
     assert_eq!(
         bound.candidate_edges,
-        [EdgeId::mint("edge-b").expect("identity grammar")]
+        [EdgeId::mint("test:model:edge#edge-b").expect("identity grammar")]
     );
     assert_eq!(
         bound.alternate_selector_faces,
-        [FaceId::mint("face-c").expect("identity grammar")]
+        [FaceId::mint("test:model:face#face-c").expect("identity grammar")]
     );
     assert_eq!(
         bound.alternate_selector_edges,
-        [EdgeId::mint("edge-c").expect("identity grammar")]
+        [EdgeId::mint("test:model:edge#edge-c").expect("identity grammar")]
     );
     let stream_tags = [
         PersistentSubentityTag {
             id: "f3d:xref/A/occurrence-0/design:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(FaceId::mint("face-a").expect("identity grammar")),
+            target: AttributeTarget::Face(FaceId::mint("test:model:face#face-a").expect("identity grammar")),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -231,7 +231,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "f3d:xref/B/occurrence-0/design:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(FaceId::mint("face-b").expect("identity grammar")),
+            target: AttributeTarget::Face(FaceId::mint("test:model:face#face-b").expect("identity grammar")),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -245,7 +245,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     );
     assert_eq!(
         bound.candidate_faces,
-        [FaceId::mint("face-a").expect("identity grammar")]
+        [FaceId::mint("test:model:face#face-a").expect("identity grammar")]
     );
 }
 
@@ -844,7 +844,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
         owner_entity_id: "0_172".into(),
         auxiliary_references: crate::records::ReferenceRun::Unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
-        members: ([(175, 25), (217, 40)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationMember { reference: crate::records::SketchRelationReference::Index(record_index), offset, relation_ordinal: 0, }).collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
+        members: ([(175, 25), (217, 40)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationMember { reference: crate::records::SketchRelationReference::Index(record_index), offset, relation_ordinal: Some(0), }).collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
         owner_reference_offset: 56,
         definition: crate::records::SketchRelationDefinition::new(0, SketchRelationKind::Unpatterned).expect("valid relation definition"),
         entity_genesis: None,

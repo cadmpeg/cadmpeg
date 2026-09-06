@@ -972,7 +972,7 @@ fn empty_reference_runs_compare_equal_across_wire_round_trip() {
 
 #[test]
 fn face_source_rows_preserve_wire_and_reject_unequal_offsets() {
-    let prefix = r#"{"id":"face-source","scope_record_index":1,"carrier_reference_ordinal":0,"carrier_record_index":2,"carrier_byte_offset":0,"carrier_class_tag":"302","carrier_frame_length":80,"paired_record_index":3,"paired_byte_offset":80,"paired_class_tag":"303"#;
+    let prefix = r#"{"id":"face-source","scope_record_index":1,"carrier_reference_ordinal":0,"carrier_record_index":2,"carrier_byte_offset":0,"carrier_class_tag":"302","carrier_frame_length":80,"paired_record_index":3,"paired_byte_offset":80,"paired_class_tag":"303""#;
     let member = r#"{"record_index":100,"byte_offset":1000,"class_tag":"304","persistent_identity":{"local_id":1,"local_id_offset":1021,"asset_id":"AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE","asset_id_offset":1033,"context_id":"11111111-2222-4333-8444-555555555555","context_id_offset":1109,"tail_slot_present":false,"tail_slot_offset":1185,"next_record_index":101,"next_byte_offset":1190}}"#;
     for (members, offsets) in [
         ("[]".to_owned(), "[]"),
@@ -3276,7 +3276,7 @@ fn sketch_relation_runs_reject_partial_resolution_and_preserve_atomic_binding() 
     for (row, (index, offset, ordinal)) in resolved.iter().zip([(1, 25, 3), (2, 40, 5)]) {
         assert_eq!(row.reference.record_index(), index);
         assert_eq!(row.reference.resolved(), Some(&SketchRelationOperand::Record { record_index: index }));
-        assert_eq!((row.offset, row.relation_ordinal), (offset, ordinal));
+        assert_eq!((row.offset, row.relation_ordinal), (offset, Some(ordinal)));
     }
     assert!(SketchRelationMembers::try_from(vec![unresolved[0].clone(), resolved[1].clone()]).is_err());
     assert!(SketchRelationMembers::try_from(vec![resolved[0].clone(), unresolved[1].clone()]).is_err());

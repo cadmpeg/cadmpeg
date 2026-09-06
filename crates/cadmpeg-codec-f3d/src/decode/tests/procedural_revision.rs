@@ -1035,12 +1035,19 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         .iter_mut()
         .find(|surface| {
             matches!(
-                surface.geometry,
-                cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_)
+                surface.geometry.solved_cache(),
+                Some(cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_))
             )
         })
         .expect("generated NURBS surface");
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = &mut surface.geometry else {
+    let cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
+        cache: Some(cache), ..
+    } = &mut surface.geometry
+    else {
+        panic!("procedural carrier with a solved cache")
+    };
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(mut nurbs) = cache.as_geometry().clone()
+    else {
         unreachable!()
     };
     nurbs.control_points_mut()[2].x = 17.5;
@@ -1048,6 +1055,10 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
     nurbs.u_knots_mut().copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
     nurbs.v_knots_mut().copy_from_slice(&[-0.5, -0.5, 1.5, 1.5]);
     nurbs.set_u_periodic(true);
+    *cache = cadmpeg_ir::geometry::SolvedSurfaceGeometry::new(
+        cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs.clone()),
+    )
+    .unwrap();
     let expected = nurbs.clone();
     let surface_id = surface.id.clone();
 
@@ -1065,7 +1076,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         .find(|surface| surface.id == surface_id)
         .expect("round-trip NURBS surface");
     assert_eq!(
-        surface.geometry,
+        *surface.geometry.solved_cache().expect("solved NURBS cache"),
         cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(expected)
     );
 }
@@ -1083,16 +1094,27 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
         .iter_mut()
         .find(|surface| {
             matches!(
-                &surface.geometry,
-                cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs)
+                surface.geometry.solved_cache(),
+                Some(cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs))
                     if nurbs.weights().is_some()
             )
         })
         .expect("generated rational surface");
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = &mut surface.geometry else {
+    let cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
+        cache: Some(cache), ..
+    } = &mut surface.geometry
+    else {
+        panic!("procedural carrier with a solved cache")
+    };
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(mut nurbs) = cache.as_geometry().clone()
+    else {
         unreachable!()
     };
     nurbs.weights_mut().expect("rational weights")[1] = 0.65;
+    *cache = cadmpeg_ir::geometry::SolvedSurfaceGeometry::new(
+        cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs.clone()),
+    )
+    .unwrap();
     let expected = nurbs.clone();
     let surface_id = surface.id.clone();
 
@@ -1110,7 +1132,7 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
         .find(|surface| surface.id == surface_id)
         .expect("round-trip rational surface");
     assert_eq!(
-        surface.geometry,
+        *surface.geometry.solved_cache().expect("solved NURBS cache"),
         cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(expected)
     );
 }
@@ -1358,15 +1380,15 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
             .iter()
             .find(|surface| &surface.id == carrier_id)
             .expect("rolling-ball carrier")
-            .geometry,
+            .geometry.solved_cache().expect("solved rolling-ball cache"),
         SurfaceGeometry::Cylinder {
             origin,
             axis,
             radius,
             ..
-        } if origin == Point3::new(2.0, 2.0, -4.0)
-            && axis == Vector3::new(0.0, 0.0, 1.0)
-            && radius == 2.0
+        } if *origin == Point3::new(2.0, 2.0, -4.0)
+            && *axis == Vector3::new(0.0, 0.0, 1.0)
+            && *radius == 2.0
     ));
 }
 

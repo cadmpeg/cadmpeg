@@ -194,22 +194,32 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
         .iter_mut()
         .find(|curve| {
             matches!(
-                curve.geometry,
-                cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+                curve.geometry.solved_cache(),
+                Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(_))
             )
         })
         .expect("generated BinaryFile4 NURBS curve");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
+    let cadmpeg_ir::geometry::CurveGeometry::Procedural {
+        cache: Some(cache), ..
+    } = &mut curve.geometry
+    else {
+        panic!("procedural carrier with a solved cache")
+    };
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(mut nurbs) = cache.as_geometry().clone() else {
         unreachable!()
     };
     let mut control_points = nurbs.control_points().to_vec();
     control_points[1].z = 4.5;
-    *nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
+    nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
         nurbs.weights().map(<[f64]>::to_vec),
         true,
+    )
+    .unwrap();
+    *cache = cadmpeg_ir::geometry::SolvedCurveGeometry::new(
+        cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs.clone()),
     )
     .unwrap();
     let expected = nurbs.clone();
@@ -221,7 +231,7 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated BinaryFile4 NURBS decode");
     assert!(round_trip.ir().model.curves.iter().any(|curve| {
-        matches!(&curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) if nurbs == &expected)
+        matches!(curve.geometry.solved_cache(), Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs)) if nurbs == &expected)
     }));
 }
 

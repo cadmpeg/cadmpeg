@@ -13,13 +13,28 @@ fn sketch_relation_runs_preserve_wire_and_reject_conflicting_resolved_indices() 
         assert_eq!(relation.member_indices(), [1, 2]);
         assert_eq!(relation.return_member_indices(), [2, 1]);
     }
+    for ordinals in ["[]", "[0,0]"] {
+        let wire = base.replace("[3,5]", ordinals);
+        let relation: SketchRelation = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&relation).unwrap(), wire);
+    }
+    let relation: SketchRelation = serde_json::from_str(base).unwrap();
+    let mut partial_ordinals = relation.members.to_vec();
+    partial_ordinals[0].relation_ordinal = None;
+    assert!(crate::records::SketchRelationMembers::try_from(partial_ordinals).is_err());
     for field in ["resolved_members", "resolved_return_members"] {
         let value: serde_json::Value = serde_json::from_str(&resolved).unwrap();
         let mut mismatch = value.clone();
         mismatch[field][0]["record_index"] = serde_json::json!(3);
-        assert!(serde_json::from_value::<SketchRelation>(mismatch).unwrap_err().to_string().contains(field));
+        assert!(serde_json::from_value::<SketchRelation>(mismatch)
+            .unwrap_err()
+            .to_string()
+            .contains(field));
         let mut partial = value;
         partial[field].as_array_mut().unwrap().pop();
-        assert!(serde_json::from_value::<SketchRelation>(partial).unwrap_err().to_string().contains(field));
+        assert!(serde_json::from_value::<SketchRelation>(partial)
+            .unwrap_err()
+            .to_string()
+            .contains(field));
     }
 }

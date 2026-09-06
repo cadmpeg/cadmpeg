@@ -820,7 +820,7 @@ fn encode_sketch_relation(
     record.extend_from_slice(&member_count.to_le_bytes());
     for member in relation.members.iter() {
         write_reference(&mut record, member.reference.record_index());
-        record.extend_from_slice(&member.relation_ordinal.to_le_bytes());
+        record.extend_from_slice(&member.relation_ordinal.unwrap_or(0).to_le_bytes());
     }
     // The base level's property-block presence byte, then the block when the
     // relation carries an `EntityGenesis` origin.

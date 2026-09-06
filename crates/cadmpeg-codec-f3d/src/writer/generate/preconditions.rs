@@ -44,30 +44,13 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
                     procedural.id, owner
                 ))
             })?;
-        match &surface.geometry {
-            SurfaceGeometry::Procedural {
-                cache: Some(geometry),
-                ..
-            } if matches!(
-                geometry.as_ref(),
-                SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. }
-            ) => {}
-            SurfaceGeometry::Procedural {
-                construction,
-                cache: None,
-            } if *construction == procedural.id => {}
-            SurfaceGeometry::Procedural { construction, .. } => {
-                return Err(CodecError::InvalidInput(format!(
-                    "surface {} links construction {construction} but is produced by {}",
-                    surface.id, procedural.id
-                )));
-            }
-            _ => {
-                return Err(CodecError::NotImplemented(format!(
-                    "source-less F3D procedural surface {} cannot retain its construction on analytic carrier {}",
-                    procedural.id, surface.id
-                )));
-            }
+        if surface.geometry.solved_cache().is_some_and(|geometry| {
+            !matches!(geometry, SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. })
+        }) {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D procedural surface {} cannot retain its construction on analytic carrier {}",
+                procedural.id, surface.id
+            )));
         }
     }
 
@@ -99,27 +82,16 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
                     procedural.id, owner
                 ))
             })?;
-        match &curve.geometry {
-            CurveGeometry::Procedural {
-                cache: Some(geometry),
-                ..
-            } if matches!(geometry.as_ref(), CurveGeometry::Nurbs(_)) => {}
-            CurveGeometry::Procedural {
-                construction,
-                cache: None,
-            } if *construction == procedural.id && procedural.cache_fit_tolerance().is_none() => {}
-            CurveGeometry::Procedural { construction, .. } => {
-                return Err(CodecError::InvalidInput(format!(
-                    "curve {} links construction {construction} but is produced by {} or carries a cache fit",
-                    curve.id, procedural.id
-                )));
-            }
-            _ => {
-                return Err(CodecError::NotImplemented(format!(
-                    "source-less F3D procedural curve {} cannot retain its construction on carrier {}",
-                    procedural.id, curve.id
-                )));
-            }
+        match curve.geometry.solved_cache() {
+            Some(CurveGeometry::Nurbs(_)) => {}
+            None if procedural.cache_fit_tolerance().is_none() => {}
+            None => return Err(CodecError::InvalidInput(format!(
+                "cacheless procedural curve {} carries a cache-fit tolerance", procedural.id
+            ))),
+            Some(_) => return Err(CodecError::NotImplemented(format!(
+                "source-less F3D procedural curve {} cannot retain its construction on carrier {}",
+                procedural.id, curve.id
+            ))),
         }
     }
     Ok(())

@@ -912,7 +912,7 @@ pub enum SurfaceGeometry {
         /// Construction that produces this carrier.
         construction: ProceduralSurfaceId,
         /// Solved carrier geometry retained from the source cache.
-        #[serde(skip)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "schema", schemars(skip))]
         cache: Option<SolvedSurfaceGeometry>,
     },
@@ -960,9 +960,19 @@ impl SolvedSurfaceGeometry {
     pub fn as_geometry(&self) -> &SurfaceGeometry {
         &self.0
     }
+}
 
-    pub(crate) fn into_geometry(self) -> SurfaceGeometry {
-        *self.0
+impl Serialize for SolvedSurfaceGeometry {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.as_geometry().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SolvedSurfaceGeometry {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::new(SurfaceGeometry::deserialize(deserializer)?).map_err(|_| {
+            serde::de::Error::custom("a solved cache cannot contain a procedural carrier")
+        })
     }
 }
 
@@ -1099,7 +1109,7 @@ pub enum CurveGeometry {
         /// Construction that produces this carrier.
         construction: ProceduralCurveId,
         /// Solved carrier geometry retained from the source cache.
-        #[serde(skip)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "schema", schemars(skip))]
         cache: Option<SolvedCurveGeometry>,
     },
@@ -1141,13 +1151,24 @@ impl SolvedCurveGeometry {
         &self.0
     }
 
-    pub(crate) fn into_geometry(self) -> CurveGeometry {
-        *self.0
-    }
 
     #[cfg(test)]
     pub(crate) fn as_geometry_mut(&mut self) -> &mut CurveGeometry {
         &mut self.0
+    }
+}
+
+impl Serialize for SolvedCurveGeometry {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.as_geometry().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SolvedCurveGeometry {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::new(CurveGeometry::deserialize(deserializer)?).map_err(|_| {
+            serde::de::Error::custom("a solved cache cannot contain a procedural carrier")
+        })
     }
 }
 
@@ -3088,6 +3109,8 @@ pub struct LoftSubdataRow {
 pub enum LoftSubdata {
     /// Type 211 stores exactly one leading pair and no column pairs.
     Type211 {
+        /// Native row/column header values. They do not count this form's payload.
+        dimensions: [i64; 2],
         /// The sole leading scalar pair.
         row: [f64; 2],
     },
@@ -3105,8 +3128,8 @@ pub struct LoftSubdataTable {
 impl LoftSubdata {
     /// Construct the fixed type-211 form.
     #[must_use]
-    pub fn type_211(row: [f64; 2]) -> Self {
-        Self::Type211 { row }
+    pub fn type_211(dimensions: [i64; 2], row: [f64; 2]) -> Self {
+        Self::Type211 { dimensions, row }
     }
 
     /// Construct a non-211 table whose rows have one shared column width.
@@ -3135,20 +3158,20 @@ impl LoftSubdata {
         }
     }
 
-    /// Number of serialized rows.
+    /// Native row header: a stored value for type 211, otherwise the row count.
     #[must_use]
     pub fn row_count(&self) -> i64 {
         match self {
-            Self::Type211 { .. } => 1,
+            Self::Type211 { dimensions, .. } => dimensions[0],
             Self::Table(table) => table.rows.len() as i64,
         }
     }
 
-    /// Shared number of column pairs in each serialized row.
+    /// Native column header: stored for type 211, otherwise the shared row width.
     #[must_use]
     pub fn column_count(&self) -> i64 {
         match self {
-            Self::Type211 { .. } => 0,
+            Self::Type211 { dimensions, .. } => dimensions[1],
             Self::Table(table) => table.rows.first().map_or(0, |row| row.columns.len() as i64),
         }
     }
@@ -3156,7 +3179,7 @@ impl LoftSubdata {
     /// Visit the leading and column pairs in each row.
     pub fn visit_rows(&self, mut visit: impl FnMut(&[f64; 2], &[[f64; 2]], Option<&[f64; 2]>)) {
         match self {
-            Self::Type211 { row } => visit(row, &[], None),
+            Self::Type211 { row, .. } => visit(row, &[], None),
             Self::Table(table) => {
                 for row in &table.rows {
                     visit(&row.parameters, &row.columns, row.extra.as_ref());
@@ -3196,7 +3219,7 @@ impl Serialize for LoftSubdata {
         state.serialize_field("row_count", &self.row_count())?;
         state.serialize_field("column_count", &self.column_count())?;
         match self {
-            Self::Type211 { row } => {
+            Self::Type211 { row, .. } => {
                 let row = LoftSubdataRow {
                     parameters: *row,
                     columns: Vec::new(),
@@ -3216,6 +3239,19 @@ impl<'de> Deserialize<'de> for LoftSubdata {
         D: serde::Deserializer<'de>,
     {
         let wire = LoftSubdataWire::deserialize(deserializer)?;
+        if wire.type_code == 211 {
+            let [row] = wire.rows.as_slice() else {
+                return Err(serde::de::Error::custom(
+                    "loft subdata type 211 requires exactly one row",
+                ));
+            };
+            if !row.columns.is_empty() || row.extra.is_some() {
+                return Err(serde::de::Error::custom(
+                    "loft subdata type 211 forbids columns and a trailing pair",
+                ));
+            }
+            return Ok(Self::type_211([wire.row_count, wire.column_count], row.parameters));
+        }
         let row_count = usize::try_from(wire.row_count)
             .map_err(|_| serde::de::Error::custom("loft subdata row_count is negative"))?;
         let column_count = usize::try_from(wire.column_count)
@@ -3224,19 +3260,6 @@ impl<'de> Deserialize<'de> for LoftSubdata {
             return Err(serde::de::Error::custom(
                 "loft subdata row_count does not match rows",
             ));
-        }
-        if wire.type_code == 211 {
-            let [row] = wire.rows.as_slice() else {
-                return Err(serde::de::Error::custom(
-                    "loft subdata type 211 requires exactly one row",
-                ));
-            };
-            if column_count != 0 || !row.columns.is_empty() || row.extra.is_some() {
-                return Err(serde::de::Error::custom(
-                    "loft subdata type 211 forbids columns and a trailing pair",
-                ));
-            }
-            return Ok(Self::type_211(row.parameters));
         }
         if wire
             .rows
@@ -7036,7 +7059,9 @@ fn inject_revision_cache(
                 }
             }
             serde_json::Value::Object(fields) => {
-                if let Some(selector) = fields.get(selector_field) {
+                if let Some(selector) = fields.get(selector_field).or_else(|| {
+                    (selector_field == "tail_enum").then(|| fields.get("cache_selector")).flatten()
+                }) {
                     if *found {
                         return Err(format!(
                             "definition contains more than one {selector_field} cache selector"

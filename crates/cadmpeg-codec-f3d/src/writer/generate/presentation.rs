@@ -344,11 +344,11 @@ mod tests {
         let mut target = cadmpeg_ir::examples::unit_cube();
         let mut first = target.model.bodies[0].clone();
         first.id =
-            cadmpeg_ir::ids::BodyId::mint("synthetic:stable-body:a").expect("identity grammar");
+            cadmpeg_ir::ids::BodyId::mint("test:model:body#synthetic:stable-body:a").expect("identity grammar");
         first.visible = Some(false);
         let mut second = first.clone();
         second.id =
-            cadmpeg_ir::ids::BodyId::mint("synthetic:stable-body:b").expect("identity grammar");
+            cadmpeg_ir::ids::BodyId::mint("test:model:body#synthetic:stable-body:b").expect("identity grammar");
         second.visible = Some(true);
         target.model.bodies = if reverse {
             vec![second.clone(), first.clone()]

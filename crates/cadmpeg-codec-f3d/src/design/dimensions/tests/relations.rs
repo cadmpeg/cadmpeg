@@ -385,7 +385,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         owner_entity_id: "0_1".into(),
         auxiliary_references: crate::records::ReferenceRun::Located(vec![crate::records::Located { value: 0, offset: 80 }]),
         rectangular_counted_reference_count: None,
-        members: ([(1, 25, 3), (2, 40, 5), (3, 55, 1), (4, 70, 1)].into_iter().map(|(record_index, offset, relation_ordinal)| crate::records::SketchRelationMember { reference: crate::records::SketchRelationReference::Index(record_index), offset, relation_ordinal, }).collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
+        members: ([(1, 25, 3), (2, 40, 5), (3, 55, 1), (4, 70, 1)].into_iter().map(|(record_index, offset, relation_ordinal)| crate::records::SketchRelationMember { reference: crate::records::SketchRelationReference::Index(record_index), offset, relation_ordinal: Some(relation_ordinal), }).collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
         owner_reference_offset: 90,
         definition: crate::records::SketchRelationDefinition::new(0x20_0000_0000, crate::records::SketchRelationKind::Unpatterned).expect("valid relation definition"),
         entity_genesis: None,

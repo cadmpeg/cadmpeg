@@ -609,11 +609,11 @@ fn active_brep_face_namespace_accepts_default_or_matching_named_source() {
         "history"
     ));
     assert!(active_brep_face_matches_source(
-        &FaceId::mint("f3d:brep/history/entity#17").expect("identity grammar"),
+        &FaceId::mint("f3d:brep/history/brep:entity#17").expect("identity grammar"),
         "history"
     ));
     assert!(!active_brep_face_matches_source(
-        &FaceId::mint("f3d:brep/other/entity#17").expect("identity grammar"),
+        &FaceId::mint("f3d:brep/other/brep:entity#17").expect("identity grammar"),
         "history"
     ));
 }

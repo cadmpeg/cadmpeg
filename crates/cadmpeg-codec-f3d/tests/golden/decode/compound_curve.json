@@ -253,7 +253,7 @@
           }
         },
         {
-          "id": "f3d:brep:procedural_curve#19:component#0",
+          "id": "f3d:brep:procedural_curve#19:component:0",
           "geometry": {
             "kind": "nurbs",
             "degree": 2,
@@ -286,7 +286,7 @@
           }
         },
         {
-          "id": "f3d:brep:procedural_curve#19:component#1",
+          "id": "f3d:brep:procedural_curve#19:component:1",
           "geometry": {
             "kind": "nurbs",
             "degree": 2,
@@ -338,8 +338,8 @@
               4.0
             ],
             "components": [
-              "f3d:brep:procedural_curve#19:component#0",
-              "f3d:brep:procedural_curve#19:component#1"
+              "f3d:brep:procedural_curve#19:component:0",
+              "f3d:brep:procedural_curve#19:component:1"
             ]
           },
           "cache_fit_tolerance": 0.0029999999999999996

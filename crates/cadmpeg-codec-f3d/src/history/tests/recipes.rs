@@ -378,12 +378,12 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         reference(
             Vec::new(),
             vec![
-                EdgeId::mint("edge#22").expect("identity grammar"),
-                EdgeId::mint("edge#23").expect("identity grammar"),
+                EdgeId::mint("test:model:edge#22").expect("identity grammar"),
+                EdgeId::mint("test:model:edge#23").expect("identity grammar"),
             ],
         ),
         reference(
-            vec![FaceId::mint("face#10").expect("identity grammar")],
+            vec![FaceId::mint("test:model:face#10").expect("identity grammar")],
             Vec::new(),
         ),
         reference(Vec::new(), Vec::new()),
@@ -584,9 +584,9 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         selector_tail: None,
 
         references: vec![reference(&[
-            "f3d:brep/current/face#1",
-            "f3d:brep/external/face#1",
-            "f3d:brep/cache/face#1",
+            "f3d:brep/current/brep:face#1",
+            "f3d:brep/external/brep:face#1",
+            "f3d:brep/cache/brep:face#1",
         ])],
         nested_record_index: 3,
         nested_record_index_offset: 0,
@@ -608,25 +608,37 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         visible,
     };
     let bodies = [
-        body("f3d:brep/current/body#1", "current-region", Some(true)),
-        body("f3d:brep/external/body#1", "external-region", Some(true)),
-        body("f3d:brep/cache/body#1", "cache-region", None),
+        body(
+            "f3d:brep/current/brep:body#1",
+            "test:model:region#current-region",
+            Some(true),
+        ),
+        body(
+            "f3d:brep/external/brep:body#1",
+            "test:model:region#external-region",
+            Some(true),
+        ),
+        body(
+            "f3d:brep/cache/brep:body#1",
+            "test:model:region#cache-region",
+            None,
+        ),
     ];
     let regions = [
         Region {
-            id: RegionId::mint("current-region").expect("identity grammar"),
+            id: RegionId::mint("test:model:region#current-region").expect("identity grammar"),
             body: bodies[0].id.clone(),
-            shells: vec![ShellId::mint("current-shell").expect("identity grammar")],
+            shells: vec![ShellId::mint("test:model:shell#current-shell").expect("identity grammar")],
         },
         Region {
-            id: RegionId::mint("external-region").expect("identity grammar"),
+            id: RegionId::mint("test:model:region#external-region").expect("identity grammar"),
             body: bodies[1].id.clone(),
-            shells: vec![ShellId::mint("external-shell").expect("identity grammar")],
+            shells: vec![ShellId::mint("test:model:shell#external-shell").expect("identity grammar")],
         },
         Region {
-            id: RegionId::mint("cache-region").expect("identity grammar"),
+            id: RegionId::mint("test:model:region#cache-region").expect("identity grammar"),
             body: bodies[2].id.clone(),
-            shells: vec![ShellId::mint("cache-shell").expect("identity grammar")],
+            shells: vec![ShellId::mint("test:model:shell#cache-shell").expect("identity grammar")],
         },
     ];
     let shell = |id: &str, region: &str, face: &str| Shell {
@@ -637,13 +649,13 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         free_vertices: Vec::new(),
     };
     let shells = [
-        shell("current-shell", "current-region", "f3d:brep/current/face#1"),
+        shell("test:model:shell#current-shell", "test:model:region#current-region", "f3d:brep/current/brep:face#1"),
         shell(
-            "external-shell",
-            "external-region",
-            "f3d:brep/external/face#1",
+            "test:model:shell#external-shell",
+            "test:model:region#external-region",
+            "f3d:brep/external/brep:face#1",
         ),
-        shell("cache-shell", "cache-region", "f3d:brep/cache/face#1"),
+        shell("test:model:shell#cache-shell", "test:model:region#cache-region", "f3d:brep/cache/brep:face#1"),
     ];
 
     assert_eq!(
@@ -662,7 +674,7 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         .retain(|face| !face.0.contains("/cache/"));
     operand
         .references
-        .push(reference(&["f3d:brep/cache/face#1"]));
+        .push(reference(&["f3d:brep/cache/brep:face#1"]));
     assert_eq!(
         super::super::unique_external_body_candidate(
             &operand,
@@ -925,19 +937,19 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     let body = Body {
         id: BodyId::mint("f3d:brep:body#1").expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("region#1").expect("identity grammar")],
+        regions: vec![RegionId::mint("test:model:region#1").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: Some(true),
     };
     let region = Region {
-        id: RegionId::mint("region#1").expect("identity grammar"),
+        id: RegionId::mint("test:model:region#1").expect("identity grammar"),
         body: body.id.clone(),
-        shells: vec![ShellId::mint("shell#1").expect("identity grammar")],
+        shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
     };
     let shell = Shell {
-        id: ShellId::mint("shell#1").expect("identity grammar"),
+        id: ShellId::mint("test:model:shell#1").expect("identity grammar"),
         region: region.id.clone(),
         faces: vec![FaceId::mint("f3d:brep:entity#7").expect("identity grammar")],
         wire_edges: Vec::new(),
@@ -1041,7 +1053,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         shells: std::slice::from_ref(&shell),
     };
     let mut feature = Feature::new(
-        FeatureId("f3d:feature#scale".into()),
+        FeatureId("f3d:test:feature#scale".into()),
         0,
         FeatureDefinition::Scale {
             bodies: BodySelection::Native(group_id.into()),
@@ -1083,7 +1095,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         shells: std::slice::from_ref(&shell),
     };
     let mut move_feature = Feature::new(
-        FeatureId("f3d:feature#move".into()),
+        FeatureId("f3d:test:feature#move".into()),
         0,
         FeatureDefinition::MoveBody {
             bodies: BodySelection::Native(group_id.into()),
@@ -1112,7 +1124,7 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
     use cadmpeg_ir::ids::BodyId;
 
     let mut feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId("test:model:feature#feature".into()),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -1122,8 +1134,8 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
         source_text: None,
         source_content: Vec::new(),
         outputs: vec![
-            BodyId::mint("body:2").expect("identity grammar"),
-            BodyId::mint("body:1").expect("identity grammar"),
+            BodyId::mint("test:model:body#2").expect("identity grammar"),
+            BodyId::mint("test:model:body#1").expect("identity grammar"),
         ],
         definition: FeatureDefinition::BaseFeature {
             bodies: BodySelection::Native("native:scope".into()),
@@ -1135,7 +1147,7 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
         feature.definition,
         FeatureDefinition::BaseFeature {
             bodies: BodySelection::Resolved { ref bodies, ref native }
-        } if bodies == &[BodyId::mint("body:2").expect("identity grammar"), BodyId::mint("body:1").expect("identity grammar")]
+        } if bodies == &[BodyId::mint("test:model:body#2").expect("identity grammar"), BodyId::mint("test:model:body#1").expect("identity grammar")]
             && native == "native:scope"
     ));
 }
@@ -1279,7 +1291,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         ],
     };
     let mut features = vec![Feature {
-        id: FeatureId("f3d:feature#42".into()),
+        id: FeatureId("f3d:test:feature#42".into()),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -1292,7 +1304,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         definition: FeatureDefinition::SplitFace {
             targets: FaceSelection::Native(group_id.clone()),
             tool: SplitFaceTool::Plane {
-                plane: FeatureId("f3d:feature#plane".into()),
+                plane: FeatureId("f3d:test:feature#plane".into()),
             },
         },
         native_ref: Some(scope_id),
@@ -1678,28 +1690,28 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         native_ref: None,
     };
     let bodies = [
-        body("sheet", BodyKind::Sheet),
-        body("solid", BodyKind::Solid),
+        body("test:model:body#sheet", BodyKind::Sheet),
+        body("test:model:body#solid", BodyKind::Solid),
     ];
     let mut features = [
         sweep(
             "sheet-sweep",
-            vec![BodyId::mint("sheet").expect("identity grammar")],
+            vec![BodyId::mint("test:model:body#sheet").expect("identity grammar")],
         ),
         sweep(
             "solid-sweep",
-            vec![BodyId::mint("solid").expect("identity grammar")],
+            vec![BodyId::mint("test:model:body#solid").expect("identity grammar")],
         ),
         sweep(
             "mixed-sweep",
             vec![
-                BodyId::mint("sheet").expect("identity grammar"),
-                BodyId::mint("solid").expect("identity grammar"),
+                BodyId::mint("test:model:body#sheet").expect("identity grammar"),
+                BodyId::mint("test:model:body#solid").expect("identity grammar"),
             ],
         ),
         sweep(
             "missing-sweep",
-            vec![BodyId::mint("missing").expect("identity grammar")],
+            vec![BodyId::mint("test:model:body#missing").expect("identity grammar")],
         ),
     ];
 
@@ -1731,7 +1743,7 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
     use std::collections::HashSet;
 
     let source_face = |source: &str, slot| {
-        FaceId::mint(format!("f3d:brep/{source}/entity#{slot}")).expect("identity grammar")
+        FaceId::mint(format!("f3d:brep/{source}/brep:entity#{slot}")).expect("identity grammar")
     };
     let active_candidates = vec![source_face("old", 10), source_face("new", 10)];
     assert_eq!(
@@ -1798,7 +1810,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let feature_id = FeatureId("f3d:feature#42".into());
+    let feature_id = FeatureId("f3d:test:feature#42".into());
     let scope_id = "f3d:Design/BulkStream.dat:scope#42";
     let mut scope =
         DesignParameterScope::empty(scope_id, crate::records::DesignFeatureKind::Hole, 42);

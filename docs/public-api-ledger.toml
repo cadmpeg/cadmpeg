@@ -5636,3 +5636,17 @@ crate = "cadmpeg-protein"
 kind = "signature"
 item = "cadmpeg_protein::DecodedRecord::properties"
 reason = "PROT-01: property-owned reference targets and reference multiplicity replace the independent value/connection pair; scalar carriers own optional connection blocks and the private wire retains the flat JSON"
+
+[[change]]
+commit = "7088591c17226495141293cef93e191827c33044"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::geometry::LoftSubdata::type_211"
+reason = "Preserve the two type-211 native header values independently of its fixed one-pair payload; callers now supply dimensions with the row."
+
+[[change]]
+commit = "7088591c17226495141293cef93e191827c33044"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::LoftSubdata::Type211"
+reason = "Preserve the two type-211 native header values independently of its fixed one-pair payload; callers now supply dimensions with the row."

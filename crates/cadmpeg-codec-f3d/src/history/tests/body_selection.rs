@@ -104,7 +104,7 @@ fn move_body_selection_uses_unique_owning_history() {
     };
     let histories = [history, unrelated_history];
     let mut feature = Feature::new(
-        FeatureId("f3d:feature#move".into()),
+        FeatureId("f3d:test:feature#move".into()),
         0,
         FeatureDefinition::MoveBody {
             bodies: BodySelection::Native(group_id.into()),

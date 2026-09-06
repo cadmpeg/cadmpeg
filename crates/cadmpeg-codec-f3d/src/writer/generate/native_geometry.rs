@@ -4326,6 +4326,7 @@ fn native_spline_field_curve(
     geometry: &CurveGeometry,
     parameter_range: Option<[f64; 2]>,
 ) -> Result<NurbsCurve, CodecError> {
+    let geometry = geometry.solved_cache().unwrap_or(geometry);
     match (geometry, parameter_range) {
         (CurveGeometry::Nurbs(curve), _) => Ok(curve.clone()),
         (_, Some(range)) => native_interval_curve(geometry, range),
@@ -4360,6 +4361,7 @@ fn native_interval_curve(
     geometry: &CurveGeometry,
     parameter_range: [f64; 2],
 ) -> Result<NurbsCurve, CodecError> {
+    let geometry = geometry.solved_cache().unwrap_or(geometry);
     if !parameter_range.into_iter().all(f64::is_finite) || parameter_range[0] >= parameter_range[1]
     {
         return Err(CodecError::Malformed(
@@ -5446,6 +5448,7 @@ fn native_embedded_surface(
     bytes: &mut Vec<u8>,
     geometry: &SurfaceGeometry,
 ) -> Result<(), CodecError> {
+    let geometry = geometry.solved_cache().unwrap_or(geometry);
     match geometry {
         SurfaceGeometry::Plane {
             origin,

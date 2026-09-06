@@ -92,11 +92,17 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     let expected_references = update_f3d_native(&mut edited, |native| {
         let relation = &mut native.sketch_relations[0];
         relation.definition = crate::records::SketchRelationDefinition::new(0x40, relation.definition.kind().clone()).expect("valid relation definition");
-        relation.members.reverse();
+        relation.members = relation.members.iter().zip(relation.members.iter().rev())
+            .map(|(position, value)| crate::records::SketchRelationMember {
+                reference: value.reference.clone(), offset: position.offset, relation_ordinal: position.relation_ordinal,
+            }).collect::<Vec<_>>().try_into().expect("uniform member resolution");
         for reference in relation.auxiliary_references.values_mut() {
             *reference = reference.saturating_add(1);
         }
-        relation.return_members.reverse();
+        relation.return_members = relation.return_members.iter().zip(relation.return_members.iter().rev())
+            .map(|(position, value)| crate::records::SketchRelationReturnMember {
+                reference: value.reference.clone(), offset: position.offset,
+            }).collect::<Vec<_>>().try_into().expect("uniform member resolution");
         (
             relation.members.clone(),
             relation.auxiliary_references.clone(),

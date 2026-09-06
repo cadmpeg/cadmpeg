@@ -847,8 +847,9 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
 
     let mut inconsistent = round_trip.ir().clone();
     f3d_native_mut(&mut inconsistent).sketch_relations[0]
-        .resolved_members()
-        .swap(0, 1);
+        .members.resolve(|record_index| crate::records::SketchRelationOperand::Point {
+            record_index, persistent_id: Some(u64::MAX),
+        });
     assert!(crate::validate::validate_native(&inconsistent)
         .iter()
         .any(|finding| {

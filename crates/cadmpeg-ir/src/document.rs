@@ -261,82 +261,9 @@ macro_rules! model_read_value {
 }
 
 #[derive(Serialize, Deserialize)]
-struct SurfaceCacheRewrite {
-    geometry: SurfaceGeometry,
-}
-
-#[derive(Serialize, Deserialize)]
-struct CurveCacheRewrite {
-    geometry: CurveGeometry,
-}
-
-#[derive(Serialize, Deserialize)]
 struct FeatureRegenerationEdge {
     child: crate::features::FeatureId,
     parent: crate::features::FeatureId,
-}
-
-fn rewrite_surface<R: EntityRewrite>(
-    rewrite: &mut R,
-    mut surface: Surface,
-) -> Result<Surface, R::Error> {
-    let cache = match &mut surface.geometry {
-        SurfaceGeometry::Procedural { cache, .. } => cache.take(),
-        _ => None,
-    };
-    let cache = match cache {
-        Some(cache) => Some(
-            rewrite
-                .rewrite(SurfaceCacheRewrite {
-                    geometry: cache.into_geometry(),
-                })?
-                .geometry,
-        ),
-        None => None,
-    };
-    let mut surface = rewrite.rewrite(surface)?;
-    if let (Some(cache), SurfaceGeometry::Procedural { cache: slot, .. }) =
-        (cache, &mut surface.geometry)
-    {
-        *slot = SolvedSurfaceGeometry::new(cache).ok();
-    }
-    Ok(surface)
-}
-
-fn rewrite_curve<R: EntityRewrite>(rewrite: &mut R, mut curve: Curve) -> Result<Curve, R::Error> {
-    let cache = match &mut curve.geometry {
-        CurveGeometry::Procedural { cache, .. } => cache.take(),
-        _ => None,
-    };
-    let cache = match cache {
-        Some(cache) => Some(
-            rewrite
-                .rewrite(CurveCacheRewrite {
-                    geometry: cache.into_geometry(),
-                })?
-                .geometry,
-        ),
-        None => None,
-    };
-    let mut curve = rewrite.rewrite(curve)?;
-    if let (Some(cache), CurveGeometry::Procedural { cache: slot, .. }) =
-        (cache, &mut curve.geometry)
-    {
-        *slot = SolvedCurveGeometry::new(cache).ok();
-    }
-    Ok(curve)
-}
-
-macro_rules! model_rewrite_entity {
-    ($rewrite:expr, surfaces, $entity:expr) => {
-        rewrite_surface($rewrite, $entity)
-    };
-    ($rewrite:expr, curves, $entity:expr) => {
-        rewrite_curve($rewrite, $entity)
-    };
-    ($rewrite:expr, $field:ident, $entity:expr) => {
-        $rewrite.rewrite($entity)
-    };
 }
 
 macro_rules! sorted_model_type {
@@ -426,14 +353,13 @@ macro_rules! declare_model {
             where
                 S: Serializer,
             {
-                crate::topology::install_coedge_ring_neighbors(&self.loops, &self.coedges);
-                crate::topology::install_loop_boundary_roles(&self.faces);
-                let result = ModelWriteWire {
+                let _scope = crate::topology::TopologySerializationScope::new(
+                    &self.faces, &self.loops, &self.coedges,
+                );
+                ModelWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
-                .serialize(serializer);
-                crate::topology::clear_coedge_ring_neighbors();
-                result
+                .serialize(serializer)
             }
         }
 
@@ -550,10 +476,13 @@ macro_rules! declare_model {
                 other: Self,
                 rewrite: &mut R,
             ) -> Result<(), R::Error> {
+                let _scope = crate::topology::TopologySerializationScope::new(
+                    &other.faces, &other.loops, &other.coedges,
+                );
                 $(
                     self.$field.reserve(other.$field.len());
                     for entity in other.$field {
-                        self.$field.push(model_rewrite_entity!(rewrite, $field, entity)?);
+                        self.$field.push(rewrite.rewrite(entity)?);
                     }
                 )*
                 for (child, parent) in other.feature_regeneration_parents.0 {
@@ -589,17 +518,28 @@ macro_rules! declare_model_view {
     ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
         /// Every model arena borrowed in canonical identity order.
         #[derive(Serialize)]
+        #[serde(remote = "Self")]
         pub(crate) struct SortedModel<'a> {
             $($(#[$attribute])* $field: sorted_model_type!($field, $ty, 'a),)*
+            #[serde(skip)]
+            owner: &'a Model,
+        }
+
+        impl Serialize for SortedModel<'_> {
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                crate::topology::with_topology_serialization(
+                    &self.owner.faces, &self.owner.loops, &self.owner.coedges,
+                    || Self::serialize(self, serializer),
+                )
+            }
         }
 
         impl Model {
             /// Borrow every arena in canonical identity order.
             pub(crate) fn sorted(&self) -> SortedModel<'_> {
-                crate::topology::install_coedge_ring_neighbors(&self.loops, &self.coedges);
-                crate::topology::install_loop_boundary_roles(&self.faces);
                 SortedModel {
                     $($field: sorted_model_value!(self, $field),)*
+                    owner: self,
                 }
             }
         }

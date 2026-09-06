@@ -6378,7 +6378,6 @@ impl TryFrom<HoleKindWire> for HoleKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct HoleConstructionWire {
-    #[serde(flatten)]
     kind: HoleKindWire,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     specification: Option<Box<HoleSpecification>>,

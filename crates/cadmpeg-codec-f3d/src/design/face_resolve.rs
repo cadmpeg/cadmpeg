@@ -2288,11 +2288,11 @@ mod tests {
             ]))
         );
         operand.resolved_active_face =
-            Some(FaceId::mint("f3d:brep/legacy/entity#30").expect("identity grammar"));
+            Some(FaceId::mint("f3d:brep/legacy/brep:entity#30").expect("identity grammar"));
         assert_eq!(
             resolved_face_group(&group, std::slice::from_ref(&operand)),
             Some(cadmpeg_ir::features::FaceSelection::Resolved {
-                faces: vec![FaceId::mint("f3d:brep/legacy/entity#30").expect("identity grammar")],
+                faces: vec![FaceId::mint("f3d:brep/legacy/brep:entity#30").expect("identity grammar")],
                 native: group.id.clone(),
             })
         );
@@ -2781,7 +2781,7 @@ mod tests {
             "recipe_kind": "bounded_face",
             "recipe_program_offset": 0,
             "recipe_program": [0, -1, 1],
-            "recipe_node_offsets": [0],
+            "recipe_node_offsets": [],
             "recipe_nodes": [],
             "next_record_index": 23,
             "next_byte_offset": 36,
@@ -2954,8 +2954,8 @@ mod tests {
         .expect("FromFace group");
         let faces = vec![Face {
             id: face(10),
-            shell: ShellId::mint("shell").expect("identity grammar"),
-            surface: SurfaceId::mint("surface").expect("identity grammar"),
+            shell: ShellId::mint("test:model:shell#shell").expect("identity grammar"),
+            surface: SurfaceId::mint("test:model:surface#surface").expect("identity grammar"),
             sense: Sense::Forward,
             loops: Vec::new().into(),
             name: None,
@@ -2996,9 +2996,9 @@ mod tests {
             native_ref: None,
         };
         let face = |id: &str, surface: &str| Face {
-            id: FaceId::mint(id).expect("identity grammar"),
-            shell: ShellId::mint("shell").expect("identity grammar"),
-            surface: SurfaceId::mint(surface).expect("identity grammar"),
+            id: FaceId::mint(format!("test:model:face#{id}")).expect("identity grammar"),
+            shell: ShellId::mint("test:model:shell#shell").expect("identity grammar"),
+            surface: SurfaceId::mint(format!("test:model:surface#{surface}")).expect("identity grammar"),
             sense: Sense::Forward,
             loops: Vec::new().into(),
             name: None,
@@ -3006,7 +3006,7 @@ mod tests {
             tolerance: None,
         };
         let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
-            id: SurfaceId::mint(id).expect("identity grammar"),
+            id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin,
                 normal,
@@ -3140,8 +3140,8 @@ mod tests {
 
         let face_with_surface = |slot: i64, surface: &str| Face {
             id: face(slot),
-            shell: ShellId::mint("shell").expect("identity grammar"),
-            surface: SurfaceId::mint(surface).expect("identity grammar"),
+            shell: ShellId::mint("test:model:shell#shell").expect("identity grammar"),
+            surface: SurfaceId::mint(format!("test:model:surface#{surface}")).expect("identity grammar"),
             sense: Sense::Forward,
             loops: Vec::new().into(),
             name: None,
@@ -3149,7 +3149,7 @@ mod tests {
             tolerance: None,
         };
         let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
-            id: SurfaceId::mint(id).expect("identity grammar"),
+            id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin,
                 normal,

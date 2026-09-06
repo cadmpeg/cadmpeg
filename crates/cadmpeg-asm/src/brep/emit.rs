@@ -2860,7 +2860,7 @@ fn emit_carrier_curve(
                     .enumerate()
                     .map(|(component, curve)| {
                         let id = CurveId::mint(format!(
-                            "{format}:brep:procedural_curve#{i}:component#{component}"
+                            "{format}:brep:procedural_curve#{i}:component:{component}"
                         ))
                         .expect("identity grammar");
                         out.curves.push(Curve {

@@ -514,8 +514,7 @@ fn generated_source_less_rejects_duplicate_procedural_curve_owners() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let mut duplicate = source_less.model.procedural_curves[0].clone();
-    duplicate.id = "generated:duplicate-helix".into();
+    let duplicate = source_less.model.procedural_curves[0].clone();
     source_less.model.procedural_curves.push(duplicate);
     let mut encoded = Vec::new();
     let error = F3dCodec
@@ -540,18 +539,28 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
         .iter_mut()
         .find(|curve| curve.id.as_str() == "f3d:brep:entity#19")
         .expect("topology-bound intcurve");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
+    let cadmpeg_ir::geometry::CurveGeometry::Procedural {
+        cache: Some(cache), ..
+    } = &mut curve.geometry
+    else {
+        panic!("procedural carrier with a solved cache")
+    };
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(mut nurbs) = cache.as_geometry().clone() else {
         panic!("expected NURBS edge carrier")
     };
     let mut control_points = nurbs.control_points().to_vec();
     control_points[1].x = 14.0;
     control_points[1].z = -3.0;
-    *nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
+    nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
         nurbs.weights().map(<[f64]>::to_vec),
         nurbs.periodic(),
+    )
+    .unwrap();
+    *cache = cadmpeg_ir::geometry::SolvedCurveGeometry::new(
+        cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs.clone()),
     )
     .unwrap();
     let expected = curve.clone();
@@ -1098,7 +1107,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
 
     let mut mixed = edited;
     let mut inline = mixed.model.pcurves[0].clone();
-    inline.id = cadmpeg_ir::ids::PcurveId::mint("generated:mixed-inline-pcurve#0")
+    inline.id = cadmpeg_ir::ids::PcurveId::mint("generated:test:mixed-inline-pcurve#0")
         .expect("identity grammar");
     let Some(parameter_range) = inline.parameter_range() else {
         panic!("ref-form fixture carries a parameter range")

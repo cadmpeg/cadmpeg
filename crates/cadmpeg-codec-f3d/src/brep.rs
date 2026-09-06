@@ -681,7 +681,7 @@ mod tests {
             ),
         ] {
             let attribute = generic_tag_attribute(
-                AttributeTarget::Face(FaceId::mint("f3d:face#1").expect("identity grammar")),
+                AttributeTarget::Face(FaceId::mint("f3d:test:face#1").expect("identity grammar")),
                 (version, version),
                 1,
                 groups,
@@ -705,7 +705,7 @@ mod tests {
         ];
         for versions in [(2, 3), (1, 1), (4, 4)] {
             let attribute = generic_tag_attribute(
-                AttributeTarget::Face(FaceId::mint("f3d:face#1").expect("identity grammar")),
+                AttributeTarget::Face(FaceId::mint("f3d:test:face#1").expect("identity grammar")),
                 versions,
                 1,
                 groups.clone(),
@@ -717,7 +717,7 @@ mod tests {
     #[test]
     fn generic_tag_payload_binds_modern_body_design_links() {
         let attribute = generic_tag_attribute(
-            AttributeTarget::Body(BodyId::mint("f3d:body#1").expect("identity grammar")),
+            AttributeTarget::Body(BodyId::mint("f3d:test:body#1").expect("identity grammar")),
             (2, 2),
             1,
             vec![
@@ -736,7 +736,7 @@ mod tests {
     #[test]
     fn generic_tag_payload_binds_legacy_body_design_links() {
         let attribute = generic_tag_attribute(
-            AttributeTarget::Body(BodyId::mint("f3d:body#1").expect("identity grammar")),
+            AttributeTarget::Body(BodyId::mint("f3d:test:body#1").expect("identity grammar")),
             (3, 3),
             1,
             vec![

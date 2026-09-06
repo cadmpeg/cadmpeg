@@ -249,7 +249,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
     let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
     let visual_guid = "11111111-2222-3333-4444-555555555555";
     let appearance = cadmpeg_ir::appearance::Appearance {
-        id: cadmpeg_ir::ids::AppearanceId::mint("f3d:appearance#second").expect("identity grammar"),
+        id: cadmpeg_ir::ids::AppearanceId::mint("f3d:test:appearance#second").expect("identity grammar"),
         name: None,
         asset_guid: Some(visual_guid.into()),
         library_id: None,
@@ -295,7 +295,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
 fn presetless_assignment_matches_only_its_visual_guid() {
     let appearance_guid = "11111111-2222-3333-4444-555555555555";
     let mut appearance = cadmpeg_ir::appearance::Appearance {
-        id: cadmpeg_ir::ids::AppearanceId::mint("f3d:appearance#catalog")
+        id: cadmpeg_ir::ids::AppearanceId::mint("f3d:test:appearance#catalog")
             .expect("identity grammar"),
         name: None,
         asset_guid: Some(appearance_guid.into()),
@@ -363,18 +363,18 @@ fn complete_visual_token_selects_one_revision_record() {
         textures: Vec::new(),
     };
     let appearances = [
-        appearance("f3d:appearance#base", base_token),
-        appearance("f3d:appearance#revised", revised_token),
+        appearance("f3d:test:appearance#base", base_token),
+        appearance("f3d:test:appearance#revised", revised_token),
     ];
 
     let selected = super::appearance_for_visual_token(&appearances, revised_token, None)
         .expect("unique complete visual token")
         .expect("revised appearance exists");
-    assert_eq!(selected.id.as_str(), "f3d:appearance#revised");
+    assert_eq!(selected.id.as_str(), "f3d:test:appearance#revised");
 
     let duplicates = [
-        appearance("f3d:appearance#first", revised_token),
-        appearance("f3d:appearance#second", revised_token),
+        appearance("f3d:test:appearance#first", revised_token),
+        appearance("f3d:test:appearance#second", revised_token),
     ];
     assert!(matches!(
         super::appearance_for_visual_token(&duplicates, revised_token, None),
@@ -398,8 +398,8 @@ fn visual_preset_fallback_requires_one_record() {
         textures: Vec::new(),
     };
     let appearances = [
-        appearance("f3d:appearance#first"),
-        appearance("f3d:appearance#second"),
+        appearance("f3d:test:appearance#first"),
+        appearance("f3d:test:appearance#second"),
     ];
 
     assert!(matches!(
@@ -689,9 +689,13 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
     let visual_family = "11111111-2222-3333-4444-555555555555";
     let visual_guid = "11111111-2222-3333-4444-555555555555_Post2015";
     let mut ir = cadmpeg_ir::CadIr::empty();
-    for face in ["face:1", "face:2", "face:3"] {
+    for face in [
+        "test:model:face#1",
+        "test:model:face#2",
+        "test:model:face#3",
+    ] {
         ir.model.attributes.push(SourceAttribute {
-            id: format!("attr:{face}").into(),
+            id: format!("test:model:attribute#{}", face.rsplit_once('#').unwrap().1).into(),
             target: AttributeTarget::Face(face.into()),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
@@ -715,8 +719,8 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
     };
     // Base record first so prefix-only selection cannot bind it.
     ir.model.appearances.extend([
-        appearance("appearance:base", visual_family),
-        appearance("appearance:revision", visual_guid),
+        appearance("test:model:appearance#base", visual_family),
+        appearance("test:model:appearance#revision", visual_guid),
     ]);
 
     crate::decode::resolve_face_appearance_bindings(
@@ -741,7 +745,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         .model
         .appearance_bindings
         .iter()
-        .all(|binding| binding.appearance.as_str() == "appearance:revision"));
+        .all(|binding| binding.appearance.as_str() == "test:model:appearance#revision"));
     let targets = ir
         .model
         .appearance_bindings
@@ -751,9 +755,9 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
     assert_eq!(
         targets,
         vec![
-            AppearanceTarget::Face("face:1".into()),
-            AppearanceTarget::Face("face:2".into()),
-            AppearanceTarget::Face("face:3".into()),
+            AppearanceTarget::Face("test:model:face#1".into()),
+            AppearanceTarget::Face("test:model:face#2".into()),
+            AppearanceTarget::Face("test:model:face#3".into()),
         ]
     );
 
@@ -807,7 +811,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
         let mut ir = cadmpeg_ir::examples::unit_cube();
         let face = ir.model.faces[0].id.clone();
         ir.model.attributes.push(SourceAttribute {
-            id: "f3d:test:face-material".into(),
+            id: "f3d:test:attribute#face-material".into(),
             target: AttributeTarget::Face(face),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
@@ -816,7 +820,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
             ],
         });
         ir.model.appearances.push(Appearance {
-            id: "appearance:face".into(),
+            id: "test:model:appearance#face".into(),
             name: None,
             asset_guid: None,
             library_id: None,

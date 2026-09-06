@@ -2893,11 +2893,11 @@ pub(crate) fn validate_curve_edits(
 ) -> Result<std::collections::BTreeSet<String>, CodecError> {
     let baseline = baseline
         .iter()
-        .map(|curve| (curve.id.as_str(), &curve.geometry))
+        .map(|curve| (curve.id.as_str(), curve.geometry.solved_cache().unwrap_or(&curve.geometry)))
         .collect::<BTreeMap<_, _>>();
     let target = target
         .iter()
-        .map(|curve| (curve.id.as_str(), &curve.geometry))
+        .map(|curve| (curve.id.as_str(), curve.geometry.solved_cache().unwrap_or(&curve.geometry)))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
         return Err(CodecError::NotImplemented(
@@ -3105,11 +3105,11 @@ pub(crate) fn validate_surface_edits(
 ) -> Result<std::collections::BTreeSet<String>, CodecError> {
     let baseline = baseline
         .iter()
-        .map(|surface| (surface.id.as_str(), &surface.geometry))
+        .map(|surface| (surface.id.as_str(), surface.geometry.solved_cache().unwrap_or(&surface.geometry)))
         .collect::<BTreeMap<_, _>>();
     let target = target
         .iter()
-        .map(|surface| (surface.id.as_str(), &surface.geometry))
+        .map(|surface| (surface.id.as_str(), surface.geometry.solved_cache().unwrap_or(&surface.geometry)))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
         return Err(CodecError::NotImplemented(

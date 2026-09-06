@@ -15523,15 +15523,19 @@ pub struct SketchRelationMember {
     pub reference: SketchRelationReference,
     /// Payload offset of the member, relative to the record.
     pub offset: u32,
-    /// Count of relations already recorded on this member.
-    pub relation_ordinal: u32,
+    /// Count of relations already recorded on this member, when retained by the wire.
+    pub relation_ordinal: Option<u32>,
 }
 
 impl SketchRelationMember {
-    /// An unresolved member with zero offset and ordinal.
+    /// An unresolved member with zero offset and no retained ordinal.
     #[must_use]
     pub fn from_index(record_index: u32) -> Self {
-        Self { reference: SketchRelationReference::Index(record_index), offset: 0, relation_ordinal: 0 }
+        Self {
+            reference: SketchRelationReference::Index(record_index),
+            offset: 0,
+            relation_ordinal: None,
+        }
     }
 }
 
@@ -15559,7 +15563,17 @@ pub struct SketchRelationMembers(Vec<SketchRelationMember>);
 impl SketchRelationMembers {
     /// Construct the unresolved source run with its member locations.
     pub(crate) fn from_indices(rows: impl IntoIterator<Item = (u32, u32, u32)>) -> Self {
-        Self(rows.into_iter().map(|(record_index, offset, relation_ordinal)| SketchRelationMember { reference: SketchRelationReference::Index(record_index), offset, relation_ordinal }).collect())
+        Self(
+            rows.into_iter()
+                .map(
+                    |(record_index, offset, relation_ordinal)| SketchRelationMember {
+                        reference: SketchRelationReference::Index(record_index),
+                        offset,
+                        relation_ordinal: Some(relation_ordinal),
+                    },
+                )
+                .collect(),
+        )
     }
 
     /// Resolve every member while retaining its position metadata.
@@ -15569,9 +15583,6 @@ impl SketchRelationMembers {
             offset: row.offset, relation_ordinal: row.relation_ordinal,
         }).collect();
     }
-
-    /// Reverse source order without changing the run's resolution state.
-    pub(crate) fn reverse(&mut self) { self.0.reverse(); }
 }
 
 impl TryFrom<Vec<SketchRelationMember>> for SketchRelationMembers {
@@ -15580,6 +15591,14 @@ impl TryFrom<Vec<SketchRelationMember>> for SketchRelationMembers {
     fn try_from(rows: Vec<SketchRelationMember>) -> Result<Self, Self::Error> {
         if rows.windows(2).any(|pair| pair[0].reference.resolved().is_some() != pair[1].reference.resolved().is_some()) {
             return Err(SketchRelationPayloadError("sketch relation members run mixes resolved and unresolved references".into()));
+        }
+        if rows
+            .windows(2)
+            .any(|pair| pair[0].relation_ordinal.is_some() != pair[1].relation_ordinal.is_some())
+        {
+            return Err(SketchRelationPayloadError(
+                "sketch relation member ordinals are only partially present".into(),
+            ));
         }
         Ok(Self(rows))
     }
@@ -15609,8 +15628,6 @@ impl SketchRelationReturnMembers {
         }).collect();
     }
 
-    /// Reverse source order without changing the run's resolution state.
-    pub(crate) fn reverse(&mut self) { self.0.reverse(); }
 }
 
 impl TryFrom<Vec<SketchRelationReturnMember>> for SketchRelationReturnMembers {
@@ -15889,30 +15906,6 @@ impl SketchRelation {
             .chain(self.return_members.iter().map(|member| member.reference.record_index()))
     }
 
-    /// Payload offsets parallel to the first reference run.
-    #[must_use]
-    pub fn member_offsets(&self) -> Vec<u32> {
-        self.members.iter().map(|member| member.offset).collect()
-    }
-
-    /// Payload offsets parallel to the return reference run.
-    #[must_use]
-    pub fn return_member_offsets(&self) -> Vec<u32> {
-        self.return_members
-            .iter()
-            .map(|member| member.offset)
-            .collect()
-    }
-
-    /// Relation ordinals parallel to the first reference run.
-    #[must_use]
-    pub fn member_relation_ordinals(&self) -> Vec<u32> {
-        self.members
-            .iter()
-            .map(|member| member.relation_ordinal)
-            .collect()
-    }
-
     /// Resolved first-run members, empty for an unresolved run.
     #[must_use]
     pub fn resolved_members(&self) -> Vec<SketchRelationOperand> {
@@ -15927,11 +15920,22 @@ impl SketchRelation {
 }
 
 fn zip_relation_members(
-    members: Vec<u32>, offsets: Vec<u32>, ordinals: Vec<u32>, resolved: Vec<SketchRelationOperand>,
+    members: Vec<u32>,
+    offsets: Vec<u32>,
+    ordinals: Vec<u32>,
+    resolved: Vec<SketchRelationOperand>,
 ) -> Result<SketchRelationMembers, SketchRelationPayloadError> {
     let len = members.len();
     let offsets = pad_or_check("member_offsets", offsets, len)?;
-    let ordinals = pad_or_check("member_relation_ordinals", ordinals, len)?;
+    let ordinals = if ordinals.is_empty() {
+        (0..len).map(|_| None).collect::<Vec<_>>()
+    } else if ordinals.len() == len {
+        ordinals.into_iter().map(Some).collect()
+    } else {
+        return Err(SketchRelationPayloadError(
+            "sketch relation member_relation_ordinals length does not match members".into(),
+        ));
+    };
     let resolved = pad_resolved("resolved_members", resolved, len)?;
     members.into_iter().zip(offsets).zip(ordinals).zip(resolved)
         .map(|(((record_index, offset), relation_ordinal), resolved)| Ok(SketchRelationMember {
@@ -16082,10 +16086,6 @@ impl From<SketchRelation> for SketchRelationSerde {
     fn from(relation: SketchRelation) -> Self {
         let (constraint_kinds, unknown_constraint_bits) =
             constraint_kinds_from_state(relation.definition.state());
-        let emit_ordinals = relation
-            .members
-            .iter()
-            .any(|member| member.relation_ordinal != 0);
         let (auxiliary_references, auxiliary_reference_offsets) = relation.auxiliary_references.into_wire();
         Self {
             id: relation.id,
@@ -16113,15 +16113,8 @@ impl From<SketchRelation> for SketchRelationSerde {
             state: relation.definition.state(),
             constraint_kinds,
             unknown_constraint_bits,
-            member_relation_ordinals: if emit_ordinals {
-                relation
-                    .members
-                    .iter()
-                    .map(|member| member.relation_ordinal)
-                    .collect()
-            } else {
-                Vec::new()
-            },
+            member_relation_ordinals: relation.members.iter()
+                .filter_map(|member| member.relation_ordinal).collect(),
             entity_genesis: relation.entity_genesis,
             pattern: relation.definition.kind.into_pattern(),
             return_members: relation

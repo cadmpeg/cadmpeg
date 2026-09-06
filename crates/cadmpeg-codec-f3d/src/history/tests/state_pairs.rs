@@ -718,38 +718,38 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
         terminal_edge_recipe_reference_faces(
             &[
                 reference(
-                    vec![FaceId::mint("face-c").expect("identity grammar")],
-                    vec![FaceId::mint("ignored").expect("identity grammar")],
+                    vec![FaceId::mint("test:model:face#face-c").expect("identity grammar")],
+                    vec![FaceId::mint("test:model:face#ignored").expect("identity grammar")],
                 ),
                 reference(
                     Vec::new(),
-                    vec![FaceId::mint("face-d").expect("identity grammar")]
+                    vec![FaceId::mint("test:model:face#face-d").expect("identity grammar")]
                 ),
                 reference(
-                    vec![FaceId::mint("face-a").expect("identity grammar")],
+                    vec![FaceId::mint("test:model:face#face-a").expect("identity grammar")],
                     Vec::new()
                 ),
             ],
             None,
         ),
         vec![
-            vec![FaceId::mint("face-c").expect("identity grammar")],
-            vec![FaceId::mint("face-d").expect("identity grammar")],
-            vec![FaceId::mint("face-a").expect("identity grammar")],
+            vec![FaceId::mint("test:model:face#face-c").expect("identity grammar")],
+            vec![FaceId::mint("test:model:face#face-d").expect("identity grammar")],
+            vec![FaceId::mint("test:model:face#face-a").expect("identity grammar")],
         ]
     );
     let reference_faces = terminal_edge_recipe_reference_faces(
         &[
             reference(
-                vec![FaceId::mint("face-c").expect("identity grammar")],
-                vec![FaceId::mint("ignored").expect("identity grammar")],
+                vec![FaceId::mint("test:model:face#face-c").expect("identity grammar")],
+                vec![FaceId::mint("test:model:face#ignored").expect("identity grammar")],
             ),
             reference(
                 Vec::new(),
-                vec![FaceId::mint("face-d").expect("identity grammar")],
+                vec![FaceId::mint("test:model:face#face-d").expect("identity grammar")],
             ),
             reference(
-                vec![FaceId::mint("face-e").expect("identity grammar")],
+                vec![FaceId::mint("test:model:face#face-e").expect("identity grammar")],
                 Vec::new(),
             ),
         ],
@@ -757,20 +757,20 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
     );
     assert_eq!(
         reference_faces,
-        vec![vec![FaceId::mint("face-d").expect("identity grammar")]]
+        vec![vec![FaceId::mint("test:model:face#face-d").expect("identity grammar")]]
     );
     assert_eq!(
         terminal_edge_recipe_faces(
             &[
-                FaceId::mint("face-b").expect("identity grammar"),
-                FaceId::mint("face-a").expect("identity grammar")
+                FaceId::mint("test:model:face#face-b").expect("identity grammar"),
+                FaceId::mint("test:model:face#face-a").expect("identity grammar")
             ],
             &reference_faces,
         ),
         vec![
-            FaceId::mint("face-a").expect("identity grammar"),
-            FaceId::mint("face-b").expect("identity grammar"),
-            FaceId::mint("face-d").expect("identity grammar"),
+            FaceId::mint("test:model:face#face-a").expect("identity grammar"),
+            FaceId::mint("test:model:face#face-b").expect("identity grammar"),
+            FaceId::mint("test:model:face#face-d").expect("identity grammar"),
         ]
     );
 }
@@ -1364,7 +1364,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
             &[
                 FaceId::mint(id(4)).expect("identity grammar"),
                 FaceId::mint(id(99)).expect("identity grammar"),
-                FaceId::mint("foreign").expect("identity grammar")
+                FaceId::mint("test:model:face#foreign").expect("identity grammar")
             ],
             &topology,
         ),

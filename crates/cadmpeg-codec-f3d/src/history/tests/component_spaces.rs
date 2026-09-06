@@ -150,7 +150,7 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
         design_reference: 301,
         design_reference_offset: 8,
         candidate_faces: vec![
-            cadmpeg_ir::ids::FaceId::mint("wrong-active-face").expect("identity grammar")
+            cadmpeg_ir::ids::FaceId::mint("test:model:face#wrong-active-face").expect("identity grammar")
         ],
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),

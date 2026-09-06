@@ -953,7 +953,7 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
 
     source_less.model.surfaces[0].source_object = None;
     source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
-        id: "generated:associated-curve#0".into(),
+        id: "generated:test:associated-curve#0".into(),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Line {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -1028,13 +1028,13 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
 
-    let point_id = PointId::mint("generated:point#3").expect("identity grammar");
+    let point_id = PointId::mint("generated:test:point#3").expect("identity grammar");
     source_less.model.points.push(cadmpeg_ir::topology::Point {
         id: point_id.clone(),
         position: cadmpeg_ir::math::Point3::new(10.0, 10.0, 0.0),
         source_object: None,
     });
-    let vertex_id = VertexId::mint("generated:vertex#3").expect("identity grammar");
+    let vertex_id = VertexId::mint("generated:test:vertex#3").expect("identity grammar");
     source_less
         .model
         .vertices
@@ -1045,7 +1045,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
         });
     let first_vertex = source_less.model.edges[0].start.clone();
     source_less.model.edges[2].end = vertex_id.clone();
-    let edge_id = EdgeId::mint("generated:edge#3").expect("identity grammar");
+    let edge_id = EdgeId::mint("generated:test:edge#3").expect("identity grammar");
     source_less.model.edges.push(cadmpeg_ir::topology::Edge {
         id: edge_id.clone(),
         curve: None,
@@ -1054,7 +1054,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
         param_range: Some([0.0, 1.0]),
         tolerance: None,
     });
-    let coedge_id = CoedgeId::mint("generated:coedge#3").expect("identity grammar");
+    let coedge_id = CoedgeId::mint("generated:test:coedge#3").expect("identity grammar");
     let loop_id = source_less.model.loops[0].id.clone();
     source_less
         .model
@@ -1152,7 +1152,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
         let length = delta.norm();
         let direction =
             cadmpeg_ir::math::Vector3::new(delta.x / length, delta.y / length, delta.z / length);
-        let id = CurveId::mint(format!("generated:curve#{index}")).expect("identity grammar");
+        let id = CurveId::mint(format!("generated:test:curve#{index}")).expect("identity grammar");
         source_less.model.curves.push(Curve {
             id: id.clone(),
             geometry: CurveGeometry::Line {
@@ -1219,7 +1219,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let curve_id = CurveId::mint("generated:circle#0").expect("identity grammar");
+    let curve_id = CurveId::mint("generated:test:circle#0").expect("identity grammar");
     let expected = CurveGeometry::Circle {
         center: cadmpeg_ir::math::Point3::new(4.0, -2.0, 0.0),
         axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -1282,7 +1282,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let curve_id = CurveId::mint("generated:ellipse#0").expect("identity grammar");
+    let curve_id = CurveId::mint("generated:test:ellipse#0").expect("identity grammar");
     let expected = CurveGeometry::Ellipse {
         center: cadmpeg_ir::math::Point3::new(-3.0, 5.0, 0.0),
         axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),

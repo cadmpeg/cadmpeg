@@ -114,7 +114,7 @@ pub fn write_semantic(
         .model
         .curves
         .iter()
-        .filter_map(|curve| match &curve.geometry {
+        .filter_map(|curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
             CurveGeometry::Nurbs(nurbs) if edited_curves.contains(curve.id.as_str()) => {
                 let before = baseline
                     .ir()
@@ -122,7 +122,7 @@ pub fn write_semantic(
                     .curves
                     .iter()
                     .find(|before| before.id == curve.id)?;
-                let CurveGeometry::Nurbs(before) = &before.geometry else {
+                let CurveGeometry::Nurbs(before) = before.geometry.solved_cache().unwrap_or(&before.geometry) else {
                     return None;
                 };
                 Some((
@@ -144,7 +144,7 @@ pub fn write_semantic(
         .model
         .surfaces
         .iter()
-        .filter_map(|surface| match &surface.geometry {
+        .filter_map(|surface| match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
             SurfaceGeometry::Nurbs(nurbs) if edited_surfaces.contains(surface.id.as_str()) => {
                 let before = baseline
                     .ir()
@@ -152,7 +152,7 @@ pub fn write_semantic(
                     .surfaces
                     .iter()
                     .find(|before| before.id == surface.id)?;
-                let SurfaceGeometry::Nurbs(before) = &before.geometry else {
+                let SurfaceGeometry::Nurbs(before) = before.geometry.solved_cache().unwrap_or(&before.geometry) else {
                     return None;
                 };
                 Some((

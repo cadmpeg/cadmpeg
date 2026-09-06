@@ -449,7 +449,7 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
-pub(crate) fn install_loop_boundary_roles(faces: &[Face]) {
+fn install_loop_boundary_roles(faces: &[Face]) {
     let mut roles = HashMap::with_capacity(faces.iter().map(|face| face.loops.len()).sum());
     for face in faces {
         for (index, id) in face.loops.iter().enumerate() {
@@ -861,7 +861,7 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
-pub(crate) fn install_coedge_ring_neighbors(loops: &[Loop], coedges: &[Coedge]) {
+fn install_coedge_ring_neighbors(loops: &[Loop], coedges: &[Coedge]) {
     let mut neighbors = HashMap::with_capacity(coedges.len());
     for coedge in coedges {
         if let Some(pair) = loops
@@ -883,8 +883,45 @@ pub fn coedge_ring_neighbors(loops: &[Loop], coedge: &Coedge) -> Option<(CoedgeI
         .find_map(|loop_| loop_.ring_neighbors_of(coedge))
 }
 
-pub(crate) fn clear_coedge_ring_neighbors() {
-    COEDGE_RING_NEIGHBORS.with(|slot| slot.borrow_mut().clear());
+/// Serialize an entity graph with loop roles and coedge neighbors derived from
+/// its owning topology. Nested calls restore the enclosing graph's context.
+pub fn with_topology_serialization<T>(
+    faces: &[Face],
+    loops: &[Loop],
+    coedges: &[Coedge],
+    serialize: impl FnOnce() -> T,
+) -> T {
+    let _scope = TopologySerializationScope::new(faces, loops, coedges);
+    serialize()
+}
+
+pub(crate) struct TopologySerializationScope {
+    neighbors: HashMap<CoedgeId, (CoedgeId, CoedgeId)>,
+    roles: HashMap<LoopId, LoopBoundaryRole>,
+    // A scope must restore the same thread-local state that it installed.
+    _thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+impl TopologySerializationScope {
+    pub(crate) fn new(faces: &[Face], loops: &[Loop], coedges: &[Coedge]) -> Self {
+        let neighbors = COEDGE_RING_NEIGHBORS.with(|slot| std::mem::take(&mut *slot.borrow_mut()));
+        let roles = LOOP_BOUNDARY_ROLES.with(|slot| std::mem::take(&mut *slot.borrow_mut()));
+        let scope = Self {
+            neighbors,
+            roles,
+            _thread: std::marker::PhantomData,
+        };
+        install_coedge_ring_neighbors(loops, coedges);
+        install_loop_boundary_roles(faces);
+        scope
+    }
+}
+
+impl Drop for TopologySerializationScope {
+    fn drop(&mut self) {
+        COEDGE_RING_NEIGHBORS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.neighbors));
+        LOOP_BOUNDARY_ROLES.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.roles));
+    }
 }
 
 #[derive(Serialize)]
@@ -1036,10 +1073,7 @@ pub struct Point {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        clear_coedge_ring_neighbors, install_coedge_ring_neighbors, Coedge, CoedgeUseCurve, Loop,
-        LoopBoundary,
-    };
+    use super::{with_topology_serialization, Coedge, CoedgeUseCurve, Loop, LoopBoundary};
 
     fn coedge_json() -> serde_json::Value {
         serde_json::json!({
@@ -1073,14 +1107,36 @@ mod tests {
                 vertex_uses: Vec::new(),
             },
         };
-        install_coedge_ring_neighbors(std::slice::from_ref(&loop_), std::slice::from_ref(&coedge));
-        let encoded = serde_json::to_value(&coedge).unwrap();
-        clear_coedge_ring_neighbors();
+        let encoded = with_topology_serialization(
+            &[],
+            std::slice::from_ref(&loop_),
+            std::slice::from_ref(&coedge),
+            || serde_json::to_value(&coedge).unwrap(),
+        );
         assert_eq!(encoded["use_curve"], "test:model:curve#0");
         assert_eq!(
             encoded["use_curve_parameter_range"],
             serde_json::json!([0.25, 0.75])
         );
+    }
+
+    #[test]
+    fn topology_serialization_restores_nested_context_after_unwind() {
+        let model = crate::examples::unit_cube().model;
+        let coedge = &model.coedges[0];
+        assert!(serde_json::to_value(coedge).is_err());
+        with_topology_serialization(&model.faces, &model.loops, &model.coedges, || {
+            let expected = serde_json::to_value(coedge).unwrap();
+            let interrupted = std::panic::catch_unwind(|| {
+                with_topology_serialization(&[], &[], &[], || {
+                    assert!(serde_json::to_value(coedge).is_err());
+                    panic!("interrupt nested serialization");
+                });
+            });
+            assert!(interrupted.is_err());
+            assert_eq!(serde_json::to_value(coedge).unwrap(), expected);
+        });
+        assert!(serde_json::to_value(coedge).is_err());
     }
 
     #[test]

@@ -465,7 +465,7 @@ fn recipe_reference(candidate_edges: &[i64]) -> DesignRecipeReference {
         candidate_faces: Vec::new(),
         candidate_edges: candidate_edges
             .iter()
-            .map(|edge| EdgeId::mint(format!("f3d:edge#{edge}")).expect("identity grammar"))
+            .map(|edge| EdgeId::mint(format!("f3d:test:edge#{edge}")).expect("identity grammar"))
             .collect(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
@@ -486,8 +486,8 @@ fn grouped_surface_patch_recipe_requires_agreeing_exact_references() {
     assert_eq!(
         surface_patch_grouped_recipe_edges(&[&first, &second]),
         SurfacePatchRecipeEdges::Resolved(vec![
-            EdgeId::mint("f3d:edge#17").expect("identity grammar"),
-            EdgeId::mint("f3d:edge#18").expect("identity grammar")
+            EdgeId::mint("f3d:test:edge#17").expect("identity grammar"),
+            EdgeId::mint("f3d:test:edge#18").expect("identity grammar")
         ])
     );
 }
@@ -894,7 +894,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
     let first = identity(10, &[(17, 5.0), (19, 5.0)]);
     let mut second = identity(11, &[(17, 5.0), (19, 5.0)]);
     second.group_member_ordinal = 1;
-    let feature_id = cadmpeg_ir::features::FeatureId("feature".into());
+    let feature_id = cadmpeg_ir::features::FeatureId("test:model:feature#feature".into());
 
     assert!(matches!(
         resolved_edge_group(
@@ -1061,7 +1061,7 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
         [("operand-a", Some(17)), ("operand-b", Some(18))],
         41,
         "feature",
-        FeatureInputTopologyId::mint("state").expect("identity grammar"),
+        FeatureInputTopologyId::mint("test:model:feature-input#state").expect("identity grammar"),
         "group",
     )
     .is_none());
@@ -1070,7 +1070,7 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
             [("operand-a", None), ("operand-b", None)],
             41,
             "feature",
-            FeatureInputTopologyId::mint("state").expect("identity grammar"),
+            FeatureInputTopologyId::mint("test:model:feature-input#state").expect("identity grammar"),
             "group",
         ),
         None

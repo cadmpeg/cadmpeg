@@ -35,8 +35,7 @@ fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
-        let mut duplicate = source_less.model.procedural_surfaces[0].clone();
-        duplicate.id = format!("generated:duplicate-{label}").into();
+        let duplicate = source_less.model.procedural_surfaces[0].clone();
         source_less.model.procedural_surfaces.push(duplicate);
 
         let error = F3dCodec
@@ -77,10 +76,13 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
         .iter_mut()
         .find(|surface| surface.id == surface_id)
         .unwrap()
-        .geometry = SurfaceGeometry::Plane {
+        .geometry = SurfaceGeometry::Procedural {
+        construction: source_less.model.procedural_surfaces[0].id.clone(),
+        cache: Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::new(SurfaceGeometry::Plane {
         origin: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
         u_axis: Vector3::new(1.0, 0.0, 0.0),
+    }).unwrap()),
     };
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -110,9 +112,12 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
         .iter_mut()
         .find(|curve| curve.id == curve_id)
         .unwrap()
-        .geometry = CurveGeometry::Line {
+        .geometry = CurveGeometry::Procedural {
+        construction: source_less.model.procedural_curves[0].id.clone(),
+        cache: Some(cadmpeg_ir::geometry::SolvedCurveGeometry::new(CurveGeometry::Line {
         origin: Point3::new(0.0, 0.0, 0.0),
         direction: Vector3::new(1.0, 0.0, 0.0),
+    }).unwrap()),
     };
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)

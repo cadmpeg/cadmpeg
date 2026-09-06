@@ -155,7 +155,7 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
 
     let resolved = |name: &str| {
         FaceSelection::Faces(vec![
-            FaceId::mint(name.to_owned()).expect("identity grammar")
+            FaceId::mint(format!("test:model:face#{name}")).expect("identity grammar")
         ])
     };
     assert!(!feature_definition_is_incomplete(
@@ -184,7 +184,7 @@ fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
     use cadmpeg_ir::ids::BodyId;
 
     let complete = FeatureDefinition::DeleteBody {
-        bodies: BodySelection::Bodies(vec![BodyId::mint("body:1").expect("identity grammar")]),
+        bodies: BodySelection::Bodies(vec![BodyId::mint("test:model:body#1").expect("identity grammar")]),
         mode: BodyRetentionMode::DeleteSelected,
     };
     assert!(!feature_definition_is_incomplete(&complete));
@@ -197,7 +197,7 @@ fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::DeleteBody {
-            bodies: BodySelection::Bodies(vec![BodyId::mint("body:1").expect("identity grammar")]),
+            bodies: BodySelection::Bodies(vec![BodyId::mint("test:model:body#1").expect("identity grammar")]),
             mode: BodyRetentionMode::Unresolved,
         }
     ));
@@ -211,7 +211,7 @@ fn product_feature_definitions_require_neutral_reference_ids() {
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::InsertComponent {
-            occurrence: OccurrenceId::mint("model:occurrence#component").expect("identity grammar"),
+            occurrence: OccurrenceId::mint("model:test:occurrence#component").expect("identity grammar"),
         }
     ));
     assert!(!feature_definition_is_incomplete(
@@ -219,11 +219,7 @@ fn product_feature_definitions_require_neutral_reference_ids() {
             joint: JointId("model:joint#assembly".into()),
         }
     ));
-    assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::InsertComponent {
-            occurrence: OccurrenceId::mint(String::new()).expect("identity grammar"),
-        }
-    ));
+    assert!(OccurrenceId::mint(String::new()).is_err());
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::AssemblyJoint {
             joint: JointId(String::new()),
@@ -240,8 +236,10 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let faces = FaceSelection::Faces(vec!["face:1".into()]);
-    let bodies = BodySelection::Bodies(vec![BodyId::mint("body:1").expect("identity grammar")]);
+    let faces = FaceSelection::Faces(vec!["test:model:face#1".into()]);
+    let bodies = BodySelection::Bodies(vec![
+        BodyId::mint("test:model:body#1").expect("identity grammar")
+    ]);
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Sphere {
@@ -323,7 +321,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     )));
     assert!(!feature_definition_is_incomplete(&shell(
         None,
-        FaceSelection::Faces(vec!["face:opening".into()]),
+        FaceSelection::Faces(vec!["test:model:face#opening".into()]),
     )));
     assert!(feature_definition_is_incomplete(&shell(
         None,
@@ -358,7 +356,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Scale {
             bodies: BodySelection::Bodies(vec![
-                BodyId::mint("body:scale").expect("identity grammar")
+                BodyId::mint("test:model:body#scale").expect("identity grammar")
             ]),
             center: Some(ScaleCenter::ModelOrigin),
             factors: ScaleFactors::Uniform(1.5),
@@ -367,7 +365,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Scale {
             bodies: BodySelection::Bodies(vec![
-                BodyId::mint("body:scale").expect("identity grammar")
+                BodyId::mint("test:model:body#scale").expect("identity grammar")
             ]),
             center: Some(ScaleCenter::Native("native:center".into())),
             factors: ScaleFactors::Uniform(1.5),
@@ -386,7 +384,7 @@ fn knit_surfaces_require_resolved_faces_and_operation_settings() {
             create_solid,
             gap_tolerance,
         };
-    let faces = FaceSelection::Faces(vec!["face:1".into()]);
+    let faces = FaceSelection::Faces(vec!["test:model:face#1".into()]);
 
     assert!(!feature_definition_is_incomplete(&complete(
         faces.clone(),

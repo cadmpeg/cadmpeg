@@ -470,7 +470,8 @@ fn nested_attributes_inherit_their_topology_owner() {
     let parent = current_attribute(7, 3);
     let child = legacy_attribute(8, 7);
     let records = HashMap::from([(7, &parent), (8, &child)]);
-    let expected = AttributeTarget::Edge(EdgeId::mint("edge").expect("identity grammar"));
+    let expected =
+        AttributeTarget::Edge(EdgeId::mint("test:model:edge#0").expect("identity grammar"));
     let targets = HashMap::from([(3, expected.clone())]);
 
     assert_eq!(
@@ -586,7 +587,7 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     let mut source = Vec::new();
     collect_attributes(
         &entity,
-        &AttributeTarget::Face(FaceId::mint("face").expect("identity grammar")),
+        &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
         &mut emitted,
         &mut source,
@@ -674,7 +675,7 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     let mut source = Vec::new();
     collect_attributes(
         &entity,
-        &AttributeTarget::Face(FaceId::mint("face").expect("identity grammar")),
+        &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
         &mut emitted,
         &mut source,
@@ -714,14 +715,14 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     let mut brep = AsmBrep {
         shells: vec![Shell {
             id: ShellId::mint(id(FORMAT, 3)).expect("identity grammar"),
-            region: RegionId::mint("region").expect("identity grammar"),
+            region: RegionId::mint("test:model:region#0").expect("identity grammar"),
             faces: Vec::new(),
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         }],
         loops: vec![Loop {
             id: LoopId::mint(id(FORMAT, 4)).expect("identity grammar"),
-            face: FaceId::mint("face").expect("identity grammar"),
+            face: FaceId::mint("test:model:face#0").expect("identity grammar"),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: Vec::new(),
                 vertex_uses: Vec::new(),

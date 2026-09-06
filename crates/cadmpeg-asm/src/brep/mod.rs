@@ -70,6 +70,7 @@ pub(crate) fn embedded_pcurve_geometry(pcurve: nurbs::pcurve::NurbsPcurve) -> Pc
 /// The decoded ASM B-rep graph plus loss accounting. Every field is a fact
 /// of the ASM stream, independent of the format that references the stream.
 #[derive(Default, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub struct AsmBrep {
     /// Bodies.
     pub bodies: Vec<Body>,
@@ -134,6 +135,23 @@ pub struct AsmBrep {
     /// Source locations for emitted B-rep and synthetic child records.
     #[serde(skip)]
     pub annotation_records: Vec<AnnotationRecord>,
+}
+
+impl Serialize for AsmBrep {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        cadmpeg_ir::topology::with_topology_serialization(
+            &self.faces,
+            &self.loops,
+            &self.coedges,
+            || Self::serialize(self, serializer),
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for AsmBrep {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::deserialize(deserializer)
+    }
 }
 
 impl AsmBrep {

@@ -563,7 +563,7 @@ fn encode_wire_body_smbh(
 fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecError> {
     let model = &target.model;
     for carrier in &model.curves {
-        match carrier.geometry {
+        match *carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
             CurveGeometry::Line { origin, direction } => {
                 native_curve_base(records, "straight")?;
                 native_point(
@@ -1098,7 +1098,7 @@ fn encode_face_topology_smbh(
     }
 
     for surface in &model.surfaces {
-        match surface.geometry {
+        match *surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
             SurfaceGeometry::Plane {
                 origin,
                 normal,

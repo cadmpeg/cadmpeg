@@ -122,7 +122,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
                 target: AttributeTarget::Face(
-                    FaceId::mint("same-stream").expect("identity grammar"),
+                    FaceId::mint("test:model:face#same-stream").expect("identity grammar"),
                 ),
                 selector: 1,
                 token: String::new(),
@@ -132,7 +132,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
                 target: AttributeTarget::Face(
-                    FaceId::mint("other-selector").expect("identity grammar"),
+                    FaceId::mint("test:model:face#other-selector").expect("identity grammar"),
                 ),
                 selector: 2,
                 token: String::new(),
@@ -142,7 +142,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             PersistentSubentityTag {
                 id: "f3d:xref/Other/occurrence-0/design:persistent-subentity-tag#1".into(),
                 target: AttributeTarget::Face(
-                    FaceId::mint("other-stream").expect("identity grammar"),
+                    FaceId::mint("test:model:face#other-stream").expect("identity grammar"),
                 ),
                 selector: 0,
                 token: String::new(),
@@ -155,8 +155,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     assert_eq!(
         operand.references[0].candidate_faces,
         [
-            FaceId::mint("other-selector").expect("identity grammar"),
-            FaceId::mint("same-stream").expect("identity grammar")
+            FaceId::mint("test:model:face#other-selector").expect("identity grammar"),
+            FaceId::mint("test:model:face#same-stream").expect("identity grammar")
         ]
     );
 
@@ -208,7 +208,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
                 target: AttributeTarget::Face(
-                    FaceId::mint("same-stream").expect("identity grammar"),
+                    FaceId::mint("test:model:face#same-stream").expect("identity grammar"),
                 ),
                 selector: 1,
                 token: String::new(),
@@ -218,7 +218,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
                 target: AttributeTarget::Face(
-                    FaceId::mint("other-selector").expect("identity grammar"),
+                    FaceId::mint("test:model:face#other-selector").expect("identity grammar"),
                 ),
                 selector: 2,
                 token: String::new(),
@@ -230,7 +230,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     );
     assert_eq!(
         combine_operand.references[0].candidate_faces,
-        [FaceId::mint("same-stream").expect("identity grammar")]
+        [FaceId::mint("test:model:face#same-stream").expect("identity grammar")]
     );
 
     let mut nested = Vec::new();
@@ -1278,7 +1278,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     face_scope.payload = crate::records::DesignFeatureKind::Extrude.into();
     let mut face_recipe = recipe;
     face_recipe.kind = ConstructionRecipeKind::BoundedFace;
-    face_recipe.design.as_mut().expect("recipe id").id.value = "303".into();
+    face_recipe.design = Some(crate::records::ConstructionRecipeDesign {
+        id: crate::records::RecordedValue {
+            value: "303".into(),
+            offset: None,
+        },
+        selector: None,
+    });
     face_recipe.byte_offset = face_recipe_name_at as u64;
     face_recipe.record_index_offset = Some(face_recipe_record_at + 8);
     let mut operand = parse_face_operand(

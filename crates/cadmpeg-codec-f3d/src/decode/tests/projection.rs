@@ -89,7 +89,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
     // The feature's owning entity reference is distinct from its scope index.
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![221]);
     let mut features = vec![Feature {
-        id: FeatureId("feature:mesh-import".into()),
+        id: FeatureId("test:model:feature#mesh-import".into()),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -216,7 +216,7 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId("feature:full-round".into()),
+        id: FeatureId("test:model:feature#full-round".into()),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -229,7 +229,7 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
         definition: FeatureDefinition::FullRoundFillet {
             groups: vec![FullRoundFilletGroup {
                 center_faces: FaceSelection::Resolved {
-                    faces: vec!["face:center".into()],
+                    faces: vec!["test:model:face#center".into()],
                     native: "native:center-group".into(),
                 },
                 side_one_faces: FullRoundSideSelection::Automatic,
@@ -299,7 +299,7 @@ fn hole_completeness_requires_support_placement_size_and_extent() {
     let complete: cadmpeg_ir::features::FeatureDefinition =
         serde_json::from_value(serde_json::json!({
             "definition": "hole",
-            "face": {"kind": "faces", "value": ["face:support"]},
+            "face": {"kind": "faces", "value": ["test:model:face#support"]},
             "placements": [{
                 "kind": "directed",
                 "position": {"x": 1.0, "y": 2.0, "z": 3.0},
@@ -344,23 +344,23 @@ fn face_selection_resolution_accepts_complete_generated_and_partial_members() {
 
     assert!(face_selection_is_resolved(&FaceSelection::Generated {
         faces: vec![GeneratedFaceRef {
-            feature: FeatureId("feature:source".into()),
-            local_id: "face:1".into(),
+            feature: FeatureId("test:model:feature#source".into()),
+            local_id: "test:model:face#1".into(),
         }],
         native: "native:generated-face".into(),
     }));
     assert!(face_selection_is_resolved(
         &FaceSelection::HistoricalPartial {
-            state: FeatureInputTopologyId::mint("state:1").expect("identity grammar"),
-            faces: vec![HistoricalFaceId::mint("face:1").expect("identity grammar")],
+            state: FeatureInputTopologyId::mint("test:model:feature-input#state:1").expect("identity grammar"),
+            faces: vec![HistoricalFaceId::mint("test:model:face#1").expect("identity grammar")],
             unresolved: Vec::new(),
             native: "native:historical-face".into(),
         }
     ));
     assert!(!face_selection_is_resolved(
         &FaceSelection::HistoricalPartial {
-            state: FeatureInputTopologyId::mint("state:1").expect("identity grammar"),
-            faces: vec![HistoricalFaceId::mint("face:1").expect("identity grammar")],
+            state: FeatureInputTopologyId::mint("test:model:feature-input#state:1").expect("identity grammar"),
+            faces: vec![HistoricalFaceId::mint("test:model:face#1").expect("identity grammar")],
             unresolved: vec!["native:missing-face".into()],
             native: "native:historical-face".into(),
         }
@@ -376,7 +376,7 @@ fn filled_surface_completeness_requires_boundary_conditions_support_and_merge() 
 
     let surface = |support_faces, continuity, merge_result| FeatureDefinition::FilledSurface {
         boundary: SurfaceBoundary::Path(PathRef::Edges(vec![
-            EdgeId::mint("edge:1").expect("identity grammar")
+            EdgeId::mint("test:model:edge#1").expect("identity grammar")
         ])),
         support_faces,
         continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(continuity),
@@ -399,7 +399,7 @@ fn filled_surface_completeness_requires_boundary_conditions_support_and_merge() 
         Some(true),
     )));
     assert!(!feature_definition_is_incomplete(&surface(
-        FaceSelection::Faces(vec![FaceId::mint("face:support").expect("identity grammar")]),
+        FaceSelection::Faces(vec![FaceId::mint("test:model:face#support").expect("identity grammar")]),
         SurfaceContinuity::Curvature,
         Some(true),
     )));
@@ -448,13 +448,13 @@ fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
         serde_json::json!({"kind": "native", "value": "native:profile"}),
     )));
     assert!(!feature_definition_is_incomplete(&edge_flange(
-        serde_json::json!({"kind": "edges", "value": ["edge:1"]}),
+        serde_json::json!({"kind": "edges", "value": ["test:model:edge#1"]}),
     )));
     assert!(feature_definition_is_incomplete(&edge_flange(
         serde_json::json!({"kind": "native", "value": "native:edges"}),
     )));
     assert!(!feature_definition_is_incomplete(&hem(
-        serde_json::json!({"kind": "edges", "value": ["edge:1"]}),
+        serde_json::json!({"kind": "edges", "value": ["test:model:edge#1"]}),
     )));
     assert!(feature_definition_is_incomplete(&hem(
         serde_json::json!({"kind": "native", "value": "native:edges"}),
@@ -479,7 +479,7 @@ fn selected_face_and_edge_features_require_neutral_operands() {
     };
 
     assert!(!feature_definition_is_incomplete(&fillet(
-        serde_json::json!({"kind": "edges", "value": ["edge:1"]}),
+        serde_json::json!({"kind": "edges", "value": ["test:model:edge#1"]}),
     )));
     assert!(feature_definition_is_incomplete(&fillet(
         serde_json::json!({"kind": "native", "value": "native:edges"}),
@@ -487,7 +487,7 @@ fn selected_face_and_edge_features_require_neutral_operands() {
     assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "delete_face",
-            "faces": {"kind": "faces", "value": ["face:1"]},
+            "faces": {"kind": "faces", "value": ["test:model:face#1"]},
             "heal": true
         }),
     )));
@@ -501,14 +501,14 @@ fn selected_face_and_edge_features_require_neutral_operands() {
     assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "offset_surface",
-            "faces": {"kind": "faces", "value": ["face:1"]},
+            "faces": {"kind": "faces", "value": ["test:model:face#1"]},
             "distance": 2.0
         }),
     )));
     assert!(feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "offset_surface",
-            "faces": {"kind": "faces", "value": ["face:1"]}
+            "faces": {"kind": "faces", "value": ["test:model:face#1"]}
         }),
     )));
 }
@@ -521,7 +521,7 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
     };
 
     assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({"definition": "form", "cages": ["subd:1"]}),
+        serde_json::json!({"definition": "form", "cages": ["test:model:subd#1"]}),
     )));
     assert!(feature_definition_is_incomplete(&definition(
         serde_json::json!({"definition": "form", "cages": []}),
@@ -585,7 +585,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
             "kind": "profile",
             "value": {"kind": "sketch", "value": "sketch:section"}
         },
-        "path": {"kind": "edges", "value": ["edge:path"]},
+        "path": {"kind": "edges", "value": ["test:model:edge#path"]},
         "mode": {"mode": "solid", "op": "join"}
     }));
     assert!(!feature_definition_is_incomplete(&sweep));
@@ -596,7 +596,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
                 "kind": "profile",
                 "value": {"kind": "native", "value": "native:section"}
             },
-            "path": {"kind": "edges", "value": ["edge:path"]},
+            "path": {"kind": "edges", "value": ["test:model:edge#path"]},
             "mode": {"mode": "solid", "op": "join"}
         }),
     )));
@@ -604,7 +604,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
     let chamfer = definition(serde_json::json!({
         "definition": "chamfer",
         "groups": [{
-            "edges": {"kind": "edges", "value": ["edge:1"]},
+            "edges": {"kind": "edges", "value": ["test:model:edge#1"]},
             "spec": {"kind": "distance", "distance": 2.0}
         }]
     }));
@@ -621,8 +621,8 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
 
     let combine = definition(serde_json::json!({
         "definition": "combine",
-        "target": {"kind": "bodies", "value": ["body:target"]},
-        "tools": {"kind": "bodies", "value": ["body:tool"]},
+        "target": {"kind": "bodies", "value": ["test:model:body#target"]},
+        "tools": {"kind": "bodies", "value": ["test:model:body#tool"]},
         "op": "cut"
     }));
     assert!(!feature_definition_is_incomplete(&combine));
@@ -630,7 +630,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
         serde_json::json!({
             "definition": "combine",
             "target": {"kind": "native", "value": "native:target"},
-            "tools": {"kind": "bodies", "value": ["body:tool"]},
+            "tools": {"kind": "bodies", "value": ["test:model:body#tool"]},
             "op": "cut"
         }),
     )));
@@ -690,7 +690,7 @@ fn datum_point_completeness_requires_a_resolved_construction_rule() {
     assert!(!feature_definition_is_incomplete(&definition(Some(
         serde_json::json!({
             "kind": "circle_center",
-            "edge": {"kind": "edges", "value": ["edge:1"]}
+            "edge": {"kind": "edges", "value": ["test:model:edge#1"]}
         }),
     ))));
     assert!(feature_definition_is_incomplete(&definition(None)));
@@ -731,8 +731,8 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
         serde_json::json!({
             "kind": "historical",
             "value": {
-                "state": "state:1",
-                "vertex": "vertex:1",
+                "state": "test:model:feature-input#state:1",
+                "vertex": "test:model:vertex#1",
                 "native": "native:1"
             }
         }),
@@ -818,7 +818,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(cadmpeg_ir::features::Feature {
-        id: cadmpeg_ir::features::FeatureId("feature:coil".into()),
+        id: cadmpeg_ir::features::FeatureId("test:model:feature#coil".into()),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -839,7 +839,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
         construction,
         CoilResult::Boolean {
             operation: cadmpeg_ir::features::BooleanKind::Cut,
-            targets: BodySelection::Bodies(vec![BodyId::mint("body:1").expect("identity grammar")]),
+            targets: BodySelection::Bodies(vec![BodyId::mint("test:model:body#1").expect("identity grammar")]),
         },
     )));
 }
@@ -849,8 +849,8 @@ fn draft_completeness_requires_material_side() {
     let complete: cadmpeg_ir::features::FeatureDefinition =
         serde_json::from_value(serde_json::json!({
             "definition": "draft",
-            "faces": {"kind": "faces", "value": ["face:drafted"]},
-            "neutral_plane": {"kind": "faces", "value": ["face:neutral"]},
+            "faces": {"kind": "faces", "value": ["test:model:face#drafted"]},
+            "neutral_plane": {"kind": "faces", "value": ["test:model:face#neutral"]},
             "pull_direction": null,
             "angle": 0.1,
             "outward": true
@@ -908,7 +908,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId("feature:loft".into()),
+        id: FeatureId("test:model:feature#loft".into()),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -973,7 +973,7 @@ fn body_copy_features_require_resolved_body_selection() {
     use cadmpeg_ir::ids::BodyId;
 
     let resolved = BodySelection::Resolved {
-        bodies: vec![BodyId::mint("body:result").expect("identity grammar")],
+        bodies: vec![BodyId::mint("test:model:body#result").expect("identity grammar")],
         native: "native:body-selection".into(),
     };
     assert!(!feature_definition_is_incomplete(
@@ -997,11 +997,11 @@ fn split_body_requires_resolved_target_and_tool_selections() {
     use cadmpeg_ir::ids::{BodyId, FaceId};
 
     let resolved_target = BodySelection::Resolved {
-        bodies: vec![BodyId::mint("body:target").expect("identity grammar")],
+        bodies: vec![BodyId::mint("test:model:body#target").expect("identity grammar")],
         native: "native:target".into(),
     };
     let resolved_tool = FaceSelection::Resolved {
-        faces: vec![FaceId::mint("face:tool").expect("identity grammar")],
+        faces: vec![FaceId::mint("test:model:face#tool").expect("identity grammar")],
         native: "native:tool".into(),
     };
     assert!(!feature_definition_is_incomplete(
@@ -1020,7 +1020,7 @@ fn split_body_requires_resolved_target_and_tool_selections() {
         &FeatureDefinition::SplitBody {
             targets: BodySelection::Native("native:target".into()),
             tools: FaceSelection::Resolved {
-                faces: vec![FaceId::mint("face:tool").expect("identity grammar")],
+                faces: vec![FaceId::mint("test:model:face#tool").expect("identity grammar")],
                 native: "native:tool".into(),
             },
         }
@@ -1060,7 +1060,7 @@ fn design_projection_gaps_count_cosmetic_thread_faces() {
         serde_json::json!({
             "kind": "historical",
             "value": {
-                "state": "feature-input",
+                "state": "test:model:feature-input#thread",
                 "faces": ["historical:face"],
                 "native": "native:thread-group"
             }
@@ -1071,7 +1071,7 @@ fn design_projection_gaps_count_cosmetic_thread_faces() {
     {
         ir.model.features.push(
             serde_json::from_value(serde_json::json!({
-                "id": format!("thread-{ordinal}"),
+                "id": format!("test:model:feature#thread-{ordinal}"),
                 "ordinal": ordinal,
                 "definition": {
                     "definition": "cosmetic_thread",
@@ -1185,7 +1185,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                         "edges": {
                             "kind": "historical_partial",
                             "value": {
-                                "state": "history-input",
+                                "state": "test:model:feature-input#history-input",
                                 "edges": [],
                                 "unresolved": [
                                     "native:edge-operand#1",
@@ -1412,7 +1412,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         unreachable!();
     };
     groups[2].edges = cadmpeg_ir::features::EdgeSelection::Historical {
-        state: cadmpeg_ir::ids::FeatureInputTopologyId::mint("history-input")
+        state: cadmpeg_ir::ids::FeatureInputTopologyId::mint("test:model:feature-input#history-input")
             .expect("identity grammar"),
         edges: vec![
             cadmpeg_ir::ids::HistoricalEdgeId::mint("history-edge").expect("identity grammar")
@@ -1781,7 +1781,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
     };
     ir.model.bodies[0].color = Some(direct);
     ir.model.appearances.push(Appearance {
-        id: AppearanceId::mint("f3d:appearance#material").expect("identity grammar"),
+        id: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),
         name: None,
         asset_guid: None,
         library_id: None,
@@ -1794,9 +1794,9 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         properties: Default::default(),
     });
     let binding = |id: &str, target| AppearanceBinding {
-        id: id.into(),
+        id: format!("test:model:appearance-binding#{id}").into(),
         target,
-        appearance: AppearanceId::mint("f3d:appearance#material").expect("identity grammar"),
+        appearance: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),
         source_entity_id: None,
         object_type: None,
         visible: None,

@@ -704,7 +704,8 @@ pub(super) fn continue_fixed_kind_operations(
         definition: historical_definition,
         native_ref: Some(indexed_revolve_scope.id.clone()),
     };
-    let surface_id = cadmpeg_ir::ids::SurfaceId::mint("surface:53").expect("identity grammar");
+    let surface_id =
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#53").expect("identity grammar");
     crate::design::feature_project::bind_revolve_face_axes(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&indexed_revolve_scope),
@@ -713,7 +714,7 @@ pub(super) fn continue_fixed_kind_operations(
         &[],
         &[cadmpeg_ir::topology::Face {
             id: cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#40").expect("identity grammar"),
-            shell: cadmpeg_ir::ids::ShellId::mint("shell:1").expect("identity grammar"),
+            shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#1").expect("identity grammar"),
             surface: surface_id.clone(),
             sense: cadmpeg_ir::topology::Sense::Forward,
             loops: Vec::new().into(),
@@ -766,8 +767,8 @@ pub(super) fn continue_fixed_kind_operations(
 
         recipe_nodes: Vec::new(),
         candidate_faces: vec![
-            cadmpeg_ir::ids::FaceId::mint("face:axis-a").expect("identity grammar"),
-            cadmpeg_ir::ids::FaceId::mint("face:axis-b").expect("identity grammar"),
+            cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-a").expect("identity grammar"),
+            cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-b").expect("identity grammar"),
         ],
         unreferenced_candidate_faces: Vec::new(),
         alternate_selector_candidate_faces: Vec::new(),
@@ -799,9 +800,9 @@ pub(super) fn continue_fixed_kind_operations(
     };
     let axis_faces = [
         cadmpeg_ir::topology::Face {
-            id: cadmpeg_ir::ids::FaceId::mint("face:axis-a").expect("identity grammar"),
-            shell: cadmpeg_ir::ids::ShellId::mint("shell:axis").expect("identity grammar"),
-            surface: cadmpeg_ir::ids::SurfaceId::mint("surface:axis-a").expect("identity grammar"),
+            id: cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-a").expect("identity grammar"),
+            shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#axis").expect("identity grammar"),
+            surface: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-a").expect("identity grammar"),
             sense: cadmpeg_ir::topology::Sense::Forward,
             loops: Vec::new().into(),
             name: None,
@@ -809,9 +810,9 @@ pub(super) fn continue_fixed_kind_operations(
             tolerance: None,
         },
         cadmpeg_ir::topology::Face {
-            id: cadmpeg_ir::ids::FaceId::mint("face:axis-b").expect("identity grammar"),
-            shell: cadmpeg_ir::ids::ShellId::mint("shell:axis").expect("identity grammar"),
-            surface: cadmpeg_ir::ids::SurfaceId::mint("surface:axis-b").expect("identity grammar"),
+            id: cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-b").expect("identity grammar"),
+            shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#axis").expect("identity grammar"),
+            surface: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b").expect("identity grammar"),
             sense: cadmpeg_ir::topology::Sense::Forward,
             loops: Vec::new().into(),
             name: None,
@@ -821,7 +822,7 @@ pub(super) fn continue_fixed_kind_operations(
     ];
     let mut axis_surfaces = [
         cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId::mint("surface:axis-a").expect("identity grammar"),
+            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-a").expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                 origin: Point3::new(1.0, 2.0, 3.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -831,7 +832,7 @@ pub(super) fn continue_fixed_kind_operations(
             source_object: None,
         },
         cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId::mint("surface:axis-b").expect("identity grammar"),
+            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b").expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                 origin: Point3::new(1.0, 2.0, 8.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -1287,7 +1288,7 @@ pub(super) fn continue_fixed_kind_operations(
             &[],
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
-            mode: cadmpeg_ir::features::SweepMode::Unresolved,
+            mode: cadmpeg_ir::features::SweepMode::NewBody,
             ..
         })
     ));

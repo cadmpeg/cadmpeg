@@ -1640,15 +1640,16 @@ fn loft_subdata_form(
     let type_code = cur.take_long()?;
     let row_count = cur.take_long()?;
     let column_count = cur.take_long()?;
-    if type_code == 211 && (row_count != 1 || column_count != 0) {
-        return None;
-    }
     let rows_to_read = if type_code == 211 {
         1
     } else {
         usize::try_from(row_count).ok()?
     };
-    let columns_to_read = usize::try_from(column_count).ok()?;
+    let columns_to_read = if type_code == 211 {
+        0
+    } else {
+        usize::try_from(column_count).ok()?
+    };
     // Each row consumes two double tokens for its parameters.
     let rows_to_read = bounded_len(rows_to_read as u64, 2, cur.rest().len())?;
     let mut rows = Vec::with_capacity(rows_to_read);
@@ -1676,7 +1677,7 @@ fn loft_subdata_form(
         let [row] = rows.as_slice() else {
             return None;
         };
-        Some(LoftSubdata::type_211(row.parameters))
+        Some(LoftSubdata::type_211([row_count, column_count], row.parameters))
     } else {
         LoftSubdata::table(type_code, rows)
     }
