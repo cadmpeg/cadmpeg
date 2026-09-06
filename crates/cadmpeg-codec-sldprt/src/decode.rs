@@ -1238,7 +1238,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             } => {
                 incomplete_profile(profile) || incomplete_face_selection(face)
             }
-            FeatureDefinition::Sketch { sketch, .. } => sketch.is_none(),
+            FeatureDefinition::Sketch { sketch, .. } => sketch.id().is_none(),
             FeatureDefinition::SpatialSketch { sketch } => sketch.is_none(),
             FeatureDefinition::Extrude {
                 profile,
@@ -3846,7 +3846,7 @@ fn mark_active_configuration(ir: &mut CadIr) {
         None
     };
     for (position, configuration) in ir.model.configurations.iter_mut().enumerate() {
-        configuration.active = (selected == Some(position)).into();
+        configuration.active = selected == Some(position);
     }
 }
 

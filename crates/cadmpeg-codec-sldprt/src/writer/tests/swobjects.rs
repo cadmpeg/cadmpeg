@@ -331,7 +331,7 @@ fn encoder_writes_source_less_line_sketches() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch_id.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
         },
         native_ref: None,
     });
@@ -564,7 +564,9 @@ fn encoder_writes_source_less_line_sketches() {
         )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.definition,
-        FeatureDefinition::Sketch { sketch: Some(_) }
+        FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
+        }
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         &feature.definition,

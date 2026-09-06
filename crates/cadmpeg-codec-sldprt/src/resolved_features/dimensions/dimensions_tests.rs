@@ -1587,7 +1587,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch_id.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
         },
         native_ref: Some(feature_ref.into()),
     };

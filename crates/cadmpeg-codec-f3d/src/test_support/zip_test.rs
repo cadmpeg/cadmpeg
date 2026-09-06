@@ -54,7 +54,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less revision surface round trip");
     let actual = scrubbed_definition(
-        &round_trip
+        round_trip
             .ir()
             .model
             .procedural_surfaces

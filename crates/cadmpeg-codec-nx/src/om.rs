@@ -479,7 +479,7 @@ pub(crate) fn offset_store_named_point<'a>(
         if !bytes.is_empty()
             && construction_payload_named_fields(block)
                 .first()
-                .is_some_and(|name| name.payload_leading())
+                .is_some_and(ConstructionPayloadNamedField::payload_leading)
         {
             return candidate;
         }
@@ -1300,11 +1300,8 @@ pub struct SketchPayloadMixedPair {
 }
 
 impl SketchPayloadMixedPair {
-    pub fn discriminator(&self) -> &'static [u8] {
-        SketchPairForm::Legacy.discriminator()
-    }
     pub fn value_offsets(&self) -> [usize; 2] {
-        let first = self.offset + self.discriminator().len();
+        let first = self.offset + SketchPairForm::Legacy.discriminator().len();
         [first, first + 8 + 1]
     }
 }
@@ -1606,6 +1603,8 @@ impl<'a> IndexedSection<'a> {
     }
 
     /// Decode tagged cross-record references from every bounded record.
+    // The tuple carries one coupled result; a separate alias would add no invariant.
+    #[allow(clippy::type_complexity)]
     pub fn references(
         &self,
     ) -> Vec<(
@@ -2566,6 +2565,8 @@ pub fn fset_payload_reference_graph(
 
 /// Decode the exactly counted nullable construction-reference field at the
 /// start of a bounded `DELETE` payload.
+// Names follow the ordered source slots in this fixed-width lane.
+#[allow(clippy::many_single_char_names)]
 pub fn delete_payload_references(
     record: OperationPayload<'_>,
 ) -> Option<DeletePayloadReferenceField> {
@@ -3772,7 +3773,7 @@ pub fn operation_body_reference_lanes(
                 operation_body_reference_lane_values(record, at, count - 1, |bytes, offset| {
                     let token = reference_index::PayloadIndexToken::read(bytes)?;
                     let width = token.raw().len();
-                    Some((PayloadObjectReference { token, offset }, width))
+                    Some((PayloadObjectReference { offset, token }, width))
                 });
             let values = match (compact, objects) {
                 (Some(values), None) => OperationBodyReferenceLaneValues::CompactIndex(values),
@@ -3895,6 +3896,8 @@ pub fn block_construction_references(
 
 /// Decode the fixed eight-reference construction lane at the start of a
 /// `DATUM_CSYS` payload.
+// Names follow the ordered source slots in this fixed-width lane.
+#[allow(clippy::many_single_char_names)]
 pub fn datum_csys_references(record: OperationPayload<'_>) -> Option<DatumCsysReferenceField> {
     const HEADER_SUFFIX: [u8; 13] = [
         0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,

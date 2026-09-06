@@ -84,7 +84,11 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
     ));
     assert!(matches!(
         decoded.ir().model.features[1].definition,
-        FeatureDefinition::Sketch { sketch: None, .. }
+        FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            ..
+        }
     ));
 
     decoded.ir_mut().model.features[0].name = Some("Renamed spatial path".into());

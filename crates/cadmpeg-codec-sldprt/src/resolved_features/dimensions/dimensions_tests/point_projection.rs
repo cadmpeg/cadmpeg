@@ -92,7 +92,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch_id.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
         },
         native_ref: Some("feature".into()),
     };

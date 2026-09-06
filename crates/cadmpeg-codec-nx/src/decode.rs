@@ -542,7 +542,7 @@ pub fn summarize(scan: &Scan) -> (crate::dialect::LayerClassification, Vec<Strin
         let entities = om_sections
             .iter()
             .filter_map(|(_, section)| section.as_fixed())
-            .map(|records| records.len())
+            .map(<[crate::om::FixedEntityRecord<'_>]>::len)
             .sum::<usize>();
         let blocks = om_sections
             .iter()

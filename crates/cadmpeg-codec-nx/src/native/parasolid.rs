@@ -9,7 +9,7 @@ use crate::parasolid::name_references::NameReferences;
 use crate::topology::blend_surface_state::BlendSurfaceState;
 use crate::topology::offset_surface_state::OffsetSurfaceState;
 
-use crate::deltas::record_family::{PointCoordinates, RecordFamily};
+use crate::deltas::record_family::RecordFamily;
 use crate::deltas::Census;
 use crate::intersection::finite_point::FinitePoint;
 use crate::parasolid::attribute_action::AttributeAction;
@@ -269,8 +269,7 @@ fn group_members_from_records(
             |(ordinal, (list_record_xmt, member_xmt, target))| {
                 Some(ParasolidGroupMember {
                     id: format!(
-                        "nx:s{partition_stream_ordinal}:parasolid-group-member#{group_node_id}-{}-{ordinal}",
-                        group_xmt
+                        "nx:s{partition_stream_ordinal}:parasolid-group-member#{group_node_id}-{group_xmt}-{ordinal}"
                     ),
                     partition_stream_ordinal,
                     group_xmt,
@@ -384,7 +383,7 @@ struct ParasolidDeltasRecordWire {
     group_selector: Option<GroupSelector>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     group_linked_reference_status: Option<GroupReferenceStatus>,
-    position: Option<PointCoordinates>,
+    position: Option<[f64; 3]>,
     byte_len: u64,
     inflated_offset: u64,
 }
@@ -420,6 +419,11 @@ impl TryFrom<ParasolidDeltasRecordWire> for ParasolidDeltasRecord {
     type Error = String;
 
     fn try_from(wire: ParasolidDeltasRecordWire) -> Result<Self, Self::Error> {
+        if wire.family == "POINT" {
+            if let Some(position) = wire.position {
+                crate::deltas::record_family::PointCoordinates::try_from(position)?;
+            }
+        }
         let family = crate::deltas::record_family::RecordFamily::from_wire(
             &wire.family,
             wire.kind,

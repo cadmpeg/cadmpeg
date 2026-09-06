@@ -302,7 +302,7 @@ mod tests {
             crate::records::DesignDecalMappingMode::FitToFaces
         );
         assert_eq!(image.target_group_record_index, 24);
-        assert_eq!(image.asset.primary_frame_length(), 30);
+        assert_eq!(crate::records::DesignDecalAsset::primary_frame_length(), 30);
         assert_eq!(image.asset.name_frame_length(), 41);
     }
 

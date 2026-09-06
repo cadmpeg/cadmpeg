@@ -627,7 +627,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                sketch: Some(sketch_id.clone()),
+                sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
             },
             native_ref: None,
         });

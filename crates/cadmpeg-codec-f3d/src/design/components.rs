@@ -29,7 +29,7 @@ pub(crate) fn project_local_components(
     for scope in scopes {
         if let Some(qualifiers) = scope
             .assembly_alignment()
-            .and_then(|alignment| alignment.operand_qualifiers())
+            .and_then(super::super::records::feature::DesignAssemblyAlignment::operand_qualifiers)
         {
             for qualifier in &qualifiers {
                 let DesignAssemblyOperandQualifier::OccurrencePath { path } = qualifier else {
@@ -50,12 +50,15 @@ pub(crate) fn project_local_components(
                     &native_by_guid,
                     &root.component_guid,
                     &root.occurrence_guid,
-                    root.transform().map(|frame| frame.value).unwrap_or([
-                        [1.0, 0.0, 0.0, 0.0],
-                        [0.0, 1.0, 0.0, 0.0],
-                        [0.0, 0.0, 1.0, 0.0],
-                        [0.0, 0.0, 0.0, 1.0],
-                    ]),
+                    root.transform().map_or(
+                        [
+                            [1.0, 0.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0],
+                        ],
+                        |frame| frame.value,
+                    ),
                 );
             }
         }

@@ -43,7 +43,7 @@ impl CountedValue for [f64; 3] {
     }
 
     fn is_finite(&self) -> bool {
-        self.iter().all(|value| value.is_finite())
+        self.iter().all(CountedValue::is_finite)
     }
 }
 

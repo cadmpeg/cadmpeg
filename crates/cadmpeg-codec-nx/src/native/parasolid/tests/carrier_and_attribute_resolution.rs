@@ -25,7 +25,9 @@ fn parasolid_attribute_definition_requires_declared_printable_name_and_field_rec
     assert_eq!(XmtTarget::to_wire(definitions[0].next_definition_xmt), 1);
     assert_eq!(definitions[0].type_id.get(), 9000);
     assert_eq!(
-        definitions[0].action_codes.map(|action| action.code()),
+        definitions[0]
+            .action_codes
+            .map(crate::parasolid::attribute_action::AttributeAction::code),
         [0, 1, 2, 3, 4, 5, 6, 0]
     );
     assert_eq!(XmtTarget::to_wire(definitions[0].field_names_xmt), 0x30);

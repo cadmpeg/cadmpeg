@@ -128,7 +128,9 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     let producer = feature(
         "producer",
         "producer-native",
-        FeatureDefinition::Sketch { sketch: None },
+        FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+        },
     );
     let target = feature(
         "target",
@@ -363,7 +365,9 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
             "sketch",
             "sketch-native",
             1,
-            FeatureDefinition::Sketch { sketch: None },
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            },
         ),
     ];
     let mut payload = vec![0; 100];
@@ -555,11 +559,15 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     assert_eq!(sketches[0].profiles[0].len(), 3);
     assert!(matches!(
         features[1].definition,
-        FeatureDefinition::Sketch { sketch: Some(_) }
+        FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
+        }
     ));
     let expected_sketch = sketches[0].id.clone();
     let mut configured_features = features.clone();
-    configured_features[1].definition = FeatureDefinition::Sketch { sketch: None };
+    configured_features[1].definition = FeatureDefinition::Sketch {
+        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+    };
     project_marker_backed_sketches(
         &mut configured_features,
         &mut sketches,
@@ -572,7 +580,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     assert!(matches!(
         &configured_features[1].definition,
         FeatureDefinition::Sketch {
-            sketch: Some(sketch),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
         } if sketch == &expected_sketch
     ));
 
@@ -592,7 +600,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     .with_endpoint_refs(source_entity.endpoint_refs.clone());
     let mut replacement_features = features.clone();
     replacement_features[1].definition = FeatureDefinition::Sketch {
-        sketch: Some(compact_id),
+        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(compact_id)),
     };
     let mut replacement_sketches = vec![compact_sketch];
     let mut replacement_entities = vec![compact_entity];
@@ -650,7 +658,9 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch { sketch: None },
+        definition: FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+        },
         native_ref: Some("feature-native".into()),
     }];
     let lanes = vec![FeatureInputLane {
@@ -691,7 +701,7 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
     ));
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::Sketch { sketch: Some(sketch), .. }
+        FeatureDefinition::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)), .. }
             if sketch == &sketches[0].id
     ));
 }
@@ -821,7 +831,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch_id.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
         },
         native_ref: Some("feature-native".into()),
     };
@@ -1007,7 +1017,9 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch { sketch },
+        definition: FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
+        },
         native_ref: Some(native_ref.into()),
     };
     let single = SketchId("single".into());

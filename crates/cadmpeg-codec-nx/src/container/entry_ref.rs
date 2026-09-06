@@ -44,8 +44,8 @@ mod tests {
         let first = EntryRef::new(&entries, 0).unwrap();
         let second = EntryRef::new(&entries, 1).unwrap();
         assert_eq!((first.index(), second.index()), (0, 1));
-        assert!(std::ptr::eq(&*first, &entries[0]));
-        assert!(std::ptr::eq(&*second, &entries[1]));
+        assert!(std::ptr::eq(&raw const *first, &raw const entries[0]));
+        assert!(std::ptr::eq(&raw const *second, &raw const entries[1]));
         assert!(EntryRef::new(&entries, 2).is_none());
     }
 }

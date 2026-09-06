@@ -1195,6 +1195,8 @@ pub struct SweepProfile {
 }
 
 /// The layout-discriminated body of an embedded sweep surface.
+// Keep typed source payloads inline without an allocation for each admitted record.
+#[allow(clippy::large_enum_variant)]
 pub enum EmbeddedSweepSurfaceLayout {
     /// The profile-first form: profile, spine, and a formula triple.
     ProfileFirst {

@@ -339,7 +339,7 @@ fn assigning_configuration_index_does_not_capture_global_input_lane() {
     .into();
     let mut configuration =
         design_configuration("configuration", 0, Some(0), Some("native-configuration"));
-    configuration.active = true.into();
+    configuration.active = true;
     sync_neutral_configurations(&[configuration], &mut native);
 
     let native = native.expect("required invariant");

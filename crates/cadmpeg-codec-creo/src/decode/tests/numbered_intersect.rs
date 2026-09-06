@@ -679,7 +679,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
                  table_class_id: u32,
                  entries: Vec<crate::feature::FeatureEntityTableEntry>| {
         crate::feature::FeatureEntityTable {
-            feature_id: feature_id,
+            feature_id,
             table_class_id,
             entries,
             offset: 0,
@@ -856,7 +856,7 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
     };
     let producer = |feature_id, entity_id, offset| {
         crate::feature::FeatureEntityTable {
-            feature_id: feature_id,
+            feature_id,
             table_class_id: 67,
             entries: vec![entry(entity_id, offset + 1)],
             offset,
@@ -1132,7 +1132,7 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
                  entries: Vec<crate::feature::FeatureEntityTableEntry>,
                  offset: usize| {
         crate::feature::FeatureEntityTable {
-            feature_id: feature_id,
+            feature_id,
             table_class_id,
             entries,
             offset,
@@ -1292,8 +1292,10 @@ fn mixed_current_and_generated_edges_remain_native() {
     ir.model.edges.push(cadmpeg_ir::topology::Edge {
         id: EdgeId::mint("creo:visibgeom:edge#45".to_string()).expect("identity grammar"),
         curve: None,
-        start: cadmpeg_ir::ids::VertexId::mint("test:start".to_string()).expect("identity grammar"),
-        end: cadmpeg_ir::ids::VertexId::mint("test:end".to_string()).expect("identity grammar"),
+        start: cadmpeg_ir::ids::VertexId::mint("test:model:entity#test:start".to_string())
+            .expect("identity grammar"),
+        end: cadmpeg_ir::ids::VertexId::mint("test:model:entity#test:end".to_string())
+            .expect("identity grammar"),
         param_range: None,
         tolerance: None,
     });
@@ -1817,14 +1819,15 @@ fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
 #[test]
 fn geometry_signal_excludes_opaque_carriers() {
     let mut ir = CadIr::empty();
-    let surface_id = SurfaceId::mint("surface".to_string()).expect("identity grammar");
+    let surface_id =
+        SurfaceId::mint("test:model:entity#surface".to_string()).expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
     ir.model.curves.push(Curve {
-        id: CurveId::mint("curve".to_string()).expect("identity grammar"),
+        id: CurveId::mint("test:model:entity#curve".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Unknown { record: None },
         source_object: None,
     });
@@ -1834,7 +1837,8 @@ fn geometry_signal_excludes_opaque_carriers() {
     let _attached = ir.model.add_procedural_surface(
         surface_id,
         ProceduralSurface::new(
-            ProceduralSurfaceId::mint("procedural".to_string()).expect("identity grammar"),
+            ProceduralSurfaceId::mint("test:model:entity#procedural".to_string())
+                .expect("identity grammar"),
             ProceduralSurfaceDefinition::Exact {
                 spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
                     ranges: [[0.0, 1.0], [0.0, 1.0]],

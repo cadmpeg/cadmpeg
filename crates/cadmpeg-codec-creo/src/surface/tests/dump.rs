@@ -37,7 +37,7 @@ fn decode_transfers_positional_line_extrusion_plane() {
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
         .expect("extrusion plane");
     assert!(matches!(
-        surface.geometry,
+        surface.geometry.solved_cache().unwrap_or(&surface.geometry),
         cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin: cadmpeg_ir::math::Point3 {
                 x: 0.0,
@@ -123,7 +123,7 @@ fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
         .expect("extrusion plane");
     assert!(matches!(
-        surface.geometry,
+        surface.geometry.solved_cache().unwrap_or(&surface.geometry),
         cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin: cadmpeg_ir::math::Point3 {
                 x: 2.0,

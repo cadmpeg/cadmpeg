@@ -48,6 +48,8 @@ use std::collections::BTreeMap;
 const EPS_FULL_TURN: f64 = 1e-12;
 
 #[test]
+// These checked constructors must accept the explicit test fixtures.
+#[allow(clippy::unwrap_used)]
 fn interpolation_spline_remains_a_closed_extrusion_profile() {
     let sketch_id = SketchId("creo:model:sketch#spline".to_string());
     let spline_id = SketchEntityId("creo:model:sketch_entity#spline".to_string());

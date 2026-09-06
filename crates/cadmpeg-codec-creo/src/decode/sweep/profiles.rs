@@ -201,8 +201,10 @@ pub(in super::super) fn circular_pcurve(
     }
     knots.extend([1.0; 3]);
     cadmpeg_ir::geometry::PcurveNurbs::new(2, knots, control_points, Some(weights), false)
-        .map(|nurbs| PcurveGeometry::Nurbs { nurbs })
-        .unwrap_or_else(|_| line_pcurve(center, center))
+        .map_or_else(
+            |_| line_pcurve(center, center),
+            |nurbs| PcurveGeometry::Nurbs { nurbs },
+        )
 }
 
 pub(in super::super) fn extrusion_cap_pcurve(

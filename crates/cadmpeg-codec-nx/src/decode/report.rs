@@ -562,7 +562,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "extract body"
             }
             FeatureDefinition::Sketch { sketch }
-                if sketch.as_ref().is_none_or(|sketch| {
+                if sketch.id().is_none_or(|sketch| {
                     ir.model
                         .sketches
                         .iter()
@@ -720,7 +720,11 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|feature| {
             matches!(
                 feature.definition,
-                FeatureDefinition::Sketch { sketch: None, .. }
+                FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                        | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                    ..
+                }
             )
         })
         .count();
@@ -739,7 +743,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|feature| feature_in_active_scope(feature))
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
             } => Some(sketch.clone()),
             _ => None,

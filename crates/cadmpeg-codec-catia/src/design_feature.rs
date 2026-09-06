@@ -126,13 +126,7 @@ impl DesignFeatureTransfer {
             });
         }
         for (child, parent) in parents {
-            if ir
-                .model
-                .set_feature_regeneration_parent(child, parent)
-                .is_err()
-            {
-                continue;
-            }
+            let _ = ir.model.set_feature_regeneration_parent(child, parent);
         }
     }
 
@@ -674,7 +668,7 @@ fn transfer_sketch(
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch_id),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
         },
         native_ref: Some(object.id.clone()),
     });

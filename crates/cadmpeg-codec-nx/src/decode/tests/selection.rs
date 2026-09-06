@@ -1084,7 +1084,9 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch { sketch: None },
+        definition: FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+        },
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -1250,7 +1252,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         native_ref: None,
     });
     ir.model.features[2].definition = FeatureDefinition::Sketch {
-        sketch: Some(sketch_id),
+        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
     };
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
@@ -1343,7 +1345,9 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch { sketch: None },
+            definition: FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+            },
             native_ref: None,
         },
     ]);

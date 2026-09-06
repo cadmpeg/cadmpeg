@@ -99,7 +99,7 @@ fn deltas_walks_attribute_records_that_share_a_terminal_zero() {
         census
             .records
             .iter()
-            .map(|record| record.kind())
+            .map(super::Record::kind)
             .collect::<Vec<_>>(),
         [84, 81, 82]
     );
@@ -126,7 +126,7 @@ fn deltas_walks_fixed_record_that_shares_a_terminal_zero() {
         census
             .records
             .iter()
-            .map(|record| record.kind())
+            .map(super::Record::kind)
             .collect::<Vec<_>>(),
         [84, 29]
     );
@@ -156,7 +156,7 @@ fn deltas_fixed_records_share_a_terminal_zero_with_their_successor() {
         census
             .records
             .iter()
-            .map(|record| record.kind())
+            .map(super::Record::kind)
             .collect::<Vec<_>>(),
         [13, 38]
     );
@@ -195,7 +195,7 @@ fn deltas_type_101_record_takes_precedence_over_an_overlapping_fixed_candidate()
         census
             .records
             .iter()
-            .map(|record| record.kind())
+            .map(super::Record::kind)
             .collect::<Vec<_>>(),
         [101]
     );
@@ -222,7 +222,7 @@ fn deltas_does_not_share_a_consecutive_reference_byte() {
         census
             .records
             .iter()
-            .map(|record| record.kind())
+            .map(super::Record::kind)
             .collect::<Vec<_>>(),
         [81]
     );
@@ -250,7 +250,7 @@ fn deltas_walks_complete_entity_value_records() {
         census
             .records
             .iter()
-            .map(|record| record.kind())
+            .map(super::Record::kind)
             .collect::<Vec<_>>(),
         [82, 83, 84]
     );
@@ -295,7 +295,7 @@ fn deltas_walks_every_transformable_value_family() {
         census
             .records
             .iter()
-            .map(|record| record.kind())
+            .map(super::Record::kind)
             .collect::<Vec<_>>(),
         [85, 86, 87, 88, 89, 98]
     );
@@ -337,7 +337,7 @@ fn deltas_admits_a_value_owned_by_a_unique_entity_reference() {
         census
             .records
             .iter()
-            .map(|record| record.kind())
+            .map(super::Record::kind)
             .collect::<Vec<_>>(),
         [82, 81]
     );
@@ -1510,10 +1510,7 @@ fn deltas_fixed_records_accept_direct_extended_and_escaped_envelopes() {
     assert_eq!(census.records[1].canonical_bytes, escaped_canonical);
     assert_eq!(census.records[2].xmt, 41);
     assert_eq!(census.records[2].family.node_id(), Some(42));
-    assert_eq!(
-        census.records[2].family.position().map(<[f64; 3]>::from),
-        Some([1.0, 2.0, 3.0])
-    );
+    assert_eq!(census.records[2].family.position(), Some([1.0, 2.0, 3.0]));
 }
 
 #[test]

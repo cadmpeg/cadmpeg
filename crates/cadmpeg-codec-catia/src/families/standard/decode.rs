@@ -615,8 +615,7 @@ fn refine_consolidated_analytic_surfaces(
                     && same_axis(*axis, cylinder.axis)
                     && radius.to_bits() == quantized(cylinder.radius).to_bits())
                 .then_some((cylinder.surface_geometry(), cylinder.pos))
-            }))
-            .map(|(geometry, pos)| (geometry, pos)),
+            })),
             Some(SurfaceGeometry::Cone {
                 origin,
                 axis,

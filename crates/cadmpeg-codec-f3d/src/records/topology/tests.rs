@@ -122,6 +122,8 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
 }
 
 #[test]
+// Fixture fields are appended from the bounded table of explicit test cases.
+#[allow(clippy::format_push_string)]
 fn construction_path_preserves_layout_wire_and_rejects_mixed_forms() {
     let prefix = r#"{"record_index":100,"byte_offset":0,"class_tag":"304","entity_ref":174,"entity_ref_offset":22"#;
     let suffix = r#","scope_record_index":90,"scope_record_index_offset":163,"nested_record_index":102,"nested_record_index_offset":174,"following_record_index":101,"following_byte_offset":190,"following_class_tag":"390"}"#;
@@ -395,7 +397,7 @@ fn historical_loop_wire_preserves_each_complete_binding_stage() {
                     .and_then(serde_json::Value::as_array)
                     .cloned()
                     .unwrap_or_default();
-                for _ in 0..count + 1 {
+                for _ in 0..=count {
                     values.push(if field == "positions" {
                         serde_json::to_value(cadmpeg_ir::math::Point3::new(9.0, 0.0, 0.0)).unwrap()
                     } else {

@@ -29,8 +29,7 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
             })?;
         if !surface_owners.insert(owner) {
             return Err(CodecError::InvalidInput(format!(
-                "surface {} has multiple procedural constructions",
-                owner
+                "surface {owner} has multiple procedural constructions"
             )));
         }
         let surface = target
@@ -70,8 +69,7 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
             })?;
         if !curve_owners.insert(owner) {
             return Err(CodecError::InvalidInput(format!(
-                "curve {} has multiple procedural constructions",
-                owner
+                "curve {owner} has multiple procedural constructions"
             )));
         }
         let curve = target
@@ -1233,7 +1231,7 @@ pub(crate) fn validate_source_less_body_kinds(
             .loops
             .iter()
             .filter(|loop_| loop_ids.contains(&loop_.id))
-            .flat_map(|loop_| loop_.coedges())
+            .flat_map(cadmpeg_ir::topology::Loop::coedges)
             .collect::<BTreeSet<_>>();
         let mut uses = BTreeMap::<&cadmpeg_ir::ids::EdgeId, usize>::new();
         for coedge in model

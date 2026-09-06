@@ -1830,9 +1830,7 @@ pub(in super::super) fn transfer_native_brep(
                 color: None,
                 tolerance: None,
             });
-            for (_boundary_index, (native_loop, loop_id)) in
-                native_loops.iter().zip(loop_ids).enumerate()
-            {
+            for (native_loop, loop_id) in native_loops.iter().zip(loop_ids) {
                 let coedge_ids = native_loop
                     .half_edges
                     .iter()

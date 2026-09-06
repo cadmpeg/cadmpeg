@@ -1,31 +1,41 @@
-# generated at f5a61de4f
+# generated at eca025858
 pub mod cadmpeg_protein
-pub enum cadmpeg_protein::PropertyValue
-pub cadmpeg_protein::PropertyValue::Boolean(bool)
-pub cadmpeg_protein::PropertyValue::Color([f64; 4])
-pub cadmpeg_protein::PropertyValue::Distance
-pub cadmpeg_protein::PropertyValue::Distance::unit: u32
-pub cadmpeg_protein::PropertyValue::Distance::value: f64
-pub cadmpeg_protein::PropertyValue::Float(f64)
-pub cadmpeg_protein::PropertyValue::Integer(u32)
-pub cadmpeg_protein::PropertyValue::Multiple(alloc::vec::Vec<cadmpeg_protein::PropertyValue>)
-pub cadmpeg_protein::PropertyValue::Reference
-pub cadmpeg_protein::PropertyValue::String(alloc::string::String)
-pub cadmpeg_protein::PropertyValue::TextureUri(alloc::vec::Vec<alloc::string::String>)
+pub mod cadmpeg_protein::property
+pub enum cadmpeg_protein::property::PropertyContent
+pub cadmpeg_protein::property::PropertyContent::MultipleReferences
+pub cadmpeg_protein::property::PropertyContent::MultipleReferences::count: usize
+pub cadmpeg_protein::property::PropertyContent::MultipleReferences::targets: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_protein::property::PropertyContent::Reference(alloc::vec::Vec<alloc::string::String>)
+pub cadmpeg_protein::property::PropertyContent::Value
+pub cadmpeg_protein::property::PropertyContent::Value::connections: core::option::Option<alloc::vec::Vec<alloc::string::String>>
+pub cadmpeg_protein::property::PropertyContent::Value::value: cadmpeg_protein::property::PropertyValue
+pub enum cadmpeg_protein::property::PropertyValue
+pub cadmpeg_protein::property::PropertyValue::Boolean(bool)
+pub cadmpeg_protein::property::PropertyValue::Color([f64; 4])
+pub cadmpeg_protein::property::PropertyValue::Distance
+pub cadmpeg_protein::property::PropertyValue::Distance::unit: u32
+pub cadmpeg_protein::property::PropertyValue::Distance::value: f64
+pub cadmpeg_protein::property::PropertyValue::Float(f64)
+pub cadmpeg_protein::property::PropertyValue::Integer(u32)
+pub cadmpeg_protein::property::PropertyValue::Multiple(alloc::vec::Vec<cadmpeg_protein::property::PropertyValue>)
+pub cadmpeg_protein::property::PropertyValue::String(alloc::string::String)
+pub cadmpeg_protein::property::PropertyValue::TextureUri(alloc::vec::Vec<alloc::string::String>)
+pub struct cadmpeg_protein::property::DecodedProperty
+pub cadmpeg_protein::property::DecodedProperty::content: cadmpeg_protein::property::PropertyContent
+pub cadmpeg_protein::property::DecodedProperty::value_offset: usize
+impl cadmpeg_protein::property::DecodedProperty
+pub fn cadmpeg_protein::property::DecodedProperty::connections(&self) -> &[alloc::string::String]
+pub fn cadmpeg_protein::property::DecodedProperty::value(&self) -> core::option::Option<&cadmpeg_protein::property::PropertyValue>
 pub struct cadmpeg_protein::DecodeOutcome
 pub cadmpeg_protein::DecodeOutcome::records: alloc::vec::Vec<cadmpeg_protein::DecodedRecord>
 pub cadmpeg_protein::DecodeOutcome::rejected: alloc::vec::Vec<cadmpeg_protein::RejectedRecord>
-pub struct cadmpeg_protein::DecodedProperty
-pub cadmpeg_protein::DecodedProperty::connections: alloc::vec::Vec<alloc::string::String>
-pub cadmpeg_protein::DecodedProperty::value: cadmpeg_protein::PropertyValue
-pub cadmpeg_protein::DecodedProperty::value_offset: usize
 pub struct cadmpeg_protein::DecodedRecord
 pub cadmpeg_protein::DecodedRecord::asset_lib_id: alloc::string::String
 pub cadmpeg_protein::DecodedRecord::base: alloc::string::String
 pub cadmpeg_protein::DecodedRecord::guid: alloc::string::String
 pub cadmpeg_protein::DecodedRecord::logical_offset: usize
 pub cadmpeg_protein::DecodedRecord::ordinal: u64
-pub cadmpeg_protein::DecodedRecord::properties: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_protein::DecodedProperty>
+pub cadmpeg_protein::DecodedRecord::properties: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_protein::property::DecodedProperty>
 pub cadmpeg_protein::DecodedRecord::schema: alloc::string::String
 pub struct cadmpeg_protein::RecordFrame
 pub cadmpeg_protein::RecordFrame::bytes: alloc::vec::Vec<u8>

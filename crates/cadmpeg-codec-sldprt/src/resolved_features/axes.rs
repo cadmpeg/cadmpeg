@@ -1064,7 +1064,7 @@ pub(crate) fn bind_profile_revolution_axes(
                 };
                 let profile_feature = &model_features[profile_index];
                 let FeatureDefinition::Sketch {
-                    sketch: Some(sketch),
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 } = &profile_feature.definition
                 else {
                     continue;
@@ -1079,7 +1079,7 @@ pub(crate) fn bind_profile_revolution_axes(
                     matches!(
                     &candidate.definition,
                     FeatureDefinition::Sketch {
-                        sketch: Some(candidate),
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
                     } if candidate == sketch_id
                         )
                 });

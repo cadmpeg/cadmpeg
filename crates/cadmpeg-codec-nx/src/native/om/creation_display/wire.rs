@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Flat native fields projected from the complete creation-display row.
 
-use super::*;
+use super::{
+    Deserialize, IndexRow, LinkedRow, RmCreationDisplayDataEncoding, RmCreationDisplayDataRelation,
+    Serialize, TargetRow, CLASS_NAME,
+};
 use crate::om::compact::CompactIndexAtom;
 
 fn atom(value: u32, raw: &[u8], field: &str) -> Result<CompactIndexAtom, String> {
     CompactIndexAtom::from_wire(value, raw).map_err(|error| format!("{field}: {error}"))
 }
 
+// This conversion consumes the input carrier at the typed construction boundary.
+#[allow(clippy::needless_pass_by_value)]
 fn row_indices<const N: usize>(
     values: [u32; N],
     raw: [Vec<u8>; N],

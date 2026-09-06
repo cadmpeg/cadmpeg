@@ -134,7 +134,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .iter_mut()
         .find(|configuration| configuration.name == "Medium")
         .expect("active medium configuration")
-        .active = false.into();
+        .active = false;
     let error = F3dCodec
         .plan(
             EncodeInput::new(&inconsistent, None),

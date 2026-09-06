@@ -4043,7 +4043,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
             }
             FeatureDefinition::Sketch { sketch, .. } => {
-                if let Some(sketch) = sketch {
+                if let Some(sketch) = sketch.id() {
                     if !ir.model.sketches.iter().any(|value| value.id == *sketch) {
                         ref_error(findings, &feature.id.0, "owned sketch", &sketch.0);
                     }
@@ -6058,7 +6058,7 @@ fn check_feature_sketch_references(
     for feature in &ir.model.features {
         let sketch = match &feature.definition {
             FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
             } => sketch.0.as_str(),
             FeatureDefinition::SpatialSketch {

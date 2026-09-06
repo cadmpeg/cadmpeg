@@ -342,7 +342,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         multiple_native.object_graphs[0].records[1]
             .references
             .iter()
-            .map(|reference| reference.payload_offset())
+            .map(super::super::CatiaObjectRecordReference::payload_offset)
             .collect::<Vec<_>>()
     );
 

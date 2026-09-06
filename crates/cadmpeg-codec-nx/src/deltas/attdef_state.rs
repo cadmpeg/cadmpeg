@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! ATTDEF_LIST active references followed by null slots.
+//! `ATTDEF_LIST` active references followed by null slots.
 
 use crate::framing::xmt_reference::NonNullXmt;
 use serde::{Deserialize, Serialize};
@@ -91,6 +91,8 @@ impl AttdefSlots {
     fn slot_count(&self) -> u32 {
         self.active_count() + self.null_count
     }
+    // This iterator emits null references lazily; it performs no count-sized allocation.
+    #[allow(clippy::disallowed_methods)]
     pub(crate) fn references(&self) -> impl Iterator<Item = u32> + '_ {
         self.active
             .iter()

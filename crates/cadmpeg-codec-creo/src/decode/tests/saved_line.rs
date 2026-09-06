@@ -1230,7 +1230,7 @@ fn generated_saved_geometry_forms_closed_profiles() {
                     None,
                     false,
                 )
-                .unwrap(),
+                .expect("valid test pcurve"),
             },
         ),
         line(13, (0.0, 0.0), (0.0, 1.0)),

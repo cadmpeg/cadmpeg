@@ -249,7 +249,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             if consumed_points.contains(&point.id) {
                 continue;
             }
-            ensure_finite_point(point.position, &point.id.as_str())?;
+            ensure_finite_point(point.position, point.id.as_str())?;
             entities.push(point_entity(point.position));
         }
         entities
@@ -1675,7 +1675,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
         {
             continue;
         }
-        ensure_finite_point(point.position, &point.id.as_str())?;
+        ensure_finite_point(point.position, point.id.as_str())?;
         entities.push(point_entity(point.position));
     }
     Ok(entities)
@@ -2131,7 +2131,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
         {
             continue;
         }
-        ensure_finite_point(point.position, &point.id.as_str())?;
+        ensure_finite_point(point.position, point.id.as_str())?;
         entities.push(point_entity(point.position));
     }
     Ok(entities)
@@ -6020,7 +6020,7 @@ fn apply_rigid_transform(
         CurveGeometry::Polyline(polyline) => CurveGeometry::Polyline(
             cadmpeg_ir::geometry::PolylineCurve::new(
                 polyline.points().iter().copied().map(point).collect(),
-                polyline.parameters().map(|values| values.to_vec()),
+                polyline.parameters().map(<[f64]>::to_vec),
                 polyline.chordal_deflection(),
             )
             .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?,

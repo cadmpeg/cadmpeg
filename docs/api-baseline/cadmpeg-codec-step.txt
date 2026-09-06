@@ -1,4 +1,4 @@
-# generated at f5a61de4f
+# generated at eca025858
 pub mod cadmpeg_codec_step
 pub enum cadmpeg_codec_step::StepSchema
 pub cadmpeg_codec_step::StepSchema::Ap203Edition1
@@ -27,6 +27,6 @@ pub cadmpeg_codec_step::StepWriteOptions::author: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::organization: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::originating_system: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::product_name: alloc::string::String
-pub cadmpeg_codec_step::StepWriteOptions::timestamp: alloc::string::String
+pub cadmpeg_codec_step::StepWriteOptions::timestamp: core::option::Option<alloc::string::String>
 impl core::default::Default for cadmpeg_codec_step::StepWriteOptions
 pub fn cadmpeg_codec_step::StepWriteOptions::default() -> Self

@@ -270,7 +270,7 @@ pub(super) fn oriented_nurbs_range(
         let sum = domain_start + domain_end;
         let knots = curve
             .knots()
-            .into_iter()
+            .iter()
             .rev()
             .map(|knot| sum - knot)
             .collect::<Vec<_>>();

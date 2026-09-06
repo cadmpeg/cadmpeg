@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Closed THRU_CURVE branch suffixes and group terminators.
+//! Closed `THRU_CURVE` branch suffixes and group terminators.
 
 use serde::{Deserialize, Serialize};
 

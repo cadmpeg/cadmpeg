@@ -748,7 +748,7 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
                 revision_id: None,
                 byte_offset: index,
                 framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                    index: index,
+                    index,
                     name: "edge".into(),
                     entity_references: Vec::new(),
                 },

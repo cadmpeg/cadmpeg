@@ -24,7 +24,7 @@ impl From<NonNullXmt> for u32 {
 }
 
 /// A retained reference target other than the null token. Zero remains
-/// representable for unresolved references; record identities require NonNullXmt.
+/// representable for unresolved references; record identities require `NonNullXmt`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct XmtTarget(u32);
 

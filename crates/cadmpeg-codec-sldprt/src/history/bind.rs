@@ -69,12 +69,18 @@ pub fn bind_unique_sketch_feature(
     }
     for (index, _, _, sketch, _) in &bindings {
         features[*index].definition = FeatureDefinition::Sketch {
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         };
     }
     let mut aliases = Vec::new();
     for index in &feature_indices {
-        let FeatureDefinition::Sketch { sketch: None, .. } = &features[*index].definition else {
+        let FeatureDefinition::Sketch {
+            sketch:
+                cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            ..
+        } = &features[*index].definition
+        else {
             continue;
         };
         let Some(base_name) = features[*index]

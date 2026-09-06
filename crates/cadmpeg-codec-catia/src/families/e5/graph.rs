@@ -72,6 +72,8 @@ pub enum E5CurveSupportKind {
 }
 
 impl E5CurveSupportKind {
+    // This conversion consumes the input carrier at the typed construction boundary.
+    #[allow(clippy::needless_pass_by_value)]
     fn from_parts(intersection: bool, pcurves: Vec<u32>) -> Option<Self> {
         match (intersection, pcurves.as_slice()) {
             (false, &[pcurve]) => Some(Self::Boundary(pcurve)),
@@ -655,7 +657,7 @@ fn curve_support_reference_closes(
             }
             if !supports
                 .get(child)
-                .is_some_and(|support| support.is_intersection())
+                .is_some_and(E5CurveSupport::is_intersection)
                 || visiting.contains(child)
             {
                 return false;

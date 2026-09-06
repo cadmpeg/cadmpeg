@@ -1269,6 +1269,8 @@ pub(crate) fn validate_act_entity_edits(
     Ok(edits)
 }
 
+// The tuple carries one coupled result; a separate alias would add no invariant.
+#[allow(clippy::type_complexity)]
 pub(crate) fn validate_act_guid_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<Edit<Vec<u8>>>>, CodecError> {
@@ -1323,6 +1325,8 @@ pub(crate) fn validate_act_guid_edits(
     Ok(edits)
 }
 
+// The tuple carries one coupled result; a separate alias would add no invariant.
+#[allow(clippy::type_complexity)]
 pub(crate) fn validate_act_registry_channel_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<Edit<Vec<u8>>>>, CodecError> {
@@ -2573,6 +2577,8 @@ pub(crate) fn encode_sketch_relation_state(
     }
 }
 
+// The tuple carries one coupled result; a separate alias would add no invariant.
+#[allow(clippy::type_complexity)]
 pub(crate) fn validate_sketch_relation_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<Vec<Edit<Vec<u8>>>>>, CodecError> {
@@ -3676,17 +3682,16 @@ pub(crate) fn validate_procedural_curve_edits(
                     .map(Vec::len)
                     .eq(after_context.discontinuities.iter().map(Vec::len))
                 && before_source == after_source
-                && match (before_tail, after_tail) {
+                && matches!(
+                    (before_tail, after_tail),
                     (
                         cadmpeg_ir::geometry::ProjectionTail::EarlyClose { .. },
                         cadmpeg_ir::geometry::ProjectionTail::EarlyClose { .. },
-                    ) => true,
-                    (
+                    ) | (
                         cadmpeg_ir::geometry::ProjectionTail::Ranged { .. },
                         cadmpeg_ir::geometry::ProjectionTail::Ranged { .. },
-                    ) => true,
-                    _ => false,
-                }
+                    )
+                )
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())

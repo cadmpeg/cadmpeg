@@ -788,9 +788,7 @@ pub(super) fn project(
                     FaceId::mint(format!("iges:model:face#{shell_stem}:D{face_sequence}"))
                         .expect("identity grammar");
                 let mut face_loops = Vec::new();
-                for (_face_loop_index, loop_sequence) in
-                    face_definition.loops.into_iter().enumerate()
-                {
+                for loop_sequence in face_definition.loops {
                     let uses = loops[&loop_sequence].clone();
                     let loop_id =
                         LoopId::mint(format!("iges:model:loop#{shell_stem}:D{loop_sequence}"))

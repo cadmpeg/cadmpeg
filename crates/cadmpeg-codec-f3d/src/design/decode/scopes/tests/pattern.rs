@@ -755,9 +755,9 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         Some(axial_frames[1].transform)
     );
     assert_eq!(
-        linked_scopes[0]
-            .assembly_alignment()
-            .and_then(|alignment| alignment.joint_origin_scope_record_index()),
+        linked_scopes[0].assembly_alignment().and_then(
+            crate::records::feature::DesignAssemblyAlignment::joint_origin_scope_record_index
+        ),
         None
     );
 
@@ -808,9 +808,9 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         Some(25)
     );
     assert_eq!(
-        single_frame_scopes[0]
-            .assembly_alignment()
-            .and_then(|alignment| alignment.joint_origin_scope_record_index()),
+        single_frame_scopes[0].assembly_alignment().and_then(
+            crate::records::feature::DesignAssemblyAlignment::joint_origin_scope_record_index
+        ),
         Some(91)
     );
 
@@ -824,9 +824,9 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut conflicting_scopes = [conflicting_assembly, conflicting_joint_origin];
     bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut conflicting_scopes);
     assert_eq!(
-        conflicting_scopes[0]
-            .assembly_alignment()
-            .and_then(|alignment| alignment.joint_origin_scope_record_index()),
+        conflicting_scopes[0].assembly_alignment().and_then(
+            crate::records::feature::DesignAssemblyAlignment::joint_origin_scope_record_index
+        ),
         None
     );
 

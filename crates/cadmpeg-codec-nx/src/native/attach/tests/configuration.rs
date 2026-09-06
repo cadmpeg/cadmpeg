@@ -468,7 +468,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
         feature.ordinal = ordinal as u64;
     }
     ir.model.configurations = vec![configuration(
-        true.into(),
+        true,
         ConfigurationBodies::Resolved(vec![body]),
     )];
     let mut annotations = AnnotationBuilder::new();
@@ -596,7 +596,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     missing_dependency.model.features = vec![producer("missing")];
     missing_dependency.model.configurations = vec![configuration(
         "active",
-        true.into(),
+        true,
         ConfigurationBodies::Resolved(vec![
             BodyId::mint("test:model:entity#body").expect("identity grammar")
         ]),
@@ -613,7 +613,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     unresolved_bodies.model.features[0].dependencies.clear();
     unresolved_bodies.model.configurations = vec![configuration(
         "active",
-        true.into(),
+        true,
         ConfigurationBodies::Unresolved,
     )];
     super::attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations);
@@ -628,7 +628,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     contradicted.model.features[0].suppressed = Some(true);
     contradicted.model.configurations = vec![configuration(
         "active",
-        true.into(),
+        true,
         ConfigurationBodies::Resolved(vec![
             BodyId::mint("test:model:entity#body").expect("identity grammar")
         ]),
@@ -645,14 +645,14 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     ambiguous.model.configurations = vec![
         configuration(
             "first",
-            true.into(),
+            true,
             ConfigurationBodies::Resolved(vec![
                 BodyId::mint("test:model:entity#body").expect("identity grammar")
             ]),
         ),
         configuration(
             "second",
-            true.into(),
+            true,
             ConfigurationBodies::Resolved(vec![
                 BodyId::mint("test:model:entity#body").expect("identity grammar")
             ]),

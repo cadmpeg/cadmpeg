@@ -130,7 +130,7 @@ fn mesh_scene_bounds_preserve_wire_and_check_corners_and_offsets() {
             [100, 124]
         )
         .unwrap_err()
-        .to_string()
+        .clone()
         .contains(field));
     }
     assert!(crate::records::DesignMeshSceneBounds::new([0.0; 3], [0.0; 3]).is_ok());

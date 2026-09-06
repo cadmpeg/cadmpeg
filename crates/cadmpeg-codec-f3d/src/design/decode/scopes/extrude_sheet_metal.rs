@@ -2917,6 +2917,8 @@ fn edge_flange_to_object_operation_at(
     })
 }
 
+// This conversion consumes the input carrier at the typed construction boundary.
+#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn exact_hem_operation(
     bytes: &[u8],
     start: usize,

@@ -82,9 +82,6 @@ const FRAMING_NAMES: &[&str] = &[
     "NEXT_TOC_ENTRY",
 ];
 
-/// Codec-defined role labels for [`ContainerEntry::role`], grouping sections by
-/// what they carry ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#12-section-map)).
-
 /// The visible-geometry section name whose `srf_array`/`crv_array` counts drive
 /// the inspect census.
 const VISIBGEOM: &str = "VisibGeom";

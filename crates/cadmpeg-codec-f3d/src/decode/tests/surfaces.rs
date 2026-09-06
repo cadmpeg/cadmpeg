@@ -972,7 +972,7 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
             &DecodeOptions::default(),
         )
         .expect("T-spline surface decode");
-    let native = construction(&decoded.ir().model.procedural_surfaces[0].definition()).clone();
+    let native = construction(decoded.ir().model.procedural_surfaces[0].definition()).clone();
     assert_eq!(native.parameter_ranges, [[-20.0, 30.0], [-40.0, 50.0]]);
     assert_eq!((native.type_code, native.trailing_value), (7, 9));
     let TSplineSubtransform::Inline {
@@ -1005,7 +1005,7 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less T-spline round trip");
     assert_eq!(
-        construction(&round_trip.ir().model.procedural_surfaces[0].definition()),
+        construction(round_trip.ir().model.procedural_surfaces[0].definition()),
         &native
     );
 }

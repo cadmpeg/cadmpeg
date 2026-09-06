@@ -2717,7 +2717,7 @@ pub(crate) fn closed_sketch_profiles(
         adjacency.entry(end).or_default().push(edge);
     }
     for incident in adjacency.values_mut() {
-        incident.sort_by(|a, b| edges[*a].0.id().cmp(&edges[*b].0.id()));
+        incident.sort_by(|a, b| edges[*a].0.id().cmp(edges[*b].0.id()));
     }
 
     let Ok(mut visited) =
@@ -2726,7 +2726,7 @@ pub(crate) fn closed_sketch_profiles(
         return Vec::new();
     };
     let mut order = (0..edges.len()).collect::<Vec<_>>();
-    order.sort_by(|a, b| edges[*a].0.id().cmp(&edges[*b].0.id()));
+    order.sort_by(|a, b| edges[*a].0.id().cmp(edges[*b].0.id()));
     for first_edge in order {
         if visited[first_edge] {
             continue;
@@ -2782,7 +2782,7 @@ pub(crate) fn closed_sketch_profiles(
             continue;
         }
 
-        component.sort_by(|a, b| edges[*a].0.id().cmp(&edges[*b].0.id()));
+        component.sort_by(|a, b| edges[*a].0.id().cmp(edges[*b].0.id()));
         let first_edge = component[0];
         let start_node = edge_nodes[first_edge][0];
         let mut current_node = edge_nodes[first_edge][1];
@@ -2852,7 +2852,7 @@ fn branched_line_profiles(
             };
             angle(*first)
                 .total_cmp(&angle(*second))
-                .then_with(|| edges[*first / 2].0.id().cmp(&edges[*second / 2].0.id()))
+                .then_with(|| edges[*first / 2].0.id().cmp(edges[*second / 2].0.id()))
                 .then_with(|| first.cmp(second))
         });
     }

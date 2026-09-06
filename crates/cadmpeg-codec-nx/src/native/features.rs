@@ -963,6 +963,8 @@ impl From<FeatureDatumCsysConstruction> for FeatureDatumCsysConstructionWire {
 impl TryFrom<FeatureDatumCsysConstructionWire> for FeatureDatumCsysConstruction {
     type Error = String;
 
+    // Names follow the ordered source slots in this fixed-width lane.
+    #[allow(clippy::many_single_char_names)]
     fn try_from(wire: FeatureDatumCsysConstructionWire) -> Result<Self, Self::Error> {
         let [a, b, c, d, e, f, g, h] = [0, 1, 2, 3, 4, 5, 6, 7].map(|slot| {
             crate::om::reference_index::ReferenceIndexToken::from_wire(
@@ -2105,6 +2107,8 @@ fn feature_payload_type_code_from_wire(
     }
 }
 
+// The tuple carries one coupled result; a separate alias would add no invariant.
+#[allow(clippy::type_complexity)]
 fn feature_payload_type_code_to_wire(
     type_code: Option<FeaturePayloadTypeCode>,
 ) -> (Option<u32>, Option<Vec<u8>>, Option<u64>, Option<u64>, bool) {
@@ -2702,6 +2706,8 @@ impl From<FeatureFsetReferenceGraph> for FeatureFsetReferenceGraphWire {
 impl TryFrom<FeatureFsetReferenceGraphWire> for FeatureFsetReferenceGraph {
     type Error = String;
 
+    // Names follow the ordered source slots in this fixed-width lane.
+    #[allow(clippy::many_single_char_names)]
     fn try_from(wire: FeatureFsetReferenceGraphWire) -> Result<Self, Self::Error> {
         let [a, b] = [0, 1].map(|slot| {
             crate::om::reference_index::ReferenceIndexToken::from_wire(
@@ -2859,6 +2865,8 @@ impl From<FeaturePointConstructionScalarLane> for FeaturePointConstructionScalar
 impl TryFrom<FeaturePointConstructionScalarLaneWire> for FeaturePointConstructionScalarLane {
     type Error = String;
 
+    // Names follow the ordered source slots in this fixed-width lane.
+    #[allow(clippy::many_single_char_names)]
     fn try_from(wire: FeaturePointConstructionScalarLaneWire) -> Result<Self, Self::Error> {
         let [a, b, c, d, e, f] = std::array::from_fn::<_, 6, _>(|i| {
             ShiftedBinary64::from_wire(wire.values[i], wire.raw_values[i])
@@ -6071,6 +6079,8 @@ pub fn feature_input_column_targets(
 
 /// Decode and atomically resolve datum coordinate-system construction lanes
 /// through the offset store selected by each operation header.
+// Names follow the ordered source slots in this fixed-width lane.
+#[allow(clippy::many_single_char_names)]
 pub fn feature_datum_csys_constructions(
     container: &Container,
 ) -> Vec<FeatureDatumCsysConstruction> {
@@ -8860,6 +8870,8 @@ pub fn feature_block_construction_references(
 }
 
 /// Join complete, uniquely resolved `BLOCK` construction-reference fields.
+// Names follow the ordered source slots in this fixed-width lane.
+#[allow(clippy::many_single_char_names)]
 pub fn feature_block_constructions(
     references: &[FeatureBlockConstructionReference],
 ) -> Vec<FeatureBlockConstruction> {

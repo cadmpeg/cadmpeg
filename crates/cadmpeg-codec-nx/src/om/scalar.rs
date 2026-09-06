@@ -74,6 +74,8 @@ pub(super) fn is_shifted_ieee_f64_marker(marker: u8) -> bool {
 pub(crate) struct ShiftedBinary32([u8; 4]);
 
 impl ShiftedBinary32 {
+    // Validate the value against the same borrowed raw byte window used by the reader.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub(crate) fn from_wire(value: f64, raw: &[u8; 4]) -> Result<Self, &'static str> {
         let scalar = Self::read(raw).ok_or("raw_values must contain shifted binary32 atoms")?;
         if scalar.value().to_bits() != value.to_bits() {

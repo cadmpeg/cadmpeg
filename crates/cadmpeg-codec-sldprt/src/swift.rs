@@ -2914,7 +2914,7 @@ mod tests {
         };
         assert_eq!(*magnitude, length(0.25));
         assert_eq!(
-            datum_system.as_ref().map(|id| id.as_str()),
+            datum_system.as_ref().map(cadmpeg_ir::ids::PmiId::as_str),
             Some("sldprt:model:pmi#A20:datum-system")
         );
         assert_eq!(

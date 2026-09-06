@@ -85,7 +85,7 @@ pub(crate) fn transfer(
                     };
                     Some(SourcedPacket {
                         packet,
-                        source_id: format!("{}:field#{offset:010}:{ordinal:06}", block.id).into(),
+                        source_id: format!("{}:field#{offset:010}:{ordinal:06}", block.id),
                     })
                 })
         })
@@ -346,6 +346,8 @@ mod tests {
         ir
     }
 
+    // This conversion consumes the input carrier at the typed construction boundary.
+    #[allow(clippy::needless_pass_by_value)]
     fn native(fields: Vec<ValueField>) -> CatiaNative {
         let mut native = CatiaNative::default();
         let payload = fields

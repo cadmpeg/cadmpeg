@@ -193,21 +193,21 @@ fn sketch_scalar_lane_parser_reads_mixed_nonzero_scalar_atoms() {
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(_, scalar, _)| scalar.value())
+            .map(|(_, scalar, ())| scalar.value())
             .collect::<Vec<_>>(),
         [1.5, 3.25]
     );
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(_, scalar, _)| scalar.raw().to_vec())
+            .map(|(_, scalar, ())| scalar.raw().to_vec())
             .collect::<Vec<_>>(),
         [shifted_f64.to_vec(), shifted_f32.to_vec()]
     );
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(offset, _, _)| offset)
+            .map(|(offset, _, ())| offset)
             .collect::<Vec<_>>(),
         [18, 26]
     );
@@ -228,14 +228,14 @@ fn sketch_scalar_lane_parser_reads_mixed_nonzero_scalar_atoms() {
     assert_eq!(
         long_lanes[0]
             .iter()
-            .map(|(_, scalar, _)| scalar.value())
+            .map(|(_, scalar, ())| scalar.value())
             .collect::<Vec<_>>(),
         [1.5, 3.25]
     );
     assert_eq!(
         long_lanes[0]
             .iter()
-            .map(|(offset, _, _)| offset)
+            .map(|(offset, _, ())| offset)
             .collect::<Vec<_>>(),
         [19, 27]
     );

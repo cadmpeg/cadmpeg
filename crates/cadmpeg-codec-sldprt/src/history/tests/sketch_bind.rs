@@ -99,7 +99,7 @@ fn decode_binds_profile_stream_by_feature_object_interval() {
     assert!(matches!(
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Sketch {
-            sketch: Some(id),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)),
         } if id == &sketch.id
     ));
 }
@@ -224,7 +224,7 @@ fn decode_binds_configuration_sketch_state_after_geometry_projection() {
     assert!(matches!(
         &decoded.ir().model.configurations[0].feature_states[&feature.id].definition,
         FeatureDefinition::Sketch {
-            sketch: Some(configuration_sketch),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(configuration_sketch)),
             ..
         } if decoded.ir().model.sketches.iter().any(|sketch| &sketch.id == configuration_sketch)
     ));
@@ -277,7 +277,7 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         &feature.definition,
         FeatureDefinition::Sketch {
-            sketch: Some(value),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(value)),
         } if value == &sketch_id
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
@@ -309,7 +309,9 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
         .iter()
         .any(|feature| matches!(
             feature.definition,
-            FeatureDefinition::Sketch { sketch: Some(_) }
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
+            }
         )));
 }
 
@@ -361,19 +363,25 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             "base",
             "Profile",
             "native-base",
-            FeatureDefinition::Sketch { sketch: None },
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            },
         ),
         neutral(
             "alias",
             "Profile<3>",
             "native-alias",
-            FeatureDefinition::Sketch { sketch: None },
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            },
         ),
         neutral(
             "different",
             "Profile<4>",
             "native-different",
-            FeatureDefinition::Sketch { sketch: None },
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            },
         ),
         neutral(
             "consumer",
@@ -433,12 +441,20 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
 
     assert!(matches!(
         &features[1].definition,
-        FeatureDefinition::Sketch { sketch: None, .. }
+        FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            ..
+        }
     ));
     assert_eq!(features[1].dependencies, vec![FeatureId("base".into())]);
     assert!(matches!(
         &features[2].definition,
-        FeatureDefinition::Sketch { sketch: None, .. }
+        FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            ..
+        }
     ));
     assert!(matches!(
         &features[3].definition,
@@ -467,7 +483,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .iter()
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } => Some(sketch.clone()),
             _ => None,
         })
@@ -522,7 +538,11 @@ fn decode_does_not_bind_duplicate_sketch_names_by_order() {
     assert_eq!(decoded.ir().model.sketches.len(), 2);
     assert!(decoded.ir().model.features.iter().all(|feature| matches!(
         feature.definition,
-        FeatureDefinition::Sketch { sketch: None, .. }
+        FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            ..
+        }
     )));
 }
 

@@ -72,7 +72,7 @@ pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
             entry_count,
             cell(&row.type_label),
             cell(&row.example),
-            row.relation.map(Relation::as_str).unwrap_or("")
+            row.relation.map_or("", Relation::as_str)
         );
     }
     if entry_count == 0 {

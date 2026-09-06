@@ -502,8 +502,7 @@ fn enrich(
         construction_supports(construction, uv, bridges, graph).ok_or(Rejection::MissingSupport)?;
     let support_uv = uv
         .get(&construction.references[5])
-        .map(SupportUvValues::support_uv)
-        .unwrap_or([None, None]);
+        .map_or([None, None], SupportUvValues::support_uv);
     Ok(IntersectionCurve {
         xmt: construction.xmt,
         references: construction.references,

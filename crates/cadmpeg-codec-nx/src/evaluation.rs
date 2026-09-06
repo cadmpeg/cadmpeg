@@ -147,7 +147,7 @@ fn feature_boundary(ir: &CadIr, id: &FeatureId) -> FeatureBoundary {
                 .as_str()
                 .map(str::to_string)
         }),
-        ordinal: boundary_feature.map(|feature| feature.ordinal).unwrap_or(0),
+        ordinal: boundary_feature.map_or(0, |feature| feature.ordinal),
     }
 }
 
@@ -1488,7 +1488,9 @@ mod tests {
         ir.model.features.push(body_neutral_feature(
             &profile.0,
             1,
-            FeatureDefinition::Sketch { sketch: None },
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+            },
         ));
         ir.model.features.extend([
             complete_extrude_feature(
@@ -1523,7 +1525,9 @@ mod tests {
         ir.model.features.push(body_neutral_feature(
             &profile.0,
             1,
-            FeatureDefinition::Sketch { sketch: None },
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+            },
         ));
         ir.model.features.push(complete_extrude_feature(
             "extrude",
@@ -1702,7 +1706,7 @@ mod tests {
             FeatureDefinition::DatumCoordinateSystemUnresolved,
         ));
         attach_complete_active_configuration(&mut ir);
-        ir.model.configurations[0].active = false.into();
+        ir.model.configurations[0].active = false;
         ir.model.configurations[0].bodies = ConfigurationBodies::Unresolved;
 
         assert_eq!(
@@ -2387,7 +2391,7 @@ mod tests {
             BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
         let unrelated =
             BodyId::mint("test:model:entity#unrelated".to_string()).expect("identity grammar");
-        ir.model.bodies = vec![model_body(&unrelated.as_str())];
+        ir.model.bodies = vec![model_body(unrelated.as_str())];
         ir.model.features[0].outputs = vec![first.clone(), second.clone(), unrelated.clone()];
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![first.clone(), second.clone(), unrelated.clone()]),

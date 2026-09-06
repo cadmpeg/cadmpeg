@@ -3458,7 +3458,7 @@ pub(super) fn profile_loci_by_marker(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;
@@ -3901,7 +3901,7 @@ pub(super) fn marker_transform_candidates_by_feature(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;

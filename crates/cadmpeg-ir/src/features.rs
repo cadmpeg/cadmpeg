@@ -1634,10 +1634,10 @@ pub enum FeatureDefinition {
     },
     /// Solved sketch node in the construction history.
     Sketch {
-        /// Neutral sketch geometry owned by this history node, when resolved.
+        /// Source-declared sketch space and optional decoded geometry.
         #[serde(flatten, with = "sketch_feature_wire")]
         #[cfg_attr(feature = "schema", schemars(with = "SketchFeatureSchemaWire"))]
-        sketch: Option<crate::sketches::SketchId>,
+        sketch: SketchFeatureBinding,
     },
     /// Solved spatial-sketch node in the construction history.
     SpatialSketch {
@@ -3222,6 +3222,25 @@ pub enum PrincipalPlane {
     Right,
 }
 
+/// Known sketch space and its optional resolved planar geometry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SketchFeatureBinding {
+    /// The feature's sketch space is unresolved.
+    Unresolved,
+    /// The source declares a planar sketch, with optional decoded geometry.
+    Planar(Option<crate::sketches::SketchId>),
+}
+
+impl SketchFeatureBinding {
+    /// Resolved planar sketch identity, when available.
+    pub fn id(&self) -> Option<&crate::sketches::SketchId> {
+        match self {
+            Self::Unresolved => None,
+            Self::Planar(sketch) => sketch.as_ref(),
+        }
+    }
+}
+
 #[cfg(feature = "schema")]
 #[derive(JsonSchema)]
 #[expect(dead_code, reason = "fields define the planar-sketch wire schema")]
@@ -3241,6 +3260,7 @@ enum SketchFeatureSpaceSchema {
 }
 
 mod sketch_feature_wire {
+    use super::SketchFeatureBinding;
     use crate::sketches::SketchId;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -3268,31 +3288,28 @@ mod sketch_feature_wire {
         sketch: Option<SketchId>,
     }
 
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(value: &Option<SketchId>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(value: &SketchFeatureBinding, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         WriteWire {
-            space: if value.is_some() {
-                Space::Planar
-            } else {
-                Space::Unresolved
+            space: match value {
+                SketchFeatureBinding::Unresolved => Space::Unresolved,
+                SketchFeatureBinding::Planar(_) => Space::Planar,
             },
-            sketch: value.as_ref(),
+            sketch: value.id(),
         }
         .serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<SketchId>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<SketchFeatureBinding, D::Error>
     where
         D: Deserializer<'de>,
     {
         let wire = ReadWire::deserialize(deserializer)?;
         match (wire.space, wire.sketch) {
-            (Space::Planar, sketch) => Ok(sketch),
-            (Space::Unresolved, None) => Ok(None),
+            (Space::Planar, sketch) => Ok(SketchFeatureBinding::Planar(sketch)),
+            (Space::Unresolved, None) => Ok(SketchFeatureBinding::Unresolved),
             (Space::Unresolved, Some(_)) => Err(serde::de::Error::custom(
                 "sketch must be absent when space is unresolved",
             )),

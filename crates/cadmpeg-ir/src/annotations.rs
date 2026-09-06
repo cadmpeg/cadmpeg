@@ -172,15 +172,6 @@ impl<'de> Deserialize<'de> for ExactnessNote {
                 "ExactnessNote cannot store the implicit byte-exact default",
             ));
         }
-        if let Some(field) = wire
-            .fields
-            .iter()
-            .find_map(|(field, exactness)| (*exactness == wire.entity).then_some(field))
-        {
-            return Err(D::Error::custom(format!(
-                "ExactnessNote.fields[{field:?}] duplicates entity exactness"
-            )));
-        }
         Ok(Self {
             entity: wire.entity,
             fields: wire.fields,
@@ -205,7 +196,7 @@ impl ExactnessNote {
         self.entity
     }
 
-    /// Sparse field overrides whose values differ from entity exactness.
+    /// Explicit field exactness notes.
     pub fn fields(&self) -> &BTreeMap<String, Exactness> {
         &self.fields
     }
@@ -344,11 +335,7 @@ impl AnnotationBuilder {
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
                     let note = entry.get_mut();
-                    if exactness == note.entity {
-                        note.fields.remove(&field);
-                    } else {
-                        note.fields.insert(field, exactness);
-                    }
+                    note.fields.insert(field, exactness);
                 }
             }
         }
@@ -544,16 +531,33 @@ mod tests {
     }
 
     #[test]
-    fn exactness_wire_rejects_a_redundant_field_override() {
-        let error = serde_json::from_value::<ExactnessNote>(serde_json::json!({
+    fn explicit_field_exactness_survives_an_equal_entity_note() {
+        let wire = serde_json::json!({
             "entity": "derived",
             "fields": {"geometry": "derived"}
-        }))
-        .unwrap_err();
+        });
+        let note: ExactnessNote = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(note).unwrap(), wire);
 
-        assert!(error
-            .to_string()
-            .contains("fields[\"geometry\"] duplicates entity exactness"));
+        for entity_first in [false, true] {
+            let mut builder = AnnotationBuilder::new();
+            if entity_first {
+                builder.exactness("nx:model:surface#1", Exactness::Derived);
+            }
+            builder.derived("nx:model:surface#1", "geometry");
+            if !entity_first {
+                builder.exactness("nx:model:surface#1", Exactness::Derived);
+            }
+            assert_eq!(
+                serde_json::to_value(&builder.annotations().exactness["nx:model:surface#1"])
+                    .unwrap(),
+                if entity_first {
+                    wire.clone()
+                } else {
+                    serde_json::json!({"entity": "derived"})
+                }
+            );
+        }
     }
 
     #[test]

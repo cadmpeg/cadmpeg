@@ -423,7 +423,9 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         model_feature(
             "path",
             "path-native",
-            FeatureDefinition::Sketch { sketch: None },
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            },
         ),
         model_feature(
             "seed",
@@ -451,7 +453,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     ));
     assert_eq!(features[0].dependencies, [features[2].id.clone()]);
     features[1].definition = FeatureDefinition::Sketch {
-        sketch: Some(sketch.clone()),
+        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
     };
     bind_pattern_inputs(
         &mut features,
@@ -764,7 +766,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     sweep_history.features[1].input_class = Some("moSweep_c".into());
     let path_sketch = SketchId("sweep-path".into());
     features[2].definition = FeatureDefinition::Sketch {
-        sketch: Some(path_sketch.clone()),
+        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(path_sketch.clone())),
     };
     features[0].dependencies.clear();
     features[0].definition = FeatureDefinition::Sweep {
@@ -916,7 +918,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         },
         native_ref: Some("feature-native".into()),
     };
@@ -1097,7 +1099,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         },
         native_ref: Some("feature-native".into()),
     };
@@ -1267,7 +1269,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch_id.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
         },
         native_ref: Some("feature-native".into()),
     };
@@ -1428,7 +1430,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         },
         native_ref: Some("feature-native".into()),
     };

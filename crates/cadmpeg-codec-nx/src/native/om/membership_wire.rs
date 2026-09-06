@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Wire words derived from RMFastLoad membership values and counts.
+//! Wire words derived from `RMFastLoad` membership values and counts.
 
 use super::{RmFastLoadObjectId, RmFastLoadObjectIdTable};
 use crate::container::membership::ObjectIdMembers;

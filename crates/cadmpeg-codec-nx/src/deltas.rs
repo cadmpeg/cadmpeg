@@ -2918,6 +2918,8 @@ fn consume_intersection_data(
     })
 }
 
+// Names follow the ordered source slots in this fixed-width lane.
+#[allow(clippy::many_single_char_names)]
 fn consume_intersection_auxiliary(stream: &[u8], offset: usize) -> Option<Record> {
     let (family, xmt, end) = if let Some((chart, end)) = crate::intersection::chart_source_record_at(
         stream,

@@ -813,7 +813,7 @@ fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
         assert_eq!(state.state_offset + 1, state.offset);
         assert_eq!(state.stored_name().as_deref(), Some(expected_name));
     }
-    assert_eq!(states[3].identifier_keyword().as_deref(), Some("ID"));
+    assert_eq!(states[3].identifier_keyword(), Some("ID"));
 
     let current_operations = operations(payload);
     let [current] = current_operations.as_slice() else {

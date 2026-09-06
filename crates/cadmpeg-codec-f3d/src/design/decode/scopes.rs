@@ -915,7 +915,7 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
         }
         if let Some(frames) = scope
             .assembly_alignment()
-            .and_then(|alignment| alignment.operand_frames())
+            .and_then(crate::records::feature::DesignAssemblyAlignment::operand_frames)
         {
             for frame in frames {
                 candidates.push((
@@ -1764,6 +1764,7 @@ pub(crate) fn exact_assembly_alignment(
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignAssemblyAlignment> {
+    use crate::records::feature::DesignAssemblyAlignmentForm;
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Assemble) {
         return None;
     }
@@ -1806,7 +1807,7 @@ pub(crate) fn exact_assembly_alignment(
     if legacy_class_388 {
         exact_legacy_class_388_scope(bytes, scope)?;
     }
-    use crate::records::feature::DesignAssemblyAlignmentForm;
+
     if as_built_421 {
         let exact = exact_legacy_as_built_421_alignment(bytes, scope, &lanes)?;
         let form = match exact_legacy_as_built_421_solved_frame(bytes, records, scope) {
@@ -6656,11 +6657,8 @@ pub(crate) fn exact_scale_operation(
     let (body_group_record_index, center_record_index, uniform_factor_offset, center) =
         if parameter_scope_payload_length(scope) == Some(303) && scope.reference_members.len() == 5
         {
-            let Some([factor_record_index, body_group_record_index, _, _, center_record_index]) =
-                scope.reference_members.values_array()
-            else {
-                return None;
-            };
+            let [factor_record_index, body_group_record_index, _, _, center_record_index] =
+                scope.reference_members.values_array()?;
             if View::u32_le_at(bytes, start + 20)? != 1
                 || bytes.get(start + 24) != Some(&0)
                 || marked_record_reference(bytes, start + 33)? != *center_record_index
@@ -6803,7 +6801,7 @@ pub(crate) fn exact_fixed_extrude_parameters(
                         native_stream(&parameter.id) == native_stream(&scope.id)
                             && parameter.record_index == owner.parameter_record_index
                     })
-                    .map(|parameter| parameter.source_kind())
+                    .map(crate::records::DesignParameter::source_kind)
             });
         match source_kind {
             Some("AlongDistance") if lane.value != 0.0 && along_distance.is_none() => {
@@ -6886,6 +6884,9 @@ pub(crate) fn exact_fixed_fillet_parameters(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignFixedFilletParameters> {
+    use crate::records::feature::{
+        DesignFixedFilletIntermediate, DesignFixedFilletLaw, DesignFixedFilletScalar,
+    };
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Fillet) {
         return None;
     }
@@ -6906,9 +6907,7 @@ pub(crate) fn exact_fixed_fillet_parameters(
     {
         return None;
     }
-    use crate::records::feature::{
-        DesignFixedFilletIntermediate, DesignFixedFilletLaw, DesignFixedFilletScalar,
-    };
+
     let scalar = |(record_index, scalar): &(u32, FixedScalarFrame)| DesignFixedFilletScalar {
         value: scalar.value,
         record_index: *record_index,
@@ -7514,11 +7513,8 @@ fn exact_two_point_work_axis_construction(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignWorkAxisConstruction> {
-    let Some([axis_record_index, _, first_point_record_index, _, second_point_record_index]) =
-        scope.reference_members.values_array()
-    else {
-        return None;
-    };
+    let [axis_record_index, _, first_point_record_index, _, second_point_record_index] =
+        scope.reference_members.values_array()?;
     let axis_frames = records.frames(*axis_record_index).collect::<Vec<_>>();
     let [(axis_start, axis_paired)] = axis_frames.as_slice() else {
         return None;
@@ -7591,10 +7587,7 @@ fn exact_direct_work_axis_construction(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignWorkAxisConstruction> {
-    let Some([carrier_record_index, support_record_index]) = scope.reference_members.values_array()
-    else {
-        return None;
-    };
+    let [carrier_record_index, support_record_index] = scope.reference_members.values_array()?;
     let (
         carrier_class,
         carrier_paired_class,

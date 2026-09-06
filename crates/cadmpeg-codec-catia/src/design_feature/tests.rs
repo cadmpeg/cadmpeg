@@ -1509,7 +1509,9 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     assert_eq!(ir.model.sketches.len(), 1);
     assert!(matches!(
         ir.model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::Sketch { sketch: Some(_) }
+        cadmpeg_ir::features::FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
+        }
     ));
     assert!(ir.model.sketches[0].profiles.is_empty());
     assert_eq!(

@@ -929,7 +929,7 @@ impl Parser<'_, '_, '_> {
                 match &mut self.omitted_entity_names {
                     Some((_, count)) => *count = count.saturating_add(1),
                     None => {
-                        self.omitted_entity_names = Some((record.span.start, NonZeroUsize::MIN))
+                        self.omitted_entity_names = Some((record.span.start, NonZeroUsize::MIN));
                     }
                 }
             }
@@ -1011,8 +1011,7 @@ impl Parser<'_, '_, '_> {
                 offset,
                 kind: ParseDiagnosticKind::OmittedEntityName,
                 message: format!(
-                    "recovered {} simple named carrier instance(s) with an omitted leading name attribute by inserting an empty name",
-                    count
+                    "recovered {count} simple named carrier instance(s) with an omitted leading name attribute by inserting an empty name"
                 ),
             });
         }

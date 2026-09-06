@@ -219,7 +219,9 @@ mod tests {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch { sketch: None },
+            definition: FeatureDefinition::Sketch {
+                sketch: crate::features::SketchFeatureBinding::Unresolved,
+            },
             native_ref: None,
         });
         ir.model.sketches.push(Sketch {
@@ -253,7 +255,7 @@ mod tests {
                     dependencies: Vec::new(),
                     outputs: Vec::new(),
                     definition: FeatureDefinition::Sketch {
-                        sketch: Some(sketch_id),
+                        sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                     },
                 },
             )]),

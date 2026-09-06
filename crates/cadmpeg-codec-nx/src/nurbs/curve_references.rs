@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Reference layouts carried by a B_CURVE_DESCRIPTOR.
+//! Reference layouts carried by a `B_CURVE_DESCRIPTOR`.
 
 use crate::framing::xmt_reference::NonNullXmt;
 
@@ -36,9 +36,9 @@ impl TryFrom<Vec<u32>> for CurveDescriptorReferences {
     type Error = &'static str;
 
     fn try_from(references: Vec<u32>) -> Result<Self, Self::Error> {
-        match references.as_slice() {
-            &[multiplicities, knots] => Ok(Self::Compact([multiplicities, knots])),
-            &[prefix, multiplicities, knots] => Ok(Self::Status([
+        match *references.as_slice() {
+            [multiplicities, knots] => Ok(Self::Compact([multiplicities, knots])),
+            [prefix, multiplicities, knots] => Ok(Self::Status([
                 NonNullXmt::try_from(prefix)?,
                 NonNullXmt::try_from(multiplicities)?,
                 NonNullXmt::try_from(knots)?,

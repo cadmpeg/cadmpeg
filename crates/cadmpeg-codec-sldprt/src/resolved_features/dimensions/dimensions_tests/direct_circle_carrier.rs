@@ -65,7 +65,7 @@ fn feature(feature_ref: &str, sketch: &SketchId) -> Feature {
         FeatureId("neutral-feature".into()),
         0,
         FeatureDefinition::Sketch {
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         },
     );
     feature.native_ref = Some(feature_ref.into());

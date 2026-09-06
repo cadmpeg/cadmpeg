@@ -438,7 +438,7 @@ pub(crate) fn bind_pattern_inputs(
                 continue;
             };
             let FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &model_features[target_index].definition
             else {
                 continue;
@@ -789,7 +789,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 continue;
             };
             let FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &model_features[profile_index].definition
             else {
                 continue;
@@ -800,8 +800,9 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                     return None;
                 }
                 let path_index = *model_by_native.get(path_feature.id.as_str())?;
-                let FeatureDefinition::Sketch { sketch: Some(path) } =
-                    &model_features[path_index].definition
+                let FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(path)),
+                } = &model_features[path_index].definition
                 else {
                     return None;
                 };
@@ -1083,7 +1084,12 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
     let unresolved = model_features
         .iter()
         .filter_map(|feature| match &feature.definition {
-            FeatureDefinition::Sketch { sketch: None, .. } => feature.native_ref.clone(),
+            FeatureDefinition::Sketch {
+                sketch:
+                    cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                    | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                ..
+            } => feature.native_ref.clone(),
             _ => None,
         })
         .collect::<HashSet<_>>();

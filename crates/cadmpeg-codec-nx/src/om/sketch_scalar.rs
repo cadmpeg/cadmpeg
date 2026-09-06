@@ -42,6 +42,8 @@ pub(crate) struct SketchMixedScalars {
 }
 
 #[derive(Serialize, Deserialize)]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
 struct MixedWire {
     fixed_value: f64,
     binary32_value: f64,

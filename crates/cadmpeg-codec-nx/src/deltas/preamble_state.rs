@@ -188,6 +188,8 @@ mod tests {
     use super::PreambleState;
 
     #[test]
+    // Keep the source-word spelling in this wire fixture.
+    #[allow(clippy::unreadable_literal)]
     fn preamble_wire_preserves_independent_count_and_rejects_invalid_lanes() {
         let json = r#"{"identity":300,"references":[40000,40001],"state_words":[2,0,1,55],"count":7,"entries":[[81,4],[82,40000],[81,5]],"terminal_value":9}"#;
         let state: PreambleState = serde_json::from_str(json).unwrap();

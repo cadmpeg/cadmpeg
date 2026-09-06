@@ -456,6 +456,8 @@ struct ConcatenatedNurbs {
     child_starts: Vec<f64>,
 }
 
+// This conversion consumes the input carrier at the typed construction boundary.
+#[allow(clippy::needless_pass_by_value)]
 fn reverse_nurbs(curve: NurbsCurve, interval: [f64; 2]) -> Option<(NurbsCurve, [f64; 2])> {
     let degree = usize::try_from(curve.degree()).ok()?;
     let control_count = curve.control_points().len();

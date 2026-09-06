@@ -1580,7 +1580,7 @@ fn decode_reports_display_list_geometry() {
                 == Some("displaylist_tessellation")
                 && result
                     .source_fidelity()
-                    .retained_record(&record.id.as_str())
+                    .retained_record(record.id.as_str())
                     .is_some_and(|source| source.data().is_some())
         }));
 }

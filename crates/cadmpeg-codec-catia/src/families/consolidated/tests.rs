@@ -611,7 +611,9 @@ fn consolidated_edge_use_run_accepts_compact_successor_layout() {
     assert_eq!(run.uses[0].references(), Some(&[1, 11][..]));
     assert_eq!(run.uses[1].references(), Some(&[2, 12][..]));
     assert_eq!(
-        run.definition.as_ref().and_then(|value| value.data()),
+        run.definition
+            .as_ref()
+            .and_then(super::records::ConsolidatedEdgeDefinition::data),
         Some(ConsolidatedEdgeDefinitionData::Compact24 { operand: 10 })
     );
 }

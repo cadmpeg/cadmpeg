@@ -139,7 +139,7 @@ impl Brep {
         let mut roots = self
             .body_selectors_for(selected_keys)?
             .into_keys()
-            .map(|body| body.into_string())
+            .map(cadmpeg_ir::ids::BodyId::into_string)
             .collect::<HashSet<_>>();
         // A Design body map selects native ASM body records. Neutral roots
         // projected from other saved top-level entities have no ASM body key

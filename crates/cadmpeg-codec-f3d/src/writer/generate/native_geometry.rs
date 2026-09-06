@@ -1366,10 +1366,7 @@ fn native_loft_curve(
     })
 }
 
-fn native_loft_subdata(
-    bytes: &mut Vec<u8>,
-    subdata: &cadmpeg_ir::geometry::LoftSubdata,
-) -> Result<(), CodecError> {
+fn native_loft_subdata(bytes: &mut Vec<u8>, subdata: &cadmpeg_ir::geometry::LoftSubdata) {
     native_i64(bytes, subdata.type_code());
     native_i64(bytes, subdata.row_count());
     native_i64(bytes, subdata.column_count());
@@ -1386,7 +1383,6 @@ fn native_loft_subdata(
             native_f64(bytes, extra[1]);
         }
     });
-    Ok(())
 }
 
 /// Emit the classic profile tail: the ASM integer, constraint subdata, and
@@ -1394,20 +1390,16 @@ fn native_loft_subdata(
 fn native_loft_profile_tail(
     bytes: &mut Vec<u8>,
     data: &cadmpeg_ir::geometry::ClassicLoftProfileData,
-) -> Result<(), CodecError> {
+) {
     native_i64(bytes, data.asm_extension);
-    native_loft_subdata(bytes, &data.subdata)?;
+    native_loft_subdata(bytes, &data.subdata);
     bytes.push(native_bool(data.direction.is_some()));
     if let Some(direction) = data.direction {
         native_vector(bytes, [direction.x, direction.y, direction.z]);
     }
-    Ok(())
 }
 
-fn native_loft_member_tail(
-    bytes: &mut Vec<u8>,
-    form: &cadmpeg_ir::geometry::LoftMemberForm,
-) -> Result<(), CodecError> {
+fn native_loft_member_tail(bytes: &mut Vec<u8>, form: &cadmpeg_ir::geometry::LoftMemberForm) {
     let (asm_extension, subdata, direction) = match form {
         cadmpeg_ir::geometry::LoftMemberForm::Support {
             asm_extension,
@@ -1425,12 +1417,11 @@ fn native_loft_member_tail(
     if let Some(asm_extension) = asm_extension {
         native_i64(bytes, *asm_extension);
     }
-    native_loft_subdata(bytes, subdata)?;
+    native_loft_subdata(bytes, subdata);
     bytes.push(native_bool(direction.is_some()));
     if let Some(direction) = direction {
         native_vector(bytes, [direction.x, direction.y, direction.z]);
     }
-    Ok(())
 }
 
 fn native_loft_section(
@@ -1503,7 +1494,7 @@ fn native_loft_section(
                     native_optional_pcurve(bytes, secondary_pcurve.as_ref())?;
                 }
             }
-            native_loft_member_tail(bytes, &member.form)?;
+            native_loft_member_tail(bytes, &member.form);
         }
         if let Some(path_curve) = &entry.path.curve {
             let path = native_loft_curve_in_range(target, &path_curve.id, parameter_range)?;
@@ -1592,7 +1583,7 @@ fn native_compound_loft_scale(
         native_embedded_surface(bytes, &surface.geometry)?;
         native_optional_pcurve(bytes, member.data.pcurve.as_ref())?;
         bytes.push(native_bool(member.data.first_flag));
-        native_loft_profile_tail(bytes, &member.data)?;
+        native_loft_profile_tail(bytes, &member.data);
     }
     native_nurbs_curve(bytes, &native_loft_curve(target, &scale.path)?)?;
     native_i64(
@@ -2412,7 +2403,7 @@ fn native_skin_profile_data(
     native_embedded_surface(bytes, &surface.geometry)?;
     native_optional_pcurve(bytes, data.pcurve.as_ref())?;
     bytes.push(native_bool(data.first_flag));
-    native_loft_profile_tail(bytes, data)?;
+    native_loft_profile_tail(bytes, data);
     Ok(())
 }
 
@@ -2480,7 +2471,7 @@ fn encode_native_skin_surface(
             second_tail,
         } => {
             native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
-            native_loft_subdata(bytes, subdata)?;
+            native_loft_subdata(bytes, subdata);
             native_i64(bytes, *first_tail);
             native_nurbs_curve(bytes, &native_loft_curve(target, secondary_curve)?)?;
             native_i64(bytes, *second_tail);
@@ -3639,7 +3630,7 @@ fn native_revision_cl_scale(
                 native_optional_pcurve(bytes, secondary_pcurve.as_ref())?;
             }
         }
-        native_loft_member_tail(bytes, &member.form)?;
+        native_loft_member_tail(bytes, &member.form);
     }
     if let Some(path_curve) = &path.curve {
         let curve = native_loft_curve_in_range(target, &path_curve.id, None)?;
@@ -3769,7 +3760,7 @@ fn encode_native_revision_g2_blend(
     match construction.radius_selector {
         cadmpeg_ir::geometry::RollingBallRadiusSelector::None => native_enum(bytes, -1),
         cadmpeg_ir::geometry::RollingBallRadiusSelector::Value { value } => {
-            native_enum(bytes, value.get())
+            native_enum(bytes, value.get());
         }
     }
     for range in [construction.u_range, construction.v_range] {
@@ -5090,7 +5081,7 @@ pub(crate) fn native_procedural_curve(
         }
         match first_pcurve {
             cadmpeg_ir::geometry::SpringPcurve::Pcurve(pcurve) => {
-                native_spring_pcurve(bytes, target, &supports[0], pcurve)?
+                native_spring_pcurve(bytes, target, &supports[0], pcurve)?;
             }
             cadmpeg_ir::geometry::SpringPcurve::Range(range) => {
                 native_ident(bytes, "nullbs")?;

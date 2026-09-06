@@ -943,7 +943,7 @@ fn opaque_blocks(
             }
             let mut payload = record.data?.to_vec();
             if lower.contains("pmisemanticdatadb") {
-                if let Err(error) = crate::pmi::patch_payload(ir, &record.id.as_str(), &mut payload)
+                if let Err(error) = crate::pmi::patch_payload(ir, record.id.as_str(), &mut payload)
                 {
                     return Some(Err(error));
                 }
@@ -1511,7 +1511,7 @@ fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribu
         .filter(|attribute| attribute.id.as_str().starts_with("sldprt:"))
         .collect::<Vec<_>>();
     attributes.sort_by_key(|attribute| {
-        let position = metadata_source_position(&attribute.id.as_str());
+        let position = metadata_source_position(attribute.id.as_str());
         (position.is_none(), position)
     });
     attributes
@@ -2425,7 +2425,7 @@ pub(crate) fn brep_body(
                 nurbs,
                 &mut next,
                 length_scale,
-                &surface.id.as_str(),
+                surface.id.as_str(),
             )?;
             continue;
         }
@@ -2444,7 +2444,7 @@ pub(crate) fn brep_body(
                 nurbs,
                 &mut next,
                 length_scale,
-                &curve.id.as_str(),
+                curve.id.as_str(),
             )?;
             continue;
         }

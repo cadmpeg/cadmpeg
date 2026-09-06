@@ -587,7 +587,7 @@ fn snapshot_edge_identity_requires_one_edge_record_and_positive_revision() {
         revision_id,
         byte_offset: 0,
         framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-            index: index,
+            index,
             name: name.into(),
             entity_references: Vec::new(),
         },

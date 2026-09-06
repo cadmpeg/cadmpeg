@@ -50,6 +50,8 @@ struct ParsedHalfEdge {
     face: i64,
 }
 
+// This conversion consumes the input carrier at the typed construction boundary.
+#[allow(clippy::needless_pass_by_value)]
 fn compact_half_edges(
     name: &str,
     slots: Vec<Option<ParsedHalfEdge>>,

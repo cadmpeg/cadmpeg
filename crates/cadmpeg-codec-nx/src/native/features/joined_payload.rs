@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn nx_sketch_payload_join_preserves_order_and_cross_block_values() {
-        let ids = vec!["block#2".to_string(), "block#3".to_string()];
+        let ids = ["block#2".to_string(), "block#3".to_string()];
         let blocks = std::collections::BTreeMap::from([
             ("block#2".to_string(), (&[0x30, 0x43][..], 120_u64)),
             (
@@ -126,7 +126,7 @@ mod tests {
             [120, 900]
         );
 
-        let missing = vec!["block#2".to_string(), "missing".to_string()];
+        let missing = ["block#2".to_string(), "missing".to_string()];
         assert!(
             crate::native::features::joined_payload::JoinedPayload::from_source(
                 missing.iter(),

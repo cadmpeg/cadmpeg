@@ -83,6 +83,8 @@ impl ExtendedCompactIndex {
         &self.0
     }
 
+    // Validate the value against the same borrowed raw byte window used by the reader.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub(crate) fn from_wire(value: u32, raw: &[u8; 2]) -> Result<Self, &'static str> {
         let index = Self::read(raw).ok_or("invalid two-byte compact index")?;
         if index.value() != value {

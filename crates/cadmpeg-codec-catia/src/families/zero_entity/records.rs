@@ -747,7 +747,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
     let loops = zero_entity_loops_from_records(data, &records);
     let flattened_terminals = faces
         .iter()
-        .flat_map(|face| face.loop_terminals())
+        .flat_map(ZeroEntityFace::loop_terminals)
         .collect::<Vec<_>>();
     let loop_terminals = loops
         .iter()
@@ -2018,6 +2018,8 @@ mod tests {
         zero_entity_ownership_stream, zero_entity_support_stream, zero_entity_topology_stream,
     };
 
+    // These checked constructors must accept the explicit test fixtures.
+    #[allow(clippy::unwrap_used)]
     fn test_pcurve(points: Vec<Point2>) -> PcurveGeometry {
         PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::new(1, vec![0.0, 0.0, 1.0, 1.0], points, None, false).unwrap(),
@@ -2271,7 +2273,7 @@ mod tests {
                     && curve.weights().is_none()
                     && !curve.periodic()
                     && curve.control_points()
-                == &[Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)]
+                == [Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)]
         ));
         assert_eq!(support.model_parameters, Some([0.0, 1.0]));
         assert_eq!(support.model_midpoint, Some(Point3::new(3.0, 8.0, 3.0)));

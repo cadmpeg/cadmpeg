@@ -1020,7 +1020,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                 .entity_tables
                 .iter()
                 .filter(|table| table.feature_id == row.feature_id)
-                .flat_map(|table| table.entry_ids())
+                .flat_map(crate::feature::FeatureEntityTable::entry_ids)
                 .collect::<BTreeSet<_>>();
             let circles = scan
                 .references

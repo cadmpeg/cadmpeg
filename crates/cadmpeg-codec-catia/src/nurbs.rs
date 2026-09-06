@@ -779,6 +779,8 @@ mod tests {
     use super::*;
 
     #[test]
+    // These checked constructors must accept the explicit test fixtures.
+    #[allow(clippy::unwrap_used)]
     fn canonical_nurbs_range_clamps_rounding_at_the_domain_boundary() {
         let geometry = CurveGeometry::Nurbs(
             NurbsCurve::new(
@@ -840,6 +842,8 @@ mod tests {
     }
 
     #[test]
+    // These checked constructors must accept the explicit test fixtures.
+    #[allow(clippy::unwrap_used)]
     fn reversed_nurbs_preserves_active_subrange() {
         let geometry = CurveGeometry::Nurbs(
             NurbsCurve::new(
@@ -906,6 +910,8 @@ mod tests {
     }
 
     #[test]
+    // These checked constructors must accept the explicit test fixtures.
+    #[allow(clippy::unwrap_used)]
     fn surface_isocurve_preserves_tiny_weights_and_knot_domain() {
         let tiny = 1e-200;
         let surface = NurbsSurface::new(
@@ -937,6 +943,8 @@ mod tests {
     }
 
     #[test]
+    // These checked constructors must accept the explicit test fixtures.
+    #[allow(clippy::unwrap_used)]
     fn surface_isocurve_rejects_invalid_weight_shape_and_output() {
         let surface = |control_points, weights| {
             NurbsSurface::new(
@@ -1071,6 +1079,8 @@ mod tests {
     }
 
     #[test]
+    // These checked constructors must accept the explicit test fixtures.
+    #[allow(clippy::unwrap_used)]
     fn reversing_geometry_rejects_nonfinite_reconstruction() {
         let pcurve_line = PcurveGeometry::Line {
             origin: Point2::new(0.0, 0.0),

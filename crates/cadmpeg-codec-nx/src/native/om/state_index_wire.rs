@@ -298,6 +298,8 @@ pub(super) enum OmRollForwardStateRowWire {
 }
 
 impl OmRollForwardStateRowWire {
+    // This conversion consumes the input carrier at the typed construction boundary.
+    #[allow(clippy::needless_pass_by_value)]
     pub(super) fn from_row(ordinal: u8, value: OmRollForwardStateRow) -> Self {
         let ordinal = u32::from(ordinal);
         match value {
@@ -524,7 +526,7 @@ mod tests {
                 .unwrap()
                 .into_slot(0)
                 .unwrap_err()
-                .to_string()
+                .clone()
                 .contains("object_index/raw_object_index"));
         }
     }

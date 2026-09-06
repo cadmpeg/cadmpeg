@@ -10,6 +10,8 @@ use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, ShellId, SurfaceId, Vert
 /// Source namespaces used to derive native record ids.
 pub mod identity;
 
+// Serde requires a borrowed skip predicate.
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_false(value: &bool) -> bool {
     !*value
 }

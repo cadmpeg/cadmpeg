@@ -369,6 +369,8 @@ impl<T> RecordedValue<T> {
     }
 }
 
+// The wire adapter receives the optional field by reference, including its absence.
+#[allow(clippy::ref_option)]
 fn serialize_absent_u64_offset<S: Serializer>(
     value: &Option<u64>,
     serializer: S,
@@ -1226,6 +1228,9 @@ mod annotation_geometry_index {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::num::NonZeroU32;
 
+    // The wire adapter receives the optional field by reference, including its absence.
+    // Serde passes the field by reference to this wire adapter.
+    #[allow(clippy::ref_option, clippy::trivially_copy_pass_by_ref)]
     pub fn serialize<S: Serializer>(
         index: &Option<NonZeroU32>,
         serializer: S,
@@ -1652,6 +1657,8 @@ impl TryFrom<DesignDimensionLocusGroupWire> for DesignDimensionLocusGroup {
     }
 }
 impl From<DesignDimensionLocusGroup> for DesignDimensionLocusGroupWire {
+    // Output cardinalities are bounded by already-materialized input vectors.
+    #[allow(clippy::disallowed_methods)]
     fn from(value: DesignDimensionLocusGroup) -> Self {
         let constraint_kinds = value.constraint_kinds();
         let unknown_constraint_bits = value.unknown_constraint_bits();
@@ -1999,11 +2006,12 @@ struct DesignSketchPlacementWire {
 impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
     type Error = String;
     fn try_from(wire: DesignSketchPlacementWire) -> Result<Self, Self::Error> {
+        use DesignSketchFrameForm as Form;
         let entity_id = DesignEntityId::try_from(wire.entity_id)?;
         if entity_id.suffix() != wire.entity_suffix {
             return Err("entity_suffix disagrees with entity_id".into());
         }
-        use DesignSketchFrameForm as Form;
+
         let form = match (wire.member_run_head, wire.frame_length) {
             (false, 201) => Form::ScopeCompact,
             (false, 213) => Form::ScopeGenesisCompact,
@@ -3206,6 +3214,8 @@ impl DesignMeshTextureTable {
             + crate::layout::paramesh_texture_table_prefix::LEN as u64
             + MESH_TEXTURE_FLAGS_ENTRY_BYTES * self.resources.len() as u64
     }
+    // Output cardinalities are bounded by already-materialized input vectors.
+    #[allow(clippy::disallowed_methods)]
     fn from_wire(
         record: DesignMeshRecordIdentity,
         flags_count_offset: u64,
@@ -3340,6 +3350,8 @@ impl DesignMeshSceneBounds {
     pub fn minimum(&self) -> [f64; 3] {
         self.minimum
     }
+    // This conversion consumes the input carrier at the typed construction boundary.
+    #[allow(clippy::needless_pass_by_value)]
     fn from_wire(wire: DesignMeshSceneBoundsWire, offsets: [u64; 2]) -> Result<Self, String> {
         if wire.offsets != offsets {
             return Err("scene bounds offsets must match their owning record".into());
@@ -4361,6 +4373,8 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
 }
 
 impl From<DesignMeshFeature> for DesignMeshFeatureWire {
+    // Output cardinalities are bounded by already-materialized input vectors.
+    #[allow(clippy::disallowed_methods)]
     fn from(value: DesignMeshFeature) -> Self {
         let mut body_record_indices = Vec::with_capacity(value.bodies.len());
         let body_count_offsets = value.body_count_offsets();
@@ -5144,7 +5158,7 @@ impl DesignDecalAsset {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn primary_frame_length(&self) -> u64 {
+    pub const fn primary_frame_length() -> u64 {
         crate::layout::design_decal_image_asset_record::LEN as u64
     }
     pub fn name_frame_length(&self) -> u64 {
@@ -5155,7 +5169,7 @@ impl DesignDecalAsset {
         self.record_index + 1
     }
     fn name_byte_offset(&self) -> u64 {
-        self.byte_offset + self.primary_frame_length()
+        self.byte_offset + Self::primary_frame_length()
     }
     fn entity_reference_offset(&self) -> u64 {
         self.byte_offset
@@ -5304,7 +5318,7 @@ impl TryFrom<DesignDecalImageWire> for DesignDecalImage {
             (
                 "asset_frame_length",
                 wire.asset_frame_length,
-                image.asset.primary_frame_length(),
+                DesignDecalAsset::primary_frame_length(),
             ),
             (
                 "asset_entity_reference_offset",
@@ -5343,7 +5357,7 @@ impl From<DesignDecalImage> for DesignDecalImageWire {
         let target_group_reference_offset = value.target_group_reference_offset();
         let asset_record_index = value.asset.record_index;
         let asset_byte_offset = value.asset.byte_offset;
-        let asset_frame_length = value.asset.primary_frame_length();
+        let asset_frame_length = DesignDecalAsset::primary_frame_length();
         let asset_entity_suffix = value.asset.entity_suffix;
         let asset_entity_reference_offset = value.asset.entity_reference_offset();
         let name_record_index = value.asset.name_record_index();
@@ -6829,7 +6843,7 @@ impl SketchPointRecordForm {
                 *companion = Some(value.incident_curves);
             }
             Self::Version11 { companion, .. } | Self::Version11InlineTyped { companion, .. } => {
-                *companion = Some(value)
+                *companion = Some(value);
             }
         }
         Ok(())
@@ -8056,7 +8070,7 @@ impl From<ActEntity> for ActEntitySerde {
 pub struct ActGuid {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Byte offset of the UTF-16 length prefix in the ACT BulkStream.
+    /// Byte offset of the UTF-16 length prefix in the ACT `BulkStream`.
     byte_offset: u64,
     /// Position in the pool in source order; does not assign a GUID to one table entry.
     pub ordinal: u32,

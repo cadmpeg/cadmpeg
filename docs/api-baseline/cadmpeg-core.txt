@@ -1,4 +1,4 @@
-# generated at f5a61de4f
+# generated at eca025858
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -19,12 +19,97 @@ pub fn cadmpeg_core::bytes::find_from(&[u8], &[u8], usize) -> core::option::Opti
 pub fn cadmpeg_core::bytes::find_in(&[u8], &[u8], usize, usize) -> core::option::Option<usize>
 pub fn cadmpeg_core::bytes::find_iter<'a>(&'a [u8], &'a [u8]) -> impl core::iter::traits::iterator::Iterator<Item = usize> + 'a
 pub mod cadmpeg_core::container
+pub enum cadmpeg_core::container::ContainerRole
+pub cadmpeg_core::container::ContainerRole::AcisBinary
+pub cadmpeg_core::container::ContainerRole::ActiveBodyIndex
+pub cadmpeg_core::container::ContainerRole::Ancillary
+pub cadmpeg_core::container::ContainerRole::Arrangements
+pub cadmpeg_core::container::ContainerRole::AssetCatalog
+pub cadmpeg_core::container::ContainerRole::Auxiliary
+pub cadmpeg_core::container::ContainerRole::Block
+pub cadmpeg_core::container::ContainerRole::Brep
+pub cadmpeg_core::container::ContainerRole::BrepSmb
+pub cadmpeg_core::container::ContainerRole::BrepSmbh
+pub cadmpeg_core::container::ContainerRole::BrepText
+pub cadmpeg_core::container::ContainerRole::Bulkstream
+pub cadmpeg_core::container::ContainerRole::CacheCell
+pub cadmpeg_core::container::ContainerRole::CompoundStream
+pub cadmpeg_core::container::ContainerRole::DesignConfig
+pub cadmpeg_core::container::ContainerRole::Directory
+pub cadmpeg_core::container::ContainerRole::DirectoryEntry
+pub cadmpeg_core::container::ContainerRole::DisplayJt
+pub cadmpeg_core::container::ContainerRole::Document
+pub cadmpeg_core::container::ContainerRole::EntityRecords
+pub cadmpeg_core::container::ContainerRole::ExternalReference
+pub cadmpeg_core::container::ContainerRole::ExternalReferences
+pub cadmpeg_core::container::ContainerRole::FastLoadJt
+pub cadmpeg_core::container::ContainerRole::FastLoadStructure
+pub cadmpeg_core::container::ContainerRole::FinjplSegment
+pub cadmpeg_core::container::ContainerRole::GuiDocument
+pub cadmpeg_core::container::ContainerRole::Image
+pub cadmpeg_core::container::ContainerRole::InFileAnchors
+pub cadmpeg_core::container::ContainerRole::Manifest
+pub cadmpeg_core::container::ContainerRole::MaterialTexture
+pub cadmpeg_core::container::ContainerRole::Metadata
+pub cadmpeg_core::container::ContainerRole::Metastream
+pub cadmpeg_core::container::ContainerRole::ModelData
+pub cadmpeg_core::container::ContainerRole::NamedOpaqueStream
+pub cadmpeg_core::container::ContainerRole::NestedArchive
+pub cadmpeg_core::container::ContainerRole::ObjectClass
+pub cadmpeg_core::container::ContainerRole::OgsCache
+pub cadmpeg_core::container::ContainerRole::Opaque
+pub cadmpeg_core::container::ContainerRole::Other
+pub cadmpeg_core::container::ContainerRole::Paramesh
+pub cadmpeg_core::container::ContainerRole::ParasolidStream
+pub cadmpeg_core::container::ContainerRole::PartAttributes
+pub cadmpeg_core::container::ContainerRole::PartPayload
+pub cadmpeg_core::container::ContainerRole::Preview
+pub cadmpeg_core::container::ContainerRole::PreviewImage
+pub cadmpeg_core::container::ContainerRole::Properties
+pub cadmpeg_core::container::ContainerRole::Protein
+pub cadmpeg_core::container::ContainerRole::ProteinAssets
+pub cadmpeg_core::container::ContainerRole::PsbGeometry
+pub cadmpeg_core::container::ContainerRole::RetainedTrailingRecords
+pub cadmpeg_core::container::ContainerRole::RootExchange
+pub cadmpeg_core::container::ContainerRole::RseDatabase
+pub cadmpeg_core::container::ContainerRole::RseRevisionTable
+pub cadmpeg_core::container::ContainerRole::RseSegmentBulk
+pub cadmpeg_core::container::ContainerRole::RseSegmentMetadata
+pub cadmpeg_core::container::ContainerRole::RseSegmentRegistry
+pub cadmpeg_core::container::ContainerRole::RseStorage
+pub cadmpeg_core::container::ContainerRole::SaveToggleInfo
+pub cadmpeg_core::container::ContainerRole::Section
+pub cadmpeg_core::container::ContainerRole::Signature
+pub cadmpeg_core::container::ContainerRole::StepExternalReferences
+pub cadmpeg_core::container::ContainerRole::Storage
+pub cadmpeg_core::container::ContainerRole::Stream
+pub cadmpeg_core::container::ContainerRole::SubsidiaryExchange
+pub cadmpeg_core::container::ContainerRole::Table
+pub cadmpeg_core::container::ContainerRole::Thumbnail
+impl cadmpeg_core::container::ContainerRole
+pub const fn cadmpeg_core::container::ContainerRole::as_str(self) -> &'static str
+impl core::fmt::Display for cadmpeg_core::container::ContainerRole
+pub fn cadmpeg_core::container::ContainerRole::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum cadmpeg_core::container::EntryCompression
+pub cadmpeg_core::container::EntryCompression::CompoundFile
+pub cadmpeg_core::container::EntryCompression::Deflate
+pub cadmpeg_core::container::EntryCompression::Jpeg
+pub cadmpeg_core::container::EntryCompression::None
+pub cadmpeg_core::container::EntryCompression::Storage
+pub cadmpeg_core::container::EntryCompression::Stored
+pub cadmpeg_core::container::EntryCompression::UnixCompress
+pub cadmpeg_core::container::EntryCompression::Zlib
+pub cadmpeg_core::container::EntryCompression::Zstd
+impl cadmpeg_core::container::EntryCompression
+pub const fn cadmpeg_core::container::EntryCompression::as_str(self) -> &'static str
+impl core::fmt::Display for cadmpeg_core::container::EntryCompression
+pub fn cadmpeg_core::container::EntryCompression::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct cadmpeg_core::container::ContainerEntry
 pub cadmpeg_core::container::ContainerEntry::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
 pub cadmpeg_core::container::ContainerEntry::compressed_size: u64
-pub cadmpeg_core::container::ContainerEntry::compression: alloc::string::String
+pub cadmpeg_core::container::ContainerEntry::compression: cadmpeg_core::container::EntryCompression
 pub cadmpeg_core::container::ContainerEntry::name: alloc::string::String
-pub cadmpeg_core::container::ContainerEntry::role: alloc::string::String
+pub cadmpeg_core::container::ContainerEntry::role: cadmpeg_core::container::ContainerRole
 pub cadmpeg_core::container::ContainerEntry::uncompressed_size: u64
 pub mod cadmpeg_core::decode
 pub enum cadmpeg_core::decode::AddressStepKind
@@ -178,12 +263,11 @@ pub cadmpeg_core::decode::SourceLocation::offset: u64
 pub cadmpeg_core::decode::SourceLocation::space: cadmpeg_core::decode::SpaceId
 pub struct cadmpeg_core::decode::SpaceDescriptor
 pub cadmpeg_core::decode::SpaceDescriptor::derivation: cadmpeg_core::decode::SpaceDerivation
-pub cadmpeg_core::decode::SpaceDescriptor::id: cadmpeg_core::decode::SpaceId
 pub cadmpeg_core::decode::SpaceDescriptor::label: alloc::string::String
 pub struct cadmpeg_core::decode::SpaceId(_)
 impl cadmpeg_core::decode::SpaceId
 pub const cadmpeg_core::decode::SpaceId::ROOT: cadmpeg_core::decode::SpaceId
-pub fn cadmpeg_core::decode::SpaceId::index(self) -> u32
+pub fn cadmpeg_core::decode::SpaceId::index(self) -> usize
 pub struct cadmpeg_core::decode::View<'a>
 impl cadmpeg_core::decode::View<'_>
 pub fn cadmpeg_core::decode::View<'_>::f32_be(&mut self) -> core::option::Option<f32>
@@ -303,7 +387,7 @@ pub cadmpeg_core::dialect::LayerInstance::Sole
 pub cadmpeg_core::dialect::LayerInstance::Tagged
 pub struct cadmpeg_core::dialect::DialectId(_)
 impl cadmpeg_core::dialect::DialectId
-pub fn cadmpeg_core::dialect::DialectId::as_str(&self) -> &str
+pub const fn cadmpeg_core::dialect::DialectId::as_str(&self) -> &str
 pub fn cadmpeg_core::dialect::DialectId::namespace(&self) -> &str
 pub fn cadmpeg_core::dialect::DialectId::parse(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_core::dialect::DialectIdError>
 pub const fn cadmpeg_core::dialect::DialectId::pinned(&'static str) -> Self
@@ -412,14 +496,15 @@ pub cadmpeg_core::target::TargetRefusalKind::NoDefault::source: cadmpeg_core::ta
 pub cadmpeg_core::target::TargetRefusalKind::UnknownExplicit
 pub cadmpeg_core::target::TargetRefusalKind::UnknownExplicit::requested: cadmpeg_core::target::TargetToken
 pub cadmpeg_core::target::TargetRefusalKind::UnrecordedSource
-pub struct cadmpeg_core::target::TargetCatalog
+pub struct cadmpeg_core::target::TargetCatalog(_)
 impl cadmpeg_core::target::TargetCatalog
-pub const cadmpeg_core::target::TargetCatalog::EMPTY: Self
 pub fn cadmpeg_core::target::TargetCatalog::default(self) -> core::option::Option<(usize, &'static cadmpeg_core::target::TargetDescriptor)>
+pub const fn cadmpeg_core::target::TargetCatalog::empty(&'static str) -> Self
 pub fn cadmpeg_core::target::TargetCatalog::find(self, &str) -> core::option::Option<(usize, &'static cadmpeg_core::target::TargetDescriptor)>
 pub const fn cadmpeg_core::target::TargetCatalog::is_empty(self) -> bool
 pub fn cadmpeg_core::target::TargetCatalog::iter(self) -> core::slice::iter::Iter<'static, cadmpeg_core::target::TargetDescriptor>
 pub const fn cadmpeg_core::target::TargetCatalog::len(self) -> usize
+pub fn cadmpeg_core::target::TargetCatalog::namespace(self) -> &'static str
 pub const fn cadmpeg_core::target::TargetCatalog::new(&'static [cadmpeg_core::target::TargetDescriptor], core::option::Option<usize>) -> Self
 pub const fn cadmpeg_core::target::TargetCatalog::targets(self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 impl core::iter::traits::collect::IntoIterator for cadmpeg_core::target::TargetCatalog
@@ -438,15 +523,17 @@ impl cadmpeg_core::target::TargetRefusal
 pub const fn cadmpeg_core::target::TargetRefusal::available(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 pub fn cadmpeg_core::target::TargetRefusal::format(&self) -> &str
 pub const fn cadmpeg_core::target::TargetRefusal::kind(&self) -> &cadmpeg_core::target::TargetRefusalKind
-pub fn cadmpeg_core::target::TargetRefusal::new(impl core::convert::Into<alloc::string::String>, cadmpeg_core::target::TargetRefusalKind, cadmpeg_core::target::TargetCatalog) -> Self
+pub fn cadmpeg_core::target::TargetRefusal::new(cadmpeg_core::target::TargetRefusalKind, cadmpeg_core::target::TargetCatalog) -> Self
 pub fn cadmpeg_core::target::TargetRefusal::reason(&self) -> core::option::Option<&str>
 pub fn cadmpeg_core::target::TargetRefusal::requested(&self) -> core::option::Option<&str>
-pub fn cadmpeg_core::target::TargetRefusal::unknown_explicit(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, cadmpeg_core::target::TargetCatalog) -> Self
+pub fn cadmpeg_core::target::TargetRefusal::unknown_explicit(impl core::convert::Into<alloc::string::String>, cadmpeg_core::target::TargetCatalog) -> Self
 impl core::convert::From<cadmpeg_core::target::TargetRefusal> for cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::error::CodecError::from(cadmpeg_core::target::TargetRefusal) -> Self
 impl core::error::Error for cadmpeg_core::target::TargetRefusal
 impl core::fmt::Display for cadmpeg_core::target::TargetRefusal
 pub fn cadmpeg_core::target::TargetRefusal::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_core::target::TargetRefusal
+pub fn cadmpeg_core::target::TargetRefusal::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 pub struct cadmpeg_core::target::TargetToken(_)
 impl cadmpeg_core::target::TargetToken
 pub fn cadmpeg_core::target::TargetToken::as_str(&self) -> &str
@@ -478,9 +565,9 @@ pub fn cadmpeg_core::error::CodecError::from(cadmpeg_core::target::TargetRefusal
 pub struct cadmpeg_core::ContainerEntry
 pub cadmpeg_core::ContainerEntry::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
 pub cadmpeg_core::ContainerEntry::compressed_size: u64
-pub cadmpeg_core::ContainerEntry::compression: alloc::string::String
+pub cadmpeg_core::ContainerEntry::compression: cadmpeg_core::container::EntryCompression
 pub cadmpeg_core::ContainerEntry::name: alloc::string::String
-pub cadmpeg_core::ContainerEntry::role: alloc::string::String
+pub cadmpeg_core::ContainerEntry::role: cadmpeg_core::container::ContainerRole
 pub cadmpeg_core::ContainerEntry::uncompressed_size: u64
 pub trait cadmpeg_core::ReadSeek: std::io::Read + core::io::seek::Seek
 impl<T: std::io::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T

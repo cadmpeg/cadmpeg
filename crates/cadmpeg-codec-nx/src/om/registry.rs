@@ -278,7 +278,7 @@ fn legacy_type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDe
             out.push(TypeDefinition {
                 offset: declaration.offset,
                 name: declaration.name,
-                registry_tail: &bytes[name_end..name_end + 1],
+                registry_tail: &bytes[name_end..=name_end],
             });
             at = name_end + 1;
         } else {
@@ -346,6 +346,6 @@ fn field_definition_at(bytes: &[u8], at: usize, end: usize) -> Option<FieldDefin
     Some(FieldDefinition {
         offset: declaration.offset,
         name: declaration.name,
-        registry_tail: &bytes[name_end..name_end + 1],
+        registry_tail: &bytes[name_end..=name_end],
     })
 }

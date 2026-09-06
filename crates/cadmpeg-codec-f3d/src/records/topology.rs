@@ -1036,6 +1036,8 @@ impl TryFrom<DesignConstructionOperandIdentityWire> for DesignConstructionOperan
 }
 
 impl From<DesignConstructionOperandIdentity> for DesignConstructionOperandIdentityWire {
+    // Output cardinalities are bounded by already-materialized input vectors.
+    #[allow(clippy::disallowed_methods)]
     fn from(identity: DesignConstructionOperandIdentity) -> Self {
         let mut wrapper_record_indices = Vec::with_capacity(identity.wrappers.len());
         let mut wrapper_byte_offsets = Vec::with_capacity(identity.wrappers.len());
@@ -1442,6 +1444,8 @@ pub struct HistoricalBinding {
 }
 
 #[derive(Deserialize)]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
 struct OptionalHistoricalBindingWire {
     historical_entity_kind: Option<AsmHistoricalEntityKind>,
     historical_entity_ref: Option<i64>,
@@ -2410,6 +2414,8 @@ struct EdgeResolvedAxisWire {
     resolved_axis_direction: Option<Vector3>,
 }
 
+// The wire adapter receives the optional field by reference, including its absence.
+#[allow(clippy::ref_option)]
 fn serialize_edge_resolved_axis<S: serde::Serializer>(
     axis: &Option<DesignAxis>,
     serializer: S,
@@ -3547,6 +3553,9 @@ pub struct DesignFaceRecipeStructure {
     pub postlude_value: Option<i32>,
 }
 
+// The wire adapter receives the optional field by reference, including its absence.
+// Serde passes the field by reference to this wire adapter.
+#[allow(clippy::ref_option, clippy::trivially_copy_pass_by_ref)]
 fn serialize_face_recipe_postlude<S: serde::Serializer>(
     value: &Option<i32>,
     serializer: S,

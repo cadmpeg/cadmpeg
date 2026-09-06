@@ -231,9 +231,8 @@ pub(super) fn decode(
         result.losses.push(
             StepLossCode::OrientedShellOmitsCfsFaces
                 .note(format!(
-                    "{name} #{} omits the derived `cfs_faces` slot required by ISO 10303-21; \
-                 read the shell element from positional slot 1",
-                    id
+                    "{name} #{id} omits the derived `cfs_faces` slot required by ISO 10303-21; \
+                 read the shell element from positional slot 1"
                 ))
                 .with_provenance(
                     cadmpeg_ir::SourceProvenance::root(
@@ -610,7 +609,7 @@ pub(super) fn decode(
         }
     }
     for face in &ir.model.faces {
-        if let Some(source) = source_numeric_id(&face.id.as_str(), "face") {
+        if let Some(source) = source_numeric_id(face.id.as_str(), "face") {
             result
                 .faces_by_source
                 .entry(source)
@@ -619,7 +618,7 @@ pub(super) fn decode(
         }
     }
     for edge in &ir.model.edges {
-        if let Some(source) = source_numeric_id(&edge.id.as_str(), "edge") {
+        if let Some(source) = source_numeric_id(edge.id.as_str(), "edge") {
             result
                 .edges_by_source
                 .entry(source)
@@ -628,7 +627,7 @@ pub(super) fn decode(
         }
     }
     for vertex in &ir.model.vertices {
-        if let Some(source) = source_numeric_id(&vertex.id.as_str(), "vertex") {
+        if let Some(source) = source_numeric_id(vertex.id.as_str(), "vertex") {
             result
                 .vertices_by_source
                 .entry(source)
@@ -4003,7 +4002,7 @@ fn surface_selection_parameter_domains(
         .find(|procedural| {
             index.ir().model.procedural_surface_owner(&procedural.id) == Some(surface_id)
         })
-        .map(|procedural| procedural.definition());
+        .map(cadmpeg_ir::geometry::ProceduralSurface::definition);
     match definition {
         Some(ProceduralSurfaceDefinition::Subset {
             parameter_ranges, ..
@@ -4513,8 +4512,7 @@ fn validate_subset_parent(
     };
     let Some(parent) = parent else {
         warnings.push(format!(
-            "{subset_type} #{} has no resolvable parent {base_type}",
-            id
+            "{subset_type} #{id} has no resolvable parent {base_type}"
         ));
         return false;
     };
@@ -4526,8 +4524,7 @@ fn validate_subset_parent(
         true
     } else {
         warnings.push(format!(
-            "{subset_type} #{} parent #{parent} does not resolve to {base_type}",
-            id
+            "{subset_type} #{id} parent #{parent} does not resolve to {base_type}"
         ));
         false
     }

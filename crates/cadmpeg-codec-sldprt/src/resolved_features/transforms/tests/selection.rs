@@ -46,7 +46,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         },
         native_ref: Some("feature-native".into()),
     };
@@ -433,7 +433,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         },
         native_ref: Some("feature-native".into()),
     };
@@ -581,7 +581,7 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         },
         native_ref: Some("feature-native".into()),
     };
@@ -784,7 +784,9 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch { sketch },
+        definition: FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
+        },
         native_ref: Some(format!("native-{id}")),
     };
     let mut features = vec![
@@ -837,11 +839,15 @@ fn circular_profile_binds_by_unique_diameter_signature() {
 
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::Sketch { sketch: Some(id), .. } if id == &sketch_id
+        FeatureDefinition::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)), .. } if id == &sketch_id
     ));
     assert!(matches!(
         &features[1].definition,
-        FeatureDefinition::Sketch { sketch: None, .. }
+        FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            ..
+        }
     ));
     assert_eq!(sketches[0].name.as_deref(), Some("Sketch1"));
 }

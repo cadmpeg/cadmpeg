@@ -203,7 +203,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         .model
         .configurations
         .iter_mut()
-        .for_each(|configuration| configuration.active = false.into());
+        .for_each(|configuration| configuration.active = false);
     let error = crate::test_support::plan_inherited_write(&inactive, &fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(error
@@ -231,8 +231,8 @@ fn semantic_writer_round_trips_active_configuration() {
     assert!(decoded.ir().model.configurations[0].active);
     assert!(!decoded.ir().model.configurations[1].active);
 
-    decoded.ir_mut().model.configurations[0].active = false.into();
-    decoded.ir_mut().model.configurations[1].active = true.into();
+    decoded.ir_mut().model.configurations[0].active = false;
+    decoded.ir_mut().model.configurations[1].active = true;
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -332,7 +332,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             native_ref: None,
         })
         .collect();
-    ir.model.configurations[1].active = true.into();
+    ir.model.configurations[1].active = true;
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -582,7 +582,7 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
     duplicate.ordinal += 1;
     duplicate.source_index = None;
     duplicate.native_ref = None;
-    duplicate.active = false.into();
+    duplicate.active = false;
     decoded.ir_mut().model.configurations.push(duplicate);
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),

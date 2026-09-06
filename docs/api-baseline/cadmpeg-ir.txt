@@ -1,4 +1,4 @@
-# generated at 7088591c1
+# generated at eca025858
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -1623,7 +1623,7 @@ pub cadmpeg_ir::features::FeatureDefinition::Shell::removed_faces: cadmpeg_ir::f
 pub cadmpeg_ir::features::FeatureDefinition::Shell::resolve_intersections: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::Shell::thickness: core::option::Option<cadmpeg_ir::features::Length>
 pub cadmpeg_ir::features::FeatureDefinition::Sketch
-pub cadmpeg_ir::features::FeatureDefinition::Sketch::sketch: core::option::Option<cadmpeg_ir::sketches::SketchId>
+pub cadmpeg_ir::features::FeatureDefinition::Sketch::sketch: cadmpeg_ir::features::SketchFeatureBinding
 pub cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition
 pub cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition::sketch: core::option::Option<cadmpeg_ir::sketches::SketchId>
 pub cadmpeg_ir::features::FeatureDefinition::SketchBlockInstance
@@ -2205,7 +2205,7 @@ pub cadmpeg_ir::features::SheetMetalFlangeWidth::TwoSides
 pub cadmpeg_ir::features::SheetMetalFlangeWidth::TwoSides::first: cadmpeg_ir::features::Length
 pub cadmpeg_ir::features::SheetMetalFlangeWidth::TwoSides::second: cadmpeg_ir::features::Length
 pub cadmpeg_ir::features::SheetMetalFlangeWidth::TwoSidesPerEdge
-pub cadmpeg_ir::features::SheetMetalFlangeWidth::TwoSidesPerEdge::widths: alloc::vec::Vec<cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth>
+pub cadmpeg_ir::features::SheetMetalFlangeWidth::TwoSidesPerEdge::widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths
 pub enum cadmpeg_ir::features::SheetMetalHeightDatum
 pub cadmpeg_ir::features::SheetMetalHeightDatum::InnerFaces
 pub cadmpeg_ir::features::SheetMetalHeightDatum::OuterFaces
@@ -2241,6 +2241,11 @@ pub enum cadmpeg_ir::features::ShellMode
 pub cadmpeg_ir::features::ShellMode::BothSides
 pub cadmpeg_ir::features::ShellMode::Pipe
 pub cadmpeg_ir::features::ShellMode::Skin
+pub enum cadmpeg_ir::features::SketchFeatureBinding
+pub cadmpeg_ir::features::SketchFeatureBinding::Planar(core::option::Option<cadmpeg_ir::sketches::SketchId>)
+pub cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+impl cadmpeg_ir::features::SketchFeatureBinding
+pub fn cadmpeg_ir::features::SketchFeatureBinding::id(&self) -> core::option::Option<&cadmpeg_ir::sketches::SketchId>
 pub enum cadmpeg_ir::features::SketchPointSelection
 pub cadmpeg_ir::features::SketchPointSelection::Native(alloc::string::String)
 pub cadmpeg_ir::features::SketchPointSelection::Planar
@@ -2580,6 +2585,13 @@ pub cadmpeg_ir::features::RibConstruction::draft: cadmpeg_ir::features::RibDraft
 pub cadmpeg_ir::features::RibConstruction::profile: core::option::Option<cadmpeg_ir::features::ProfileRef>
 pub cadmpeg_ir::features::RibConstruction::side: core::option::Option<cadmpeg_ir::features::RibSide>
 pub cadmpeg_ir::features::RibConstruction::thickness: core::option::Option<cadmpeg_ir::features::Length>
+pub struct cadmpeg_ir::features::SheetMetalFlangeEdgeWidths(_)
+impl cadmpeg_ir::features::SheetMetalFlangeEdgeWidths
+pub fn cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::as_mut_slice(&mut self) -> &mut [cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth]
+pub fn cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::as_slice(&self) -> &[cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth]
+pub fn cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(alloc::vec::Vec<cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth>) -> core::result::Result<Self, &'static str>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::SheetMetalFlangeEdgeWidths
+pub fn cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
 pub cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth::first: cadmpeg_ir::features::Length
 pub cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth::second: cadmpeg_ir::features::Length
@@ -2621,7 +2633,6 @@ pub cadmpeg_ir::geometry::CacheFitToleranceError::Conflicting::supplied: f64
 pub cadmpeg_ir::geometry::CacheFitToleranceError::MissingSolved
 pub cadmpeg_ir::geometry::CacheFitToleranceError::Parameterized
 pub cadmpeg_ir::geometry::CacheFitToleranceError::StaleVariableBlend
-pub cadmpeg_ir::geometry::CacheFitToleranceError::VariableBlendState
 pub enum cadmpeg_ir::geometry::CompositeCurveTransition
 pub cadmpeg_ir::geometry::CompositeCurveTransition::ContSameGradient
 pub cadmpeg_ir::geometry::CompositeCurveTransition::ContSameGradientSameCurvature
@@ -2654,7 +2665,6 @@ pub cadmpeg_ir::geometry::CompoundLoftTail::Six::selector: i64
 pub cadmpeg_ir::geometry::CompoundLoftTail::Zero
 pub cadmpeg_ir::geometry::CompoundLoftTail::Zero::direction: cadmpeg_ir::geometry::CompoundLoftDirection
 pub cadmpeg_ir::geometry::CompoundLoftTail::Zero::flags: [bool; 2]
-pub cadmpeg_ir::geometry::CompoundLoftTail::Zero::selector: i64
 pub cadmpeg_ir::geometry::CompoundLoftTail::Zero::trailing_flags: [bool; 2]
 pub enum cadmpeg_ir::geometry::CurveGeometry
 pub cadmpeg_ir::geometry::CurveGeometry::Circle
@@ -3027,8 +3037,7 @@ pub enum cadmpeg_ir::geometry::ProceduralCurveDefinition
 pub cadmpeg_ir::geometry::ProceduralCurveDefinition::BlendSpine
 pub cadmpeg_ir::geometry::ProceduralCurveDefinition::BlendSpine::blend_surface: core::option::Option<cadmpeg_ir::ids::SurfaceId>
 pub cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound
-pub cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound::component_parameters: alloc::vec::Vec<f64>
-pub cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound::components: alloc::vec::Vec<cadmpeg_ir::ids::CurveId>
+pub cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound::components: alloc::vec::Vec<cadmpeg_ir::geometry::CompoundComponent<cadmpeg_ir::ids::CurveId>>
 pub cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound::parameters: alloc::vec::Vec<f64>
 pub cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable
 pub cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable::cache_first: cadmpeg_ir::geometry::CacheFirstCurveForm
@@ -3131,8 +3140,7 @@ pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend::radius: cadmpeg_ir
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend::spine: core::option::Option<cadmpeg_ir::ids::CurveId>
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend::supports: [core::option::Option<cadmpeg_ir::geometry::BlendSupport>; 2]
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound
-pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound::components: alloc::vec::Vec<cadmpeg_ir::ids::SurfaceId>
-pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound::parameters: alloc::vec::Vec<f64>
+pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound::components: alloc::vec::Vec<cadmpeg_ir::geometry::CompoundComponent<cadmpeg_ir::ids::SurfaceId>>
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CompoundLoft
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CompoundLoft::construction: alloc::boxed::Box<cadmpeg_ir::geometry::CompoundLoftConstruction>
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded
@@ -3200,9 +3208,7 @@ pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution::revision_form
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution::transposed: bool
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet::degree: u32
-pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet::knots: alloc::vec::Vec<f64>
-pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet::multiplicities: alloc::vec::Vec<u32>
-pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet::sites: alloc::vec::Vec<cadmpeg_ir::geometry::RollingBallJetSite>
+pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet::stations: alloc::vec::Vec<cadmpeg_ir::geometry::RollingBallJetStation>
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Ruled
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Ruled::first: cadmpeg_ir::ids::CurveId
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Ruled::second: cadmpeg_ir::ids::CurveId
@@ -3257,15 +3263,25 @@ pub cadmpeg_ir::geometry::ProjectionTail::Ranged
 pub cadmpeg_ir::geometry::ProjectionTail::Ranged::flag: bool
 pub cadmpeg_ir::geometry::ProjectionTail::Ranged::parameter_range: [f64; 2]
 pub cadmpeg_ir::geometry::ProjectionTail::Ranged::role: cadmpeg_ir::geometry::ProjectionRole
-pub enum cadmpeg_ir::geometry::RevisionCacheForm<P, S>
+pub enum cadmpeg_ir::geometry::RevisionCacheForm<P>
 pub cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(P)
 pub cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache
-pub cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache::fit_tolerance: S
-impl<P, S> cadmpeg_ir::geometry::RevisionCacheForm<P, S>
-pub const fn cadmpeg_ir::geometry::RevisionCacheForm<P, S>::parameterization(&self) -> core::option::Option<&P>
-pub const fn cadmpeg_ir::geometry::RevisionCacheForm<P, S>::selector(&self) -> i64
+pub cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache::fit_tolerance: f64
 impl<P> cadmpeg_ir::geometry::RevisionCacheForm<P>
 pub const fn cadmpeg_ir::geometry::RevisionCacheForm<P>::fit_tolerance(&self) -> core::option::Option<f64>
+pub const fn cadmpeg_ir::geometry::RevisionCacheForm<P>::parameterization(&self) -> core::option::Option<&P>
+pub const fn cadmpeg_ir::geometry::RevisionCacheForm<P>::selector(&self) -> i64
+pub enum cadmpeg_ir::geometry::RevisionCompoundLoftTail<T>
+pub cadmpeg_ir::geometry::RevisionCompoundLoftTail::Curve
+pub cadmpeg_ir::geometry::RevisionCompoundLoftTail::Curve::curve: T
+pub cadmpeg_ir::geometry::RevisionCompoundLoftTail::Curve::interval: [f64; 2]
+pub cadmpeg_ir::geometry::RevisionCompoundLoftTail::LowerBound(f64)
+pub cadmpeg_ir::geometry::RevisionCompoundLoftTail::Unbounded
+pub cadmpeg_ir::geometry::RevisionCompoundLoftTail::UpperBound(f64)
+impl<T> cadmpeg_ir::geometry::RevisionCompoundLoftTail<T>
+pub const fn cadmpeg_ir::geometry::RevisionCompoundLoftTail<T>::curve(&self) -> core::option::Option<&T>
+pub const fn cadmpeg_ir::geometry::RevisionCompoundLoftTail<T>::interval(&self) -> [core::option::Option<f64>; 2]
+pub fn cadmpeg_ir::geometry::RevisionCompoundLoftTail<T>::map<U>(self, impl core::ops::function::FnOnce(T) -> U) -> cadmpeg_ir::geometry::RevisionCompoundLoftTail<U>
 pub enum cadmpeg_ir::geometry::RollingBallRadiusSelector<T>
 pub cadmpeg_ir::geometry::RollingBallRadiusSelector::None
 pub cadmpeg_ir::geometry::RollingBallRadiusSelector::Value
@@ -3274,7 +3290,6 @@ pub enum cadmpeg_ir::geometry::ScaledCompoundLoftBranch
 pub cadmpeg_ir::geometry::ScaledCompoundLoftBranch::Direct
 pub cadmpeg_ir::geometry::ScaledCompoundLoftBranch::Direct::direction: cadmpeg_ir::geometry::CompoundLoftDirection
 pub cadmpeg_ir::geometry::ScaledCompoundLoftBranch::Direct::flag: bool
-pub cadmpeg_ir::geometry::ScaledCompoundLoftBranch::Direct::selector: i64
 pub cadmpeg_ir::geometry::ScaledCompoundLoftBranch::ExtendedCurve
 pub cadmpeg_ir::geometry::ScaledCompoundLoftBranch::ExtendedCurve::curve: cadmpeg_ir::ids::CurveId
 pub cadmpeg_ir::geometry::ScaledCompoundLoftBranch::ExtendedCurve::flag: bool
@@ -3507,6 +3522,19 @@ pub const fn cadmpeg_ir::geometry::VariableBlendBareCrossSection::native_selecto
 impl core::convert::TryFrom<i64> for cadmpeg_ir::geometry::VariableBlendBareCrossSection
 pub type cadmpeg_ir::geometry::VariableBlendBareCrossSection::Error = ()
 pub fn cadmpeg_ir::geometry::VariableBlendBareCrossSection::try_from(i64) -> core::result::Result<Self, Self::Error>
+pub enum cadmpeg_ir::geometry::VariableBlendCache
+pub cadmpeg_ir::geometry::VariableBlendCache::Current
+pub cadmpeg_ir::geometry::VariableBlendCache::Current::fit_tolerance: f64
+pub cadmpeg_ir::geometry::VariableBlendCache::Current::shape_prefix: core::num::nonzero::NonZeroI64
+pub cadmpeg_ir::geometry::VariableBlendCache::Parameterization
+pub cadmpeg_ir::geometry::VariableBlendCache::Parameterization::parameterization: cadmpeg_ir::geometry::RevisionSurfaceParameterization
+pub cadmpeg_ir::geometry::VariableBlendCache::Parameterization::shape_prefix: i64
+pub cadmpeg_ir::geometry::VariableBlendCache::Stale
+impl cadmpeg_ir::geometry::VariableBlendCache
+pub const fn cadmpeg_ir::geometry::VariableBlendCache::fit_tolerance(&self) -> core::option::Option<f64>
+pub const fn cadmpeg_ir::geometry::VariableBlendCache::parameterization(&self) -> core::option::Option<&cadmpeg_ir::geometry::RevisionSurfaceParameterization>
+pub const fn cadmpeg_ir::geometry::VariableBlendCache::selector(&self) -> i64
+pub const fn cadmpeg_ir::geometry::VariableBlendCache::shape_prefix(&self) -> i64
 pub enum cadmpeg_ir::geometry::VariableBlendConvexity
 pub cadmpeg_ir::geometry::VariableBlendConvexity::Concave
 pub cadmpeg_ir::geometry::VariableBlendConvexity::Convex
@@ -3533,12 +3561,6 @@ pub const fn cadmpeg_ir::geometry::VariableBlendRadii::second(&self) -> core::op
 pub enum cadmpeg_ir::geometry::VariableBlendRenderMode
 pub cadmpeg_ir::geometry::VariableBlendRenderMode::RollingBallEnvelope
 pub cadmpeg_ir::geometry::VariableBlendRenderMode::RollingBallSnapshot
-pub enum cadmpeg_ir::geometry::VariableBlendSolvedCache
-pub cadmpeg_ir::geometry::VariableBlendSolvedCache::Current
-pub cadmpeg_ir::geometry::VariableBlendSolvedCache::Current::fit_tolerance: f64
-pub cadmpeg_ir::geometry::VariableBlendSolvedCache::Stale
-impl cadmpeg_ir::geometry::VariableBlendSolvedCache
-pub const fn cadmpeg_ir::geometry::VariableBlendSolvedCache::fit_tolerance(&self) -> core::option::Option<f64>
 pub enum cadmpeg_ir::geometry::VariableBlendSupportKind
 pub cadmpeg_ir::geometry::VariableBlendSupportKind::CosineCurve
 pub cadmpeg_ir::geometry::VariableBlendSupportKind::Curve
@@ -3583,10 +3605,9 @@ pub enum cadmpeg_ir::geometry::VertexBlendBoundaryGeometry
 pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Circle
 pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Circle::curve: cadmpeg_ir::ids::CurveId
 pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Circle::curve_endpoints: [core::option::Option<f64>; 2]
-pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Circle::form: i64
 pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Circle::parameters: [f64; 2]
 pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Circle::sense: bool
-pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Circle::twists: alloc::vec::Vec<cadmpeg_ir::math::Point3>
+pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Circle::twists: cadmpeg_ir::geometry::VertexBlendTwists
 pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Degenerate
 pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Degenerate::location: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Degenerate::normals: [cadmpeg_ir::math::Vector3; 2]
@@ -3601,9 +3622,27 @@ pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Plane::curve: cadmpeg_ir:
 pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Plane::curve_endpoints: [core::option::Option<f64>; 2]
 pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Plane::normal: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Plane::parameters: [f64; 2]
+pub enum cadmpeg_ir::geometry::VertexBlendTwists
+pub cadmpeg_ir::geometry::VertexBlendTwists::None
+pub cadmpeg_ir::geometry::VertexBlendTwists::One(cadmpeg_ir::math::Point3)
+pub cadmpeg_ir::geometry::VertexBlendTwists::Two([cadmpeg_ir::math::Point3; 2])
+impl cadmpeg_ir::geometry::VertexBlendTwists
+pub fn cadmpeg_ir::geometry::VertexBlendTwists::entries(&self) -> &[cadmpeg_ir::math::Point3]
+pub const fn cadmpeg_ir::geometry::VertexBlendTwists::form(&self) -> i64
 pub struct cadmpeg_ir::geometry::BlendSupport
 pub cadmpeg_ir::geometry::BlendSupport::reversed: bool
 pub cadmpeg_ir::geometry::BlendSupport::surface: cadmpeg_ir::ids::SurfaceId
+pub struct cadmpeg_ir::geometry::BsplineSurface
+impl cadmpeg_ir::geometry::BsplineSurface
+pub fn cadmpeg_ir::geometry::BsplineSurface::control_points(&self) -> &[alloc::vec::Vec<cadmpeg_ir::math::Point3>]
+pub fn cadmpeg_ir::geometry::BsplineSurface::control_points_mut(&mut self) -> impl core::iter::traits::iterator::Iterator<Item = &mut cadmpeg_ir::math::Point3>
+pub fn cadmpeg_ir::geometry::BsplineSurface::new(u32, u32, alloc::vec::Vec<f64>, alloc::vec::Vec<f64>, alloc::vec::Vec<alloc::vec::Vec<cadmpeg_ir::math::Point3>>) -> core::result::Result<Self, cadmpeg_ir::geometry::NurbsError>
+pub const fn cadmpeg_ir::geometry::BsplineSurface::u_degree(&self) -> u32
+pub fn cadmpeg_ir::geometry::BsplineSurface::u_knots(&self) -> &[f64]
+pub const fn cadmpeg_ir::geometry::BsplineSurface::v_degree(&self) -> u32
+pub fn cadmpeg_ir::geometry::BsplineSurface::v_knots(&self) -> &[f64]
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::geometry::BsplineSurface
+pub fn cadmpeg_ir::geometry::BsplineSurface::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::geometry::CacheFirstCurveForm
 pub cadmpeg_ir::geometry::CacheFirstCurveForm::cache: cadmpeg_ir::geometry::RevisionCacheForm<cadmpeg_ir::geometry::CacheFirstCurveParameterization>
 pub cadmpeg_ir::geometry::CacheFirstCurveForm::extension: i64
@@ -3626,6 +3665,9 @@ pub struct cadmpeg_ir::geometry::CompositeCurveSegment
 pub cadmpeg_ir::geometry::CompositeCurveSegment::curve: cadmpeg_ir::ids::CurveId
 pub cadmpeg_ir::geometry::CompositeCurveSegment::same_sense: bool
 pub cadmpeg_ir::geometry::CompositeCurveSegment::transition: cadmpeg_ir::geometry::CompositeCurveTransition
+pub struct cadmpeg_ir::geometry::CompoundComponent<T>
+pub cadmpeg_ir::geometry::CompoundComponent::component: T
+pub cadmpeg_ir::geometry::CompoundComponent::parameter: f64
 pub struct cadmpeg_ir::geometry::CompoundLoftConstruction
 pub cadmpeg_ir::geometry::CompoundLoftConstruction::fifth_scale: core::option::Option<alloc::boxed::Box<cadmpeg_ir::geometry::CompoundLoftScale>>
 pub cadmpeg_ir::geometry::CompoundLoftConstruction::flags: [bool; 2]
@@ -3859,6 +3901,7 @@ pub fn cadmpeg_ir::geometry::PcurveNurbs::control_points_mut(&mut self) -> &mut 
 pub const fn cadmpeg_ir::geometry::PcurveNurbs::degree(&self) -> u32
 pub fn cadmpeg_ir::geometry::PcurveNurbs::knots(&self) -> &[f64]
 pub fn cadmpeg_ir::geometry::PcurveNurbs::knots_mut(&mut self) -> &mut [f64]
+pub fn cadmpeg_ir::geometry::PcurveNurbs::lift(&self, impl core::ops::function::FnMut(cadmpeg_ir::math::Point2) -> cadmpeg_ir::math::Point3) -> cadmpeg_ir::geometry::NurbsCurve
 pub fn cadmpeg_ir::geometry::PcurveNurbs::new(u32, alloc::vec::Vec<f64>, alloc::vec::Vec<cadmpeg_ir::math::Point2>, core::option::Option<alloc::vec::Vec<f64>>, bool) -> core::result::Result<Self, cadmpeg_ir::geometry::NurbsError>
 pub const fn cadmpeg_ir::geometry::PcurveNurbs::periodic(&self) -> bool
 pub fn cadmpeg_ir::geometry::PcurveNurbs::set_weights(&mut self, core::option::Option<alloc::vec::Vec<f64>>) -> core::result::Result<(), cadmpeg_ir::geometry::NurbsError>
@@ -3962,12 +4005,10 @@ pub cadmpeg_ir::geometry::RevisionCompoundLoftConstruction::direction: cadmpeg_i
 pub cadmpeg_ir::geometry::RevisionCompoundLoftConstruction::discontinuities: [alloc::vec::Vec<f64>; 6]
 pub cadmpeg_ir::geometry::RevisionCompoundLoftConstruction::entries: alloc::vec::Vec<cadmpeg_ir::geometry::LoftSectionEntry>
 pub cadmpeg_ir::geometry::RevisionCompoundLoftConstruction::flags: [bool; 2]
-pub cadmpeg_ir::geometry::RevisionCompoundLoftConstruction::interval: [core::option::Option<f64>; 2]
-pub cadmpeg_ir::geometry::RevisionCompoundLoftConstruction::kind: i64
 pub cadmpeg_ir::geometry::RevisionCompoundLoftConstruction::kind_flags: [bool; 2]
 pub cadmpeg_ir::geometry::RevisionCompoundLoftConstruction::revision: i64
+pub cadmpeg_ir::geometry::RevisionCompoundLoftConstruction::tail: cadmpeg_ir::geometry::RevisionCompoundLoftTail<cadmpeg_ir::ids::CurveId>
 pub cadmpeg_ir::geometry::RevisionCompoundLoftConstruction::tail_flag: bool
-pub cadmpeg_ir::geometry::RevisionCompoundLoftConstruction::trailing_curve: core::option::Option<cadmpeg_ir::ids::CurveId>
 pub struct cadmpeg_ir::geometry::RevisionG2BlendConstruction
 pub cadmpeg_ir::geometry::RevisionG2BlendConstruction::cache: cadmpeg_ir::geometry::RevisionCacheForm
 pub cadmpeg_ir::geometry::RevisionG2BlendConstruction::center: cadmpeg_ir::ids::CurveId
@@ -4040,6 +4081,10 @@ pub cadmpeg_ir::geometry::RollingBallJetSite::first_derivative: cadmpeg_ir::geom
 pub cadmpeg_ir::geometry::RollingBallJetSite::first_limit: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::geometry::RollingBallJetSite::second_derivative: cadmpeg_ir::geometry::RollingBallJetDerivative
 pub cadmpeg_ir::geometry::RollingBallJetSite::second_limit: cadmpeg_ir::math::Point3
+pub struct cadmpeg_ir::geometry::RollingBallJetStation
+pub cadmpeg_ir::geometry::RollingBallJetStation::knot: f64
+pub cadmpeg_ir::geometry::RollingBallJetStation::multiplicity: u32
+pub cadmpeg_ir::geometry::RollingBallJetStation::site: cadmpeg_ir::geometry::RollingBallJetSite
 pub struct cadmpeg_ir::geometry::RollingBallSide
 pub cadmpeg_ir::geometry::RollingBallSide::curve: core::option::Option<cadmpeg_ir::ids::CurveId>
 pub cadmpeg_ir::geometry::RollingBallSide::curve_range: [core::option::Option<f64>; 2]
@@ -4179,7 +4224,7 @@ pub struct cadmpeg_ir::geometry::TolerantIntersectionParameterization
 pub cadmpeg_ir::geometry::TolerantIntersectionParameterization::parameter_range: [f64; 2]
 pub cadmpeg_ir::geometry::TolerantIntersectionParameterization::pcurves: [cadmpeg_ir::geometry::PcurveGeometry; 2]
 pub struct cadmpeg_ir::geometry::VariableBlendConstruction
-pub cadmpeg_ir::geometry::VariableBlendConstruction::cache: cadmpeg_ir::geometry::RevisionCacheForm<cadmpeg_ir::geometry::RevisionSurfaceParameterization, cadmpeg_ir::geometry::VariableBlendSolvedCache>
+pub cadmpeg_ir::geometry::VariableBlendConstruction::cache: cadmpeg_ir::geometry::VariableBlendCache
 pub cadmpeg_ir::geometry::VariableBlendConstruction::convexity: cadmpeg_ir::geometry::VariableBlendConvexity
 pub cadmpeg_ir::geometry::VariableBlendConstruction::cross_section: core::option::Option<cadmpeg_ir::geometry::VariableBlendCrossSection>
 pub cadmpeg_ir::geometry::VariableBlendConstruction::discontinuities: [alloc::vec::Vec<f64>; 6]
@@ -4194,7 +4239,6 @@ pub cadmpeg_ir::geometry::VariableBlendConstruction::secondary_curve: core::opti
 pub cadmpeg_ir::geometry::VariableBlendConstruction::secondary_range: [core::option::Option<f64>; 2]
 pub cadmpeg_ir::geometry::VariableBlendConstruction::shape_length: f64
 pub cadmpeg_ir::geometry::VariableBlendConstruction::shape_parameter: f64
-pub cadmpeg_ir::geometry::VariableBlendConstruction::shape_prefix: i64
 pub cadmpeg_ir::geometry::VariableBlendConstruction::shape_tail: i64
 pub cadmpeg_ir::geometry::VariableBlendConstruction::sides: alloc::boxed::Box<[cadmpeg_ir::geometry::RollingBallSide; 2]>
 pub cadmpeg_ir::geometry::VariableBlendConstruction::slice: cadmpeg_ir::ids::CurveId
@@ -4253,288 +4297,433 @@ pub cadmpeg_ir::ids::IdentityError::InvalidKey::value: alloc::string::String
 impl core::error::Error for cadmpeg_ir::ids::IdentityError
 impl core::fmt::Display for cadmpeg_ir::ids::IdentityError
 pub fn cadmpeg_ir::ids::IdentityError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct cadmpeg_ir::ids::AppearanceBindingId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::AppearanceBindingId(_)
 impl cadmpeg_ir::ids::AppearanceBindingId
 pub fn cadmpeg_ir::ids::AppearanceBindingId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::AppearanceBindingId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::AppearanceBindingId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::AppearanceBindingId
+pub type cadmpeg_ir::ids::AppearanceBindingId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::AppearanceBindingId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::AppearanceBindingId
+pub type cadmpeg_ir::ids::AppearanceBindingId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::AppearanceBindingId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::AppearanceBindingId
 pub fn cadmpeg_ir::ids::AppearanceBindingId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::AppearanceBindingId
 pub fn cadmpeg_ir::ids::AppearanceBindingId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::AppearanceBindingId
-pub fn cadmpeg_ir::ids::AppearanceBindingId::from(S) -> Self
-pub struct cadmpeg_ir::ids::AppearanceId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::AppearanceId(_)
 impl cadmpeg_ir::ids::AppearanceId
 pub fn cadmpeg_ir::ids::AppearanceId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::AppearanceId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::AppearanceId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::AppearanceId
+pub type cadmpeg_ir::ids::AppearanceId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::AppearanceId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::AppearanceId
+pub type cadmpeg_ir::ids::AppearanceId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::AppearanceId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::AppearanceId
 pub fn cadmpeg_ir::ids::AppearanceId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::AppearanceId
 pub fn cadmpeg_ir::ids::AppearanceId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::AppearanceId
-pub fn cadmpeg_ir::ids::AppearanceId::from(S) -> Self
-pub struct cadmpeg_ir::ids::AttributeId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::AttributeId(_)
 impl cadmpeg_ir::ids::AttributeId
 pub fn cadmpeg_ir::ids::AttributeId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::AttributeId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::AttributeId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::AttributeId
+pub type cadmpeg_ir::ids::AttributeId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::AttributeId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::AttributeId
+pub type cadmpeg_ir::ids::AttributeId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::AttributeId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::AttributeId
 pub fn cadmpeg_ir::ids::AttributeId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::AttributeId
 pub fn cadmpeg_ir::ids::AttributeId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::AttributeId
-pub fn cadmpeg_ir::ids::AttributeId::from(S) -> Self
-pub struct cadmpeg_ir::ids::BodyId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::BodyId(_)
 impl cadmpeg_ir::ids::BodyId
 pub fn cadmpeg_ir::ids::BodyId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::BodyId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::BodyId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::BodyId
+pub type cadmpeg_ir::ids::BodyId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::BodyId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::BodyId
+pub type cadmpeg_ir::ids::BodyId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::BodyId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::BodyId
 pub fn cadmpeg_ir::ids::BodyId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::BodyId
 pub fn cadmpeg_ir::ids::BodyId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::BodyId
-pub fn cadmpeg_ir::ids::BodyId::from(S) -> Self
-pub struct cadmpeg_ir::ids::CoedgeId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::CoedgeId(_)
 impl cadmpeg_ir::ids::CoedgeId
 pub fn cadmpeg_ir::ids::CoedgeId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::CoedgeId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::CoedgeId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::CoedgeId
+pub type cadmpeg_ir::ids::CoedgeId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::CoedgeId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::CoedgeId
+pub type cadmpeg_ir::ids::CoedgeId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::CoedgeId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::CoedgeId
 pub fn cadmpeg_ir::ids::CoedgeId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::CoedgeId
 pub fn cadmpeg_ir::ids::CoedgeId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::CoedgeId
-pub fn cadmpeg_ir::ids::CoedgeId::from(S) -> Self
-pub struct cadmpeg_ir::ids::CurveId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::CurveId(_)
 impl cadmpeg_ir::ids::CurveId
 pub fn cadmpeg_ir::ids::CurveId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::CurveId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::CurveId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::CurveId
+pub type cadmpeg_ir::ids::CurveId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::CurveId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::CurveId
+pub type cadmpeg_ir::ids::CurveId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::CurveId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::CurveId
 pub fn cadmpeg_ir::ids::CurveId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::CurveId
 pub fn cadmpeg_ir::ids::CurveId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::CurveId
-pub fn cadmpeg_ir::ids::CurveId::from(S) -> Self
-pub struct cadmpeg_ir::ids::EdgeId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::EdgeId(_)
 impl cadmpeg_ir::ids::EdgeId
 pub fn cadmpeg_ir::ids::EdgeId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::EdgeId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::EdgeId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::EdgeId
+pub type cadmpeg_ir::ids::EdgeId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::EdgeId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::EdgeId
+pub type cadmpeg_ir::ids::EdgeId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::EdgeId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::EdgeId
 pub fn cadmpeg_ir::ids::EdgeId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::EdgeId
 pub fn cadmpeg_ir::ids::EdgeId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::EdgeId
-pub fn cadmpeg_ir::ids::EdgeId::from(S) -> Self
-pub struct cadmpeg_ir::ids::FaceId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::FaceId(_)
 impl cadmpeg_ir::ids::FaceId
 pub fn cadmpeg_ir::ids::FaceId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::FaceId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::FaceId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::FaceId
+pub type cadmpeg_ir::ids::FaceId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::FaceId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::FaceId
+pub type cadmpeg_ir::ids::FaceId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::FaceId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::FaceId
 pub fn cadmpeg_ir::ids::FaceId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::FaceId
 pub fn cadmpeg_ir::ids::FaceId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::FaceId
-pub fn cadmpeg_ir::ids::FaceId::from(S) -> Self
-pub struct cadmpeg_ir::ids::FeatureInputTopologyId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::FeatureInputTopologyId(_)
 impl cadmpeg_ir::ids::FeatureInputTopologyId
 pub fn cadmpeg_ir::ids::FeatureInputTopologyId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::FeatureInputTopologyId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::FeatureInputTopologyId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::FeatureInputTopologyId
+pub type cadmpeg_ir::ids::FeatureInputTopologyId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::FeatureInputTopologyId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::FeatureInputTopologyId
+pub type cadmpeg_ir::ids::FeatureInputTopologyId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::FeatureInputTopologyId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::FeatureInputTopologyId
 pub fn cadmpeg_ir::ids::FeatureInputTopologyId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::FeatureInputTopologyId
 pub fn cadmpeg_ir::ids::FeatureInputTopologyId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::FeatureInputTopologyId
-pub fn cadmpeg_ir::ids::FeatureInputTopologyId::from(S) -> Self
-pub struct cadmpeg_ir::ids::FeatureResultTopologyId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::FeatureResultTopologyId(_)
 impl cadmpeg_ir::ids::FeatureResultTopologyId
 pub fn cadmpeg_ir::ids::FeatureResultTopologyId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::FeatureResultTopologyId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::FeatureResultTopologyId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::FeatureResultTopologyId
+pub type cadmpeg_ir::ids::FeatureResultTopologyId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::FeatureResultTopologyId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::FeatureResultTopologyId
+pub type cadmpeg_ir::ids::FeatureResultTopologyId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::FeatureResultTopologyId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::FeatureResultTopologyId
 pub fn cadmpeg_ir::ids::FeatureResultTopologyId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::FeatureResultTopologyId
 pub fn cadmpeg_ir::ids::FeatureResultTopologyId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::FeatureResultTopologyId
-pub fn cadmpeg_ir::ids::FeatureResultTopologyId::from(S) -> Self
-pub struct cadmpeg_ir::ids::HistoricalBodyId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::HistoricalBodyId(_)
 impl cadmpeg_ir::ids::HistoricalBodyId
 pub fn cadmpeg_ir::ids::HistoricalBodyId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::HistoricalBodyId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::HistoricalBodyId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::HistoricalBodyId
+pub type cadmpeg_ir::ids::HistoricalBodyId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::HistoricalBodyId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::HistoricalBodyId
+pub type cadmpeg_ir::ids::HistoricalBodyId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::HistoricalBodyId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::HistoricalBodyId
 pub fn cadmpeg_ir::ids::HistoricalBodyId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::HistoricalBodyId
-pub fn cadmpeg_ir::ids::HistoricalBodyId::from(S) -> Self
-pub struct cadmpeg_ir::ids::HistoricalEdgeId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::HistoricalEdgeId(_)
 impl cadmpeg_ir::ids::HistoricalEdgeId
 pub fn cadmpeg_ir::ids::HistoricalEdgeId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::HistoricalEdgeId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::HistoricalEdgeId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::HistoricalEdgeId
+pub type cadmpeg_ir::ids::HistoricalEdgeId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::HistoricalEdgeId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::HistoricalEdgeId
+pub type cadmpeg_ir::ids::HistoricalEdgeId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::HistoricalEdgeId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::HistoricalEdgeId
 pub fn cadmpeg_ir::ids::HistoricalEdgeId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::HistoricalEdgeId
-pub fn cadmpeg_ir::ids::HistoricalEdgeId::from(S) -> Self
-pub struct cadmpeg_ir::ids::HistoricalFaceId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::HistoricalFaceId(_)
 impl cadmpeg_ir::ids::HistoricalFaceId
 pub fn cadmpeg_ir::ids::HistoricalFaceId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::HistoricalFaceId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::HistoricalFaceId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::HistoricalFaceId
+pub type cadmpeg_ir::ids::HistoricalFaceId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::HistoricalFaceId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::HistoricalFaceId
+pub type cadmpeg_ir::ids::HistoricalFaceId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::HistoricalFaceId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::HistoricalFaceId
 pub fn cadmpeg_ir::ids::HistoricalFaceId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::HistoricalFaceId
-pub fn cadmpeg_ir::ids::HistoricalFaceId::from(S) -> Self
-pub struct cadmpeg_ir::ids::HistoricalVertexId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::HistoricalVertexId(_)
 impl cadmpeg_ir::ids::HistoricalVertexId
 pub fn cadmpeg_ir::ids::HistoricalVertexId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::HistoricalVertexId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::HistoricalVertexId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::HistoricalVertexId
+pub type cadmpeg_ir::ids::HistoricalVertexId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::HistoricalVertexId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::HistoricalVertexId
+pub type cadmpeg_ir::ids::HistoricalVertexId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::HistoricalVertexId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::HistoricalVertexId
 pub fn cadmpeg_ir::ids::HistoricalVertexId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::HistoricalVertexId
-pub fn cadmpeg_ir::ids::HistoricalVertexId::from(S) -> Self
-pub struct cadmpeg_ir::ids::LayerId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::LayerId(_)
 impl cadmpeg_ir::ids::LayerId
 pub fn cadmpeg_ir::ids::LayerId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::LayerId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::LayerId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::LayerId
+pub type cadmpeg_ir::ids::LayerId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::LayerId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::LayerId
+pub type cadmpeg_ir::ids::LayerId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::LayerId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::LayerId
 pub fn cadmpeg_ir::ids::LayerId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::LayerId
 pub fn cadmpeg_ir::ids::LayerId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::LayerId
-pub fn cadmpeg_ir::ids::LayerId::from(S) -> Self
-pub struct cadmpeg_ir::ids::LoopId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::LoopId(_)
 impl cadmpeg_ir::ids::LoopId
 pub fn cadmpeg_ir::ids::LoopId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::LoopId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::LoopId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::LoopId
+pub type cadmpeg_ir::ids::LoopId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::LoopId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::LoopId
+pub type cadmpeg_ir::ids::LoopId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::LoopId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::LoopId
 pub fn cadmpeg_ir::ids::LoopId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::LoopId
 pub fn cadmpeg_ir::ids::LoopId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::LoopId
-pub fn cadmpeg_ir::ids::LoopId::from(S) -> Self
-pub struct cadmpeg_ir::ids::OccurrenceId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::OccurrenceId(_)
 impl cadmpeg_ir::ids::OccurrenceId
 pub fn cadmpeg_ir::ids::OccurrenceId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::OccurrenceId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::OccurrenceId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::OccurrenceId
+pub type cadmpeg_ir::ids::OccurrenceId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::OccurrenceId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::OccurrenceId
+pub type cadmpeg_ir::ids::OccurrenceId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::OccurrenceId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::OccurrenceId
 pub fn cadmpeg_ir::ids::OccurrenceId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::OccurrenceId
 pub fn cadmpeg_ir::ids::OccurrenceId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::OccurrenceId
-pub fn cadmpeg_ir::ids::OccurrenceId::from(S) -> Self
-pub struct cadmpeg_ir::ids::PcurveId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::PcurveId(_)
 impl cadmpeg_ir::ids::PcurveId
 pub fn cadmpeg_ir::ids::PcurveId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::PcurveId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::PcurveId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::PcurveId
+pub type cadmpeg_ir::ids::PcurveId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::PcurveId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::PcurveId
+pub type cadmpeg_ir::ids::PcurveId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::PcurveId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::PcurveId
 pub fn cadmpeg_ir::ids::PcurveId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::PcurveId
 pub fn cadmpeg_ir::ids::PcurveId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::PcurveId
-pub fn cadmpeg_ir::ids::PcurveId::from(S) -> Self
-pub struct cadmpeg_ir::ids::PmiId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::PmiId(_)
 impl cadmpeg_ir::ids::PmiId
 pub fn cadmpeg_ir::ids::PmiId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::PmiId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::PmiId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::PmiId
+pub type cadmpeg_ir::ids::PmiId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::PmiId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::PmiId
+pub type cadmpeg_ir::ids::PmiId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::PmiId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::PmiId
 pub fn cadmpeg_ir::ids::PmiId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::PmiId
 pub fn cadmpeg_ir::ids::PmiId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::PmiId
-pub fn cadmpeg_ir::ids::PmiId::from(S) -> Self
-pub struct cadmpeg_ir::ids::PointId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::PointId(_)
 impl cadmpeg_ir::ids::PointId
 pub fn cadmpeg_ir::ids::PointId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::PointId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::PointId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::PointId
+pub type cadmpeg_ir::ids::PointId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::PointId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::PointId
+pub type cadmpeg_ir::ids::PointId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::PointId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::PointId
 pub fn cadmpeg_ir::ids::PointId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::PointId
 pub fn cadmpeg_ir::ids::PointId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::PointId
-pub fn cadmpeg_ir::ids::PointId::from(S) -> Self
-pub struct cadmpeg_ir::ids::ProceduralCurveId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::ProceduralCurveId(_)
 impl cadmpeg_ir::ids::ProceduralCurveId
 pub fn cadmpeg_ir::ids::ProceduralCurveId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::ProceduralCurveId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::ProceduralCurveId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::ProceduralCurveId
+pub type cadmpeg_ir::ids::ProceduralCurveId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::ProceduralCurveId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::ProceduralCurveId
+pub type cadmpeg_ir::ids::ProceduralCurveId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::ProceduralCurveId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::ProceduralCurveId
 pub fn cadmpeg_ir::ids::ProceduralCurveId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::ProceduralCurveId
 pub fn cadmpeg_ir::ids::ProceduralCurveId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::ProceduralCurveId
-pub fn cadmpeg_ir::ids::ProceduralCurveId::from(S) -> Self
-pub struct cadmpeg_ir::ids::ProceduralSurfaceId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::ProceduralSurfaceId(_)
 impl cadmpeg_ir::ids::ProceduralSurfaceId
 pub fn cadmpeg_ir::ids::ProceduralSurfaceId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::ProceduralSurfaceId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::ProceduralSurfaceId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::ProceduralSurfaceId
+pub type cadmpeg_ir::ids::ProceduralSurfaceId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::ProceduralSurfaceId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::ProceduralSurfaceId
+pub type cadmpeg_ir::ids::ProceduralSurfaceId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::ProceduralSurfaceId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::ProceduralSurfaceId
 pub fn cadmpeg_ir::ids::ProceduralSurfaceId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::ProceduralSurfaceId
 pub fn cadmpeg_ir::ids::ProceduralSurfaceId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::ProceduralSurfaceId
-pub fn cadmpeg_ir::ids::ProceduralSurfaceId::from(S) -> Self
-pub struct cadmpeg_ir::ids::ProductDefinitionId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::ProductDefinitionId(_)
 impl cadmpeg_ir::ids::ProductDefinitionId
 pub fn cadmpeg_ir::ids::ProductDefinitionId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::ProductDefinitionId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::ProductDefinitionId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::ProductDefinitionId
+pub type cadmpeg_ir::ids::ProductDefinitionId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::ProductDefinitionId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::ProductDefinitionId
+pub type cadmpeg_ir::ids::ProductDefinitionId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::ProductDefinitionId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::ProductDefinitionId
 pub fn cadmpeg_ir::ids::ProductDefinitionId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::ProductDefinitionId
 pub fn cadmpeg_ir::ids::ProductDefinitionId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::ProductDefinitionId
-pub fn cadmpeg_ir::ids::ProductDefinitionId::from(S) -> Self
-pub struct cadmpeg_ir::ids::RegionId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::RegionId(_)
 impl cadmpeg_ir::ids::RegionId
 pub fn cadmpeg_ir::ids::RegionId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::RegionId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::RegionId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::RegionId
+pub type cadmpeg_ir::ids::RegionId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::RegionId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::RegionId
+pub type cadmpeg_ir::ids::RegionId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::RegionId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::RegionId
 pub fn cadmpeg_ir::ids::RegionId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::RegionId
 pub fn cadmpeg_ir::ids::RegionId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::RegionId
-pub fn cadmpeg_ir::ids::RegionId::from(S) -> Self
-pub struct cadmpeg_ir::ids::ShellId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::ShellId(_)
 impl cadmpeg_ir::ids::ShellId
 pub fn cadmpeg_ir::ids::ShellId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::ShellId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::ShellId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::ShellId
+pub type cadmpeg_ir::ids::ShellId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::ShellId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::ShellId
+pub type cadmpeg_ir::ids::ShellId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::ShellId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::ShellId
 pub fn cadmpeg_ir::ids::ShellId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::ShellId
 pub fn cadmpeg_ir::ids::ShellId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::ShellId
-pub fn cadmpeg_ir::ids::ShellId::from(S) -> Self
-pub struct cadmpeg_ir::ids::SubdId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::SubdId(_)
 impl cadmpeg_ir::ids::SubdId
 pub fn cadmpeg_ir::ids::SubdId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::SubdId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::SubdId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::SubdId
+pub type cadmpeg_ir::ids::SubdId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::SubdId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::SubdId
+pub type cadmpeg_ir::ids::SubdId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::SubdId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::SubdId
 pub fn cadmpeg_ir::ids::SubdId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::SubdId
 pub fn cadmpeg_ir::ids::SubdId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::SubdId
-pub fn cadmpeg_ir::ids::SubdId::from(S) -> Self
-pub struct cadmpeg_ir::ids::SurfaceId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::SurfaceId(_)
 impl cadmpeg_ir::ids::SurfaceId
 pub fn cadmpeg_ir::ids::SurfaceId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::SurfaceId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::SurfaceId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::SurfaceId
+pub type cadmpeg_ir::ids::SurfaceId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::SurfaceId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::SurfaceId
+pub type cadmpeg_ir::ids::SurfaceId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::SurfaceId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::SurfaceId
 pub fn cadmpeg_ir::ids::SurfaceId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::SurfaceId
 pub fn cadmpeg_ir::ids::SurfaceId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::SurfaceId
-pub fn cadmpeg_ir::ids::SurfaceId::from(S) -> Self
-pub struct cadmpeg_ir::ids::UnknownId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::UnknownId(_)
 impl cadmpeg_ir::ids::UnknownId
 pub fn cadmpeg_ir::ids::UnknownId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::UnknownId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::UnknownId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::UnknownId
+pub type cadmpeg_ir::ids::UnknownId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::UnknownId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::UnknownId
+pub type cadmpeg_ir::ids::UnknownId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::UnknownId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::UnknownId
 pub fn cadmpeg_ir::ids::UnknownId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::UnknownId
 pub fn cadmpeg_ir::ids::UnknownId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::UnknownId
-pub fn cadmpeg_ir::ids::UnknownId::from(S) -> Self
-pub struct cadmpeg_ir::ids::VertexId(pub alloc::string::String)
+pub struct cadmpeg_ir::ids::VertexId(_)
 impl cadmpeg_ir::ids::VertexId
 pub fn cadmpeg_ir::ids::VertexId::as_str(&self) -> &str
+pub fn cadmpeg_ir::ids::VertexId::into_string(self) -> alloc::string::String
 pub fn cadmpeg_ir::ids::VertexId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::ids::VertexId
+pub type cadmpeg_ir::ids::VertexId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::VertexId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::ids::VertexId
+pub type cadmpeg_ir::ids::VertexId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::VertexId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::ids::VertexId
 pub fn cadmpeg_ir::ids::VertexId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for cadmpeg_ir::ids::VertexId
 pub fn cadmpeg_ir::ids::VertexId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::VertexId
-pub fn cadmpeg_ir::ids::VertexId::from(S) -> Self
 pub fn cadmpeg_ir::ids::format_identity(&str, &str, &str, impl core::fmt::Display) -> core::result::Result<alloc::string::String, cadmpeg_ir::ids::IdentityError>
 pub fn cadmpeg_ir::ids::is_valid_identity(&str) -> bool
 pub mod cadmpeg_ir::index
@@ -5025,8 +5214,6 @@ pub cadmpeg_ir::products::PairedJointKind::Slider
 pub cadmpeg_ir::products::PairedJointKind::Slider::distance: core::option::Option<f64>
 pub cadmpeg_ir::products::PairedJointKind::Slider::linear_limits: core::option::Option<cadmpeg_ir::products::JointLimits>
 pub cadmpeg_ir::products::PairedJointKind::Slider::translation_offset: core::option::Option<[f64; 3]>
-impl cadmpeg_ir::products::PairedJointKind
-pub fn cadmpeg_ir::products::PairedJointKind::with_scalars(self, core::option::Option<f64>, core::option::Option<[f64; 3]>, core::option::Option<f64>, core::option::Option<f64>, core::option::Option<cadmpeg_ir::products::JointLimits>, core::option::Option<cadmpeg_ir::products::JointLimits>) -> Self
 pub enum cadmpeg_ir::products::ProductDefinitionKind
 pub cadmpeg_ir::products::ProductDefinitionKind::Group
 pub cadmpeg_ir::products::ProductDefinitionKind::LinkGroup
@@ -5679,9 +5866,9 @@ pub cadmpeg_ir::sketches::SketchConstraintDefinition::Angle::first: cadmpeg_ir::
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Angle::parameter: cadmpeg_ir::features::ParameterId
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Angle::second: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleDifference
-pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleDifference::difference: cadmpeg_ir::sketches::SketchSolverScalar
-pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleDifference::first: cadmpeg_ir::sketches::SketchSolverScalar
-pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleDifference::second: cadmpeg_ir::sketches::SketchSolverScalar
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleDifference::difference: u32
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleDifference::first: u32
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleDifference::second: u32
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleDifference::value: cadmpeg_ir::features::Angle
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleToAxis
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleToAxis::axis: cadmpeg_ir::sketches::SketchAxis
@@ -5824,8 +6011,8 @@ pub cadmpeg_ir::sketches::SketchConstraintDefinition::SameCoordinate::axis: cadm
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::SameCoordinate::first: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::SameCoordinate::second: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality
-pub cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality::first: cadmpeg_ir::sketches::SketchSolverScalar
-pub cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality::second: cadmpeg_ir::sketches::SketchSolverScalar
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality::first: u32
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality::second: u32
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::SnellsLaw
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::SnellsLaw::incident: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::SnellsLaw::interface: cadmpeg_ir::sketches::SketchEntityId
@@ -5908,11 +6095,7 @@ pub cadmpeg_ir::sketches::SketchGeometry::Line::start: cadmpeg_ir::math::Point2
 pub cadmpeg_ir::sketches::SketchGeometry::Native
 pub cadmpeg_ir::sketches::SketchGeometry::Native::native_kind: alloc::string::String
 pub cadmpeg_ir::sketches::SketchGeometry::Nurbs
-pub cadmpeg_ir::sketches::SketchGeometry::Nurbs::control_points: alloc::vec::Vec<cadmpeg_ir::math::Point2>
-pub cadmpeg_ir::sketches::SketchGeometry::Nurbs::degree: u32
-pub cadmpeg_ir::sketches::SketchGeometry::Nurbs::knots: alloc::vec::Vec<f64>
-pub cadmpeg_ir::sketches::SketchGeometry::Nurbs::periodic: bool
-pub cadmpeg_ir::sketches::SketchGeometry::Nurbs::weights: core::option::Option<alloc::vec::Vec<f64>>
+pub cadmpeg_ir::sketches::SketchGeometry::Nurbs::curve: cadmpeg_ir::geometry::PcurveNurbs
 pub cadmpeg_ir::sketches::SketchGeometry::Parabola
 pub cadmpeg_ir::sketches::SketchGeometry::Parabola::axis_angle: cadmpeg_ir::features::Angle
 pub cadmpeg_ir::sketches::SketchGeometry::Parabola::bounds: core::option::Option<[f64; 2]>
@@ -5972,14 +6155,6 @@ pub cadmpeg_ir::sketches::SketchTextVerticalAlignment::Bottom
 pub cadmpeg_ir::sketches::SketchTextVerticalAlignment::Middle
 pub cadmpeg_ir::sketches::SketchTextVerticalAlignment::Native(u32)
 pub cadmpeg_ir::sketches::SketchTextVerticalAlignment::Top
-pub enum cadmpeg_ir::sketches::SolverScalarClass
-pub cadmpeg_ir::sketches::SolverScalarClass::Angle
-pub cadmpeg_ir::sketches::SolverScalarClass::Difference
-pub cadmpeg_ir::sketches::SolverScalarClass::Equality
-impl serde_core::ser::Serialize for cadmpeg_ir::sketches::SolverScalarClass
-pub fn cadmpeg_ir::sketches::SolverScalarClass::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::sketches::SolverScalarClass
-pub fn cadmpeg_ir::sketches::SolverScalarClass::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub enum cadmpeg_ir::sketches::SpatialSketchConstraintDefinition
 pub cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Coincident
 pub cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Coincident::first: cadmpeg_ir::sketches::SpatialSketchEntityId
@@ -6057,17 +6232,9 @@ pub cadmpeg_ir::sketches::SpatialSketchGeometry::Line::start: cadmpeg_ir::math::
 pub cadmpeg_ir::sketches::SpatialSketchGeometry::Native
 pub cadmpeg_ir::sketches::SpatialSketchGeometry::Native::native_kind: alloc::string::String
 pub cadmpeg_ir::sketches::SpatialSketchGeometry::Nurbs
-pub cadmpeg_ir::sketches::SpatialSketchGeometry::Nurbs::control_points: alloc::vec::Vec<cadmpeg_ir::math::Point3>
-pub cadmpeg_ir::sketches::SpatialSketchGeometry::Nurbs::degree: u32
-pub cadmpeg_ir::sketches::SpatialSketchGeometry::Nurbs::knots: alloc::vec::Vec<f64>
-pub cadmpeg_ir::sketches::SpatialSketchGeometry::Nurbs::periodic: bool
-pub cadmpeg_ir::sketches::SpatialSketchGeometry::Nurbs::weights: core::option::Option<alloc::vec::Vec<f64>>
+pub cadmpeg_ir::sketches::SpatialSketchGeometry::Nurbs::curve: cadmpeg_ir::geometry::NurbsCurve
 pub cadmpeg_ir::sketches::SpatialSketchGeometry::NurbsSurface
-pub cadmpeg_ir::sketches::SpatialSketchGeometry::NurbsSurface::control_points: alloc::vec::Vec<alloc::vec::Vec<cadmpeg_ir::math::Point3>>
-pub cadmpeg_ir::sketches::SpatialSketchGeometry::NurbsSurface::u_degree: u32
-pub cadmpeg_ir::sketches::SpatialSketchGeometry::NurbsSurface::u_knots: alloc::vec::Vec<f64>
-pub cadmpeg_ir::sketches::SpatialSketchGeometry::NurbsSurface::v_degree: u32
-pub cadmpeg_ir::sketches::SpatialSketchGeometry::NurbsSurface::v_knots: alloc::vec::Vec<f64>
+pub cadmpeg_ir::sketches::SpatialSketchGeometry::NurbsSurface::surface: cadmpeg_ir::geometry::BsplineSurface
 pub cadmpeg_ir::sketches::SpatialSketchGeometry::Point
 pub cadmpeg_ir::sketches::SpatialSketchGeometry::Point::position: cadmpeg_ir::math::Point3
 pub struct cadmpeg_ir::sketches::OffsetParameter
@@ -6196,9 +6363,6 @@ impl serde_core::ser::Serialize for cadmpeg_ir::sketches::SketchRectangularPatte
 pub fn cadmpeg_ir::sketches::SketchRectangularPattern::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::sketches::SketchRectangularPattern
 pub fn cadmpeg_ir::sketches::SketchRectangularPattern::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
-pub struct cadmpeg_ir::sketches::SketchSolverScalar
-pub cadmpeg_ir::sketches::SketchSolverScalar::class: cadmpeg_ir::sketches::SolverScalarClass
-pub cadmpeg_ir::sketches::SketchSolverScalar::key: u32
 pub struct cadmpeg_ir::sketches::SpatialSketch
 pub cadmpeg_ir::sketches::SpatialSketch::configuration: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::sketches::SpatialSketch::id: cadmpeg_ir::sketches::SpatialSketchId
@@ -7559,7 +7723,7 @@ pub cadmpeg_ir::FeatureDefinition::Shell::removed_faces: cadmpeg_ir::features::F
 pub cadmpeg_ir::FeatureDefinition::Shell::resolve_intersections: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::Shell::thickness: core::option::Option<cadmpeg_ir::features::Length>
 pub cadmpeg_ir::FeatureDefinition::Sketch
-pub cadmpeg_ir::FeatureDefinition::Sketch::sketch: core::option::Option<cadmpeg_ir::sketches::SketchId>
+pub cadmpeg_ir::FeatureDefinition::Sketch::sketch: cadmpeg_ir::features::SketchFeatureBinding
 pub cadmpeg_ir::FeatureDefinition::SketchBlockDefinition
 pub cadmpeg_ir::FeatureDefinition::SketchBlockDefinition::sketch: core::option::Option<cadmpeg_ir::sketches::SketchId>
 pub cadmpeg_ir::FeatureDefinition::SketchBlockInstance
@@ -7829,8 +7993,6 @@ pub cadmpeg_ir::PairedJointKind::Slider
 pub cadmpeg_ir::PairedJointKind::Slider::distance: core::option::Option<f64>
 pub cadmpeg_ir::PairedJointKind::Slider::linear_limits: core::option::Option<cadmpeg_ir::products::JointLimits>
 pub cadmpeg_ir::PairedJointKind::Slider::translation_offset: core::option::Option<[f64; 3]>
-impl cadmpeg_ir::products::PairedJointKind
-pub fn cadmpeg_ir::products::PairedJointKind::with_scalars(self, core::option::Option<f64>, core::option::Option<[f64; 3]>, core::option::Option<f64>, core::option::Option<f64>, core::option::Option<cadmpeg_ir::products::JointLimits>, core::option::Option<cadmpeg_ir::products::JointLimits>) -> Self
 pub enum cadmpeg_ir::ParameterValue
 pub cadmpeg_ir::ParameterValue::Angle(cadmpeg_ir::features::Angle)
 pub cadmpeg_ir::ParameterValue::Boolean(bool)
@@ -7980,9 +8142,9 @@ pub cadmpeg_ir::SketchConstraintDefinition::Angle::first: cadmpeg_ir::sketches::
 pub cadmpeg_ir::SketchConstraintDefinition::Angle::parameter: cadmpeg_ir::features::ParameterId
 pub cadmpeg_ir::SketchConstraintDefinition::Angle::second: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::SketchConstraintDefinition::AngleDifference
-pub cadmpeg_ir::SketchConstraintDefinition::AngleDifference::difference: cadmpeg_ir::sketches::SketchSolverScalar
-pub cadmpeg_ir::SketchConstraintDefinition::AngleDifference::first: cadmpeg_ir::sketches::SketchSolverScalar
-pub cadmpeg_ir::SketchConstraintDefinition::AngleDifference::second: cadmpeg_ir::sketches::SketchSolverScalar
+pub cadmpeg_ir::SketchConstraintDefinition::AngleDifference::difference: u32
+pub cadmpeg_ir::SketchConstraintDefinition::AngleDifference::first: u32
+pub cadmpeg_ir::SketchConstraintDefinition::AngleDifference::second: u32
 pub cadmpeg_ir::SketchConstraintDefinition::AngleDifference::value: cadmpeg_ir::features::Angle
 pub cadmpeg_ir::SketchConstraintDefinition::AngleToAxis
 pub cadmpeg_ir::SketchConstraintDefinition::AngleToAxis::axis: cadmpeg_ir::sketches::SketchAxis
@@ -8125,8 +8287,8 @@ pub cadmpeg_ir::SketchConstraintDefinition::SameCoordinate::axis: cadmpeg_ir::sk
 pub cadmpeg_ir::SketchConstraintDefinition::SameCoordinate::first: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::SketchConstraintDefinition::SameCoordinate::second: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::SketchConstraintDefinition::ScalarEquality
-pub cadmpeg_ir::SketchConstraintDefinition::ScalarEquality::first: cadmpeg_ir::sketches::SketchSolverScalar
-pub cadmpeg_ir::SketchConstraintDefinition::ScalarEquality::second: cadmpeg_ir::sketches::SketchSolverScalar
+pub cadmpeg_ir::SketchConstraintDefinition::ScalarEquality::first: u32
+pub cadmpeg_ir::SketchConstraintDefinition::ScalarEquality::second: u32
 pub cadmpeg_ir::SketchConstraintDefinition::SnellsLaw
 pub cadmpeg_ir::SketchConstraintDefinition::SnellsLaw::incident: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::SketchConstraintDefinition::SnellsLaw::interface: cadmpeg_ir::sketches::SketchEntityId
@@ -8209,11 +8371,7 @@ pub cadmpeg_ir::SketchGeometry::Line::start: cadmpeg_ir::math::Point2
 pub cadmpeg_ir::SketchGeometry::Native
 pub cadmpeg_ir::SketchGeometry::Native::native_kind: alloc::string::String
 pub cadmpeg_ir::SketchGeometry::Nurbs
-pub cadmpeg_ir::SketchGeometry::Nurbs::control_points: alloc::vec::Vec<cadmpeg_ir::math::Point2>
-pub cadmpeg_ir::SketchGeometry::Nurbs::degree: u32
-pub cadmpeg_ir::SketchGeometry::Nurbs::knots: alloc::vec::Vec<f64>
-pub cadmpeg_ir::SketchGeometry::Nurbs::periodic: bool
-pub cadmpeg_ir::SketchGeometry::Nurbs::weights: core::option::Option<alloc::vec::Vec<f64>>
+pub cadmpeg_ir::SketchGeometry::Nurbs::curve: cadmpeg_ir::geometry::PcurveNurbs
 pub cadmpeg_ir::SketchGeometry::Parabola
 pub cadmpeg_ir::SketchGeometry::Parabola::axis_angle: cadmpeg_ir::features::Angle
 pub cadmpeg_ir::SketchGeometry::Parabola::bounds: core::option::Option<[f64; 2]>
@@ -8241,14 +8399,6 @@ pub cadmpeg_ir::SketchPlacement::Resolved::u_axis: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::SketchPlacement::Unresolved
 impl cadmpeg_ir::sketches::SketchPlacement
 pub fn cadmpeg_ir::sketches::SketchPlacement::resolved(self) -> core::option::Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3, cadmpeg_ir::math::Vector3)>
-pub enum cadmpeg_ir::SolverScalarClass
-pub cadmpeg_ir::SolverScalarClass::Angle
-pub cadmpeg_ir::SolverScalarClass::Difference
-pub cadmpeg_ir::SolverScalarClass::Equality
-impl serde_core::ser::Serialize for cadmpeg_ir::sketches::SolverScalarClass
-pub fn cadmpeg_ir::sketches::SolverScalarClass::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::sketches::SolverScalarClass
-pub fn cadmpeg_ir::sketches::SolverScalarClass::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub enum cadmpeg_ir::SpatialSketchGeometry
 pub cadmpeg_ir::SpatialSketchGeometry::Arc
 pub cadmpeg_ir::SpatialSketchGeometry::Arc::center: cadmpeg_ir::math::Point3
@@ -8268,17 +8418,9 @@ pub cadmpeg_ir::SpatialSketchGeometry::Line::start: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::SpatialSketchGeometry::Native
 pub cadmpeg_ir::SpatialSketchGeometry::Native::native_kind: alloc::string::String
 pub cadmpeg_ir::SpatialSketchGeometry::Nurbs
-pub cadmpeg_ir::SpatialSketchGeometry::Nurbs::control_points: alloc::vec::Vec<cadmpeg_ir::math::Point3>
-pub cadmpeg_ir::SpatialSketchGeometry::Nurbs::degree: u32
-pub cadmpeg_ir::SpatialSketchGeometry::Nurbs::knots: alloc::vec::Vec<f64>
-pub cadmpeg_ir::SpatialSketchGeometry::Nurbs::periodic: bool
-pub cadmpeg_ir::SpatialSketchGeometry::Nurbs::weights: core::option::Option<alloc::vec::Vec<f64>>
+pub cadmpeg_ir::SpatialSketchGeometry::Nurbs::curve: cadmpeg_ir::geometry::NurbsCurve
 pub cadmpeg_ir::SpatialSketchGeometry::NurbsSurface
-pub cadmpeg_ir::SpatialSketchGeometry::NurbsSurface::control_points: alloc::vec::Vec<alloc::vec::Vec<cadmpeg_ir::math::Point3>>
-pub cadmpeg_ir::SpatialSketchGeometry::NurbsSurface::u_degree: u32
-pub cadmpeg_ir::SpatialSketchGeometry::NurbsSurface::u_knots: alloc::vec::Vec<f64>
-pub cadmpeg_ir::SpatialSketchGeometry::NurbsSurface::v_degree: u32
-pub cadmpeg_ir::SpatialSketchGeometry::NurbsSurface::v_knots: alloc::vec::Vec<f64>
+pub cadmpeg_ir::SpatialSketchGeometry::NurbsSurface::surface: cadmpeg_ir::geometry::BsplineSurface
 pub cadmpeg_ir::SpatialSketchGeometry::Point
 pub cadmpeg_ir::SpatialSketchGeometry::Point::position: cadmpeg_ir::math::Point3
 pub enum cadmpeg_ir::StrictConsequence
@@ -9012,9 +9154,6 @@ pub cadmpeg_ir::SketchNativeOperand::native_kind: alloc::string::String
 pub cadmpeg_ir::SketchNativeOperand::native_ref: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::SketchNativeOperand::native_role: core::option::Option<u32>
 pub cadmpeg_ir::SketchNativeOperand::object_index: u32
-pub struct cadmpeg_ir::SketchSolverScalar
-pub cadmpeg_ir::SketchSolverScalar::class: cadmpeg_ir::sketches::SolverScalarClass
-pub cadmpeg_ir::SketchSolverScalar::key: u32
 pub struct cadmpeg_ir::SourceDiff
 pub cadmpeg_ir::SourceDiff::attributes: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
 pub cadmpeg_ir::SourceDiff::dialects_change: core::option::Option<cadmpeg_ir::diff::DialectsChange>

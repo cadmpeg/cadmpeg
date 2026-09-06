@@ -767,7 +767,7 @@ fn retain_unowned_carriers(
             ir.model
                 .edges
                 .iter()
-                .filter_map(|edge| edge.curve.as_ref().map(|curve| curve.as_str())),
+                .filter_map(|edge| edge.curve.as_ref().map(cadmpeg_ir::ids::CurveId::as_str)),
         )
         .chain(ir.model.faces.iter().map(|face| face.surface.as_str()))
         .chain(
@@ -830,56 +830,56 @@ fn retain_unowned_carriers(
         .model
         .pcurves
         .iter()
-        .filter(|pcurve| !retains_carrier(&pcurve.id.as_str(), &removed_closure, &protected))
+        .filter(|pcurve| !retains_carrier(pcurve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_points = ir
         .model
         .points
         .iter()
-        .filter(|point| !retains_carrier(&point.id.as_str(), &removed_closure, &protected))
+        .filter(|point| !retains_carrier(point.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_curves = ir
         .model
         .curves
         .iter()
-        .filter(|curve| !retains_carrier(&curve.id.as_str(), &removed_closure, &protected))
+        .filter(|curve| !retains_carrier(curve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_surfaces = ir
         .model
         .surfaces
         .iter()
-        .filter(|surface| !retains_carrier(&surface.id.as_str(), &removed_closure, &protected))
+        .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_procedural_curves = ir
         .model
         .procedural_curves
         .iter()
-        .filter(|curve| !retains_carrier(&curve.id.as_str(), &removed_closure, &protected))
+        .filter(|curve| !retains_carrier(curve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_procedural_surfaces = ir
         .model
         .procedural_surfaces
         .iter()
-        .filter(|surface| !retains_carrier(&surface.id.as_str(), &removed_closure, &protected))
+        .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
         .count();
     ir.model
         .pcurves
         .retain(|pcurve| owned.contains(pcurve.id.as_str()));
     ir.model
         .points
-        .retain(|point| retains_carrier(&point.id.as_str(), &removed_closure, &protected));
+        .retain(|point| retains_carrier(point.id.as_str(), &removed_closure, &protected));
     ir.model
         .curves
-        .retain(|curve| retains_carrier(&curve.id.as_str(), &removed_closure, &protected));
+        .retain(|curve| retains_carrier(curve.id.as_str(), &removed_closure, &protected));
     ir.model
         .surfaces
-        .retain(|surface| retains_carrier(&surface.id.as_str(), &removed_closure, &protected));
+        .retain(|surface| retains_carrier(surface.id.as_str(), &removed_closure, &protected));
     ir.model
         .procedural_curves
-        .retain(|curve| retains_carrier(&curve.id.as_str(), &removed_closure, &protected));
+        .retain(|curve| retains_carrier(curve.id.as_str(), &removed_closure, &protected));
     ir.model
         .procedural_surfaces
-        .retain(|surface| retains_carrier(&surface.id.as_str(), &removed_closure, &protected));
+        .retain(|surface| retains_carrier(surface.id.as_str(), &removed_closure, &protected));
     typed_records.retain(|id| {
         !unowned_pcurves.contains(id) && (!removed_closure.contains(id) || protected.contains(id))
     });
@@ -895,7 +895,7 @@ fn retain_unowned_carriers(
 
 fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
     for point in &mut ir.model.points {
-        let Some(id) = step_id_from_ir(&point.id.as_str()) else {
+        let Some(id) = step_id_from_ir(point.id.as_str()) else {
             continue;
         };
         if ids.contains(&id) {
@@ -905,7 +905,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
         }
     }
     for curve in &mut ir.model.curves {
-        let Some(id) = step_id_from_ir(&curve.id.as_str()) else {
+        let Some(id) = step_id_from_ir(curve.id.as_str()) else {
             continue;
         };
         if ids.contains(&id) {
@@ -915,7 +915,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
         }
     }
     for surface in &mut ir.model.surfaces {
-        let Some(id) = step_id_from_ir(&surface.id.as_str()) else {
+        let Some(id) = step_id_from_ir(surface.id.as_str()) else {
             continue;
         };
         if ids.contains(&id) {

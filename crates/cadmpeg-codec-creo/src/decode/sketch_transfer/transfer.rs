@@ -646,7 +646,7 @@ pub(in super::super) fn transfer_sketches(
             }
             annotate(
                 annotations,
-                &constraint.id.as_str(),
+                constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_dimension_constraint",
@@ -662,7 +662,7 @@ pub(in super::super) fn transfer_sketches(
         ) {
             annotate(
                 annotations,
-                &constraint.id.as_str(),
+                constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_segment_radius_constraint",
@@ -741,7 +741,7 @@ pub(in super::super) fn transfer_sketches(
             }
             annotate(
                 annotations,
-                &constraint.id.as_str(),
+                constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_equation_constraint",
@@ -759,7 +759,7 @@ pub(in super::super) fn transfer_sketches(
         {
             annotate(
                 annotations,
-                &constraint.id.as_str(),
+                constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_native_equation_constraint",
@@ -780,7 +780,7 @@ pub(in super::super) fn transfer_sketches(
             }
             annotate(
                 annotations,
-                &constraint.id.as_str(),
+                constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_solver_constraint",
@@ -853,7 +853,9 @@ pub(in super::super) fn transfer_sketches(
                 source_content: Vec::new(),
                 outputs: Vec::new(),
                 definition: IrFeatureDefinition::Sketch {
-                    sketch: Some(sketch_id.clone()),
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                        sketch_id.clone(),
+                    )),
                 },
                 native_ref: Some(sketch_native_ref(&sketch_id)),
             });

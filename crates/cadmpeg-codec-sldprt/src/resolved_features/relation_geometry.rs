@@ -361,7 +361,7 @@ pub(crate) fn project_relation_point_geometry(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;
@@ -764,7 +764,7 @@ pub(crate) fn project_relation_solved_line_geometry(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;
@@ -1299,7 +1299,7 @@ pub(crate) fn project_relation_solved_point_geometry(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;
@@ -2248,7 +2248,7 @@ pub(crate) fn project_relation_bindings(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;
@@ -2776,7 +2776,7 @@ mod relation_geometry_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                sketch: Some(sketch.clone()),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
             },
             native_ref: Some("feature-native".into()),
         };
@@ -2955,7 +2955,7 @@ mod relation_geometry_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                sketch: Some(sketch_id.clone()),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
             },
             native_ref: Some(FEATURE.into()),
         };

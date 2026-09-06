@@ -147,7 +147,7 @@ pub(crate) fn transfer(
             ir.model.sketch_constraints.extend(decoded.constraints);
             ir.model.parameters.extend(decoded.parameters);
             FeatureDefinition::Sketch {
-                sketch: Some(sketch_id),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
             }
         } else if is_stored_geometry_feature(&object.type_name) {
             FeatureDefinition::StoredGeometry

@@ -1490,7 +1490,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         "f3d:feature:planar-sketch",
         0,
         FeatureDefinition::Sketch {
-            sketch: Some(planar_sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(planar_sketch.clone())),
         },
     );
     let spatial_feature = feature(

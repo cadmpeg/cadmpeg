@@ -309,7 +309,7 @@ fn native_object_references_select_sparse_entity_identities() {
         graph
             .records
             .iter()
-            .map(|record| record.entity_id())
+            .map(super::super::CatiaObjectRecord::entity_id)
             .collect::<Vec<_>>(),
         [Some(1), Some(3), Some(7)]
     );
@@ -517,7 +517,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
             .map(|row| {
                 row.cells
                     .iter()
-                    .map(|cell| cell.entity_id())
+                    .map(super::super::CatiaDesignReferenceCell::entity_id)
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(),
@@ -530,7 +530,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
             .map(|row| {
                 row.cells
                     .iter()
-                    .map(|cell| cell.payload_offset())
+                    .map(super::super::CatiaDesignReferenceCell::payload_offset)
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(),
@@ -841,7 +841,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .rows[1]
         .cells
         .iter()
-        .all(|cell| cell.is_null()));
+        .all(super::super::CatiaDesignReferenceCell::is_null));
 
     let three_references = [0x3b, 0x83, 0x81, 0x83, 0x81, 0x84, 0x81, 0x83, 0x86, 0xfe];
     let mismatched = sequential_entity_backed_object_graph(&[

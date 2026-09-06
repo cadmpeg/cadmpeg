@@ -510,7 +510,7 @@ fn schema_configuration_row_chain_retains_complete_source_order() {
                     .as_ref()
                     .expect("source-ordered row interval")
                     .iter()
-                    .map(|entity| entity.entity_id())
+                    .map(super::super::CatiaEntityReference::entity_id)
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(),

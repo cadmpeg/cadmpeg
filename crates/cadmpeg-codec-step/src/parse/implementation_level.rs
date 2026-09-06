@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Part 21 grammar selected by a FILE_DESCRIPTION declaration.
+//! Part 21 grammar selected by a `FILE_DESCRIPTION` declaration.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ImplementationLevel {

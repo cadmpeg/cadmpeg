@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Wire adapters for closed scalar-pair framing.
-use super::*;
+use super::{
+    Deserialize, FeatureDatumCsysPayloadFixedPair, FeatureSketchPayloadFixedPair,
+    FeatureSketchPayloadMixedPair, PairPosition, Serialize, SketchMixedScalars, SketchScaledAtom,
+    Q155,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct FeatureDatumCsysPayloadFixedPairWire {
@@ -188,6 +192,7 @@ impl From<FeatureSketchPayloadMixedPair> for FeatureSketchPayloadMixedPairWire {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::om::scalar_pair::SketchPairForm;
 
     #[test]
     fn fixed_pair_wire_rejects_unknown_framing_and_inconsistent_offsets() {

@@ -157,7 +157,7 @@ fn authored_scope_ordinals_for_stream<'a>(
     for scope in scopes {
         let Some(target_record_index) = scope
             .assembly_alignment()
-            .and_then(|alignment| alignment.joint_origin_scope_record_index())
+            .and_then(super::super::records::feature::DesignAssemblyAlignment::joint_origin_scope_record_index)
         else {
             continue;
         };
@@ -264,7 +264,7 @@ fn authored_scope_ordinals_for_stream<'a>(
     for scope in scopes {
         let Some(target_record_index) = scope
             .assembly_alignment()
-            .and_then(|alignment| alignment.joint_origin_scope_record_index())
+            .and_then(super::super::records::feature::DesignAssemblyAlignment::joint_origin_scope_record_index)
         else {
             continue;
         };
@@ -657,7 +657,7 @@ pub fn project_parameter_design_with_edge_identities(
                 .collect::<Vec<_>>();
             let family = design_feature_family(&scope.kind());
             let definition = match family {
-                Some(DesignFeatureFamily::Sketch) => FeatureDefinition::Sketch { sketch: None },
+                Some(DesignFeatureFamily::Sketch) => FeatureDefinition::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved },
                 Some(DesignFeatureFamily::Assemble) => scope
                     .assembly_alignment()
                     .filter(|alignment| {
@@ -2518,12 +2518,14 @@ pub fn bind_sketch_feature_geometry(
         let has_spatial = spatial_sketches.iter().any(|sketch| sketch.id == spatial);
         feature.definition = match (has_planar, has_spatial) {
             (true, false) => FeatureDefinition::Sketch {
-                sketch: Some(planar),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(planar)),
             },
             (false, true) => FeatureDefinition::SpatialSketch {
                 sketch: Some(spatial),
             },
-            _ => FeatureDefinition::Sketch { sketch: None },
+            _ => FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+            },
         };
     }
     for feature in features.iter_mut() {
@@ -2588,7 +2590,7 @@ pub fn bind_sketch_feature_geometry(
         .iter()
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } => Some((sketch.clone(), feature.id.clone())),
             _ => None,
         })
@@ -3642,9 +3644,7 @@ pub(crate) fn project_edge_flange(
 
     // Each role-`0x08` group carries one selected edge. The aggregate role-`0x43`
     // group repeats them, so it contributes no separate selection.
-    if operation.shape.edges().next().is_none() {
-        return None;
-    }
+    operation.shape.edges().next()?;
     let selections = operation
         .shape
         .edges()

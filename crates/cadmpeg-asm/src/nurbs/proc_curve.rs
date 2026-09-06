@@ -356,6 +356,8 @@ pub enum EmbeddedSpringPcurve {
 }
 
 /// Structurally selected spring layout.
+// Keep typed source payloads inline without an allocation for each admitted record.
+#[allow(clippy::large_enum_variant)]
 pub enum EmbeddedSpringLayout {
     /// Context-first form with inline replacement ranges.
     ContextFirst {
@@ -1161,7 +1163,7 @@ fn embedded_spring(
     }
     let mut supports = Vec::with_capacity(2);
     let mut surface_charts = [NativeSupportChart::Canonical; 2];
-    for side in 0..2 {
+    for surface_chart in &mut surface_charts {
         let saved = cur.pos();
         if cur.take_ident() == Some("null_surface") {
             supports.push(EmbeddedSpringSupport::Ranges([
@@ -1170,7 +1172,7 @@ fn embedded_spring(
             ]));
         } else {
             cur.set_pos(saved);
-            surface_charts[side] = native_support_chart(toks, cur.pos());
+            *surface_chart = native_support_chart(toks, cur.pos());
             supports.push(EmbeddedSpringSupport::Surface(embedded_surface(&mut cur)?));
         }
     }

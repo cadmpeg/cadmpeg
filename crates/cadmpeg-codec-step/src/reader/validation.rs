@@ -177,7 +177,7 @@ pub(super) fn decode(
         }
     }
     ir.model.points.retain(|point| {
-        let id = step_id(&point.id.as_str());
+        let id = step_id(point.id.as_str());
         !validation_points.contains(&id) || referenced_validation_points.contains(&id)
     });
     StageOutcome {
@@ -246,8 +246,7 @@ fn measure_scale(
         })
         .unwrap_or_else(|| {
             losses.push(StepLossCode::ValidationMeasureUnitUnresolved.note(format!(
-                    "geometric validation {kind} measure #{} unit scale did not resolve; the document length scale was used",
-                    id,
+                    "geometric validation {kind} measure #{id} unit scale did not resolve; the document length scale was used",
                 )));
             fallback.powi(if kind == "AREA_MEASURE" { 2 } else { 3 })
         })

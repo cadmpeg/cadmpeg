@@ -70,6 +70,9 @@ pub(crate) struct Type38State {
     lanes: Lanes,
 }
 impl Type38State {
+    // This conversion consumes the input carrier at the typed construction boundary.
+    // The constructor checks the complete source row and its coupled fields together.
+    #[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
     pub(crate) fn new(
         xmt: NonNullXmt,
         node_id: u32,
@@ -83,8 +86,8 @@ impl Type38State {
         if leading_statuses[..4] != [1; 4] || !matches!(leading_statuses[4], 0 | 1) {
             return Err("leading_statuses: require four ones followed by zero or one");
         }
-        let lanes = match linked_references.as_slice() {
-            &[left, right] => {
+        let lanes = match *linked_references.as_slice() {
+            [left, right] => {
                 let identity = u32::from(xmt);
                 identity
                     .checked_add(3)
@@ -132,7 +135,7 @@ impl Type38State {
                     }
                 }
             }
-            &[linked] => {
+            [linked] => {
                 if leading_statuses != [1; 5] {
                     return Err("leading_statuses: one-link form requires all ones");
                 }
@@ -224,6 +227,8 @@ impl Type38State {
 fn default_statuses() -> [u8; 5] {
     [1; 5]
 }
+// Serde requires a borrowed skip predicate.
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn statuses_are_default(statuses: &[u8; 5]) -> bool {
     *statuses == [1; 5]
 }

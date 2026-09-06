@@ -67,7 +67,6 @@ pub(super) fn emit_model_features(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
-    let mut tree_edges = Vec::new();
     let mut regeneration_edges = Vec::new();
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
     let operation_feature_ids = scan
@@ -162,7 +161,8 @@ pub(super) fn emit_model_features(
             current_feature_operation(&scan.features.operations, operation.feature_id);
         let outputs = feature_output_bodies(scan, ir, operation.feature_id);
         let mut source_properties = feature_source_properties(scan, operation.feature_id);
-        if let Some(prefix) = current_operation.and_then(|operation| operation.stored_name_prefix())
+        if let Some(prefix) =
+            current_operation.and_then(crate::feature::FeatureOperation::stored_name_prefix)
         {
             source_properties.insert(
                 "mdl_stored_name_prefix".to_string(),
@@ -228,14 +228,7 @@ pub(super) fn emit_model_features(
                     .then_some(parent)
             });
         if let Some(parent) = parent {
-            if ir.model.features.iter().any(|feature| {
-                feature.id == parent
-                    && matches!(feature.definition, IrFeatureDefinition::TreeNode { .. })
-            }) {
-                tree_edges.push((parent, id.clone()));
-            } else {
-                regeneration_edges.push((id.clone(), parent));
-            }
+            regeneration_edges.push((id.clone(), parent));
         }
         let operation_section = scan
             .framing
@@ -419,30 +412,8 @@ pub(super) fn emit_model_features(
         });
         refresh_feature_outputs(scan, ir);
     }
-    for (parent, child) in tree_edges {
-        let Some(feature) = ir
-            .model
-            .features
-            .iter_mut()
-            .find(|feature| feature.id == parent)
-        else {
-            continue;
-        };
-        let IrFeatureDefinition::TreeNode { children, .. } = &mut feature.definition else {
-            continue;
-        };
-        if !children.contains(&child) {
-            children.push(child);
-        }
-    }
     for (child, parent) in regeneration_edges {
-        if ir
-            .model
-            .set_feature_regeneration_parent(child, parent)
-            .is_err()
-        {
-            continue;
-        }
+        let _ = ir.model.set_feature_regeneration_parent(child, parent);
     }
     geometry_generator_feature_count
 }

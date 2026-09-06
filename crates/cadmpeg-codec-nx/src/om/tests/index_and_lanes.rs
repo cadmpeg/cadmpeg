@@ -874,21 +874,21 @@ fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(_, atom, _)| atom.scalar.value())
+            .map(|(_, atom, ())| atom.scalar.value())
             .collect::<Vec<_>>(),
         [0.5, -0.5]
     );
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(_, atom, _)| atom.marker.byte())
+            .map(|(_, atom, ())| atom.marker.byte())
             .collect::<Vec<_>>(),
         [0x30, 0xb0]
     );
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(offset, _, _)| offset)
+            .map(|(offset, _, ())| offset)
             .collect::<Vec<_>>(),
         [19, 27]
     );
@@ -919,14 +919,14 @@ fn om_draft_binary32_lanes_require_complete_typed_atoms_and_terminator() {
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(_, scalar, _)| scalar.value())
+            .map(|(_, scalar, ())| scalar.value())
             .collect::<Vec<_>>(),
         [1.0, -1.0]
     );
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(offset, _, _)| offset)
+            .map(|(offset, _, ())| offset)
             .collect::<Vec<_>>(),
         [19, 23]
     );

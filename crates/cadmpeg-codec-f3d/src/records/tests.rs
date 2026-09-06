@@ -64,6 +64,8 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
 }
 
 #[test]
+// Fixture fields are appended from the bounded table of explicit test cases.
+#[allow(clippy::format_push_string)]
 fn material_assignment_preserves_located_and_authored_token_wire() {
     let prefix = r#"{"id":"material#0","asm_body_key":42,"asm_body_key_offset":10,"entity_suffix":985,"entity_suffix_offset":20,"entity_id":"0_985","entity_id_offset":30,"visual_guid":"Prism-001","visual_guid_offset":40"#;
     for field in ["physical_token", "visual_preset"] {
@@ -105,6 +107,8 @@ fn material_assignment_preserves_located_and_authored_token_wire() {
 }
 
 #[test]
+// Fixture fields are appended from the bounded table of explicit test cases.
+#[allow(clippy::format_push_string)]
 fn recipe_design_id_preserves_source_and_authored_wire() {
     let prefix = r#"{"id":"recipe#0","byte_offset":27,"kind":"body""#;
     let suffix = r#","recipe_index":0,"record_index":12}"#;
@@ -132,6 +136,8 @@ fn recipe_design_id_preserves_source_and_authored_wire() {
 }
 
 #[test]
+// Fixture fields are appended from the bounded table of explicit test cases.
+#[allow(clippy::format_push_string)]
 fn segment_base_guid_preserves_source_and_authored_wire() {
     let prefix = r#"{"id":"type#0","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4"#;
     let suffix = r#","version":1,"version_offset":80,"module":"Fusion","entity_ids":[1],"entity_id_offsets":[]}"#;
@@ -158,6 +164,8 @@ fn segment_base_guid_preserves_source_and_authored_wire() {
 }
 
 #[test]
+// Fixture fields are appended from the bounded table of explicit test cases.
+#[allow(clippy::format_push_string)]
 fn parameter_unit_preserves_source_and_authored_wire() {
     let prefix = r#"{"id":"parameter","byte_offset":0,"class_tag":"123","record_index":1,"source_ordinal":0,"owner_record_index":2,"expression":"1","expression_offset":40,"source_kind":"Distance","source_kind_offset":60,"kind":"feature""#;
     let suffix =
@@ -1160,7 +1168,7 @@ fn sketch_relation_runs_reject_partial_resolution_and_preserve_atomic_binding() 
         interrupted.resolve(|record_index| {
             assert_ne!(record_index, 2, "interrupt the second resolution");
             SketchRelationOperand::Record { record_index }
-        })
+        });
     }));
     assert!(result.is_err());
     assert_eq!(interrupted, unresolved);
@@ -1169,7 +1177,7 @@ fn sketch_relation_runs_reject_partial_resolution_and_preserve_atomic_binding() 
         interrupted_return.resolve(|record_index| {
             assert_ne!(record_index, 1, "interrupt the second resolution");
             SketchRelationOperand::Record { record_index }
-        })
+        });
     }));
     assert!(result.is_err());
     assert_eq!(interrupted_return, unresolved_return);
@@ -1483,11 +1491,11 @@ fn act_root_layout_derives_utf16_offsets_and_bounds_padding() {
     assert_eq!(layout.display_name_offset(), 161);
     assert_eq!(layout.components_root_record_offset(), 174);
     for padding in [0, 9, u64::MAX] {
-        assert!(ActRootLayout::new(0, "0_3".into(), "".into(), padding).is_err());
+        assert!(ActRootLayout::new(0, "0_3".into(), String::new(), padding).is_err());
     }
-    assert!(ActRootLayout::new(u64::MAX - 63, "0_3".into(), "".into(), 1).is_ok());
-    assert!(ActRootLayout::new(u64::MAX - 62, "0_3".into(), "".into(), 1).is_err());
-    assert!(ActRootLayout::new(0, "".into(), "".into(), 1).is_err());
+    assert!(ActRootLayout::new(u64::MAX - 63, "0_3".into(), String::new(), 1).is_ok());
+    assert!(ActRootLayout::new(u64::MAX - 62, "0_3".into(), String::new(), 1).is_err());
+    assert!(ActRootLayout::new(0, String::new(), String::new(), 1).is_err());
 }
 
 #[test]
@@ -1578,10 +1586,14 @@ fn act_registry_channel_derives_offsets_and_rejects_invalid_wire() {
         guid.into()
     )
     .is_ok());
-    assert!(
-        crate::records::ActRegistryChannel::new("id".into(), 0, 0, "abc".into(), "".into())
-            .is_err()
-    );
+    assert!(crate::records::ActRegistryChannel::new(
+        "id".into(),
+        0,
+        0,
+        "abc".into(),
+        String::new()
+    )
+    .is_err());
 }
 
 mod sketch_relation_wire;

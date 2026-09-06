@@ -736,7 +736,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 tool.members = vec![crate::records::Located {
                     value: 201,
                     offset: tool.members[0].offset,
-                }]
+                }];
             }
             _ => unreachable!(),
         }
@@ -752,7 +752,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 target.members = vec![crate::records::Located {
                     value: 501,
                     offset: target.members[0].offset,
-                }]
+                }];
             }
             _ => unreachable!(),
         }

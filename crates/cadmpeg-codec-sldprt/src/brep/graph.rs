@@ -116,7 +116,7 @@ impl Brep {
             )
         };
         for body in &mut self.bodies {
-            body.id = qualify(&body.id.as_str())
+            body.id = qualify(body.id.as_str())
                 .try_into()
                 .expect("qualified identity");
             body.regions
@@ -124,7 +124,7 @@ impl Brep {
                 .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
         }
         for region in &mut self.regions {
-            region.id = qualify(&region.id.as_str())
+            region.id = qualify(region.id.as_str())
                 .try_into()
                 .expect("qualified identity");
             region.body = qualify(region.body.as_str())
@@ -136,7 +136,7 @@ impl Brep {
                 .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
         }
         for shell in &mut self.shells {
-            shell.id = qualify(&shell.id.as_str())
+            shell.id = qualify(shell.id.as_str())
                 .try_into()
                 .expect("qualified identity");
             shell.region = qualify(shell.region.as_str())
@@ -156,7 +156,7 @@ impl Brep {
                 .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
         }
         for face in &mut self.faces {
-            face.id = qualify(&face.id.as_str())
+            face.id = qualify(face.id.as_str())
                 .try_into()
                 .expect("qualified identity");
             face.shell = qualify(face.shell.as_str())
@@ -170,7 +170,7 @@ impl Brep {
                 .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
         }
         for loop_ in &mut self.loops {
-            loop_.id = qualify(&loop_.id.as_str())
+            loop_.id = qualify(loop_.id.as_str())
                 .try_into()
                 .expect("qualified identity");
             loop_.face = qualify(loop_.face.as_str())
@@ -211,7 +211,7 @@ impl Brep {
             }
         }
         for coedge in &mut self.coedges {
-            coedge.id = qualify(&coedge.id.as_str())
+            coedge.id = qualify(coedge.id.as_str())
                 .try_into()
                 .expect("qualified identity");
             coedge.owner_loop = qualify(coedge.owner_loop.as_str())
@@ -230,7 +230,7 @@ impl Brep {
             }
         }
         for edge in &mut self.edges {
-            edge.id = qualify(&edge.id.as_str())
+            edge.id = qualify(edge.id.as_str())
                 .try_into()
                 .expect("qualified identity");
             if let Some(curve) = &mut edge.curve {
@@ -246,7 +246,7 @@ impl Brep {
                 .expect("qualified identity");
         }
         for vertex in &mut self.vertices {
-            vertex.id = qualify(&vertex.id.as_str())
+            vertex.id = qualify(vertex.id.as_str())
                 .try_into()
                 .expect("qualified identity");
             vertex.point = qualify(vertex.point.as_str())
@@ -254,12 +254,12 @@ impl Brep {
                 .expect("qualified identity");
         }
         self.points.iter_mut().for_each(|point| {
-            point.id = qualify(&point.id.as_str())
+            point.id = qualify(point.id.as_str())
                 .try_into()
-                .expect("qualified identity")
+                .expect("qualified identity");
         });
         for surface in &mut self.surfaces {
-            surface.id = qualify(&surface.id.as_str())
+            surface.id = qualify(surface.id.as_str())
                 .try_into()
                 .expect("qualified identity");
             match &mut surface.geometry {
@@ -279,7 +279,7 @@ impl Brep {
             }
         }
         for procedural in &mut self.procedural_surfaces {
-            procedural.id = qualify(&procedural.id.as_str())
+            procedural.id = qualify(procedural.id.as_str())
                 .try_into()
                 .expect("qualified identity");
             procedural.edit_definition(|definition| match definition {
@@ -306,7 +306,7 @@ impl Brep {
             });
         }
         for curve in &mut self.curves {
-            curve.id = qualify(&curve.id.as_str())
+            curve.id = qualify(curve.id.as_str())
                 .try_into()
                 .expect("qualified identity");
             if let CurveGeometry::Unknown {
@@ -319,9 +319,9 @@ impl Brep {
             }
         }
         self.pcurves.iter_mut().for_each(|pcurve| {
-            pcurve.id = qualify(&pcurve.id.as_str())
+            pcurve.id = qualify(pcurve.id.as_str())
                 .try_into()
-                .expect("qualified identity")
+                .expect("qualified identity");
         });
         for record in &mut self.unknowns {
             let id = UnknownId::mint(qualify(record.id().as_str())).expect("identity grammar");
@@ -365,7 +365,7 @@ fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> 
         .collect::<Vec<_>>();
     let candidate_ids = candidates
         .iter()
-        .map(|face| face.as_str())
+        .map(cadmpeg_ir::ids::FaceId::as_str)
         .collect::<HashSet<_>>();
     let loop_faces = out
         .loops
@@ -2028,7 +2028,7 @@ fn decode_graph(
                 annotate_group(&shell_id, None);
                 let face_ids = faces
                     .iter()
-                    .map(|face| face.as_str())
+                    .map(cadmpeg_ir::ids::FaceId::as_str)
                     .collect::<HashSet<_>>();
                 for face in &mut out.faces {
                     if face_ids.contains(face.id.as_str()) {
@@ -2072,7 +2072,7 @@ fn decode_graph(
                         );
                         let face_ids = faces
                             .iter()
-                            .map(|face| face.as_str())
+                            .map(cadmpeg_ir::ids::FaceId::as_str)
                             .collect::<HashSet<_>>();
                         for face in &mut out.faces {
                             if face_ids.contains(face.id.as_str()) {
@@ -2206,7 +2206,7 @@ fn prune_rejected_topology(out: &mut Brep) {
     let kept_coedges = out
         .loops
         .iter()
-        .flat_map(|loop_| loop_.coedges())
+        .flat_map(cadmpeg_ir::topology::Loop::coedges)
         .cloned()
         .collect::<HashSet<_>>();
     out.coedges
@@ -5373,6 +5373,8 @@ mod tests {
             .expect("valid test NURBS curve")
     }
 
+    // The fixture helper states each independent NURBS grid parameter explicitly.
+    #[allow(clippy::too_many_arguments)]
     fn test_nurbs_surface(
         u_degree: u32,
         v_degree: u32,

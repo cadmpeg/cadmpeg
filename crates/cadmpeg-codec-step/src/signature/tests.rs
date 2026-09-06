@@ -127,9 +127,9 @@ fn parser_retains_multiple_signature_sections_after_exchange_terminator() {
     assert!(source[exchange.signatures[1].clone()]
         .windows(b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=".len())
         .any(|bytes| bytes == b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA="));
-    assert_eq!(sections(&exchange, &source).len(), 2);
-    let first = &sections(&exchange, &source)[0];
-    let second = &sections(&exchange, &source)[1];
+    assert_eq!(sections(&exchange, source).len(), 2);
+    let first = &sections(&exchange, source)[0];
+    let second = &sections(&exchange, source)[1];
     assert_eq!(first.signed.end, first.span.start);
     assert_eq!(second.signed.end, second.span.start);
     let first_section = &source[first.span.clone()];
@@ -189,7 +189,7 @@ fn parser_exposes_the_detached_signature_contract() {
     let (exchange, diagnostics) = crate::parse::parse(source).expect("signature contract");
 
     assert!(diagnostics.is_empty());
-    let section = &sections(&exchange, &source)[0];
+    let section = &sections(&exchange, source)[0];
     let signed = &source[section.signed.clone()];
     assert!(signed.starts_with(b"ISO-10303-21;"));
     assert!(signed.ends_with(b"END-ISO-10303-21;"));
@@ -280,8 +280,8 @@ fn signature_method_and_parameters_are_inside_cms_payload() {
     let (exchange, diagnostics) = crate::parse::parse(source).expect("signature method witness");
 
     assert!(diagnostics.is_empty());
-    assert_eq!(sections(&exchange, &source).len(), 1);
-    let section = &sections(&exchange, &source)[0];
+    assert_eq!(sections(&exchange, source).len(), 1);
+    let section = &sections(&exchange, source)[0];
     assert_eq!(
         &source[section.span.clone()],
         b"SIGNATURE;\nMFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nENDSEC;"
@@ -300,9 +300,9 @@ fn parser_projects_each_signature_to_preceding_alphabet_bytes() {
     let (exchange, diagnostics) = crate::parse::parse(source).expect("signed byte witness");
 
     assert!(diagnostics.is_empty());
-    assert_eq!(sections(&exchange, &source).len(), 2);
-    let first = &sections(&exchange, &source)[0];
-    let second = &sections(&exchange, &source)[1];
+    assert_eq!(sections(&exchange, source).len(), 2);
+    let first = &sections(&exchange, source)[0];
+    let second = &sections(&exchange, source)[1];
     assert_eq!(first.signed.start, 0);
     assert_eq!(first.signed.end, first.span.start);
     assert_eq!(second.signed.start, 0);

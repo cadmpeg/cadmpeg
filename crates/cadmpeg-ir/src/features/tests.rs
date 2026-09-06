@@ -1732,3 +1732,25 @@ fn per_edge_flange_widths_reject_empty_rosters_and_preserve_array_wire() {
         .contains("widths must contain at least one pair"));
     assert!(super::SheetMetalFlangeEdgeWidths::new(Vec::new()).is_err());
 }
+
+#[test]
+fn sketch_binding_preserves_known_planar_space_without_geometry() {
+    for wire in [
+        serde_json::json!({"definition": "sketch", "space": "unresolved"}),
+        serde_json::json!({"definition": "sketch", "space": "planar"}),
+        serde_json::json!({"definition": "sketch", "space": "planar", "sketch": "test:model:sketch#1"}),
+    ] {
+        let definition: super::FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(definition).unwrap(), wire);
+    }
+    for wire in [
+        serde_json::json!({"definition": "sketch", "space": "unresolved", "sketch": "test:model:sketch#1"}),
+        serde_json::json!({"definition": "sketch", "space": "spatial"}),
+    ] {
+        assert!(serde_json::from_value::<super::FeatureDefinition>(wire).is_err());
+    }
+    assert_ne!(
+        super::SketchFeatureBinding::Unresolved,
+        super::SketchFeatureBinding::Planar(None)
+    );
+}

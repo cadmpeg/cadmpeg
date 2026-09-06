@@ -165,7 +165,7 @@ fn extrude_prefixes_preserve_wire_and_reject_partial_locations() {
             r#","operation":"join","operation_offset":28,"direction_face_extend_values":[1,0],"side_extent_discriminators":[1,0],"side_extent_discriminator_offsets":[105,109],"direction_face_extend_offsets":[32,36],"direction_reversed":false,"direction_reversed_offset":40,"solid_operation":true,"solid_operation_offset":41,"start":"profile_plane","start_offset":42}"#,
         ),
     ] {
-        for value in [None, Some(if layout == "legacy_distance" { 0 } else { 1 })] {
+        for value in [None, Some(i32::from(layout != "legacy_distance"))] {
             let fields = match value {
                 Some(value) => format!(",\"{field}\":{value},\"{field}_offset\":21"),
                 None if layout == "legacy_distance" => {
@@ -223,6 +223,8 @@ fn mirror_references_preserve_wire_and_reject_partial_locations() {
 }
 
 #[test]
+// Fixture fields are appended from the bounded table of explicit test cases.
+#[allow(clippy::format_push_string)]
 fn hole_construction_preserves_tangent_and_input_reference_wire() {
     let prefix = r#"{"point_record_index":55,"point_record_byte_offset":10,"position":[1.25,-2.5,3.75],"position_offset":35,"direction":[0.0,0.0,1.0],"direction_offset":59,"point_parameters":[0.125,-0.25],"point_parameter_offsets":[83,91],"reference_type":19,"reference_type_offset":99"#;
     let fields = [
@@ -292,6 +294,8 @@ fn coil_values_preserve_optional_locations_and_reject_orphan_offsets() {
 }
 
 #[test]
+// Fixture fields are appended from the bounded table of explicit test cases.
+#[allow(clippy::format_push_string)]
 fn legacy_base_feature_form_owns_its_compact_mode() {
     for form in ["compact_one_body", "expanded_two_body"] {
         let (
@@ -545,6 +549,8 @@ fn base_feature_result_rows_preserve_complete_and_unrepeated_runs() {
 }
 
 #[test]
+// The resize uses only the explicit small lengths in this wire fixture.
+#[allow(clippy::disallowed_methods)]
 fn copied_body_rows_preserve_wire_and_reject_unequal_runs() {
     let wire = r#"{"body_group_record_index":501,"body_group_class_tag":"264","body_group_byte_offset":100,"body_operand_record_indices":[502,504],"body_operand_record_offsets":[126,137],"relation_record_index":503,"relation_class_tag":"264","relation_byte_offset":200,"source_body_entity_suffixes":[11,13],"source_body_entity_suffix_offsets":[225,255],"copied_body_entity_suffixes":[12,14],"copied_body_entity_suffix_offsets":[240,270]}"#;
     let operation: crate::records::feature::DesignCopyPasteBodiesOperation =

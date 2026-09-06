@@ -33,6 +33,8 @@ impl From<PointCoordinates> for [f64; 3] {
     }
 }
 
+use crate::intersection::finite_point::FinitePoint;
+
 /// Semantic family of one admitted deltas record.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RecordFamily {
@@ -73,14 +75,17 @@ pub enum RecordFamily {
         position: PointCoordinates,
     },
     Line {
+        position: FinitePoint,
         references: [u32; 5],
         node_id: u32,
     },
     Circle {
+        position: FinitePoint,
         references: [u32; 5],
         node_id: u32,
     },
     Ellipse {
+        position: FinitePoint,
         references: [u32; 5],
         node_id: u32,
     },
@@ -92,22 +97,27 @@ pub enum RecordFamily {
     TermUse,
     Type45,
     Plane {
+        position: FinitePoint,
         references: [u32; 5],
         node_id: u32,
     },
     Cylinder {
+        position: FinitePoint,
         references: [u32; 5],
         node_id: u32,
     },
     Cone {
+        position: FinitePoint,
         references: [u32; 5],
         node_id: u32,
     },
     Sphere {
+        position: FinitePoint,
         references: [u32; 5],
         node_id: u32,
     },
     Torus {
+        position: FinitePoint,
         references: [u32; 5],
         node_id: u32,
     },
@@ -171,6 +181,7 @@ pub enum RecordFamily {
     Multiplicities,
     Knots,
     TrimmedCurve {
+        position: FinitePoint,
         references: [u32; 6],
         node_id: u32,
     },
@@ -314,10 +325,19 @@ impl RecordFamily {
         }
     }
 
-    /// POINT coordinates in Parasolid metres.
-    pub const fn position(&self) -> Option<PointCoordinates> {
+    /// The record's last position tuple in Parasolid metres.
+    pub fn position(&self) -> Option<[f64; 3]> {
         match self {
-            Self::Point { position, .. } => Some(*position),
+            Self::Point { position, .. } => Some(position.0),
+            Self::Line { position, .. }
+            | Self::Circle { position, .. }
+            | Self::Ellipse { position, .. }
+            | Self::Plane { position, .. }
+            | Self::Cylinder { position, .. }
+            | Self::Cone { position, .. }
+            | Self::Sphere { position, .. }
+            | Self::Torus { position, .. }
+            | Self::TrimmedCurve { position, .. } => Some((*position).into()),
             _ => None,
         }
     }
@@ -333,7 +353,7 @@ impl RecordFamily {
     /// Ordered references retained by this record layout.
     pub fn references(&self) -> Vec<u32> {
         match self {
-            Self::Body { references, .. } => references.to_vec(),
+            Self::Body { references, .. } => references.clone(),
             Self::Shell { references, .. } => references.to_vec(),
             Self::Face { references, .. } => references.to_vec(),
             Self::Loop { references, .. } => references.to_vec(),
@@ -444,14 +464,17 @@ impl RecordFamily {
                 position: position?.try_into().ok()?,
             },
             30 => Self::Line {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             31 => Self::Circle {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             32 => Self::Ellipse {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -460,22 +483,27 @@ impl RecordFamily {
                 node_id: node_id?,
             },
             50 => Self::Plane {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             51 => Self::Cylinder {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             52 => Self::Cone {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             53 => Self::Sphere {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             54 => Self::Torus {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -492,6 +520,7 @@ impl RecordFamily {
                 node_id: node_id?,
             },
             133 => Self::TrimmedCurve {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -511,7 +540,7 @@ impl RecordFamily {
         name: &str,
         kind: u16,
         node_id: Option<u32>,
-        position: Option<PointCoordinates>,
+        position: Option<[f64; 3]>,
         group_selector: Option<GroupSelector>,
         group_linked_reference_status: Option<GroupReferenceStatus>,
         references: Vec<u32>,
@@ -551,17 +580,20 @@ impl RecordFamily {
             "POINT" => Self::Point {
                 references: references.try_into().ok()?,
                 node_id: node_id?,
-                position: position?,
+                position: position?.try_into().ok()?,
             },
             "LINE" => Self::Line {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "CIRCLE" => Self::Circle {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "ELLIPSE" => Self::Ellipse {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -582,22 +614,27 @@ impl RecordFamily {
                 Self::Type45
             }
             "PLANE" => Self::Plane {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "CYLINDER" => Self::Cylinder {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "CONE" => Self::Cone {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "SPHERE" => Self::Sphere {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "TORUS" => Self::Torus {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -709,6 +746,7 @@ impl RecordFamily {
                 Self::Knots
             }
             "TRIMMED_CURVE" => Self::TrimmedCurve {
+                position: position?.try_into().ok()?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -740,10 +778,7 @@ impl RecordFamily {
             Self::Group { .. } => true,
             _ => group_selector.is_none() && group_linked_reference_status.is_none(),
         };
-        let position_ok = match family {
-            Self::Point { .. } => true,
-            _ => position.is_none(),
-        };
+        let position_ok = family.position() == position;
         (family.kind() == kind && family.node_id() == node_id && group_ok && position_ok)
             .then_some(family)
     }
@@ -751,7 +786,7 @@ impl RecordFamily {
 
 #[cfg(test)]
 mod point_coordinate_tests {
-    use super::PointCoordinates;
+    use super::{PointCoordinates, RecordFamily};
 
     #[test]
     fn point_coordinates_reject_nonfinite_and_subnormal_values() {
@@ -769,6 +804,64 @@ mod point_coordinate_tests {
         for value in [0.0, -0.0, f64::MIN_POSITIVE, -f64::MIN_POSITIVE, f64::MAX] {
             let position = PointCoordinates::try_from([value, 0.0, 0.0]).unwrap();
             assert_eq!(<[f64; 3]>::from(position)[0].to_bits(), value.to_bits());
+        }
+    }
+
+    #[test]
+    fn fixed_geometry_positions_survive_native_wire_projection() {
+        for (kind, name, references) in [
+            (30, "LINE", vec![0; 5]),
+            (31, "CIRCLE", vec![0; 5]),
+            (32, "ELLIPSE", vec![0; 5]),
+            (50, "PLANE", vec![0; 5]),
+            (51, "CYLINDER", vec![0; 5]),
+            (52, "CONE", vec![0; 5]),
+            (53, "SPHERE", vec![0; 5]),
+            (54, "TORUS", vec![0; 5]),
+            (133, "TRIMMED_CURVE", vec![0; 6]),
+        ] {
+            let position = [f64::from_bits(1), -0.0, 42.0];
+            let family =
+                RecordFamily::from_fixed(kind, Some(7), Some(position), references.clone())
+                    .unwrap();
+            assert_eq!(
+                family.position().unwrap().map(f64::to_bits),
+                position.map(f64::to_bits)
+            );
+            let restored = RecordFamily::from_wire(
+                name,
+                kind,
+                Some(7),
+                family.position(),
+                None,
+                None,
+                references.clone(),
+            )
+            .unwrap();
+            assert_eq!(restored, family);
+            assert_eq!(
+                restored.position().unwrap().map(f64::to_bits),
+                position.map(f64::to_bits)
+            );
+            assert!(RecordFamily::from_wire(
+                name,
+                kind,
+                Some(7),
+                None,
+                None,
+                None,
+                references.clone()
+            )
+            .is_none());
+            for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                assert!(RecordFamily::from_fixed(
+                    kind,
+                    Some(7),
+                    Some([invalid, 0.0, 0.0]),
+                    references.clone()
+                )
+                .is_none());
+            }
         }
     }
 }

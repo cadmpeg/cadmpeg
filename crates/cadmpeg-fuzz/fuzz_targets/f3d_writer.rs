@@ -26,7 +26,7 @@ fuzz_target!(|data: &[u8]| {
     if ir.native_unknowns("f3d").is_ok_and(|records| {
         records
             .iter()
-            .any(|record| record.id.0 == "f3d:file:source-image#0")
+            .any(|record| record.id.as_str() == "f3d:file:source-image#0")
     }) {
         return;
     }

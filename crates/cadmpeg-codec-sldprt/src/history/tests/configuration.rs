@@ -211,7 +211,7 @@ fn configuration_lane_follows_stored_id_or_ordinal_changes() {
         if let Some(id) = id {
             configuration = with_configuration_id(configuration, id);
         }
-        configuration.active = true.into();
+        configuration.active = true;
         sync_neutral_configurations(&[configuration], &mut native);
 
         assert_eq!(
@@ -244,7 +244,9 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         features: vec![native_feature],
     };
     let feature_id = cadmpeg_ir::features::FeatureId("sketch".into());
-    let unresolved = FeatureDefinition::Sketch { sketch: None };
+    let unresolved = FeatureDefinition::Sketch {
+        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+    };
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
         id: feature_id.clone(),
@@ -388,7 +390,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     assert!(matches!(
         &ir.model.configurations[0].feature_states[&feature_id].definition,
         FeatureDefinition::Sketch {
-            sketch: Some(sketch),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
         } if sketch == &sketch_id
     ));
     assert!(matches!(
@@ -446,7 +448,9 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch { sketch: None },
+        definition: FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+        },
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -456,7 +460,11 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
     bind_unique_sketch_feature(&mut features, &[], std::slice::from_ref(&history));
     assert!(matches!(
         features[0].definition,
-        FeatureDefinition::Sketch { sketch: None, .. }
+        FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            ..
+        }
     ));
     assert_eq!(features[1].dependencies, [features[0].id.clone()]);
 
@@ -563,7 +571,9 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
                         suppressed: false,
                         dependencies: Vec::new(),
                         outputs: Vec::new(),
-                        definition: FeatureDefinition::Sketch { sketch: None },
+                        definition: FeatureDefinition::Sketch {
+                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                        },
                     },
                 ),
             ]),
@@ -960,7 +970,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         native_ref: None,
     });
     let mut configuration = design_configuration("configuration", 0, Some(0), None);
-    configuration.active = true.into();
+    configuration.active = true;
     configuration.feature_states.insert(
         id.clone(),
         ConfigurationFeatureState {

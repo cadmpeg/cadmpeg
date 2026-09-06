@@ -1892,7 +1892,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         .surfaces
         .iter()
         .filter_map(|surface| {
-            let id = step_instance_id(&surface.id.as_str())?;
+            let id = step_instance_id(surface.id.as_str())?;
             let scales = surface_parameter_scales_for_step(
                 ir,
                 &surface.id,
@@ -1969,7 +1969,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         .model
         .pcurves
         .iter()
-        .filter_map(|pcurve| step_instance_id(&pcurve.id.as_str()))
+        .filter_map(|pcurve| step_instance_id(pcurve.id.as_str()))
         .collect::<BTreeSet<_>>();
     for surface in &mut ir.model.procedural_surfaces {
         surface.edit_definition(|definition| {
@@ -2763,7 +2763,7 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
                     Some(boundary_pcurves)
                 })
                 .flatten()
-                .map(|pcurve| pcurve.as_str()),
+                .map(cadmpeg_ir::ids::PcurveId::as_str),
         )
         .collect::<BTreeSet<_>>();
     for (pcurve_id, record) in exchange.entities("PCURVE") {

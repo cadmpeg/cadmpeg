@@ -175,8 +175,8 @@ impl ParameterRecord {
             directory_sequence,
             line_range,
             bytes,
-            parameter_end,
             tokens,
+            parameter_end,
             comment,
         }
     }

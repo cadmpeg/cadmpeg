@@ -714,7 +714,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                         class: ConsolidatedEdgeDefinitionClass::try_from(record.class).ok()?,
                     })
                 });
-            identity_chain_consistent.then(|| ConsolidatedEdgeUseRun {
+            identity_chain_consistent.then_some(ConsolidatedEdgeUseRun {
                 definition,
                 uses,
                 node,

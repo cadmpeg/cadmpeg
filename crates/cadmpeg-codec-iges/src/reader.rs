@@ -412,8 +412,7 @@ fn decode_with_occurrence_limits(
         losses.push(occurrence_loss(
             IgesLossCode::ParameterBoundaryAmbiguous,
             format!(
-                "IGES Parameter Data has {candidate_count} {} trailing pointer-group boundaries; primary parameters and pointer ownership were not guessed",
-                kind
+                "IGES Parameter Data has {candidate_count} {kind} trailing pointer-group boundaries; primary parameters and pointer ownership were not guessed"
             ),
             source_sequence,
             &parse.directory,

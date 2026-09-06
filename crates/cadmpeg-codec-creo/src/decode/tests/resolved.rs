@@ -135,7 +135,7 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             .model
             .sketch_entities
             .iter()
-            .map(|entity| entity.id())
+            .map(cadmpeg_ir::SketchEntity::id)
             .collect::<BTreeSet<_>>()
             .len(),
         4

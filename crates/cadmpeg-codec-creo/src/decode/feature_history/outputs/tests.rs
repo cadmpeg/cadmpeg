@@ -228,13 +228,20 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
 
 #[test]
 fn edge_output_joins_reject_duplicate_topology_owners() {
-    let body_id = BodyId::mint("creo:test:body".to_string()).expect("identity grammar");
-    let region_id = RegionId::mint("creo:test:region".to_string()).expect("identity grammar");
-    let shell_id = ShellId::mint("creo:test:shell".to_string()).expect("identity grammar");
-    let face_id = FaceId::mint("creo:test:face".to_string()).expect("identity grammar");
-    let loop_id = LoopId::mint("creo:test:loop".to_string()).expect("identity grammar");
-    let coedge_id = CoedgeId::mint("creo:test:coedge".to_string()).expect("identity grammar");
-    let edge_id = EdgeId::mint("creo:test:edge".to_string()).expect("identity grammar");
+    let body_id =
+        BodyId::mint("test:model:entity#creo:test:body".to_string()).expect("identity grammar");
+    let region_id =
+        RegionId::mint("test:model:entity#creo:test:region".to_string()).expect("identity grammar");
+    let shell_id =
+        ShellId::mint("test:model:entity#creo:test:shell".to_string()).expect("identity grammar");
+    let face_id =
+        FaceId::mint("test:model:entity#creo:test:face".to_string()).expect("identity grammar");
+    let loop_id =
+        LoopId::mint("test:model:entity#creo:test:loop".to_string()).expect("identity grammar");
+    let coedge_id =
+        CoedgeId::mint("test:model:entity#creo:test:coedge".to_string()).expect("identity grammar");
+    let edge_id =
+        EdgeId::mint("test:model:entity#creo:test:edge".to_string()).expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: body_id.clone(),
@@ -260,7 +267,8 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     ir.model.faces.push(Face {
         id: face_id.clone(),
         shell: shell_id.clone(),
-        surface: SurfaceId::mint("creo:test:surface".to_string()).expect("identity grammar"),
+        surface: SurfaceId::mint("test:model:entity#creo:test:surface".to_string())
+            .expect("identity grammar"),
         sense: Sense::Forward,
         loops: vec![loop_id.clone()].into(),
         name: None,
@@ -292,7 +300,8 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     let mut duplicate_loop = ir.clone();
     duplicate_loop.model.loops.push(IrLoop {
         id: loop_id.clone(),
-        face: FaceId::mint("creo:ambiguous:face".to_string()).expect("identity grammar"),
+        face: FaceId::mint("test:model:entity#creo:ambiguous:face".to_string())
+            .expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
             coedges: Vec::new(),
             vertex_uses: Vec::new(),
@@ -303,8 +312,10 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     let mut duplicate_face = ir.clone();
     duplicate_face.model.faces.push(Face {
         id: face_id.clone(),
-        shell: ShellId::mint("creo:ambiguous:shell".to_string()).expect("identity grammar"),
-        surface: SurfaceId::mint("creo:test:surface-2".to_string()).expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#creo:ambiguous:shell".to_string())
+            .expect("identity grammar"),
+        surface: SurfaceId::mint("test:model:entity#creo:test:surface-2".to_string())
+            .expect("identity grammar"),
         sense: Sense::Forward,
         loops: Vec::new().into(),
         name: None,
@@ -316,7 +327,8 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     let mut duplicate_shell = ir.clone();
     duplicate_shell.model.shells.push(Shell {
         id: shell_id.clone(),
-        region: RegionId::mint("creo:ambiguous:region".to_string()).expect("identity grammar"),
+        region: RegionId::mint("test:model:entity#creo:ambiguous:region".to_string())
+            .expect("identity grammar"),
         faces: Vec::new(),
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
@@ -326,7 +338,8 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     let mut duplicate_region = ir.clone();
     duplicate_region.model.regions.push(Region {
         id: region_id.clone(),
-        body: BodyId::mint("creo:ambiguous:body".to_string()).expect("identity grammar"),
+        body: BodyId::mint("test:model:entity#creo:ambiguous:body".to_string())
+            .expect("identity grammar"),
         shells: Vec::new(),
     });
     assert!(bodies_containing_edges(&duplicate_region, std::slice::from_ref(&edge_id)).is_empty());

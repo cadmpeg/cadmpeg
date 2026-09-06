@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn message_text_rejects_invalid_bytes_lengths_and_duplicate_count() {
         for text in [
-            "".to_string(),
+            String::new(),
             "\n".to_string(),
             "μ".to_string(),
             "x".repeat(254),

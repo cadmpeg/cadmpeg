@@ -483,7 +483,7 @@ pub(crate) fn project_configuration_sketch_states(
             else {
                 continue;
             };
-            if sketch.is_none() && reusable_spatial_sketches.contains(base_sketch) {
+            if sketch.id().is_none() && reusable_spatial_sketches.contains(base_sketch) {
                 feature.definition = FeatureDefinition::SpatialSketch {
                     sketch: Some(base_sketch.clone()),
                 };
@@ -833,7 +833,7 @@ pub(crate) fn inherit_configuration_hole_semantics(
         }
         _ => {}
     }
-    if exit_kind.is_none() || exit_kind.is_some_and(|kind| kind.is_unresolved()) {
+    if exit_kind.is_none_or(|kind| kind.is_unresolved()) {
         exit_kind.clone_from(base_exit_kind);
     }
     if diameter.is_none() {

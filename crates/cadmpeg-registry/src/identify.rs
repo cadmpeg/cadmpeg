@@ -38,6 +38,8 @@ pub enum Inspection {
 /// What cadmpeg makes of one file, before any semantic decode.
 ///
 #[derive(Debug)]
+// One identification result retains its inspection inline without a second allocation.
+#[allow(clippy::large_enum_variant)]
 pub enum Identification {
     /// Neutral CADIR has high-confidence identity and no native container.
     Cadir,
@@ -519,7 +521,7 @@ mod tests {
         }
         let formats = found
             .iter()
-            .map(|identification| identification.format())
+            .map(super::Identification::format)
             .collect::<Vec<_>>();
         assert!(
             formats.contains(&"fcstd") && formats.contains(&"f3d"),

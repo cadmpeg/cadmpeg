@@ -70,7 +70,9 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(SketchId("sketch".into())),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
+                "sketch".into(),
+            ))),
         },
         native_ref: Some("feature".into()),
     });

@@ -116,8 +116,8 @@ pub(super) fn bind_circular_profile_by_dimension(
             else {
                 continue;
             };
-            if bound.as_ref() == Some(&sketch_id) {
-                *bound = None;
+            if bound.id() == Some(&sketch_id) {
+                *bound = cadmpeg_ir::features::SketchFeatureBinding::Planar(None);
             }
         }
         let name = features[feature_index].name.clone();
@@ -126,7 +126,7 @@ pub(super) fn bind_circular_profile_by_dimension(
         else {
             continue;
         };
-        *sketch = Some(sketch_id.clone());
+        *sketch = cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone()));
         if let Some(native) = sketches.iter_mut().find(|sketch| sketch.id == sketch_id) {
             native.name = name;
         }

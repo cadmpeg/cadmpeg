@@ -1801,7 +1801,7 @@ fn emit_e5_faces_loops_coedges(
             tolerance: None,
         });
 
-        for (_loop_position, loop_) in face.loops.iter().enumerate() {
+        for loop_ in &face.loops {
             let loop_id = LoopId::mint(format!("catia:e5:loop#{}", loop_.record_id))
                 .expect("identity grammar");
             let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.members.len())

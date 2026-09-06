@@ -458,8 +458,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             byte_offset: 0,
             class_tag: "264".into(),
             members: members
-                .to_vec()
-                .into_iter()
+                .iter()
+                .copied()
                 .map(|value| crate::records::Located { value, offset: 0 })
                 .collect(),
             lost_edge_references: Vec::new(),

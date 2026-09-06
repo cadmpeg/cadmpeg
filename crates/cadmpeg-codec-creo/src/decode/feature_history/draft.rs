@@ -204,7 +204,9 @@ pub(in super::super) fn schema_feature_definition(
                     .any(|candidate| candidate.id == sketch)
                     .then_some(sketch)
             });
-        return IrFeatureDefinition::Sketch { sketch };
+        return IrFeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
+        };
     }
     if schema_class == 911 {
         let stepped_form = stepped_hole_form(

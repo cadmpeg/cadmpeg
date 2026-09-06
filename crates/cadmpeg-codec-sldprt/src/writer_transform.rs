@@ -148,14 +148,14 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                 .iter_mut()
                 .for_each(|point| *point = transform.apply_point(*point));
             if let Some(normals) = mesh.normals_mut() {
-                normals
-                    .iter_mut()
-                    .for_each(|normal| *normal = transform.apply_vector(*normal));
+                for normal in normals {
+                    *normal = transform.apply_vector(*normal);
+                }
             }
             if let Some(normals) = mesh.corner_normals_mut() {
-                normals
-                    .iter_mut()
-                    .for_each(|normal| *normal = transform.apply_vector(*normal));
+                for normal in normals {
+                    *normal = transform.apply_vector(*normal);
+                }
             }
         }
     }

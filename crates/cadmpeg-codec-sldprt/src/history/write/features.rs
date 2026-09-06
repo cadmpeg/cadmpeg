@@ -291,7 +291,7 @@ pub fn sync_neutral_features(
         .iter()
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } => parent_sources
                 .get(&feature.id)
                 .map(|source| (sketch.clone(), source.clone())),

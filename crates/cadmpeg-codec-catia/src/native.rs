@@ -331,6 +331,8 @@ pub struct CatiaOwnerIdentityTarget {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+// Keep typed source payloads inline without an allocation for each admitted record.
+#[allow(clippy::large_enum_variant)]
 pub enum CatiaOwnerPacketPayload {
     /// Nine alternating strong/weak identities followed by a fixed numeric tail.
     FixedNine {
@@ -490,7 +492,7 @@ impl From<CatiaConsolidatedOwnerPacket> for CatiaConsolidatedOwnerPacketWire {
                     boundary_cycle: None,
                 },
             ),
-            payload => (Vec::new(), None, None, payload),
+            payload @ CatiaOwnerPacketPayload::Counted { .. } => (Vec::new(), None, None, payload),
         };
         Self {
             id: value.id,
@@ -584,6 +586,8 @@ pub struct CatiaConsolidatedCone {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "u8", into = "u8")]
+// Variant names retain the source layout width terminology.
+#[allow(clippy::enum_variant_names)]
 pub enum CatiaCircleLayout {
     /// Identity packed in six bits (`0x32`).
     Identity6Bit,
@@ -3188,6 +3192,8 @@ pub struct CatiaObjectEntity {
 /// Class role resolved through the graph schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
 pub struct CatiaObjectClass {
     /// Head role identifying the per-file class ordinal.
     pub class_ref: u32,
@@ -3200,6 +3206,8 @@ pub struct CatiaObjectClass {
 /// Storage role resolved through the same graph.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
 pub struct CatiaObjectStorage {
     /// Head role selecting class-specific storage.
     pub storage_ref: u32,
@@ -8489,9 +8497,9 @@ fn consolidated_edge_runs(
         bytes, records,
     )
     .into_iter()
-    .filter_map(|run| {
+    .map(|run| {
         let pcurve_offsets = run.edge.pcurves.each_ref().map(|pcurve| pcurve.pos as u64);
-        Some((run, pcurve_offsets))
+        (run, pcurve_offsets)
     })
     .enumerate()
     .filter_map(|(index, (run, pcurve_offsets))| {

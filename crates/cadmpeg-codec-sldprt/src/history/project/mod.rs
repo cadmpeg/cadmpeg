@@ -58,12 +58,7 @@ impl FeatureProjection {
     pub(crate) fn install(self, model: &mut cadmpeg_ir::document::Model) {
         model.features = self.features;
         for (child, parent) in self.regeneration_parents {
-            if model
-                .set_feature_regeneration_parent(child, parent)
-                .is_err()
-            {
-                continue;
-            }
+            let _ = model.set_feature_regeneration_parent(child, parent);
         }
     }
 
@@ -942,7 +937,9 @@ pub(crate) fn project_definition(
         {
             FeatureDefinition::SpatialSketch { sketch: None }
         } else {
-            FeatureDefinition::Sketch { sketch: None }
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            }
         };
     }
     if class == Some(FeatureClass::SketchBlockDefinition) {

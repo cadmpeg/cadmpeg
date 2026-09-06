@@ -155,6 +155,7 @@ dependencies = [
  "cadmpeg-protein",
  "encoding_rs",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

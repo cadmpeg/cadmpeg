@@ -1204,6 +1204,8 @@ mod tests {
     use super::*;
     use crate::value_block;
 
+    // The tuple carries one coupled result; a separate alias would add no invariant.
+    #[allow(clippy::type_complexity)]
     fn nested_body(
         record: &EntityRecord,
     ) -> (

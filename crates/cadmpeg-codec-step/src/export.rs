@@ -3581,7 +3581,8 @@ impl<'a> Builder<'a> {
                         let Some(loop_) = self.loops.get(loop_id.as_str()).copied() else {
                             continue;
                         };
-                        referenced_vertices.extend(loop_.vertices().map(|vertex| vertex.as_str()));
+                        referenced_vertices
+                            .extend(loop_.vertices().map(cadmpeg_ir::ids::VertexId::as_str));
                         for vertex_use in loop_.anchored_vertex_uses() {
                             referenced_coedges.insert(vertex_use.after.as_str());
                         }

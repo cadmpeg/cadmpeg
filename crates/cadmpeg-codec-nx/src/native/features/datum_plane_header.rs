@@ -271,7 +271,7 @@ impl Serialize for FeatureDatumPlaneHeader {
         match &self.branch {
             Some(ReferenceBranch::Unresolved(branch)) => branch.write_wire(&mut wire, |()| None),
             Some(ReferenceBranch::Resolved(branch)) => {
-                branch.write_wire(&mut wire, |block| Some(block.clone()))
+                branch.write_wire(&mut wire, |block| Some(block.clone()));
             }
             None => {}
         }

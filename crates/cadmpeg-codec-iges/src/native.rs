@@ -1518,6 +1518,8 @@ struct OccurrenceDefinition {
     transform: Affine,
 }
 
+// The wire adapter receives the optional field by reference, including its absence.
+#[allow(clippy::ref_option)]
 fn serialize_parameter_lines<S: Serializer>(
     lines: &Option<std::ops::Range<u32>>,
     serializer: S,
@@ -5103,8 +5105,7 @@ pub(crate) fn store(
         }
     }
     for body in &ir.model.bodies {
-        if let Some(sequence) = model_id_directory_sequence(&body.id.as_str(), "iges:model:body#D")
-        {
+        if let Some(sequence) = model_id_directory_sequence(body.id.as_str(), "iges:model:body#D") {
             occurrence_neutral_links
                 .entry(sequence)
                 .or_default()
@@ -5112,8 +5113,7 @@ pub(crate) fn store(
         }
     }
     for point in &ir.model.points {
-        if let Some(sequence) =
-            model_id_directory_sequence(&point.id.as_str(), "iges:model:point#D")
+        if let Some(sequence) = model_id_directory_sequence(point.id.as_str(), "iges:model:point#D")
         {
             occurrence_neutral_links
                 .entry(sequence)

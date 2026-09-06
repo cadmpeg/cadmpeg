@@ -391,7 +391,7 @@ fn validate_generated_marker_constraint(
         matches!(
             &feature.definition,
             FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } if sketch == &constraint.sketch
         )
     }) {
@@ -552,7 +552,7 @@ fn validate_generated_marker_constraint(
         let owner = ir.model.features.iter().find(|feature| {
             matches!(
                 &feature.definition,
-                FeatureDefinition::Sketch { sketch: Some(sketch), .. }
+                FeatureDefinition::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)), .. }
                     if sketch == &constraint.sketch
             )
         });
@@ -1188,7 +1188,7 @@ fn unique_planar_sketch_owner<'a>(
         matches!(
             &feature.definition,
             FeatureDefinition::Sketch {
-                sketch: Some(candidate),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
             } if candidate == sketch
         )
     })
@@ -1271,13 +1271,13 @@ fn source_less_lanes(
     for sketch in &ir.model.sketches {
         let configuration = sketch.configuration.clone().unwrap_or_else(|| "0".into());
         let owner = unique_planar_sketch_owner(ir, &sketch.id)?;
-        let owner_record = generated_sketch_owner_record(native, owner, &sketch.id.as_str())?;
-        let object_id = generated_sketch_owner_id(owner_record, &sketch.id.as_str())?;
+        let owner_record = generated_sketch_owner_record(native, owner, sketch.id.as_str())?;
+        let object_id = generated_sketch_owner_id(owner_record, sketch.id.as_str())?;
         let mut payload = Vec::new();
         append_generated_object_name(
             &mut payload,
             if owner_record.name.is_empty() {
-                sketch.name.as_deref().unwrap_or(&sketch.id.as_str())
+                sketch.name.as_deref().unwrap_or(sketch.id.as_str())
             } else {
                 owner_record.name.as_str()
             },
@@ -1289,20 +1289,20 @@ fn source_less_lanes(
         payload.extend(crate::writer::parasolid_stream_named(
             &body,
             "SCH_SW_33103_11000",
-            sketch.name.as_deref().unwrap_or(&sketch.id.as_str()),
+            sketch.name.as_deref().unwrap_or(sketch.id.as_str()),
         ));
         objects.push((configuration, owner.ordinal, payload));
     }
     for sketch in &ir.model.spatial_sketches {
         let configuration = sketch.configuration.clone().unwrap_or_else(|| "0".into());
         let owner = unique_spatial_sketch_owner(ir, &sketch.id)?;
-        let owner_record = generated_sketch_owner_record(native, owner, &sketch.id.as_str())?;
-        let object_id = generated_sketch_owner_id(owner_record, &sketch.id.as_str())?;
+        let owner_record = generated_sketch_owner_record(native, owner, sketch.id.as_str())?;
+        let object_id = generated_sketch_owner_id(owner_record, sketch.id.as_str())?;
         let mut payload = Vec::new();
         append_generated_object_name(
             &mut payload,
             if owner_record.name.is_empty() {
-                sketch.name.as_deref().unwrap_or(&sketch.id.as_str())
+                sketch.name.as_deref().unwrap_or(sketch.id.as_str())
             } else {
                 owner_record.name.as_str()
             },
@@ -1493,7 +1493,7 @@ mod source_less_lane_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: Some(sketch.id.clone()),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.id.clone())),
             },
             native_ref: None,
         });

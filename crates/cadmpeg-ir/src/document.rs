@@ -834,18 +834,10 @@ fn reconcile_feature_parents(
             }
             continue;
         }
-        match &mut model.features[parent_index].definition {
-            FeatureDefinition::TreeNode { children, .. } => {
-                children.push(child_id.clone());
-                tree_parents.insert(child_id, parent_id);
-            }
-            _ => {
-                model
-                    .feature_regeneration_parents
-                    .0
-                    .insert(child_id, parent_id);
-            }
-        }
+        model
+            .feature_regeneration_parents
+            .0
+            .insert(child_id, parent_id);
     }
     Ok(())
 }
@@ -875,7 +867,7 @@ impl Model {
             .or_else(|| self.feature_regeneration_parents.0.get(child))
     }
 
-    /// Set the non-tree containing operation used to order regeneration.
+    /// Set a regeneration predecessor without asserting structural tree membership.
     pub fn set_feature_regeneration_parent(
         &mut self,
         child: crate::features::FeatureId,

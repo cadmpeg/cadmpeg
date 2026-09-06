@@ -543,7 +543,7 @@ pub(super) fn project(
         .bodies
         .iter()
         .filter_map(|body| {
-            let sequence = source_sequence(&body.id.as_str())?;
+            let sequence = source_sequence(body.id.as_str())?;
             let entry = entries.get(&sequence)?;
             resolve(entry.color)
                 .map(|appearance| (body.id.clone(), sequence, appearance, entry.status.blank))
@@ -570,7 +570,7 @@ pub(super) fn project(
     }
     for body in &mut ir.model.bodies {
         if body.visible.is_none() {
-            body.visible = source_sequence(&body.id.as_str())
+            body.visible = source_sequence(body.id.as_str())
                 .and_then(|sequence| entries.get(&sequence))
                 .map(|entry| entry.status.blank == BlankStatus::Visible);
         }
@@ -581,7 +581,7 @@ pub(super) fn project(
         .faces
         .iter()
         .filter_map(|face| {
-            let sequence = source_sequence(&face.id.as_str())?;
+            let sequence = source_sequence(face.id.as_str())?;
             let entry = entries.get(&sequence)?;
             resolve(entry.color).map(|appearance| (face.id.clone(), sequence, appearance))
         })

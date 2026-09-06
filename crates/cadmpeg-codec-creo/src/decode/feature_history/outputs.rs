@@ -51,7 +51,7 @@ fn feature_output_bodies_with_history(
                 .entity_tables
                 .iter()
                 .filter(|table| table.feature_id == feature_id)
-                .flat_map(|table| table.surface_ids())
+                .flat_map(crate::feature::FeatureEntityTable::surface_ids)
                 .map(|surface_id| {
                     SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
                         .expect("identity grammar")

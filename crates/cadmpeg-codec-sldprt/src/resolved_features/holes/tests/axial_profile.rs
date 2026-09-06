@@ -616,7 +616,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
         },
         native_ref: Some("native-profile".into()),
     };
@@ -632,7 +632,9 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(SketchId("position".into())),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
+                "position".into(),
+            ))),
         },
         native_ref: Some("native-position".into()),
     };
@@ -642,7 +644,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
             } = &feature.definition
             else {
@@ -764,7 +766,9 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(SketchId(sketch.into())),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
+                sketch.into(),
+            ))),
         },
         native_ref: Some(id.into()),
     };

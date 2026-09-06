@@ -1431,7 +1431,7 @@ pub(crate) fn blend_spine_cache_fit_tolerance_with_index(
             index
                 .procedural_curves_for_curve(spine.as_str())
                 .and_then(|procedurals| procedurals.first().copied())
-                .and_then(|procedural| procedural.cache_fit_tolerance())
+                .and_then(cadmpeg_ir::geometry::ProceduralCurve::cache_fit_tolerance)
         })
         .filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0)
         .map_or(fit_tolerance, |tolerance| fit_tolerance + tolerance)
@@ -1835,10 +1835,10 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
         ) = (
             index
                 .procedural_surface_for_carrier(first.as_str())
-                .map(|surface| surface.definition()),
+                .map(cadmpeg_ir::geometry::ProceduralSurface::definition),
             index
                 .procedural_surface_for_carrier(second.as_str())
-                .map(|surface| surface.definition()),
+                .map(cadmpeg_ir::geometry::ProceduralSurface::definition),
         )
         else {
             return false;
@@ -1958,7 +1958,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 return None;
             }
             let source_index = sources.iter().position(|source| {
-                index >= source.coedge_start && stream_owns_id(&coedge.id.as_str(), &source.prefix)
+                index >= source.coedge_start && stream_owns_id(coedge.id.as_str(), &source.prefix)
             })?;
             let surface = loop_faces
                 .get(&coedge.owner_loop)
@@ -1999,7 +1999,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         if multiple_sources
             && !sources.iter().any(|source| {
                 index >= source.procedural_start
-                    && stream_owns_id(&procedural.id.as_str(), &source.prefix)
+                    && stream_owns_id(procedural.id.as_str(), &source.prefix)
             })
         {
             continue;

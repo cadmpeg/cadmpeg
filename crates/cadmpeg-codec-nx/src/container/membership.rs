@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Members whose count fits the RMFastLoad unsigned 32-bit count word.
+//! Members whose count fits the `RMFastLoad` unsigned 32-bit count word.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ObjectIdMembers<T>(Vec<T>);

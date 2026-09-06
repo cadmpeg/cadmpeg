@@ -326,14 +326,14 @@ fn finish_decode(
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| table.rows())
+        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
         .map(|row| row.cells.len())
         .sum();
     let design_parallel_reference_resolved_cell_count = native
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| table.rows())
+        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
         .flat_map(|row| &row.cells)
         .filter(|cell| cell.field().is_some())
         .count();
@@ -341,7 +341,7 @@ fn finish_decode(
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| table.rows())
+        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
         .flat_map(|row| &row.cells)
         .filter(|cell| cell.is_null())
         .count();
@@ -349,7 +349,7 @@ fn finish_decode(
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| table.rows())
+        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
         .flat_map(|row| &row.cells)
         .filter(|cell| cell.field_class().is_some())
         .count();
@@ -357,7 +357,7 @@ fn finish_decode(
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| table.columns())
+        .flat_map(super::native::CatiaDesignParallelReferenceTable::columns)
         .filter(|column| column.field_class.is_some())
         .count();
     let design_parallel_reference_unclassified_column_count =
@@ -371,7 +371,7 @@ fn finish_decode(
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| table.rows())
+        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
         .filter(|row| row.matching_design_object.is_some())
         .count();
     let design_parallel_reference_unmatched_row_count =
@@ -634,14 +634,14 @@ fn finish_decode(
     {
         match packet {
             entity_table::EntityValuePacket::Compact { .. } => {
-                compact_entity_value_packet_count += 1
+                compact_entity_value_packet_count += 1;
             }
             entity_table::EntityValuePacket::Numeric { .. } => {
-                numeric_entity_value_packet_count += 1
+                numeric_entity_value_packet_count += 1;
             }
             entity_table::EntityValuePacket::Layout { .. } => layout_entity_value_packet_count += 1,
             entity_table::EntityValuePacket::E9Scalar { .. } => {
-                e9_scalar_entity_value_packet_count += 1
+                e9_scalar_entity_value_packet_count += 1;
             }
         }
     }

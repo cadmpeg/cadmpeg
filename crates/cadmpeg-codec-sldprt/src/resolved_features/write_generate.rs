@@ -647,7 +647,7 @@ fn unique_generated_entity_marker(
                     .iter()
                     .any(|(candidate, _)| same_point2(*point, *candidate))
             })
-            .map(|candidate| candidate.id());
+            .map(cadmpeg_ir::SketchEntity::id);
         if candidates.next() == Some(entity) && candidates.next().is_none() {
             return Ok(*local_id);
         }

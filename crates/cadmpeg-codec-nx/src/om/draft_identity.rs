@@ -59,6 +59,8 @@ impl Prefix {
     }
 
     fn raw(&self) -> Vec<u8> {
+        // The wire adapter receives the optional field by reference, including its absence.
+        #[allow(clippy::ref_option)]
         fn nullable(atom: &Option<CompactIndexAtom>) -> &[u8] {
             atom.as_ref().map_or(&[0xff], CompactIndexAtom::raw)
         }

@@ -264,7 +264,9 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         Some(4)
     );
     assert_eq!(
-        recipe.resolution.map(|resolution| resolution.vertex_slot()),
+        recipe
+            .resolution
+            .map(crate::records::feature::DesignVertexResolution::vertex_slot),
         Some(40)
     );
 

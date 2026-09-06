@@ -214,9 +214,9 @@ pub fn bind_topology_selections(
                         normal,
                         *distance,
                     );
-                    let mut face = native
-                        .map(|native| FaceSelection::Native(native.to_owned()))
-                        .unwrap_or(FaceSelection::Unresolved);
+                    let mut face = native.map_or(FaceSelection::Unresolved, |native| {
+                        FaceSelection::Native(native.to_owned())
+                    });
                     resolve_offset_plane_face_selection(
                         &mut face,
                         support_origin,

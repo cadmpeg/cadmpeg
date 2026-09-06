@@ -99,6 +99,8 @@ impl TryFrom<StateWire> for Type101State {
 mod tests {
     use super::Type101State;
     #[test]
+    // Keep the source-word spelling in this wire fixture.
+    #[allow(clippy::unreadable_literal)]
     fn wire_preserves_both_forms_and_rejects_invalid_state() {
         for json in [
             r#"{"references":[40000,3,1,9],"anchor_reference":11,"state_words":[19,9,27],"terminal_value":258}"#,

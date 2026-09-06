@@ -5425,7 +5425,7 @@ struct DesignParameterScopeSerde {
     /// Exact mode, parameter, and selection records carried by a `SurfaceRuled` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ruled_surface_operation: Option<DesignRuledSurfaceOperation>,
-    /// BaseFlange operation and sketch profile.
+    /// `BaseFlange` operation and sketch profile.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "base_flange_scope_is_absent")]
     #[serde(deserialize_with = "deserialize_flattened_scope")]
@@ -5534,6 +5534,8 @@ where
 }
 
 #[derive(Deserialize)]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
 struct WorkPlaneFrameWire {
     work_plane_transform: Option<[[f64; 4]; 4]>,
     work_plane_transform_offset: Option<u64>,
@@ -5583,6 +5585,8 @@ impl<'de> Deserialize<'de> for DesignWorkPlaneTransform {
 }
 
 #[derive(Deserialize)]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
 struct JointOriginFrameWire {
     joint_origin_transform: Option<[[f64; 4]; 4]>,
     joint_origin_transform_offset: Option<u64>,
@@ -5633,6 +5637,8 @@ impl<'de> Deserialize<'de> for DesignJointOriginTransform {
 }
 
 #[derive(Deserialize)]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
 struct SketchEntityWire {
     entity_id: Option<String>,
     entity_suffix: Option<u64>,
@@ -5667,6 +5673,8 @@ where
     }
 }
 
+// The wire adapter receives the optional field by reference, including its absence.
+#[allow(clippy::ref_option)]
 fn base_flange_scope_is_absent(base_flange: &Option<DesignBaseFlangeScope>) -> bool {
     match base_flange {
         None => true,
@@ -5676,6 +5684,8 @@ fn base_flange_scope_is_absent(base_flange: &Option<DesignBaseFlangeScope>) -> b
     }
 }
 
+// The wire adapter receives the optional field by reference, including its absence.
+#[allow(clippy::ref_option)]
 fn coil_scope_is_absent(coil: &Option<DesignCoilScope>) -> bool {
     match coil {
         None => true,
@@ -5691,6 +5701,8 @@ fn coil_scope_is_absent(coil: &Option<DesignCoilScope>) -> bool {
     }
 }
 
+// The wire adapter receives the optional field by reference, including its absence.
+#[allow(clippy::ref_option)]
 fn extrude_scope_is_absent(extrude: &Option<DesignExtrudeScope>) -> bool {
     match extrude {
         None => true,
@@ -5702,6 +5714,8 @@ fn extrude_scope_is_absent(extrude: &Option<DesignExtrudeScope>) -> bool {
     }
 }
 
+// The wire adapter receives the optional field by reference, including its absence.
+#[allow(clippy::ref_option)]
 fn path_feature_scope_is_absent(path_feature: &Option<DesignPathFeatureWire>) -> bool {
     match path_feature {
         None => true,
@@ -5711,7 +5725,7 @@ fn path_feature_scope_is_absent(path_feature: &Option<DesignPathFeatureWire>) ->
     }
 }
 
-/// BaseFlange-specific records carried by a BaseFlange parameter scope.
+/// BaseFlange-specific records carried by a `BaseFlange` parameter scope.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignBaseFlangeScope {
@@ -5776,6 +5790,8 @@ struct DesignPathFeatureWire {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "DesignCoilScopeWire", into = "DesignCoilScopeWire")]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
 pub struct DesignCoilScope {
     pub coil_operation: Option<RecordedValue<DesignExtrudeOperation>>,
     pub coil_extent: Option<RecordedValue<DesignCoilExtent>>,
@@ -5789,6 +5805,8 @@ pub struct DesignCoilScope {
 /// Coil-specific records carried by a Coil parameter scope.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
 struct DesignCoilScopeWire {
     /// Coil result operation from the fixed scope prologue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -5901,6 +5919,8 @@ pub struct DesignSketchEntityBinding {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
 struct DesignSketchEntityBindingWire {
     /// Full Design entity id of a sketch scope.
     entity_id: String,
@@ -5948,7 +5968,7 @@ pub struct DesignWorkPlaneTransform {
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference: Option<DesignWorkPlaneReference>,
-    /// Exact construction rule carried by this WorkPlane frame.
+    /// Exact construction rule carried by this `WorkPlane` frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_construction: Option<DesignWorkPlaneConstruction>,
 }
@@ -6467,6 +6487,8 @@ pub enum DesignEdgeFlangeShape {
 }
 
 impl DesignEdgeFlangeShape {
+    // The tuple carries one coupled result; a separate alias would add no invariant.
+    #[allow(clippy::type_complexity)]
     pub(crate) fn edges(&self) -> impl Iterator<Item = &DesignEdgeFlangeEdge> {
         let (shared, symmetric, two_sided): (
             &[DesignEdgeFlangeEdge],
@@ -6509,6 +6531,8 @@ impl DesignEdgeFlangeShape {
         }
     }
 
+    // The tuple carries one coupled result; a separate alias would add no invariant.
+    #[allow(clippy::type_complexity)]
     pub(crate) fn owner_indices(&self) -> impl Iterator<Item = &u32> {
         let (shared, symmetric, two_sided): (
             &[u32],
@@ -7150,13 +7174,13 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.path_feature = value.map(|value| DesignPathFeatureWire {
                     path_feature_construction: Some(DesignPathFeatureConstruction::Revolve(value)),
                     sweep_profile: None,
-                })
+                });
             }
             DesignScopePayload::Loft(value) => {
                 wire.path_feature = value.map(|value| DesignPathFeatureWire {
                     path_feature_construction: Some(DesignPathFeatureConstruction::Loft(value)),
                     sweep_profile: None,
-                })
+                });
             }
             DesignScopePayload::Sweep(value) => {
                 wire.path_feature = value.map(|sweep| DesignPathFeatureWire {
@@ -7164,13 +7188,13 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                         .construction
                         .map(DesignPathFeatureConstruction::Sweep),
                     sweep_profile: sweep.sweep_profile,
-                })
+                });
             }
             DesignScopePayload::Pipe(value) => {
                 wire.path_feature = value.map(|value| DesignPathFeatureWire {
                     path_feature_construction: Some(DesignPathFeatureConstruction::Pipe(value)),
                     sweep_profile: None,
-                })
+                });
             }
             DesignScopePayload::WorkPlane(value) => wire.work_plane_frame = value,
             DesignScopePayload::JointOrigin(value) => wire.joint_origin_frame = value,
@@ -7179,30 +7203,30 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::Skizze(value)
             | DesignScopePayload::Esboco(value) => wire.sketch_entity = value,
             DesignScopePayload::SpherePrimitive(value) => {
-                wire.solid_primitive = value.map(DesignSolidPrimitive::Sphere)
+                wire.solid_primitive = value.map(DesignSolidPrimitive::Sphere);
             }
             DesignScopePayload::TorusPrimitive(value) => {
-                wire.solid_primitive = value.map(DesignSolidPrimitive::Torus)
+                wire.solid_primitive = value.map(DesignSolidPrimitive::Torus);
             }
             DesignScopePayload::BoxPrimitive(value) => {
-                wire.solid_primitive = value.map(DesignSolidPrimitive::Box)
+                wire.solid_primitive = value.map(DesignSolidPrimitive::Box);
             }
             DesignScopePayload::CylinderPrimitive(value) => {
-                wire.solid_primitive = value.map(DesignSolidPrimitive::Cylinder)
+                wire.solid_primitive = value.map(DesignSolidPrimitive::Cylinder);
             }
             DesignScopePayload::ReplaceFace => {}
             DesignScopePayload::OffsetFaces(value) | DesignScopePayload::DecalerLesFaces(value) => {
-                wire.direct_face_operation = value.map(DesignDirectFaceOperation::OffsetFaces)
+                wire.direct_face_operation = value.map(DesignDirectFaceOperation::OffsetFaces);
             }
             DesignScopePayload::Shell(value) | DesignScopePayload::Schale(value) => {
-                wire.direct_face_operation = value.map(DesignDirectFaceOperation::Shell)
+                wire.direct_face_operation = value.map(DesignDirectFaceOperation::Shell);
             }
             DesignScopePayload::Thicken(value) => {
-                wire.direct_face_operation = value.map(DesignDirectFaceOperation::Thicken)
+                wire.direct_face_operation = value.map(DesignDirectFaceOperation::Thicken);
             }
             DesignScopePayload::Move(value) => wire.move_operation = value,
             DesignScopePayload::Scale(value) | DesignScopePayload::Massstab(value) => {
-                wire.scale_operation = value
+                wire.scale_operation = value;
             }
             DesignScopePayload::SurfaceStitch(value) => wire.surface_stitch_operation = value,
             DesignScopePayload::SurfaceExtend(value) => wire.surface_extend_operation = value,
@@ -7216,7 +7240,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::Abrundung(value)
             | DesignScopePayload::Arredondamento(value) => wire.fixed_fillet_parameters = value,
             DesignScopePayload::Chamfer(value) | DesignScopePayload::Chanfrein(value) => {
-                wire.fixed_chamfer_parameters = value
+                wire.fixed_chamfer_parameters = value;
             }
             DesignScopePayload::Combine(value) => wire.combine_operation = value,
             DesignScopePayload::Thread(value) => wire.thread_construction = value,
@@ -7225,21 +7249,21 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::CircularPattern(value)
             | DesignScopePayload::ReseauC(value) => wire.circular_pattern_construction = value,
             DesignScopePayload::RPattern(value) | DesignScopePayload::RectangularPattern(value) => {
-                wire.rectangular_pattern_construction = value
+                wire.rectangular_pattern_construction = value;
             }
             DesignScopePayload::Assemble(value) | DesignScopePayload::AsBuilt(value) => {
-                wire.assembly_alignment = value
+                wire.assembly_alignment = value;
             }
             DesignScopePayload::ComponentInsert(value) => {
-                wire.component_insert_construction = value
+                wire.component_insert_construction = value;
             }
             DesignScopePayload::DerivedInstance(value) => {
-                wire.derived_instance_construction = value
+                wire.derived_instance_construction = value;
             }
             DesignScopePayload::CopyPaste(value) => wire.copy_paste_component_operation = value,
             DesignScopePayload::CopyPasteBodies(value) => wire.copy_paste_bodies_operation = value,
             DesignScopePayload::Mirror(value) | DesignScopePayload::SymetrieMiroir(value) => {
-                wire.mirror_construction = value
+                wire.mirror_construction = value;
             }
             DesignScopePayload::BaseFeature(value) => wire.base_feature_construction = value,
             DesignScopePayload::WorkAxis(value) => wire.work_axis_construction = value,
@@ -7860,6 +7884,8 @@ pub enum DesignEdgeFlangeHeightExtent {
 
 /// One selected flange edge and its aggregate operand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
 pub struct DesignEdgeFlangeEdge {
     pub wrapper_record_index: u32,
     pub group_record_index: u32,
@@ -8758,6 +8784,8 @@ enum DesignBaseFeatureConstructionWire {
 
 impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstruction {
     type Error = String;
+    // Output cardinalities are bounded by already-materialized input vectors.
+    #[allow(clippy::disallowed_methods)]
     fn try_from(wire: DesignBaseFeatureConstructionWire) -> Result<Self, Self::Error> {
         Ok(match wire {
             DesignBaseFeatureConstructionWire::ResultBodies {
@@ -9013,6 +9041,8 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
 }
 
 impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
+    // Output cardinalities are bounded by already-materialized input vectors.
+    #[allow(clippy::disallowed_methods)]
     fn from(value: DesignBaseFeatureConstruction) -> Self {
         match value {
             DesignBaseFeatureConstruction::ResultBodies {

@@ -360,7 +360,7 @@ fn relation_expression_signature_preserves_ordered_typed_inputs() {
         ));
     let signature = native.entity_records[0]
         .relation_expression()
-        .and_then(|expression| expression.signature())
+        .and_then(super::super::CatiaRelationExpression::signature)
         .expect("multi-input signature");
 
     assert_eq!(
@@ -386,7 +386,7 @@ fn relation_expression_signature_accepts_an_empty_input_list_with_an_empty_place
     );
     let signature = native.entity_records[0]
         .relation_expression()
-        .and_then(|expression| expression.signature())
+        .and_then(super::super::CatiaRelationExpression::signature)
         .expect("zero-input signature");
 
     assert!(signature.inputs.is_empty());

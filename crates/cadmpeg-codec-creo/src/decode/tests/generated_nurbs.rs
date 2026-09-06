@@ -1252,7 +1252,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     };
     assert_eq!(
         current_feature_operation(std::slice::from_ref(&operation), 6)
-            .and_then(|current| current.root_schema_class()),
+            .and_then(crate::feature::FeatureOperation::root_schema_class),
         Some(917)
     );
     assert!(current_feature_operation(&[operation.clone(), operation.clone()], 6).is_none());

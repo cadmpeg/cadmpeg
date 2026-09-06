@@ -68,6 +68,8 @@ impl CsysDescriptor {
         })
     }
 
+    // This conversion consumes the input carrier at the typed construction boundary.
+    #[allow(clippy::needless_pass_by_value)]
     pub(crate) fn from_wire(
         prefix: Vec<u8>,
         identity: CsysIdentity,

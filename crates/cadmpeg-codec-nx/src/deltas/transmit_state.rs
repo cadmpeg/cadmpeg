@@ -83,6 +83,8 @@ mod tests {
     use super::TransmitState;
 
     #[test]
+    // Keep the source-word spelling in this wire fixture.
+    #[allow(clippy::unreadable_literal)]
     fn transmit_wire_preserves_fields_and_rejects_invalid_header_payload() {
         let json =
             r#"{"description":"Transmit (deltas)","schema":"SCH_1","references":[1063,1064]}"#;

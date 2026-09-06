@@ -528,10 +528,10 @@ fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
 #[must_use]
 pub fn standard_mesh_edge_runs(bytes: &[u8]) -> Option<Vec<MeshEdgeRun>> {
     let analysis = standard_mesh_analysis(bytes)?;
-    mesh_edge_runs(&analysis)
+    Some(mesh_edge_runs(&analysis))
 }
 
-fn mesh_edge_runs(analysis: &StandardMeshAnalysis) -> Option<Vec<MeshEdgeRun>> {
+fn mesh_edge_runs(analysis: &StandardMeshAnalysis) -> Vec<MeshEdgeRun> {
     let mut runs = analysis
         .occurrences
         .iter()
@@ -539,7 +539,7 @@ fn mesh_edge_runs(analysis: &StandardMeshAnalysis) -> Option<Vec<MeshEdgeRun>> {
         .copied()
         .collect::<Vec<_>>();
     runs.sort_by_key(|run| (run.face, run.cycle, run.start, run.edge));
-    Some(runs)
+    runs
 }
 
 /// Complete repeated standard edge-face slots from exact trim-boundary
@@ -1226,7 +1226,7 @@ impl StandardMeshBoundaryContext {
         let coverage = mesh_face_coverage(&analysis, edge_faces)?;
         let local_ports = solver_ports(bytes, global_handle_ports)?;
         let edge_ports = mesh_edge_ports(&analysis, &local_ports)?;
-        let edge_runs = mesh_edge_runs(&analysis)?;
+        let edge_runs = mesh_edge_runs(&analysis);
         let cycle_lengths = analysis
             .cycles
             .iter()
@@ -2803,6 +2803,8 @@ pub fn standard_mesh_prune_endpoint_candidates(
 type MeshCorner = (usize, usize, usize);
 type MeshCornerPoints = HashMap<MeshCorner, HashSet<usize>>;
 
+// The tuple carries one coupled result; a separate alias would add no invariant.
+#[allow(clippy::type_complexity)]
 fn standard_mesh_assignment_corner_points(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
@@ -2817,7 +2819,7 @@ fn standard_mesh_assignment_corner_points(
     if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
         return None;
     }
-    let runs = mesh_edge_runs(&analysis)?;
+    let runs = mesh_edge_runs(&analysis);
     let assignments = standard_mesh_missing_edge_assignments(bytes, edge_faces, None, true)?;
     let cycle_lengths = analysis
         .cycles

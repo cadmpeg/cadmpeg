@@ -1112,7 +1112,7 @@ pub(crate) fn project_profiled_hole_constructions(
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
             } = &feature.definition
             else {
@@ -1334,7 +1334,7 @@ pub(crate) fn project_hole_position_sketches(
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;
@@ -2791,7 +2791,7 @@ pub(crate) fn project_hole_axes(
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
             } = &feature.definition
             else {
@@ -3246,7 +3246,7 @@ pub(crate) fn project_topological_hole_constructions(
             continue;
         }
         let mut common = None::<Vec<(f64, f64)>>;
-        for placement in placements.iter() {
+        for placement in placements {
             let HolePlacement::Axis {
                 origin: placement_origin,
                 axis: placement_axis,
@@ -3368,7 +3368,10 @@ pub(crate) fn project_bore_backed_position_sketches(
         };
         if !matches!(
             model_position.definition,
-            FeatureDefinition::Sketch { sketch: None }
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                    | cadmpeg_ir::features::SketchFeatureBinding::Planar(None)
+            }
         ) {
             continue;
         }
@@ -3471,10 +3474,11 @@ pub(crate) fn project_bore_backed_position_sketches(
         let FeatureDefinition::Sketch { sketch, .. } = &mut feature.definition else {
             continue;
         };
-        if sketch.is_some() {
+        if sketch.id().is_some() {
             continue;
         }
-        *sketch = Some(projection.sketch.id.clone());
+        *sketch =
+            cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(projection.sketch.id.clone()));
         entities.extend(projection.entities);
         sketches.push(projection.sketch);
     }

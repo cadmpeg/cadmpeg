@@ -1300,15 +1300,12 @@ pub fn bind_sketch_profiles(
                         slot.get_or_insert_with(Default::default).sweep_profile = value;
                     }
                 }
-            } else {
-                if let crate::records::feature::DesignScopePayload::Extrude(slot)
-                | crate::records::feature::DesignScopePayload::Extrusion(slot)
-                | crate::records::feature::DesignScopePayload::Extrusao(slot) =
-                    &mut scope.payload
-                {
-                    slot.get_or_insert_with(Default::default).extrude_profile =
-                        Some(profile.clone());
-                }
+            } else if let crate::records::feature::DesignScopePayload::Extrude(slot)
+            | crate::records::feature::DesignScopePayload::Extrusion(slot)
+            | crate::records::feature::DesignScopePayload::Extrusao(slot) =
+                &mut scope.payload
+            {
+                slot.get_or_insert_with(Default::default).extrude_profile = Some(profile.clone());
             }
         }
     }
@@ -2808,6 +2805,8 @@ pub(crate) fn parse_construction_tracking_path(
     })
 }
 
+// Outer absence is a parse failure; inner absence is the encoded null identity.
+#[allow(clippy::option_option)]
 fn take_optional_tracking_identity(
     bytes: &[u8],
     cursor: &mut usize,

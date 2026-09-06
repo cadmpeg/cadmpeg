@@ -35,10 +35,7 @@ fn inline_entity_and_object_records_pair_by_extent_and_cardinality() {
         .iter()
         .find(|record| record.object_graph == graph.id)
         .expect("paired inline entity");
-    assert_eq!(
-        record.inline_body().as_deref(),
-        Some(&[0x03, 0xea, 1, 0, 0, 0][..])
-    );
+    assert_eq!(record.inline_body(), Some(&[0x03, 0xea, 1, 0, 0, 0][..]));
     assert_eq!(record.object_record, graph.records[0].id);
 }
 

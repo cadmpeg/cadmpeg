@@ -40,9 +40,9 @@ impl MaterialTextureAsset {
         source_entry: String,
         source_offset: u64,
     ) -> Result<Self, &'static str> {
-        if !source_entry
+        if source_entry
             .strip_prefix(TEXTURE_PREFIX)
-            .is_some_and(|name| !name.is_empty())
+            .is_none_or(str::is_empty)
         {
             return Err("source_entry: requires a nonempty materialsTif path");
         }

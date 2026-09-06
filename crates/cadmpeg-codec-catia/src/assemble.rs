@@ -1012,6 +1012,8 @@ mod route_tests {
     }
 
     #[test]
+    // These checked constructors must accept the explicit test fixtures.
+    #[allow(clippy::unwrap_used)]
     fn neutral_model_admissibility_includes_pending_unknown_records() {
         let record_id = UnknownId::mint("catia:test:unknown#0").expect("identity grammar");
         let mut ir = CadIr::empty();

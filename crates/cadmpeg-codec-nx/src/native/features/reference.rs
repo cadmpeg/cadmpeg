@@ -56,6 +56,8 @@ impl From<super::FeatureDeleteReferenceField> for DeleteReferenceFieldWire {
 impl TryFrom<DeleteReferenceFieldWire> for super::FeatureDeleteReferenceField {
     type Error = String;
 
+    // Names follow the ordered source slots in this fixed-width lane.
+    #[allow(clippy::many_single_char_names)]
     fn try_from(wire: DeleteReferenceFieldWire) -> Result<Self, Self::Error> {
         let slots = std::array::from_fn::<_, 5, _>(|slot| {
             let target = match wire.object_indices[slot] {

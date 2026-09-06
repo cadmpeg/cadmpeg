@@ -445,7 +445,7 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
     assert_eq!(
         ir.model
             .procedural_surface_owner(&procedural.id)
-            .map(|id| id.as_str()),
+            .map(cadmpeg_ir::ids::SurfaceId::as_str),
         Some("catia:standard:edge-support-surface#21")
     );
     assert_eq!(procedural.definition(), &rolling_ball_definition);

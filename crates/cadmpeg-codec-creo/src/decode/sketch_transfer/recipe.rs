@@ -156,7 +156,7 @@ pub(in super::super) fn resolved_feature_schema_class_from_classes(
     feature_id: u32,
 ) -> Option<u32> {
     if let Some(schema_class) = current_feature_operation(operations, feature_id)
-        .and_then(|operation| operation.root_schema_class())
+        .and_then(crate::feature::FeatureOperation::root_schema_class)
     {
         return Some(schema_class);
     }

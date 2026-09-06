@@ -473,7 +473,7 @@ pub(crate) fn project_dissected_sketches(
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;
@@ -491,7 +491,11 @@ pub(crate) fn project_dissected_sketches(
         .filter(|feature| {
             matches!(
                 feature.definition,
-                FeatureDefinition::Sketch { sketch: None, .. }
+                FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                        | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                    ..
+                }
             ) && feature
                 .native_ref
                 .as_deref()

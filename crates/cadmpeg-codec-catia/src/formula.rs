@@ -180,11 +180,7 @@ pub(crate) fn transfer_parameters(
                 continue;
             }
             dependencies.push(id.clone());
-            let Some(type_value) = static_formula_value(candidate.parameter_type) else {
-                all_inputs_complete = false;
-                all_inputs_typed = false;
-                continue;
-            };
+            let type_value = static_formula_value(candidate.parameter_type);
             type_bindings.insert(input.parameter.as_str(), type_value);
             match candidate.parameter.value.as_ref() {
                 None => {
@@ -488,9 +484,9 @@ pub(crate) fn transfer_parameters(
         .count();
     let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
     for candidate in &parameters {
-        annotation_builder.derived(&candidate.parameter.id.as_str(), "properties");
+        annotation_builder.derived(candidate.parameter.id.as_str(), "properties");
         if !candidate.role.is_formula_output() && candidate.parameter.dependencies.is_empty() {
-            annotation_builder.derived(&candidate.parameter.id.as_str(), "expression");
+            annotation_builder.derived(candidate.parameter.id.as_str(), "expression");
         }
     }
     *annotations = annotation_builder.build();
@@ -1109,6 +1105,8 @@ impl FormulaParameterType {
 }
 
 #[derive(Clone)]
+// Keep typed source payloads inline without an allocation for each admitted record.
+#[allow(clippy::large_enum_variant)]
 enum FormulaParameterRole {
     Input,
     FormulaOutput {
@@ -1265,7 +1263,7 @@ fn relation_program_output_candidate(
         dependencies.push(candidate.parameter.id.clone());
         type_bindings.insert(
             input.parameter.as_str(),
-            static_formula_value(candidate.parameter_type)?,
+            static_formula_value(candidate.parameter_type),
         );
         match candidate.parameter.value.as_ref() {
             Some(value) => {
@@ -3214,8 +3212,8 @@ fn evaluate_formula_expression_with_mode<'a>(
     .parse()
 }
 
-fn static_formula_value(parameter_type: FormulaParameterType) -> Option<EvaluatedFormulaValue> {
-    Some(match parameter_type {
+fn static_formula_value(parameter_type: FormulaParameterType) -> EvaluatedFormulaValue {
+    match parameter_type {
         FormulaParameterType::Length => EvaluatedFormulaValue::Scalar(
             EvaluatedFormulaScalar::from_parts(0.0, FormulaDimension::LENGTH, None, None),
         ),
@@ -3234,7 +3232,7 @@ fn static_formula_value(parameter_type: FormulaParameterType) -> Option<Evaluate
         FormulaParameterType::String => {
             EvaluatedFormulaValue::String(EvaluatedFormulaString::unknown())
         }
-    })
+    }
 }
 
 fn typed_parameter_evaluation(
@@ -3360,26 +3358,11 @@ mod parser_tests {
     #[test]
     fn static_formula_check_preserves_type_closure_without_values() {
         let bindings = BTreeMap::from([
-            (
-                "#1_",
-                static_formula_value(FormulaParameterType::Length).expect("length type"),
-            ),
-            (
-                "#2_",
-                static_formula_value(FormulaParameterType::Integer).expect("integer type"),
-            ),
-            (
-                "#3_",
-                static_formula_value(FormulaParameterType::Boolean).expect("Boolean type"),
-            ),
-            (
-                "#4_",
-                static_formula_value(FormulaParameterType::String).expect("String type"),
-            ),
-            (
-                "#5_",
-                static_formula_value(FormulaParameterType::Real).expect("Real type"),
-            ),
+            ("#1_", static_formula_value(FormulaParameterType::Length)),
+            ("#2_", static_formula_value(FormulaParameterType::Integer)),
+            ("#3_", static_formula_value(FormulaParameterType::Boolean)),
+            ("#4_", static_formula_value(FormulaParameterType::String)),
+            ("#5_", static_formula_value(FormulaParameterType::Real)),
         ]);
 
         assert!(
@@ -3423,22 +3406,10 @@ mod parser_tests {
     #[test]
     fn static_formula_check_does_not_use_placeholder_values_as_facts() {
         let bindings = BTreeMap::from([
-            (
-                "#1_",
-                static_formula_value(FormulaParameterType::Length).expect("length type"),
-            ),
-            (
-                "#2_",
-                static_formula_value(FormulaParameterType::Integer).expect("integer type"),
-            ),
-            (
-                "#3_",
-                static_formula_value(FormulaParameterType::Real).expect("real type"),
-            ),
-            (
-                "#4_",
-                static_formula_value(FormulaParameterType::String).expect("string type"),
-            ),
+            ("#1_", static_formula_value(FormulaParameterType::Length)),
+            ("#2_", static_formula_value(FormulaParameterType::Integer)),
+            ("#3_", static_formula_value(FormulaParameterType::Real)),
+            ("#4_", static_formula_value(FormulaParameterType::String)),
         ]);
 
         let unknown_predicate = evaluate_formula_expression_with_mode("#3_ > 1", &bindings, false)
@@ -3879,19 +3850,19 @@ mod parser_tests {
         assert_eq!(
             evaluate_formula_expression("#1_.Length()", &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
-                .map(|value| value.value()),
+                .map(super::EvaluatedFormulaScalar::value),
             Some(11.0)
         );
         assert_eq!(
             evaluate_formula_expression("#1_ .Search(#2_)", &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
-                .map(|value| value.value()),
+                .map(super::EvaluatedFormulaScalar::value),
             Some(6.0)
         );
         assert_eq!(
             evaluate_formula_expression("#1_.Search(\"missing\")", &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
-                .map(|value| value.value()),
+                .map(super::EvaluatedFormulaScalar::value),
             Some(-1.0)
         );
         assert_eq!(
@@ -3915,7 +3886,7 @@ mod parser_tests {
         assert_eq!(
             evaluate_formula_expression("\"Cilas Evans Evans\".Search(\"Evans\",7)", &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
-                .map(|value| value.value()),
+                .map(super::EvaluatedFormulaScalar::value),
             Some(12.0)
         );
         assert_eq!(
@@ -3924,19 +3895,19 @@ mod parser_tests {
                 &bindings,
             )
             .and_then(EvaluatedFormulaValue::scalar)
-            .map(|value| value.value()),
+            .map(super::EvaluatedFormulaScalar::value),
             Some(12.0)
         );
         assert_eq!(
             evaluate_formula_expression("\"é猫x猫\".Search(\"猫\",2)", &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
-                .map(|value| value.value()),
+                .map(super::EvaluatedFormulaScalar::value),
             Some(3.0)
         );
         assert_eq!(
             evaluate_formula_expression("\"text\".Search(\"t\",5)", &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
-                .map(|value| value.value()),
+                .map(super::EvaluatedFormulaScalar::value),
             Some(-1.0)
         );
         assert_eq!(
@@ -3966,7 +3937,7 @@ mod parser_tests {
         assert_eq!(
             evaluate_formula_expression("\"12.5\".ToReal()", &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
-                .map(|value| value.value()),
+                .map(super::EvaluatedFormulaScalar::value),
             Some(12.5)
         );
         assert_eq!(

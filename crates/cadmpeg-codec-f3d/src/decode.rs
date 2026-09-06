@@ -785,7 +785,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     }
                 }
         }
-        FeatureDefinition::Sketch { sketch } => sketch.is_none(),
+        FeatureDefinition::Sketch { sketch } => sketch.id().is_none(),
         FeatureDefinition::DatumPoint { construction, .. } => construction
             .as_deref()
             .is_none_or(|construction| !datum_point_construction_is_resolved(construction)),
@@ -1291,7 +1291,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     || {
                         scope
                             .assembly_alignment()
-                            .and_then(|alignment| alignment.joint_origin_scope_record_index())
+                            .and_then(super::records::feature::DesignAssemblyAlignment::joint_origin_scope_record_index)
                             .is_none()
                     },
                     |ordinals| {
@@ -4056,7 +4056,7 @@ fn populate_annotations(
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
             annotations
-                .note(&appearance.id.as_str(), stream, 0)
+                .note(appearance.id.as_str(), stream, 0)
                 .tag(appearance.schema.as_deref().unwrap_or("appearance"));
         }
     }
@@ -4246,7 +4246,7 @@ fn extend_related_design_records(
             native
                 .design_record_headers
                 .push(crate::records::DesignRecordHeader {
-                    id: format!("{stream}:design-record-header#{}", scope.byte_offset).into(),
+                    id: format!("{stream}:design-record-header#{}", scope.byte_offset),
                     record_index: scope.record_index,
                     class_tag: scope.class_tag.clone(),
                     byte_offset: scope.byte_offset,
@@ -4260,8 +4260,7 @@ fn extend_related_design_records(
                         id: format!(
                             "{stream}:design-record-header#{}",
                             operation.relation_byte_offset
-                        )
-                        .into(),
+                        ),
                         record_index: operation.relation_record_index,
                         class_tag: operation.relation_class_tag.clone(),
                         byte_offset: operation.relation_byte_offset,

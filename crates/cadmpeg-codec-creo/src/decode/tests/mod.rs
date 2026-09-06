@@ -112,7 +112,7 @@ pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::Fe
         entry(36, 200, Some(4)),
     ];
     crate::feature::FeatureEntityTable {
-        feature_id: feature_id,
+        feature_id,
         table_class_id: 29,
         entries,
         offset: 0,

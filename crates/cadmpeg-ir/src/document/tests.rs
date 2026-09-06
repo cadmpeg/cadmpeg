@@ -452,3 +452,35 @@ fn current_source_metadata_schema_requires_dialects_and_omits_legacy_dialect() {
     );
     assert!(schema["properties"].get("dialect").is_none(), "{schema:#}");
 }
+
+#[test]
+fn parent_only_wire_preserves_regeneration_without_tree_membership() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole};
+
+    let parent_id = FeatureId("test:model:feature#parent".into());
+    let child_id = FeatureId("test:model:feature#child".into());
+    let mut model = Model {
+        features: vec![
+            Feature::new(
+                parent_id.clone(),
+                0,
+                FeatureDefinition::TreeNode {
+                    role: FeatureTreeNodeRole::SolidBodies,
+                    children: Vec::new(),
+                    active_child: None,
+                },
+            ),
+            Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry),
+        ],
+        ..Model::default()
+    };
+    model
+        .set_feature_regeneration_parent(child_id.clone(), parent_id.clone())
+        .unwrap();
+    assert_eq!(model.feature_tree_parent(&child_id), None);
+    assert_eq!(model.feature_parent(&child_id), Some(&parent_id));
+    let wire = serde_json::to_value(&model).unwrap();
+    assert!(wire["features"][0]["definition"].get("children").is_none());
+    assert_eq!(wire["features"][1]["parent"], parent_id.0);
+    assert_eq!(serde_json::from_value::<Model>(wire).unwrap(), model);
+}

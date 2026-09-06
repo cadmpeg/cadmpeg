@@ -266,8 +266,8 @@ fn occurrence_key(reference: &XrefReference) -> String {
 
 fn apply_occurrence_transform(model: &mut Model, source_rows: [[f64; 4]; 4]) {
     let mut rows = source_rows;
-    for row in 0..3 {
-        rows[row][3] *= 10.0;
+    for row in rows.iter_mut().take(3) {
+        row[3] *= 10.0;
     }
     let occurrence = cadmpeg_ir::transform::Transform::from_rows(rows).expect("affine transform");
     for body in &mut model.bodies {

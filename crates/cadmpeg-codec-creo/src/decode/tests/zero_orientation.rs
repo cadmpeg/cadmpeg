@@ -1012,7 +1012,7 @@ fn transferred_geometry_is_derived_from_ir_arenas() {
     assert!(!has_transferred_geometry(&ir));
 
     ir.model.points.push(Point {
-        id: PointId::mint("point".to_string()).expect("identity grammar"),
+        id: PointId::mint("test:model:entity#point".to_string()).expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
@@ -1051,6 +1051,8 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
 }
 
 #[test]
+// These checked constructors must accept the explicit test fixtures.
+#[allow(clippy::unwrap_used)]
 fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense() {
     let transform = crate::placement::FeatureSectionTransform {
         definition_id: 1,

@@ -1080,9 +1080,8 @@ pub(crate) fn var_blend_spl_sur(
         cur.take_optional_range_value()?.value(),
         cur.take_optional_range_value()?.value(),
     ];
-    let v_lower = match v_range {
-        [lower, None] => lower,
-        _ => return None,
+    let [v_lower, None] = v_range else {
+        return None;
     };
     let shape_prefix = cur.take_long()?;
     let shape_parameter = cur.take_f64()?;

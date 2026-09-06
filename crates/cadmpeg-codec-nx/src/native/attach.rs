@@ -876,12 +876,12 @@ fn attach_material_texture_assets(
     let stream = annotations.stream("nx:container");
     for (texture, asset) in model.om.material_texture_assets.iter().zip(&assets) {
         annotations
-            .note(&asset.id.as_str(), stream, texture.source_offset)
+            .note(asset.id.as_str(), stream, texture.source_offset)
             .tag("MATERIAL_TEXTURE_ASSET");
-        annotations.exactness(&asset.id.as_str(), Exactness::ByteExact);
-        annotations.derived(&asset.id.as_str(), "id");
-        annotations.derived(&asset.id.as_str(), "media_type");
-        annotations.derived(&asset.id.as_str(), "native_ref");
+        annotations.exactness(asset.id.as_str(), Exactness::ByteExact);
+        annotations.derived(asset.id.as_str(), "id");
+        annotations.derived(asset.id.as_str(), "media_type");
+        annotations.derived(asset.id.as_str(), "native_ref");
     }
     ir.model.assets.extend(assets);
     Ok(())
@@ -937,7 +937,7 @@ fn attach_active_configuration_parameter_values(
         .collect();
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.parameter_values = values;
-    annotations.derived(&configuration.id.as_str(), "parameter_values");
+    annotations.derived(configuration.id.as_str(), "parameter_values");
 }
 
 fn attach_current_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
@@ -1025,7 +1025,7 @@ fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut 
     }
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.feature_states = states;
-    annotations.derived(&configuration.id.as_str(), "feature_states");
+    annotations.derived(configuration.id.as_str(), "feature_states");
 }
 
 fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> Option<usize> {
@@ -1914,9 +1914,9 @@ fn attach_feature_operations(
             continue;
         };
         annotations
-            .note(&annotation.id.as_str(), stream, label.source_offset)
+            .note(annotation.id.as_str(), stream, label.source_offset)
             .tag("TEXT_SEMANTIC_ANNOTATION");
-        annotations.exactness(&annotation.id.as_str(), Exactness::Derived);
+        annotations.exactness(annotation.id.as_str(), Exactness::Derived);
         ir.model.semantic_annotations.push(annotation);
     }
     for (ordinal, label) in chronological_labels.into_iter().enumerate() {
@@ -3510,7 +3510,9 @@ fn attach_feature_operations(
                 .unwrap_or_else(|| {
                     if let Some(sketch) = sketch {
                         return FeatureDefinition::Sketch {
-                            sketch: Some(sketch),
+                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                                sketch,
+                            )),
                         };
                     }
                     let mut definition = non_modeling_history_definition(
@@ -4346,7 +4348,7 @@ fn attach_parasolid_topology_string_attributes(
     }
     ir.model
         .attributes
-        .sort_by(|first, second| first.id.as_str().cmp(&second.id.as_str()));
+        .sort_by(|first, second| first.id.as_str().cmp(second.id.as_str()));
 }
 
 struct ParasolidNumericAttributeSources<'a> {
@@ -4764,7 +4766,7 @@ fn attach_parasolid_topology_numeric_attributes(
     }
     ir.model
         .attributes
-        .sort_by(|first, second| first.id.as_str().cmp(&second.id.as_str()));
+        .sort_by(|first, second| first.id.as_str().cmp(second.id.as_str()));
 }
 
 struct ParasolidStructuredAttributeSources<'a> {
@@ -4929,7 +4931,7 @@ fn attach_parasolid_topology_structured_attributes(
     }
     ir.model
         .attributes
-        .sort_by(|first, second| first.id.as_str().cmp(&second.id.as_str()));
+        .sort_by(|first, second| first.id.as_str().cmp(second.id.as_str()));
 }
 
 fn preceding_operation_dependency(
@@ -6052,7 +6054,9 @@ fn non_boolean_feature_definition_with_parameters(
             placement: None,
             op: BooleanOp::Unresolved,
         },
-        "SKETCH" => FeatureDefinition::Sketch { sketch: None },
+        "SKETCH" => FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+        },
         "EXTRACT_BODY" => FeatureDefinition::ExtractBody {
             source: BodySelection::Unresolved,
         },
@@ -8949,7 +8953,7 @@ fn attach_block_dimension_parameter_consumers(
                     .properties
                     .insert(format!("consumer.{consumer_ordinal}"), consumer.clone());
             }
-            annotations.derived(&parameter.id.as_str(), "properties");
+            annotations.derived(parameter.id.as_str(), "properties");
         }
     }
 }

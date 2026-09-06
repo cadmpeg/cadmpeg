@@ -148,7 +148,7 @@ pub(crate) fn project_pattern(
     );
     let pattern = resolved
         .filter(|_| !seeds_required || !seeds.is_empty())
-        .unwrap_or_else(|| match form {
+        .unwrap_or(match form {
             None => PatternKind::Unresolved,
             Some(NativePatternClass::Linear) => PatternKind::UnresolvedLinear,
             Some(NativePatternClass::Circular) => PatternKind::UnresolvedCircular,

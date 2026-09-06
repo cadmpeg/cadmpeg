@@ -294,7 +294,7 @@ fn project_face_bindings(
     }
     let mut appearance_ids = std::collections::HashMap::new();
     let mut ordered_face_keys = face_keys.iter().collect::<Vec<_>>();
-    ordered_face_keys.sort_by(|(left, _), (right, _)| left.cmp(right));
+    ordered_face_keys.sort_by_key(|(left, _)| *left);
     for (face_id, key) in ordered_face_keys {
         let matching_faces = inventory
             .graphics_faces

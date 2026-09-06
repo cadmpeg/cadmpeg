@@ -203,7 +203,7 @@ pub(crate) fn generated_class_200_source_entity_ids(table: &FeatureEntityTable) 
         .entries
         .iter()
         .filter(|entry| entry.class_id == 200)
-        .filter_map(|entry| entry.source_entity_id())
+        .filter_map(FeatureEntityTableEntry::source_entity_id)
         .collect()
 }
 

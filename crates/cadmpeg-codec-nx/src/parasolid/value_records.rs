@@ -217,7 +217,7 @@ fn append_value_record<'a>(
 ) -> Option<()> {
     match frame.payload {
         ValuePayload::Integers(value) => {
-            records.integers.push(frame.retained(value.materialize()?))
+            records.integers.push(frame.retained(value.materialize()?));
         }
         ValuePayload::Doubles(value) => records.doubles.push(frame.retained(value.materialize()?)),
         ValuePayload::String(value) => records.strings.push(frame.retained(value)),

@@ -1528,7 +1528,7 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
     for body in design_records
         .iter()
         .flat_map(|design| &design.features)
-        .flat_map(|feature| feature.bodies())
+        .flat_map(crate::records::DesignMeshFeature::bodies)
         .filter(|body| body.tessellation_id.is_none())
     {
         outcomes.push(MeshContainerOutcome::Missing {

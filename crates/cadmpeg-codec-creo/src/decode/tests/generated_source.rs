@@ -449,6 +449,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
 
     let mut extended = table.clone();
     let mut extra = extended.entries[3].clone();
+    extra.is_surface = false;
     extra.entity_id = 26;
     extra.payload = crate::feature::EntryPayload::Source { entity: Some(5) };
     extended.entries.insert(7, extra.clone());
@@ -1373,6 +1374,8 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
 }
 
 #[test]
+// These checked constructors must accept the explicit test fixtures.
+#[allow(clippy::unwrap_used)]
 fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
@@ -1392,7 +1395,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
         row(43, crate::surface::SurfaceKind::Cone),
     ];
     let plane = |id: &str, native_id: u32| Surface {
-        id: SurfaceId::mint(id.to_string()).expect("identity grammar"),
+        id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1415,14 +1418,18 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     ];
     let cache = surfaces[2].geometry.clone();
     surfaces[2].geometry = SurfaceGeometry::Procedural {
-        construction: ProceduralSurfaceId::mint("extrusion-construction".to_string())
-            .expect("identity grammar"),
+        construction: ProceduralSurfaceId::mint(
+            "test:model:entity#extrusion-construction".to_string(),
+        )
+        .expect("identity grammar"),
         cache: Some(SolvedSurfaceGeometry::new(cache).unwrap()),
     };
     let procedural_surfaces = vec![ProceduralSurface::new(
-        ProceduralSurfaceId::mint("extrusion-construction".to_string()).expect("identity grammar"),
+        ProceduralSurfaceId::mint("test:model:entity#extrusion-construction".to_string())
+            .expect("identity grammar"),
         ProceduralSurfaceDefinition::Extrusion {
-            directrix: CurveId::mint("directrix".to_string()).expect("identity grammar"),
+            directrix: CurveId::mint("test:model:entity#directrix".to_string())
+                .expect("identity grammar"),
             parameter_interval: None,
             direction: Vector3::new(0.0, 0.0, 1.0),
             native_position: None,
@@ -1471,7 +1478,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
     };
     let curves = vec![
         Curve {
-            id: CurveId::mint("typed".to_string()).expect("identity grammar"),
+            id: CurveId::mint("test:model:entity#typed".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Line {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 direction: Vector3::new(1.0, 0.0, 0.0),
@@ -1479,7 +1486,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
             source_object: Some(source(41)),
         },
         Curve {
-            id: CurveId::mint("opaque".to_string()).expect("identity grammar"),
+            id: CurveId::mint("test:model:entity#opaque".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Unknown { record: None },
             source_object: Some(source(42)),
         },

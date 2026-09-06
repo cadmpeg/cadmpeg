@@ -564,7 +564,7 @@ pub fn decode_with_body_bindings<'a>(
         }
         out.extend(appearances);
     }
-    out.sort_by(|a, b| a.id.as_str().cmp(&b.id.as_str()));
+    out.sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
     if let Some(pair) = out
         .windows(2)
         .find(|pair| pair[0].id == pair[1].id && pair[0] != pair[1])

@@ -1250,7 +1250,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            sketch: Some(sketch_id.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
         },
         native_ref: None,
     });
@@ -1388,13 +1388,13 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     super::append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
-    ir.model.configurations[0].active = false.into();
+    ir.model.configurations[0].active = false;
     losses.clear();
     super::append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
 
-    ir.model.configurations[0].active = true.into();
+    ir.model.configurations[0].active = true;
     let output = ir.model.bodies[0].id.clone();
     let feature = Feature {
         id: FeatureId("test:feature#base".into()),
@@ -1543,14 +1543,14 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     super::append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
-    for invalid_placement in [cadmpeg_ir::transform::Transform::from_rows([
-        [2.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ])
-    .expect("affine transform")]
     {
+        let invalid_placement = cadmpeg_ir::transform::Transform::from_rows([
+            [2.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform");
         ir.model.features[0].definition = FeatureDefinition::Block {
             dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
             placement: Some(invalid_placement),

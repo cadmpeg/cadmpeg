@@ -224,34 +224,31 @@ pub(crate) fn native_history_tail(
         ));
     }
     let history = &histories[0];
-    match history.preamble {
-        Some(preamble) => {
-            if history
-                .states
-                .first()
-                .is_none_or(|state| state.state_id != preamble.stream_size)
-                || preamble.history_entry_count < 0
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
-                    history.id
-                )));
-            }
-            for name in ["Begin", "of", "ASM", "History"] {
-                native_subident(bytes, name)?;
-            }
-            native_ident(bytes, "Data")?;
-            native_ident(bytes, "history_stream")?;
-            native_i64(bytes, preamble.stream_size);
-            native_i64(bytes, preamble.stream_size);
-            native_i64(bytes, 0);
-            native_i64(bytes, preamble.history_entry_count);
-            for reference in [-1, 0, 1, -1] {
-                native_ref(bytes, reference);
-            }
-            bytes.push(0x11);
+    if let Some(preamble) = history.preamble {
+        if history
+            .states
+            .first()
+            .is_none_or(|state| state.state_id != preamble.stream_size)
+            || preamble.history_entry_count < 0
+        {
+            return Err(CodecError::malformed(format_args!(
+                "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
+                history.id
+            )));
         }
-        None => {}
+        for name in ["Begin", "of", "ASM", "History"] {
+            native_subident(bytes, name)?;
+        }
+        native_ident(bytes, "Data")?;
+        native_ident(bytes, "history_stream")?;
+        native_i64(bytes, preamble.stream_size);
+        native_i64(bytes, preamble.stream_size);
+        native_i64(bytes, 0);
+        native_i64(bytes, preamble.history_entry_count);
+        for reference in [-1, 0, 1, -1] {
+            native_ref(bytes, reference);
+        }
+        bytes.push(0x11);
     }
     for state in &history.states {
         native_ident(bytes, "delta_state")?;

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Wire adapters for checked palette records.
-use super::*;
+use super::{
+    ColorComponent, Deserialize, PaletteIndex, PartColorDefinition, PartColorTable, Serialize,
+    BACKGROUND_NAME,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct PartColorTableWire {
