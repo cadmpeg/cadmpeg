@@ -1685,3 +1685,20 @@ fn extrude_direction_rejects_a_source_without_an_explicit_vector() {
         .to_string();
     assert!(error.contains("direction_source requires an explicit extrusion direction"));
 }
+
+#[test]
+fn per_edge_flange_widths_reject_empty_rosters_and_preserve_array_wire() {
+    let wire = serde_json::json!({
+        "kind": "two_sides_per_edge",
+        "value": {"widths": [{"first": 3.0, "second": 1.5}, {"first": 2.0, "second": 4.0}]}
+    });
+    let width: super::SheetMetalFlangeWidth = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(width).unwrap(), wire);
+    let mut empty = wire;
+    empty["value"]["widths"] = serde_json::json!([]);
+    let error = serde_json::from_value::<super::SheetMetalFlangeWidth>(empty).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("widths must contain at least one pair"));
+    assert!(super::SheetMetalFlangeEdgeWidths::new(Vec::new()).is_err());
+}

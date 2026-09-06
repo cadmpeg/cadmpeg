@@ -5748,3 +5748,10 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::sketches::SpatialSketchGeometry::NurbsSurface"
 reason = "IR-85: use a checked polynomial B-spline surface payload whose rectangular grid and full knot vectors cannot change cardinality independently; preserve the flat JSON fields."
+
+[[change]]
+commit = "a10c3e4276da3a16d87498a2eeaf35e9563d8eaf"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::features::SheetMetalFlangeWidth::TwoSidesPerEdge"
+reason = "IR-85: require a nonempty per-edge width roster at construction and decoding; preserve the array wire and expose only length-preserving mutable access."

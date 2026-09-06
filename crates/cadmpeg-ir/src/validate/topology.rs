@@ -2885,25 +2885,22 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         "sheet-metal edge-flange bend radius is invalid",
                     );
                 }
-                let widths = match width {
-                    crate::features::SheetMetalFlangeWidth::FullEdge => Vec::new(),
-                    crate::features::SheetMetalFlangeWidth::Symmetric { width } => vec![*width],
-                    crate::features::SheetMetalFlangeWidth::TwoSides { first, second } => {
-                        vec![*first, *second]
+                let widths_valid = match width {
+                    crate::features::SheetMetalFlangeWidth::FullEdge => true,
+                    crate::features::SheetMetalFlangeWidth::Symmetric { width } => {
+                        positive_feature_length(*width)
                     }
-                    crate::features::SheetMetalFlangeWidth::TwoSidesPerEdge { widths } => widths
-                        .iter()
-                        .flat_map(|width| [width.first, width.second])
-                        .collect(),
+                    crate::features::SheetMetalFlangeWidth::TwoSides { first, second } => {
+                        positive_feature_length(*first) && positive_feature_length(*second)
+                    }
+                    crate::features::SheetMetalFlangeWidth::TwoSidesPerEdge { widths } => {
+                        widths.as_slice().iter().all(|width| {
+                            positive_feature_length(width.first)
+                                && positive_feature_length(width.second)
+                        })
+                    }
                 };
-                let per_edge_widths_are_nonempty = !matches!(
-                    width,
-                    crate::features::SheetMetalFlangeWidth::TwoSidesPerEdge { widths }
-                        if widths.is_empty()
-                );
-                if !per_edge_widths_are_nonempty
-                    || !widths.iter().copied().all(positive_feature_length)
-                {
+                if !widths_valid {
                     feature_geometry_error(
                         findings,
                         feature,

@@ -754,7 +754,7 @@ fn scale_sheet_metal_flange_width(
             scale_length(second, scale);
         }
         SheetMetalFlangeWidth::TwoSidesPerEdge { widths } => {
-            for width in widths {
+            for width in widths.as_mut_slice() {
                 scale_length(&mut width.first, scale);
                 scale_length(&mut width.second, scale);
             }

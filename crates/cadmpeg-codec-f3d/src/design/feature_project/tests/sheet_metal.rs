@@ -26,16 +26,18 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         crate::records::DesignFeatureKind::EdgeFlange,
         382,
     );
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![383, 385, 388, 393, 396, 399, 402, 404, 407, 411]);
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+        383, 385, 388, 393, 396, 399, 402, 404, 407, 411,
+    ]);
     if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
         *slot = Some(DesignEdgeFlangeOperation {
             shape: crate::records::DesignEdgeFlangeShape::TwoSides {
-            edges: vec![crate::records::DesignEdgeFlangeEdge {
-                wrapper_record_index: 383,
-                group_record_index: 385,
-                operand_record_index: 388,
-                aggregate_operand_record_index: 407,
-            }],
+                edges: vec![crate::records::DesignEdgeFlangeEdge {
+                    wrapper_record_index: 383,
+                    group_record_index: 385,
+                    operand_record_index: 388,
+                    aggregate_operand_record_index: 407,
+                }],
                 owners: [393, 396],
             },
             aggregate_group_record_index: 404,
@@ -74,12 +76,16 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             class_tag: "000".into(),
             record_index,
             source_ordinal: 0,
-            source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None).unwrap(),
+            source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
+                .unwrap(),
             expression: String::new(),
             expression_offset: 0,
             source_kind_offset: 0,
 
-            unit: Some(crate::records::RecordedValue { value: unit.into(), offset: None }),
+            unit: Some(crate::records::RecordedValue {
+                value: unit.into(),
+                offset: None,
+            }),
             name: source_kind.into(),
             name_offset: 0,
             evaluated_value,
@@ -106,7 +112,10 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         record_index: 385,
         byte_offset: 0,
         class_tag: "000".into(),
-        members: vec![crate::records::Located { value: 388, offset: 0 }],
+        members: vec![crate::records::Located {
+            value: 388,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
@@ -184,16 +193,34 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         .cloned()
         .expect("single-edge operation fixture");
     offset_operation.shape = crate::records::DesignEdgeFlangeShape::TwoSidesPerEdge {
-        edges: offset_operation.shape.edges().copied().map(|edge| crate::records::DesignFlangeEdgeWidth { edge, owners: [393, 396] }).collect(),
+        edges: offset_operation
+            .shape
+            .edges()
+            .copied()
+            .map(|edge| crate::records::DesignFlangeEdgeWidth {
+                edge,
+                owners: [393, 396],
+            })
+            .collect(),
         source: crate::records::DesignEdgeFlangeWidthParameterSource::EdgeOffset,
     };
     if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut offset_scope.payload {
         *slot = Some(offset_operation);
     }
     let mut offset_parameters = parameters.clone();
-    offset_parameters[0].source = crate::records::DesignParameterSource::new("EdgeOffset_1".into(), offset_parameters[0].owner_record_index(), offset_parameters[0].family_discriminator()).unwrap();
+    offset_parameters[0].source = crate::records::DesignParameterSource::new(
+        "EdgeOffset_1".into(),
+        offset_parameters[0].owner_record_index(),
+        offset_parameters[0].family_discriminator(),
+    )
+    .unwrap();
     offset_parameters[0].evaluated_value = -3.0;
-    offset_parameters[1].source = crate::records::DesignParameterSource::new("EdgeOffset_2".into(), offset_parameters[1].owner_record_index(), offset_parameters[1].family_discriminator()).unwrap();
+    offset_parameters[1].source = crate::records::DesignParameterSource::new(
+        "EdgeOffset_2".into(),
+        offset_parameters[1].owner_record_index(),
+        offset_parameters[1].family_discriminator(),
+    )
+    .unwrap();
     offset_parameters[1].evaluated_value = -1.5;
     let offset_inputs = crate::design::feature_project::ProjectInputs {
         native: &offset_parameters,
@@ -224,10 +251,13 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     assert_eq!(
         width,
         SheetMetalFlangeWidth::TwoSidesPerEdge {
-            widths: vec![SheetMetalFlangeTwoSidedWidth {
-                first: cadmpeg_ir::features::Length(30.0),
-                second: cadmpeg_ir::features::Length(15.0),
-            }],
+            widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(vec![
+                SheetMetalFlangeTwoSidedWidth {
+                    first: cadmpeg_ir::features::Length(30.0),
+                    second: cadmpeg_ir::features::Length(15.0),
+                }
+            ])
+            .unwrap(),
         }
     );
 
@@ -236,7 +266,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         .edge_flange_operation()
         .cloned()
         .expect("single-edge operation fixture");
-    if let crate::records::DesignEdgeFlangeShape::TwoSides { edges, .. } = &mut multi_operation.shape {
+    if let crate::records::DesignEdgeFlangeShape::TwoSides { edges, .. } =
+        &mut multi_operation.shape
+    {
         edges.push(crate::records::DesignEdgeFlangeEdge {
             wrapper_record_index: edges[0].wrapper_record_index,
             group_record_index: 415,
@@ -250,7 +282,10 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let mut second_group = group.clone();
     second_group.id = format!("{stream}:design-construction-operand-group#415");
     second_group.record_index = 415;
-    second_group.members = vec![crate::records::Located { value: 418, offset: second_group.members[0].offset }];
+    second_group.members = vec![crate::records::Located {
+        value: 418,
+        offset: second_group.members[0].offset,
+    }];
     let multi_groups = [group, second_group];
     let multi_inputs = crate::design::feature_project::ProjectInputs {
         native: &parameters,
@@ -284,13 +319,28 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     );
 
     let mut per_edge_parameters = parameters.clone();
-    per_edge_parameters[0].source = crate::records::DesignParameterSource::new("EdgeWidth".into(), per_edge_parameters[0].owner_record_index(), per_edge_parameters[0].family_discriminator()).unwrap();
-    per_edge_parameters[1].source = crate::records::DesignParameterSource::new("EdgeWidth".into(), per_edge_parameters[1].owner_record_index(), per_edge_parameters[1].family_discriminator()).unwrap();
+    per_edge_parameters[0].source = crate::records::DesignParameterSource::new(
+        "EdgeWidth".into(),
+        per_edge_parameters[0].owner_record_index(),
+        per_edge_parameters[0].family_discriminator(),
+    )
+    .unwrap();
+    per_edge_parameters[1].source = crate::records::DesignParameterSource::new(
+        "EdgeWidth".into(),
+        per_edge_parameters[1].owner_record_index(),
+        per_edge_parameters[1].family_discriminator(),
+    )
+    .unwrap();
     per_edge_parameters[1].evaluated_value = 3.0;
     let mut per_edge_operation = multi_operation;
     per_edge_operation.shape = crate::records::DesignEdgeFlangeShape::SymmetricPerEdge(
-        per_edge_operation.shape.edges().copied().zip(per_edge_operation.shape.owner_indices().copied())
-            .map(|(edge, owners)| crate::records::DesignFlangeEdgeWidth { edge, owners }).collect(),
+        per_edge_operation
+            .shape
+            .edges()
+            .copied()
+            .zip(per_edge_operation.shape.owner_indices().copied())
+            .map(|(edge, owners)| crate::records::DesignFlangeEdgeWidth { edge, owners })
+            .collect(),
     );
     if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut multi_scope.payload {
         *slot = Some(per_edge_operation);
@@ -360,8 +410,13 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         .cloned()
         .expect("per-edge width operation fixture");
     two_sided_per_edge_operation.shape = crate::records::DesignEdgeFlangeShape::TwoSidesPerEdge {
-        edges: two_sided_per_edge_operation.shape.edges().copied().zip([[393, 396], [414, 417]])
-            .map(|(edge, owners)| crate::records::DesignFlangeEdgeWidth { edge, owners }).collect(),
+        edges: two_sided_per_edge_operation
+            .shape
+            .edges()
+            .copied()
+            .zip([[393, 396], [414, 417]])
+            .map(|(edge, owners)| crate::records::DesignFlangeEdgeWidth { edge, owners })
+            .collect(),
         source: crate::records::DesignEdgeFlangeWidthParameterSource::EdgeWidth,
     };
     if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut multi_scope.payload {
@@ -402,7 +457,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     assert_eq!(
         width,
         SheetMetalFlangeWidth::TwoSidesPerEdge {
-            widths: vec![
+            widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(vec![
                 SheetMetalFlangeTwoSidedWidth {
                     first: cadmpeg_ir::features::Length(30.0),
                     second: cadmpeg_ir::features::Length(15.0),
@@ -411,7 +466,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
                     first: cadmpeg_ir::features::Length(20.0),
                     second: cadmpeg_ir::features::Length(40.0),
                 },
-            ],
+            ])
+            .unwrap(),
         }
     );
 }
@@ -435,18 +491,18 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
         *slot = Some(DesignEdgeFlangeOperation {
             shape: crate::records::DesignEdgeFlangeShape::FullEdge {
-            edges: vec![crate::records::DesignEdgeFlangeEdge {
-                wrapper_record_index: 383,
-                group_record_index: 385,
-                operand_record_index: 388,
-                aggregate_operand_record_index: 407,
-            }],
-            height: DesignEdgeFlangeHeightExtent::ToObject {
-                target_group_record_index: 421,
-                target_operand_record_index: 424,
-                offset_owner_record_index: 430,
-                reference_record_indices: [469, 470],
-            },
+                edges: vec![crate::records::DesignEdgeFlangeEdge {
+                    wrapper_record_index: 383,
+                    group_record_index: 385,
+                    operand_record_index: 388,
+                    aggregate_operand_record_index: 407,
+                }],
+                height: DesignEdgeFlangeHeightExtent::ToObject {
+                    target_group_record_index: 421,
+                    target_operand_record_index: 424,
+                    offset_owner_record_index: 430,
+                    reference_record_indices: [469, 470],
+                },
             },
             aggregate_group_record_index: 404,
             height_owner_record_index: 399,
@@ -484,12 +540,16 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             class_tag: "000".into(),
             record_index,
             source_ordinal: 0,
-            source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None).unwrap(),
+            source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
+                .unwrap(),
             expression: String::new(),
             expression_offset: 0,
             source_kind_offset: 0,
 
-            unit: Some(crate::records::RecordedValue { value: unit.into(), offset: None }),
+            unit: Some(crate::records::RecordedValue {
+                value: unit.into(),
+                offset: None,
+            }),
             name: source_kind.into(),
             name_offset: 0,
             evaluated_value,
@@ -510,7 +570,10 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         record_index: 385,
         byte_offset: 0,
         class_tag: "000".into(),
-        members: vec![crate::records::Located { value: 388, offset: 0 }],
+        members: vec![crate::records::Located {
+            value: 388,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
@@ -536,7 +599,10 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     target_group.id = format!("{stream}:design-construction-operand-group#421");
     target_group.scope_reference_ordinal = 2;
     target_group.record_index = 421;
-    target_group.members = vec![crate::records::Located { value: 424, offset: target_group.members[0].offset }];
+    target_group.members = vec![crate::records::Located {
+        value: 424,
+        offset: target_group.members[0].offset,
+    }];
     target_group.role = 0x0000_0021_0000_0000;
 
     let target_selection = crate::records::DesignEntitySelectionOperand {
@@ -625,16 +691,17 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         crate::records::DesignFeatureKind::EdgeFlange,
         317,
     );
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![318, 320, 323, 328, 331, 334, 336, 339, 343]);
+    scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![318, 320, 323, 328, 331, 334, 336, 339, 343]);
     if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
         *slot = Some(DesignEdgeFlangeOperation {
             shape: crate::records::DesignEdgeFlangeShape::Symmetric {
-            edges: vec![crate::records::DesignEdgeFlangeEdge {
-                wrapper_record_index: 318,
-                group_record_index: 320,
-                operand_record_index: 323,
-                aggregate_operand_record_index: 339,
-            }],
+                edges: vec![crate::records::DesignEdgeFlangeEdge {
+                    wrapper_record_index: 318,
+                    group_record_index: 320,
+                    operand_record_index: 323,
+                    aggregate_operand_record_index: 339,
+                }],
                 owner: 328,
             },
             aggregate_group_record_index: 336,
@@ -757,7 +824,9 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
         1,
     );
     scope.frame_length = 442;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![900, 100, 101, 102, 110, 111, 112, 120, 121, 122]);
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+        900, 100, 101, 102, 110, 111, 112, 120, 121, 122,
+    ]);
     if let crate::records::DesignScopePayload::SurfacePatch(slot) = &mut scope.payload {
         *slot = vec![
             DesignSurfacePatchBoundary {
@@ -797,7 +866,10 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
         record_index,
         byte_offset: 0,
         class_tag: "277".into(),
-        members: vec![crate::records::Located { value: member, offset: 0 }],
+        members: vec![crate::records::Located {
+            value: member,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
@@ -838,7 +910,9 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
         ) if rest == &[SurfaceContinuity::Contact, SurfaceContinuity::Contact])
     ));
 
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 101, 102, 110, 111, 112, 120, 121, 122, 900]);
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+        100, 101, 102, 110, 111, 112, 120, 121, 122, 900,
+    ]);
     let crate::records::DesignScopePayload::SurfacePatch(boundaries) = &mut scope.payload else {
         panic!("SurfacePatch fixture");
     };
@@ -902,12 +976,16 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             class_tag: "000".into(),
             record_index,
             source_ordinal: 0,
-            source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None).unwrap(),
+            source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
+                .unwrap(),
             expression: String::new(),
             expression_offset: 0,
             source_kind_offset: 0,
 
-            unit: Some(crate::records::RecordedValue { value: unit.into(), offset: None }),
+            unit: Some(crate::records::RecordedValue {
+                value: unit.into(),
+                offset: None,
+            }),
             name: source_kind.into(),
             name_offset: 0,
             evaluated_value: value,
@@ -921,7 +999,10 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             record_index,
             byte_offset: 0,
             class_tag: "000".into(),
-            members: vec![crate::records::Located { value: member, offset: 0 }],
+            members: vec![crate::records::Located {
+                value: member,
+                offset: 0,
+            }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame {
                 member_count_offset: 0,

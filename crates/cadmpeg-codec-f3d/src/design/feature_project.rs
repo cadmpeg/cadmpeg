@@ -3606,7 +3606,9 @@ pub(crate) fn project_edge_flange(
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
-            SheetMetalFlangeWidth::TwoSidesPerEdge { widths }
+            SheetMetalFlangeWidth::TwoSidesPerEdge {
+                widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(widths).ok()?,
+            }
         }
         crate::records::DesignEdgeFlangeShape::TwoSides {
             owners: [first, second],

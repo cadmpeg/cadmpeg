@@ -4063,8 +4063,44 @@ pub enum SheetMetalFlangeWidth {
     /// pair shared by all edges.
     TwoSidesPerEdge {
         /// One first-end/second-end pair for each selected edge.
-        widths: Vec<SheetMetalFlangeTwoSidedWidth>,
+        widths: SheetMetalFlangeEdgeWidths,
     },
+}
+
+/// Nonempty source-ordered per-edge flange widths.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct SheetMetalFlangeEdgeWidths(Vec<SheetMetalFlangeTwoSidedWidth>);
+
+impl SheetMetalFlangeEdgeWidths {
+    /// Construct widths for at least one selected source edge group.
+    pub fn new(widths: Vec<SheetMetalFlangeTwoSidedWidth>) -> Result<Self, &'static str> {
+        if widths.is_empty() {
+            Err("sheet-metal flange widths must contain at least one pair")
+        } else {
+            Ok(Self(widths))
+        }
+    }
+
+    /// Width pairs in selected source edge-group order.
+    pub fn as_slice(&self) -> &[SheetMetalFlangeTwoSidedWidth] {
+        &self.0
+    }
+
+    /// Mutable width values. The number of selected groups cannot change.
+    pub fn as_mut_slice(&mut self) -> &mut [SheetMetalFlangeTwoSidedWidth] {
+        &mut self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for SheetMetalFlangeEdgeWidths {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::new(Vec::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
 }
 
 /// Two-sided extent assigned to one selected sheet-metal flange edge.
