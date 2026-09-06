@@ -219,6 +219,111 @@ pub struct NurbsSurface {
     v_periodic: bool,
 }
 
+/// Polynomial tensor-product B-spline surface with a rectangular control grid.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct BsplineSurface {
+    u_degree: u32,
+    v_degree: u32,
+    u_knots: Vec<f64>,
+    v_knots: Vec<f64>,
+    control_points: Vec<Vec<Point3>>,
+}
+
+impl BsplineSurface {
+    /// Build a rectangular grid with full knot vectors for both parameters.
+    pub fn new(
+        u_degree: u32,
+        v_degree: u32,
+        u_knots: Vec<f64>,
+        v_knots: Vec<f64>,
+        control_points: Vec<Vec<Point3>>,
+    ) -> Result<Self, NurbsError> {
+        let u_count = control_points.len();
+        let v_count = control_points.first().map_or(0, Vec::len);
+        for (axis, degree, count, knots) in [
+            ("u", u_degree, u_count, &u_knots),
+            ("v", v_degree, v_count, &v_knots),
+        ] {
+            if count <= degree as usize {
+                return Err(NurbsError(format!(
+                    "control_points {axis} count must exceed degree {degree}, found {count}"
+                )));
+            }
+            require_length(
+                &format!("{axis}_knots"),
+                knots.len(),
+                checked_knot_count(axis, count, degree)?,
+            )?;
+        }
+        for row in &control_points {
+            require_length("control_points row", row.len(), v_count)?;
+        }
+        Ok(Self {
+            u_degree,
+            v_degree,
+            u_knots,
+            v_knots,
+            control_points,
+        })
+    }
+
+    /// Degree in the first parameter.
+    pub const fn u_degree(&self) -> u32 {
+        self.u_degree
+    }
+
+    /// Degree in the second parameter.
+    pub const fn v_degree(&self) -> u32 {
+        self.v_degree
+    }
+
+    /// Full knot vector in the first parameter.
+    pub fn u_knots(&self) -> &[f64] {
+        &self.u_knots
+    }
+
+    /// Full knot vector in the second parameter.
+    pub fn v_knots(&self) -> &[f64] {
+        &self.v_knots
+    }
+
+    /// Rectangular control grid in first-parameter-major order.
+    pub fn control_points(&self) -> &[Vec<Point3>] {
+        &self.control_points
+    }
+
+    /// Mutable pole coordinates. The grid shape cannot change.
+    pub fn control_points_mut(&mut self) -> impl Iterator<Item = &mut Point3> {
+        self.control_points.iter_mut().flatten()
+    }
+}
+
+impl<'de> Deserialize<'de> for BsplineSurface {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            u_degree: u32,
+            v_degree: u32,
+            u_knots: Vec<f64>,
+            v_knots: Vec<f64>,
+            control_points: Vec<Vec<Point3>>,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(
+            wire.u_degree,
+            wire.v_degree,
+            wire.u_knots,
+            wire.v_knots,
+            wire.control_points,
+        )
+        .map_err(serde::de::Error::custom)
+    }
+}
+
 /// Structural error in a NURBS knot or pole carrier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NurbsError(String);

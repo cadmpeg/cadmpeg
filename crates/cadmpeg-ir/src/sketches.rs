@@ -917,18 +917,11 @@ pub enum SpatialSketchGeometry {
         #[serde(flatten)]
         curve: crate::geometry::NurbsCurve,
     },
-    /// Tensor-product NURBS surface embedded in model space.
+    /// Polynomial tensor-product B-spline surface embedded in model space.
     NurbsSurface {
-        /// Degree in the first parameter.
-        u_degree: u32,
-        /// Degree in the second parameter.
-        v_degree: u32,
-        /// Full knot vector in the first parameter.
-        u_knots: Vec<f64>,
-        /// Full knot vector in the second parameter.
-        v_knots: Vec<f64>,
-        /// Rectangular control grid in first-parameter-major order.
-        control_points: Vec<Vec<Point3>>,
+        /// Checked rectangular control grid and full knot vectors.
+        #[serde(flatten)]
+        surface: crate::geometry::BsplineSurface,
     },
     /// Source-native spatial geometry not yet reduced to a neutral family.
     Native {

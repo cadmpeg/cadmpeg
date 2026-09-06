@@ -616,19 +616,22 @@ pub fn project_spatial_sketch_design(
                 neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id),
                 sketch,
                 SpatialSketchGeometry::NurbsSurface {
-                    u_degree: surface.u_degree,
-                    v_degree: surface.v_degree,
-                    u_knots: surface.u_knots.clone(),
-                    v_knots: surface.v_knots.clone(),
-                    control_points: surface
-                        .control_points
-                        .iter()
-                        .map(|row| {
-                            row.iter()
-                                .map(|point| transform_point(placement, point))
-                                .collect()
-                        })
-                        .collect(),
+                    surface: cadmpeg_ir::geometry::BsplineSurface::new(
+                        surface.u_degree,
+                        surface.v_degree,
+                        surface.u_knots.clone(),
+                        surface.v_knots.clone(),
+                        surface
+                            .control_points
+                            .iter()
+                            .map(|row| {
+                                row.iter()
+                                    .map(|point| transform_point(placement, point))
+                                    .collect()
+                            })
+                            .collect(),
+                    )
+                    .ok()?,
                 },
             )
             .with_native_ref(Some(surface.id.clone())),

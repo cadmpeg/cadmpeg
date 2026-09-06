@@ -914,33 +914,15 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            SpatialSketchGeometry::NurbsSurface {
-                u_degree,
-                v_degree,
-                u_knots,
-                v_knots,
-                control_points,
-            } => {
-                let u_count = control_points.len();
-                let v_count = control_points.first().map_or(0, Vec::len);
-                let expected_u_knots = usize::try_from(*u_degree)
-                    .ok()
-                    .and_then(|degree| u_count.checked_add(degree)?.checked_add(1));
-                let expected_v_knots = usize::try_from(*v_degree)
-                    .ok()
-                    .and_then(|degree| v_count.checked_add(degree)?.checked_add(1));
-                if *u_degree == 0
-                    || *v_degree == 0
-                    || u_count <= *u_degree as usize
-                    || v_count <= *v_degree as usize
-                    || control_points.iter().any(|row| row.len() != v_count)
-                    || expected_u_knots != Some(u_knots.len())
-                    || expected_v_knots != Some(v_knots.len())
-                    || u_knots.iter().any(|value| !value.is_finite())
-                    || v_knots.iter().any(|value| !value.is_finite())
-                    || !knots_nondecreasing(u_knots)
-                    || !knots_nondecreasing(v_knots)
-                    || control_points
+            SpatialSketchGeometry::NurbsSurface { surface } => {
+                if surface.u_degree() == 0
+                    || surface.v_degree() == 0
+                    || surface.u_knots().iter().any(|value| !value.is_finite())
+                    || surface.v_knots().iter().any(|value| !value.is_finite())
+                    || !knots_nondecreasing(surface.u_knots())
+                    || !knots_nondecreasing(surface.v_knots())
+                    || surface
+                        .control_points()
                         .iter()
                         .flatten()
                         .any(|point| !finite3(*point))

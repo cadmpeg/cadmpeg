@@ -1494,11 +1494,9 @@ fn scale_spatial_sketch_geometry(geometry: &mut SpatialSketchGeometry, scale: f6
                 scale_point3(point, scale);
             }
         }
-        SpatialSketchGeometry::NurbsSurface { control_points, .. } => {
-            for row in control_points {
-                for point in row {
-                    scale_point3(point, scale);
-                }
+        SpatialSketchGeometry::NurbsSurface { surface } => {
+            for point in surface.control_points_mut() {
+                scale_point3(point, scale);
             }
         }
         SpatialSketchGeometry::Native { .. } => {}

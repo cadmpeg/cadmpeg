@@ -647,14 +647,17 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             surface.clone(),
             sketch.clone(),
             SpatialSketchGeometry::NurbsSurface {
-                u_degree: 1,
-                v_degree: 1,
-                u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![
-                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-                ],
+                surface: crate::geometry::BsplineSurface::new(
+                    1,
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![
+                        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                    ],
+                )
+                .unwrap(),
             },
         ));
     let surface_point =
@@ -1432,4 +1435,32 @@ fn spatial_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
             "{field}"
         );
     }
+}
+
+#[test]
+fn spatial_surface_wire_checks_rectangular_grid_and_full_knots() {
+    use crate::sketches::SpatialSketchGeometry;
+
+    let wire = serde_json::json!({
+        "kind": "nurbs_surface", "u_degree": 1, "v_degree": 1,
+        "u_knots": [0.0, 0.0, 1.0, 1.0], "v_knots": [0.0, 0.0, 1.0, 1.0],
+        "control_points": [
+            [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 0.0, "y": 1.0, "z": 0.0}],
+            [{"x": 1.0, "y": 0.0, "z": 0.0}, {"x": 1.0, "y": 1.0, "z": 0.0}]
+        ]
+    });
+    let geometry: SpatialSketchGeometry = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    for field in ["u_knots", "v_knots", "control_points"] {
+        let mut invalid = wire.clone();
+        invalid[field].as_array_mut().unwrap().pop();
+        assert!(
+            serde_json::from_value::<SpatialSketchGeometry>(invalid).is_err(),
+            "{field}"
+        );
+    }
+    let mut ragged = wire;
+    ragged["control_points"][1].as_array_mut().unwrap().pop();
+    let error = serde_json::from_value::<SpatialSketchGeometry>(ragged).unwrap_err();
+    assert!(error.to_string().contains("control_points row"));
 }

@@ -5741,3 +5741,10 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::sketches::SpatialSketchGeometry::Nurbs"
 reason = "IR-85: use the existing checked NurbsCurve payload to prevent independent knot, pole, and weight cardinalities while preserving the flat JSON."
+
+[[change]]
+commit = "a0894405a0170099e5fe754d8dfa08ee911ed3a3"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::sketches::SpatialSketchGeometry::NurbsSurface"
+reason = "IR-85: use a checked polynomial B-spline surface payload whose rectangular grid and full knot vectors cannot change cardinality independently; preserve the flat JSON fields."
