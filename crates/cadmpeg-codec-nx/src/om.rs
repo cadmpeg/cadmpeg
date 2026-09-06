@@ -15,6 +15,8 @@ pub(crate) mod swp104_state;
 pub(crate) mod scalar;
 use scalar::{ShiftedBinary64, shifted_ieee_f64, is_shifted_ieee_f64_marker};
 pub(crate) mod thru_curve_endings;
+pub(crate) mod thru_curve_controls;
+use thru_curve_controls::ThruCurveControls;
 pub(crate) mod thru_curve_state;
 use thru_curve_state::ThruCurveBranchItems;
 use thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
@@ -2299,7 +2301,7 @@ pub struct ThruCurvePayloadReferenceField {
     /// Nonzero construction discriminator at the payload start.
     pub discriminator: NonZeroU8,
     /// Exact opaque controls between the two reference groups.
-    pub controls: [u8; 9],
+    pub controls: ThruCurveControls,
     /// Three header references followed by six construction references.
     pub references: [PayloadObjectReference; 9],
     /// Nonzero control byte following the reference groups.
@@ -4946,8 +4948,8 @@ pub fn thru_curve_payload_references(
     (record.payload.get(at..at + 2) == Some(&[0x01, 0x08])).then_some(())?;
     at += 2;
     let controls: [u8; 9] = record.payload.get(at..at + 9)?.try_into().ok()?;
-    (controls[8] == 0x07).then_some(())?;
-    at += controls.len();
+    let controls = ThruCurveControls::try_from(controls).ok()?;
+    at += 9;
     for _ in 0..6 {
         references.push(decode_reference(&mut at)?);
     }

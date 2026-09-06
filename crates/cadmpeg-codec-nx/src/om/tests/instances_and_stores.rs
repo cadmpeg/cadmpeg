@@ -508,7 +508,7 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     };
     let field = super::thru_curve_payload_references(record).expect("complete envelope");
     assert_eq!(field.discriminator.get(), 0x13);
-    assert_eq!(field.controls, [2, 3, 3, 4, 1, 1, 1, 1, 7]);
+    assert_eq!(<[u8; 9]>::from(field.controls), [2, 3, 3, 4, 1, 1, 1, 1, 7]);
     assert_eq!(
         field
             .references
@@ -534,7 +534,7 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     })
     .expect("alternate controls");
     assert_eq!(alternate.discriminator.get(), 0x17);
-    assert_eq!(alternate.controls, [7, 3, 3, 4, 1, 2, 4, 1, 7]);
+    assert_eq!(<[u8; 9]>::from(alternate.controls), [7, 3, 3, 4, 1, 2, 4, 1, 7]);
     assert_eq!(alternate.trailing_control.get(), 6);
     assert_eq!(alternate.trailing_value, [0x5d, 0xfc]);
 

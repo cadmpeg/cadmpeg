@@ -15,6 +15,7 @@ use crate::om::swp104_state::Swp104StateLane;
 use crate::om::scalar::ShiftedBinary64;
 use crate::om::branch_items::BranchItems;
 use crate::om::thru_curve_state::ThruCurveBranchItems;
+use crate::om::thru_curve_controls::ThruCurveControls;
 use crate::om::thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
 
 pub(crate) mod datum_plane_header;
@@ -4253,7 +4254,7 @@ pub struct FeatureThruCurveConstructionEnvelope {
     /// Nonzero construction discriminator.
     pub discriminator: NonZeroU8,
     /// Exact opaque controls between the reference groups.
-    pub controls: [u8; 9],
+    pub controls: ThruCurveControls,
     /// Nonzero control following the second reference group.
     pub trailing_control: NonZeroU8,
     /// Exact two-byte value selected by the `a0` marker.
