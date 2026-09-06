@@ -103,8 +103,45 @@ pub(crate) enum NativeClassKind {
 pub(crate) struct NativeObjectClass {
     pub kind: NativeClassKind,
     pub role: FeatureInputClassRole,
-    pub feature: Option<FeatureClass>,
-    pub tree_node: Option<FeatureTreeNodeRole>,
+}
+
+impl NativeObjectClass {
+    pub(crate) fn feature(self) -> Option<FeatureClass> {
+        use NativeClassKind::*;
+        Some(match self.kind {
+            Operation(feature) => feature,
+            Extrusion | SurfaceExtrusion => FeatureClass::Extrude,
+            Fillet => FeatureClass::Fillet,
+            Chamfer => FeatureClass::Chamfer,
+            ProfileFeature => FeatureClass::Sketch,
+            SketchBlockDefinition => FeatureClass::SketchBlockDefinition,
+            SketchBlockInstance => FeatureClass::SketchBlockInstance,
+            ReferencePlane => FeatureClass::ReferencePlane,
+            ReferenceAxis => FeatureClass::ReferenceAxis,
+            Thicken => FeatureClass::Thicken,
+            Sweep | SweepCut | SweepReferenceSurface => FeatureClass::Sweep,
+            Loft | LoftCut | SurfaceLoft => FeatureClass::Loft,
+            Helix => FeatureClass::Helix,
+            HoleWizard => FeatureClass::Hole,
+            Revolution => FeatureClass::Revolve,
+            LinearPattern | CircularPattern | CurvePattern | MirrorPattern => FeatureClass::Pattern,
+            Combine => FeatureClass::Combine,
+            DeleteBody => FeatureClass::DeleteBody,
+            CosmeticThread => FeatureClass::CosmeticThread,
+            PlanarSurface | OriginProfileFeature | TreeNode(_) | Sketch | SketchEntity
+            | SketchRelation(_) | Dimension | LengthParameter | Reference | Auxiliary | Unknown => {
+                return None
+            }
+        })
+    }
+
+    pub(crate) fn tree_node(self) -> Option<FeatureTreeNodeRole> {
+        match self.kind {
+            NativeClassKind::TreeNode(role) => Some(role),
+            NativeClassKind::OriginProfileFeature => Some(FeatureTreeNodeRole::ModelOrigin),
+            _ => None,
+        }
+    }
 }
 
 /// Resolve a serialized class name through the format-wide object taxonomy.
@@ -113,175 +150,38 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         Auxiliary, Dimension, Feature, Native, Parameter, Reference, Sketch, SketchEntity,
     };
 
-    let (kind, role, feature, tree_node) = match name {
-        "moExtrusion_c" | "moICE_c" | "moCut_c" => (
-            NativeClassKind::Extrusion,
-            Feature,
-            Some(FeatureClass::Extrude),
-            None,
-        ),
-        "moExtruRefSurface_c" => (
-            NativeClassKind::SurfaceExtrusion,
-            Feature,
-            Some(FeatureClass::Extrude),
-            None,
-        ),
-        "Fillet_c" => (
-            NativeClassKind::Fillet,
-            Feature,
-            Some(FeatureClass::Fillet),
-            None,
-        ),
-        "Chamfer_c" => (
-            NativeClassKind::Chamfer,
-            Feature,
-            Some(FeatureClass::Chamfer),
-            None,
-        ),
-        "moOriginProfileFeature_c" => (
-            NativeClassKind::OriginProfileFeature,
-            Feature,
-            None,
-            Some(FeatureTreeNodeRole::ModelOrigin),
-        ),
-        "moProfileFeature_c" | "mo3DProfileFeature_c" => (
-            NativeClassKind::ProfileFeature,
-            Feature,
-            Some(FeatureClass::Sketch),
-            None,
-        ),
-        "moSketchBlockDef_c" => (
-            NativeClassKind::SketchBlockDefinition,
-            Feature,
-            Some(FeatureClass::SketchBlockDefinition),
-            None,
-        ),
-        "moSketchBlockInst_c" => (
-            NativeClassKind::SketchBlockInstance,
-            Feature,
-            Some(FeatureClass::SketchBlockInstance),
-            None,
-        ),
-        "moRefPlane_c" => (
-            NativeClassKind::ReferencePlane,
-            Reference,
-            Some(FeatureClass::ReferencePlane),
-            None,
-        ),
-        "moRefAxis_c" => (
-            NativeClassKind::ReferenceAxis,
-            Reference,
-            Some(FeatureClass::ReferenceAxis),
-            None,
-        ),
-        "moThicken_c" => (
-            NativeClassKind::Thicken,
-            Feature,
-            Some(FeatureClass::Thicken),
-            None,
-        ),
-        "moPLine_c" => (
-            NativeClassKind::Operation(FeatureClass::SplitFace),
-            Feature,
-            Some(FeatureClass::SplitFace),
-            None,
-        ),
+    let (kind, role) = match name {
+        "moExtrusion_c" | "moICE_c" | "moCut_c" => (NativeClassKind::Extrusion, Feature),
+        "moExtruRefSurface_c" => (NativeClassKind::SurfaceExtrusion, Feature),
+        "Fillet_c" => (NativeClassKind::Fillet, Feature),
+        "Chamfer_c" => (NativeClassKind::Chamfer, Feature),
+        "moOriginProfileFeature_c" => (NativeClassKind::OriginProfileFeature, Feature),
+        "moProfileFeature_c" | "mo3DProfileFeature_c" => (NativeClassKind::ProfileFeature, Feature),
+        "moSketchBlockDef_c" => (NativeClassKind::SketchBlockDefinition, Feature),
+        "moSketchBlockInst_c" => (NativeClassKind::SketchBlockInstance, Feature),
+        "moRefPlane_c" => (NativeClassKind::ReferencePlane, Reference),
+        "moRefAxis_c" => (NativeClassKind::ReferenceAxis, Reference),
+        "moThicken_c" => (NativeClassKind::Thicken, Feature),
+        "moPLine_c" => (NativeClassKind::Operation(FeatureClass::SplitFace), Feature),
         "moPLineProject_c"
         | "moPLineProjIdRep_c"
         | "moPLineSurfIdRep_c"
-        | "moPerBodyChooserDataWithFileName_c" => {
-            (NativeClassKind::Auxiliary, Auxiliary, None, None)
-        }
-        "moSweep_c" => (
-            NativeClassKind::Sweep,
-            Feature,
-            Some(FeatureClass::Sweep),
-            None,
-        ),
-        "moSweepCut_c" => (
-            NativeClassKind::SweepCut,
-            Feature,
-            Some(FeatureClass::Sweep),
-            None,
-        ),
-        "moSweepRefSurface_c" => (
-            NativeClassKind::SweepReferenceSurface,
-            Feature,
-            Some(FeatureClass::Sweep),
-            None,
-        ),
-        "moBlend_c" => (
-            NativeClassKind::Loft,
-            Feature,
-            Some(FeatureClass::Loft),
-            None,
-        ),
-        "moBlendCut_c" => (
-            NativeClassKind::LoftCut,
-            Feature,
-            Some(FeatureClass::Loft),
-            None,
-        ),
-        "moBlendRefSurface_c" => (
-            NativeClassKind::SurfaceLoft,
-            Feature,
-            Some(FeatureClass::Loft),
-            None,
-        ),
-        "moHelix_c" => (
-            NativeClassKind::Helix,
-            Feature,
-            Some(FeatureClass::Helix),
-            None,
-        ),
-        "moHoleWzd_c" => (
-            NativeClassKind::HoleWizard,
-            Feature,
-            Some(FeatureClass::Hole),
-            None,
-        ),
-        "moRevolution_c" | "moRevCut_c" => (
-            NativeClassKind::Revolution,
-            Feature,
-            Some(FeatureClass::Revolve),
-            None,
-        ),
-        "moLPattern_c" => (
-            NativeClassKind::LinearPattern,
-            Feature,
-            Some(FeatureClass::Pattern),
-            None,
-        ),
-        "moCirPattern_c" => (
-            NativeClassKind::CircularPattern,
-            Feature,
-            Some(FeatureClass::Pattern),
-            None,
-        ),
-        "moCurvePattern_c" => (
-            NativeClassKind::CurvePattern,
-            Feature,
-            Some(FeatureClass::Pattern),
-            None,
-        ),
-        "moMirrorPattern_c" | "moMirrorSolid_c" => (
-            NativeClassKind::MirrorPattern,
-            Feature,
-            Some(FeatureClass::Pattern),
-            None,
-        ),
-        "moCombineBodies_c" => (
-            NativeClassKind::Combine,
-            Feature,
-            Some(FeatureClass::Combine),
-            None,
-        ),
-        "moDeleteBody_c" => (
-            NativeClassKind::DeleteBody,
-            Feature,
-            Some(FeatureClass::DeleteBody),
-            None,
-        ),
+        | "moPerBodyChooserDataWithFileName_c" => (NativeClassKind::Auxiliary, Auxiliary),
+        "moSweep_c" => (NativeClassKind::Sweep, Feature),
+        "moSweepCut_c" => (NativeClassKind::SweepCut, Feature),
+        "moSweepRefSurface_c" => (NativeClassKind::SweepReferenceSurface, Feature),
+        "moBlend_c" => (NativeClassKind::Loft, Feature),
+        "moBlendCut_c" => (NativeClassKind::LoftCut, Feature),
+        "moBlendRefSurface_c" => (NativeClassKind::SurfaceLoft, Feature),
+        "moHelix_c" => (NativeClassKind::Helix, Feature),
+        "moHoleWzd_c" => (NativeClassKind::HoleWizard, Feature),
+        "moRevolution_c" | "moRevCut_c" => (NativeClassKind::Revolution, Feature),
+        "moLPattern_c" => (NativeClassKind::LinearPattern, Feature),
+        "moCirPattern_c" => (NativeClassKind::CircularPattern, Feature),
+        "moCurvePattern_c" => (NativeClassKind::CurvePattern, Feature),
+        "moMirrorPattern_c" | "moMirrorSolid_c" => (NativeClassKind::MirrorPattern, Feature),
+        "moCombineBodies_c" => (NativeClassKind::Combine, Feature),
+        "moDeleteBody_c" => (NativeClassKind::DeleteBody, Feature),
         "moDome_c" => operation_class(FeatureClass::Dome),
         "moRib_c" => operation_class(FeatureClass::Rib),
         "moShell_c" => operation_class(FeatureClass::Shell),
@@ -293,28 +193,20 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         "moExtendRefSurface_c" => operation_class(FeatureClass::ExtendSurface),
         "moRuledSrfFromEdge_c" => operation_class(FeatureClass::RuledSurface),
         "moSurfCut_c" => operation_class(FeatureClass::CutWithSurface),
-        "moPlanarSurface_c" => (NativeClassKind::PlanarSurface, Feature, None, None),
+        "moPlanarSurface_c" => (NativeClassKind::PlanarSurface, Feature),
         "moDelFace_c" => operation_class(FeatureClass::DeleteFace),
         "moMoveFace_c" => operation_class(FeatureClass::MoveFace),
         "moMoveCopyBody_c" => operation_class(FeatureClass::MoveBody),
-        "VarFillet_c" => (
-            NativeClassKind::Fillet,
-            Feature,
-            Some(FeatureClass::Fillet),
-            None,
-        ),
+        "VarFillet_c" => (NativeClassKind::Fillet, Feature),
         "moRefPoint_c" => operation_class(FeatureClass::ReferencePoint),
         "moCoordSys_c" => operation_class(FeatureClass::CoordinateSystem),
 
         "moDetailCabinet_c" => tree_node_class(FeatureTreeNodeRole::Annotations),
         "moDetailFolder_c" => tree_node_class(FeatureTreeNodeRole::Details),
         "moCommentsFolder_c" => tree_node_class(FeatureTreeNodeRole::Comments),
-        "moCosmeticThread_c" | "moDerivedCosmeticThread_c" => (
-            NativeClassKind::CosmeticThread,
-            Feature,
-            Some(FeatureClass::CosmeticThread),
-            None,
-        ),
+        "moCosmeticThread_c" | "moDerivedCosmeticThread_c" => {
+            (NativeClassKind::CosmeticThread, Feature)
+        }
         "moDocsFolder_c" => tree_node_class(FeatureTreeNodeRole::DesignBinder),
         "moEnvFolder_c" => tree_node_class(FeatureTreeNodeRole::LightsAndCameras),
         "moEqnFolder_c" => tree_node_class(FeatureTreeNodeRole::Equations),
@@ -334,9 +226,9 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         "moPointLight_c" => tree_node_class(FeatureTreeNodeRole::PointLight),
         "moSpotLight_c" => tree_node_class(FeatureTreeNodeRole::SpotLight),
 
-        "sgSketch" => (NativeClassKind::Sketch, Sketch, None, None),
+        "sgSketch" => (NativeClassKind::Sketch, Sketch),
         "sgArcHandle" | "sgEntHandle" | "sgLineHandle" | "sgPointHandle" | "sgSplineHandle" => {
-            (NativeClassKind::SketchEntity, SketchEntity, None, None)
+            (NativeClassKind::SketchEntity, SketchEntity)
         }
         "sgLLDist" => relation_class(FeatureInputRelationFamily::LineLineDistance),
         "sgPntPntDist" => relation_class(FeatureInputRelationFamily::PointPointDistance),
@@ -364,11 +256,11 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         | "moDisplayLinearPattCntDim_c"
         | "moNumberDim_c"
         | "moScalerDim_c"
-        | "AngleDim_c" => (NativeClassKind::Dimension, Dimension, None, None),
+        | "AngleDim_c" => (NativeClassKind::Dimension, Dimension),
         "sgDimEntityHelpData_c" | "sgLinearPattCntDim" | "sgOffsetDim" | "sgSkOffsetDim" => {
-            (NativeClassKind::Dimension, Dimension, None, None)
+            (NativeClassKind::Dimension, Dimension)
         }
-        "moLengthParameter_c" => (NativeClassKind::LengthParameter, Parameter, None, None),
+        "moLengthParameter_c" => (NativeClassKind::LengthParameter, Parameter),
         "moCompEdge_c"
         | "moCompFace_c"
         | "moCompFeature_c"
@@ -386,7 +278,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         | "moLineRef_w"
         | "moSingleFaceRef_w"
         | "moSolidRef_w"
-        | "moVertexRef_c" => (NativeClassKind::Reference, Reference, None, None),
+        | "moVertexRef_c" => (NativeClassKind::Reference, Reference),
         "moBBoxCenterData_c"
         | "moDefaultRefPlnData_c"
         | "moEndFace3IntSurfIdRep_c"
@@ -408,62 +300,30 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         | "moSurfaceIdRep_c"
         | "moMirPatternSurfIdRep_c"
         | "moWzdHoleSurfIdRep_c"
-        | "sgExtEnt_c" => (NativeClassKind::Auxiliary, Auxiliary, None, None),
-        _ => (NativeClassKind::Unknown, Native, None, None),
+        | "sgExtEnt_c" => (NativeClassKind::Auxiliary, Auxiliary),
+        _ => (NativeClassKind::Unknown, Native),
     };
-    NativeObjectClass {
-        kind,
-        role,
-        feature,
-        tree_node,
-    }
+    NativeObjectClass { kind, role }
 }
 
-fn tree_node_class(
-    role: FeatureTreeNodeRole,
-) -> (
-    NativeClassKind,
-    FeatureInputClassRole,
-    Option<FeatureClass>,
-    Option<FeatureTreeNodeRole>,
-) {
+fn tree_node_class(role: FeatureTreeNodeRole) -> (NativeClassKind, FeatureInputClassRole) {
     (
         NativeClassKind::TreeNode(role),
         FeatureInputClassRole::Auxiliary,
-        None,
-        Some(role),
     )
 }
 
-fn operation_class(
-    feature: FeatureClass,
-) -> (
-    NativeClassKind,
-    FeatureInputClassRole,
-    Option<FeatureClass>,
-    Option<FeatureTreeNodeRole>,
-) {
+fn operation_class(feature: FeatureClass) -> (NativeClassKind, FeatureInputClassRole) {
     (
         NativeClassKind::Operation(feature),
         FeatureInputClassRole::Feature,
-        Some(feature),
-        None,
     )
 }
 
-fn relation_class(
-    family: FeatureInputRelationFamily,
-) -> (
-    NativeClassKind,
-    FeatureInputClassRole,
-    Option<FeatureClass>,
-    Option<FeatureTreeNodeRole>,
-) {
+fn relation_class(family: FeatureInputRelationFamily) -> (NativeClassKind, FeatureInputClassRole) {
     (
         NativeClassKind::SketchRelation(family),
         FeatureInputClassRole::SketchConstraint,
-        None,
-        None,
     )
 }
 
@@ -542,7 +402,7 @@ pub(crate) fn principal_plane_with_siblings(
 }
 
 fn classify_input_class(class: Option<&str>) -> Option<FeatureClass> {
-    native_object_class(class?).feature
+    native_object_class(class?).feature()
 }
 
 pub(crate) fn classify_xml_element(tag: &str) -> Option<FeatureClass> {
@@ -783,15 +643,15 @@ mod tests {
             let class = native_object_class(name);
             assert_eq!(class.kind, kind, "{name}");
             assert_eq!(class.role, FeatureInputClassRole::Feature, "{name}");
-            assert_eq!(class.feature, Some(feature), "{name}");
-            assert_eq!(class.tree_node, None, "{name}");
+            assert_eq!(class.feature(), Some(feature), "{name}");
+            assert_eq!(class.tree_node(), None, "{name}");
         }
 
         let planar_surface = native_object_class("moPlanarSurface_c");
         assert_eq!(planar_surface.kind, NativeClassKind::PlanarSurface);
         assert_eq!(planar_surface.role, FeatureInputClassRole::Feature);
-        assert_eq!(planar_surface.feature, None);
-        assert_eq!(planar_surface.tree_node, None);
+        assert_eq!(planar_surface.feature(), None);
+        assert_eq!(planar_surface.tree_node(), None);
     }
 
     #[test]
@@ -835,23 +695,23 @@ mod tests {
         let plane = native_object_class("moRefPlane_c");
         assert_eq!(plane.kind, NativeClassKind::ReferencePlane);
         assert_eq!(plane.role, FeatureInputClassRole::Reference);
-        assert_eq!(plane.feature, Some(FeatureClass::ReferencePlane));
-        assert_eq!(plane.tree_node, None);
+        assert_eq!(plane.feature(), Some(FeatureClass::ReferencePlane));
+        assert_eq!(plane.tree_node(), None);
 
         let folder = native_object_class("moSolidBodyFolder_c");
         assert_eq!(folder.role, FeatureInputClassRole::Auxiliary);
-        assert_eq!(folder.feature, None);
-        assert_eq!(folder.tree_node, Some(FeatureTreeNodeRole::SolidBodies));
+        assert_eq!(folder.feature(), None);
+        assert_eq!(folder.tree_node(), Some(FeatureTreeNodeRole::SolidBodies));
 
         let markup = native_object_class("moInkMarkupFolder_c");
         assert_eq!(markup.role, FeatureInputClassRole::Auxiliary);
-        assert_eq!(markup.tree_node, Some(FeatureTreeNodeRole::Markups));
+        assert_eq!(markup.tree_node(), Some(FeatureTreeNodeRole::Markups));
 
         for class in ["moMirPatternSurfIdRep_c", "moWzdHoleSurfIdRep_c"] {
             let output = native_object_class(class);
             assert_eq!(output.role, FeatureInputClassRole::Auxiliary, "{class}");
-            assert_eq!(output.feature, None, "{class}");
-            assert_eq!(output.tree_node, None, "{class}");
+            assert_eq!(output.feature(), None, "{class}");
+            assert_eq!(output.tree_node(), None, "{class}");
         }
 
         for class in ["moCosmeticThread_c", "moDerivedCosmeticThread_c"] {
@@ -859,11 +719,11 @@ mod tests {
             assert_eq!(thread.kind, NativeClassKind::CosmeticThread, "{class}");
             assert_eq!(thread.role, FeatureInputClassRole::Feature, "{class}");
             assert_eq!(
-                thread.feature,
+                thread.feature(),
                 Some(FeatureClass::CosmeticThread),
                 "{class}"
             );
-            assert_eq!(thread.tree_node, None, "{class}");
+            assert_eq!(thread.tree_node(), None, "{class}");
         }
 
         for (class, role) in [
@@ -878,15 +738,15 @@ mod tests {
         ] {
             let folder = native_object_class(class);
             assert_eq!(folder.role, FeatureInputClassRole::Auxiliary, "{class}");
-            assert_eq!(folder.feature, None, "{class}");
-            assert_eq!(folder.tree_node, Some(role), "{class}");
+            assert_eq!(folder.feature(), None, "{class}");
+            assert_eq!(folder.tree_node(), Some(role), "{class}");
         }
 
         let origin = native_object_class("moOriginProfileFeature_c");
         assert_eq!(origin.kind, NativeClassKind::OriginProfileFeature);
         assert_eq!(origin.role, FeatureInputClassRole::Feature);
-        assert_eq!(origin.feature, None);
-        assert_eq!(origin.tree_node, Some(FeatureTreeNodeRole::ModelOrigin));
+        assert_eq!(origin.feature(), None);
+        assert_eq!(origin.tree_node(), Some(FeatureTreeNodeRole::ModelOrigin));
 
         for (name, kind, feature) in [
             (
@@ -903,7 +763,7 @@ mod tests {
             let block = native_object_class(name);
             assert_eq!(block.kind, kind, "{name}");
             assert_eq!(block.role, FeatureInputClassRole::Feature, "{name}");
-            assert_eq!(block.feature, Some(feature), "{name}");
+            assert_eq!(block.feature(), Some(feature), "{name}");
         }
 
         for name in [
@@ -996,7 +856,7 @@ mod tests {
         ] {
             let class = native_object_class(name);
             assert!(
-                class.feature.is_some() || class.tree_node.is_some(),
+                class.feature().is_some() || class.tree_node().is_some(),
                 "missing projection role for {name}"
             );
             assert_ne!(

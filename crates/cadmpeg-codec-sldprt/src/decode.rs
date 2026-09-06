@@ -1767,7 +1767,7 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
                 source_counts.get(&id).copied() == Some(1)
                     && (binding_counts.get(&(id, class.name.as_str())).copied() == Some(1)
                         || native_object_class(&class.name)
-                            .feature
+                            .feature()
                             .is_some_and(|expected| {
                                 native
                                     .feature_histories

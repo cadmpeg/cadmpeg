@@ -183,7 +183,7 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
         .into_iter()
         .filter(|class| {
             matches!(
-                crate::classification::native_object_class(&class.name).tree_node,
+                crate::classification::native_object_class(&class.name).tree_node(),
                 Some(
                     cadmpeg_ir::features::FeatureTreeNodeRole::AmbientLight
                         | cadmpeg_ir::features::FeatureTreeNodeRole::DirectionalLight
