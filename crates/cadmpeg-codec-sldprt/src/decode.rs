@@ -2941,7 +2941,7 @@ fn build_geometry_ir(
                 .clone()
                 .unwrap_or_else(|| format!("block@{}", source_block.offset)),
             source_block.offset as u64,
-            source_block.family,
+            source_block.family.label(),
             Exactness::ByteExact,
         );
         unknowns.push(UnknownRecord::retained(
@@ -2958,7 +2958,7 @@ fn build_geometry_ir(
             id.clone(),
             source_stream.path.clone(),
             0,
-            container::payload_family(&source_stream.payload),
+            container::payload_family(&source_stream.payload).label(),
             Exactness::ByteExact,
         );
         unknowns.push(UnknownRecord::retained(
@@ -3072,7 +3072,7 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
     for section in scan.sections() {
         let payload = section.payload();
         match container::payload_family(payload) {
-            "png-preview" => {
+            container::PayloadFamily::PngPreview => {
                 if payload.get(8..16) != Some(&[0, 0, 0, 13, b'I', b'H', b'D', b'R']) {
                     continue;
                 }
@@ -3095,7 +3095,7 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
                 attributes.insert(format!("{prefix}_interlace"), fields[4].to_string());
                 png_index += 1;
             }
-            "bmp-thumbnail" => {
+            container::PayloadFamily::BmpThumbnail => {
                 let (Some(width), Some(height), Some(image_size)) = (
                     View::i32_le_at(payload, 8),
                     View::i32_le_at(payload, 12),
@@ -4497,7 +4497,7 @@ fn build_container_report(
     let parasolid_sources = scan
         .blocks
         .iter()
-        .filter(|b| b.family == "parasolid")
+        .filter(|b| b.family == container::PayloadFamily::Parasolid)
         .count()
         + scan
             .compound_streams

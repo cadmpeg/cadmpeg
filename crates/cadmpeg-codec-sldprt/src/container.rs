@@ -33,32 +33,61 @@ pub const MARKER: [u8; 6] = block_hdr::MARKER_VALUE;
 /// from driving an unbounded allocation. Real part streams sit far below this.
 const MAX_UNCOMP: usize = 512 * 1024 * 1024;
 
+/// Classified decompressed payload signature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PayloadFamily {
+    Parasolid,
+    PngPreview,
+    BmpThumbnail,
+    Ole2,
+    Tessellation,
+    SwObjects,
+    Unqlite,
+    Xml,
+    Unknown,
+}
+
+impl PayloadFamily {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Parasolid => "parasolid",
+            Self::PngPreview => "png-preview",
+            Self::BmpThumbnail => "bmp-thumbnail",
+            Self::Ole2 => "ole2",
+            Self::Tessellation => "tessellation",
+            Self::SwObjects => "sw-objects",
+            Self::Unqlite => "unqlite",
+            Self::Xml => "xml",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 /// Classify a decompressed block payload by signature.
 ///
-/// The returned labels form the `family` values exposed by [`Block`] and
-/// [`summarize`]. Unknown signatures return `"unknown"`.
-pub fn payload_family(payload: &[u8]) -> &'static str {
+/// Unknown signatures return [`PayloadFamily::Unknown`].
+pub fn payload_family(payload: &[u8]) -> PayloadFamily {
     if payload.starts_with(&[0x89, 0x50, 0x4e, 0x47]) {
-        "png-preview"
+        PayloadFamily::PngPreview
     } else if is_bmp_thumbnail(payload) {
-        "bmp-thumbnail"
+        PayloadFamily::BmpThumbnail
     } else if payload.starts_with(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]) {
-        "ole2"
+        PayloadFamily::Ole2
     } else if contains(payload, b"uoTempBodyTessData_c")
         || contains(payload, b"uoTempFaceTessData_c")
     {
-        "tessellation"
+        PayloadFamily::Tessellation
     } else if payload.starts_with(&[0xff, 0xff, 0x01, 0x00]) {
-        "sw-objects"
+        PayloadFamily::SwObjects
     } else if payload.starts_with(b"unqlite") {
-        "unqlite"
+        PayloadFamily::Unqlite
     } else if payload.starts_with(b"<?xml")
         || payload.starts_with(&[0xff, 0xfe])
         || (payload.first() == Some(&0x86) && contains(&payload[..payload.len().min(64)], b"<"))
     {
-        "xml"
+        PayloadFamily::Xml
     } else {
-        "unknown"
+        PayloadFamily::Unknown
     }
 }
 
@@ -96,16 +125,21 @@ pub struct Block {
     pub type_id: u32,
     /// Compressed payload length.
     pub comp_sz: u32,
-    /// Declared decompressed length, equal to `payload.len()`.
-    pub uncomp_sz: u32,
     /// OPC section name decoded from the preamble, when printable.
     pub section: Option<String>,
-    /// Payload-family label from [`payload_family`], or `"parasolid"`.
-    pub family: &'static str,
+    /// Payload family from its signature or extracted Parasolid streams.
+    pub family: PayloadFamily,
     /// The decompressed payload bytes.
     pub payload: Vec<u8>,
     /// Every located and header-validated Parasolid stream carried by this block.
     pub ps_streams: Vec<crate::parasolid::ExtractedStream>,
+}
+
+impl Block {
+    /// Decompressed payload length.
+    pub fn uncomp_sz(&self) -> usize {
+        self.payload.len()
+    }
 }
 
 /// One tail-directory entry naming a section.
@@ -509,10 +543,9 @@ struct RawBlock {
     offset: usize,
     type_id: u32,
     comp_sz: u32,
-    uncomp_sz: u32,
     preamble_len: usize,
     section: Option<String>,
-    family: &'static str,
+    family: PayloadFamily,
     payload: Vec<u8>,
     ps_streams: Vec<crate::parasolid::ExtractedStream>,
 }
@@ -523,7 +556,6 @@ impl RawBlock {
             offset: self.offset,
             type_id: self.type_id,
             comp_sz: self.comp_sz,
-            uncomp_sz: self.uncomp_sz,
             section: self.section,
             family: self.family,
             payload: self.payload,
@@ -595,14 +627,13 @@ fn block_from_inflated(
     let family = if ps_streams.is_empty() {
         payload_family(&inflated)
     } else {
-        "parasolid"
+        PayloadFamily::Parasolid
     };
 
     Some(RawBlock {
         offset: off,
         type_id: frame.type_id,
         comp_sz: frame.comp_sz,
-        uncomp_sz: frame.uncomp_sz,
         preamble_len: frame.pre_sz as usize,
         section,
         family,
@@ -718,7 +749,7 @@ pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSumm
         let mut attributes = BTreeMap::new();
         attributes.insert("offset".to_string(), b.offset.to_string());
         attributes.insert("type_id".to_string(), format!("0x{:08x}", b.type_id));
-        attributes.insert("family".to_string(), b.family.to_string());
+        attributes.insert("family".to_string(), b.family.label().to_string());
         attributes.insert("sha256".to_string(), sha256_hex(&b.payload));
         if let Some(stream) = b.ps_streams.first() {
             attributes.insert("parasolid_schema".to_string(), stream.header.schema.clone());
@@ -735,7 +766,7 @@ pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSumm
             role: ContainerRole::Block,
             compression: EntryCompression::Deflate,
             compressed_size: b.comp_sz as u64,
-            uncompressed_size: b.uncomp_sz as u64,
+            uncompressed_size: b.uncomp_sz() as u64,
             attributes,
         });
     }
@@ -774,7 +805,7 @@ pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSumm
         attributes.insert("sha256".to_string(), sha256_hex(&stream.payload));
         attributes.insert(
             "family".to_string(),
-            payload_family(&stream.payload).to_string(),
+            payload_family(&stream.payload).label().to_string(),
         );
         entries.push(ContainerEntry {
             name: stream.path.clone(),

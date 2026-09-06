@@ -115,11 +115,11 @@ fn scan_classifies_blocks_cells_and_directory() {
 
     let png = &scan.blocks[0];
     assert_eq!(png.section.as_deref(), Some("PreviewPNG"));
-    assert_eq!(png.family, "png-preview");
+    assert_eq!(png.family, container::PayloadFamily::PngPreview);
 
     let ps = &scan.blocks[1];
     assert_eq!(ps.section.as_deref(), Some("Contents/Config-0-Partition"));
-    assert_eq!(ps.family, "parasolid");
+    assert_eq!(ps.family, container::PayloadFamily::Parasolid);
 
     assert_eq!(scan.cache_cells[0].name, "Contents/DisplayLists");
     assert_eq!(scan.cache_cells[0].logical_len, 90);

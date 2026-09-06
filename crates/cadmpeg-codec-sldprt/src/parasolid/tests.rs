@@ -47,7 +47,7 @@ fn parasolid_stream_header_is_parsed() {
     let container::Section::Block(block) = site.section else {
         panic!("synthetic native block selected as compound stream");
     };
-    assert_eq!(block.family, "parasolid");
+    assert_eq!(block.family, container::PayloadFamily::Parasolid);
     assert!(crate::parasolid::is_body_stream(site.header));
 }
 

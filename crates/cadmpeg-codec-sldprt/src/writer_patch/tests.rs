@@ -389,15 +389,18 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         .unwrap();
     let mut directory = make_directory_entry(
         partition.type_id,
-        partition.uncomp_sz,
+        partition.uncomp_sz().try_into().unwrap(),
         "Contents/Config-0-Partition",
     );
     directory[26] = 0xab;
     let trailer = directory.len() - 6;
     directory[trailer..trailer + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
     source.extend(directory);
-    let mut directory =
-        make_directory_entry(keywords.type_id, keywords.uncomp_sz, "Contents/Keywords");
+    let mut directory = make_directory_entry(
+        keywords.type_id,
+        keywords.uncomp_sz().try_into().unwrap(),
+        "Contents/Keywords",
+    );
     directory[26] = 0xcd;
     let trailer = directory.len() - 6;
     directory[trailer..trailer + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);

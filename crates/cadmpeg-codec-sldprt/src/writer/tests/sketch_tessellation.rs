@@ -619,7 +619,9 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
             assert_eq!(block.type_id, 0x77);
         }
         assert!(scan.directory.iter().any(|entry| {
-            entry.name == section && entry.size == block.uncomp_sz && entry.type_id == block.type_id
+            entry.name == section
+                && entry.size as usize == block.uncomp_sz()
+                && entry.type_id == block.type_id
         }));
     }
 }

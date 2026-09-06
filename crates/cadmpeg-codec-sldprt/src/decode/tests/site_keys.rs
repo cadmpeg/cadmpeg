@@ -10,9 +10,8 @@ fn site_keys_use_outer_container_identity() {
         offset: 100,
         type_id: 0,
         comp_sz: 0,
-        uncomp_sz: 0,
         section: Some("Contents/Config-0-Partition".into()),
-        family: "parasolid",
+        family: crate::container::PayloadFamily::Parasolid,
         payload: Vec::new(),
         ps_streams: Vec::new(),
     };
