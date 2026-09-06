@@ -11895,7 +11895,7 @@ pub(crate) fn data_block_object_frame_id(data_block: &str, ordinal: usize) -> St
 }
 
 fn unique_offset_data_block(
-    indexed: &[(&crate::container::DirEntry, crate::om::IndexedSection<'_>)],
+    indexed: &[(crate::container::entry_ref::EntryRef<'_>, crate::om::IndexedSection<'_>)],
     object_index: u32,
 ) -> Option<String> {
     let section_ordinal = unique_offset_data_store(indexed, &[object_index])?;
@@ -11905,7 +11905,7 @@ fn unique_offset_data_block(
 }
 
 fn unique_offset_data_store(
-    indexed: &[(&crate::container::DirEntry, crate::om::IndexedSection<'_>)],
+    indexed: &[(crate::container::entry_ref::EntryRef<'_>, crate::om::IndexedSection<'_>)],
     object_indices: &[u32],
 ) -> Option<usize> {
     if object_indices.is_empty() || object_indices.contains(&0) {

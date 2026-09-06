@@ -3699,11 +3699,7 @@ fn xml_stream_text(payload: &[u8]) -> Option<&str> {
 pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
     let mut definitions = BTreeMap::new();
     for (entry, section) in container.om_sections() {
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("OM entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.types.iter().cloned().enumerate() {
             definitions.insert(
@@ -3722,11 +3718,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
         }
     }
     for (entry, section) in container.indexed_om_sections() {
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("indexed entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.types.iter().cloned().enumerate() {
@@ -3771,11 +3763,7 @@ fn registry_layout(suffix: &[u8]) -> Option<RegistryLayout<'_>> {
 pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
     let mut definitions = BTreeMap::new();
     for (entry, section) in container.om_sections() {
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("OM entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
             definitions.insert(
@@ -3794,11 +3782,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
         }
     }
     for (entry, section) in container.indexed_om_sections() {
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("indexed entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
@@ -4147,13 +4131,13 @@ pub fn data_block_control_class_references(
             for definition in container
                 .om_sections()
                 .into_iter()
-                .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
+                .filter(|(candidate, _)| candidate.index() == entry.index())
                 .flat_map(|(_, section)| section.types.iter().cloned().collect::<Vec<_>>())
                 .chain(
                     container
                         .indexed_om_sections()
                         .into_iter()
-                        .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
+                        .filter(|(candidate, _)| candidate.index() == entry.index())
                         .flat_map(|(_, section)| {
                             std::sync::Arc::as_ref(&section.types).to_owned()
                         }),
@@ -4166,11 +4150,7 @@ pub fn data_block_control_class_references(
             else {
                 return Vec::new();
             };
-            let entry_index = container
-                .entries
-                .iter()
-                .position(|candidate| std::ptr::eq(candidate, entry))
-                .expect("indexed entry belongs to container");
+            let entry_index = entry.index();
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             ordinals
@@ -4749,11 +4729,7 @@ pub fn rm_creation_display_data_relations(
         let Ok(class_ordinal) = u32::try_from(class_ordinal) else {
             continue;
         };
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("OM entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let source_base = entry_offset + record_area_offset as u64;
         let class_definition = format!("nx:om-entry-{entry_index}:class#{}", definition.offset);
@@ -4854,11 +4830,7 @@ pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<Par
         let [table] = parsed_tables.as_slice() else {
             continue;
         };
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("indexed entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let source_base = entry_offset + storage_offset as u64;
         let table_id = format!("nx:part-color-tables:table#{section_ordinal}");

@@ -19,6 +19,8 @@ fn unique_offset_data_store_rejects_a_second_matching_section() {
         region: Region::Header,
         file_span: None,
     };
+    let entries = [entry];
+    let entry = crate::container::entry_ref::EntryRef::new(&entries, 0).unwrap();
     let section = || IndexedSection {
         base: 0,
         entity_index_offset: 0,
@@ -41,10 +43,10 @@ fn unique_offset_data_store_rejects_a_second_matching_section() {
     let second = section();
     let single = section();
     assert_eq!(
-        super::unique_offset_data_store(&[(&entry, single)], &[1]),
+        super::unique_offset_data_store(&[(entry, single)], &[1]),
         Some(0)
     );
-    let indexed = [(&entry, first), (&entry, second)];
+    let indexed = [(entry, first), (entry, second)];
 
     assert_eq!(super::unique_offset_data_store(&indexed, &[1]), None);
 }

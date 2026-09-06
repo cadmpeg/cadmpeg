@@ -12,6 +12,8 @@
 use cadmpeg_core::container::ContainerRole;
 
 pub(crate) mod membership;
+pub(crate) mod entry_ref;
+use entry_ref::EntryRef;
 use membership::ObjectIdMembers;
 
 use std::borrow::Cow;
@@ -343,7 +345,7 @@ impl<'a> Container<'a> {
     }
 
     /// Locate independently size-framed NX object-model sections.
-    pub fn om_sections(&self) -> Vec<(&DirEntry, crate::om::Section<'_>)> {
+    pub fn om_sections(&self) -> Vec<(EntryRef<'_>, crate::om::Section<'_>)> {
         let framed_cache = self.om_section_cache.get_or_init(|| match &self.data {
             Cow::Borrowed(bytes) => {
                 let bytes: &'a [u8] = bytes;
@@ -362,20 +364,19 @@ impl<'a> Container<'a> {
             FramedSectionCache::Borrowed { sections } => sections
                 .iter()
                 .filter_map(|(entry_index, section)| {
-                    self.entries
-                        .get(*entry_index)
+                    EntryRef::new(&self.entries, *entry_index)
                         .map(|entry| (entry, section.clone()))
                 })
                 .collect(),
             FramedSectionCache::Owned { layouts } => layouts
                 .iter()
-                .filter_map(|(entry_index, layout)| self.entries.get(*entry_index).map(|entry| (entry, layout.materialize())))
+                .filter_map(|(entry_index, layout)| EntryRef::new(&self.entries, *entry_index).map(|entry| (entry, layout.materialize())))
                 .collect(),
         }
     }
 
     /// Locate indexed NX object-model sections in catalogued file entries.
-    pub fn indexed_om_sections(&self) -> Vec<(&DirEntry, crate::om::IndexedSection<'_>)> {
+    pub fn indexed_om_sections(&self) -> Vec<(EntryRef<'_>, crate::om::IndexedSection<'_>)> {
         let cache = self.indexed_section_layouts.get_or_init(|| {
             match &self.data {
                 Cow::Borrowed(bytes) => {
@@ -417,14 +418,13 @@ impl<'a> Container<'a> {
             IndexedSectionCache::Borrowed { sections, .. } => sections
                 .iter()
                 .filter_map(|(entry_index, section)| {
-                    self.entries
-                        .get(*entry_index)
+                    EntryRef::new(&self.entries, *entry_index)
                         .map(|entry| (entry, section.clone()))
                 })
                 .collect(),
             IndexedSectionCache::Owned { layouts } => layouts
                 .iter()
-                .filter_map(|(entry_index, layout)| self.entries.get(*entry_index).map(|entry| (entry, layout.materialize())))
+                .filter_map(|(entry_index, layout)| EntryRef::new(&self.entries, *entry_index).map(|entry| (entry, layout.materialize())))
                 .collect(),
         }
     }
