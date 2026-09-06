@@ -3154,21 +3154,71 @@ pub struct FeaturePointConstructionHeader {
 
 /// Exact cross-block scalar lane selected by a point-construction header.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    from = "FeaturePointConstructionScalarLaneWire",
+    into = "FeaturePointConstructionScalarLaneWire"
+)]
 pub struct FeaturePointConstructionScalarLane {
-    /// Globally unique point-construction scalar-lane identity.
     pub id: String,
-    /// Owning `POINT` operation label.
     pub operation_label: String,
-    /// Header selecting this lane.
     pub construction_header: String,
-    /// Preceding and target data blocks in byte order.
     pub data_blocks: [String; 2],
+    pub values: [FeatureBinary64ScalarToken; 6],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FeatureBinary64ScalarToken {
+    pub value: f64,
+    pub raw: [u8; 8],
+    pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeaturePointConstructionScalarLaneWire {
+    /// Globally unique point-construction scalar-lane identity.
+    id: String,
+    /// Owning `POINT` operation label.
+    operation_label: String,
+    /// Header selecting this lane.
+    construction_header: String,
+    /// Preceding and target data blocks in byte order.
+    data_blocks: [String; 2],
     /// Six finite scalar values in byte order.
-    pub values: [f64; 6],
+    values: [f64; 6],
     /// Exact shifted-binary64 encodings in byte order.
-    pub raw_values: [[u8; 8]; 6],
+    raw_values: [[u8; 8]; 6],
     /// Absolute file offsets of the six scalar markers.
-    pub source_offsets: [u64; 6],
+    source_offsets: [u64; 6],
+}
+
+impl From<FeaturePointConstructionScalarLane> for FeaturePointConstructionScalarLaneWire {
+    fn from(lane: FeaturePointConstructionScalarLane) -> Self {
+        Self {
+            id: lane.id,
+            operation_label: lane.operation_label,
+            construction_header: lane.construction_header,
+            data_blocks: lane.data_blocks,
+            values: lane.values.map(|token| token.value),
+            raw_values: lane.values.map(|token| token.raw),
+            source_offsets: lane.values.map(|token| token.source_offset),
+        }
+    }
+}
+
+impl From<FeaturePointConstructionScalarLaneWire> for FeaturePointConstructionScalarLane {
+    fn from(wire: FeaturePointConstructionScalarLaneWire) -> Self {
+        Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            construction_header: wire.construction_header,
+            data_blocks: wire.data_blocks,
+            values: std::array::from_fn(|slot| FeatureBinary64ScalarToken {
+                value: wire.values[slot],
+                raw: wire.raw_values[slot],
+                source_offset: wire.source_offsets[slot],
+            }),
+        }
+    }
 }
 
 /// Ordered construction reference carried by a bounded draft-feature payload.
@@ -9230,9 +9280,11 @@ pub fn feature_point_construction_scalar_lanes(
                 ),
                 format!("nx:om-data-blocks-{section_ordinal}:block#{target_ordinal}"),
             ],
-            values: lane.values,
-            raw_values: lane.raw_values,
-            source_offsets,
+            values: std::array::from_fn(|slot| FeatureBinary64ScalarToken {
+                value: lane.values[slot],
+                raw: lane.raw_values[slot],
+                source_offset: source_offsets[slot],
+            }),
         });
     }
     lanes
