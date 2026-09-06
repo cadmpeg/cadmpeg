@@ -92,10 +92,12 @@ fn sketch_points_require_owned_finite_scalar_fields() {
         payload_start_offset: 0,
         payload_end_offset: 100,
     };
-    let scalar = |id: &str, value: f64| FeatureSketchPayloadScalar {
+    let scalar = |id: &str, value: f64| FeaturePayloadScalar {
         id: id.to_string(),
         operation_label: "sketch".to_string(),
-        construction_payload: "payload".to_string(),
+        payload: crate::native::features::FeatureScalarPayload::Construction {
+            construction_payload: "payload".to_string(),
+        },
         ordinal: 0,
         field_code: 100,
         value,

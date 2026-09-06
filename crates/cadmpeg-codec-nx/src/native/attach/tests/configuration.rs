@@ -875,10 +875,12 @@ fn named_sketch_points_project_without_an_external_named_point() {
         coordinates: point.coordinates,
     };
     let scalar = |id: &str, ordinal: u32, value: f64, source_offset: u64| {
-        crate::native::features::FeatureSketchPayloadScalar {
+        crate::native::features::FeaturePayloadScalar {
             id: id.to_string(),
             operation_label: label.id.clone(),
-            construction_payload: "payload".to_string(),
+            payload: crate::native::features::FeatureScalarPayload::Construction {
+                construction_payload: "payload".to_string(),
+            },
             ordinal,
             field_code: 100,
             value,

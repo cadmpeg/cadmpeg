@@ -1297,15 +1297,16 @@ pub struct FeatureDatumCsysPayloadFixedPair {
     pub value_source_offsets: [u64; 2],
 }
 
-/// One exactly framed scalar field in a reconstructed datum-CSYS payload.
+/// One exactly framed scalar field in a reconstructed feature payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureDatumCsysPayloadScalar {
+pub struct FeaturePayloadScalar {
     /// Globally unique scalar-field identity.
     pub id: String,
-    /// Owning `DATUM_CSYS` operation label.
+    /// Owning operation label.
     pub operation_label: String,
     /// Reconstructed payload carrying the field.
-    pub datum_csys_payload: String,
+    #[serde(flatten)]
+    pub payload: FeatureScalarPayload,
     /// Zero-based field order within the payload.
     pub ordinal: u32,
     /// Serialized discriminator following the `50 59 66` marker.
@@ -1318,6 +1319,24 @@ pub struct FeatureDatumCsysPayloadScalar {
     pub payload_offset: u64,
     /// Absolute source offset of the field marker.
     pub source_offset: u64,
+}
+
+/// Payload identity under its native record field name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FeatureScalarPayload {
+    DatumCsys { datum_csys_payload: String },
+    Construction { construction_payload: String },
+}
+
+impl FeatureScalarPayload {
+    #[must_use]
+    pub fn id(&self) -> &str {
+        match self {
+            Self::DatumCsys { datum_csys_payload } => datum_csys_payload,
+            Self::Construction { construction_payload } => construction_payload,
+        }
+    }
 }
 
 /// Typed descriptor from one of the final three datum-CSYS construction lanes.
@@ -1761,29 +1780,6 @@ pub struct FeatureSketchPayloadMixedPair {
     pub source_offset: u64,
     /// Absolute source offsets of the two atom markers.
     pub value_source_offsets: [u64; 2],
-}
-
-/// Exact framed scalar retained from one reconstructed sketch payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureSketchPayloadScalar {
-    /// Globally unique scalar identity.
-    pub id: String,
-    /// Owning `SKETCH` operation label.
-    pub operation_label: String,
-    /// Reconstructed sketch payload carrying this field.
-    pub construction_payload: String,
-    /// Zero-based field order within the reconstructed payload.
-    pub ordinal: u32,
-    /// Serialized discriminator following the `50 59 66` marker.
-    pub field_code: u8,
-    /// Finite shifted-IEEE binary64 value.
-    pub value: f64,
-    /// Exact shifted-binary64 encoding.
-    pub raw_value: [u8; 8],
-    /// Byte offset of the field marker within the reconstructed payload.
-    pub payload_offset: u64,
-    /// Absolute file offset of the field marker.
-    pub source_offset: u64,
 }
 
 /// Exact scalar-vector frame retained from one reconstructed sketch payload.
@@ -4638,29 +4634,6 @@ pub struct FeatureBlockConstructionPayload {
     pub block_source_offsets: Vec<u64>,
 }
 
-/// One complete shifted-binary64 field in a reconstructed `BLOCK` payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureBlockPayloadScalar {
-    /// Globally unique scalar-field identity.
-    pub id: String,
-    /// Owning `BLOCK` operation label.
-    pub operation_label: String,
-    /// Reconstructed payload containing the field.
-    pub construction_payload: String,
-    /// Zero-based field order in the reconstructed payload.
-    pub ordinal: u32,
-    /// Serialized field discriminator following `PYf`.
-    pub field_code: u8,
-    /// Exact finite shifted-binary64 value.
-    pub value: f64,
-    /// Exact shifted-binary64 encoding.
-    pub raw_value: [u8; 8],
-    /// Payload-relative `PYf` marker offset.
-    pub payload_offset: u64,
-    /// Absolute source offset of the `PYf` marker.
-    pub source_offset: u64,
-}
-
 /// One complete compact-code name field in a reconstructed `BLOCK` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -7369,17 +7342,19 @@ pub fn feature_datum_csys_payload_fixed_pairs(
 pub fn feature_datum_csys_payload_scalars(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
-) -> Vec<FeatureDatumCsysPayloadScalar> {
+) -> Vec<FeaturePayloadScalar> {
     construction_payload_frames(
         container,
         payloads,
         |payload| &payload.data_blocks[..],
         crate::om::construction_payload_scalar_fields,
         |payload, ordinal, scalar, source_offset| {
-            Some(FeatureDatumCsysPayloadScalar {
+            Some(FeaturePayloadScalar {
                 id: format!("{}-scalar-{ordinal:010}", payload.id),
                 operation_label: payload.operation_label.clone(),
-                datum_csys_payload: payload.id.clone(),
+                payload: FeatureScalarPayload::DatumCsys {
+                    datum_csys_payload: payload.id.clone(),
+                },
                 ordinal: ordinal as u32,
                 field_code: scalar.field_code,
                 value: scalar.value,
@@ -7892,7 +7867,7 @@ fn offset_data_block_bytes<'a>(
 pub fn feature_sketch_payload_scalars(
     container: &Container,
     constructions: &[FeatureSketchConstructionInputs],
-) -> Vec<FeatureSketchPayloadScalar> {
+) -> Vec<FeaturePayloadScalar> {
     let blocks = offset_data_block_bytes(container);
     constructions
         .iter()
@@ -7922,7 +7897,7 @@ pub fn feature_sketch_payload_scalars(
                                 .then_some(source_start + relative - payload_start)
                             })
                             .expect("field lies in joined payload");
-                        FeatureSketchPayloadScalar {
+                        FeaturePayloadScalar {
                             id: format!(
                                 "nx:feature-history:sketch-payload-scalar#{}-{ordinal:010}",
                                 construction_payload
@@ -7930,7 +7905,9 @@ pub fn feature_sketch_payload_scalars(
                                     .map_or("unknown", |(_, key)| key)
                             ),
                             operation_label: construction.operation_label.clone(),
-                            construction_payload: construction_payload.clone(),
+                            payload: FeatureScalarPayload::Construction {
+                                construction_payload: construction_payload.clone(),
+                            },
                             ordinal: ordinal as u32,
                             field_code: field.field_code,
                             value: field.value,
@@ -8055,7 +8032,7 @@ pub fn feature_sketch_payload_names(
 pub fn feature_sketch_payload_named_records(
     payloads: &[FeatureSketchConstructionPayload],
     names: &[FeatureSketchPayloadName],
-    scalars: &[FeatureSketchPayloadScalar],
+    scalars: &[FeaturePayloadScalar],
     fixed_pairs: &[FeatureSketchPayloadFixedPair],
     mixed_pairs: &[FeatureSketchPayloadMixedPair],
 ) -> Vec<FeatureSketchPayloadNamedRecord> {
@@ -8073,7 +8050,7 @@ pub fn feature_sketch_payload_named_records(
             let mut scalar_fields = scalars
                 .iter()
                 .filter(|scalar| {
-                    scalar.construction_payload == payload.id
+                    scalar.payload.id() == payload.id
                         && scalar.payload_offset > name.payload_offset
                         && scalar.payload_offset < end
                 })
@@ -8132,7 +8109,7 @@ pub fn feature_sketch_payload_named_records(
 pub fn feature_sketch_points(
     records: &[FeatureSketchPayloadNamedRecord],
     names: &[FeatureSketchPayloadName],
-    scalars: &[FeatureSketchPayloadScalar],
+    scalars: &[FeaturePayloadScalar],
 ) -> Vec<FeatureSketchPoint> {
     let names = names
         .iter()
@@ -8159,7 +8136,7 @@ pub fn feature_sketch_points(
             let second = scalars.get(second_id.as_str())?;
             if [first, second].into_iter().any(|scalar| {
                 scalar.operation_label != record.operation_label
-                    || scalar.construction_payload != record.construction_payload
+                    || scalar.payload.id() != record.construction_payload
                     || !scalar.value.is_finite()
             }) {
                 return None;
@@ -8540,7 +8517,7 @@ pub fn feature_sketch_datum_csys_dependencies(
     named_points: &[OffsetStoreNamedPoint],
     point_uses: &[FeatureSketchPointUse],
     constructions: &[FeatureDatumCsysConstruction],
-    scalars: &[FeatureDatumCsysPayloadScalar],
+    scalars: &[FeaturePayloadScalar],
 ) -> Vec<FeatureSketchDatumCsysDependency> {
     fn block_key(block: &str) -> Option<(&str, u32)> {
         let (store, ordinal) = block.rsplit_once(":block#")?;
@@ -11108,7 +11085,7 @@ pub fn feature_block_construction_payloads(
 pub fn feature_block_payload_scalars(
     container: &Container,
     payloads: &[FeatureBlockConstructionPayload],
-) -> Vec<FeatureBlockPayloadScalar> {
+) -> Vec<FeaturePayloadScalar> {
     let blocks = offset_data_block_bytes(container);
     payloads
         .iter()
@@ -11128,10 +11105,12 @@ pub fn feature_block_payload_scalars(
                         &lengths,
                         &sources,
                     )?;
-                    Some(FeatureBlockPayloadScalar {
+                    Some(FeaturePayloadScalar {
                         id: format!("{}-scalar-{ordinal}", payload.id),
                         operation_label: payload.operation_label.clone(),
-                        construction_payload: payload.id.clone(),
+                        payload: FeatureScalarPayload::Construction {
+                            construction_payload: payload.id.clone(),
+                        },
                         ordinal: ordinal as u32,
                         field_code: field.field_code,
                         value: field.value,
@@ -11199,7 +11178,7 @@ pub fn feature_block_payload_names(
 pub fn feature_block_payload_named_records(
     payloads: &[FeatureBlockConstructionPayload],
     names: &[FeatureBlockPayloadName],
-    scalars: &[FeatureBlockPayloadScalar],
+    scalars: &[FeaturePayloadScalar],
 ) -> Vec<FeatureBlockPayloadNamedRecord> {
     let mut records = Vec::new();
     for payload in payloads {
@@ -11215,7 +11194,7 @@ pub fn feature_block_payload_named_records(
             let mut scalar_fields = scalars
                 .iter()
                 .filter(|scalar| {
-                    scalar.construction_payload == payload.id
+                    scalar.payload.id() == payload.id
                         && scalar.payload_offset > name.payload_offset
                         && scalar.payload_offset < end
                 })
@@ -11242,7 +11221,7 @@ pub fn feature_block_payload_named_records(
 pub fn feature_block_payload_points(
     records: &[FeatureBlockPayloadNamedRecord],
     names: &[FeatureBlockPayloadName],
-    scalars: &[FeatureBlockPayloadScalar],
+    scalars: &[FeaturePayloadScalar],
 ) -> Vec<FeatureBlockPayloadPoint> {
     let names = names
         .iter()

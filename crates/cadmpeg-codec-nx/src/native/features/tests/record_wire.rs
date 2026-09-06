@@ -34,3 +34,14 @@ fn body_write_retains_labeled_and_unlabeled_wire() {
         assert_eq!(serde_json::to_string(&write).unwrap(), json);
     }
 }
+
+#[test]
+fn payload_scalar_preserves_each_payload_owner_key() {
+    for json in [
+        r#"{"id":"scalar","operation_label":"operation","datum_csys_payload":"payload","ordinal":0,"field_code":100,"value":2.0,"raw_value":[1,2,3,4,5,6,7,8],"payload_offset":10,"source_offset":20}"#,
+        r#"{"id":"scalar","operation_label":"operation","construction_payload":"payload","ordinal":0,"field_code":100,"value":2.0,"raw_value":[1,2,3,4,5,6,7,8],"payload_offset":10,"source_offset":20}"#,
+    ] {
+        let scalar: super::FeaturePayloadScalar = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&scalar).unwrap(), json);
+    }
+}

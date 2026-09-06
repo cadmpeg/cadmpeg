@@ -981,7 +981,7 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
 #[test]
 fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
     use super::{
-        FeatureDatumCsysConstruction, FeatureDatumCsysPayloadScalar, FeatureOperationLabel,
+        FeatureDatumCsysConstruction, FeaturePayloadScalar, FeatureOperationLabel,
         FeatureSketchDatumCsysBlockRelation, FeatureSketchPointUse, OffsetStoreNamedPoint,
     };
 
@@ -1025,10 +1025,12 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         data_blocks: blocks,
         source_offsets: [400; 8],
     };
-    let scalar = FeatureDatumCsysPayloadScalar {
+    let scalar = FeaturePayloadScalar {
         id: "csys-scalar".to_string(),
         operation_label: "csys".to_string(),
-        datum_csys_payload: "payload".to_string(),
+        payload: crate::native::features::FeatureScalarPayload::DatumCsys {
+            datum_csys_payload: "payload".to_string(),
+        },
         ordinal: 0,
         field_code: 0x64,
         value: 2.0,

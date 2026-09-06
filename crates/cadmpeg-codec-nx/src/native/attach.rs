@@ -3992,7 +3992,7 @@ fn attach_sketch_graph(
         }
     }
     let mut scalars_by_id =
-        BTreeMap::<&str, &crate::native::features::FeatureSketchPayloadScalar>::new();
+        BTreeMap::<&str, &crate::native::features::FeaturePayloadScalar>::new();
     for scalar in sources.payload_scalars {
         if scalars_by_id.insert(scalar.id.as_str(), scalar).is_some() {
             return None;
@@ -4139,7 +4139,7 @@ struct SketchSources<'a> {
     point_uses: &'a [&'a crate::native::features::FeatureSketchPointUse],
     point_groups: &'a [crate::native::features::FeatureSketchPointGroup],
     points: &'a [crate::native::features::FeatureSketchPoint],
-    payload_scalars: &'a [crate::native::features::FeatureSketchPayloadScalar],
+    payload_scalars: &'a [crate::native::features::FeaturePayloadScalar],
     fixed_points: &'a [&'a crate::native::features::FeatureSketchFixedPoint],
     coordinate_pairs: &'a [&'a crate::native::features::FeatureSketchPayloadCoordinatePair],
 }
