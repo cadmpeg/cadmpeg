@@ -1,5 +1,6 @@
 use crate::om::compact::LocatedCompactIndex;
 use crate::om::pattern::{PatternRows, PatternScalarEncoding};
+use crate::om::pattern_references::{PatternPayloadReferenceLayout, PatternReferences};
 use crate::om::projected_references::ProjectedCurveReferences;
 use crate::om::scalar::ShiftedScalar;
 use crate::om::PatternPayloadTransformLane;
@@ -181,14 +182,14 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
     let label = "Pattern Geometry";
     let nullable = b"\x61\xf1\x1b\x08\xff\x00\xff\x01\xf1\x1b\x09\xf1\x1b\x0a\x61\xf1\x1b\x0b\xff\x00\xff\x01\xf1\x1b\x0c\xf1\x1b\x0d\xff\x62\xf1\x1b\x0e\xf1\x1b\x0f\xff\x00\x00\x01\xf1\x1b\x10\xff\xff\xff\x01";
     let record = crate::om::operation_record::OperationPayload::new(nullable, 200, label).unwrap();
-    let field = super::super::pattern_payload_references(record).expect("complete graph");
+    let field = PatternReferences::read(record).expect("complete graph");
     assert_eq!(
-        field.layout,
-        super::super::PatternPayloadReferenceLayout::CanonicalGraph
+        field.layout(),
+        PatternPayloadReferenceLayout::CanonicalGraph
     );
     assert_eq!(
         field
-            .references
+            .into_references()
             .iter()
             .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
@@ -196,7 +197,7 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
     );
 
     let populated = [&nullable[..nullable.len() - 4], b"\xf1\x1b\x11\xff\xff\x01"].concat();
-    let field = super::super::pattern_payload_references(
+    let field = PatternReferences::read(
         crate::om::operation_record::OperationPayload::new(
             &populated,
             record.payload_offset(),
@@ -205,12 +206,13 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
         .unwrap(),
     )
     .expect("populated terminal slot");
-    assert_eq!(field.references.len(), 10);
-    assert_eq!(field.references[9].token.value(), 6929);
+    let references = field.into_references();
+    assert_eq!(references.len(), 10);
+    assert_eq!(references[9].token.value(), 6929);
 
     let mut malformed = nullable.to_vec();
     malformed[18] = 0x60;
-    assert!(super::super::pattern_payload_references(
+    assert!(PatternReferences::read(
         crate::om::operation_record::OperationPayload::new(
             &malformed,
             record.payload_offset(),
@@ -221,7 +223,7 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
     .is_none());
 
     let compact = b"\x3b\xf1\x1b\x20\xff\x00\x01\xf1\x1b\x21\xf1\x1b\x22\x3b\xf1\x1b\x23\xff\x00\x01\xf1\x1b\x24\xf1\x1b\x25\xff\x3c\xf1\x1b\x26\xf1\x1b\x27\xff\x00\x00\x01\xf1\x1b\x28\xff\xff\xff\x01";
-    let field = super::super::pattern_payload_references(
+    let field = PatternReferences::read(
         crate::om::operation_record::OperationPayload::new(
             compact,
             record.payload_offset(),
@@ -230,13 +232,10 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
         .unwrap(),
     )
     .expect("complete compact graph");
-    assert_eq!(
-        field.layout,
-        super::super::PatternPayloadReferenceLayout::CompactGraph
-    );
+    assert_eq!(field.layout(), PatternPayloadReferenceLayout::CompactGraph);
     assert_eq!(
         field
-            .references
+            .into_references()
             .iter()
             .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),

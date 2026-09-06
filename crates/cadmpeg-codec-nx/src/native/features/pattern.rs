@@ -2,6 +2,8 @@
 //! Pattern construction records and extraction.
 
 use crate::om::branch_items::BranchItems;
+use crate::om::pattern_references::{PatternPayloadReferenceLayout, PatternReferences};
+use crate::om::reference_index::PayloadIndexToken;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
@@ -48,12 +50,12 @@ pub struct FeaturePatternReference {
     /// Owning pattern operation label.
     pub operation_label: String,
     /// Exact byte layout that framed the reference field.
-    pub layout: FeaturePatternReferenceLayout,
+    pub layout: PatternPayloadReferenceLayout,
     /// Zero-based non-null slot order in the exact reference field.
     pub ordinal: u32,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: crate::om::reference_index::ReferenceIndexToken,
+    pub token: PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -163,18 +165,6 @@ impl TryFrom<FeaturePatternCountedReferenceLaneWire> for FeaturePatternCountedRe
                 .collect::<Result<_, String>>()?,
         })
     }
-}
-
-/// Byte layout selected by a pattern construction-reference field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FeaturePatternReferenceLayout {
-    /// The `61`/`ff 00 ff 01`/`ff 62` graph framing.
-    CanonicalGraph,
-    /// The `3b`/`ff 00 01`/`ff 3c` graph framing.
-    CompactGraph,
-    /// The one-reference `Geometry Instance` framing.
-    GeometryInstance,
 }
 
 /// Canonical printable string in a reconstructed pattern payload.
@@ -929,23 +919,13 @@ pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternRe
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(decoded) = crate::om::pattern_payload_references(record.payload_view()) else {
+            let Some(decoded) = PatternReferences::read(record.payload_view()) else {
                 return;
             };
-            let layout = match decoded.layout {
-                crate::om::PatternPayloadReferenceLayout::CanonicalGraph => {
-                    FeaturePatternReferenceLayout::CanonicalGraph
-                }
-                crate::om::PatternPayloadReferenceLayout::CompactGraph => {
-                    FeaturePatternReferenceLayout::CompactGraph
-                }
-                crate::om::PatternPayloadReferenceLayout::GeometryInstance => {
-                    FeaturePatternReferenceLayout::GeometryInstance
-                }
-            };
+            let layout = decoded.layout();
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            references.extend(decoded.references.into_iter().enumerate().map(|(ordinal, reference)| {
+            references.extend(decoded.into_references().into_iter().enumerate().map(|(ordinal, reference)| {
                 FeaturePatternReference {
                     id: format!(
                         "nx:feature-history:pattern-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"

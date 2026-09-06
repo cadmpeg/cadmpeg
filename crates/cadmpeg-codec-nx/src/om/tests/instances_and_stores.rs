@@ -3,6 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+use crate::om::pattern_references::PatternReferences;
 use cadmpeg_core::decode::View;
 
 use crate::test_support::*;
@@ -205,12 +206,13 @@ fn om_geometry_instance_reference_requires_one_complete_field() {
     let label = "Geometry Instance";
     let payload = b"\x44\x45\x00\xff\xff\xf1\x03\x21\x01\x02\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x01\x02";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let field = super::pattern_payload_references(record).expect("complete field");
-    assert_eq!(field.references[0].token.value(), 801);
-    assert_eq!(field.references[0].offset, 205);
+    let field = PatternReferences::read(record).expect("complete field");
+    let references = field.into_references();
+    assert_eq!(references[0].token.value(), 801);
+    assert_eq!(references[0].offset, 205);
 
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(super::pattern_payload_references(
+    assert!(PatternReferences::read(
         crate::om::operation_record::OperationPayload::new(
             &ambiguous,
             record.payload_offset(),

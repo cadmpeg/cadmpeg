@@ -1934,7 +1934,7 @@ pub enum FeatureConstructionOwner {
     },
     Pattern {
         operation_kind: FeaturePatternKind,
-        reference_layout: FeaturePatternReferenceLayout,
+        reference_layout: PatternPayloadReferenceLayout,
         construction_references: Vec<String>,
     },
     Draft {
@@ -9246,7 +9246,7 @@ pub fn feature_parameter_uses(bindings: &[FeatureParameterBinding]) -> Vec<Featu
 #[cfg(test)]
 mod tests;
 
-use crate::native::features::pattern::FeaturePatternReferenceLayout;
+use crate::om::pattern_references::PatternPayloadReferenceLayout;
 
 fn deserialize_reference_lane_count<'de, D: serde::Deserializer<'de>>(
     deserializer: D,

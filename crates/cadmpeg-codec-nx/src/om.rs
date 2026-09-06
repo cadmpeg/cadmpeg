@@ -80,6 +80,7 @@ pub(crate) mod state_message;
 use state_message::OperationStateMessage;
 use state_tagged_value::StateTaggedValue;
 pub(crate) mod projected_references;
+pub(crate) mod pattern_references;
 pub(crate) mod pattern;
 use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWideValues};
 pub(crate) mod scalar;
@@ -667,26 +668,6 @@ pub struct PayloadObjectReference<T = ReferenceIndexToken, O = usize> {
     pub offset: O,
     /// Checked token retaining the exact marker and width.
     pub token: T,
-}
-
-/// Byte layout selected by a pattern construction-reference field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PatternPayloadReferenceLayout {
-    /// The `61`/`ff 00 ff 01`/`ff 62` graph framing.
-    CanonicalGraph,
-    /// The `3b`/`ff 00 01`/`ff 3c` graph framing.
-    CompactGraph,
-    /// The one-reference `Geometry Instance` framing.
-    GeometryInstance,
-}
-
-/// Exact non-null construction references in a pattern payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PatternPayloadReferenceField {
-    /// Exact byte layout that framed the field.
-    pub layout: PatternPayloadReferenceLayout,
-    /// Non-null references in serialized slot order.
-    pub references: Vec<PayloadObjectReference>,
 }
 
 /// Exact counted non-null reference lane in a `Pattern Feature` payload.
@@ -1921,138 +1902,6 @@ pub fn sketch_payload_references(record: OperationPayload<'_>) -> Option<SketchR
 fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {
     let token = ReferenceIndexToken::read_payload(bytes)?;
     Some((token, token.raw().len()))
-}
-
-/// Decode the unique exactly framed construction-reference field in a bounded
-/// pattern payload.
-pub fn pattern_payload_references(
-    record: OperationPayload<'_>,
-) -> Option<PatternPayloadReferenceField> {
-    const GRAPH_SEPARATOR: [u8; 4] = [0xff, 0x00, 0xff, 0x01];
-    const GRAPH_TAIL_PREFIX: [u8; 4] = [0xff, 0x00, 0x00, 0x01];
-    const GRAPH_SUFFIX: [u8; 3] = [0xff, 0xff, 0x01];
-    const COMPACT_GRAPH_SEPARATOR: [u8; 3] = [0xff, 0x00, 0x01];
-    const COMPACT_GRAPH_MIDDLE: [u8; 2] = [0xff, 0x3c];
-    const INSTANCE_PREFIX: [u8; 3] = [0x00, 0xff, 0xff];
-    const INSTANCE_SUFFIX: [u8; 17] = [
-        0x01, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
-        0x01, 0x02,
-    ];
-    let decode_reference = |at: &mut usize| {
-        let offset = *at;
-        let (object_index, width) = payload_object_index(record.payload().get(offset..)?)?;
-        *at += width;
-        Some(PayloadObjectReference {
-            offset: record.payload_offset() + offset,
-            token: object_index,
-        })
-    };
-    let decode_graph = |start: usize| {
-        let mut at = start + 1;
-        let mut references = Vec::with_capacity(10);
-        references.push(decode_reference(&mut at)?);
-        (record.payload().get(at..at + GRAPH_SEPARATOR.len()) == Some(&GRAPH_SEPARATOR))
-            .then_some(())?;
-        at += GRAPH_SEPARATOR.len();
-        references.push(decode_reference(&mut at)?);
-        references.push(decode_reference(&mut at)?);
-        (record.payload().get(at) == Some(&0x61)).then_some(())?;
-        at += 1;
-        references.push(decode_reference(&mut at)?);
-        (record.payload().get(at..at + GRAPH_SEPARATOR.len()) == Some(&GRAPH_SEPARATOR))
-            .then_some(())?;
-        at += GRAPH_SEPARATOR.len();
-        references.push(decode_reference(&mut at)?);
-        references.push(decode_reference(&mut at)?);
-        (record.payload().get(at..at + 2) == Some(&[0xff, 0x62])).then_some(())?;
-        at += 2;
-        references.push(decode_reference(&mut at)?);
-        references.push(decode_reference(&mut at)?);
-        (record.payload().get(at..at + GRAPH_TAIL_PREFIX.len()) == Some(&GRAPH_TAIL_PREFIX))
-            .then_some(())?;
-        at += GRAPH_TAIL_PREFIX.len();
-        references.push(decode_reference(&mut at)?);
-        if record.payload().get(at) == Some(&0xff) {
-            at += 1;
-        } else {
-            references.push(decode_reference(&mut at)?);
-        }
-        (record.payload().get(at..at + GRAPH_SUFFIX.len()) == Some(&GRAPH_SUFFIX)).then_some(())?;
-        Some(PatternPayloadReferenceField {
-            layout: PatternPayloadReferenceLayout::CanonicalGraph,
-            references,
-        })
-    };
-    let decode_compact_graph = |start: usize| {
-        let mut at = start + 1;
-        let mut references = Vec::with_capacity(10);
-        references.push(decode_reference(&mut at)?);
-        (record.payload().get(at..at + COMPACT_GRAPH_SEPARATOR.len())
-            == Some(&COMPACT_GRAPH_SEPARATOR))
-        .then_some(())?;
-        at += COMPACT_GRAPH_SEPARATOR.len();
-        references.push(decode_reference(&mut at)?);
-        references.push(decode_reference(&mut at)?);
-        (record.payload().get(at) == Some(&0x3b)).then_some(())?;
-        at += 1;
-        references.push(decode_reference(&mut at)?);
-        (record.payload().get(at..at + COMPACT_GRAPH_SEPARATOR.len())
-            == Some(&COMPACT_GRAPH_SEPARATOR))
-        .then_some(())?;
-        at += COMPACT_GRAPH_SEPARATOR.len();
-        references.push(decode_reference(&mut at)?);
-        references.push(decode_reference(&mut at)?);
-        (record.payload().get(at..at + COMPACT_GRAPH_MIDDLE.len()) == Some(&COMPACT_GRAPH_MIDDLE))
-            .then_some(())?;
-        at += COMPACT_GRAPH_MIDDLE.len();
-        references.push(decode_reference(&mut at)?);
-        references.push(decode_reference(&mut at)?);
-        (record.payload().get(at..at + GRAPH_TAIL_PREFIX.len()) == Some(&GRAPH_TAIL_PREFIX))
-            .then_some(())?;
-        at += GRAPH_TAIL_PREFIX.len();
-        references.push(decode_reference(&mut at)?);
-        if record.payload().get(at) == Some(&0xff) {
-            at += 1;
-        } else {
-            references.push(decode_reference(&mut at)?);
-        }
-        (record.payload().get(at..at + GRAPH_SUFFIX.len()) == Some(&GRAPH_SUFFIX)).then_some(())?;
-        Some(PatternPayloadReferenceField {
-            layout: PatternPayloadReferenceLayout::CompactGraph,
-            references,
-        })
-    };
-    let decode_instance = |start: usize| {
-        let mut at = start + INSTANCE_PREFIX.len();
-        let reference = decode_reference(&mut at)?;
-        (record.payload().get(at..at + INSTANCE_SUFFIX.len()) == Some(&INSTANCE_SUFFIX))
-            .then_some(())?;
-        Some(PatternPayloadReferenceField {
-            layout: PatternPayloadReferenceLayout::GeometryInstance,
-            references: vec![reference],
-        })
-    };
-    let field = match record.name() {
-        "Pattern Feature" | "Pattern Geometry" => {
-            unique_candidate((0..record.payload().len()).filter_map(|start| {
-                match record.payload().get(start) {
-                    Some(0x61) => decode_graph(start),
-                    Some(0x3b) => decode_compact_graph(start),
-                    _ => None,
-                }
-            }))
-        }
-        "Geometry Instance" => unique_candidate(
-            (0..=record.payload().len().saturating_sub(INSTANCE_PREFIX.len()))
-                .filter(|&start| {
-                    record.payload().get(start..start + INSTANCE_PREFIX.len())
-                        == Some(&INSTANCE_PREFIX)
-                })
-                .filter_map(decode_instance),
-        ),
-        _ => return None,
-    };
-    field
 }
 
 /// Decode the unique exactly terminated counted reference lane in a bounded
