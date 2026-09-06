@@ -63,6 +63,27 @@ impl ReferenceIndexToken {
     }
 }
 
+/// Required index restricted to the payload `f0`/`f1` grammar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PayloadIndexToken(ReferenceIndexToken);
+
+impl PayloadIndexToken {
+    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+        ReferenceIndexToken::read_payload(bytes).map(Self)
+    }
+
+    pub(crate) fn from_wire(value: u32, raw: &[u8]) -> Result<Self, &'static str> {
+        let token = Self::read(raw).ok_or("invalid payload reference token")?;
+        if token.raw().len() != raw.len() || token.value() != value {
+            return Err("payload index/raw token: value or width mismatch");
+        }
+        Ok(token)
+    }
+
+    pub(crate) fn value(self) -> u32 { self.0.value() }
+    pub(crate) fn raw(&self) -> &[u8] { self.0.raw() }
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ReferenceIndexWire {
     object_index: u32,

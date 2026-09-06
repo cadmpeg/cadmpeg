@@ -19,7 +19,7 @@ use crate::om::swp104_state::Swp104StateLane;
 use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, RepeatedScalar, ShiftedBinary32, ShiftedBinary64, ShiftedScalar};
 use crate::om::branch_items::BranchItems;
 use crate::om::nonempty::NonEmpty;
-use crate::om::reference_index::ReferenceIndexToken;
+use crate::om::reference_index::{PayloadIndexToken, ReferenceIndexToken};
 use crate::om::compact::{CompactIndexAtom, WrappedCompactIndex};
 use crate::om::sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLaneForm};
 use crate::om::fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
@@ -5213,11 +5213,18 @@ pub struct FeatureOperationBody11Continuation {
 /// Homogeneous value encoding in an operation body-reference lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FeatureOperationBodyReferenceLaneEncoding {
+enum FeatureOperationBodyReferenceLaneEncoding {
     /// NX OM compact-index encoding.
     CompactIndex,
     /// `f0`/`f1` payload object-index encoding.
     PayloadObjectIndex,
+}
+
+/// A homogeneous operation body lane with checked grammar-specific tokens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FeatureOperationBodyReferences {
+    CompactIndex(Vec<ConstructionReference<Option<String>, CompactIndexAtom>>),
+    PayloadObjectIndex(Vec<ConstructionReference<Option<String>, PayloadIndexToken>>),
 }
 
 /// Counted reference lane following an operation body scalar clause.
@@ -5232,8 +5239,7 @@ pub struct FeatureOperationBodyReferenceLane {
     pub body_reference_ordinal: u32,
     pub body_object_index: u32,
     pub branch: u8,
-    pub encoding: FeatureOperationBodyReferenceLaneEncoding,
-    pub references: Vec<FeatureDataBlockToken<Vec<u8>>>,
+    pub references: FeatureOperationBodyReferences,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -5262,33 +5268,41 @@ struct FeatureOperationBodyReferenceLaneWire {
 
 impl From<FeatureOperationBodyReferenceLane> for FeatureOperationBodyReferenceLaneWire {
     fn from(value: FeatureOperationBodyReferenceLane) -> Self {
+        let mut object_indices = Vec::new();
+        let mut raw_object_indices = Vec::new();
+        let mut data_blocks = Vec::new();
+        let mut source_offsets = Vec::new();
+        let mut push = |index, raw, data_block, offset| {
+            object_indices.push(index);
+            raw_object_indices.push(raw);
+            data_blocks.push(data_block);
+            source_offsets.push(offset);
+        };
+        let encoding = match value.references {
+            FeatureOperationBodyReferences::CompactIndex(references) => {
+                for reference in references {
+                    push(reference.token.value(), reference.token.raw().to_vec(), reference.data_block, reference.source_offset);
+                }
+                FeatureOperationBodyReferenceLaneEncoding::CompactIndex
+            }
+            FeatureOperationBodyReferences::PayloadObjectIndex(references) => {
+                for reference in references {
+                    push(reference.token.value(), reference.token.raw().to_vec(), reference.data_block, reference.source_offset);
+                }
+                FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex
+            }
+        };
         Self {
             id: value.id,
             operation_label: value.operation_label,
             body_reference_ordinal: value.body_reference_ordinal,
             body_object_index: value.body_object_index,
             branch: value.branch,
-            encoding: value.encoding,
-            object_indices: value
-                .references
-                .iter()
-                .map(|reference| reference.value)
-                .collect(),
-            raw_object_indices: value
-                .references
-                .iter()
-                .map(|reference| reference.raw.clone())
-                .collect(),
-            data_blocks: value
-                .references
-                .iter()
-                .map(|reference| reference.data_block.clone())
-                .collect(),
-            source_offsets: value
-                .references
-                .iter()
-                .map(|reference| reference.source_offset)
-                .collect(),
+            encoding,
+            object_indices,
+            raw_object_indices,
+            data_blocks,
+            source_offsets,
         }
     }
 }
@@ -5303,28 +5317,37 @@ impl TryFrom<FeatureOperationBodyReferenceLaneWire> for FeatureOperationBodyRefe
         {
             return Err("object_indices, raw_object_indices, data_blocks, and source_offsets must have equal lengths".into());
         }
+        let entries = wire.object_indices.into_iter().zip(wire.raw_object_indices)
+            .zip(wire.data_blocks).zip(wire.source_offsets).enumerate();
+        let references = match wire.encoding {
+            FeatureOperationBodyReferenceLaneEncoding::CompactIndex => {
+                FeatureOperationBodyReferences::CompactIndex(entries.map(|(slot, (((value, raw), data_block), source_offset))| {
+                    Ok(ConstructionReference {
+                        token: CompactIndexAtom::from_wire(value, &raw)
+                            .map_err(|error| format!("object_indices/raw_object_indices[{slot}]: {error}"))?,
+                        data_block,
+                        source_offset,
+                    })
+                }).collect::<Result<_, String>>()?)
+            }
+            FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex => {
+                FeatureOperationBodyReferences::PayloadObjectIndex(entries.map(|(slot, (((value, raw), data_block), source_offset))| {
+                    Ok(ConstructionReference {
+                        token: PayloadIndexToken::from_wire(value, &raw)
+                            .map_err(|error| format!("object_indices/raw_object_indices[{slot}]: {error}"))?,
+                        data_block,
+                        source_offset,
+                    })
+                }).collect::<Result<_, String>>()?)
+            }
+        };
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
             body_reference_ordinal: wire.body_reference_ordinal,
             body_object_index: wire.body_object_index,
             branch: wire.branch,
-            encoding: wire.encoding,
-            references: wire
-                .object_indices
-                .into_iter()
-                .zip(wire.raw_object_indices)
-                .zip(wire.data_blocks)
-                .zip(wire.source_offsets)
-                .map(
-                    |(((value, raw), data_block), source_offset)| FeatureDataBlockToken {
-                        value,
-                        raw,
-                        data_block,
-                        source_offset,
-                    },
-                )
-                .collect(),
+            references,
         })
     }
 }
@@ -5445,14 +5468,6 @@ pub struct FeatureExtrudePayload32Branch {
     pub terminal: ReferenceIndexToken,
     pub terminal_source_offset: u64,
     pub source_offset: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureDataBlockToken<R> {
-    pub value: u32,
-    pub raw: R,
-    pub source_offset: u64,
-    pub data_block: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -11338,25 +11353,21 @@ pub fn feature_operation_body_reference_lanes(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             for lane in crate::om::operation_body_reference_lanes(record) {
-                let (encoding, references) = match lane.values {
-                    crate::om::OperationBodyReferenceLaneValues::CompactIndex(values) => (
-                        FeatureOperationBodyReferenceLaneEncoding::CompactIndex,
-                        values.into_iter().map(|value| FeatureDataBlockToken {
-                            value: value.atom.value(),
-                            raw: value.atom.raw().to_vec(),
+                let references = match lane.values {
+                    crate::om::OperationBodyReferenceLaneValues::CompactIndex(values) => {
+                        FeatureOperationBodyReferences::CompactIndex(values.into_iter().map(|value| ConstructionReference {
+                            token: value.atom,
                             data_block: unique_offset_data_block(&indexed, value.atom.value()),
                             source_offset: entry_offset + value.offset as u64,
-                        }).collect(),
-                    ),
-                    crate::om::OperationBodyReferenceLaneValues::PayloadObjectIndex(values) => (
-                        FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex,
-                        values.into_iter().map(|value| FeatureDataBlockToken {
-                            value: value.token.value(),
-                            raw: value.token.raw().to_vec(),
+                        }).collect())
+                    }
+                    crate::om::OperationBodyReferenceLaneValues::PayloadObjectIndex(values) => {
+                        FeatureOperationBodyReferences::PayloadObjectIndex(values.into_iter().map(|value| ConstructionReference {
+                            token: value.token,
                             data_block: unique_offset_data_block(&indexed, value.token.value()),
                             source_offset: entry_offset + value.offset as u64,
-                        }).collect(),
-                    ),
+                        }).collect())
+                    }
                 };
                 lanes.push(FeatureOperationBodyReferenceLane {
                     id: format!(
@@ -11369,7 +11380,6 @@ pub fn feature_operation_body_reference_lanes(
                     body_reference_ordinal: lane.body_reference_ordinal,
                     body_object_index: lane.body_object_index,
                     branch: lane.branch,
-                    encoding,
                     references,
                 });
             }

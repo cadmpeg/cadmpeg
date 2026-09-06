@@ -498,3 +498,33 @@ fn pattern_counted_references_preserve_wire_and_reject_token_disagreement() {
         assert!(error.to_string().contains("raw_object_indices"), "{error}");
     }
 }
+
+#[test]
+fn operation_body_reference_lanes_preserve_wire_and_enforce_each_grammar() {
+    let compact = r#"{"id":"lane","operation_label":"operation","body_reference_ordinal":0,"body_object_index":110,"branch":28,"encoding":"compact_index","object_indices":[4096,28673],"raw_object_indices":[[144,0],[240,1]],"data_blocks":[null,"block"],"source_offsets":[111,113]}"#;
+    let payload = r#"{"id":"lane","operation_label":"operation","body_reference_ordinal":0,"body_object_index":110,"branch":17,"encoding":"payload_object_index","object_indices":[1,256],"raw_object_indices":[[240,1],[241,1,0]],"data_blocks":[null,"block"],"source_offsets":[111,113]}"#;
+    for json in [compact, payload] {
+        let lane: super::FeatureOperationBodyReferenceLane = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["object_indices"][0] = serde_json::json!(2);
+        let error = serde_json::from_value::<super::FeatureOperationBodyReferenceLane>(wire).unwrap_err();
+        assert!(error.to_string().contains("object_indices"), "{error}");
+    }
+    for (json, raw) in [
+        (compact, vec![144]),
+        (compact, vec![144, 0, 0]),
+        (compact, vec![255]),
+        (payload, vec![1]),
+        (payload, vec![128, 1]),
+        (payload, vec![240]),
+        (payload, vec![240, 1, 0]),
+        (payload, vec![241, 0, 1]),
+        (payload, vec![255]),
+    ] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["raw_object_indices"][0] = serde_json::json!(raw);
+        let error = serde_json::from_value::<super::FeatureOperationBodyReferenceLane>(wire).unwrap_err();
+        assert!(error.to_string().contains("raw_object_indices"), "{error}");
+    }
+}

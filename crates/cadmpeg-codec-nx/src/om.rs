@@ -1432,11 +1432,11 @@ pub struct OperationPayloadTextFrame<'a> {
 
 /// One canonical variable-width object index in an operation payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PayloadObjectReference {
+pub struct PayloadObjectReference<T = ReferenceIndexToken> {
     /// Absolute offset of the width marker.
     pub offset: usize,
     /// Checked token retaining the exact marker and width.
-    pub token: ReferenceIndexToken,
+    pub token: T,
 }
 
 /// Counted reference field in one bounded sketch-operation payload.
@@ -1981,7 +1981,7 @@ pub struct OperationBody11Continuation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OperationBodyReferenceLaneValues {
     CompactIndex(Vec<LocatedCompactIndex>),
-    PayloadObjectIndex(Vec<PayloadObjectReference>),
+    PayloadObjectIndex(Vec<PayloadObjectReference<reference_index::PayloadIndexToken>>),
 }
 
 /// Counted reference lane following an operation body scalar clause.
@@ -4668,7 +4668,8 @@ pub fn operation_body_reference_lanes(
                 Some((LocatedCompactIndex { atom, offset }, width))
             });
             let objects = operation_body_reference_lane_values(record, at, count - 1, |bytes, offset| {
-                let (token, width) = payload_object_index(bytes)?;
+                let token = reference_index::PayloadIndexToken::read(bytes)?;
+                let width = token.raw().len();
                 Some((PayloadObjectReference { token, offset }, width))
             });
             let values = match (compact, objects) {
