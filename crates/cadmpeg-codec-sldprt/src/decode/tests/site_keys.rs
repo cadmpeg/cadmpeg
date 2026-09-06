@@ -2,7 +2,7 @@
 //! Container site-key identity tests.
 #![allow(clippy::unwrap_used)]
 
-use crate::container::{Block, CompoundStream};
+use crate::container::{Block, CompoundStream, Section};
 
 #[test]
 fn site_keys_use_outer_container_identity() {
@@ -22,8 +22,8 @@ fn site_keys_use_outer_container_identity() {
         ..first.clone()
     };
     assert_ne!(
-        super::super::BodyOrigin::Block(&first).site_key(),
-        super::super::BodyOrigin::Block(&second).site_key()
+        Section::Block(&first).site_key(),
+        Section::Block(&second).site_key()
     );
 
     let compound = CompoundStream {
@@ -34,8 +34,5 @@ fn site_keys_use_outer_container_identity() {
         decoded_payload: None,
         ps_streams: Vec::new(),
     };
-    assert_eq!(
-        super::super::BodyOrigin::Compound(&compound).site_key(),
-        "compound@300"
-    );
+    assert_eq!(Section::Compound(&compound).site_key(), "compound@300");
 }

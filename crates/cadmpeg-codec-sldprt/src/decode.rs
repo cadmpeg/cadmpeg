@@ -33,51 +33,8 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use crate::container::configuration_index;
 
 use crate::brep::{self, Brep};
-use crate::container::{self, Block, CompoundStream, ContainerScan};
+use crate::container::{self, ActiveParasolidSite, ContainerScan};
 use crate::parasolid::StreamHeader;
-
-struct BodyStream<'a> {
-    origin: BodyOrigin<'a>,
-    payload: &'a [u8],
-    header: &'a StreamHeader,
-}
-
-#[derive(Clone, Copy)]
-enum BodyOrigin<'a> {
-    Block(&'a Block),
-    Compound(&'a CompoundStream),
-}
-
-impl BodyOrigin<'_> {
-    fn name(self) -> String {
-        match self {
-            Self::Block(block) => block
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", block.offset)),
-            Self::Compound(stream) => stream.path.clone(),
-        }
-    }
-
-    fn unknown_id(self) -> UnknownId {
-        match self {
-            Self::Block(block) => UnknownId::mint(format!("sldprt:file:block#{}", block.offset))
-                .expect("identity grammar"),
-            Self::Compound(stream) => UnknownId::mint(format!(
-                "sldprt:file:compound-stream#{}",
-                stream.directory_id
-            ))
-            .expect("identity grammar"),
-        }
-    }
-
-    fn site_key(self) -> String {
-        match self {
-            Self::Block(block) => format!("block@{}", block.offset),
-            Self::Compound(stream) => format!("compound@{}", stream.directory_id),
-        }
-    }
-}
 
 struct DecodedBrep {
     /// Representative stream whose header is common to every merged site.
@@ -1992,40 +1949,25 @@ fn multiply_projected_sketch_relation_records(
 }
 
 /// Collect the available Parasolid body streams, excluding auxiliary sites.
-fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<BodyStream<'a>> {
-    let block_streams = scan.blocks.iter().flat_map(|block| {
-        block.ps_streams.iter().filter_map(move |stream| {
-            let section = block.section.as_deref().unwrap_or("").to_ascii_lowercase();
-            if crate::parasolid::is_body_stream(&stream.header)
-                && !section.contains("ghost")
-                && !section.contains("resolvedfeatures")
-            {
-                Some(BodyStream {
-                    origin: BodyOrigin::Block(block),
+fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSite<'a>> {
+    let mut streams = scan
+        .sections()
+        .flat_map(|section| {
+            section.ps_streams().iter().filter_map(move |stream| {
+                let name = section.name().unwrap_or("").to_ascii_lowercase();
+                (crate::parasolid::is_body_stream(&stream.header)
+                    && !name.contains("ghost")
+                    && !name.contains("resolvedfeatures"))
+                .then_some(ActiveParasolidSite {
+                    section,
                     payload: &stream.payload,
                     header: &stream.header,
                 })
-            } else {
-                None
-            }
-        })
-    });
-    let compound_streams = scan.compound_streams.iter().flat_map(|stream| {
-        stream.ps_streams.iter().filter_map(move |kernel| {
-            let section = stream.path.to_ascii_lowercase();
-            (crate::parasolid::is_body_stream(&kernel.header)
-                && !section.contains("ghost")
-                && !section.contains("resolvedfeatures"))
-            .then_some(BodyStream {
-                origin: BodyOrigin::Compound(stream),
-                payload: &kernel.payload,
-                header: &kernel.header,
             })
         })
-    });
-    let mut streams = block_streams.chain(compound_streams).collect::<Vec<_>>();
+        .collect::<Vec<_>>();
     streams.sort_by_key(|stream| {
-        let section = stream.origin.name().to_ascii_lowercase();
+        let section = stream.name().to_ascii_lowercase();
         (
             !section.contains("partition"),
             !stream
@@ -2043,20 +1985,17 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<BodyStream<'a>> {
 /// partition/deltas model, so the caller falls back to metadata.
 fn try_decode_brep(
     scan: &ContainerScan,
-    streams: &[BodyStream<'_>],
+    streams: &[ActiveParasolidSite<'_>],
     classification: &crate::dialect::LayerClassification,
 ) -> Option<(DecodedBrep, DecodeBody)> {
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in streams.iter().enumerate() {
-        sites
-            .entry(stream.origin.site_key())
-            .or_default()
-            .push(index);
+        sites.entry(stream.site_key()).or_default().push(index);
     }
     let mut decoded_sites = Vec::new();
     for (site, indices) in &sites {
         let first = indices[0];
-        let name = streams[first].origin.name();
+        let name = streams[first].name();
         let bodies: Vec<_> = indices
             .iter()
             .map(|index| (streams[*index].payload, streams[*index].header))
@@ -2138,9 +2077,12 @@ fn try_decode_brep(
     if active_stream.is_none() {
         decoded.qualify_ids(&selected_site_key);
     }
-    bind_opaque_geometry(&mut decoded, &streams[selected].origin.unknown_id());
+    bind_opaque_geometry(
+        &mut decoded,
+        &UnknownId::mint(streams[selected].section.native_id()).expect("identity grammar"),
+    );
     let mut configuration_bodies = Vec::new();
-    if let Some(index) = configuration_index(&streams[selected].origin.name()) {
+    if let Some(index) = configuration_index(&streams[selected].name()) {
         configuration_bodies.push((
             index,
             decoded.bodies.iter().map(|body| body.id.clone()).collect(),
@@ -2148,8 +2090,11 @@ fn try_decode_brep(
     }
     for (site, first, mut alternate) in decoded_sites {
         alternate.qualify_ids(&site);
-        bind_opaque_geometry(&mut alternate, &streams[first].origin.unknown_id());
-        if let Some(index) = configuration_index(&streams[first].origin.name()) {
+        bind_opaque_geometry(
+            &mut alternate,
+            &UnknownId::mint(streams[first].section.native_id()).expect("identity grammar"),
+        );
+        if let Some(index) = configuration_index(&streams[first].name()) {
             configuration_bodies.push((
                 index,
                 alternate
