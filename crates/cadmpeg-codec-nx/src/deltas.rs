@@ -6,6 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU16;
 
 pub(crate) mod record_kind;
+pub(crate) mod reference_lanes;
+use reference_lanes::{MapEntries, TaggedReferences};
 pub(crate) mod packet_marker;
 pub(crate) mod xmt_reference;
 pub(crate) mod state_references;
@@ -551,7 +553,7 @@ pub struct TransmitHeader {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaggedReferenceLane {
     /// Ordered `(Parasolid record kind, XMT identity)` references.
-    pub references: Vec<(u16, u32)>,
+    pub references: TaggedReferences,
     /// First byte of the first tagged reference.
     pub offset: usize,
     /// First byte following the final tagged reference.
@@ -562,7 +564,7 @@ pub struct TaggedReferenceLane {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceTypeMap {
     /// Ordered `(reference, type_code)` entries.
-    pub entries: Vec<(u32, u16)>,
+    pub entries: MapEntries,
     /// Type code of the optional terminal map target.
     pub target_kind: Option<NonZeroU16>,
     /// First byte of the map.
@@ -1431,15 +1433,13 @@ fn tagged_reference_lanes(stream: &[u8], census: &Census) -> Vec<TaggedReference
             let mut references = Vec::new();
             while at < end {
                 let kind = View::u16_be_at(stream, at)?;
-                is_tagged_reference_kind(kind).then_some(())?;
                 let (xmt, consumed) = read_xmt(stream, at.checked_add(2)?)?;
-                (xmt > 1).then_some(())?;
                 at = at.checked_add(2 + consumed)?;
                 (at <= end).then_some(())?;
                 references.push((kind, xmt));
             }
-            (at == end && !references.is_empty()).then_some(TaggedReferenceLane {
-                references,
+            (at == end).then_some(TaggedReferenceLane {
+                references: TaggedReferences::try_from(references).ok()?,
                 offset,
                 end,
             })
@@ -1466,10 +1466,7 @@ fn reference_type_maps(stream: &[u8], census: &Census) -> Vec<ReferenceTypeMap> 
                 let map =
                     reference_type_map(stream, offset, ReferenceTypeMapLimit::Bounded(shared_end))?;
                 (map.target_kind.is_none()
-                    && map
-                        .entries
-                        .last()
-                        .is_some_and(|(_, kind)| *kind == following_kind))
+                    && map.entries.last_kind() == following_kind)
                 .then_some(map)
             })
         })
@@ -1505,8 +1502,8 @@ fn reference_type_map(
     let mut entries = Vec::new();
     loop {
         if expected_end == Some(at) {
-            return (!entries.is_empty()).then_some(ReferenceTypeMap {
-                entries,
+            return Some(ReferenceTypeMap {
+                entries: MapEntries::try_from(entries).ok()?,
                 target_kind: None,
                 offset,
                 end: at,
@@ -1520,8 +1517,8 @@ fn reference_type_map(
             (View::u16_be_at(stream, at) == Some(0)).then_some(())?;
             at = at.checked_add(2)?;
             if expected_end == Some(at) {
-                return (!entries.is_empty()).then_some(ReferenceTypeMap {
-                    entries,
+                return Some(ReferenceTypeMap {
+                    entries: MapEntries::try_from(entries).ok()?,
                     target_kind: None,
                     offset,
                     end: at,
@@ -1529,9 +1526,9 @@ fn reference_type_map(
             }
             let target_kind = NonZeroU16::new(View::u16_be_at(stream, at)?)?;
             at = at.checked_add(2)?;
-            return (expected_end.is_none_or(|end| at <= end) && !entries.is_empty()).then_some(
+            return (expected_end.is_none_or(|end| at <= end)).then_some(
                 ReferenceTypeMap {
-                    entries,
+                    entries: MapEntries::try_from(entries).ok()?,
                     target_kind: Some(target_kind),
                     offset,
                     end: at,
@@ -1539,7 +1536,6 @@ fn reference_type_map(
             );
         }
         let kind = View::u16_be_at(stream, at)?;
-        is_reference_type_kind(kind).then_some(())?;
         at = at.checked_add(2)?;
         expected_end.is_none_or(|end| at <= end).then_some(())?;
         entries.push((reference, kind));
@@ -2476,13 +2472,6 @@ fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usi
     merged
 }
 
-fn is_tagged_reference_kind(kind: u16) -> bool {
-    (family_name(kind).is_some() && kind != 98) || matches!(kind, 79 | 80)
-}
-
-fn is_reference_type_kind(kind: u16) -> bool {
-    is_tagged_reference_kind(kind) || matches!(kind, 11 | 35 | 55 | 61 | 67 | 100)
-}
 
 fn consume_shared_record(
     stream: &[u8],
@@ -4562,12 +4551,12 @@ mod inline_schema_tests {
         let census = Census {
             tagged_reference_lanes: vec![
                 TaggedReferenceLane {
-                    references: Vec::new(),
+                    references: vec![(79, 2)].try_into().unwrap(),
                     offset: shared_offset,
                     end: shared_offset + 16,
                 },
                 TaggedReferenceLane {
-                    references: Vec::new(),
+                    references: vec![(79, 2)].try_into().unwrap(),
                     offset: declaration_end,
                     end: stream.len(),
                 },
@@ -4741,7 +4730,7 @@ mod reference_type_map_tests {
         assert_eq!(
             census.reference_type_maps,
             [ReferenceTypeMap {
-                entries: vec![(40_000, 81), (3, 100)],
+                entries: vec![(40_000, 81), (3, 100)].try_into().unwrap(),
                 target_kind: NonZeroU16::new(55),
                 offset: 0,
                 end: bytes.len(),
@@ -4760,7 +4749,7 @@ mod reference_type_map_tests {
         assert_eq!(
             census.reference_type_maps,
             [ReferenceTypeMap {
-                entries: vec![(40_000, 81), (3, 100)],
+                entries: vec![(40_000, 81), (3, 100)].try_into().unwrap(),
                 target_kind: NonZeroU16::new(55),
                 offset: 0,
                 end: bytes.len(),
@@ -4805,7 +4794,7 @@ mod reference_type_map_tests {
         assert_eq!(
             census.reference_type_maps,
             [ReferenceTypeMap {
-                entries: vec![(3, 82)],
+                entries: vec![(3, 82)].try_into().unwrap(),
                 target_kind: NonZeroU16::new(612),
                 offset: 0,
                 end: map.len(),
@@ -4824,7 +4813,7 @@ mod reference_type_map_tests {
         assert_eq!(
             census.reference_type_maps,
             [ReferenceTypeMap {
-                entries: vec![(3, 81), (4, 100)],
+                entries: vec![(3, 81), (4, 100)].try_into().unwrap(),
                 target_kind: None,
                 offset: 0,
                 end: bytes.len(),
@@ -4842,7 +4831,7 @@ mod reference_type_map_tests {
         assert_eq!(
             census.reference_type_maps,
             [ReferenceTypeMap {
-                entries: vec![(3, 81)],
+                entries: vec![(3, 81)].try_into().unwrap(),
                 target_kind: None,
                 offset: 0,
                 end: 8,
@@ -4872,7 +4861,7 @@ mod reference_type_map_tests {
         assert_eq!(
             census.reference_type_maps,
             [ReferenceTypeMap {
-                entries: vec![(3, 81), (4, 100)],
+                entries: vec![(3, 81), (4, 100)].try_into().unwrap(),
                 target_kind: None,
                 offset: 0,
                 end: bytes.len(),
@@ -4890,7 +4879,7 @@ mod reference_type_map_tests {
         assert_eq!(
             census.reference_type_maps,
             [ReferenceTypeMap {
-                entries: vec![(3, 67), (4, 11)],
+                entries: vec![(3, 67), (4, 11)].try_into().unwrap(),
                 target_kind: NonZeroU16::new(61),
                 offset: 0,
                 end: bytes.len(),

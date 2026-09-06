@@ -16,6 +16,7 @@ use body_revision_wire::RevisionLengths;
 use crate::deltas::packet_marker::ReferenceMarker;
 use crate::deltas::xmt_reference::NonNullXmt;
 use crate::deltas::state_frame::StateFrames;
+use crate::deltas::reference_lanes::{MapEntries, TaggedReferences};
 use crate::deltas::transmit_state::TransmitState;
 use crate::deltas::preamble_state::PreambleState;
 use crate::deltas::type150_state::Type150State;
@@ -551,7 +552,7 @@ pub struct ParasolidDeltasTaggedReferenceLane {
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
     /// Ordered `(Parasolid record kind, XMT identity)` references.
-    pub references: Vec<(u16, u32)>,
+    pub references: TaggedReferences,
     /// Exact reference-lane byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact reference-lane bytes.
@@ -568,7 +569,7 @@ pub struct ParasolidDeltasReferenceTypeMap {
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
     /// Ordered `(XMT identity, Parasolid type code)` entries.
-    pub entries: Vec<(u32, u16)>,
+    pub entries: MapEntries,
     /// Type code of the optional terminal map target.
     #[serde(default, deserialize_with = "deserialize_map_target_kind")]
     pub target_kind: Option<std::num::NonZeroU16>,
@@ -3744,7 +3745,7 @@ mod tests {
 
         assert_eq!(events.tagged_reference_lanes.len(), 1);
         let lane = &events.tagged_reference_lanes[0];
-        assert_eq!(lane.references, [(79, 10), (80, 32_768)]);
+        assert_eq!(Vec::<(u16, u32)>::from(lane.references.clone()), [(79, 10), (80, 32_768)]);
         assert_eq!(lane.byte_len, 10);
         assert_eq!(lane.inflated_offset, lane_offset as u64);
         assert_eq!(
@@ -3854,7 +3855,7 @@ mod tests {
 
         assert_eq!(events.reference_type_maps.len(), 1);
         let map = &events.reference_type_maps[0];
-        assert_eq!(map.entries, [(40_000, 81), (3, 100)]);
+        assert_eq!(Vec::<(u32, u16)>::from(map.entries.clone()), [(40_000, 81), (3, 100)]);
         assert_eq!(map.target_kind.map(std::num::NonZeroU16::get), Some(55));
         assert_eq!(map.byte_len, 20);
         assert_eq!(map.inflated_offset, map_offset as u64);

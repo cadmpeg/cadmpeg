@@ -688,7 +688,7 @@ fn deltas_tagged_reference_lanes_require_complete_known_kind_and_xmt_pairs() {
     let census = crate::deltas::walk(&stream);
     assert_eq!(census.tagged_reference_lanes.len(), 1);
     assert_eq!(
-        census.tagged_reference_lanes[0].references,
+        Vec::<(u16, u32)>::from(census.tagged_reference_lanes[0].references.clone()),
         [(79, 10), (80, 32_768)]
     );
     assert_eq!(census.tagged_reference_lanes[0].offset, 0);

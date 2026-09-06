@@ -223,6 +223,6 @@ fn deltas_body_revision_does_not_absorb_an_adjacent_tagged_reference_lane() {
     assert_eq!(census.body_revisions[0].end, lane_offset);
     assert_eq!(census.tagged_reference_lanes.len(), 1);
     assert_eq!(census.tagged_reference_lanes[0].offset, lane_offset);
-    assert_eq!(census.tagged_reference_lanes[0].references, [(29, 10)]);
+    assert_eq!(Vec::<(u16, u32)>::from(census.tagged_reference_lanes[0].references.clone()), [(29, 10)]);
     assert_eq!(census.bytes_decoded, bytes.len());
 }
