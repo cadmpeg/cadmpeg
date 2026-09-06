@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::native::om::roll_forward::OmRollForwardStateGroup;
+use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::om::roll_forward::OperationStateGroupRow;
 use crate::om::state_message::{StateMessage, StateMessageSeverity};
 use std::io::Cursor;
@@ -14,7 +15,7 @@ use crate::native::om::{
     audit_trail_rows, operation_state_counters, operation_state_groups,
     operation_state_journal_groups, operation_state_messages, operation_state_slot_lanes,
     operation_state_statuses, OmAuditTrailRow, OmOperationStateCounter, OmOperationStateMessage,
-    OmOperationStateSlotLane, OmOperationStateStatus,
+    OmOperationStateStatus,
 };
 use crate::test_support::{
     composed_feature_history_payload_with_operation_state_statuses,
@@ -291,17 +292,17 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
 
     let lanes = operation_state_slot_lanes(&container);
     assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].slots.len(), 3);
+    assert_eq!(lanes[0].frame.slots().len(), 3);
     assert_eq!(
-        lanes[0].slots.as_slice()[0].map(crate::om::state_index::StateIndexToken::value),
+        lanes[0].frame.slots().as_slice()[0].map(crate::om::state_index::StateIndexToken::value),
         None
     );
     assert_eq!(
-        lanes[0].slots.as_slice()[1].map(crate::om::state_index::StateIndexToken::value),
+        lanes[0].frame.slots().as_slice()[1].map(crate::om::state_index::StateIndexToken::value),
         Some(0x3ad)
     );
     assert_eq!(
-        lanes[0].slots.as_slice()[2].map(crate::om::state_index::StateIndexToken::value),
+        lanes[0].frame.slots().as_slice()[2].map(crate::om::state_index::StateIndexToken::value),
         None
     );
 

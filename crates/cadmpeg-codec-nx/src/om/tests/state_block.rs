@@ -125,10 +125,9 @@ fn operation_state_status_table_retains_plain_link_diagnostic_and_opaque_rows() 
     };
     assert_eq!(raw, &[0x1e, 0x01, 0x41, 0xff, 0x83, 0xad, 0xff, 0x02, 0x11]);
     assert_eq!(table.slot_lanes.len(), 1);
-    assert_eq!(table.slot_lanes[0].slots.len(), 3);
+    assert_eq!(table.slot_lanes[0].slots().len(), 3);
     assert_eq!(
-        table.slot_lanes[0].slots.as_slice()[1]
-            .token()
+        table.slot_lanes[0].slots().as_slice()[1]
             .map(crate::om::state_index::StateIndexToken::value),
         Some(0x3ad)
     );

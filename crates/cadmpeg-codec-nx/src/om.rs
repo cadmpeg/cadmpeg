@@ -65,7 +65,8 @@ pub(crate) mod state_index;
 pub(crate) mod state_slots;
 pub(crate) mod state_tagged_value;
 use source_span::SourceSpan;
-use state_slots::StateSlots;
+pub(crate) mod state_slot_lane;
+use state_slot_lane::StateSlotLane;
 pub(crate) mod state_link;
 use state_link::StateLinkCode;
 pub(crate) mod roll_forward;
@@ -677,25 +678,16 @@ pub struct OperationStateStatusTable<'a> {
     /// Rows in serialized order.
     pub rows: Vec<OperationStateStatus<'a>>,
     /// Standalone feature-record slot lanes following the status rows.
-    pub slot_lanes: Vec<OperationStateSlotLane>,
+    pub slot_lanes: Vec<StateSlotLane>,
     /// Exact bounded bytes after the last complete status row.
     pub trailing_bytes: &'a [u8],
-}
-
-/// One standalone feature-record slot lane in the operation-state block.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationStateSlotLane {
-    /// Checked source position within its record area.
-    pub span: SourceSpan,
-    /// Null or object-index slots in serialized order.
-    pub slots: StateSlots<OperationStateIndex>,
 }
 
 struct OperationStateBlock<'a> {
     offset: usize,
     status_end_offset: usize,
     rows: Vec<OperationStateStatus<'a>>,
-    slot_lanes: Vec<OperationStateSlotLane>,
+    slot_lanes: Vec<StateSlotLane>,
     messages: Vec<OperationStateMessage<'a>>,
 }
 
@@ -4329,7 +4321,7 @@ fn operation_state_status_end_at(
     if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
         let precomputed_end = opaque_lane_starts
             .and_then(|starts| operation_state_opaque_lane_end_at(starts, at, end));
-        precomputed_end.or_else(|| operation_state_slot_lane_end_at(bytes, at, end))
+        precomputed_end.or_else(|| StateSlotLane::end_at(bytes, at, end))
     } else {
         operation_state_status_row_at(bytes, at, end, base_offset, opaque_lane_starts)
             .map(|row| row.span.local_end())
@@ -4494,10 +4486,10 @@ fn operation_state_block_before_boundary(
         if status_length >= message_length && status_length > 0 {
             let next = status_next?;
             if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
-                let lane = operation_state_slot_lane_at(bytes, at, end, base_offset)?;
-                let lane_end = lane.span.local_end();
+                let lane = StateSlotLane::read(bytes, at, end, base_offset)?;
+                let lane_end = lane.end_offset() - base_offset;
                 (lane_end == next).then_some(())?;
-                let lane_end_offset = lane.span.end_offset();
+                let lane_end_offset = lane.end_offset();
                 slot_lanes.push(lane);
                 at = next;
                 status_end_offset = lane_end_offset;
@@ -4596,47 +4588,6 @@ fn operation_state_link_payload(
     ))
 }
 
-fn operation_state_slot_lane_at(
-    bytes: &[u8],
-    at: usize,
-    end: usize,
-    base_offset: usize,
-) -> Option<OperationStateSlotLane> {
-    if bytes.get(at..at + 3) != Some(&[0x02, 0x01, 0x11]) {
-        return None;
-    }
-    let mut slots = Vec::new();
-    let mut cursor = at + 3;
-    while cursor < end {
-        if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
-            let lane_end = cursor + 2;
-            return Some(OperationStateSlotLane {
-                span: SourceSpan::new(base_offset, at, lane_end)?,
-                slots: StateSlots::new(slots).ok()?,
-            });
-        }
-        let slot = OperationStateIndex::read_at(bytes, cursor, base_offset)?;
-        cursor = cursor.checked_add(slot.raw().len())?;
-        slots.push(slot);
-    }
-    None
-}
-
-fn operation_state_slot_lane_end_at(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
-    if bytes.get(at..at + 3) != Some(&[0x02, 0x01, 0x11]) {
-        return None;
-    }
-    let mut cursor = at + 3;
-    while cursor < end {
-        if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
-            return cursor.checked_add(2);
-        }
-        let slot = OperationStateIndex::read_at(bytes, cursor, 0)?;
-        cursor = cursor.checked_add(slot.raw().len())?;
-    }
-    None
-}
-
 fn operation_state_status_row_at<'a>(
     bytes: &'a [u8],
     at: usize,
@@ -4702,8 +4653,8 @@ pub fn operation_state_status_table(
             break;
         }
         if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
-            let lane = operation_state_slot_lane_at(bytes, at, end, base_offset)?;
-            at = lane.span.local_end();
+            let lane = StateSlotLane::read(bytes, at, end, base_offset)?;
+            at = lane.end_offset() - base_offset;
             slot_lanes.push(lane);
             continue;
         }

@@ -32,16 +32,6 @@ impl<T> StateSlots<T> {
         &self.0
     }
 
-    pub(crate) fn map_slots<U>(self, mut map: impl FnMut(u32, T) -> U) -> StateSlots<U> {
-        StateSlots(
-            self.0
-                .into_iter()
-                .enumerate()
-                .map(|(ordinal, slot)| map(ordinal as u32, slot))
-                .collect(),
-        )
-    }
-
     pub(crate) fn try_map_slots<U, E>(
         self,
         mut map: impl FnMut(u32, T) -> Result<U, E>,
@@ -64,7 +54,8 @@ mod tests {
     fn slot_maps_preserve_positions_and_empty_sequences() {
         let slots = StateSlots::new(vec![10, 20])
             .unwrap()
-            .map_slots(|ordinal, value| (ordinal, value));
+            .try_map_slots(|ordinal, value| Ok::<_, ()>((ordinal, value)))
+            .unwrap();
         assert_eq!(slots.as_slice(), &[(0, 10), (1, 20)]);
         assert_eq!(StateSlots::new(Vec::<()>::new()).unwrap().len(), 0);
     }

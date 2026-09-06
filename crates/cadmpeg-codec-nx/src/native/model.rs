@@ -6,6 +6,7 @@
 //! data is omitted, never surfaced as an error.
 
 use crate::native::om::roll_forward::OmRollForwardStateGroup;
+use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;

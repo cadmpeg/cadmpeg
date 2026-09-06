@@ -35,6 +35,8 @@ use crate::om::parameter_name::ParameterName;
 pub(crate) mod roll_forward;
 use roll_forward::OmRollForwardStateGroup;
 use crate::om::IndexedStore;
+pub(crate) mod state_slot_lane;
+use state_slot_lane::OmOperationStateSlotLane;
 
 /// Semantic family declared by a linked OM section's class registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -209,25 +211,6 @@ pub struct OmOperationStateStatus {
     /// Absolute file offset of the status-code token.
     pub source_offset: u64,
     /// Absolute exclusive end offset of the row.
-    pub end_offset: u64,
-}
-
-/// One `02 01 11 ... 02 11` operation-state slot lane.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OmOperationStateSlotLane {
-    /// Globally unique slot-lane identity.
-    pub id: String,
-    /// Owning feature-history section link.
-    pub section_link: String,
-    /// Zero-based lane ordinal within the status table.
-    pub ordinal: u32,
-    /// Ordered null or object-index slots.
-    pub slots: crate::om::state_slots::StateSlots<Option<StateIndexToken>>,
-    /// Directory entry containing the feature-history section.
-    pub source_entry: String,
-    /// Absolute file offset of the lane prefix.
-    pub source_offset: u64,
-    /// Absolute exclusive end offset after the lane terminator.
     pub end_offset: u64,
 }
 
@@ -576,17 +559,14 @@ pub fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationState
                 .enumerate()
                 .filter_map(move |(ordinal, lane)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let slots = lane.slots.map_slots(|_, slot| slot.token());
                     Some(OmOperationStateSlotLane {
                         id: format!(
                             "nx:feature-history:operation-state-slot-lane#{section_key}-{ordinal:010}"
                         ),
                         section_link: link.id.clone(),
                         ordinal,
-                        slots,
+                        frame: lane.into_absolute(entry_offset)?,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + lane.span.offset() as u64,
-                        end_offset: entry_offset + lane.span.end_offset() as u64,
                     })
                 })
                 .collect()

@@ -7,6 +7,7 @@
 //! Stream choice (`nx:container` vs `nx:s{ordinal}`) lives in the `note` fn.
 
 use crate::native::om::roll_forward::OmRollForwardStateGroup;
+use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
@@ -332,7 +333,7 @@ impl ContainerNoted for OmOperationStateStatus {
 }
 impl ContainerNoted for OmOperationStateSlotLane {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.frame.offset())
     }
 }
 impl ContainerNoted for FeatureOperationLabel {
