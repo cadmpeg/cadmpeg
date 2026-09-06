@@ -5,8 +5,7 @@ fn graph_scopes_equal_names_by_native_unit_label() {
     let expression =
         |id: &str, name: &str, unit: ExpressionUnit, formula: &str, value| Expression {
             id: id.into(),
-            object_id: None,
-            record: None,
+            owner: None,
             declaration: None,
             name: name.into(),
             parameter_index: None,

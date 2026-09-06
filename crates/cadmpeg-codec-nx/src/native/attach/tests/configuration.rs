@@ -931,8 +931,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
 fn nx_native_feature_parameters_require_unique_resolved_names() {
     let expression = |id: &str, name: &str, text: &str| crate::native::om::Expression {
         id: id.to_string(),
-        object_id: None,
-        record: None,
+        owner: None,
         declaration: None,
         name: name.to_string(),
         parameter_index: None,
@@ -1309,8 +1308,7 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
 fn nx_block_dimension_parameters_name_the_block_as_consumer() {
     let expression = |key: u32| crate::native::om::Expression {
         id: format!("nx:test:expression#{key}"),
-        object_id: Some(key),
-        record: None,
+        owner: None,
         declaration: None,
         name: format!("p{key}"),
         parameter_index: Some(key),
@@ -1380,8 +1378,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
 fn nx_inch_expression_values_are_attached_in_millimeters() {
     let expression = |key: u32, name: &str, formula: &str, value| crate::native::om::Expression {
         id: format!("nx:test:expression#{key}"),
-        object_id: Some(key),
-        record: None,
+        owner: None,
         declaration: None,
         name: name.into(),
         parameter_index: Some(key),
@@ -1428,8 +1425,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
 fn nx_native_expression_units_remain_outside_neutral_values() {
     let expression = crate::native::om::Expression {
         id: "nx:test:expression#native".into(),
-        object_id: Some(1),
-        record: None,
+        owner: None,
         declaration: None,
         name: "p1".into(),
         parameter_index: Some(1),

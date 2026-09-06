@@ -942,13 +942,12 @@ pub struct ExpressionDeclaration {
 
 /// Explicit numeric expression serialized in one NX OM entity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "ExpressionWire", into = "ExpressionWire")]
 pub struct Expression {
     /// Globally unique native-record identity.
     pub id: String,
-    /// Persistent OM object identifier.
-    pub object_id: Option<u32>,
-    /// Owning entry in the native OM record directory, when externally bounded.
-    pub record: Option<String>,
+    /// Externally bounded OM record and its optional persistent identity.
+    pub owner: Option<ExpressionOwner>,
     /// Exact-name declaration record for this parameter, when unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declaration: Option<String>,
@@ -973,6 +972,93 @@ pub struct Expression {
     pub source_table: String,
     /// Absolute file offset of the expression text.
     pub source_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpressionOwner {
+    pub object_id: Option<u32>,
+    pub record: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ExpressionWire {
+    /// Globally unique native-record identity.
+    id: String,
+    /// Persistent OM object identifier.
+    object_id: Option<u32>,
+    /// Owning entry in the native OM record directory, when externally bounded.
+    record: Option<String>,
+    /// Exact-name declaration record for this parameter, when unique.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    declaration: Option<String>,
+    /// NX parameter name.
+    name: String,
+    /// Decimal source parameter identifier following the leading `p`.
+    parameter_index: Option<u32>,
+    /// Qualified role following the parameter identifier.
+    qualifier: Option<String>,
+    /// Declared native unit.
+    unit: ExpressionUnit,
+    /// Exact serialized expression text.
+    expression: String,
+    /// Finite numeric value after context-free and dependency-graph evaluation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    value: Option<f64>,
+    /// Directory entry containing the OM section.
+    source_entry: String,
+    /// Self-contained expression table selected by the nearest preceding table marker.
+    #[serde(default)]
+    source_table: String,
+    /// Absolute file offset of the expression text.
+    source_offset: u64,
+}
+
+impl From<Expression> for ExpressionWire {
+    fn from(value: Expression) -> Self {
+        let (object_id, record) = value
+            .owner
+            .map_or((None, None), |owner| (owner.object_id, Some(owner.record)));
+        Self {
+            object_id,
+            record,
+            id: value.id,
+            declaration: value.declaration,
+            name: value.name,
+            parameter_index: value.parameter_index,
+            qualifier: value.qualifier,
+            unit: value.unit,
+            expression: value.expression,
+            value: value.value,
+            source_entry: value.source_entry,
+            source_table: value.source_table,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<ExpressionWire> for Expression {
+    type Error = String;
+    fn try_from(wire: ExpressionWire) -> Result<Self, Self::Error> {
+        let owner = match (wire.object_id, wire.record) {
+            (None, None) => None,
+            (object_id, Some(record)) => Some(ExpressionOwner { object_id, record }),
+            (Some(_), None) => return Err("object_id requires record".into()),
+        };
+        Ok(Self {
+            owner,
+            id: wire.id,
+            declaration: wire.declaration,
+            name: wire.name,
+            parameter_index: wire.parameter_index,
+            qualifier: wire.qualifier,
+            unit: wire.unit,
+            expression: wire.expression,
+            value: wire.value,
+            source_entry: wire.source_entry,
+            source_table: wire.source_table,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Return exact `p<decimal>[_qualifier]` references in formula occurrence order.
@@ -5449,10 +5535,8 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                 });
             expressions.push(Expression {
                 id: format!("nx:om-entry-{entry_index}:expression#{}", expression.offset),
-                object_id: indexed_record
-                    .as_ref()
-                    .and_then(|(object_id, _)| *object_id),
-                record: indexed_record.map(|(_, record)| record),
+                owner: indexed_record
+                    .map(|(object_id, record)| ExpressionOwner { object_id, record }),
                 declaration,
                 name: expression.name.to_string(),
                 parameter_index: expression.parameter_index,
@@ -5646,8 +5730,7 @@ mod tests {
     fn nx_expression_graph_rejects_noncanonical_parameter_tokens() {
         let expression = |name: &str, formula: &str, value| super::Expression {
             id: format!("nx:test:expression#{name}"),
-            object_id: None,
-            record: None,
+            owner: None,
             declaration: None,
             name: name.into(),
             parameter_index: None,
@@ -5675,8 +5758,7 @@ mod tests {
     fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
         let expression = |name: &str, formula: &str, value| super::Expression {
             id: format!("nx:test:expression#{name}"),
-            object_id: None,
-            record: None,
+            owner: None,
             declaration: None,
             name: name.into(),
             parameter_index: None,
@@ -5705,8 +5787,7 @@ mod tests {
     fn nx_expression_graph_substitutes_dependencies_as_atomic_operands() {
         let expression = |name: &str, formula: &str, value| super::Expression {
             id: format!("nx:test:expression#{name}"),
-            object_id: None,
-            record: None,
+            owner: None,
             declaration: None,
             name: name.into(),
             parameter_index: None,
@@ -5735,8 +5816,7 @@ mod tests {
         let expression =
             |id: &str, table: &str, name: &str, formula: &str, value| super::Expression {
                 id: id.into(),
-                object_id: None,
-                record: None,
+                owner: None,
                 declaration: None,
                 name: name.into(),
                 parameter_index: None,
@@ -5766,8 +5846,7 @@ mod tests {
         let expression =
             |id: &str, table: &str, name: &str, formula: &str, value| super::Expression {
                 id: id.into(),
-                object_id: None,
-                record: None,
+                owner: None,
                 declaration: None,
                 name: name.into(),
                 parameter_index: None,
@@ -5802,8 +5881,7 @@ mod tests {
             |id: &str, name: &str, unit: super::ExpressionUnit, formula: &str, value| {
                 super::Expression {
                     id: id.into(),
-                    object_id: None,
-                    record: None,
+                    owner: None,
                     declaration: None,
                     name: name.into(),
                     parameter_index: None,
@@ -5864,8 +5942,7 @@ mod tests {
                           text: &str,
                           value: Option<f64>| super::Expression {
             id: format!("nx:test:expression#{key}"),
-            object_id: Some(key),
-            record: None,
+            owner: None,
             declaration: None,
             name: name.into(),
             parameter_index: Some(index),
@@ -5903,8 +5980,7 @@ mod tests {
     fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
         let expression = |key: u32, name: &str, text: &str| super::Expression {
             id: format!("nx:test:expression#{key}"),
-            object_id: Some(key),
-            record: None,
+            owner: None,
             declaration: None,
             name: name.into(),
             parameter_index: Some(key),
@@ -5939,8 +6015,7 @@ mod tests {
         let expression = |key: u32, name: &str, unit: super::ExpressionUnit, text: &str, value| {
             super::Expression {
                 id: format!("nx:test:expression#{key}"),
-                object_id: Some(key),
-                record: None,
+                owner: None,
                 declaration: None,
                 name: name.into(),
                 parameter_index: Some(key),
@@ -6024,8 +6099,7 @@ mod tests {
         let expression =
             |id: &str, table: &str, name: &str, text: &str, source_offset: u64| super::Expression {
                 id: format!("nx:test:expression#{id}"),
-                object_id: None,
-                record: None,
+                owner: None,
                 declaration: None,
                 name: name.into(),
                 parameter_index: None,
@@ -6133,8 +6207,7 @@ mod tests {
     fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
         let expression = |id: &str, name: &str, text: &str, source_offset| super::Expression {
             id: format!("nx:test:expression#{id}"),
-            object_id: None,
-            record: None,
+            owner: None,
             declaration: None,
             name: name.to_string(),
             parameter_index: None,
@@ -6185,8 +6258,7 @@ mod tests {
     fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
         let expression = |id: &str, name: &str, text: &str, source_offset| super::Expression {
             id: format!("nx:test:expression#{id}"),
-            object_id: None,
-            record: None,
+            owner: None,
             declaration: None,
             name: name.to_string(),
             parameter_index: None,
@@ -6283,8 +6355,7 @@ mod tests {
 
         let expression = super::Expression {
             id: "nx:test:expression#20".to_string(),
-            object_id: Some(20),
-            record: None,
+            owner: None,
             declaration: None,
             name: "p20".to_string(),
             parameter_index: Some(20),
@@ -6319,8 +6390,7 @@ mod tests {
     fn nx_parameter_consumers_follow_physical_use_order() {
         let expression = super::Expression {
             id: "nx:test:expression#20".to_string(),
-            object_id: Some(20),
-            record: None,
+            owner: None,
             declaration: None,
             name: "p20".to_string(),
             parameter_index: Some(20),
@@ -6371,8 +6441,7 @@ mod tests {
     fn nx_parameter_consumers_depend_on_preceding_expression_owner() {
         let expression = super::Expression {
             id: "nx:test:expression#20".to_string(),
-            object_id: Some(20),
-            record: None,
+            owner: None,
             declaration: None,
             name: "p20".to_string(),
             parameter_index: Some(20),
@@ -6454,8 +6523,7 @@ mod tests {
 
         let expression = super::Expression {
             id: "nx:om-entry-9:expression#3".to_string(),
-            object_id: Some(201),
-            record: None,
+            owner: None,
             declaration: Some("nx:om-expression-declarations-0:declaration#3".to_string()),
             name: "p3".to_string(),
             parameter_index: Some(3),
@@ -6581,8 +6649,17 @@ mod tests {
         assert!(super::object_references(&container).is_empty());
         let expressions = super::expressions(&container);
         assert_eq!(expressions.len(), 1);
-        assert_eq!(expressions[0].object_id, None);
-        assert_eq!(expressions[0].record, None);
+        assert_eq!(
+            expressions[0]
+                .owner
+                .as_ref()
+                .and_then(|owner| owner.object_id),
+            None
+        );
+        assert_eq!(
+            expressions[0].owner.as_ref().map(|owner| &owner.record),
+            None
+        );
     }
 
     #[test]
@@ -6732,7 +6809,13 @@ mod tests {
             189
         );
         assert_eq!(expressions.len(), 1);
-        assert_eq!(expressions[0].object_id, Some(0x102));
+        assert_eq!(
+            expressions[0]
+                .owner
+                .as_ref()
+                .and_then(|owner| owner.object_id),
+            Some(0x102)
+        );
         assert_eq!(expressions[0].parameter_index, Some(8));
         assert_eq!(
             expressions[0].qualifier.as_deref(),
@@ -6815,7 +6898,10 @@ mod tests {
             object_records[1].object_id.map(|(_, offset)| offset),
             object_records[0].object_id.map(|(_, offset)| offset + 4)
         );
-        assert_eq!(expressions[0].record.as_ref(), Some(&object_records[1].id));
+        assert_eq!(
+            expressions[0].owner.as_ref().map(|owner| &owner.record),
+            Some(&object_records[1].id)
+        );
         assert_eq!(object_records[1].record_ordinal, 1);
         assert_eq!(
             object_records[0].section_offset,
