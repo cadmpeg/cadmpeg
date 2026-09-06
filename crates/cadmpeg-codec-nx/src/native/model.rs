@@ -6,6 +6,9 @@
 //! data is omitted, never surfaced as an error.
 
 use crate::container::Container;
+use crate::native::features::datum_plane_header::{
+    feature_datum_plane_headers, FeatureDatumPlaneHeader,
+};
 use crate::parasolid::Stream;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::ids::BodyId;

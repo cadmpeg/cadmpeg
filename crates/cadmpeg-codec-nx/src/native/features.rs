@@ -11,6 +11,9 @@ use crate::native::om::{
 use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
 use std::borrow::Cow;
 
+pub(crate) mod datum_plane_header;
+use datum_plane_header::FeatureDatumPlaneHeader;
+
 /// Ordered feature operation label from a feature-history record area.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureOperationLabel {
@@ -1436,47 +1439,6 @@ pub struct FeatureDatumPlaneCsysIdentityUse {
     pub datum_csys_operation_label: String,
     /// Datum-CSYS construction reference ordinal.
     pub datum_csys_reference_ordinal: u8,
-}
-
-/// Common typed header of one datum-plane construction payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureDatumPlaneHeader {
-    /// Globally unique header identity.
-    pub id: String,
-    /// Owning `DATUM_PLANE` operation label.
-    pub operation_label: String,
-    /// Payload control byte.
-    pub control: u8,
-    /// Declared construction count.
-    pub declared_count: u8,
-    /// Tag selecting the following construction branch.
-    pub branch_tag: u8,
-    /// Ordered compact descriptor indices carried by the selected branch.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub descriptor_indices: Vec<u32>,
-    /// Exact compact descriptor-index tokens in branch order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub raw_descriptor_indices: Vec<Vec<u8>>,
-    /// Ordered canonical object indices carried by the selected branch.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub object_indices: Vec<u32>,
-    /// Exact canonical object-index tokens in branch order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub raw_object_indices: Vec<Vec<u8>>,
-    /// Atomically resolved same-store descriptor blocks.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub descriptor_data_blocks: Vec<String>,
-    /// Atomically resolved same-store canonical object blocks.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub object_data_blocks: Vec<String>,
-    /// Absolute offsets of compact descriptor indices.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub descriptor_source_offsets: Vec<u64>,
-    /// Absolute offsets of canonical object-index markers.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub object_source_offsets: Vec<u64>,
-    /// Absolute offset of the payload control byte.
-    pub source_offset: u64,
 }
 
 /// One compact index in a datum-plane terminal index lane.
@@ -7299,122 +7261,6 @@ pub fn feature_datum_csys_constructions(
     constructions
 }
 
-/// Decode common datum-plane payload headers from feature-history records.
-pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPlaneHeader> {
-    let indexed = container.indexed_om_sections();
-    let inputs = feature_input_blocks(container);
-    let mut headers = Vec::new();
-    visit_feature_history_operation_records(
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(header) = crate::om::datum_plane_payload_header(record) else {
-                return;
-            };
-            let single = crate::om::datum_plane_descriptor_reference_branch(record);
-            let double = crate::om::datum_plane_double_reference_branch(record);
-            let descriptor_indices = single
-                .iter()
-                .map(|branch| branch.descriptor_index)
-                .collect::<Vec<_>>();
-            let object_indices = single
-                .iter()
-                .map(|branch| branch.object_index)
-                .chain(double.iter().flat_map(|branch| {
-                    branch
-                        .references
-                        .iter()
-                        .map(|reference| reference.object_index)
-                }))
-                .collect::<Vec<_>>();
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let input_prefixes = inputs
-                .iter()
-                .filter(|input| input.operation_label == operation_label)
-                .filter_map(|input| {
-                    input
-                        .data_block
-                        .rsplit_once(":block#")
-                        .map(|(prefix, _)| prefix)
-                })
-                .collect::<BTreeSet<_>>();
-            let resolved = (object_indices.len() + descriptor_indices.len() > 0)
-                .then_some(())
-                .and_then(|()| {
-                    if input_prefixes.len() != 1 {
-                        return None;
-                    }
-                    let input_prefix = *input_prefixes.iter().next()?;
-                    let descriptor_blocks = descriptor_indices
-                        .iter()
-                        .map(|index| unique_offset_data_block(&indexed, *index))
-                        .collect::<Option<Vec<_>>>()?;
-                    let object_blocks = object_indices
-                        .iter()
-                        .map(|index| unique_offset_data_block(&indexed, *index))
-                        .collect::<Option<Vec<_>>>()?;
-                    let same_store = |block: &str| {
-                        block
-                            .rsplit_once(":block#")
-                            .is_some_and(|(prefix, _)| prefix == input_prefix)
-                    };
-                    descriptor_blocks
-                        .iter()
-                        .chain(&object_blocks)
-                        .all(|block| same_store(block))
-                        .then_some((descriptor_blocks, object_blocks))
-                });
-            headers.push(FeatureDatumPlaneHeader {
-                id: format!(
-                    "nx:feature-history:datum-plane-header#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label,
-                control: header.control,
-                declared_count: header.declared_count,
-                branch_tag: header.branch_tag,
-                descriptor_indices,
-                raw_descriptor_indices: single
-                    .iter()
-                    .map(|branch| branch.raw_descriptor_index.clone())
-                    .collect(),
-                object_indices,
-                raw_object_indices: single
-                    .iter()
-                    .map(|branch| branch.raw_object_index.clone())
-                    .chain(double.iter().flat_map(|branch| {
-                        branch
-                            .references
-                            .iter()
-                            .map(|reference| reference.raw_object_index.clone())
-                    }))
-                    .collect(),
-                descriptor_data_blocks: resolved
-                    .as_ref()
-                    .map_or_else(Vec::new, |(blocks, _)| blocks.clone()),
-                object_data_blocks: resolved
-                    .as_ref()
-                    .map_or_else(Vec::new, |(_, blocks)| blocks.clone()),
-                descriptor_source_offsets: single
-                    .iter()
-                    .map(|branch| entry_offset + branch.descriptor_offset as u64)
-                    .collect(),
-                object_source_offsets: single
-                    .iter()
-                    .map(|branch| entry_offset + branch.object_offset as u64)
-                    .chain(double.iter().flat_map(|branch| {
-                        branch
-                            .references
-                            .iter()
-                            .map(|reference| entry_offset + reference.offset as u64)
-                    }))
-                    .collect(),
-                source_offset: entry_offset + record.payload_offset as u64,
-            });
-        },
-    );
-    headers
-}
-
 /// Reconstruct datum-plane object payloads across ordered store blocks.
 pub fn feature_datum_plane_payloads(
     container: &Container,
@@ -7423,10 +7269,19 @@ pub fn feature_datum_plane_payloads(
     let blocks = offset_data_block_bytes(container);
     headers
         .iter()
-        .filter(|header| !header.object_data_blocks.is_empty())
+        .filter(|header| {
+            !header
+                .resolved_references(DatumPlaneBlockLane::Object)
+                .is_empty()
+        })
         .filter_map(|header| {
+            let data_blocks = header
+                .resolved_references(DatumPlaneBlockLane::Object)
+                .iter()
+                .map(|reference| reference.data_block.clone())
+                .collect::<Vec<_>>();
             let (payload, block_payload_offsets, block_byte_lengths, block_source_offsets) =
-                join_data_block_bytes(&header.object_data_blocks, &blocks)?;
+                join_data_block_bytes(&data_blocks, &blocks)?;
             let lanes = crate::om::datum_plane_object_index_lanes(&payload);
             let lane = match lanes.as_slice() {
                 [lane] => Some(lane),
@@ -7437,7 +7292,7 @@ pub fn feature_datum_plane_payloads(
                 id: format!("nx:feature-history:datum-plane-payload#{key}"),
                 operation_label: header.operation_label.clone(),
                 datum_plane_header: header.id.clone(),
-                data_blocks: header.object_data_blocks.clone(),
+                data_blocks,
                 byte_len: payload.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(&payload),
                 block_payload_offsets,
@@ -7717,10 +7572,11 @@ pub fn feature_datum_plane_descriptors(
         .iter()
         .flat_map(|header| {
             header
-                .descriptor_data_blocks
+                .resolved_references(DatumPlaneBlockLane::Descriptor)
                 .iter()
                 .enumerate()
-                .filter_map(|(ordinal, data_block)| {
+                .filter_map(|(ordinal, reference)| {
+                    let data_block = &reference.data_block;
                     let (bytes, source_offset) = blocks.get(data_block)?.to_owned();
                     let descriptor = crate::om::datum_plane_descriptor_block(bytes)?;
                     Some(FeatureDatumPlaneDescriptor {
@@ -7752,14 +7608,11 @@ pub fn feature_datum_plane_block_uses(
             .operation_label
             .rsplit_once('#')
             .map_or(header.operation_label.as_str(), |(_, key)| key);
-        for (lane, blocks) in [
-            (
-                DatumPlaneBlockLane::Descriptor,
-                &header.descriptor_data_blocks,
-            ),
-            (DatumPlaneBlockLane::Object, &header.object_data_blocks),
-        ] {
-            for (reference_ordinal, data_block) in blocks.iter().enumerate() {
+        for lane in [DatumPlaneBlockLane::Descriptor, DatumPlaneBlockLane::Object] {
+            for (reference_ordinal, reference) in
+                header.resolved_references(lane).iter().enumerate()
+            {
+                let data_block = &reference.data_block;
                 for input in inputs
                     .iter()
                     .filter(|input| input.data_block == *data_block)
