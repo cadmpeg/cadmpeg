@@ -37,9 +37,9 @@ fn unlabeled_operation_header_still_bounds_adjacent_records() {
     let [write] = writes.as_slice() else {
         panic!("one independently bounded unlabeled body write");
     };
-    assert_eq!(write.body_identity, 0x0b);
-    assert_eq!(write.group_node, 0x21);
-    assert_eq!(write.body_image_object_index, 0x22);
+    assert_eq!(write.body_identity(), 0x0b);
+    assert_eq!(write.group_node().value(), 0x21);
+    assert_eq!(write.body_image().value(), 0x22);
 }
 
 #[test]
@@ -64,10 +64,10 @@ fn every_body_identity_opens_a_body_write_frame() {
     let [write] = writes.as_slice() else {
         panic!("one body-write frame");
     };
-    assert_eq!(write.body_identity, 0x11);
-    assert_eq!(write.group_node, 0xa9);
-    assert_eq!(write.endpoint_tag, 0x10);
-    assert_eq!(write.body_image_object_index, 0x693);
+    assert_eq!(write.body_identity(), 0x11);
+    assert_eq!(write.group_node().value(), 0xa9);
+    assert_eq!(write.endpoint_tag().code(), 0x10);
+    assert_eq!(write.body_image().value(), 0x693);
 
     for endpoint_tag in [0x12, 0x15] {
         let mut generation = payload;
@@ -80,7 +80,7 @@ fn every_body_identity_opens_a_body_write_frame() {
         let [write] = writes.as_slice() else {
             panic!("generation body-write frame");
         };
-        assert_eq!(write.endpoint_tag, endpoint_tag);
+        assert_eq!(write.endpoint_tag().code(), endpoint_tag);
     }
 
     let mut invalid_endpoint = payload;

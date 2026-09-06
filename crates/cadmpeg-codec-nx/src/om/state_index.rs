@@ -67,8 +67,6 @@ impl OperationStateIndex {
 
     pub(crate) fn token(self) -> Option<StateIndexToken> { self.token }
 
-    pub(crate) fn value(self) -> Option<u32> { self.token.map(StateIndexToken::value) }
-
     pub(crate) fn raw(&self) -> &[u8] { self.token.as_ref().map_or(&[0xff], StateIndexToken::raw) }
 
     #[cfg(test)]
@@ -113,7 +111,7 @@ mod tests {
     #[test]
     fn null_and_incomplete_indices_cannot_be_required() {
         let null = OperationStateIndex::read_at(&[0xff], 0, 10).unwrap();
-        assert_eq!(null.value(), None);
+        assert_eq!(null.token().map(StateIndexToken::value), None);
         assert_eq!(null.raw(), &[0xff]);
         assert!(NonNullStateIndex::from_index(null).is_none());
         for raw in [&[][..], &[0xff][..], &[0x80][..], &[0x90, 0][..], &[0xa0, 0][..], &[0xf1, 0][..], &[0x91, 0, 0][..]] {

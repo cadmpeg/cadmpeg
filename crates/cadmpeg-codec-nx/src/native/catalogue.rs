@@ -364,7 +364,7 @@ impl ContainerNoted for FeatureUnlabeledOperationRecord {
 }
 impl ContainerNoted for FeatureOperationBodyWrite {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.frame.offset())
     }
 }
 impl ContainerNoted for FeatureOperationObjectReference {

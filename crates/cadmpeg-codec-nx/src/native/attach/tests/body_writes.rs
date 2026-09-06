@@ -21,17 +21,11 @@ fn native_body_write(id: &str) -> crate::native::features::FeatureOperationBodyW
         operation_label: Some("operation".into()),
         operation_record: "record".into(),
         ordinal: 0,
-        body_identity: 17,
-        group_node: 1,
-        raw_group_node: vec![1],
-        group_node_source_offset: 0,
-        endpoint_tag: 0x10,
-        body_image_object_index: 2,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(17,
+            crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).unwrap(),
+            crate::om::body_write::BodyImageTag::Form10,
+            crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).unwrap(), 0).unwrap(),
         body_image_data_block: Some("block".into()),
-        raw_body_image_object_index: vec![2],
-        body_image_object_index_source_offset: 0,
-        byte_len: 1,
-        source_offset: 0,
     }
 }
 
@@ -137,7 +131,9 @@ fn native_boolean(
 #[test]
 fn boolean_body_write_requires_one_target_image_and_excludes_tools() {
     let mut write = native_body_write("write");
-    write.body_image_object_index = 40;
+    write.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(write.frame.body_identity(),
+        write.frame.group_node(), write.frame.endpoint_tag(),
+        crate::om::body_write::BodyWriteIndex::from_wire(40, &[40]).unwrap(), write.frame.offset()).unwrap();
     let boolean = native_boolean(40, vec![41, 42]);
 
     assert!(super::body_writes_match_boolean_target(&[&write], None));
@@ -231,7 +227,9 @@ fn conflicting_body_output_witnesses_remain_unresolved() {
 fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
     let write_a = native_body_write("write-a");
     let mut write_b = native_body_write("write-b");
-    write_b.group_node = 2;
+    write_b.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(write_b.frame.body_identity(),
+        crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).unwrap(), write_b.frame.endpoint_tag(),
+        write_b.frame.body_image(), write_b.frame.offset()).unwrap();
     let use_ = crate::native::features::FeatureBodyWriteGroupPartitionUse {
         id: "partition-use".into(),
         body_write: "unlabeled-write".into(),

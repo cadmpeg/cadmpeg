@@ -1101,17 +1101,15 @@ fn om_operation_body_write_is_not_a_direct_primary_body_reference() {
     assert!(super::operation_body_reference(record).is_none());
     assert_eq!(
         super::operation_body_write_frames(record),
-        [super::OperationBodyWriteFrame {
-            offset: 100,
-            body_identity: 0x0b,
-            group_node: 0x66a4,
-            raw_group_node: vec![0xa0, 0x66, 0xa4],
-            group_node_offset: 103,
-            endpoint_tag: 0x10,
-            body_image_object_index: 0x43,
-            raw_body_image_object_index: vec![0x43],
-            body_image_object_index_offset: 111,
-            end_offset: 113,
+        [{
+            let frame = crate::om::body_write::BodyWriteFrame::<usize>::new(0x0b,
+                crate::om::body_write::BodyWriteIndex::from_wire(0x66a4, &[0xa0, 0x66, 0xa4]).unwrap(),
+                crate::om::body_write::BodyImageTag::try_from(0x10).unwrap(),
+                crate::om::body_write::BodyWriteIndex::from_wire(0x43, &[0x43]).unwrap(), 100).unwrap();
+            assert_eq!(frame.group_node_offset(), 103);
+            assert_eq!(frame.body_image_offset(), 111);
+            assert_eq!(frame.end_offset(), 113);
+            frame
         }]
     );
 
@@ -1146,17 +1144,15 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
     };
     assert_eq!(
         super::operation_body_write_frames(record),
-        [super::OperationBodyWriteFrame {
-            offset: 100,
-            body_identity: 0x17,
-            group_node: 0x123,
-            raw_group_node: vec![0x81, 0x23],
-            group_node_offset: 103,
-            endpoint_tag: 0x10,
-            body_image_object_index: 0x645,
-            raw_body_image_object_index: vec![0x86, 0x45],
-            body_image_object_index_offset: 110,
-            end_offset: 113,
+        [{
+            let frame = crate::om::body_write::BodyWriteFrame::<usize>::new(0x17,
+                crate::om::body_write::BodyWriteIndex::from_wire(0x123, &[0x81, 0x23]).unwrap(),
+                crate::om::body_write::BodyImageTag::try_from(0x10).unwrap(),
+                crate::om::body_write::BodyWriteIndex::from_wire(0x645, &[0x86, 0x45]).unwrap(), 100).unwrap();
+            assert_eq!(frame.group_node_offset(), 103);
+            assert_eq!(frame.body_image_offset(), 110);
+            assert_eq!(frame.end_offset(), 113);
+            frame
         }]
     );
 
@@ -1195,9 +1191,9 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
         ..record
     });
     assert_eq!(nested_relations.len(), 1);
-    assert_eq!(nested_relations[0].body_identity, 0x11);
-    assert_eq!(nested_relations[0].group_node, 0xa9);
-    assert_eq!(nested_relations[0].body_image_object_index, 0x693);
+    assert_eq!(nested_relations[0].body_identity(), 0x11);
+    assert_eq!(nested_relations[0].group_node().value(), 0xa9);
+    assert_eq!(nested_relations[0].body_image().value(), 0x693);
 }
 
 #[test]

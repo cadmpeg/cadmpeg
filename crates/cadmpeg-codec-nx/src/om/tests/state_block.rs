@@ -17,7 +17,7 @@ fn operation_state_indices_retain_each_admitted_form() {
     let mut at = 0;
     for (value, width) in expected {
         let token = crate::om::state_index::OperationStateIndex::read_at(&bytes, at, 0).expect("complete state index");
-        assert_eq!(token.value(), value);
+        assert_eq!(token.token().map(crate::om::state_index::StateIndexToken::value), value);
         assert_eq!(token.raw(), &bytes[at..at + width]);
         assert_eq!(token.offset(), at);
         at += width;
@@ -160,7 +160,7 @@ fn operation_state_status_table_retains_plain_link_diagnostic_and_opaque_rows() 
     assert_eq!(raw, &[0x1e, 0x01, 0x41, 0xff, 0x83, 0xad, 0xff, 0x02, 0x11]);
     assert_eq!(table.slot_lanes.len(), 1);
     assert_eq!(table.slot_lanes[0].slots.len(), 3);
-    assert_eq!(table.slot_lanes[0].slots.as_slice()[1].value(), Some(0x3ad));
+    assert_eq!(table.slot_lanes[0].slots.as_slice()[1].token().map(crate::om::state_index::StateIndexToken::value), Some(0x3ad));
     assert_eq!(table.trailing_bytes, &b""[..]);
 }
 

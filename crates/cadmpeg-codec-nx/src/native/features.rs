@@ -7,6 +7,7 @@ use reference::{ConstructionReference, NullableConstructionReference};
 #[allow(clippy::wildcard_imports)]
 use super::*;
 mod common_frame_wire;
+mod body_write_wire;
 use crate::printable_string::PrintableString;
 use crate::native::om::{
     data_blocks, DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow,
@@ -156,39 +157,14 @@ pub struct FeatureUnlabeledOperationRecord {
 
 /// Exact body-write frame retained from one feature operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "body_write_wire::BodyWriteWire", into = "body_write_wire::BodyWriteWire")]
 pub struct FeatureOperationBodyWrite {
-    /// Globally unique relation identity.
     pub id: String,
-    /// Owning operation-label identity, absent for an unlabeled record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation_label: Option<String>,
-    /// Owning bounded operation-record identity.
     pub operation_record: String,
-    /// Zero-based body-write order within the operation payload.
     pub ordinal: u32,
-    /// Persistent identity of the body written by this operation.
-    pub body_identity: u8,
-    /// Partition-local Parasolid GROUP node owned by this feature.
-    pub group_node: u32,
-    /// Exact serialized GROUP-node token.
-    pub raw_group_node: Vec<u8>,
-    /// Absolute offset of the GROUP-node token.
-    pub group_node_source_offset: u64,
-    /// Tagged body-image field discriminator.
-    pub endpoint_tag: u8,
-    /// Offset-store object containing the body's serialized image.
-    pub body_image_object_index: u32,
-    /// Unambiguous offset-store block selected by the body-image object index.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: crate::om::body_write::BodyWriteFrame<u64>,
     pub body_image_data_block: Option<String>,
-    /// Exact serialized body-image object token.
-    pub raw_body_image_object_index: Vec<u8>,
-    /// Absolute offset of the body-image object token.
-    pub body_image_object_index_source_offset: u64,
-    /// Exact serialized frame byte length.
-    pub byte_len: u64,
-    /// Absolute offset of the opening `01 02` marker.
-    pub source_offset: u64,
 }
 
 /// Exact bridge from a body-write image block to one plain cached-body stream.
@@ -6564,6 +6540,8 @@ pub fn feature_unlabeled_operation_body_writes(
                 .into_iter()
                 .enumerate()
             {
+                let Some(offset) = entry_offset.checked_add(write.offset() as u64) else { continue; };
+                let Some(frame) = crate::om::body_write::BodyWriteFrame::<u64>::new(write.body_identity(), write.group_node(), write.endpoint_tag(), write.body_image(), offset) else { continue; };
                 writes.push(FeatureOperationBodyWrite {
                     operation_label: None,
                     id: format!(
@@ -6571,21 +6549,8 @@ pub fn feature_unlabeled_operation_body_writes(
                     ),
                     operation_record: operation_record.clone(),
                     ordinal: ordinal as u32,
-                    body_identity: write.body_identity,
-                    group_node: write.group_node,
-                    raw_group_node: write.raw_group_node,
-                    group_node_source_offset: entry_offset + write.group_node_offset as u64,
-                    endpoint_tag: write.endpoint_tag,
-                    body_image_object_index: write.body_image_object_index,
-                    body_image_data_block: unique_offset_data_block(
-                        &indexed,
-                        write.body_image_object_index,
-                    ),
-                    raw_body_image_object_index: write.raw_body_image_object_index,
-                    body_image_object_index_source_offset: entry_offset
-                        + write.body_image_object_index_offset as u64,
-                    byte_len: (write.end_offset - write.offset) as u64,
-                    source_offset: entry_offset + write.offset as u64,
+                    body_image_data_block: unique_offset_data_block(&indexed, frame.body_image().value()),
+                    frame,
                 });
             }
         },
@@ -6609,6 +6574,8 @@ pub fn feature_operation_body_writes(container: &Container) -> Vec<FeatureOperat
                 .into_iter()
                 .enumerate()
             {
+                let Some(offset) = entry_offset.checked_add(write.offset() as u64) else { continue; };
+                let Some(frame) = crate::om::body_write::BodyWriteFrame::<u64>::new(write.body_identity(), write.group_node(), write.endpoint_tag(), write.body_image(), offset) else { continue; };
                 writes.push(FeatureOperationBodyWrite {
                     id: format!(
                         "nx:feature-history:operation-body-write#{section_key}-{operation_ordinal:010}-{ordinal:010}"
@@ -6616,22 +6583,8 @@ pub fn feature_operation_body_writes(container: &Container) -> Vec<FeatureOperat
                     operation_label: Some(operation_label.clone()),
                     operation_record: operation_record.clone(),
                     ordinal: ordinal as u32,
-                    body_identity: write.body_identity,
-                    group_node: write.group_node,
-                    raw_group_node: write.raw_group_node,
-                    group_node_source_offset: entry_offset
-                        + write.group_node_offset as u64,
-                    endpoint_tag: write.endpoint_tag,
-                    body_image_object_index: write.body_image_object_index,
-                    body_image_data_block: unique_offset_data_block(
-                        &indexed,
-                        write.body_image_object_index,
-                    ),
-                    raw_body_image_object_index: write.raw_body_image_object_index,
-                    body_image_object_index_source_offset: entry_offset
-                        + write.body_image_object_index_offset as u64,
-                    byte_len: (write.end_offset - write.offset) as u64,
-                    source_offset: entry_offset + write.offset as u64,
+                    body_image_data_block: unique_offset_data_block(&indexed, frame.body_image().value()),
+                    frame,
                 });
             }
         },
@@ -6654,7 +6607,7 @@ pub fn feature_operation_body_image_segment_uses(
             let body_image_data_block = write.body_image_data_block.as_ref()?;
             let mut matches = bindings.iter().filter(|binding| {
                 binding.stream_kind == crate::parasolid::StreamKind::Plain
-                    && binding.body_alias_object_index == u32::from(write.body_identity)
+                    && binding.body_alias_object_index == u32::from(write.frame.body_identity())
             });
             let binding = matches.next()?;
             if matches.next().is_some() {
@@ -6687,7 +6640,7 @@ pub fn feature_operation_body_identity_segment_uses(
         .filter_map(|write| {
             let mut matches = bindings.iter().filter(|binding| {
                 binding.stream_kind == crate::parasolid::StreamKind::Plain
-                    && binding.body_alias_object_index == u32::from(write.body_identity)
+                    && binding.body_alias_object_index == u32::from(write.frame.body_identity())
             });
             let binding = matches.next()?;
             matches.next().is_none().then_some(())?;
@@ -6698,7 +6651,7 @@ pub fn feature_operation_body_identity_segment_uses(
                     1,
                 ),
                 operation_body_write: write.id.clone(),
-                body_identity: write.body_identity,
+                body_identity: write.frame.body_identity(),
                 segment_body_binding: binding.id.clone(),
             })
         })
@@ -6784,7 +6737,7 @@ pub fn feature_operation_body_partition_uses(
                 .iter()
                 .filter(|group| {
                     group.origin.partition_stream_ordinal() == Some(partition_stream_ordinal)
-                        && group.node_id == write.group_node
+                        && group.node_id == write.frame.group_node().value()
                 })
                 .map(|group| group.id.clone())
                 .collect();
@@ -6792,7 +6745,7 @@ pub fn feature_operation_body_partition_uses(
                 .iter()
                 .filter(|member| {
                     member.partition_stream_ordinal == partition_stream_ordinal
-                        && member.group_node_id == write.group_node
+                        && member.group_node_id == write.frame.group_node().value()
                 })
                 .map(|member| member.id.clone())
                 .collect();
@@ -6804,7 +6757,7 @@ pub fn feature_operation_body_partition_uses(
                 body_image_segment_use: image_use.id.clone(),
                 segment_body_binding: binding.id.clone(),
                 partition_stream_ordinal,
-                group_node: write.group_node,
+                group_node: write.frame.group_node().value(),
                 parasolid_group_records,
                 parasolid_group_members,
             })
@@ -6826,7 +6779,7 @@ pub fn feature_body_write_group_partition_uses(
     let candidates = writes
         .iter()
         .chain(unlabeled_writes)
-        .map(|write| (write.id.as_str(), write.body_identity, write.group_node));
+        .map(|write| (write.id.as_str(), write.frame.body_identity(), write.frame.group_node().value()));
     candidates
         .filter_map(|(id, body_identity, group_node)| {
             let matching_groups = groups

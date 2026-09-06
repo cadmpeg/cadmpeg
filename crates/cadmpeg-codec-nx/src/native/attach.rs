@@ -1945,7 +1945,7 @@ fn attach_feature_operations(
             &[]
         };
         for write in operation_body_writes {
-            if let Some(writer) = body_identity_writers.get(&write.body_identity) {
+            if let Some(writer) = body_identity_writers.get(&write.frame.body_identity()) {
                 if !dependencies.contains(writer) {
                     dependencies.push(writer.clone());
                 }
@@ -2092,19 +2092,19 @@ fn attach_feature_operations(
             source_properties.insert(format!("body_write.{ordinal}"), write.id.clone());
             source_properties.insert(
                 format!("body_write.{ordinal}.body_identity"),
-                write.body_identity.to_string(),
+                write.frame.body_identity().to_string(),
             );
             source_properties.insert(
                 format!("body_write.{ordinal}.group_node"),
-                write.group_node.to_string(),
+                write.frame.group_node().value().to_string(),
             );
             source_properties.insert(
                 format!("body_write.{ordinal}.endpoint_tag"),
-                write.endpoint_tag.to_string(),
+                write.frame.endpoint_tag().code().to_string(),
             );
             source_properties.insert(
                 format!("body_write.{ordinal}.body_image_object_index"),
-                write.body_image_object_index.to_string(),
+                write.frame.body_image().value().to_string(),
             );
             if let Some(use_) = operation_body_image_segment_uses
                 .iter()
@@ -3601,7 +3601,7 @@ fn attach_feature_operations(
             .flatten();
         body_writer_history.record_writer(native_output, offset_store_output, &outputs, &id);
         for write in operation_body_writes {
-            body_identity_writers.insert(write.body_identity, id.clone());
+            body_identity_writers.insert(write.frame.body_identity(), id.clone());
         }
         if let Some(operation) = (!deletes_body)
             .then(|| booleans.get(label.id.as_str()))
@@ -3655,7 +3655,7 @@ fn attach_feature_operations(
                         output_of: id.clone(),
                         bodies: vec![format!(
                             "nx:feature-history:body-identity#{:010}",
-                            write.body_identity
+                            write.frame.body_identity()
                         )],
                         faces: result_members.faces,
                         edges: result_members.edges,
@@ -8567,7 +8567,7 @@ fn operation_body_group_partition_outputs_by_write<'a>(
         .iter()
         .filter_map(|write| {
             unique_bodies
-                .get(&write.body_identity)
+                .get(&write.frame.body_identity())
                 .cloned()
                 .map(|body| (write.id.as_str(), body))
         })
@@ -8604,11 +8604,11 @@ fn body_writes_match_boolean_target(
     let [write] = writes else {
         return false;
     };
-    write.body_image_object_index == boolean.target.token.value()
+    write.frame.body_image().value() == boolean.target.token.value()
         && !boolean
             .tools
             .iter()
-            .any(|token| token.token.value() == write.body_image_object_index)
+            .any(|token| token.token.value() == write.frame.body_image().value())
 }
 
 pub(crate) fn attach_expression_parameters(

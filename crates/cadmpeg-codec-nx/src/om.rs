@@ -6,6 +6,8 @@ pub(crate) mod plane_descriptor;
 pub(crate) mod csys_descriptor;
 pub(crate) mod reference_index;
 pub(crate) mod common_frame;
+pub(crate) mod body_write;
+use body_write::{BodyImageTag, BodyWriteFrame, BodyWriteIndex};
 use common_frame::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
 pub(crate) mod instances;
 use reference_index::ReferenceIndexToken;
@@ -1942,31 +1944,6 @@ pub struct OperationBodyReference {
     pub offset: usize,
     /// Referenced body object index.
     pub object_index: reference_index::FeatureReferenceToken,
-}
-
-/// One exact body-write frame in a bounded operation record.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationBodyWriteFrame {
-    /// Absolute offset of the opening `01 02` marker.
-    pub offset: usize,
-    /// Byte between the opening marker and the first object index.
-    pub body_identity: u8,
-    /// Partition-local Parasolid GROUP node.
-    pub group_node: u32,
-    /// Exact serialized GROUP-node token.
-    pub raw_group_node: Vec<u8>,
-    /// Absolute offset of the GROUP-node token.
-    pub group_node_offset: usize,
-    /// Tagged body-image field discriminator.
-    pub endpoint_tag: u8,
-    /// Offset-store body-image object index.
-    pub body_image_object_index: u32,
-    /// Exact serialized body-image object-index token.
-    pub raw_body_image_object_index: Vec<u8>,
-    /// Absolute offset of the body-image object-index token.
-    pub body_image_object_index_offset: usize,
-    /// Exclusive absolute end offset after the frame terminator.
-    pub end_offset: usize,
 }
 
 /// One exact direct tagged-reference field in a bounded operation record.
@@ -5191,7 +5168,7 @@ fn operation_body_reference_candidates(
                 operation_body_write_frame_at(record.payload, record.payload_offset, payload_marker)
             });
         if let Some(body_write) = body_write {
-            if let Some(end) = body_write.end_offset.checked_sub(record.offset()) {
+            if let Some(end) = body_write.end_offset().checked_sub(record.offset()) {
                 cursor = cursor.max(end);
             }
             continue;
@@ -5222,18 +5199,18 @@ pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBo
 ///
 /// Both indices are non-null and canonical. Endpoint tags `10`, `12`, and
 /// `15` select the body-image field across the supported schema generations.
-pub fn operation_body_write_frames(record: OperationRecord<'_>) -> Vec<OperationBodyWriteFrame> {
+pub fn operation_body_write_frames(record: OperationRecord<'_>) -> Vec<BodyWriteFrame<usize>> {
     body_write_frames(record.payload, record.payload_offset)
 }
 
 /// Decode body-write frames from one independently bounded unlabeled record.
 pub fn unlabeled_operation_body_write_frames(
     record: UnlabeledOperationRecord<'_>,
-) -> Vec<OperationBodyWriteFrame> {
+) -> Vec<BodyWriteFrame<usize>> {
     body_write_frames(record.payload, record.payload_offset)
 }
 
-fn body_write_frames(payload: &[u8], payload_offset: usize) -> Vec<OperationBodyWriteFrame> {
+fn body_write_frames(payload: &[u8], payload_offset: usize) -> Vec<BodyWriteFrame<usize>> {
     let mut relations = Vec::new();
     for marker in payload
         .windows(2)
@@ -5251,48 +5228,16 @@ fn operation_body_write_frame_at(
     payload: &[u8],
     payload_offset: usize,
     marker: usize,
-) -> Option<OperationBodyWriteFrame> {
+) -> Option<BodyWriteFrame<usize>> {
     let body_identity = *payload.get(marker + 2)?;
-    let first_token = marker + 3;
-    let (Some(first_object_index), first_end) =
-        operation_relation_object_index(payload, first_token)?
-    else {
-        return None;
-    };
-    let raw_first_object_index = payload.get(first_token..first_end)?;
-    if !canonical_operation_relation_object_index(Some(first_object_index), raw_first_object_index)
-        || payload.get(first_end..first_end + 4) != Some(&[0x97, 0x75, 0x01, 0x02])
-    {
-        return None;
-    }
-    let endpoint_tag = *payload.get(first_end + 4)?;
-    matches!(endpoint_tag, 0x10 | 0x12 | 0x15).then_some(())?;
-    let second_token = first_end + 5;
-    let (Some(second_object_index), second_end) =
-        operation_relation_object_index(payload, second_token)?
-    else {
-        return None;
-    };
-    let raw_second_object_index = payload.get(second_token..second_end)?;
-    if !canonical_operation_relation_object_index(
-        Some(second_object_index),
-        raw_second_object_index,
-    ) || payload.get(second_end) != Some(&0xff)
-    {
-        return None;
-    }
-    Some(OperationBodyWriteFrame {
-        offset: payload_offset + marker,
-        body_identity,
-        group_node: first_object_index,
-        raw_group_node: raw_first_object_index.to_vec(),
-        group_node_offset: payload_offset + first_token,
-        endpoint_tag,
-        body_image_object_index: second_object_index,
-        raw_body_image_object_index: raw_second_object_index.to_vec(),
-        body_image_object_index_offset: payload_offset + second_token,
-        end_offset: payload_offset + second_end + 1,
-    })
+    let group_node = BodyWriteIndex::read(payload.get(marker + 3..)?)?;
+    let first_end = marker + 3 + group_node.raw().len();
+    (payload.get(first_end..first_end + 4) == Some(&[0x97, 0x75, 0x01, 0x02])).then_some(())?;
+    let endpoint_tag = BodyImageTag::try_from(*payload.get(first_end + 4)?).ok()?;
+    let image_at = first_end + 5;
+    let body_image = BodyWriteIndex::read(payload.get(image_at..)?)?;
+    (payload.get(image_at + body_image.raw().len()) == Some(&0xff)).then_some(())?;
+    BodyWriteFrame::<usize>::new(body_identity, group_node, endpoint_tag, body_image, payload_offset.checked_add(marker)?)
 }
 
 /// Decode every exact direct `01 02 17 index ff 80 00 00 02` field.
@@ -5381,11 +5326,6 @@ fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)>
         0xff => Some((None, at + 1)),
         _ => None,
     }
-}
-
-fn operation_relation_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {
-    let token = OperationStateIndex::read_at(bytes, at, 0)?;
-    Some((token.value(), at + token.raw().len()))
 }
 
 fn operation_state_counter_row(
@@ -6337,17 +6277,6 @@ pub fn operation_state_journal(
         groups.push(group);
     }
     (!groups.is_empty() && at == end).then_some(groups)
-}
-
-fn canonical_operation_relation_object_index(value: Option<u32>, raw: &[u8]) -> bool {
-    matches!(
-        (value, raw),
-        (None, [0xff])
-            | (Some(0..=0x7f), [_])
-            | (Some(0x80..=0x0fff), [0x80..=0x8f, _])
-            | (Some(0x1000..=0xffff), [0x90, _, _])
-            | (Some(_), [0xa0..=0xaf | 0xf1, _, _])
-    )
 }
 
 /// Return one decoded candidate only when the scan produced exactly one.

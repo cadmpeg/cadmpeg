@@ -184,14 +184,14 @@ fn operation_body_write_retains_identity_group_and_image() {
     let [first, second] = writes.as_slice() else {
         panic!("two body-write frames");
     };
-    assert_eq!(first.body_identity, 0x11);
-    assert_eq!(first.group_node, 0xa9);
-    assert_eq!(first.raw_group_node, [0x80, 0xa9]);
-    assert_eq!(first.body_image_object_index, 0x693);
-    assert_eq!(first.raw_body_image_object_index, [0x86, 0x93]);
-    assert_eq!(second.body_identity, 0x12);
-    assert_eq!(second.group_node, first.group_node);
-    assert_eq!(second.body_image_object_index, 0x694);
+    assert_eq!(first.frame.body_identity(), 0x11);
+    assert_eq!(first.frame.group_node().value(), 0xa9);
+    assert_eq!(first.frame.group_node().raw(), [0x80, 0xa9]);
+    assert_eq!(first.frame.body_image().value(), 0x693);
+    assert_eq!(first.frame.body_image().raw(), [0x86, 0x93]);
+    assert_eq!(second.frame.body_identity(), 0x12);
+    assert_eq!(second.frame.group_node().value(), first.frame.group_node().value());
+    assert_eq!(second.frame.body_image().value(), 0x694);
 }
 
 #[test]
@@ -211,7 +211,7 @@ fn operation_body_write_resolves_one_unique_image_block() {
     let writes = super::feature_operation_body_writes(&container);
 
     assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].body_image_object_index, 65);
+    assert_eq!(writes[0].frame.body_image().value(), 65);
     assert_eq!(
         writes[0].body_image_data_block.as_deref(),
         Some("nx:om-data-blocks-0:block#65")
@@ -277,17 +277,11 @@ fn body_identity_segment_use_does_not_require_an_image_block() {
         operation_label: Some("operation".into()),
         operation_record: "record".into(),
         ordinal: 0,
-        body_identity: 11,
-        group_node: 1,
-        raw_group_node: vec![1],
-        group_node_source_offset: 0,
-        endpoint_tag: 0x12,
-        body_image_object_index: 1519,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(11,
+            crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).unwrap(),
+            crate::om::body_write::BodyImageTag::Form12,
+            crate::om::body_write::BodyWriteIndex::from_wire(1519, &[0x85, 0xef]).unwrap(), 0).unwrap(),
         body_image_data_block: None,
-        raw_body_image_object_index: vec![0x95, 0xef],
-        body_image_object_index_source_offset: 0,
-        byte_len: 12,
-        source_offset: 0,
     };
     let binding = |id: &str, stream_kind: crate::parasolid::StreamKind| SegmentBodyBinding {
         id: id.into(),
@@ -371,7 +365,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
             id: id.into(),
             origin: crate::native::parasolid::group_record::GroupOrigin::Deltas { stream_ordinal: partition_stream_ordinal + 1, partition_stream_ordinal: Some(partition_stream_ordinal) },
             xmt: 10,
-            node_id: writes[0].group_node,
+            node_id: writes[0].frame.group_node().value(),
             references: [3, 4, 5, 6, 7],
             selector: crate::deltas::group::GroupSelector::Form4,
             linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
@@ -437,17 +431,11 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
         id: "unlabeled-body-write".into(),
         operation_record: "unlabeled-record".into(),
         ordinal: 0,
-        body_identity: 11,
-        group_node: 99,
-        raw_group_node: vec![99],
-        group_node_source_offset: 10,
-        endpoint_tag: 0x10,
-        body_image_object_index: 20,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(11,
+            crate::om::body_write::BodyWriteIndex::from_wire(99, &[99]).unwrap(),
+            crate::om::body_write::BodyImageTag::Form10,
+            crate::om::body_write::BodyWriteIndex::from_wire(20, &[20]).unwrap(), 9).unwrap(),
         body_image_data_block: Some("block".into()),
-        raw_body_image_object_index: vec![20],
-        body_image_object_index_source_offset: 11,
-        byte_len: 12,
-        source_offset: 9,
     };
     let group =
         |id: &str, partition_stream_ordinal| crate::native::parasolid::ParasolidGroupRecord {
