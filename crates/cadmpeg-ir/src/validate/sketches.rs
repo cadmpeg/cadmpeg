@@ -1717,23 +1717,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && angle_matches
                     && parameter_matches
             }
-            Constraint::AngleDifference {
-                first,
-                second,
-                difference,
-                value,
-            } => {
-                first.class == crate::sketches::SolverScalarClass::Angle
-                    && second.class == crate::sketches::SolverScalarClass::Angle
-                    && difference.class == crate::sketches::SolverScalarClass::Difference
-                    && value.0.is_finite()
-                    && (0.0..=std::f64::consts::PI).contains(&value.0)
+            Constraint::AngleDifference { value, .. } => {
+                value.0.is_finite() && (0.0..=std::f64::consts::PI).contains(&value.0)
             }
-            Constraint::ScalarEquality { first, second } => {
-                first.class == crate::sketches::SolverScalarClass::Equality
-                    && second.class == crate::sketches::SolverScalarClass::Equality
-                    && first.key != second.key
-            }
+            Constraint::ScalarEquality { first, second } => first != second,
             Constraint::RepeatedDistance { measurements, .. } => {
                 let mut entities = HashSet::new();
                 !measurements.is_empty()

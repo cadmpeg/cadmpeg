@@ -28,8 +28,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Angle, Length, ParameterId};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis, SketchDistancePair,
-    SketchEntityId, SketchId, SketchLocus, SketchNativeOperand, SketchSolverScalar,
-    SolverScalarClass,
+    SketchEntityId, SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1050,18 +1049,9 @@ pub(in super::super) fn section_equation_function_sixteen_angle_difference_const
                     ),
                     sketch: sketch.clone(),
                     definition: SketchConstraintDefinition::AngleDifference {
-                        first: SketchSolverScalar {
-                            class: SolverScalarClass::Angle,
-                            key: equation.first.1,
-                        },
-                        second: SketchSolverScalar {
-                            class: SolverScalarClass::Angle,
-                            key: equation.second.1,
-                        },
-                        difference: SketchSolverScalar {
-                            class: SolverScalarClass::Difference,
-                            key: equation.difference.1,
-                        },
+                        first: equation.first.1,
+                        second: equation.second.1,
+                        difference: equation.difference.1,
                         value: Angle(equation.value),
                     },
                     name: None,
@@ -1096,14 +1086,8 @@ pub(in super::super) fn section_equation_function_five_scalar_equality_constrain
                     ),
                     sketch: sketch.clone(),
                     definition: SketchConstraintDefinition::ScalarEquality {
-                        first: SketchSolverScalar {
-                            class: SolverScalarClass::Equality,
-                            key: equation.first.1,
-                        },
-                        second: SketchSolverScalar {
-                            class: SolverScalarClass::Equality,
-                            key: equation.second.1,
-                        },
+                        first: equation.first.1,
+                        second: equation.second.1,
                     },
                     name: None,
                     driving: None,
@@ -2022,9 +2006,7 @@ mod tests {
         section_equation_function_sixteen_angle_difference_constraints,
     };
     use cadmpeg_ir::features::ParameterId;
-    use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition, SketchEntityId, SketchId, SketchSolverScalar, SolverScalarClass,
-    };
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchId};
     use std::collections::BTreeSet;
 
     #[test]
@@ -2083,18 +2065,9 @@ mod tests {
         assert_eq!(
             constraints[0].0.definition,
             SketchConstraintDefinition::AngleDifference {
-                first: SketchSolverScalar {
-                    class: SolverScalarClass::Angle,
-                    key: 10,
-                },
-                second: SketchSolverScalar {
-                    class: SolverScalarClass::Angle,
-                    key: 11,
-                },
-                difference: SketchSolverScalar {
-                    class: SolverScalarClass::Difference,
-                    key: 20,
-                },
+                first: 10,
+                second: 11,
+                difference: 20,
                 value: cadmpeg_ir::features::Angle(1.5),
             }
         );
@@ -2154,14 +2127,8 @@ mod tests {
         assert_eq!(
             constraints[0].0.definition,
             SketchConstraintDefinition::ScalarEquality {
-                first: SketchSolverScalar {
-                    class: SolverScalarClass::Equality,
-                    key: 10,
-                },
-                second: SketchSolverScalar {
-                    class: SolverScalarClass::Equality,
-                    key: 11,
-                },
+                first: 10,
+                second: 11,
             }
         );
 

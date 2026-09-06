@@ -5783,3 +5783,31 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet"
 reason = "IR-85: each parameter station owns its knot, multiplicity, and complete jet; remove independently mutable parallel arrays and preserve the flat JSON through checked conversion."
+
+[[change]]
+commit = "b85cf67b877bfba4c1dc1564e8bc10142e46698d"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::sketches::SketchSolverScalar"
+reason = "IR-85: scalar classes are fixed by their constraint slots; keep only solver-local keys and derive each numeric class in the unchanged JSON wire, rejecting mismatches on read."
+
+[[change]]
+commit = "b85cf67b877bfba4c1dc1564e8bc10142e46698d"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::sketches::SolverScalarClass"
+reason = "IR-85: scalar classes are fixed by their constraint slots; keep only solver-local keys and derive each numeric class in the unchanged JSON wire, rejecting mismatches on read."
+
+[[change]]
+commit = "b85cf67b877bfba4c1dc1564e8bc10142e46698d"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::sketches::SketchConstraintDefinition::AngleDifference"
+reason = "IR-85: scalar classes are fixed by their constraint slots; keep only solver-local keys and derive each numeric class in the unchanged JSON wire, rejecting mismatches on read."
+
+[[change]]
+commit = "b85cf67b877bfba4c1dc1564e8bc10142e46698d"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality"
+reason = "IR-85: scalar classes are fixed by their constraint slots; keep only solver-local keys and derive each numeric class in the unchanged JSON wire, rejecting mismatches on read."
