@@ -2,57 +2,6 @@
 
 use super::*;
 
-fn check_lane_wire<T>(json: &str, columns: &[&str])
-where
-    T: serde::de::DeserializeOwned + Serialize,
-{
-    let lane: T = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&lane).unwrap(), json);
-    for column in columns {
-        let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
-        malformed[*column].as_array_mut().unwrap().pop();
-        assert!(serde_json::from_value::<T>(malformed).is_err(), "{column}");
-    }
-}
-
-#[test]
-fn repeated_scalar_lane_preserves_parallel_wire_and_requires_complete_tokens() {
-    check_lane_wire::<FeatureSimpleHoleRepeatedScalarLane>(
-        r#"{"id":"lane","operation_label":"operation","values":[2.5,4.0],"raw_values":[[48,4,0,0,0,0,0,0],[48,16,0,0,0,0,0,0]],"first_witness_offsets":[10,18],"second_witness_offsets":[40,48]}"#,
-        &[
-            "values",
-            "raw_values",
-            "first_witness_offsets",
-            "second_witness_offsets",
-        ],
-    );
-}
-
-#[test]
-fn hole_group_preserves_parallel_wire_and_requires_complete_members() {
-    check_lane_wire::<FeatureSimpleHoleConstructionGroup>(
-        r#"{"id":"group","first_data_blocks":["a","b"],"second_data_blocks":["c","d"],"operation_labels":["first","second"],"scalar_lanes":["scalar-a","scalar-b"],"block_references":["refs-a","refs-b"]}"#,
-        &["operation_labels", "scalar_lanes", "block_references"],
-    );
-}
-
-#[test]
-fn hole_group_rejects_short_and_duplicate_members_at_deserialization() {
-    for labels in [vec![], vec!["first"], vec!["first", "first"]] {
-        let count = labels.len();
-        let wire = serde_json::json!({
-            "id": "group",
-            "first_data_blocks": ["a", "b"],
-            "second_data_blocks": ["c", "d"],
-            "operation_labels": labels,
-            "scalar_lanes": (0..count).map(|index| format!("scalar-{index}")).collect::<Vec<_>>(),
-            "block_references": (0..count).map(|index| format!("refs-{index}")).collect::<Vec<_>>(),
-        });
-        let error = serde_json::from_value::<FeatureSimpleHoleConstructionGroup>(wire).unwrap_err();
-        assert!(error.to_string().contains("operation_labels"));
-    }
-}
-
 #[test]
 fn input_identity_group_preserves_parallel_wire_and_requires_complete_members() {
     check_lane_wire::<FeatureInputBlockIdentityGroup>(
@@ -77,83 +26,6 @@ fn sketch_scalar_lane_preserves_parallel_wire_and_requires_complete_tokens() {
             "value_source_offsets",
         ],
     );
-}
-
-#[test]
-fn pattern_fixed_lane_preserves_parallel_wire_and_requires_complete_tokens() {
-    check_lane_wire::<FeaturePatternConstructionFixedLane>(
-        r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":[48,176],"raw_values":[[32,0,0,0,0,0,0],[64,0,0,0,0,0,0]],"payload_offset":0,"value_payload_offsets":[18,26],"source_offset":100,"value_source_offsets":[118,126]}"#,
-        &[
-            "values",
-            "markers",
-            "raw_values",
-            "value_payload_offsets",
-            "value_source_offsets",
-        ],
-    );
-}
-
-#[test]
-fn draft_fixed_lane_preserves_parallel_wire_and_requires_complete_tokens() {
-    check_lane_wire::<FeatureDraftConstructionFixedLane>(
-        r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":[48,176],"raw_values":[[32,0,0,0,0,0,0],[64,0,0,0,0,0,0]],"payload_offset":0,"value_payload_offsets":[18,26],"source_offset":100,"value_source_offsets":[118,126]}"#,
-        &[
-            "values",
-            "markers",
-            "raw_values",
-            "value_payload_offsets",
-            "value_source_offsets",
-        ],
-    );
-}
-
-#[test]
-fn draft_binary32_lane_preserves_parallel_wire_and_requires_complete_tokens() {
-    check_lane_wire::<FeatureDraftConstructionBinary32Lane>(
-        r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"discriminator":[144,24,69,1,4,1,3,1,192,69,4,0,128,134,2,0,3,0],"branch":3,"values":[2.5,4.0],"raw_values":[[80,32,0,0],[80,128,0,0]],"payload_offset":0,"value_payload_offsets":[18,22],"source_offset":100,"value_source_offsets":[118,122]}"#,
-        &[
-            "values",
-            "raw_values",
-            "value_payload_offsets",
-            "value_source_offsets",
-        ],
-    );
-}
-
-#[test]
-fn multi_instance_lane_preserves_wire_and_requires_complete_rows_and_references() {
-    check_lane_wire::<FeatureMultiInstanceOutputLane>(
-        r#"{"id":"lane","operation_label":"operation","declared_count":3,"selectors":[7,8],"raw_selectors":[[7],[8]],"ordinals":[2,2],"row_indices":[2,3],"instance_count":2,"trailing_object_indices":[9],"raw_trailing_object_indices":[[9]],"source_offset":100,"selector_source_offsets":[110,120],"trailing_object_index_source_offsets":[130]}"#,
-        &[
-            "selectors",
-            "raw_selectors",
-            "ordinals",
-            "row_indices",
-            "selector_source_offsets",
-            "trailing_object_indices",
-            "raw_trailing_object_indices",
-            "trailing_object_index_source_offsets",
-        ],
-    );
-}
-
-#[test]
-fn identical_instance_lane_preserves_wire_and_requires_complete_selectors() {
-    let json = r#"{"id":"lane","operation_label":"operation","leading_schema_index":4,"count_schema_index":5,"row_schema_indices":[6,7,8],"declared_count":3,"selectors":[7,8],"raw_selectors":[[7],[8]],"source_offset":100,"selector_source_offsets":[110,120]}"#;
-    check_lane_wire::<FeatureIdenticalInstanceOutputLane>(
-        json,
-        &["selectors", "raw_selectors", "selector_source_offsets"],
-    );
-    for (field, value) in [
-        ("count_schema_index", serde_json::json!(253)),
-        ("row_schema_indices", serde_json::json!([6, 7, 9])),
-    ] {
-        let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
-        malformed[field] = value;
-        let error =
-            serde_json::from_value::<FeatureIdenticalInstanceOutputLane>(malformed).unwrap_err();
-        assert!(error.to_string().contains(field));
-    }
 }
 
 #[test]
@@ -225,67 +97,6 @@ fn point_scalar_lane_preserves_wire_and_requires_six_complete_tokens() {
     check_lane_wire::<FeaturePointConstructionScalarLane>(
         r#"{"id":"lane","operation_label":"operation","construction_header":"header","data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0],[48,8,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0]],"source_offsets":[100,110,120,200,210,220]}"#,
         &["values", "raw_values", "source_offsets"],
-    );
-}
-
-#[test]
-fn draft_index_lane_preserves_wire_and_groups_resolution_with_tokens() {
-    check_lane_wire::<FeatureDraftConstructionIndexLane>(
-        r#"{"id":"lane","operation_label":"operation","declared_count":3,"indices":[7,8],"raw_indices":[[7],[8]],"data_blocks":["first","second"],"source_offsets":[110,120]}"#,
-        &["indices", "raw_indices", "data_blocks", "source_offsets"],
-    );
-    check_lane_wire::<FeatureDraftConstructionIndexLane>(
-        r#"{"id":"lane","operation_label":"operation","declared_count":3,"indices":[7,8],"raw_indices":[[7],[8]],"source_offsets":[110,120]}"#,
-        &["indices", "raw_indices", "source_offsets"],
-    );
-}
-
-#[test]
-fn draft_index_lane_checks_compact_token_grammar() {
-    let json = r#"{"id":"lane","operation_label":"operation","declared_count":3,"indices":[4096,7],"raw_indices":[[144,0],[128,7]],"source_offsets":[110,120]}"#;
-    let lane: FeatureDraftConstructionIndexLane = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&lane).unwrap(), json);
-    for raw in [vec![255], vec![144], vec![144, 0, 0], vec![1]] {
-        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire["raw_indices"][0] = serde_json::json!(raw);
-        let error = serde_json::from_value::<FeatureDraftConstructionIndexLane>(wire).unwrap_err();
-        assert!(error.to_string().contains("indices[0]"));
-    }
-}
-
-#[test]
-fn draft_index_lane_requires_nonempty_byte_counted_members() {
-    for count in [0, 1, 254, 255] {
-        let wire = serde_json::json!({
-            "id": "lane", "operation_label": "operation", "declared_count": count + 1,
-            "indices": vec![1; count], "raw_indices": vec![vec![1]; count],
-            "source_offsets": vec![100; count],
-        });
-        assert_eq!(
-            serde_json::from_value::<FeatureDraftConstructionIndexLane>(wire).is_ok(),
-            matches!(count, 1 | 254)
-        );
-    }
-}
-
-#[test]
-fn pattern_transform_lane_preserves_wire_and_requires_complete_rows() {
-    let columns = &[
-        "encodings",
-        "values",
-        "raw_values",
-        "selectors",
-        "raw_selectors",
-        "value_source_offsets",
-        "selector_source_offsets",
-    ];
-    check_lane_wire::<FeaturePatternTransformLane>(
-        r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":3,"encodings":["binary32","binary64"],"values":[2.5,4.0],"raw_values":[[80,32,0,0],[48,16,0,0,0,0,0,0]],"selectors":[7,8],"raw_selectors":[[7],[8]],"source_offset":100,"value_source_offsets":[110,120],"selector_source_offsets":[114,128]}"#,
-        columns,
-    );
-    check_lane_wire::<FeaturePatternTransformLane>(
-        r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[2.5,4.0,5.0,6.0,1.0],"raw_values":[[48,4,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0],[1]],"selectors":[7],"raw_selectors":[[7]],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#,
-        columns,
     );
 }
 
@@ -369,55 +180,6 @@ fn boolean_operation_rejects_inconsistent_reference_tokens() {
 }
 
 #[test]
-fn draft_terminal_lane_derives_its_source_offset() {
-    let json = r#"{"id":"lane","operation_label":"operation","indices":[128,129],"raw_indices":[[128,128],[128,129]],"tail":[1,2,3],"index_source_offsets":[100,102],"source_offset":100}"#;
-    check_lane_wire::<FeatureDraftConstructionTerminalLane>(json, &[]);
-    let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
-    malformed["source_offset"] = serde_json::json!(101);
-    let error =
-        serde_json::from_value::<FeatureDraftConstructionTerminalLane>(malformed).unwrap_err();
-    assert!(error.to_string().contains("source_offset"));
-}
-
-#[test]
-fn draft_terminal_lane_requires_two_byte_compact_indices() {
-    let json = r#"{"id":"lane","operation_label":"operation","indices":[4096,1],"raw_indices":[[144,0],[128,1]],"tail":[1,2,3],"index_source_offsets":[100,102],"source_offset":100}"#;
-    check_lane_wire::<FeatureDraftConstructionTerminalLane>(json, &[]);
-    for (value, raw) in [
-        (4096, [255, 0]),
-        (4096, [127, 0]),
-        (1, [1, 0]),
-        (1, [128, 2]),
-    ] {
-        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire["indices"][0] = serde_json::json!(value);
-        wire["raw_indices"][0] = serde_json::json!(raw);
-        let error =
-            serde_json::from_value::<FeatureDraftConstructionTerminalLane>(wire).unwrap_err();
-        assert!(error.to_string().contains("indices[0]"));
-    }
-}
-
-#[test]
-fn pattern_rows_reject_scalar_families_outside_their_layout() {
-    let narrow = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":2,"encodings":["exact_one"],"values":[1.0],"raw_values":[[1]],"selectors":[7],"raw_selectors":[[7]],"source_offset":100,"value_source_offsets":[110],"selector_source_offsets":[111]}"#;
-    assert!(serde_json::from_str::<FeaturePatternTransformLane>(narrow).is_err());
-    let wide = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[2.5,4.0,5.0,6.0,1.0],"raw_values":[[48,4,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0],[1]],"selectors":[7],"raw_selectors":[[7]],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#;
-    let mut wrong_first: serde_json::Value = serde_json::from_str(wide).unwrap();
-    wrong_first["encodings"][0] = serde_json::json!("binary32");
-    wrong_first["raw_values"][0] = serde_json::json!([80, 32, 0, 0]);
-    assert!(serde_json::from_value::<FeaturePatternTransformLane>(wrong_first).is_err());
-    let mut wrong_terminal: serde_json::Value = serde_json::from_str(wide).unwrap();
-    wrong_terminal["encodings"][4] = serde_json::json!("binary64");
-    wrong_terminal["raw_values"][4] = serde_json::json!([47, 240, 0, 0, 0, 0, 0, 0]);
-    assert!(serde_json::from_value::<FeaturePatternTransformLane>(wrong_terminal).is_err());
-    assert!(serde_json::from_str::<FeaturePatternTransformLane>(
-        &wide.replace("\"row_schema_index\":3", "\"row_schema_index\":0")
-    )
-    .is_err());
-}
-
-#[test]
 fn sketch_scalar_lane_rejects_inconsistent_or_zero_atoms() {
     let json = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"discriminator":[37,37,65,0,4,1,7,1,192,69,16,0,128,134,2,0,1,0],"values":[2.5],"raw_values":[[80,32,0,0]],"value_payload_offsets":[18],"terminator_payload_offset":22,"source_offset":100,"value_source_offsets":[118],"terminator_source_offset":122}"#;
     let original: serde_json::Value = serde_json::from_str(json).unwrap();
@@ -432,40 +194,6 @@ fn sketch_scalar_lane_rejects_inconsistent_or_zero_atoms() {
         let error = serde_json::from_value::<FeatureSketchPayloadScalarLane>(invalid).unwrap_err();
         assert!(error.to_string().contains("raw_values"));
     }
-}
-
-#[test]
-fn draft_binary32_lane_rejects_inconsistent_or_wrong_width_atoms() {
-    let json = r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"discriminator":[144,24,69,1,4,1,3,1,192,69,4,0,128,134,2,0,3,0],"branch":3,"values":[2.5],"raw_values":[[80,32,0,0]],"payload_offset":0,"value_payload_offsets":[18],"source_offset":100,"value_source_offsets":[118]}"#;
-    let original: serde_json::Value = serde_json::from_str(json).unwrap();
-    for (value, raw) in [
-        (4.0, vec![80, 32, 0, 0]),
-        (2.5, vec![48, 4, 0, 0, 0, 0, 0, 0]),
-        (0.0, vec![0, 0, 0, 0]),
-    ] {
-        let mut invalid = original.clone();
-        invalid["values"][0] = serde_json::json!(value);
-        invalid["raw_values"][0] = serde_json::json!(raw);
-        assert!(serde_json::from_value::<FeatureDraftConstructionBinary32Lane>(invalid).is_err());
-    }
-}
-
-#[test]
-fn repeated_scalar_lane_rejects_empty_and_inconsistent_atoms() {
-    let empty = r#"{"id":"lane","operation_label":"operation","values":[],"raw_values":[],"first_witness_offsets":[],"second_witness_offsets":[]}"#;
-    assert!(
-        serde_json::from_str::<FeatureSimpleHoleRepeatedScalarLane>(empty)
-            .unwrap_err()
-            .to_string()
-            .contains("values")
-    );
-    let invalid = r#"{"id":"lane","operation_label":"operation","values":[4.0],"raw_values":[[48,4,0,0,0,0,0,0]],"first_witness_offsets":[10],"second_witness_offsets":[40]}"#;
-    assert!(
-        serde_json::from_str::<FeatureSimpleHoleRepeatedScalarLane>(invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("raw_values")
-    );
 }
 
 #[test]
@@ -632,43 +360,6 @@ fn extrude_32_branch_rejects_disagreeing_scalar_and_body_copies() {
 }
 
 #[test]
-fn draft_identity_frame_derives_prefix_form_and_preserves_wire() {
-    let json = r#"{"id":"frame","operation_label":"operation","draft_construction_payload":"payload","ordinal":0,"prefix":[65,129,84,240,56,2,1],"form":{"kind":"indexed_branch","first_index":340,"second_index":56,"branch":2},"identity":"abc123","payload_offset":1,"identity_payload_offset":8,"source_offset":100,"identity_source_offset":500}"#;
-    let frame: FeatureDraftConstructionIdentityFrame = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&frame).unwrap(), json);
-    for (field, value, expected) in [
-        ("identity", serde_json::json!(""), "identity"),
-        ("identity", serde_json::json!("ABC123"), "identity"),
-        (
-            "prefix",
-            serde_json::json!([65, 129, 84, 240, 56, 3, 1]),
-            "form",
-        ),
-        (
-            "prefix",
-            serde_json::json!([65, 129, 84, 240, 56, 2, 1, 0]),
-            "prefix",
-        ),
-        (
-            "identity_payload_offset",
-            serde_json::json!(9),
-            "identity_payload_offset",
-        ),
-        (
-            "payload_offset",
-            serde_json::json!(u64::MAX),
-            "payload_offset",
-        ),
-    ] {
-        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire[field] = value;
-        let error =
-            serde_json::from_value::<FeatureDraftConstructionIdentityFrame>(wire).unwrap_err();
-        assert!(error.to_string().contains(expected), "{error}");
-    }
-}
-
-#[test]
 fn datum_plane_descriptor_derives_suffix_and_preserves_native_wire() {
     let json = r#"{"id":"descriptor","operation_label":"operation","datum_plane_header":"header","ordinal":0,"data_block":"block","identity":"012345678901234567890123456789","suffix":[63,65,1,255,2,1,97,98,99,100],"schema_index":1,"label":"abcd","source_offset":10}"#;
     let descriptor: FeatureDatumPlaneDescriptor = serde_json::from_str(json).unwrap();
@@ -709,20 +400,6 @@ fn datum_csys_descriptor_preserves_wire_and_rejects_invalid_identity_or_position
         wire[field] = value;
         let error = serde_json::from_value::<FeatureDatumCsysDescriptor>(wire).unwrap_err();
         assert!(error.to_string().contains(field), "{error}");
-    }
-}
-
-#[test]
-fn pattern_counted_references_preserve_wire_and_reject_token_disagreement() {
-    let json = r#"{"id":"lane","operation_label":"operation","declared_count":2,"object_indices":[1],"raw_object_indices":[[240,1]],"data_blocks":[null],"source_offset":18,"object_index_source_offsets":[20]}"#;
-    let lane: super::FeaturePatternCountedReferenceLane = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&lane).unwrap(), json);
-    for raw in [vec![240, 2], vec![255], vec![240], vec![240, 1, 0]] {
-        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire["raw_object_indices"] = serde_json::json!([raw]);
-        let error =
-            serde_json::from_value::<super::FeaturePatternCountedReferenceLane>(wire).unwrap_err();
-        assert!(error.to_string().contains("raw_object_indices"), "{error}");
     }
 }
 
@@ -770,95 +447,9 @@ fn operation_body_reference_lane_rejects_unknown_branch() {
     assert!(error.to_string().contains("branch"));
 }
 
-#[test]
-fn pattern_transform_selectors_require_matching_compact_tokens() {
-    let json = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":2,"encodings":["binary32"],"values":[2.5],"raw_values":[[80,32,0,0]],"selectors":[4096],"raw_selectors":[[144,0]],"source_offset":100,"value_source_offsets":[110],"selector_source_offsets":[114]}"#;
-    check_lane_wire::<FeaturePatternTransformLane>(json, &[]);
-    for (field, value) in [
-        ("selectors", serde_json::json!([4097])),
-        ("raw_selectors", serde_json::json!([[144]])),
-        ("raw_selectors", serde_json::json!([[144, 0, 0]])),
-        ("raw_selectors", serde_json::json!([[255]])),
-    ] {
-        let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
-        malformed[field] = value;
-        let error = serde_json::from_value::<FeaturePatternTransformLane>(malformed).unwrap_err();
-        assert!(error.to_string().contains("selectors"), "{error}");
-    }
-}
+use crate::native::features::draft::FeatureDraftConstructionBinary32Lane;
+use crate::native::features::draft::FeatureDraftConstructionFixedLane;
 
-#[test]
-fn identical_instance_selectors_check_tokens_and_terminal_count_capacity() {
-    let json = r#"{"id":"lane","operation_label":"operation","leading_schema_index":4,"count_schema_index":5,"row_schema_indices":[6,7,8],"declared_count":2,"selectors":[4096],"raw_selectors":[[144,0]],"source_offset":100,"selector_source_offsets":[110]}"#;
-    check_lane_wire::<FeatureIdenticalInstanceOutputLane>(json, &[]);
-    for (field, value) in [
-        ("selectors", serde_json::json!([4097])),
-        ("raw_selectors", serde_json::json!([[144]])),
-        ("raw_selectors", serde_json::json!([[144, 0, 0]])),
-        ("raw_selectors", serde_json::json!([[255]])),
-    ] {
-        let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
-        malformed[field] = value;
-        let error =
-            serde_json::from_value::<FeatureIdenticalInstanceOutputLane>(malformed).unwrap_err();
-        assert!(error.to_string().contains("selectors"), "{error}");
-    }
-    for count in [253, 254] {
-        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire["declared_count"] = serde_json::json!(count + 1);
-        wire["selectors"] = serde_json::json!(vec![1; count]);
-        wire["raw_selectors"] = serde_json::json!(vec![vec![1]; count]);
-        wire["selector_source_offsets"] = serde_json::json!(vec![110; count]);
-        let result = serde_json::from_value::<FeatureIdenticalInstanceOutputLane>(wire.clone());
-        if count == 253 {
-            assert_eq!(serde_json::to_value(result.unwrap()).unwrap(), wire);
-        } else {
-            assert!(result.unwrap_err().to_string().contains("selectors"));
-        }
-    }
-}
+use crate::native::features::pattern::FeaturePatternConstructionFixedLane;
 
-#[test]
-fn multi_instance_groups_preserve_interleaving_and_reject_invalid_ordinals() {
-    let json = r#"{"id":"lane","operation_label":"operation","declared_count":5,"selectors":[7,8,7,8],"raw_selectors":[[7],[8],[128,7],[128,8]],"ordinals":[2,2,3,3],"row_indices":[2,3,4,5],"instance_count":3,"trailing_object_indices":[9,256],"raw_trailing_object_indices":[[9],[144,1,0]],"source_offset":100,"selector_source_offsets":[110,120,130,140],"trailing_object_index_source_offsets":[150,160]}"#;
-    check_lane_wire::<FeatureMultiInstanceOutputLane>(json, &[]);
-    for (field, value, error_field) in [
-        ("ordinals", serde_json::json!([1, 2, 3, 3]), "ordinals"),
-        ("ordinals", serde_json::json!([2, 2, 2, 3]), "ordinals"),
-        ("ordinals", serde_json::json!([2, 2, 4, 3]), "ordinals"),
-        (
-            "raw_selectors",
-            serde_json::json!([[7], [8], [255], [128, 8]]),
-            "selectors",
-        ),
-        (
-            "raw_trailing_object_indices",
-            serde_json::json!([[9], [240, 1]]),
-            "trailing_object_indices",
-        ),
-        (
-            "trailing_object_indices",
-            serde_json::json!([9, 257]),
-            "trailing_object_indices",
-        ),
-    ] {
-        let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
-        malformed[field] = value;
-        let error =
-            serde_json::from_value::<FeatureMultiInstanceOutputLane>(malformed).unwrap_err();
-        assert!(error.to_string().contains(error_field), "{error}");
-    }
-    let mut incomplete: serde_json::Value = serde_json::from_str(json).unwrap();
-    incomplete["declared_count"] = serde_json::json!(4);
-    for field in [
-        "selectors",
-        "raw_selectors",
-        "ordinals",
-        "row_indices",
-        "selector_source_offsets",
-    ] {
-        incomplete[field].as_array_mut().unwrap().pop();
-    }
-    let error = serde_json::from_value::<FeatureMultiInstanceOutputLane>(incomplete).unwrap_err();
-    assert!(error.to_string().contains("trailing_object_indices"));
-}
+use crate::native::features::test_support::check_lane_wire;

@@ -49,10 +49,11 @@ fn attribute_field_name(
 
 #[test]
 fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
-    use crate::native::features::{
-        FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
-        SimpleHoleForm,
-    };
+    use crate::native::features::holes::FeatureSimpleHoleTemplate;
+    use crate::native::features::holes::SimpleHoleEndTreatment;
+    use crate::native::features::holes::SimpleHoleExtent;
+    use crate::native::features::holes::SimpleHoleFamily;
+    use crate::native::features::holes::SimpleHoleForm;
     use cadmpeg_ir::document::{CadIr, Model};
     use cadmpeg_ir::features::{
         FeatureDefinition, HoleKind, HolePlacement, Length, LinearTermination,
@@ -330,10 +331,11 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
 
 #[test]
 fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
-    use crate::native::features::{
-        FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
-        SimpleHoleForm,
-    };
+    use crate::native::features::holes::FeatureSimpleHoleTemplate;
+    use crate::native::features::holes::SimpleHoleEndTreatment;
+    use crate::native::features::holes::SimpleHoleExtent;
+    use crate::native::features::holes::SimpleHoleFamily;
+    use crate::native::features::holes::SimpleHoleForm;
     use cadmpeg_ir::document::{CadIr, Model};
     use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};

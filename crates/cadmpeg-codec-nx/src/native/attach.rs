@@ -5572,10 +5572,10 @@ pub(crate) fn feature_source_content(
 
 fn simple_hole_native_properties(
     operation_label: &str,
-    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
-    repeated_lanes: &[crate::native::features::FeatureSimpleHoleRepeatedScalarLane],
-    block_references: &[crate::native::features::FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
-    construction_groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
+    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
+    repeated_lanes: &[crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane],
+    block_references: &[crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
+    construction_groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
 ) -> BTreeMap<String, String> {
     let mut properties = BTreeMap::new();
     if let Some(template) = templates
@@ -6117,30 +6117,34 @@ fn non_boolean_feature_definition_with_parameters(
                 ),
                 |(_, form, extent, start_treatment, end_treatment)| {
                     let kind = match start_treatment {
-                        crate::native::features::SimpleHoleEndTreatment::Chamfer => {
+                        crate::native::features::holes::SimpleHoleEndTreatment::Chamfer => {
                             HoleKind::Unresolved(Some(HoleForm::Chamfer))
                         }
-                        crate::native::features::SimpleHoleEndTreatment::None => match form {
-                            crate::native::features::SimpleHoleForm::Simple => HoleKind::Simple,
-                            crate::native::features::SimpleHoleForm::Counterbored => {
-                                HoleKind::Unresolved(Some(HoleForm::Counterbore))
+                        crate::native::features::holes::SimpleHoleEndTreatment::None => {
+                            match form {
+                                crate::native::features::holes::SimpleHoleForm::Simple => {
+                                    HoleKind::Simple
+                                }
+                                crate::native::features::holes::SimpleHoleForm::Counterbored => {
+                                    HoleKind::Unresolved(Some(HoleForm::Counterbore))
+                                }
+                                crate::native::features::holes::SimpleHoleForm::Countersunk => {
+                                    HoleKind::Unresolved(Some(HoleForm::Countersink))
+                                }
                             }
-                            crate::native::features::SimpleHoleForm::Countersunk => {
-                                HoleKind::Unresolved(Some(HoleForm::Countersink))
-                            }
-                        },
+                        }
                     };
                     let exit_kind = match end_treatment {
-                        crate::native::features::SimpleHoleEndTreatment::Chamfer => {
+                        crate::native::features::holes::SimpleHoleEndTreatment::Chamfer => {
                             Some(HoleKind::Unresolved(Some(HoleForm::Chamfer)))
                         }
-                        crate::native::features::SimpleHoleEndTreatment::None => None,
+                        crate::native::features::holes::SimpleHoleEndTreatment::None => None,
                     };
                     let extent = match extent {
-                        crate::native::features::SimpleHoleExtent::Through => {
+                        crate::native::features::holes::SimpleHoleExtent::Through => {
                             Some(cadmpeg_ir::features::LinearTermination::ThroughAll)
                         }
-                        crate::native::features::SimpleHoleExtent::Blind => None,
+                        crate::native::features::holes::SimpleHoleExtent::Blind => None,
                     };
                     (kind, exit_kind, extent)
                 },
@@ -6170,10 +6174,10 @@ fn non_boolean_feature_definition_with_parameters(
                             Some(chamfer),
                             Some((
                                 _,
-                                crate::native::features::SimpleHoleForm::Simple,
-                                crate::native::features::SimpleHoleExtent::Through,
-                                crate::native::features::SimpleHoleEndTreatment::Chamfer,
-                                crate::native::features::SimpleHoleEndTreatment::Chamfer,
+                                crate::native::features::holes::SimpleHoleForm::Simple,
+                                crate::native::features::holes::SimpleHoleExtent::Through,
+                                crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
+                                crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
                             )),
                         ) => chamfer,
                         _ => template_kind,
@@ -6185,10 +6189,10 @@ fn non_boolean_feature_definition_with_parameters(
                         Some(chamfer),
                         Some((
                             _,
-                            crate::native::features::SimpleHoleForm::Simple,
-                            crate::native::features::SimpleHoleExtent::Through,
-                            crate::native::features::SimpleHoleEndTreatment::Chamfer,
-                            crate::native::features::SimpleHoleEndTreatment::Chamfer,
+                            crate::native::features::holes::SimpleHoleForm::Simple,
+                            crate::native::features::holes::SimpleHoleExtent::Through,
+                            crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
+                            crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
                         )),
                     ) => Some(chamfer),
                     _ => template_exit_kind,
@@ -6371,7 +6375,7 @@ fn native_feature_parameters(
 /// Offset-store body fields remain absent so a complete unique-solid topology
 /// witness can apply the documented fallback.
 fn primary_hole_outputs(
-    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
+    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     body_references: &BTreeMap<&str, u32>,
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
@@ -6389,8 +6393,8 @@ fn primary_hole_outputs(
 }
 
 fn simple_hole_operations(
-    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
-    groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
+    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
+    groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
     operation_positions: &BTreeMap<&str, usize>,
 ) -> Option<Vec<String>> {
     let template_counts = templates
@@ -6404,8 +6408,8 @@ fn simple_hole_operations(
     let mut ordered_templates = templates
         .iter()
         .filter(|template| {
-            template.form == crate::native::features::SimpleHoleForm::Simple
-                && template.extent == crate::native::features::SimpleHoleExtent::Through
+            template.form == crate::native::features::holes::SimpleHoleForm::Simple
+                && template.extent == crate::native::features::holes::SimpleHoleExtent::Through
         })
         .collect::<Vec<_>>();
     let template_operations = ordered_templates
@@ -6474,7 +6478,7 @@ fn simple_hole_operations(
 /// operation with competing typed templates is not assignable to one body
 /// witness and remains native-only.
 fn blind_hole_operations(
-    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
+    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     operation_positions: &BTreeMap<&str, usize>,
 ) -> Option<Vec<String>> {
     let template_counts = templates
@@ -6488,8 +6492,8 @@ fn blind_hole_operations(
     let mut operations = templates
         .iter()
         .filter(|template| {
-            template.form == crate::native::features::SimpleHoleForm::Simple
-                && template.extent == crate::native::features::SimpleHoleExtent::Blind
+            template.form == crate::native::features::holes::SimpleHoleForm::Simple
+                && template.extent == crate::native::features::holes::SimpleHoleExtent::Blind
         })
         .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
         .map(|template| template.operation_label.clone())
@@ -6515,7 +6519,7 @@ fn blind_hole_operations(
 /// Counterbore construction groups are not inferred from the scalar lanes:
 /// each operation must have its own unambiguous body and topology witness.
 fn counterbore_operations(
-    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
+    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     operation_positions: &BTreeMap<&str, usize>,
 ) -> Option<Vec<String>> {
     let template_counts = templates
@@ -6529,10 +6533,12 @@ fn counterbore_operations(
     let mut operations = templates
         .iter()
         .filter(|template| {
-            template.form == crate::native::features::SimpleHoleForm::Counterbored
-                && template.extent == crate::native::features::SimpleHoleExtent::Through
-                && template.start_treatment == crate::native::features::SimpleHoleEndTreatment::None
-                && template.end_treatment == crate::native::features::SimpleHoleEndTreatment::None
+            template.form == crate::native::features::holes::SimpleHoleForm::Counterbored
+                && template.extent == crate::native::features::holes::SimpleHoleExtent::Through
+                && template.start_treatment
+                    == crate::native::features::holes::SimpleHoleEndTreatment::None
+                && template.end_treatment
+                    == crate::native::features::holes::SimpleHoleEndTreatment::None
         })
         .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
         .map(|template| template.operation_label.clone())
@@ -6565,9 +6571,9 @@ struct HolePackageProjection {
 
 fn hole_package_projection(
     ir: &CadIr,
-    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
-    groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
-    uses: &[crate::native::features::FeatureHolePackageConstructionGroupUse],
+    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
+    groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
+    uses: &[crate::native::features::holes::FeatureHolePackageConstructionGroupUse],
     outputs: &BTreeMap<String, Vec<BodyId>>,
     diameters: &BTreeMap<String, Length>,
     chamfers: &BTreeMap<String, HoleKind>,
@@ -6620,8 +6626,8 @@ fn hole_package_projection(
             .collect::<Vec<_>>();
         if child_templates.iter().any(|matches| {
             !matches!(matches.as_slice(), [template]
-                if template.form == crate::native::features::SimpleHoleForm::Simple
-                    && template.extent == crate::native::features::SimpleHoleExtent::Through)
+                if template.form == crate::native::features::holes::SimpleHoleForm::Simple
+                    && template.extent == crate::native::features::holes::SimpleHoleExtent::Through)
         }) {
             continue;
         }
@@ -6660,14 +6666,16 @@ fn hole_package_projection(
         }
         let requests_chamfer = child_templates.iter().all(|matches| {
             let template = matches[0];
-            template.start_treatment == crate::native::features::SimpleHoleEndTreatment::Chamfer
+            template.start_treatment
+                == crate::native::features::holes::SimpleHoleEndTreatment::Chamfer
                 && template.end_treatment
-                    == crate::native::features::SimpleHoleEndTreatment::Chamfer
+                    == crate::native::features::holes::SimpleHoleEndTreatment::Chamfer
         });
         let requests_no_treatment = child_templates.iter().all(|matches| {
             let template = matches[0];
-            template.start_treatment == crate::native::features::SimpleHoleEndTreatment::None
-                && template.end_treatment == crate::native::features::SimpleHoleEndTreatment::None
+            template.start_treatment == crate::native::features::holes::SimpleHoleEndTreatment::None
+                && template.end_treatment
+                    == crate::native::features::holes::SimpleHoleEndTreatment::None
         });
         if !requests_chamfer && !requests_no_treatment {
             continue;
@@ -7621,7 +7629,7 @@ fn through_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<(Point
 /// bounded by the bore circle and one equal larger circle.
 fn simple_hole_chamfers(
     ir: &CadIr,
-    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
+    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, HoleKind> {
     let template_counts = templates
@@ -7635,12 +7643,12 @@ fn simple_hole_chamfers(
     let operations = templates
         .iter()
         .filter(|template| {
-            template.form == crate::native::features::SimpleHoleForm::Simple
-                && template.extent == crate::native::features::SimpleHoleExtent::Through
+            template.form == crate::native::features::holes::SimpleHoleForm::Simple
+                && template.extent == crate::native::features::holes::SimpleHoleExtent::Through
                 && template.start_treatment
-                    == crate::native::features::SimpleHoleEndTreatment::Chamfer
+                    == crate::native::features::holes::SimpleHoleEndTreatment::Chamfer
                 && template.end_treatment
-                    == crate::native::features::SimpleHoleEndTreatment::Chamfer
+                    == crate::native::features::holes::SimpleHoleEndTreatment::Chamfer
         })
         .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
         .map(|template| template.operation_label.clone())
@@ -7798,11 +7806,11 @@ fn simple_hole_chamfers(
 fn unique_simple_hole_template(
     payload_strings: &[&str],
 ) -> Option<(
-    crate::native::features::SimpleHoleFamily,
-    crate::native::features::SimpleHoleForm,
-    crate::native::features::SimpleHoleExtent,
-    crate::native::features::SimpleHoleEndTreatment,
-    crate::native::features::SimpleHoleEndTreatment,
+    crate::native::features::holes::SimpleHoleFamily,
+    crate::native::features::holes::SimpleHoleForm,
+    crate::native::features::holes::SimpleHoleExtent,
+    crate::native::features::holes::SimpleHoleEndTreatment,
+    crate::native::features::holes::SimpleHoleEndTreatment,
 )> {
     let mut candidates = payload_strings
         .iter()
@@ -7812,7 +7820,7 @@ fn unique_simple_hole_template(
     if candidates.next().is_some() {
         return None;
     }
-    crate::native::features::parse_simple_hole_template(candidate)
+    crate::native::features::holes::parse_simple_hole_template(candidate)
 }
 
 /// Identity namespace used to prove that two Boolean selections are disjoint.

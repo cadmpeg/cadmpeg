@@ -254,7 +254,7 @@ Fixed prefix only. `count - 1` occurrences of `e0 + handle:u32 BE` follow at +25
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/container.rs` — The parser derives the same prefix, with the closing byte at +25 + 5 * handle_token_count.
+- `crates/cadmpeg-codec-nx/src/container/extref_handles.rs` — The parser derives the same prefix, with the closing byte at +25 + 5 * handle_token_count.
 
 ## `analytic_common_header`
 

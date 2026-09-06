@@ -631,8 +631,8 @@ anchor = "`count:u8`, `count - 1` occurrences of `e0 + handle:u32 BE`"
 note = "Offset derived by laying the stated ordered field list out from the record start."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/container.rs"
-contains = "let prefix_byte_len = 26"
+path = "crates/cadmpeg-codec-nx/src/container/extref_handles.rs"
+contains = "extrefstream_handle_set_record::LEN + self.0.len() * 5 + 1"
 note = "The parser derives the same prefix, with the closing byte at +25 + 5 * handle_token_count."
 
 # --- §4.1 Fixed Parasolid XT record families -------------------------------

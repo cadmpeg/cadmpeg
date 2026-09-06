@@ -2,11 +2,14 @@ use super::super::*;
 
 #[test]
 fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
-    use crate::native::features::{
-        FeatureSimpleHoleConstructionGroup, FeatureSimpleHoleRepeatedScalarLane,
-        FeatureSimpleHoleRepeatedScalarLaneBlockReferences, FeatureSimpleHoleTemplate,
-        SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
-    };
+    use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
+    use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane;
+    use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockReferences;
+    use crate::native::features::holes::FeatureSimpleHoleTemplate;
+    use crate::native::features::holes::SimpleHoleEndTreatment;
+    use crate::native::features::holes::SimpleHoleExtent;
+    use crate::native::features::holes::SimpleHoleFamily;
+    use crate::native::features::holes::SimpleHoleForm;
     let operation = "nx:feature-history:operation-label#1-4";
     let template = FeatureSimpleHoleTemplate {
         id: "template".to_string(),
@@ -47,13 +50,13 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         id: "group".into(),
         first_data_blocks: blocks.first_data_blocks.clone(),
         second_data_blocks: blocks.second_data_blocks.clone(),
-        members: crate::native::features::SimpleHoleConstructionMembers::new(vec![
-            crate::native::features::FeatureSimpleHoleConstructionMember {
+        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
                 operation_label: operation.into(),
                 scalar_lane: "lane".into(),
                 block_reference: "blocks".into(),
             },
-            crate::native::features::FeatureSimpleHoleConstructionMember {
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
                 operation_label: "other-operation".into(),
                 scalar_lane: "other-lane".into(),
                 block_reference: "other-blocks".into(),
@@ -87,10 +90,12 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
 
 #[test]
 fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
-    use crate::native::features::{
-        FeatureSimpleHoleConstructionGroup, FeatureSimpleHoleTemplate, SimpleHoleEndTreatment,
-        SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
-    };
+    use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
+    use crate::native::features::holes::FeatureSimpleHoleTemplate;
+    use crate::native::features::holes::SimpleHoleEndTreatment;
+    use crate::native::features::holes::SimpleHoleExtent;
+    use crate::native::features::holes::SimpleHoleFamily;
+    use crate::native::features::holes::SimpleHoleForm;
     use cadmpeg_ir::document::{CadIr, Model};
     use cadmpeg_ir::features::HolePlacement;
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
@@ -120,13 +125,13 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         id: "group".into(),
         first_data_blocks: ["a".into(), "b".into()],
         second_data_blocks: ["c".into(), "d".into()],
-        members: crate::native::features::SimpleHoleConstructionMembers::new(vec![
-            crate::native::features::FeatureSimpleHoleConstructionMember {
+        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
                 operation_label: operations[0].clone(),
                 scalar_lane: "lane-a".into(),
                 block_reference: "refs-a".into(),
             },
-            crate::native::features::FeatureSimpleHoleConstructionMember {
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
                 operation_label: operations[1].clone(),
                 scalar_lane: "lane-b".into(),
                 block_reference: "refs-b".into(),

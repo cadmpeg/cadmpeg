@@ -130,19 +130,6 @@ fn datum_plane_payload_retains_checked_compact_tokens() {
 }
 
 #[test]
-fn symbolic_thread_text_frame_derives_marker() {
-    let json = r#"{"id":"frame","symbolic_thread":"thread","ordinal":0,"marker":3,"value":"CUT","source_offset":10}"#;
-    let frame: super::FeatureSymbolicThreadTextFrame = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&frame).unwrap(), json);
-    for marker in [0, 4, 255] {
-        let invalid = json.replace("\"marker\":3", &format!("\"marker\":{marker}"));
-        let error =
-            serde_json::from_str::<super::FeatureSymbolicThreadTextFrame>(&invalid).unwrap_err();
-        assert!(error.to_string().contains("marker"));
-    }
-}
-
-#[test]
 fn sketch_construction_members_preserve_wire_and_reject_unpaired_blocks() {
     let json = r#"{"id":"inputs","operation_label":"operation","sketch_record":"sketch","member_references":["reference"],"member_data_blocks":["block"],"terminal_reference":"terminal","terminal_data_block":"last"}"#;
     let inputs: super::FeatureSketchConstructionInputs = serde_json::from_str(json).unwrap();
@@ -434,13 +421,13 @@ fn construction_reference_records_preserve_wire_and_check_tokens() {
     check::<super::FeatureProjectedCurveReference>(
         r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#,
     );
-    check::<super::FeaturePatternReference>(
+    check::<crate::native::features::pattern::FeaturePatternReference>(
         r#"{"id":"r","operation_label":"o","layout":"canonical_graph","ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#,
     );
     check::<super::FeaturePointConstructionHeader>(
         r#"{"id":"r","operation_label":"o","object_index":1,"raw_object_index":[240,1],"mode":2,"source_offset":10}"#,
     );
-    check::<super::FeatureDraftConstructionReference>(
+    check::<crate::native::features::draft::FeatureDraftConstructionReference>(
         r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#,
     );
     check::<super::FeatureSurfaceConstructionReference>(
@@ -477,14 +464,17 @@ fn fixed_reference_groups_preserve_wire_and_check_each_token() {
         "raw_object_indices",
     );
     let hole = r#"{"id":"c","operation_label":"o","selector":70,"branch":17,"object_indices":[1,2,3,4],"raw_object_indices":[[240,1],[240,2],[240,3],[240,4]],"data_blocks":["a","b","c","d"],"payload_offset":20,"source_offset":120,"reference_source_offsets":[132,134,141,143]}"#;
-    check::<super::FeatureHolePackageConstructionGroupLane>(hole, "raw_object_indices");
+    check::<crate::native::features::holes::FeatureHolePackageConstructionGroupLane>(
+        hole,
+        "raw_object_indices",
+    );
     for field in ["selector", "branch"] {
         let mut invalid: serde_json::Value = serde_json::from_str(hole).unwrap();
         invalid[field] = serde_json::json!(0);
-        assert!(
-            serde_json::from_value::<super::FeatureHolePackageConstructionGroupLane>(invalid)
-                .is_err()
-        );
+        assert!(serde_json::from_value::<
+            crate::native::features::holes::FeatureHolePackageConstructionGroupLane,
+        >(invalid)
+        .is_err());
     }
     let fset = r#"{"id":"g","operation_label":"o","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":[[144,0,1],[144,0,2]],"first_data_blocks":["a",null],"second_object_indices":[3,4,5],"raw_second_object_indices":[[144,0,3],[144,0,4],[144,0,5]],"second_data_blocks":[null,"d","e"],"source_offset":10,"first_source_offsets":[11,14],"second_source_offsets":[17,20,23]}"#;
     check::<super::FeatureFsetReferenceGraph>(fset, "raw_first_object_indices");
