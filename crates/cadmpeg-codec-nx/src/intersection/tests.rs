@@ -266,7 +266,6 @@ fn intersection_rejects_cross_form_xmt_collision_atomically() {
         &BTreeMap::new(),
         &BTreeMap::new(),
         &BTreeMap::new(),
-        &BTreeMap::new(),
         &crate::topology::Graph::default(),
         vec![construction(false, 10), construction(true, 20)],
         super::CrossFormCollision::Reject,
@@ -470,7 +469,7 @@ fn intersection_support_uv_scan_does_not_admit_nested_counted_candidates() {
     let records = crate::intersection::support_uv_records(&outer);
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].xmt, 23);
-    assert_eq!(records[0].values.len(), 4);
+    assert_eq!(records[0].values.values().len(), 4);
 }
 
 #[test]

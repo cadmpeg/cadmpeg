@@ -7,6 +7,8 @@ use cadmpeg_core::decode::alloc_filled;
 
 use crate::deltas::Census;
 
+mod support_uv_wire;
+
 use super::substrate::{ParsedStreams, StreamView};
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -1837,6 +1839,7 @@ impl ParasolidScanRecords for ParasolidTermUseRecord {
 
 /// Complete typed source record for one Parasolid support-UV values array.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "support_uv_wire::SupportUvWire", into = "support_uv_wire::SupportUvWire")]
 pub struct ParasolidSupportUvRecord {
     /// Globally unique record identity.
     pub id: String,
@@ -1844,12 +1847,8 @@ pub struct ParasolidSupportUvRecord {
     pub stream_ordinal: u32,
     /// Cross-reference index of the values array.
     pub xmt: u32,
-    /// Serialized scalar count.
-    pub count: u32,
-    /// Tuple-packing marker (`2`, `3`, or `4`).
-    pub marker: u8,
-    /// Ordered serialized scalar values.
-    pub values: Vec<f64>,
+    /// Exact finite packed support tuples.
+    pub values: crate::intersection::support_uv_values::SupportUvValues,
     /// Serialized record framing.
     pub framing: crate::intersection::SupportUvFraming,
     /// Tag or inline-payload offset in the inflated stream.
@@ -1876,8 +1875,6 @@ impl ParasolidScanRecords for ParasolidSupportUvRecord {
             id,
             stream_ordinal,
             xmt: row.xmt,
-            count: row.count,
-            marker: row.marker,
             values: row.values,
             framing: row.framing,
             inflated_offset: row.pos as u64,

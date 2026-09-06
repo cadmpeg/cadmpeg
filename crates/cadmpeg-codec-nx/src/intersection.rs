@@ -9,6 +9,8 @@ use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod chart_samples;
+pub(crate) mod support_uv_values;
+use support_uv_values::{SupportUvPacking, SupportUvValues};
 
 use chart_samples::ChartSamples;
 
@@ -174,34 +176,12 @@ pub enum SupportUvFraming {
 pub struct SupportUvRecord {
     /// Cross-reference index of the values array.
     pub xmt: u32,
-    /// Serialized scalar count.
-    pub count: u32,
-    /// Tuple-packing marker (`2`, `3`, or `4`).
-    pub marker: u8,
-    /// Ordered serialized finite scalar values.
-    pub values: Vec<f64>,
+    /// Exact finite packed support tuples.
+    pub values: SupportUvValues,
     /// Serialized record framing.
     pub framing: SupportUvFraming,
     /// Tag or inline-payload offset in the inflated stream.
     pub pos: usize,
-}
-
-impl SupportUvRecord {
-    fn support_uv(&self) -> SupportUv {
-        let width = if self.marker == 4 { 4 } else { 2 };
-        let first = self
-            .values
-            .chunks_exact(width)
-            .map(|entry| [entry[0], entry[1]])
-            .collect();
-        let second = (self.marker == 4).then(|| {
-            self.values
-                .chunks_exact(4)
-                .map(|entry| [entry[2], entry[3]])
-                .collect()
-        });
-        [Some(first), second]
-    }
 }
 
 /// A decoded surface-intersection construction and its solved chart cache.
@@ -349,7 +329,7 @@ pub(crate) fn scan_with_graph(
     graph: &topology::Graph,
     point_layout: ChartPointLayout,
 ) -> CurveScan {
-    let (uv, uv_markers) = uv_records(stream);
+    let uv = uv_records(stream);
     let constructions = graph
         .composite_curves()
         .into_iter()
@@ -359,7 +339,6 @@ pub(crate) fn scan_with_graph(
         &chart_records(stream, point_layout),
         &term_records(stream),
         &uv,
-        &uv_markers,
         &blend_bound_records(stream),
         graph,
         constructions,
@@ -386,14 +365,12 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
 ) -> CurveScan {
     let mut charts = chart_records(base_stream, ChartPointLayout::Xyz3);
     let mut terms = term_records(base_stream);
-    let (mut uv, mut uv_markers) = uv_records(base_stream);
+    let mut uv = uv_records(base_stream);
     let mut bridges = blend_bound_records(base_stream);
     for replacement_stream in replacement_streams {
         charts.extend(chart_records(replacement_stream, ChartPointLayout::Ext11));
         terms.extend(term_records(replacement_stream));
-        let (replacement_uv, replacement_markers) = uv_records(replacement_stream);
-        uv.extend(replacement_uv);
-        uv_markers.extend(replacement_markers);
+        uv.extend(uv_records(replacement_stream));
         bridges.extend(blend_bound_records(replacement_stream));
     }
     let constructions = graph
@@ -405,7 +382,6 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
         &charts,
         &terms,
         &uv,
-        &uv_markers,
         &bridges,
         graph,
         constructions,
@@ -419,14 +395,10 @@ enum CrossFormCollision {
     PreferDeltaTwin,
 }
 
-// Keep each independently keyed auxiliary family and the merge-context policy
-// explicit at the construction-admission boundary.
-#[allow(clippy::too_many_arguments)]
 fn scan_with_auxiliaries(
     charts: &BTreeMap<u32, Chart>,
     terms: &BTreeMap<u32, Point3>,
-    uv: &BTreeMap<u32, SupportUv>,
-    uv_markers: &BTreeMap<u32, u8>,
+    uv: &BTreeMap<u32, SupportUvValues>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
     constructions: Vec<CompositeCurve>,
@@ -461,21 +433,21 @@ fn scan_with_auxiliaries(
         })
         .collect::<Vec<_>>();
     for construction in constructions.iter().copied() {
-        match enrich(construction, charts, terms, uv, uv_markers, bridges, graph) {
+        match enrich(construction, charts, terms, uv, bridges, graph) {
             Ok(curve) => {
                 result.constructions.push(construction);
                 result.curves.push(curve);
             }
             Err(rejection)
                 if referenced_curves.contains(&construction.xmt)
-                    && construction_supports(construction, uv_markers, bridges, graph)
+                    && construction_supports(construction, uv, bridges, graph)
                         .is_some()
                     && construction_has_endpoint_witnesses(construction, terms, graph) =>
             {
                 result.constructions.push(construction);
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some(witness)) = (
-                        construction_supports(construction, uv_markers, bridges, graph)
+                        construction_supports(construction, uv, bridges, graph)
                             .filter(|supports| supports[1] > 1),
                         graph
                             .unique_curve_edge_witness(construction.xmt)
@@ -509,8 +481,7 @@ fn enrich(
     construction: CompositeCurve,
     charts: &BTreeMap<u32, Chart>,
     terms: &BTreeMap<u32, Point3>,
-    uv: &BTreeMap<u32, SupportUv>,
-    uv_markers: &BTreeMap<u32, u8>,
+    uv: &BTreeMap<u32, SupportUvValues>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> Result<IntersectionCurve, Rejection> {
@@ -559,11 +530,11 @@ fn enrich(
             });
         }
     }
-    let supports = construction_supports(construction, uv_markers, bridges, graph)
+    let supports = construction_supports(construction, uv, bridges, graph)
         .ok_or(Rejection::MissingSupport)?;
     let support_uv = uv
         .get(&construction.references[5])
-        .cloned()
+        .map(SupportUvValues::support_uv)
         .unwrap_or([None, None]);
     Ok(IntersectionCurve {
         xmt: construction.xmt,
@@ -579,7 +550,7 @@ fn enrich(
 
 fn construction_supports(
     construction: CompositeCurve,
-    uv_markers: &BTreeMap<u32, u8>,
+    uv: &BTreeMap<u32, SupportUvValues>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> Option<[u32; 2]> {
@@ -589,10 +560,9 @@ fn construction_supports(
         // A present marker-3 values array explicitly reverses the serialized
         // support order. Without that array, retain the type-38 references'
         // order; no alternate order was serialized.
-        match uv_markers.get(&construction.references[5]).copied() {
-            Some(3) => (construction.references[1], construction.references[0]),
-            Some(2 | 4) | None => (construction.references[0], construction.references[1]),
-            Some(_) => return None,
+        match uv.get(&construction.references[5]).map(SupportUvValues::packing) {
+            Some(SupportUvPacking::Form3) => (construction.references[1], construction.references[0]),
+            Some(SupportUvPacking::Form2 | SupportUvPacking::Form4) | None => (construction.references[0], construction.references[1]),
         }
     };
     is_surface(graph, primary).then_some(())?;
@@ -1062,12 +1032,8 @@ fn term_at(
     ))
 }
 
-fn uv_records(stream: &[u8]) -> (BTreeMap<u32, SupportUv>, BTreeMap<u32, u8>) {
-    let records = support_uv_records(stream);
-    (
-        records.iter().map(|r| (r.xmt, r.support_uv())).collect(),
-        records.into_iter().map(|r| (r.xmt, r.marker)).collect(),
-    )
+fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUvValues> {
+    support_uv_records(stream).into_iter().map(|record| (record.xmt, record.values)).collect()
 }
 
 /// Decode complete direct, escaped, and descriptor-inline support-UV arrays.
@@ -1154,24 +1120,14 @@ fn uv_at(
     let count_usize = count as usize;
     let (xmt, xmt_len) = read_xmt(stream, base + 4)?;
     let payload = base + 4 + xmt_len;
-    let marker @ 2..=4 = stream.get(payload).copied()? else {
-        return None;
-    };
-    let width = if marker == 4 { 4 } else { 2 };
-    if count_usize < width * 2 || !count_usize.is_multiple_of(width) {
-        return None;
-    }
+    let packing = SupportUvPacking::try_from(*stream.get(payload)?).ok()?;
     let values = View::over_retained(stream)
         .child(payload + 1, stream.len())?
         .read_counted(count as u64, 8, View::f64_be)?;
-    if !values.iter().all(|value| value.is_finite()) {
-        return None;
-    }
+    let values = SupportUvValues::new(packing, values).ok()?;
     Some((
         SupportUvRecord {
             xmt,
-            count,
-            marker,
             values,
             framing,
             pos,
