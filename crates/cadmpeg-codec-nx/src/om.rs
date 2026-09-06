@@ -2177,7 +2177,6 @@ pub struct PatternPayloadTransformLane {
 pub struct MultiInstanceOutputRow {
     pub selector: LaneToken<u32>,
     pub ordinal: u8,
-    pub row_index: u8,
 }
 
 /// Exact counted instance-output lane in a multi-instance operation payload.
@@ -4457,7 +4456,6 @@ pub fn multi_instance_output_payload_lane(
             rows.push(MultiInstanceOutputRow {
                 selector,
                 ordinal,
-                row_index: expected_row_index,
             });
             at += 3;
         }

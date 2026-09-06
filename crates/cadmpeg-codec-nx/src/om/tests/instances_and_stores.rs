@@ -79,13 +79,6 @@ fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
         lane.rows.iter().map(|row| row.ordinal).collect::<Vec<_>>(),
         [2, 3, 2, 3, 2, 3]
     );
-    assert_eq!(
-        lane.rows
-            .iter()
-            .map(|row| row.row_index)
-            .collect::<Vec<_>>(),
-        [2, 3, 4, 5, 6, 7]
-    );
     assert_eq!(lane.trailing_references.len() + 1, 3);
     assert_eq!(
         lane.rows

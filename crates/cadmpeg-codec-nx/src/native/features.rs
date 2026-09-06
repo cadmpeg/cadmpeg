@@ -3234,7 +3234,6 @@ pub struct FeatureMultiInstanceOutputRow {
     pub value: u32,
     pub raw: Vec<u8>,
     pub ordinal: u8,
-    pub row_index: u8,
     pub source_offset: u64,
 }
 
@@ -3273,7 +3272,7 @@ struct FeatureMultiInstanceOutputLaneWire {
     /// Ordered serialized instance ordinals.
     ordinals: Vec<u8>,
     /// Ordered serialized row indices.
-    row_indices: Vec<u8>,
+    row_indices: Vec<usize>,
     /// Count including the implicit seed instance.
     #[serde(deserialize_with = "deserialize_reference_lane_count")]
     instance_count: usize,
@@ -3300,7 +3299,7 @@ impl From<FeatureMultiInstanceOutputLane> for FeatureMultiInstanceOutputLaneWire
             selectors: lane.rows.iter().map(|token| token.value).collect(),
             raw_selectors: lane.rows.iter().map(|token| token.raw.clone()).collect(),
             ordinals: lane.rows.iter().map(|token| token.ordinal).collect(),
-            row_indices: lane.rows.iter().map(|token| token.row_index).collect(),
+            row_indices: (2..lane.rows.len() + 2).collect(),
             selector_source_offsets: lane.rows.iter().map(|token| token.source_offset).collect(),
             trailing_object_indices: lane
                 .trailing_references
@@ -3327,12 +3326,14 @@ impl TryFrom<FeatureMultiInstanceOutputLaneWire> for FeatureMultiInstanceOutputL
         if wire.declared_count != wire.selectors.len() + 1 {
             return Err("declared_count must equal the row count plus the implicit seed".into());
         }
+        if wire.row_indices.iter().copied().ne(2..wire.selectors.len() + 2) {
+            return Err("row_indices must enumerate rows from two".into());
+        }
         if wire.instance_count != wire.trailing_object_indices.len() + 1 {
             return Err("instance_count must equal the trailing reference count plus the implicit seed".into());
         }
         if wire.raw_selectors.len() != wire.selectors.len()
             || wire.ordinals.len() != wire.selectors.len()
-            || wire.row_indices.len() != wire.selectors.len()
             || wire.selector_source_offsets.len() != wire.selectors.len()
         {
             return Err(
@@ -3353,14 +3354,12 @@ impl TryFrom<FeatureMultiInstanceOutputLaneWire> for FeatureMultiInstanceOutputL
                 .into_iter()
                 .zip(wire.raw_selectors)
                 .zip(wire.ordinals)
-                .zip(wire.row_indices)
                 .zip(wire.selector_source_offsets)
-                .map(|((((value, raw), ordinal), row_index), source_offset)| {
+                .map(|(((value, raw), ordinal), source_offset)| {
                     FeatureMultiInstanceOutputRow {
                         value,
                         raw,
                         ordinal,
-                        row_index,
                         source_offset,
                     }
                 })
@@ -9923,7 +9922,6 @@ pub fn feature_multi_instance_output_lanes(
                     value: row.selector.value,
                     raw: row.selector.raw,
                     ordinal: row.ordinal,
-                    row_index: row.row_index,
                     source_offset: entry_offset + row.selector.offset as u64,
                 }).collect(),
                 trailing_references: lane.trailing_references.into_iter().map(|reference| FeatureIndexToken {
