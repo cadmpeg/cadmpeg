@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::native::features::extrude_32::FeatureExtrudePayload32Branch;
+use crate::native::features::point_scalar_lane::FeaturePointConstructionScalarLane;
 use crate::native::features::terminal_discriminator::FeatureOperationTerminalDiscriminator;
 
 #[test]
@@ -97,7 +98,7 @@ fn terminal_discriminator_rejects_inconsistent_compact_tokens() {
 #[test]
 fn point_scalar_lane_preserves_wire_and_requires_six_complete_tokens() {
     check_lane_wire::<FeaturePointConstructionScalarLane>(
-        r#"{"id":"lane","operation_label":"operation","construction_header":"header","data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0],[48,8,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0]],"source_offsets":[100,110,120,200,210,220]}"#,
+        r#"{"id":"lane","operation_label":"operation","construction_header":"header","data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0],[48,8,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0]],"source_offsets":[100,110,118,126,134,142]}"#,
         &["values", "raw_values", "source_offsets"],
     );
 }

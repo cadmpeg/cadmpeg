@@ -24,6 +24,7 @@ use crate::native::features::fset::{
 };
 use crate::native::features::object_frame::DataBlockObjectFrame;
 use crate::native::features::payload_name::FeaturePayloadName;
+use crate::native::features::point_scalar_lane::FeaturePointConstructionScalarLane;
 use crate::native::features::surface_branches::{
     feature_surface_construction_branches, FeatureSurfaceConstructionBranch,
 };
