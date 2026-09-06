@@ -175,6 +175,8 @@ fn swp104_state_wire_preserves_independent_witness_and_absence() {
         assert_eq!(serde_json::to_string(&branch).unwrap(), json);
         let invalid = json.replace("\"declared_count\":2", "\"declared_count\":3");
         assert!(serde_json::from_str::<super::FeatureSwp104LeadingBranch>(&invalid).unwrap_err().to_string().contains("declared_count"));
+        let invalid = json.replace("0.04", "0.05");
+        assert!(serde_json::from_str::<super::FeatureSwp104LeadingBranch>(&invalid).unwrap_err().to_string().contains("scalars"));
         for field in ["discriminator", "mode"] {
             let mut invalid: serde_json::Value = serde_json::from_str(&json).unwrap();
             invalid[field] = serde_json::json!(0);

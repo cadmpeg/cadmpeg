@@ -886,8 +886,8 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
     };
     let branch = super::swp104_payload_leading_branch(record).expect("leading branch");
     assert_eq!(branch.discriminator.get(), 0x21);
-    assert_eq!(branch.scalars, [0.04; 4]);
-    assert_eq!(branch.raw_scalars, [raw_scalar; 4]);
+    assert_eq!(branch.scalars.map(crate::om::scalar::ShiftedBinary64::value), [0.04; 4]);
+    assert_eq!(branch.scalars.map(crate::om::scalar::ShiftedBinary64::raw), [raw_scalar; 4]);
     assert!(!branch.leading_zero);
     assert_eq!(branch.mode.get(), 0x23);
     assert_eq!(branch.members.declared_count(), 3);

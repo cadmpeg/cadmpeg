@@ -12,6 +12,7 @@ use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLin
 use std::borrow::Cow;
 use std::num::NonZeroU8;
 use crate::om::swp104_state::Swp104StateLane;
+use crate::om::scalar::ShiftedBinary64;
 use crate::om::branch_items::BranchItems;
 use crate::om::thru_curve_state::ThruCurveBranchItems;
 use crate::om::thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
@@ -4391,9 +4392,7 @@ pub struct FeatureSwp104LeadingBranch {
     /// Nonzero construction discriminator.
     pub discriminator: NonZeroU8,
     /// Four finite shifted-binary64 values in serialized order.
-    pub scalars: [f64; 4],
-    /// Exact shifted-binary64 encodings.
-    pub raw_scalars: [[u8; 8]; 4],
+    pub scalars: [ShiftedBinary64; 4],
     /// Whether one zero byte precedes the branch mode.
     pub leading_zero: bool,
     /// Serialized nonzero branch mode.
@@ -4435,8 +4434,8 @@ impl From<FeatureSwp104LeadingBranch> for FeatureSwp104LeadingBranchWire {
             id: value.id,
             operation_label: value.operation_label,
             discriminator: value.discriminator,
-            scalars: value.scalars,
-            raw_scalars: value.raw_scalars,
+            scalars: value.scalars.map(ShiftedBinary64::value),
+            raw_scalars: value.scalars.map(ShiftedBinary64::raw),
             leading_zero: value.leading_zero,
             mode: value.mode,
             declared_count: value.members.declared_count(),
@@ -4456,12 +4455,13 @@ impl TryFrom<FeatureSwp104LeadingBranchWire> for FeatureSwp104LeadingBranch {
         if wire.declared_count != wire.members.declared_count() {
             return Err("declared_count must equal members length plus one".to_owned());
         }
+        let [a, b, c, d] = std::array::from_fn::<_, 4, _>(|i| ShiftedBinary64::from_wire(wire.scalars[i], wire.raw_scalars[i]));
+        let scalars = [a?, b?, c?, d?];
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
             discriminator: wire.discriminator,
-            scalars: wire.scalars,
-            raw_scalars: wire.raw_scalars,
+            scalars,
             leading_zero: wire.leading_zero,
             mode: wire.mode,
             state_lane: Swp104StateLane::from_parts(wire.witnessed_count, wire.state_lane)?,
@@ -10888,7 +10888,6 @@ pub fn feature_swp104_leading_branches(container: &Container) -> Vec<FeatureSwp1
                 operation_label: format!("nx:feature-history:operation-label#{operation_key}"),
                 discriminator: branch.discriminator,
                 scalars: branch.scalars,
-                raw_scalars: branch.raw_scalars,
                 leading_zero: branch.leading_zero,
                 mode: branch.mode,
                 state_lane: branch.state_lane,

@@ -12,6 +12,8 @@ pub(crate) mod discriminators;
 use branch_items::BranchItems;
 pub(crate) mod parameter_name;
 pub(crate) mod swp104_state;
+pub(crate) mod scalar;
+use scalar::{ShiftedBinary64, shifted_ieee_f64, is_shifted_ieee_f64_marker};
 pub(crate) mod thru_curve_endings;
 pub(crate) mod thru_curve_state;
 use thru_curve_state::ThruCurveBranchItems;
@@ -2340,9 +2342,7 @@ pub struct Swp104PayloadLeadingBranch {
     /// Nonzero construction discriminator at the payload start.
     pub discriminator: NonZeroU8,
     /// Four finite shifted-binary64 values in serialized order.
-    pub scalars: [f64; 4],
-    /// Exact shifted-binary64 encodings.
-    pub raw_scalars: [[u8; 8]; 4],
+    pub scalars: [ShiftedBinary64; 4],
     /// Whether one zero byte precedes the branch mode.
     pub leading_zero: bool,
     /// Serialized nonzero branch mode.
@@ -5068,13 +5068,12 @@ pub fn swp104_payload_leading_branch(
     (record.payload.get(1..5) == Some(&HEADER)).then_some(())?;
 
     let mut at = 5;
-    let mut raw_scalars = [[0; 8]; 4];
-    let mut scalars = [0.0; 4];
-    for ordinal in 0..4 {
-        raw_scalars[ordinal] = record.payload.get(at..at + 8)?.try_into().ok()?;
-        scalars[ordinal] = shifted_ieee_f64(&raw_scalars[ordinal])?;
+    let mut scalars = Vec::with_capacity(4);
+    for _ in 0..4 {
+        scalars.push(ShiftedBinary64::read(record.payload.get(at..at + 8)?)?);
         at += 8;
     }
+    let scalars = scalars.try_into().ok()?;
 
     let leading_zero = record.payload.get(at) == Some(&0x00);
     at += usize::from(leading_zero);
@@ -5130,7 +5129,6 @@ pub fn swp104_payload_leading_branch(
     Some(Swp104PayloadLeadingBranch {
         discriminator,
         scalars,
-        raw_scalars,
         leading_zero,
         mode,
         state_lane,
@@ -5439,21 +5437,6 @@ pub fn operation_terminal_discriminator(
         found = Some(lane);
     }
     found
-}
-
-fn shifted_ieee_f64(bytes: &[u8]) -> Option<f64> {
-    let encoded: [u8; 8] = bytes.try_into().ok()?;
-    if !is_shifted_ieee_f64_marker(encoded[0]) {
-        return None;
-    }
-    let mut raw = encoded;
-    raw[0] = raw[0].checked_add(0x10)?;
-    let value = f64::from_be_bytes(raw);
-    value.is_finite().then_some(value)
-}
-
-fn is_shifted_ieee_f64_marker(marker: u8) -> bool {
-    matches!(marker, 0x20..=0x3f | 0xa0..=0xbf)
 }
 
 /// Decode complete three-scalar clauses following ordered operation body fields.
