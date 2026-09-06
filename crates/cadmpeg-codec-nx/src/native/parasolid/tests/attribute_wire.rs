@@ -52,3 +52,18 @@ fn attribute_definition_wire_preserves_codes_and_rejects_invalid_domains() {
         assert!(serde_json::from_str::<ParasolidAttributeDefinition>(&invalid).is_err());
     }
 }
+
+#[test]
+fn resolved_class_relations_preserve_non_null_definition_wire() {
+    use crate::native::parasolid::{ParasolidAttributeClassUse, ParasolidTopologyAttributeClassUse};
+    fn check<T: serde::Serialize + serde::de::DeserializeOwned>(wire: &str) {
+        let relation: T = serde_json::from_str(wire).unwrap();
+        assert_eq!(serde_json::to_string(&relation).unwrap(), wire);
+        for target in [0, 1] {
+            let invalid = wire.replace("\"definition_xmt\":2", &format!("\"definition_xmt\":{target}"));
+            assert!(serde_json::from_str::<T>(&invalid).is_err());
+        }
+    }
+    check::<ParasolidAttributeClassUse>(r#"{"id":"class","stream_ordinal":0,"entity_51_record":"entity","definition_xmt":2,"attribute_definition":"definition"}"#);
+    check::<ParasolidTopologyAttributeClassUse>(r#"{"id":"class","topology_attribute_reference":"topology","entity_51_record":"entity","attribute_class_use":"use","definition_xmt":2,"attribute_definition":"definition"}"#);
+}

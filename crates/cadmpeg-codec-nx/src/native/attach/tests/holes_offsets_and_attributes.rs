@@ -1283,7 +1283,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         topology_attribute_reference: references[2].id.clone(),
         entity_51_record: "entity".into(),
         attribute_class_use: "attribute-class-use".into(),
-        definition_xmt: definition.xmt.into(),
+        definition_xmt: definition.xmt,
         attribute_definition: definition.id.clone(),
     };
     let class_uses = [class_use];
@@ -1395,7 +1395,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         topology_attribute_reference: reference.id.clone(),
         entity_51_record: "entity".into(),
         attribute_class_use: "attribute-class-use".into(),
-        definition_xmt: definition.xmt.into(),
+        definition_xmt: definition.xmt,
         attribute_definition: definition.id.clone(),
     };
     let field_use = ParasolidAttributeFieldUse {
@@ -1542,7 +1542,7 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
         topology_attribute_reference: reference.id.clone(),
         entity_51_record: "entity".into(),
         attribute_class_use: "attribute-class-use".into(),
-        definition_xmt: definition.xmt.into(),
+        definition_xmt: definition.xmt,
         attribute_definition: definition.id.clone(),
     };
     let text_field = ParasolidAttributeFieldUse {
@@ -1637,7 +1637,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             topology_attribute_reference: reference.id.clone(),
             entity_51_record: "head".into(),
             attribute_class_use: "head-class-use".into(),
-            definition_xmt: definition.xmt.into(),
+            definition_xmt: definition.xmt,
             attribute_definition: definition.id.clone(),
         },
         ParasolidTopologyAttributeClassUse {
@@ -1645,7 +1645,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             topology_attribute_reference: reference.id.clone(),
             entity_51_record: "child".into(),
             attribute_class_use: "child-class-use".into(),
-            definition_xmt: definition.xmt.into(),
+            definition_xmt: definition.xmt,
             attribute_definition: definition.id.clone(),
         },
     ];

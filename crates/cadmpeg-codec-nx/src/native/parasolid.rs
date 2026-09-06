@@ -2141,7 +2141,7 @@ pub struct ParasolidAttributeClassUse {
     /// Type-81 attribute-instance record.
     pub entity_51_record: String,
     /// Stream-local XMT of the matched type-80 definition.
-    pub definition_xmt: u32,
+    pub definition_xmt: NonNullXmt,
     /// Uniquely matched attribute definition.
     pub attribute_definition: String,
 }
@@ -2224,7 +2224,7 @@ pub struct ParasolidTopologyAttributeClassUse {
     /// Resolved class relation for the attribute instance.
     pub attribute_class_use: String,
     /// Stream-local XMT of the matched type-80 definition.
-    pub definition_xmt: u32,
+    pub definition_xmt: NonNullXmt,
     /// Uniquely matched attribute definition.
     pub attribute_definition: String,
 }
@@ -2951,7 +2951,7 @@ pub fn parasolid_attribute_class_uses(
                 ),
                 stream_ordinal: entity.stream_ordinal,
                 entity_51_record: entity.id.clone(),
-                definition_xmt,
+                definition_xmt: definition.xmt,
                 attribute_definition: definition.id.clone(),
             })
         })
@@ -3897,7 +3897,7 @@ mod tests {
             id: "nx:s2:attribute-class-use#class-use".into(),
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
-            definition_xmt: 9,
+            definition_xmt: NonNullXmt::try_from(9).unwrap(),
             attribute_definition: "definition".into(),
         };
         let numeric_use = ParasolidEntity51NumericUse {
@@ -3967,7 +3967,7 @@ mod tests {
             id: "duplicate".into(),
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
-            definition_xmt: 11,
+            definition_xmt: NonNullXmt::try_from(11).unwrap(),
             attribute_definition: "other-definition".into(),
         };
         assert!(parasolid_attribute_field_uses(
@@ -4110,7 +4110,7 @@ mod tests {
             id: "nx:s2:attribute-class-use#class-use".into(),
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
-            definition_xmt: 9,
+            definition_xmt: NonNullXmt::try_from(9).unwrap(),
             attribute_definition: definition.id.clone(),
         };
         let structured = kinds
@@ -4181,7 +4181,7 @@ mod tests {
             id: "class-use".into(),
             stream_ordinal: 0,
             entity_51_record: entity.id.clone(),
-            definition_xmt: 20,
+            definition_xmt: NonNullXmt::try_from(20).unwrap(),
             attribute_definition: "definition".into(),
         };
         let field_use = ParasolidAttributeFieldUse {
@@ -4210,7 +4210,7 @@ mod tests {
             topology_attribute_reference: topology_reference.id.clone(),
             entity_51_record: entity.id.clone(),
             attribute_class_use: class_use.id.clone(),
-            definition_xmt: 20,
+            definition_xmt: NonNullXmt::try_from(20).unwrap(),
             attribute_definition: "definition".into(),
         };
 
@@ -4578,7 +4578,7 @@ mod tests {
         );
         assert_eq!(instance_uses.len(), 1);
         assert_eq!(instance_uses[0].entity_51_record, entity.id);
-        assert_eq!(instance_uses[0].definition_xmt, 34);
+        assert_eq!(u32::from(instance_uses[0].definition_xmt), 34);
         assert_eq!(instance_uses[0].attribute_definition, definition.id);
 
         let uses = super::parasolid_topology_attribute_class_uses(
@@ -4588,7 +4588,7 @@ mod tests {
         );
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].attribute_class_use, instance_uses[0].id);
-        assert_eq!(uses[0].definition_xmt, 34);
+        assert_eq!(u32::from(uses[0].definition_xmt), 34);
         assert_eq!(uses[0].attribute_definition, definition.id);
         assert!(super::parasolid_topology_attribute_class_uses(
             std::slice::from_ref(&reference),
