@@ -181,7 +181,7 @@ fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
     let declaration = &census.inline_schema_declarations[0];
     assert_eq!(
         declaration.fields,
-        crate::deltas::InlineSchemaFields::Region {
+        crate::deltas::inline_schema_fields::InlineSchemaFields::Region {
             xmt: 40_000,
             state_word: 5,
             references: [1, 3, 1, 9],

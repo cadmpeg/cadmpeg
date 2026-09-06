@@ -17,6 +17,7 @@ use crate::deltas::packet_marker::ReferenceMarker;
 use crate::deltas::xmt_reference::NonNullXmt;
 use crate::deltas::state_frame::StateFrames;
 use crate::deltas::reference_lanes::{MapEntries, TaggedReferences};
+use crate::deltas::inline_schema_fields::{InlineBodyStateFields, InlineSchemaFields};
 use crate::deltas::transmit_state::TransmitState;
 use crate::deltas::preamble_state::PreambleState;
 use crate::deltas::type150_state::Type150State;
@@ -663,87 +664,6 @@ pub struct ParasolidDeltasType150StatePacket {
     pub inflated_offset: u64,
 }
 
-/// Body of an inline schema declaration in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "schema", rename_all = "snake_case")]
-pub enum ParasolidDeltasInlineSchemaFields {
-    /// Type 12 `BODY` schema header without following instance state.
-    BodyHeader,
-    /// REGION declaration state.
-    Region {
-        xmt: u32,
-        state_word: u32,
-        references: [u32; 4],
-    },
-    /// `ATTDEF_LIST` declaration state.
-    AttdefList {
-        xmt: u32,
-        slot_count: u32,
-        active_count: u32,
-        references: Vec<u32>,
-    },
-    /// Type 70 declaration state.
-    Type70 {
-        xmt: u32,
-        node_id: u32,
-        references: [u32; 4],
-        count: u16,
-        trailing_reference: u32,
-    },
-    /// Type 100 declaration and its precision state.
-    Type100 {
-        xmt: u32,
-        references: [u32; 3],
-        transform: [f64; 13],
-    },
-    /// Type 101 declaration and its schema-bound instance state.
-    Type101 {
-        references: [u32; 4],
-        anchor_reference: Option<u32>,
-        state_words: [u32; 3],
-        terminal_value: u64,
-    },
-    /// Type 101 declaration with the compact fixed state.
-    Type101Compact,
-    /// Type 38 intersection-data declaration state.
-    Type38 {
-        xmt: u32,
-        node_id: u32,
-        leading_references: [u32; 5],
-        #[serde(
-            default = "default_type38_leading_statuses",
-            deserialize_with = "deserialize_type38_leading_statuses",
-            skip_serializing_if = "type38_leading_statuses_are_default"
-        )]
-        leading_statuses: [u8; 5],
-        marker: u8,
-        linked_references: Vec<u32>,
-        state_references: Vec<u32>,
-        numeric_values: Option<[f64; 11]>,
-    },
-    /// Type 41 term-use declaration state.
-    Type41 {
-        reference: u32,
-        numeric_values: [f64; 11],
-    },
-}
-
-fn default_type38_leading_statuses() -> [u8; 5] {
-    [1; 5]
-}
-
-fn type38_leading_statuses_are_default(statuses: &[u8; 5]) -> bool {
-    *statuses == default_type38_leading_statuses()
-}
-
-fn deserialize_type38_leading_statuses<'de, D>(deserializer: D) -> Result<[u8; 5], D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    Ok(Option::<[u8; 5]>::deserialize(deserializer)?
-        .unwrap_or_else(default_type38_leading_statuses))
-}
-
 /// Inline schema declaration in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParasolidDeltasInlineSchemaDeclaration {
@@ -753,33 +673,13 @@ pub struct ParasolidDeltasInlineSchemaDeclaration {
     pub stream_ordinal: u32,
     /// Schema-specific declaration body.
     #[serde(flatten)]
-    pub fields: ParasolidDeltasInlineSchemaFields,
+    pub fields: InlineSchemaFields,
     /// Exact declaration byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact declaration bytes.
     pub sha256: String,
     /// First declaration byte offset in the inflated stream.
     pub inflated_offset: u64,
-}
-
-/// Schema-bound type-12 `BODY` instance-state fields.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "form", rename_all = "snake_case")]
-pub enum ParasolidDeltasInlineBodyStateFields {
-    /// Compact reference form followed by status zero.
-    Compact {
-        /// Non-null stream-local XMT reference.
-        reference: u32,
-    },
-    /// Revision form with a bounded opaque state tail.
-    Revision {
-        /// Monotonic kernel revision identity.
-        node_id: u32,
-        /// Eight ordered status-framed XMT references.
-        references: [u32; 8],
-        /// Exact state bytes following the reference prefix.
-        state_bytes: Vec<u8>,
-    },
 }
 
 /// Schema-bound type-12 `BODY` instance state in a Parasolid deltas stream.
@@ -790,7 +690,7 @@ pub struct ParasolidDeltasInlineBodyState {
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
     /// Serialized state form.
-    pub fields: ParasolidDeltasInlineBodyStateFields,
+    pub fields: InlineBodyStateFields,
     /// Exact state byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact state bytes.
@@ -1083,93 +983,6 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
         }
         for declaration in census.inline_schema_declarations {
             let bytes = &stream.inflated[declaration.offset..declaration.end];
-            let fields = match declaration.fields {
-                crate::deltas::InlineSchemaFields::BodyHeader => {
-                    ParasolidDeltasInlineSchemaFields::BodyHeader
-                }
-                crate::deltas::InlineSchemaFields::Region {
-                    xmt,
-                    state_word,
-                    references,
-                } => ParasolidDeltasInlineSchemaFields::Region {
-                    xmt,
-                    state_word,
-                    references,
-                },
-                crate::deltas::InlineSchemaFields::AttdefList {
-                    xmt,
-                    slot_count,
-                    active_count,
-                    references,
-                } => ParasolidDeltasInlineSchemaFields::AttdefList {
-                    xmt,
-                    slot_count,
-                    active_count,
-                    references,
-                },
-                crate::deltas::InlineSchemaFields::Type70 {
-                    xmt,
-                    node_id,
-                    references,
-                    count,
-                    trailing_reference,
-                } => ParasolidDeltasInlineSchemaFields::Type70 {
-                    xmt,
-                    node_id,
-                    references,
-                    count,
-                    trailing_reference,
-                },
-                crate::deltas::InlineSchemaFields::Type100 {
-                    xmt,
-                    references,
-                    transform,
-                } => ParasolidDeltasInlineSchemaFields::Type100 {
-                    xmt,
-                    references,
-                    transform,
-                },
-                crate::deltas::InlineSchemaFields::Type101 {
-                    references,
-                    anchor_reference,
-                    state_words,
-                    terminal_value,
-                } => ParasolidDeltasInlineSchemaFields::Type101 {
-                    references,
-                    anchor_reference,
-                    state_words,
-                    terminal_value,
-                },
-                crate::deltas::InlineSchemaFields::Type101Compact => {
-                    ParasolidDeltasInlineSchemaFields::Type101Compact
-                }
-                crate::deltas::InlineSchemaFields::Type38 {
-                    xmt,
-                    node_id,
-                    leading_references,
-                    leading_statuses,
-                    marker,
-                    linked_references,
-                    state_references,
-                    numeric_values,
-                } => ParasolidDeltasInlineSchemaFields::Type38 {
-                    xmt,
-                    node_id,
-                    leading_references,
-                    leading_statuses,
-                    marker,
-                    linked_references,
-                    state_references,
-                    numeric_values,
-                },
-                crate::deltas::InlineSchemaFields::Type41 {
-                    reference,
-                    numeric_values,
-                } => ParasolidDeltasInlineSchemaFields::Type41 {
-                    reference,
-                    numeric_values,
-                },
-            };
             events
                 .inline_schema_declarations
                 .push(ParasolidDeltasInlineSchemaDeclaration {
@@ -1178,7 +991,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                         declaration.offset
                     ),
                     stream_ordinal: stream_ordinal as u32,
-                    fields,
+                    fields: declaration.fields,
                     byte_len: bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                     inflated_offset: declaration.offset as u64,
@@ -1186,20 +999,6 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
         }
         for state in census.inline_body_states {
             let bytes = &stream.inflated[state.offset..state.end];
-            let fields = match state.fields {
-                crate::deltas::InlineBodyStateFields::Compact { reference } => {
-                    ParasolidDeltasInlineBodyStateFields::Compact { reference }
-                }
-                crate::deltas::InlineBodyStateFields::Revision {
-                    node_id,
-                    references,
-                    state_bytes,
-                } => ParasolidDeltasInlineBodyStateFields::Revision {
-                    node_id,
-                    references,
-                    state_bytes,
-                },
-            };
             events
                 .inline_body_states
                 .push(ParasolidDeltasInlineBodyState {
@@ -1208,7 +1007,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                         state.offset
                     ),
                     stream_ordinal: stream_ordinal as u32,
-                    fields,
+                    fields: state.fields,
                     byte_len: bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                     inflated_offset: state.offset as u64,
@@ -3384,7 +3183,7 @@ mod tests {
 
     #[test]
     fn type38_leading_statuses_preserve_default_omission_and_nondefault_values() {
-        use super::ParasolidDeltasInlineSchemaFields;
+        use crate::deltas::inline_schema_fields::InlineSchemaFields;
         let base = serde_json::json!({
             "schema": "type38", "xmt": 3, "node_id": 7,
             "leading_references": [1, 2, 3, 4, 5], "marker": 4,
@@ -3395,9 +3194,9 @@ mod tests {
             if let Some(statuses) = statuses {
                 wire["leading_statuses"] = serde_json::json!(statuses);
             }
-            let fields: ParasolidDeltasInlineSchemaFields =
+            let fields: InlineSchemaFields =
                 serde_json::from_value(wire.clone()).unwrap();
-            let ParasolidDeltasInlineSchemaFields::Type38 {
+            let InlineSchemaFields::Type38 {
                 leading_statuses, ..
             } = &fields
             else {
@@ -3411,7 +3210,7 @@ mod tests {
         }
         let mut null = base.clone();
         null["leading_statuses"] = serde_json::Value::Null;
-        let fields: ParasolidDeltasInlineSchemaFields = serde_json::from_value(null).unwrap();
+        let fields: InlineSchemaFields = serde_json::from_value(null).unwrap();
         assert_eq!(serde_json::to_value(fields).unwrap(), base);
     }
 
@@ -4056,7 +3855,7 @@ mod tests {
         let declaration = &events.inline_schema_declarations[0];
         assert_eq!(
             declaration.fields,
-            ParasolidDeltasInlineSchemaFields::Region {
+            InlineSchemaFields::Region {
                 xmt: 11,
                 state_word: 5,
                 references: [1, 3, 1, 9],
