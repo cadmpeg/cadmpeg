@@ -10,6 +10,8 @@ pub(crate) mod reference_lanes;
 pub(crate) mod inline_schema_fields;
 pub(crate) mod precision_state;
 pub(crate) mod type101_state;
+pub(crate) mod attdef_state;
+use attdef_state::AttdefState;
 use precision_state::PrecisionState;
 use inline_schema_fields::{BodyStateBytes, InlineBodyStateFields, InlineSchemaFields, TermUseValues};
 use reference_lanes::{MapEntries, TaggedReferences};
@@ -1733,15 +1735,10 @@ fn inline_schema_declaration(
         == Some(ATTDEF_LIST_SCHEMA_HEADER)
     {
         let body = offset.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())?;
-        let (xmt, slot_count, active_count, references, end) = attdef_list_body(stream, body)?;
+        let (state, end) = attdef_list_body(stream, body)?;
         (end <= gap_end).then_some(())?;
         return Some(InlineSchemaDeclaration {
-            fields: InlineSchemaFields::AttdefList {
-                xmt,
-                slot_count,
-                active_count,
-                references: references.into_iter().skip(1).collect(),
-            },
+            fields: InlineSchemaFields::AttdefList { state },
             offset,
             end,
         });
@@ -3139,20 +3136,17 @@ fn attdef_list_layout(
     envelope_len: usize,
 ) -> Option<(u32, Vec<u32>, usize)> {
     let body = offset.checked_add(2 + envelope_len)?;
-    let (xmt, _, _, references, end) = attdef_list_body(stream, body)?;
-    Some((xmt, references, end))
+    let (state, end) = attdef_list_body(stream, body)?;
+    let references = std::iter::once(1).chain(state.references()).collect();
+    Some((state.xmt(), references, end))
 }
 
-fn attdef_list_body(stream: &[u8], body: usize) -> Option<(u32, u32, u32, Vec<u32>, usize)> {
+fn attdef_list_body(stream: &[u8], body: usize) -> Option<(AttdefState, usize)> {
     let slot_count_value = View::u32_be_at(stream, body)?;
     let slot_count = usize::try_from(slot_count_value).ok()?;
-    (slot_count > 0).then_some(())?;
     let (xmt, consumed) = read_xmt(stream, body.checked_add(4)?)?;
-    (xmt > 1).then_some(())?;
     let mut at = body.checked_add(4 + consumed)?;
     let active_count_value = View::u32_be_at(stream, at)?;
-    let active_count = usize::try_from(active_count_value).ok()?;
-    (active_count <= slot_count).then_some(())?;
     at += 4;
     (View::u32_be_at(stream, at) == Some(0)).then_some(())?;
     at += 4;
@@ -3163,20 +3157,14 @@ fn attdef_list_body(stream: &[u8], body: usize) -> Option<(u32, u32, u32, Vec<u3
     at = at.checked_add(consumed)?;
     (stream.get(at) == Some(&1)).then_some(())?;
     at += 1;
-    references.push(sentinel);
-    for index in 0..slot_count {
+    for _ in 0..slot_count {
         let (reference, consumed) = read_xmt(stream, at)?;
         at = at.checked_add(consumed)?;
-        if index < active_count {
-            (reference > 1).then_some(())?;
-        } else {
-            (reference == 1).then_some(())?;
-        }
         (stream.get(at) == Some(&1)).then_some(())?;
         at += 1;
         references.push(reference);
     }
-    Some((xmt, slot_count_value, active_count_value, references, at))
+    Some((AttdefState::new(xmt, slot_count_value, active_count_value, references).ok()?, at))
 }
 
 fn group_layout(
@@ -4430,12 +4418,10 @@ mod inline_schema_tests {
         assert!(matches!(
             &declarations[0].fields,
             InlineSchemaFields::AttdefList {
-                xmt: 43,
-                slot_count: 20,
-                active_count: 10,
-                references,
-            } if references[..10] == [143, 155, 114, 150, 145, 167, 164, 105, 137, 141]
-                && references[10..] == [1; 10]
+                state,
+            } if state.xmt() == 43 && state.slot_count() == 20 && state.active_count() == 10
+                && state.references().collect::<Vec<_>>()[..10] == [143, 155, 114, 150, 145, 167, 164, 105, 137, 141]
+                && state.references().collect::<Vec<_>>()[10..] == [1; 10]
         ));
         assert_eq!(declarations[0].end, declaration_end);
     }

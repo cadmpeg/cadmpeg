@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::xmt_reference::NonNullXmt;
 use super::precision_state::PrecisionState;
 use super::type101_state::Type101State;
+use super::attdef_state::AttdefState;
 
 /// Body of an inline schema declaration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -23,14 +24,8 @@ pub(crate) enum InlineSchemaFields {
     },
     /// `ATTDEF_LIST` declaration state.
     AttdefList {
-        /// Non-null stream-local declaration identity.
-        xmt: u32,
-        /// Number of serialized reference slots.
-        slot_count: u32,
-        /// Number of leading non-null slots.
-        active_count: u32,
-        /// Slot references, excluding the null sentinel.
-        references: Vec<u32>,
+        #[serde(flatten)]
+        state: AttdefState,
     },
     /// Type 70 declaration state.
     Type70 {
