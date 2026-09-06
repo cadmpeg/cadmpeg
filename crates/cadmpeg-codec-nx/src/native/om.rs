@@ -316,10 +316,9 @@ fn operation_state_message_severity(word: u16) -> Option<OmOperationStateMessage
     into = "OmOperationStateMessageBodyWire"
 )]
 pub struct OmOperationStateMessageBody {
-    /// Serialized length byte.
-    pub declared_length: u8,
-    /// Exact Part Navigator diagnostic text.
-    pub text: String,
+    /// Exact Part Navigator diagnostic text with its derived frame length.
+    #[serde(flatten)]
+    pub text: crate::om::state_message_text::StateMessageText<String>,
     /// Complete tagged integer token.
     #[serde(flatten)]
     pub value: crate::om::state_tagged_value::StateTaggedValue,
@@ -336,8 +335,8 @@ impl OmOperationStateMessageBody {
 
 #[derive(Serialize, Deserialize)]
 struct OmOperationStateMessageBodyWire {
-    declared_length: u8,
-    text: String,
+    #[serde(flatten)]
+    text: crate::om::state_message_text::StateMessageText<String>,
     #[serde(flatten)]
     value: crate::om::state_tagged_value::StateTaggedValue,
     count_or_severity: u16,
@@ -349,7 +348,6 @@ impl From<OmOperationStateMessageBody> for OmOperationStateMessageBodyWire {
     fn from(value: OmOperationStateMessageBody) -> Self {
         let severity = value.severity();
         Self {
-            declared_length: value.declared_length,
             text: value.text,
             value: value.value,
             count_or_severity: value.count_or_severity,
@@ -363,7 +361,6 @@ impl TryFrom<OmOperationStateMessageBodyWire> for OmOperationStateMessageBody {
 
     fn try_from(wire: OmOperationStateMessageBodyWire) -> Result<Self, Self::Error> {
         let body = Self {
-            declared_length: wire.declared_length,
             text: wire.text,
             value: wire.value,
             count_or_severity: wire.count_or_severity,
@@ -784,8 +781,7 @@ pub fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMe
                         section_link: link.id.clone(),
                         ordinal,
                         body: OmOperationStateMessageBody {
-                            declared_length: message.declared_length,
-                            text: message.text.to_string(),
+                            text: message.text.into_owned(),
                             value: message.value,
                             count_or_severity: message.count_or_severity,
                         },
@@ -842,8 +838,7 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                         },
                         crate::om::OperationStateStatusPayload::Diagnostic { message } => {
                             OmOperationStateStatusPayload::Diagnostic(OmOperationStateMessageBody {
-                                declared_length: message.declared_length,
-                                text: message.text.to_string(),
+                                text: message.text.into_owned(),
                                 value: message.value,
                                 count_or_severity: message.count_or_severity,
                             })

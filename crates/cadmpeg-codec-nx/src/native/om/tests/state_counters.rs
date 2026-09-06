@@ -233,7 +233,7 @@ fn native_catalog_emits_bounded_operation_state_messages() {
 
     let messages = operation_state_messages(&container);
     assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].body.text, "state warning");
+    assert_eq!(messages[0].body.text.as_str(), "state warning");
     assert_eq!(messages[0].body.value.marker(), 0xaa);
     assert_eq!(messages[0].body.value.value(), 0x000a_606b);
     assert_eq!(messages[0].body.count_or_severity, 0x0100);
@@ -323,4 +323,11 @@ fn message_body_preserves_flat_tagged_value_wire() {
     wire["value"] = 1.into();
     assert!(serde_json::from_value::<super::OmOperationStateMessageBody>(wire)
         .unwrap_err().to_string().contains("value"));
+}
+
+#[test]
+fn message_body_rejects_text_length_mismatch() {
+    let json = r#"{"declared_length":4,"text":"A","value_marker":160,"value":0,"raw_value":[160,0,0],"count_or_severity":0}"#;
+    assert!(serde_json::from_str::<super::OmOperationStateMessageBody>(json)
+        .unwrap_err().to_string().contains("declared_length"));
 }

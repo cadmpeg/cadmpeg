@@ -26,6 +26,8 @@ pub(crate) mod fixed;
 use fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 pub(crate) mod nonempty;
 pub(crate) mod state_tagged_value;
+pub(crate) mod state_message_text;
+use state_message_text::StateMessageText;
 use state_tagged_value::StateTaggedValue;
 use nonempty::NonEmpty;
 pub(crate) mod pattern;
@@ -1574,10 +1576,8 @@ pub struct OperationStateCounterMap<'a> {
 pub struct OperationStateMessage<'a> {
     /// Absolute byte offset of the opening `03` marker.
     pub offset: usize,
-    /// Declared length from the `03` length byte through the text terminator.
-    pub declared_length: u8,
-    /// Exact ASCII Part Navigator text.
-    pub text: &'a str,
+    /// Exact byte-length-framed ASCII Part Navigator text.
+    pub text: StateMessageText<&'a str>,
     /// Tagged value following the four zero bytes.
     pub value: StateTaggedValue,
     /// Big-endian count or severity word following the tagged value.
@@ -6611,18 +6611,9 @@ fn operation_state_message_at(
         return None;
     }
     let declared_length = *bytes.get(at + 1)?;
-    if declared_length < 3 {
-        return None;
-    }
     let text_end = at.checked_add(usize::from(declared_length))?;
     let text = bytes.get(at + 2..text_end)?;
-    if !text
-        .iter()
-        .all(|byte| *byte == b' ' || byte.is_ascii_graphic())
-    {
-        return None;
-    }
-    let text = std::str::from_utf8(text).ok()?;
+    let text = StateMessageText::new(std::str::from_utf8(text).ok()?).ok()?;
     let terminator = text_end;
     (bytes.get(terminator) == Some(&0)).then_some(())?;
     let zeros_start = terminator.checked_add(1)?;
@@ -6634,7 +6625,6 @@ fn operation_state_message_at(
     let end = count_at.checked_add(2)?;
     Some(OperationStateMessage {
         offset: base_offset.checked_add(at)?,
-        declared_length,
         text,
         value,
         count_or_severity,
