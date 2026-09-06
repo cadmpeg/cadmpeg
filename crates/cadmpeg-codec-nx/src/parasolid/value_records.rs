@@ -200,3 +200,6 @@ pub(crate) fn entity_54_string_record_at(bytes: &[u8], offset: usize) -> Option<
  let ValuePayload::String(value) = frame.payload else { return None; };
  Some(frame.retained(value))
 }
+
+#[cfg(test)]
+mod tests;
