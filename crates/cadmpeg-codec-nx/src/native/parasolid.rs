@@ -12,6 +12,7 @@ mod tail_wire;
 mod body_revision_wire;
 use body_revision_wire::RevisionLengths;
 use crate::deltas::packet_marker::ReferenceMarker;
+use crate::deltas::preamble_state::PreambleState;
 use crate::deltas::type150_state::Type150State;
 use crate::deltas::tails::{NullTailForm, NumericTailValues};
 pub(crate) mod group_member;
@@ -616,21 +617,8 @@ pub struct ParasolidDeltasSchemaReferencePreamble {
     pub id: String,
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
-    /// Repeated serialized identity.
-    pub identity: u16,
-    /// Two consecutive non-null stream-local XMT references.
-    pub references: [u32; 2],
-    /// Non-null state-lane reference between null sentinels.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub state_reference: Option<u32>,
-    /// Four ordered big-endian state words.
-    pub state_words: [u32; 4],
-    /// Serialized state count.
-    pub count: u16,
-    /// Ordered `(Parasolid record kind, XMT identity)` entries.
-    pub entries: Vec<(u16, u32)>,
-    /// Terminal serialized state value.
-    pub terminal_value: u16,
+    #[serde(flatten)]
+    pub state: PreambleState,
     /// Exact preamble byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact preamble bytes.
@@ -1066,14 +1054,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                         preamble.offset
                     ),
                     stream_ordinal: stream_ordinal as u32,
-                    identity: preamble.identity,
-                    references: preamble.references,
-                    state_reference: (preamble.state_references != [1; 3])
-                        .then_some(preamble.state_references[1]),
-                    state_words: preamble.state_words,
-                    count: preamble.count,
-                    entries: preamble.entries,
-                    terminal_value: preamble.terminal_value,
+                    state: preamble.state,
                     byte_len: bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                     inflated_offset: preamble.offset as u64,
@@ -3999,13 +3980,13 @@ mod tests {
 
         assert_eq!(events.schema_reference_preambles.len(), 1);
         let preamble = &events.schema_reference_preambles[0];
-        assert_eq!(preamble.identity, 300);
-        assert_eq!(preamble.references, [2, 3]);
-        assert_eq!(preamble.state_reference, None);
-        assert_eq!(preamble.state_words, [2, 0, 1, 55]);
-        assert_eq!(preamble.count, 5);
-        assert_eq!(preamble.entries, [(81, 4), (82, 5), (81, 6)]);
-        assert_eq!(preamble.terminal_value, 9);
+        assert_eq!(preamble.state.identity(), 300);
+        assert_eq!(preamble.state.references(), [2, 3]);
+        assert_eq!(preamble.state.state_reference(), None);
+        assert_eq!(preamble.state.state_words(), [2, 0, 1, 55]);
+        assert_eq!(preamble.state.count(), 5);
+        assert_eq!(preamble.state.entries(), [(81, 4), (82, 5), (81, 6)]);
+        assert_eq!(preamble.state.terminal_value(), 9);
         assert_eq!(preamble.inflated_offset, preamble_offset as u64);
         assert_eq!(preamble.byte_len, (preamble_end - preamble_offset) as u64);
         assert_eq!(

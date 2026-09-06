@@ -6,6 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod record_kind;
 pub(crate) mod packet_marker;
+pub(crate) mod preamble_state;
+use preamble_state::PreambleState;
 pub(crate) mod type150_state;
 use type150_state::Type150State;
 use packet_marker::{ReferenceMarker, Type150Marker};
@@ -592,20 +594,7 @@ pub struct ReferenceStatePacket {
 /// One deltas schema preamble carrying typed references and unassigned state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaReferencePreamble {
-    /// Repeated serialized identity.
-    pub identity: u16,
-    /// Two consecutive non-null stream-local XMT references.
-    pub references: [u32; 2],
-    /// Three ordered state-lane XMT references.
-    pub state_references: [u32; 3],
-    /// Four ordered big-endian state words.
-    pub state_words: [u32; 4],
-    /// Serialized state count.
-    pub count: u16,
-    /// Ordered `(Parasolid record kind, XMT identity)` entries.
-    pub entries: Vec<(u16, u32)>,
-    /// Terminal serialized state value.
-    pub terminal_value: u16,
+    pub state: PreambleState,
     /// First byte of the preamble.
     pub offset: usize,
     /// First byte following the preamble.
@@ -1694,33 +1683,27 @@ fn schema_reference_preamble(
     gap_end: usize,
 ) -> Option<SchemaReferencePreamble> {
     let identity = View::u16_be_at(stream, offset)?;
-    (identity > 1
-        && View::u16_be_at(stream, offset.checked_add(2)?) == Some(4)
+    (View::u16_be_at(stream, offset.checked_add(2)?) == Some(4)
         && stream.get(offset.checked_add(4)?) == Some(&0xff))
     .then_some(())?;
     let mut at = offset.checked_add(5)?;
     let mut references = [0; 2];
     for reference in &mut references {
         let (value, consumed) = read_xmt(stream, at)?;
-        (value > 1).then_some(())?;
         *reference = value;
         at = at.checked_add(consumed)?;
     }
-    (references[1] == references[0].checked_add(1)?).then_some(())?;
     let mut state_references = [0; 3];
     for reference in &mut state_references {
         let (value, consumed) = read_xmt(stream, at)?;
         *reference = value;
         at = at.checked_add(consumed)?;
     }
-    let linked_state = [1, references[1].checked_add(1)?, 1];
-    (state_references == [1; 3] || state_references == linked_state).then_some(())?;
     let mut state_words = [0; 4];
     for state_word in &mut state_words {
         *state_word = View::u32_be_at(stream, at)?;
         at = at.checked_add(4)?;
     }
-    (matches!(state_words[0], 0 | 2) && state_words[1] == 0 && state_words[2] == 1).then_some(())?;
     (stream.get(at..at.checked_add(3)?) == Some(&[0, 0, 0])).then_some(())?;
     at = at.checked_add(3)?;
     (View::u16_be_at(stream, at) == Some(identity)).then_some(())?;
@@ -1731,12 +1714,10 @@ fn schema_reference_preamble(
         at = at.checked_add(consumed)?;
     }
     let count = View::u16_be_at(stream, at)?;
-    (count > 0).then_some(())?;
     at = at.checked_add(2)?;
     let mut entries = Vec::new();
     loop {
         let entry_kind = View::u16_be_at(stream, at)?;
-        matches!(entry_kind, 81 | 82).then_some(())?;
         at = at.checked_add(2)?;
         let (reference, consumed) = read_xmt(stream, at)?;
         at = at.checked_add(consumed)?;
@@ -1745,19 +1726,12 @@ fn schema_reference_preamble(
             at = at.checked_add(2)?;
             let terminal_value = View::u16_be_at(stream, at)?;
             at = at.checked_add(2)?;
-            return (at <= gap_end && !entries.is_empty()).then_some(SchemaReferencePreamble {
-                identity,
-                references,
-                state_references,
-                state_words,
-                count,
-                entries,
-                terminal_value,
+            return (at <= gap_end).then_some(SchemaReferencePreamble {
+                state: PreambleState::new(identity, references, state_references, state_words, count, entries, terminal_value).ok()?,
                 offset,
                 end: at,
             });
         }
-        (reference > 1).then_some(())?;
         entries.push((entry_kind, reference));
     }
 }
@@ -3984,13 +3958,7 @@ mod schema_reference_preamble_tests {
         assert_eq!(
             parsed,
             SchemaReferencePreamble {
-                identity: 300,
-                references: [40_000, 40_001],
-                state_references: [1; 3],
-                state_words: [2, 0, 1, 55],
-                count: 7,
-                entries: vec![(81, 4), (82, 40_000), (81, 5)],
-                terminal_value: 9,
+                state: PreambleState::new(300, [40_000, 40_001], [1; 3], [2, 0, 1, 55], 7, vec![(81, 4), (82, 40_000), (81, 5)], 9).unwrap(),
                 offset: 0,
                 end: bytes.len(),
             }
@@ -4045,8 +4013,8 @@ mod schema_reference_preamble_tests {
         let parsed = schema_reference_preamble(&bytes, 0, bytes.len())
             .expect("linked state-reference lane must be admitted");
 
-        assert_eq!(parsed.references, [40_000, 40_001]);
-        assert_eq!(parsed.state_references, [1, 40_002, 1]);
+        assert_eq!(parsed.state.references(), [40_000, 40_001]);
+        assert_eq!(parsed.state.state_references(), [1, 40_002, 1]);
 
         let mut invalid = bytes;
         invalid[first_state_reference + 3] ^= 1;
