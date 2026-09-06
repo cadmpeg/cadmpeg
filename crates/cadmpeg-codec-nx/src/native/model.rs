@@ -5,6 +5,9 @@
 //! record vectors into domain sub-structs. Extraction is infallible: malformed
 //! data is omitted, never surfaced as an error.
 
+use crate::native::om::column_row::{DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockTargetIndexRow, data_block_index_rows, data_block_linked_index_rows, data_block_target_index_rows};
+use crate::native::om::creation_display::{RmCreationDisplayDataRelation, rm_creation_display_data_relations};
+use crate::native::om::display_color::{RmDisplayColorAssignment, rm_display_color_assignments};
 use crate::native::om::object_uuid::{ObjectUuidValue, object_uuid_values};
 use crate::native::om::material_texture::{MaterialTextureAsset, material_texture_assets};
 use crate::native::features::object_frame::DataBlockObjectFrame;

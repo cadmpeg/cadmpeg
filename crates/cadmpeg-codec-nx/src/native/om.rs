@@ -13,8 +13,13 @@ pub(crate) mod object_uuid;
 mod reference_wire;
 use material_texture::MaterialTextureAsset;
 
-use crate::om::compact::{CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex};
+use crate::om::compact::{CompactIndexAtom, CountedIndexMembers};
+#[cfg(test)]
 mod row_wire;
+pub(crate) mod column_row;
+pub(crate) mod creation_display;
+pub(crate) mod display_color;
+use column_row::{DataBlockLinkedIndexRow, DataBlockTargetIndexRow};
 mod membership_wire;
 use crate::container::membership::ObjectIdMembers;
 use crate::container::extref_handles::ExtrefHandles;
@@ -2310,354 +2315,6 @@ impl TryFrom<DataBlockAbrReferenceLaneWire> for DataBlockAbrReferenceLane {
     }
 }
 
-/// Self-framed index row in contiguous offset-store column storage.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "row_wire::DataBlockIndexRowWire", into = "row_wire::DataBlockIndexRowWire")]
-pub struct DataBlockIndexRow {
-    /// Globally unique row identity.
-    pub id: String,
-    /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
-    /// Zero-based row order within the section's column storage.
-    pub ordinal: u32,
-    /// Checked leading index and its absolute source offset.
-    pub first_index: LocatedCompactIndex<u64>,
-    /// Serialized `03` or `07` row flag.
-    pub flag: crate::om::discriminators::LinkedIndexFlag,
-    /// Resolved ordered post-marker tokens with source locations.
-    pub indices: [DataBlockIndexToken; 4],
-    /// Directory entry containing the offset-only store.
-    pub source_entry: String,
-    /// Column block containing the row's opening byte.
-    pub opening_data_block: String,
-    /// Byte offset of the row opening within `opening_data_block`.
-    pub opening_block_offset: u32,
-    /// Absolute file offset of the opening discriminator.
-    pub source_offset: u64,
-}
-
-/// Self-framed linked index row in contiguous column storage.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "row_wire::DataBlockLinkedIndexRowWire", into = "row_wire::DataBlockLinkedIndexRowWire")]
-pub struct DataBlockLinkedIndexRow {
-    /// Globally unique row identity.
-    pub id: String,
-    /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
-    /// Zero-based row order within the section's column storage.
-    pub ordinal: u32,
-    /// Checked leading index and its absolute source offset.
-    pub first_index: LocatedCompactIndex<u64>,
-    /// Serialized `16`, `17`, or `18` discriminator.
-    pub discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
-    /// Resolved target token and its absolute source offset.
-    pub target: DataBlockIndexToken,
-    /// Resolved ordered post-marker tokens with source locations.
-    pub indices: [DataBlockIndexToken; 3],
-    /// Serialized `03` or `07` flag.
-    pub flag: crate::om::discriminators::LinkedIndexFlag,
-    /// Serialized `04` or `07` mode.
-    pub mode: crate::om::discriminators::IndexRowMode,
-    /// Directory entry containing the store.
-    pub source_entry: String,
-    /// Column block containing the row's opening byte.
-    pub opening_data_block: String,
-    /// Byte offset of the row opening within `opening_data_block`.
-    pub opening_block_offset: u32,
-    /// Absolute file offset of the opening discriminator.
-    pub source_offset: u64,
-}
-
-/// Self-framed target-index row in contiguous column storage.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "row_wire::DataBlockTargetIndexRowWire", into = "row_wire::DataBlockTargetIndexRowWire")]
-pub struct DataBlockTargetIndexRow {
-    /// Globally unique row identity.
-    pub id: String,
-    /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
-    /// Zero-based row order within the section's column storage.
-    pub ordinal: u32,
-    /// Resolved target token and its absolute source offset.
-    pub target: DataBlockIndexToken,
-    /// Resolved ordered post-marker tokens with source locations.
-    pub indices: [DataBlockIndexToken; 3],
-    /// Serialized `04` or `07` mode.
-    pub mode: crate::om::discriminators::IndexRowMode,
-    /// Directory entry containing the store.
-    pub source_entry: String,
-    /// Column block containing the row's opening byte.
-    pub opening_data_block: String,
-    /// Byte offset of the row opening within `opening_data_block`.
-    pub opening_block_offset: u32,
-    /// Absolute file offset of the opening discriminator.
-    pub source_offset: u64,
-}
-
-/// Exact row encoding that selects `UGS::RM_creation_display_data` in an
-/// `RMFastLoad` record area.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RmCreationDisplayDataEncoding {
-    /// Self-framed index row whose fourth post-flag index selects the class.
-    Index {
-        first_index: LocatedCompactIndex<u64>,
-        flag: crate::om::discriminators::LinkedIndexFlag,
-        indices: [LocatedCompactIndex<u64>; 4],
-    },
-    /// Self-framed linked row whose third post-marker index selects the class.
-    Linked {
-        first_index: LocatedCompactIndex<u64>,
-        discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
-        target_index: LocatedCompactIndex<u64>,
-        indices: [LocatedCompactIndex<u64>; 3],
-        flag: crate::om::discriminators::LinkedIndexFlag,
-        mode: crate::om::discriminators::IndexRowMode,
-    },
-    /// Self-framed target row whose third post-marker index selects the class.
-    Target {
-        target_index: LocatedCompactIndex<u64>,
-        indices: [LocatedCompactIndex<u64>; 3],
-        mode: crate::om::discriminators::IndexRowMode,
-    },
-}
-
-/// Lossless class-selected creation-display relation in `RMFastLoad`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "RmCreationDisplayDataRelationWire",
-    into = "RmCreationDisplayDataRelationWire"
-)]
-pub struct RmCreationDisplayDataRelation {
-    /// Globally unique relation identity.
-    pub id: String,
-    /// Zero-based relation order in ascending source order.
-    pub ordinal: u32,
-    /// Exact registered class name.
-    pub class_name: String,
-    /// Target in the native `class_definitions` arena.
-    pub class_definition: String,
-    /// Exact admitted row encoding.
-    pub encoding: RmCreationDisplayDataEncoding,
-    /// Member addressed by the target index when the row carries one and the
-    /// index resolves in the `RMFastLoad` object-ID table.
-    pub target_object_id: Option<String>,
-    /// Directory entry containing the relation.
-    pub source_entry: String,
-    /// Absolute file offset of the opening row discriminator.
-    pub source_offset: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum RmCreationDisplayDataEncodingWire {
-    Index {
-        flag: u8,
-        indices: [u32; 4],
-        raw_indices: [Vec<u8>; 4],
-        index_source_offsets: [u64; 4],
-    },
-    Linked {
-        discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
-        target_index: u32,
-        raw_target_index: Vec<u8>,
-        target_index_source_offset: u64,
-        indices: [u32; 3],
-        raw_indices: [Vec<u8>; 3],
-        index_source_offsets: [u64; 3],
-        flag: crate::om::discriminators::LinkedIndexFlag,
-        mode: crate::om::discriminators::IndexRowMode,
-    },
-    Target {
-        target_index: u32,
-        raw_target_index: Vec<u8>,
-        target_index_source_offset: u64,
-        indices: [u32; 3],
-        raw_indices: [Vec<u8>; 3],
-        index_source_offsets: [u64; 3],
-        mode: crate::om::discriminators::IndexRowMode,
-    },
-}
-
-#[derive(Serialize, Deserialize)]
-struct RmCreationDisplayDataRelationWire {
-    id: String,
-    ordinal: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    first_index: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    raw_first_index: Option<Vec<u8>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    first_index_source_offset: Option<u64>,
-    class_name: String,
-    class_definition: String,
-    encoding: RmCreationDisplayDataEncodingWire,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    target_object_id: Option<String>,
-    source_entry: String,
-    source_offset: u64,
-}
-
-impl From<RmCreationDisplayDataRelation> for RmCreationDisplayDataRelationWire {
-    fn from(value: RmCreationDisplayDataRelation) -> Self {
-        let (first_index, raw_first_index, first_index_source_offset, encoding) =
-            match value.encoding {
-                RmCreationDisplayDataEncoding::Index {
-                    first_index,
-                    flag,
-                    indices,
-                } => (
-                    Some(first_index.atom.value()),
-                    Some(first_index.atom.raw().to_vec()),
-                    Some(first_index.offset),
-                    RmCreationDisplayDataEncodingWire::Index {
-                        flag: u8::from(flag),
-                        indices: indices.map(|token| token.atom.value()),
-                        raw_indices: indices.map(|token| token.atom.raw().to_vec()),
-                        index_source_offsets: indices.map(|token| token.offset),
-                    },
-                ),
-                RmCreationDisplayDataEncoding::Linked {
-                    first_index,
-                    discriminator,
-                    target_index,
-                    indices,
-                    flag,
-                    mode,
-                } => (
-                    Some(first_index.atom.value()),
-                    Some(first_index.atom.raw().to_vec()),
-                    Some(first_index.offset),
-                    RmCreationDisplayDataEncodingWire::Linked {
-                        discriminator,
-                        target_index: target_index.atom.value(),
-                        raw_target_index: target_index.atom.raw().to_vec(),
-                        target_index_source_offset: target_index.offset,
-                        indices: indices.map(|token| token.atom.value()),
-                        raw_indices: indices.map(|token| token.atom.raw().to_vec()),
-                        index_source_offsets: indices.map(|token| token.offset),
-                        flag,
-                        mode,
-                    },
-                ),
-                RmCreationDisplayDataEncoding::Target {
-                    target_index,
-                    indices,
-                    mode,
-                } => (
-                    None,
-                    None,
-                    None,
-                    RmCreationDisplayDataEncodingWire::Target {
-                        target_index: target_index.atom.value(),
-                        raw_target_index: target_index.atom.raw().to_vec(),
-                        target_index_source_offset: target_index.offset,
-                        indices: indices.map(|token| token.atom.value()),
-                        raw_indices: indices.map(|token| token.atom.raw().to_vec()),
-                        index_source_offsets: indices.map(|token| token.offset),
-                        mode,
-                    },
-                ),
-            };
-        Self {
-            id: value.id,
-            ordinal: value.ordinal,
-            first_index,
-            raw_first_index,
-            first_index_source_offset,
-            class_name: value.class_name,
-            class_definition: value.class_definition,
-            encoding,
-            target_object_id: value.target_object_id,
-            source_entry: value.source_entry,
-            source_offset: value.source_offset,
-        }
-    }
-}
-
-impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelation {
-    type Error = String;
-
-    fn try_from(wire: RmCreationDisplayDataRelationWire) -> Result<Self, Self::Error> {
-        let encoding = match (
-            wire.encoding,
-            wire.first_index,
-            wire.raw_first_index,
-            wire.first_index_source_offset,
-        ) {
-            (
-                RmCreationDisplayDataEncodingWire::Index {
-                    flag,
-                    indices,
-                    raw_indices,
-                    index_source_offsets,
-                },
-                Some(first_index),
-                Some(raw_first_index),
-                Some(first_index_source_offset),
-            ) => RmCreationDisplayDataEncoding::Index {
-                first_index: row_wire::located_index(first_index, &raw_first_index, first_index_source_offset, "first_index/raw_first_index")?,
-                flag: crate::om::discriminators::LinkedIndexFlag::try_from(flag).map_err(|_| "flag: must be 3 or 7")?,
-                indices: row_wire::located_indices(indices, raw_indices, index_source_offsets)?,
-            },
-            (
-                RmCreationDisplayDataEncodingWire::Linked {
-                    discriminator,
-                    target_index,
-                    raw_target_index,
-                    target_index_source_offset,
-                    indices,
-                    raw_indices,
-                    index_source_offsets,
-                    flag,
-                    mode,
-                },
-                Some(first_index),
-                Some(raw_first_index),
-                Some(first_index_source_offset),
-            ) => RmCreationDisplayDataEncoding::Linked {
-                first_index: row_wire::located_index(first_index, &raw_first_index, first_index_source_offset, "first_index/raw_first_index")?,
-                discriminator,
-                target_index: row_wire::located_index(target_index, &raw_target_index, target_index_source_offset, "target_index/raw_target_index")?,
-                indices: row_wire::located_indices(indices, raw_indices, index_source_offsets)?,
-                flag,
-                mode,
-            },
-            (
-                RmCreationDisplayDataEncodingWire::Target {
-                    target_index,
-                    raw_target_index,
-                    target_index_source_offset,
-                    indices,
-                    raw_indices,
-                    index_source_offsets,
-                    mode,
-                },
-                None,
-                None,
-                None,
-            ) => RmCreationDisplayDataEncoding::Target {
-                target_index: row_wire::located_index(target_index, &raw_target_index, target_index_source_offset, "target_index/raw_target_index")?,
-                indices: row_wire::located_indices(indices, raw_indices, index_source_offsets)?,
-                mode,
-            },
-            _ => return Err(
-                "RM creation-display first index is present exactly for Index and Linked encodings"
-                    .to_owned(),
-            ),
-        };
-        Ok(Self {
-            id: wire.id,
-            ordinal: wire.ordinal,
-            class_name: wire.class_name,
-            class_definition: wire.class_definition,
-            encoding,
-            target_object_id: wire.target_object_id,
-            source_entry: wire.source_entry,
-            source_offset: wire.source_offset,
-        })
-    }
-}
-
 /// Complete named NX part palette for color indices 1 through 216.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "color_wire::PartColorTableWire", into = "color_wire::PartColorTableWire")]
@@ -2692,53 +2349,6 @@ pub struct PartColorDefinition {
     pub components: [(ColorComponent, u64); 3],
     /// Absolute file offset of the opening `05` marker.
     pub source_offset: u64,
-}
-
-/// Exact row encoding carrying one `RMFastLoad` display-color assignment.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "row_wire::RmDisplayColorAssignmentEncodingWire", into = "row_wire::RmDisplayColorAssignmentEncodingWire")]
-pub enum RmDisplayColorAssignmentEncoding {
-    /// Linked row with an unresolved leading object identity.
-    Linked {
-        object_index: LocatedCompactIndex<u64>,
-        discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
-        target_index: LocatedCompactIndex<u64>,
-        indices: [LocatedCompactIndex<u64>; 3],
-        flag: crate::om::discriminators::LinkedIndexFlag,
-        mode: crate::om::discriminators::IndexRowMode,
-    },
-    /// Target-index row without a leading object identity.
-    Target {
-        target_index: LocatedCompactIndex<u64>,
-        indices: [LocatedCompactIndex<u64>; 3],
-        mode: crate::om::discriminators::IndexRowMode,
-    },
-}
-
-/// Explicit color assignment carried by one complete `RMFastLoad` row.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "color_wire::RmDisplayColorAssignmentWire", into = "color_wire::RmDisplayColorAssignmentWire")]
-pub struct RmDisplayColorAssignment {
-    /// Globally unique assignment identity.
-    pub id: String,
-    /// Zero-based source order.
-    pub ordinal: u32,
-    /// Complete self-framed row carrying the color token.
-    pub encoding: RmDisplayColorAssignmentEncoding,
-    /// Member addressed by the row target index when it resolves in the
-    /// `RMFastLoad` object-ID table.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_object_id: Option<String>,
-    /// One-based part palette index.
-    pub color_index: PaletteIndex,
-    /// Target in `part_color_definitions`.
-    pub color_definition: String,
-    /// Owning directory entry.
-    pub source_entry: String,
-    /// Absolute color-token offset.
-    pub source_offset: u64,
-    /// Absolute row-opener offset.
-    pub row_source_offset: u64,
 }
 
 /// Complete composite table spanning linked and target-index row grammars.
@@ -4484,273 +4094,6 @@ pub fn data_block_abr_reference_lanes(container: &Container) -> Vec<DataBlockAbr
         .collect()
 }
 
-fn resolve_column_indices<const N: usize>(
-    section_ordinal: usize,
-    block_count: usize,
-    source_base: u64,
-    tokens: [LocatedCompactIndex; N],
-) -> Option<[DataBlockIndexToken; N]> {
-    tokens.into_iter().map(|token| Some(DataBlockIndexToken {
-        target: DataBlockIndexTarget {
-            atom: token.atom,
-            data_block: control_index_data_block(section_ordinal, block_count, token.atom.value())?,
-        },
-        source_offset: source_base + token.offset as u64,
-    })).collect::<Option<Vec<_>>>()?.try_into().ok()
-}
-
-/// Decode complete index rows from offset-store column storage.
-pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some((_, storage, records)) = section.as_offset_only() else {
-                return Vec::new();
-            };
-            let Some(storage_offset) = records.first().map(|record| record.offset) else {
-                return Vec::new();
-            };
-            let source_base =
-                entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
-            let block_count = records.len() + 1;
-            crate::om::offset_store_index_rows(storage)
-                .into_iter()
-                .filter_map(|row| {
-                    let tokens = resolve_column_indices(section_ordinal, block_count, source_base, row.indices)?;
-                    let opening = column_storage_block_at(
-                        section_ordinal,
-                        records,
-                        storage_offset + row.offset,
-                    )?;
-                    Some((row, tokens, opening))
-                })
-                .enumerate()
-                .map(|(ordinal, (row, indices, opening))| DataBlockIndexRow {
-                    id: format!("nx:om-data-block-index-rows-{section_ordinal}:row#{ordinal}"),
-                    section_ordinal: section_ordinal as u32,
-                    ordinal: ordinal as u32,
-                    first_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
-                    flag: row.flag,
-                    indices,
-                    source_entry: entry.name.clone(),
-                    opening_data_block: opening.0,
-                    opening_block_offset: opening.1,
-                    source_offset: source_base + row.offset as u64,
-                })
-                .collect()
-        })
-        .collect()
-}
-
-/// Decode complete in-range linked index rows from column storage.
-pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinkedIndexRow> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some((_, storage, records)) = section.as_offset_only() else {
-                return Vec::new();
-            };
-            let Some(storage_offset) = records.first().map(|record| record.offset) else {
-                return Vec::new();
-            };
-            let source_base =
-                entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
-            let block_count = records.len() + 1;
-            crate::om::offset_store_linked_index_rows(storage)
-                .into_iter()
-                .filter_map(|row| {
-                    let tokens = resolve_column_indices(section_ordinal, block_count, source_base, [row.target_index, row.indices[0], row.indices[1], row.indices[2]])?;
-                    let opening = column_storage_block_at(
-                        section_ordinal,
-                        records,
-                        storage_offset + row.offset,
-                    )?;
-                    Some((row, tokens, opening))
-                })
-                .enumerate()
-                .map(
-                    |(ordinal, (row, [target, a, b, c], opening))| DataBlockLinkedIndexRow {
-                        id: format!(
-                            "nx:om-data-block-linked-index-rows-{section_ordinal}:row#{ordinal}"
-                        ),
-                        section_ordinal: section_ordinal as u32,
-                        ordinal: ordinal as u32,
-                        first_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
-                        discriminator: row.discriminator,
-                        target,
-                        indices: [a, b, c],
-                        flag: row.flag,
-                        mode: row.mode,
-                        source_entry: entry.name.clone(),
-                        opening_data_block: opening.0,
-                        opening_block_offset: opening.1,
-                        source_offset: source_base + row.offset as u64,
-                    },
-                )
-                .collect()
-        })
-        .collect()
-}
-
-/// Decode complete in-range target-index rows from column storage.
-pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTargetIndexRow> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some((_, storage, records)) = section.as_offset_only() else {
-                return Vec::new();
-            };
-            let Some(storage_offset) = records.first().map(|record| record.offset) else {
-                return Vec::new();
-            };
-            let source_base =
-                entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
-            let block_count = records.len() + 1;
-            crate::om::offset_store_target_index_rows(storage)
-                .into_iter()
-                .filter_map(|row| {
-                    let tokens = resolve_column_indices(section_ordinal, block_count, source_base, [row.target_index, row.indices[0], row.indices[1], row.indices[2]])?;
-                    let opening = column_storage_block_at(
-                        section_ordinal,
-                        records,
-                        storage_offset + row.offset,
-                    )?;
-                    Some((row, tokens, opening))
-                })
-                .enumerate()
-                .map(
-                    |(ordinal, (row, [target, a, b, c], opening))| DataBlockTargetIndexRow {
-                        id: format!(
-                            "nx:om-data-block-target-index-rows-{section_ordinal}:row#{ordinal}"
-                        ),
-                        section_ordinal: section_ordinal as u32,
-                        ordinal: ordinal as u32,
-                        target,
-                        indices: [a, b, c],
-                        mode: row.mode,
-                        source_entry: entry.name.clone(),
-                        opening_data_block: opening.0,
-                        opening_block_offset: opening.1,
-                        source_offset: source_base + row.offset as u64,
-                    },
-                )
-                .collect()
-        })
-        .collect()
-}
-
-/// Decode class-selected creation-display relations from `RMFastLoad` record
-/// areas. The compact indices remain uninterpreted until their object roles are
-/// established independently.
-pub fn rm_creation_display_data_relations(
-    container: &Container,
-    object_ids: &[RmFastLoadObjectId],
-) -> Vec<RmCreationDisplayDataRelation> {
-    const CLASS_NAME: &str = "UGS::RM_creation_display_data";
-
-    let mut relations = Vec::new();
-    for (entry, section) in container
-        .om_sections()
-        .into_iter()
-        .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")
-    {
-        let Some(record_area) = section.record_area else {
-            continue;
-        };
-        let record_area_offset = record_area.offset;
-        let record_area = record_area.bytes;
-        let Some((class_ordinal, definition)) = section
-            .types
-            .iter()
-            .enumerate()
-            .find(|(_, definition)| definition.name == CLASS_NAME)
-        else {
-            continue;
-        };
-        let Ok(class_ordinal) = u32::try_from(class_ordinal) else {
-            continue;
-        };
-        let entry_index = entry.index();
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        let source_base = entry_offset + record_area_offset as u64;
-        let class_definition = format!("nx:om-entry-{entry_index}:class#{}", definition.offset);
-
-        for row in crate::om::offset_store_index_rows(record_area) {
-            if row.indices[3].atom.value() != class_ordinal {
-                continue;
-            }
-            relations.push(RmCreationDisplayDataRelation {
-                id: String::new(),
-                ordinal: 0,
-                class_name: CLASS_NAME.to_string(),
-                class_definition: class_definition.clone(),
-                encoding: RmCreationDisplayDataEncoding::Index {
-                    first_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
-                    flag: row.flag,
-                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
-                },
-                target_object_id: None,
-                source_entry: entry.name.clone(),
-                source_offset: source_base + row.offset as u64,
-            });
-        }
-        for row in crate::om::offset_store_linked_index_rows(record_area) {
-            if row.indices[2].atom.value() != class_ordinal {
-                continue;
-            }
-            relations.push(RmCreationDisplayDataRelation {
-                id: String::new(),
-                ordinal: 0,
-                class_name: CLASS_NAME.to_string(),
-                class_definition: class_definition.clone(),
-                encoding: RmCreationDisplayDataEncoding::Linked {
-                    first_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
-                    discriminator: row.discriminator,
-                    target_index: LocatedCompactIndex { atom: row.target_index.atom, offset: source_base + row.target_index.offset as u64 },
-                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
-                    flag: row.flag,
-                    mode: row.mode,
-                },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.atom.value()),
-                source_entry: entry.name.clone(),
-                source_offset: source_base + row.offset as u64,
-            });
-        }
-        for row in crate::om::offset_store_target_index_rows(record_area) {
-            if row.indices[2].atom.value() != class_ordinal {
-                continue;
-            }
-            relations.push(RmCreationDisplayDataRelation {
-                id: String::new(),
-                ordinal: 0,
-                class_name: CLASS_NAME.to_string(),
-                class_definition: class_definition.clone(),
-                encoding: RmCreationDisplayDataEncoding::Target {
-                    target_index: LocatedCompactIndex { atom: row.target_index.atom, offset: source_base + row.target_index.offset as u64 },
-                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
-                    mode: row.mode,
-                },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.atom.value()),
-                source_entry: entry.name.clone(),
-                source_offset: source_base + row.offset as u64,
-            });
-        }
-    }
-
-    relations.sort_by_key(|relation| relation.source_offset);
-    for (ordinal, relation) in relations.iter_mut().enumerate() {
-        relation.ordinal = ordinal as u32;
-        relation.id = format!("nx:rm-creation-display-data-relations:relation#{ordinal}");
-    }
-    relations
-}
-
 /// Decode complete part-local color tables from class-declaring offset stores.
 pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<PartColorDefinition>) {
     const CLASS_NAME: &str = "UGS::COLOR_table";
@@ -4807,95 +4150,6 @@ pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<Par
     (tables, definitions)
 }
 
-/// Decode explicit display-color assignments from `RMFastLoad` linked rows.
-pub fn rm_display_color_assignments(
-    container: &Container,
-    color_definitions: &[PartColorDefinition],
-    object_ids: &[RmFastLoadObjectId],
-) -> Vec<RmDisplayColorAssignment> {
-    let mut assignments = Vec::new();
-    for (entry, section) in container
-        .om_sections()
-        .into_iter()
-        .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")
-    {
-        let Some(record_area) = section.record_area else {
-            continue;
-        };
-        let record_area_offset = record_area.offset;
-        let record_area = record_area.bytes;
-        let source_base =
-            entry.file_span.map_or(0, |(offset, _)| offset) + record_area_offset as u64;
-        for row in crate::om::offset_store_linked_index_rows(record_area) {
-            let Some(color) = crate::om::linked_row_color_index(record_area, &row) else {
-                continue;
-            };
-            let mut matches = color_definitions
-                .iter()
-                .filter(|definition| definition.color_index == color.color_index);
-            let Some(definition) = matches.next() else {
-                continue;
-            };
-            if matches.next().is_some() {
-                continue;
-            }
-            assignments.push(RmDisplayColorAssignment {
-                id: String::new(),
-                ordinal: 0,
-                encoding: RmDisplayColorAssignmentEncoding::Linked {
-                    object_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
-                    discriminator: row.discriminator,
-                    target_index: LocatedCompactIndex { atom: row.target_index.atom, offset: source_base + row.target_index.offset as u64 },
-                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
-                    flag: row.flag,
-                    mode: row.mode,
-                },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.atom.value()),
-                color_index: color.color_index,
-                color_definition: definition.id.clone(),
-                source_entry: entry.name.clone(),
-                source_offset: source_base + color.offset as u64,
-                row_source_offset: source_base + row.offset as u64,
-            });
-        }
-        for row in crate::om::offset_store_target_index_rows(record_area) {
-            let Some(color) = crate::om::target_row_color_index(record_area, &row) else {
-                continue;
-            };
-            let mut matches = color_definitions
-                .iter()
-                .filter(|definition| definition.color_index == color.color_index);
-            let Some(definition) = matches.next() else {
-                continue;
-            };
-            if matches.next().is_some() {
-                continue;
-            }
-            assignments.push(RmDisplayColorAssignment {
-                id: String::new(),
-                ordinal: 0,
-                encoding: RmDisplayColorAssignmentEncoding::Target {
-                    target_index: LocatedCompactIndex { atom: row.target_index.atom, offset: source_base + row.target_index.offset as u64 },
-                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
-                    mode: row.mode,
-                },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.atom.value()),
-                color_index: color.color_index,
-                color_definition: definition.id.clone(),
-                source_entry: entry.name.clone(),
-                source_offset: source_base + color.offset as u64,
-                row_source_offset: source_base + row.offset as u64,
-            });
-        }
-    }
-    assignments.sort_by_key(|assignment| assignment.source_offset);
-    for (ordinal, assignment) in assignments.iter_mut().enumerate() {
-        assignment.ordinal = ordinal as u32;
-        assignment.id = format!("nx:rm-display-color-assignments:assignment#{ordinal}");
-    }
-    assignments
-}
-
 fn rmfastload_target_object_id(object_ids: &[RmFastLoadObjectId], target: u32) -> Option<String> {
     let target = usize::try_from(target).ok()?;
     object_ids.get(target).map(|object_id| object_id.id.clone())
@@ -4926,28 +4180,28 @@ pub fn data_block_column_index_tables(
             let targets = targets_by_section.remove(&section_ordinal)?;
             let (opening, suffix) = linked.split_first()?;
             let (last_target, target_prefix) = targets.split_last()?;
-            if opening.mode != crate::om::discriminators::IndexRowMode::Form07
+            if opening.frame.mode() != crate::om::discriminators::IndexRowMode::Form07
                 || suffix.is_empty()
                 || suffix
                     .iter()
-                    .any(|row| row.mode != crate::om::discriminators::IndexRowMode::Form04)
-                || last_target.mode != crate::om::discriminators::IndexRowMode::Form04
+                    .any(|row| row.frame.mode() != crate::om::discriminators::IndexRowMode::Form04)
+                || last_target.frame.mode() != crate::om::discriminators::IndexRowMode::Form04
                 || target_prefix
                     .iter()
-                    .any(|row| row.mode != crate::om::discriminators::IndexRowMode::Form07)
+                    .any(|row| row.frame.mode() != crate::om::discriminators::IndexRowMode::Form07)
             {
                 return None;
             }
-            let ordered = std::iter::once((opening.target.target.atom.value(), opening.source_offset))
+            let ordered = std::iter::once((opening.frame.target_index().atom.value(), opening.frame.offset()))
                 .chain(
                     targets
                         .iter()
-                        .map(|row| (row.target.target.atom.value(), row.source_offset)),
+                        .map(|row| (row.frame.target_index().atom.value(), row.frame.offset())),
                 )
                 .chain(
                     suffix
                         .iter()
-                        .map(|row| (row.target.target.atom.value(), row.source_offset)),
+                        .map(|row| (row.frame.target_index().atom.value(), row.frame.offset())),
                 )
                 .collect::<Vec<_>>();
             if ordered
@@ -4967,13 +4221,13 @@ pub fn data_block_column_index_tables(
                 section_ordinal,
                 opening_linked_row: opening.id.clone(),
                 rows: ColumnIndexRows::new(
-                    opening.target.target.atom.value(),
+                    opening.frame.target_index().atom.value(),
                     targets.iter().map(|row| row.id.clone()).collect(),
                     suffix.iter().map(|row| row.id.clone()).collect(),
                 )
                 .ok()?,
                 source_entry: opening.source_entry.clone(),
-                source_offset: opening.source_offset,
+                source_offset: opening.frame.offset(),
             })
         })
         .collect()

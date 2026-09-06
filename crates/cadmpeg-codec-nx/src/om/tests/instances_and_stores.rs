@@ -1288,36 +1288,36 @@ fn om_offset_store_index_rows_require_complete_exact_frames() {
     bytes.extend_from_slice(b"gap");
     bytes.extend_from_slice(second);
 
-    let rows = super::offset_store_index_rows(&bytes);
+    let rows = crate::om::column_row::scan::index_rows(&bytes);
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].offset, 6);
-    assert_eq!(rows[0].first_index.atom.value(), 42);
-    assert_eq!(rows[0].first_index.atom.raw(), [0x2a]);
-    assert_eq!(u8::from(rows[0].flag), 3);
-    assert_eq!(rows[0].indices.map(|token| (token.atom.value(), token.offset)), [(24, 13), (32, 15), (32, 16), (65, 17)]);
+    assert_eq!(rows[0].offset(), 6);
+    assert_eq!(rows[0].first_index().atom.value(), 42);
+    assert_eq!(rows[0].first_index().atom.raw(), [0x2a]);
+    assert_eq!(u8::from(rows[0].flag()), 3);
+    assert_eq!(rows[0].indices().map(|token| (token.atom.value(), token.offset)), [(24, 13), (32, 15), (32, 16), (65, 17)]);
     assert_eq!(
-        rows[0].indices.map(|token| token.atom.raw().to_vec()),
+        rows[0].indices().map(|token| token.atom.raw().to_vec()),
         [vec![0x80, 0x18], vec![0x20], vec![0x20], vec![0x41]]
     );
-    assert_eq!(rows[1].first_index.atom.value(), 950);
-    assert_eq!(rows[1].first_index.atom.raw(), [0x83, 0xb6]);
-    assert_eq!(u8::from(rows[1].flag), 7);
-    assert_eq!(rows[1].indices.map(|token| (token.atom.value(), token.offset)), [(24, 38), (32, 40), (77, 41), (65, 43)]);
+    assert_eq!(rows[1].first_index().atom.value(), 950);
+    assert_eq!(rows[1].first_index().atom.raw(), [0x83, 0xb6]);
+    assert_eq!(u8::from(rows[1].flag()), 7);
+    assert_eq!(rows[1].indices().map(|token| (token.atom.value(), token.offset)), [(24, 38), (32, 40), (77, 41), (65, 43)]);
     assert_eq!(
-        rows[1].indices.map(|token| token.atom.raw().to_vec()),
+        rows[1].indices().map(|token| token.atom.raw().to_vec()),
         [vec![0x80, 0x18], vec![0x20], vec![0x80, 0x4d], vec![0x41]]
     );
 
     let mut null = first.to_vec();
     null[3] = 0xff;
-    assert!(super::offset_store_index_rows(&null).is_empty());
+    assert!(crate::om::column_row::scan::index_rows(&null).is_empty());
     let mut other_flag = first.to_vec();
     other_flag[6] = 0x04;
-    assert!(super::offset_store_index_rows(&other_flag).is_empty());
+    assert!(crate::om::column_row::scan::index_rows(&other_flag).is_empty());
     let mut overlong = first.to_vec();
     overlong.insert(12, 0x01);
-    assert!(super::offset_store_index_rows(&overlong).is_empty());
-    assert!(super::offset_store_index_rows(&first[..first.len() - 1]).is_empty());
+    assert!(crate::om::column_row::scan::index_rows(&overlong).is_empty());
+    assert!(crate::om::column_row::scan::index_rows(&first[..first.len() - 1]).is_empty());
 }
 
 #[test]
@@ -1380,67 +1380,67 @@ fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
 #[test]
 fn om_offset_store_linked_index_rows_require_complete_exact_frames() {
     let row = b"\x02\x0b\x83\x93\x93\x8c\x16\x24\xff\xff\x90\xfe\x20\x20\x41\x00\x47\x03\x04\x01\xc0\x44\x04\x00";
-    let rows = super::offset_store_linked_index_rows(row);
+    let rows = crate::om::column_row::scan::linked_rows(row);
     assert_eq!(rows.len(), 1);
-    assert_eq!((rows[0].first_index.atom.value(), rows[0].first_index.offset), (915, 2));
-    assert_eq!(rows[0].first_index.atom.raw(), [0x83, 0x93]);
-    assert_eq!(u8::from(rows[0].discriminator), 0x16);
-    assert_eq!((rows[0].target_index.atom.value(), rows[0].target_index.offset), (36, 7));
-    assert_eq!(rows[0].target_index.atom.raw(), [0x24]);
-    assert_eq!(rows[0].indices.map(|token| (token.atom.value(), token.offset)), [(32, 12), (32, 13), (65, 14)]);
-    assert_eq!(rows[0].indices.map(|token| token.atom.raw().to_vec()), [vec![0x20], vec![0x20], vec![0x41]]);
-    assert_eq!(u8::from(rows[0].flag), 3);
-    assert_eq!(u8::from(rows[0].mode), 4);
+    assert_eq!((rows[0].first_index().atom.value(), rows[0].first_index().offset), (915, 2));
+    assert_eq!(rows[0].first_index().atom.raw(), [0x83, 0x93]);
+    assert_eq!(u8::from(rows[0].discriminator()), 0x16);
+    assert_eq!((rows[0].target_index().atom.value(), rows[0].target_index().offset), (36, 7));
+    assert_eq!(rows[0].target_index().atom.raw(), [0x24]);
+    assert_eq!(rows[0].indices().map(|token| (token.atom.value(), token.offset)), [(32, 12), (32, 13), (65, 14)]);
+    assert_eq!(rows[0].indices().map(|token| token.atom.raw().to_vec()), [vec![0x20], vec![0x20], vec![0x41]]);
+    assert_eq!(u8::from(rows[0].flag()), 3);
+    assert_eq!(u8::from(rows[0].mode()), 4);
 
     let mut null = row.to_vec();
     null[7] = 0xff;
-    assert!(super::offset_store_linked_index_rows(&null).is_empty());
+    assert!(crate::om::column_row::scan::linked_rows(&null).is_empty());
     let mut discriminator = row.to_vec();
     discriminator[6] = 0x15;
-    assert!(super::offset_store_linked_index_rows(&discriminator).is_empty());
+    assert!(crate::om::column_row::scan::linked_rows(&discriminator).is_empty());
     let mut flag = row.to_vec();
     flag[17] = 0x04;
-    assert!(super::offset_store_linked_index_rows(&flag).is_empty());
+    assert!(crate::om::column_row::scan::linked_rows(&flag).is_empty());
     let mut mode = row.to_vec();
     mode[18] = 0x06;
-    assert!(super::offset_store_linked_index_rows(&mode).is_empty());
+    assert!(crate::om::column_row::scan::linked_rows(&mode).is_empty());
     let mut mode_seven = row.to_vec();
     mode_seven[18] = 0x07;
     assert_eq!(
-        u8::from(super::offset_store_linked_index_rows(&mode_seven)[0].mode),
+        u8::from(crate::om::column_row::scan::linked_rows(&mode_seven)[0].mode()),
         7
     );
-    assert!(super::offset_store_linked_index_rows(&row[..row.len() - 1]).is_empty());
+    assert!(crate::om::column_row::scan::linked_rows(&row[..row.len() - 1]).is_empty());
 }
 
 #[test]
 fn om_offset_store_target_index_rows_require_complete_exact_frames() {
     let row =
         b"\x02\x01\x01\x01\x16\x3e\xff\xff\x90\xfe\x1e\x20\x58\x00\x47\x03\x07\x01\xc0\x44\x04\x00";
-    let rows = super::offset_store_target_index_rows(row);
+    let rows = crate::om::column_row::scan::target_rows(row);
     assert_eq!(rows.len(), 1);
-    assert_eq!((rows[0].target_index.atom.value(), rows[0].target_index.offset), (62, 5));
-    assert_eq!(rows[0].target_index.atom.raw(), [0x3e]);
-    assert_eq!(rows[0].indices.map(|token| (token.atom.value(), token.offset)), [(30, 10), (32, 11), (88, 12)]);
-    assert_eq!(rows[0].indices.map(|token| token.atom.raw().to_vec()), [vec![0x1e], vec![0x20], vec![0x58]]);
-    assert_eq!(u8::from(rows[0].mode), 7);
+    assert_eq!((rows[0].target_index().atom.value(), rows[0].target_index().offset), (62, 5));
+    assert_eq!(rows[0].target_index().atom.raw(), [0x3e]);
+    assert_eq!(rows[0].indices().map(|token| (token.atom.value(), token.offset)), [(30, 10), (32, 11), (88, 12)]);
+    assert_eq!(rows[0].indices().map(|token| token.atom.raw().to_vec()), [vec![0x1e], vec![0x20], vec![0x58]]);
+    assert_eq!(u8::from(rows[0].mode()), 7);
 
     let mut null = row.to_vec();
     null[5] = 0xff;
-    assert!(super::offset_store_target_index_rows(&null).is_empty());
+    assert!(crate::om::column_row::scan::target_rows(&null).is_empty());
     let mut discriminator = row.to_vec();
     discriminator[4] = 0x17;
-    assert!(super::offset_store_target_index_rows(&discriminator).is_empty());
+    assert!(crate::om::column_row::scan::target_rows(&discriminator).is_empty());
     let mut suffix = row.to_vec();
     suffix[16] = 0x03;
-    assert!(super::offset_store_target_index_rows(&suffix).is_empty());
+    assert!(crate::om::column_row::scan::target_rows(&suffix).is_empty());
     let mut mode_four = row.to_vec();
     mode_four[16] = 0x04;
     assert_eq!(
-        u8::from(super::offset_store_target_index_rows(&mode_four)[0].mode),
+        u8::from(crate::om::column_row::scan::target_rows(&mode_four)[0].mode()),
         4
     );
-    assert!(super::offset_store_target_index_rows(&row[..row.len() - 1]).is_empty());
+    assert!(crate::om::column_row::scan::target_rows(&row[..row.len() - 1]).is_empty());
 }
 
 #[test]

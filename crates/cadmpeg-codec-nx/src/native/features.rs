@@ -20,9 +20,10 @@ use block_reference::{BlockReferencePosition, FeatureBlockConstructionReference}
 use operation_record::{FeatureOperationRecord, OperationRecordSpan};
 use unlabeled_record::FeatureUnlabeledOperationRecord;
 use crate::printable_string::PrintableString;
+use crate::native::om::column_row::{DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockTargetIndexRow};
 use crate::native::om::{
-    data_blocks, DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow,
-    DataBlockReference, DataBlockRole, DataBlockTargetIndexRow, Expression, ExpressionDeclaration,
+    data_blocks, DataBlockColumnIndexTable,
+    DataBlockReference, DataBlockRole, Expression, ExpressionDeclaration,
     OmOperationStateJournalGroup, OmSchemaRole,
 };
 use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
@@ -7660,18 +7661,18 @@ fn column_relations_by_block<'a>(
     }
     let mut slots_by_block = ColumnSlotsByBlock::new();
     for row in index_rows {
-        for (slot, token) in row.indices.iter().enumerate() {
-            slots_by_block.entry(&token.target.data_block).or_default().push((row.id.as_str(), ColumnIndexRowKind::Index, slot, token.source_offset));
+        for (slot, token) in row.frame.indices().into_iter().enumerate() {
+            slots_by_block.entry(token.target).or_default().push((row.id.as_str(), ColumnIndexRowKind::Index, slot, token.offset));
         }
     }
     for row in linked_rows {
-        for (slot, token) in std::iter::once(&row.target).chain(&row.indices).enumerate() {
-            slots_by_block.entry(&token.target.data_block).or_default().push((row.id.as_str(), ColumnIndexRowKind::LinkedIndex, slot, token.source_offset));
+        for (slot, token) in std::iter::once(row.frame.target_index()).chain(row.frame.indices()).enumerate() {
+            slots_by_block.entry(token.target).or_default().push((row.id.as_str(), ColumnIndexRowKind::LinkedIndex, slot, token.offset));
         }
     }
     for row in target_rows {
-        for (slot, token) in std::iter::once(&row.target).chain(&row.indices).enumerate() {
-            slots_by_block.entry(&token.target.data_block).or_default().push((row.id.as_str(), ColumnIndexRowKind::TargetIndex, slot, token.source_offset));
+        for (slot, token) in std::iter::once(row.frame.target_index()).chain(row.frame.indices()).enumerate() {
+            slots_by_block.entry(token.target).or_default().push((row.id.as_str(), ColumnIndexRowKind::TargetIndex, slot, token.offset));
         }
     }
     (table_by_row, slots_by_block)
@@ -7813,15 +7814,15 @@ pub fn feature_input_column_targets(
                         };
                         (
                             FeatureInputColumnTargetRow::Linked {
-                                leading_index: row.first_index.atom.value(),
-                                leading_index_source_offset: row.first_index.offset,
-                                discriminator: row.discriminator,
-                                flag: row.flag,
+                                leading_index: row.frame.first_index().atom.value(),
+                                leading_index_source_offset: row.frame.first_index().offset,
+                                discriminator: row.frame.discriminator(),
+                                flag: row.frame.flag(),
                             },
-                            row.indices.each_ref().map(|token| token.target.atom.value()),
-                            row.indices.each_ref().map(|token| token.target.data_block.clone()),
-                            row.indices.each_ref().map(|token| token.source_offset),
-                            row.mode,
+                            row.frame.indices().map(|token| token.atom.value()),
+                            row.frame.indices().map(|token| token.target.clone()),
+                            row.frame.indices().map(|token| token.offset),
+                            row.frame.mode(),
                         )
                     }
                     ColumnIndexRowKind::TargetIndex => {
@@ -7834,10 +7835,10 @@ pub fn feature_input_column_targets(
                         };
                         (
                             FeatureInputColumnTargetRow::Target,
-                            row.indices.each_ref().map(|token| token.target.atom.value()),
-                            row.indices.each_ref().map(|token| token.target.data_block.clone()),
-                            row.indices.each_ref().map(|token| token.source_offset),
-                            row.mode,
+                            row.frame.indices().map(|token| token.atom.value()),
+                            row.frame.indices().map(|token| token.target.clone()),
+                            row.frame.indices().map(|token| token.offset),
+                            row.frame.mode(),
                         )
                     }
                     ColumnIndexRowKind::Index => return None,

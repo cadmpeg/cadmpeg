@@ -42,6 +42,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 const MIN_LINEAR_TOLERANCE: f64 = 1.0e-9;
 const MIN_ANGULAR_TOLERANCE: f64 = 1.0e-12;
 
+use crate::native::om::display_color::{RmDisplayColorAssignment, RmDisplayColorAssignmentEncoding};
 use crate::container::EntryContent;
 use crate::decode::Scan;
 use crate::native::history::{
@@ -590,14 +591,14 @@ enum RmColorChoice<'a> {
 }
 
 impl<'a> RmColorChoice<'a> {
-    fn new(assignment: &'a super::om::RmDisplayColorAssignment) -> Self {
-        Self::Unique { definition: &assignment.color_definition, source_offset: assignment.source_offset }
+    fn new(assignment: &'a RmDisplayColorAssignment) -> Self {
+        Self::Unique { definition: &assignment.color_definition, source_offset: assignment.frame.offset() }
     }
 
-    fn observe(&mut self, assignment: &'a super::om::RmDisplayColorAssignment) {
+    fn observe(&mut self, assignment: &'a RmDisplayColorAssignment) {
         if let Self::Unique { definition, source_offset } = self {
             if *definition == assignment.color_definition {
-                *source_offset = (*source_offset).min(assignment.source_offset);
+                *source_offset = (*source_offset).min(assignment.frame.offset());
             } else {
                 *self = Self::Conflicting;
             }
@@ -606,7 +607,7 @@ impl<'a> RmColorChoice<'a> {
 }
 
 fn resolve_rm_source_color_bindings(
-    assignments: &[super::om::RmDisplayColorAssignment],
+    assignments: &[RmDisplayColorAssignment],
 ) -> Vec<RmSourceColorBinding> {
     let mut choices = BTreeMap::<&str, RmColorChoice<'_>>::new();
     for assignment in assignments {
@@ -627,7 +628,7 @@ fn resolve_rm_source_color_bindings(
 
 fn resolve_rm_face_colors(
     face_ids: &BTreeSet<String>,
-    assignments: &[super::om::RmDisplayColorAssignment],
+    assignments: &[RmDisplayColorAssignment],
     definitions: &[super::om::PartColorDefinition],
     records: &[super::parasolid::ParasolidDeltasRecord],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
@@ -655,7 +656,7 @@ fn resolve_rm_face_colors(
 
 fn resolve_rm_face_color_bindings(
     face_ids: &BTreeSet<String>,
-    assignments: &[super::om::RmDisplayColorAssignment],
+    assignments: &[RmDisplayColorAssignment],
     definitions: &[super::om::PartColorDefinition],
     records: &[super::parasolid::ParasolidDeltasRecord],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
@@ -672,10 +673,9 @@ fn resolve_rm_face_color_bindings(
 
     let mut choices = BTreeMap::<u32, RmColorChoice<'_>>::new();
     for assignment in assignments {
-        let crate::native::om::RmDisplayColorAssignmentEncoding::Linked { object_index, .. } =
-            &assignment.encoding
+        let RmDisplayColorAssignmentEncoding::Linked(row) = assignment.frame.encoding()
         else { continue; };
-        choices.entry(object_index.atom.value())
+        choices.entry(row.first_index().atom.value())
             .and_modify(|choice| choice.observe(assignment))
             .or_insert_with(|| RmColorChoice::new(assignment));
     }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Frame NX object-model entities using external boundary and identity arrays.
 
+pub(crate) mod column_row;
 pub(crate) mod reference_value;
 use reference_value::{DirectReference, LocatedReference, RecordReference, Tagged28};
 
@@ -251,79 +252,9 @@ pub struct OffsetStoreAbrReferenceLane {
     pub slots: [NullableCompactIndex; 16],
 }
 
-/// One self-framed index row in contiguous offset-store column storage.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OffsetStoreIndexRow {
-    /// Byte offset of the opening `2d 02 0b` discriminator.
-    pub offset: usize,
-    /// First non-null compact index.
-    pub first_index: LocatedCompactIndex,
-    /// Serialized row flag.
-    pub flag: crate::om::discriminators::LinkedIndexFlag,
-    /// Four ordered non-null compact indices after the row flag.
-    pub indices: [LocatedCompactIndex; 4],
-}
-
-/// One self-framed linked index row in contiguous column storage.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OffsetStoreLinkedIndexRow {
-    /// Byte offset of the opening `02 0b` discriminator.
-    pub offset: usize,
-    /// Unresolved leading compact index and its byte offset.
-    pub first_index: LocatedCompactIndex,
-    /// Serialized `16`, `17`, or `18` row discriminator.
-    pub discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
-    /// Compact target index and its byte offset.
-    pub target_index: LocatedCompactIndex,
-    /// Three ordered non-null compact indices after `ff ff 90 fe`.
-    pub indices: [LocatedCompactIndex; 3],
-    /// Serialized `03` or `07` row flag.
-    pub flag: crate::om::discriminators::LinkedIndexFlag,
-    /// Serialized `04` or `07` row mode.
-    pub mode: crate::om::discriminators::IndexRowMode,
-}
-
-/// Canonical NX color-index token immediately preceding a display row.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LinkedRowColorIndex {
-    /// One-based part palette index.
-    pub color_index: PaletteIndex,
-    /// Color token's byte offset.
-    pub offset: usize,
-}
-
-/// Decode the color-index prefix of an `RMFastLoad` linked row.
-pub fn linked_row_color_index(
-    bytes: &[u8],
-    row: &OffsetStoreLinkedIndexRow,
-) -> Option<LinkedRowColorIndex> {
-    row_color_index(bytes, row.offset)
-}
-
-/// Decode the color-index prefix of an `RMFastLoad` target-index row.
-pub fn target_row_color_index(
-    bytes: &[u8],
-    row: &OffsetStoreTargetIndexRow,
-) -> Option<LinkedRowColorIndex> {
-    row_color_index(bytes, row.offset)
-}
-
-fn row_color_index(bytes: &[u8], row_offset: usize) -> Option<LinkedRowColorIndex> {
-    const PRECEDING_SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
-    for width in [1, 2] {
-        let Some(offset) = row_offset.checked_sub(width) else { continue; };
-        let Some(prefix_offset) = offset.checked_sub(PRECEDING_SUFFIX.len()) else { continue; };
-        if bytes.get(prefix_offset..offset) != Some(&PRECEDING_SUFFIX) { continue; }
-        if let Some(color_index) = PaletteIndex::read_display(bytes.get(offset..row_offset)?) {
-            return Some(LinkedRowColorIndex { color_index, offset });
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod linked_row_color_index_tests {
-    use super::*;
+    use crate::om::column_row::scan::{linked_rows, target_rows, preceding_color};
 
     #[test]
     fn requires_the_complete_preceding_suffix() {
@@ -333,13 +264,13 @@ mod linked_row_color_index_tests {
         ];
         let mut bytes = [1, 0xc0, 0x44, 4, 0, 0x80, 201].to_vec();
         bytes.extend(row_bytes);
-        let rows = offset_store_linked_index_rows(&bytes);
-        let color = linked_row_color_index(&bytes, &rows[0]).expect("complete prefix");
-        assert_eq!(color.color_index.value(), 201);
-        assert_eq!(color.color_index.display_raw(), [0x80, 201]);
+        let rows = linked_rows(&bytes);
+        let color = preceding_color(&bytes, rows[0].offset()).expect("complete prefix");
+        assert_eq!(color.value(), 201);
+        assert_eq!(color.display_raw(), [0x80, 201]);
 
         bytes[1] = 0;
-        assert_eq!(linked_row_color_index(&bytes, &rows[0]), None);
+        assert_eq!(preceding_color(&bytes, rows[0].offset()), None);
     }
 
     #[test]
@@ -350,24 +281,11 @@ mod linked_row_color_index_tests {
         ];
         let mut bytes = [1, 0xc0, 0x44, 4, 0, 0x80, 201].to_vec();
         bytes.extend(row_bytes);
-        let rows = offset_store_target_index_rows(&bytes);
-        let color = target_row_color_index(&bytes, &rows[0]).expect("complete prefix");
-        assert_eq!(color.color_index.value(), 201);
-        assert_eq!(color.color_index.display_raw(), [0x80, 201]);
+        let rows = target_rows(&bytes);
+        let color = preceding_color(&bytes, rows[0].offset()).expect("complete prefix");
+        assert_eq!(color.value(), 201);
+        assert_eq!(color.display_raw(), [0x80, 201]);
     }
-}
-
-/// One self-framed target-index row in contiguous column storage.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OffsetStoreTargetIndexRow {
-    /// Byte offset of the opening `02 01 01 01 16` discriminator.
-    pub offset: usize,
-    /// Compact target index and its byte offset.
-    pub target_index: LocatedCompactIndex,
-    /// Three ordered non-null compact indices after `ff ff 90 fe`.
-    pub indices: [LocatedCompactIndex; 3],
-    /// Serialized `04` or `07` row mode.
-    pub mode: crate::om::discriminators::IndexRowMode,
 }
 
 /// One RGB definition from an NX part color table.
@@ -516,200 +434,6 @@ pub fn color_tables(bytes: &[u8]) -> Vec<ColorTable<'_>> {
         start = end;
     }
     tables
-}
-
-/// Decode complete self-framed index rows from contiguous column storage.
-pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
-    const PREFIX: [u8; 3] = [0x2d, 0x02, 0x0b];
-    const MIDDLE: [u8; 2] = [0x93, 0x8a];
-    const SUFFIX: [u8; 9] = [0x00, 0x47, 0x04, 0x04, 0x01, 0xc0, 0x44, 0x04, 0x00];
-    let mut rows = Vec::new();
-    let mut start = 0;
-    while start + PREFIX.len() <= bytes.len() {
-        if bytes.get(start..start + PREFIX.len()) != Some(&PREFIX) {
-            start += 1;
-            continue;
-        }
-        let first_index_offset = start + PREFIX.len();
-        let Some(first_token) = LocatedCompactIndex::read(bytes, first_index_offset) else {
-            start += 1;
-            continue;
-        };
-        let marker = first_token.offset + first_token.atom.raw().len();
-        if bytes.get(marker..marker + 2) != Some(&MIDDLE[..2]) {
-            start += 1;
-            continue;
-        }
-        let Some(flag) = bytes.get(marker + 2).copied().and_then(|value| discriminators::LinkedIndexFlag::try_from(value).ok()) else {
-            start += 1;
-            continue;
-        };
-        let mut at = marker + 3;
-        let Some(index_tokens) = LocatedCompactIndex::read_array(bytes, &mut at) else {
-            start += 1;
-            continue;
-        };
-        let Some(end) = at.checked_add(SUFFIX.len()) else {
-            start += 1;
-            continue;
-        };
-        if bytes.get(at..end) != Some(&SUFFIX) {
-            start += 1;
-            continue;
-        }
-        rows.push(OffsetStoreIndexRow {
-            offset: start,
-            first_index: first_token,
-            flag,
-            indices: index_tokens,
-        });
-        start = end;
-    }
-    rows
-}
-
-/// Decode complete linked index rows from contiguous column storage.
-pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedIndexRow> {
-    const MIDDLE: [u8; 4] = [0xff, 0xff, 0x90, 0xfe];
-    const SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
-    let mut rows = Vec::new();
-    let mut start = 0;
-    while start + 2 <= bytes.len() {
-        if bytes.get(start..start + 2) != Some(&[0x02, 0x0b]) {
-            start += 1;
-            continue;
-        }
-        let first_offset = start + 2;
-        let Some(first_token) = LocatedCompactIndex::read(bytes, first_offset) else {
-            start += 1;
-            continue;
-        };
-        let marker = first_token.offset + first_token.atom.raw().len();
-        if bytes.get(marker..marker + 2) != Some(&[0x93, 0x8c]) {
-            start += 1;
-            continue;
-        }
-        let Some(discriminator) = bytes
-            .get(marker + 2)
-            .copied()
-            .and_then(|value| discriminators::LinkedIndexDiscriminator::try_from(value).ok())
-        else {
-            start += 1;
-            continue;
-        };
-        let target_offset = marker + 3;
-        let Some(target_token) = LocatedCompactIndex::read(bytes, target_offset) else {
-            start += 1;
-            continue;
-        };
-        let mut at = target_token.offset + target_token.atom.raw().len();
-        if bytes.get(at..at + MIDDLE.len()) != Some(&MIDDLE) {
-            start += 1;
-            continue;
-        }
-        at += MIDDLE.len();
-        let Some(index_tokens) = LocatedCompactIndex::read_array(bytes, &mut at) else {
-            start += 1;
-            continue;
-        };
-        if bytes.get(at..at + 2) != Some(&[0x00, 0x47]) {
-            start += 1;
-            continue;
-        }
-        let Some(flag) = bytes
-            .get(at + 2)
-            .copied()
-            .and_then(|value| discriminators::LinkedIndexFlag::try_from(value).ok())
-        else {
-            start += 1;
-            continue;
-        };
-        let Some(mode) = bytes
-            .get(at + 3)
-            .copied()
-            .and_then(|value| discriminators::IndexRowMode::try_from(value).ok())
-        else {
-            start += 1;
-            continue;
-        };
-        let Some(end) = at.checked_add(4 + SUFFIX.len()) else {
-            start += 1;
-            continue;
-        };
-        if bytes.get(at + 4..end) != Some(&SUFFIX) {
-            start += 1;
-            continue;
-        }
-        rows.push(OffsetStoreLinkedIndexRow {
-            offset: start,
-            first_index: first_token,
-            discriminator,
-            target_index: target_token,
-            indices: index_tokens,
-            flag,
-            mode,
-        });
-        start = end;
-    }
-    rows
-}
-
-/// Decode complete target-index rows from contiguous column storage.
-pub fn offset_store_target_index_rows(bytes: &[u8]) -> Vec<OffsetStoreTargetIndexRow> {
-    const PREFIX: [u8; 5] = [0x02, 0x01, 0x01, 0x01, 0x16];
-    const MIDDLE: [u8; 4] = [0xff, 0xff, 0x90, 0xfe];
-    const SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
-    let mut rows = Vec::new();
-    let mut start = 0;
-    while start + PREFIX.len() <= bytes.len() {
-        if bytes.get(start..start + PREFIX.len()) != Some(&PREFIX) {
-            start += 1;
-            continue;
-        }
-        let target_offset = start + PREFIX.len();
-        let Some(target_token) = LocatedCompactIndex::read(bytes, target_offset) else {
-            start += 1;
-            continue;
-        };
-        let mut at = target_token.offset + target_token.atom.raw().len();
-        if bytes.get(at..at + MIDDLE.len()) != Some(&MIDDLE) {
-            start += 1;
-            continue;
-        }
-        at += MIDDLE.len();
-        let Some(index_tokens) = LocatedCompactIndex::read_array(bytes, &mut at) else {
-            start += 1;
-            continue;
-        };
-        if bytes.get(at..at + 3) != Some(&[0x00, 0x47, 0x03]) {
-            start += 1;
-            continue;
-        }
-        let Some(mode) = bytes
-            .get(at + 3)
-            .copied()
-            .and_then(|value| discriminators::IndexRowMode::try_from(value).ok())
-        else {
-            start += 1;
-            continue;
-        };
-        let Some(end) = at.checked_add(4 + SUFFIX.len()) else {
-            start += 1;
-            continue;
-        };
-        if bytes.get(at + 4..end) != Some(&SUFFIX) {
-            start += 1;
-            continue;
-        }
-        rows.push(OffsetStoreTargetIndexRow {
-            offset: start,
-            target_index: target_token,
-            indices: index_tokens,
-            mode,
-        });
-        start = end;
-    }
-    rows
 }
 
 /// Decode fixed-width `ABR` block-reference lanes from contiguous column storage.

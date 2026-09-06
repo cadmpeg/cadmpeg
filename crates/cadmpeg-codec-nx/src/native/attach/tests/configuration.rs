@@ -3,7 +3,9 @@
 use cadmpeg_ir::math::Point2;
 
 use super::*;
-use crate::om::compact::{CompactIndexAtom, LocatedCompactIndex};
+use crate::om::compact::CompactIndexAtom;
+use crate::om::column_row::{LinkedRow, TargetRow};
+use crate::native::om::display_color::{RmDisplayColorAssignment, RmDisplayColorAssignmentEncoding, DisplayColorFrame};
 
 #[test]
 fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
@@ -19,23 +21,15 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
         }),
         source_offset: 10,
     };
-    let assignment = crate::native::om::RmDisplayColorAssignment {
+    let assignment = RmDisplayColorAssignment {
         id: "nx:test:assignment#0".into(),
         ordinal: 0,
-        encoding: crate::native::om::RmDisplayColorAssignmentEncoding::Linked {
-            object_index: LocatedCompactIndex { atom: CompactIndexAtom::read(&[42]).unwrap(), offset: 22 },
-            discriminator: crate::om::discriminators::LinkedIndexDiscriminator::Form16,
-            target_index: LocatedCompactIndex { atom: CompactIndexAtom::read(&[7]).unwrap(), offset: 23 },
-            indices: [(1, 24), (2, 25), (3, 26)].map(|(value, offset)| LocatedCompactIndex { atom: CompactIndexAtom::read(&[value]).unwrap(), offset }),
-            flag: crate::om::discriminators::LinkedIndexFlag::Form03,
-            mode: crate::om::discriminators::IndexRowMode::Form04,
-        },
+        frame: DisplayColorFrame::new(RmDisplayColorAssignmentEncoding::Linked(
+            LinkedRow::<(), u64>::new(CompactIndexAtom::read(&[42]).unwrap(), crate::om::discriminators::LinkedIndexDiscriminator::Form16, CompactIndexAtom::read(&[7]).unwrap().into(), [1, 2, 3].map(|value| CompactIndexAtom::read(&[value]).unwrap().into()), crate::om::discriminators::LinkedIndexFlag::Form03, crate::om::discriminators::IndexRowMode::Form04, 22).unwrap()
+        ), crate::om::color::PaletteIndex::new(201).unwrap()).unwrap(),
         target_object_id: Some("nx:test:object-id#7".into()),
-        color_index: crate::om::color::PaletteIndex::new(201).unwrap(),
         color_definition: definition.id.clone(),
         source_entry: "/Root/FastLoad/RMFastLoad".into(),
-        source_offset: 20,
-        row_source_offset: 21,
     };
     let record = crate::native::parasolid::ParasolidDeltasRecord {
         id: "nx:test:deltas#0".into(),
@@ -82,11 +76,9 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
     );
 
     let mut target_assignment = assignment.clone();
-    target_assignment.encoding = crate::native::om::RmDisplayColorAssignmentEncoding::Target {
-        target_index: LocatedCompactIndex { atom: CompactIndexAtom::read(&[7]).unwrap(), offset: 23 },
-        indices: [(1, 24), (2, 25), (3, 26)].map(|(value, offset)| LocatedCompactIndex { atom: CompactIndexAtom::read(&[value]).unwrap(), offset }),
-        mode: crate::om::discriminators::IndexRowMode::Form04,
-    };
+    target_assignment.frame = DisplayColorFrame::new(RmDisplayColorAssignmentEncoding::Target(
+        TargetRow::<(), u64>::new(CompactIndexAtom::read(&[7]).unwrap().into(), [1, 2, 3].map(|value| CompactIndexAtom::read(&[value]).unwrap().into()), crate::om::discriminators::IndexRowMode::Form04, 22).unwrap()
+    ), crate::om::color::PaletteIndex::new(201).unwrap()).unwrap();
     assert_eq!(
         resolve_rm_face_colors(
             &face_ids,
@@ -116,21 +108,16 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
 
 #[test]
 fn rm_source_color_bindings_require_one_palette_per_source_identity() {
-    let assignment = |id: &str, source_id: Option<&str>, color_definition: &str, offset| {
-        crate::native::om::RmDisplayColorAssignment {
+    let assignment = |id: &str, source_id: Option<&str>, color_definition: &str, offset: u64| {
+        RmDisplayColorAssignment {
             id: id.into(),
             ordinal: 0,
-            encoding: crate::native::om::RmDisplayColorAssignmentEncoding::Target {
-                target_index: LocatedCompactIndex { atom: CompactIndexAtom::read(&[7]).unwrap(), offset },
-                indices: [(1, offset + 1), (2, offset + 2), (3, offset + 3)].map(|(value, offset)| LocatedCompactIndex { atom: CompactIndexAtom::read(&[value]).unwrap(), offset }),
-                mode: crate::om::discriminators::IndexRowMode::Form04,
-            },
+            frame: DisplayColorFrame::new(RmDisplayColorAssignmentEncoding::Target(
+                TargetRow::<(), u64>::new(CompactIndexAtom::read(&[7]).unwrap().into(), [1, 2, 3].map(|value| CompactIndexAtom::read(&[value]).unwrap().into()), crate::om::discriminators::IndexRowMode::Form04, offset + 2).unwrap()
+            ), crate::om::color::PaletteIndex::new(201).unwrap()).unwrap(),
             target_object_id: source_id.map(str::to_owned),
-            color_index: crate::om::color::PaletteIndex::new(201).unwrap(),
             color_definition: color_definition.into(),
             source_entry: "/Root/FastLoad/RMFastLoad".into(),
-            source_offset: offset,
-            row_source_offset: offset,
         }
     };
     let assignments = [

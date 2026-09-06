@@ -27,6 +27,8 @@ impl PaletteIndex {
         if self.0 < 128 { ([self.0, 0], 1) } else { ([0x80, self.0 - 1], 2) }
     }
 
+    pub(crate) fn display_byte_len(self) -> u8 { if self.0 < 128 { 1 } else { 2 } }
+
     pub(crate) fn display_raw(self) -> Vec<u8> {
         if self.0 < 128 { vec![self.0] } else { vec![0x80, self.0] }
     }
