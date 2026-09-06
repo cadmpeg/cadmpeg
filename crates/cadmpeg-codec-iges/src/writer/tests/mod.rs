@@ -96,7 +96,9 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
 #[test]
 fn type_508_requires_an_explicit_isoparametric_flag() {
     let pcurve = PcurveUse {
-        pcurve: "test:model:pcurve#type-508".into(),
+        pcurve: "test:model:pcurve#type-508"
+            .try_into()
+            .expect("valid identity"),
         isoparametric: Some(false),
         parameter_range: None,
     };
@@ -779,13 +781,13 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::Face;
 
-    let face_id = FaceId::from("test:model:face#face");
-    let inner_id = LoopId::from("test:model:loop#inner");
-    let outer_id = LoopId::from("test:model:loop#outer");
+    let face_id = FaceId::mint("test:model:face#face").expect("valid identity");
+    let inner_id = LoopId::mint("test:model:loop#inner").expect("valid identity");
+    let outer_id = LoopId::mint("test:model:loop#outer").expect("valid identity");
     let face = Face {
         id: face_id.clone(),
-        shell: ShellId::from("test:model:shell#shell"),
-        surface: SurfaceId::from("test:model:surface#surface"),
+        shell: ShellId::mint("test:model:shell#shell").expect("valid identity"),
+        surface: SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
         sense: Sense::Forward,
         loops: cadmpeg_ir::topology::FaceLoops::classified(
             Some(outer_id.clone()),
@@ -824,13 +826,13 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::Face;
 
-    let face_id = FaceId::from("test:model:face#face");
-    let inner_id = LoopId::from("test:model:loop#inner");
-    let unclassified_id = LoopId::from("test:model:loop#unclassified");
+    let face_id = FaceId::mint("test:model:face#face").expect("valid identity");
+    let inner_id = LoopId::mint("test:model:loop#inner").expect("valid identity");
+    let unclassified_id = LoopId::mint("test:model:loop#unclassified").expect("valid identity");
     let face = Face {
         id: face_id.clone(),
-        shell: ShellId::from("test:model:shell#shell"),
-        surface: SurfaceId::from("test:model:surface#surface"),
+        shell: ShellId::mint("test:model:shell#shell").expect("valid identity"),
+        surface: SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
         sense: Sense::Forward,
         loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
             unclassified_id.clone(),

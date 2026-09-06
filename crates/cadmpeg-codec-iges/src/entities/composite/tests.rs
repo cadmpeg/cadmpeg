@@ -182,7 +182,7 @@ fn decode_rejects_a_nonzero_v4_composite_entity_use_flag() {
         .model
         .curves
         .iter()
-        .any(|curve| curve.id.0 == "iges:model:curve#D5"));
+        .any(|curve| curve.id.as_str() == "iges:model:curve#D5"));
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::EntityNotProjected.kind()
             && loss
@@ -1708,7 +1708,7 @@ fn decode_concatenates_ordered_composite_curve_children() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .unwrap();
     let CurveGeometry::Nurbs(nurbs) = composite
         .geometry
@@ -1741,7 +1741,7 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .expect("Type 102 curve within the Global resolution");
     assert!(matches!(
         *within_curve
@@ -1763,7 +1763,7 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .expect("degraded Type 102 curve");
     let cadmpeg_ir::geometry::CurveGeometry::Composite { segments, .. } = outside_curve
         .geometry
@@ -1797,7 +1797,7 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .expect("Type 102 curve at the Global resolution");
     assert!(matches!(
         *at_or_beyond_resolution_curve
@@ -1854,7 +1854,7 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .unwrap();
     let CurveGeometry::Nurbs(nurbs) = composite
         .geometry
@@ -1885,7 +1885,7 @@ fn decode_converts_heterogeneous_composite_curve_children_to_an_exact_carrier() 
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .unwrap();
     let CurveGeometry::Nurbs(nurbs) = composite
         .geometry
@@ -1919,7 +1919,7 @@ fn decode_projects_mixed_degree_composite_pcurve() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D7")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D7")
         .unwrap();
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
         curve.geometry.solved_cache().unwrap_or(&curve.geometry)
@@ -1936,7 +1936,7 @@ fn decode_projects_mixed_degree_composite_pcurve() {
             .find(|edge| edge
                 .curve
                 .as_ref()
-                .is_some_and(|id| id.0 == "iges:model:curve#D7"))
+                .is_some_and(|id| id.as_str() == "iges:model:curve#D7"))
             .and_then(|edge| edge.param_range),
         Some([0.0, 2.0])
     );
@@ -1945,7 +1945,7 @@ fn decode_projects_mixed_degree_composite_pcurve() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D11")
+        .find(|face| face.id.as_str() == "iges:model:face#D11")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     assert_eq!(face.loops.len(), 1);
     assert_eq!(result.ir().model.pcurves.len(), 1);
@@ -1979,7 +1979,7 @@ fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_chil
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D3")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("composite curve should be projected after its spline child");
     assert!(matches!(
         *composite

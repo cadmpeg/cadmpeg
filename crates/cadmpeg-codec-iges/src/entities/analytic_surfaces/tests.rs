@@ -33,7 +33,7 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
                 .model
                 .surfaces
                 .iter()
-                .find(|surface| surface.id.0 == surface_id)
+                .find(|surface| surface.id.as_str() == surface_id)
                 .unwrap();
             match (entity_type, &surface.geometry) {
                 (190, cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. }) => {

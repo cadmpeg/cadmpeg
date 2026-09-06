@@ -204,7 +204,7 @@ fn color_name_placekeeper_is_4_0_only() {
         .model
         .appearances
         .iter()
-        .any(|appearance| appearance.id.0 == "iges:appearance:color#D1"));
+        .any(|appearance| appearance.id.as_str() == "iges:appearance:color#D1"));
     assert!(!v4
         .report()
         .losses
@@ -222,7 +222,7 @@ fn color_name_placekeeper_is_4_0_only() {
         .model
         .appearances
         .iter()
-        .any(|appearance| appearance.id.0 == "iges:appearance:color#D1"));
+        .any(|appearance| appearance.id.as_str() == "iges:appearance:color#D1"));
     assert!(v5
         .report()
         .losses
@@ -254,7 +254,7 @@ fn color_definition_requires_definition_directory_fields() {
         .model
         .appearances
         .iter()
-        .any(|appearance| appearance.id.0 == "iges:appearance:color#D1"));
+        .any(|appearance| appearance.id.as_str() == "iges:appearance:color#D1"));
 }
 
 #[test]
@@ -288,7 +288,7 @@ fn color_definition_ignores_nonsemantic_directory_fields() {
                 .model
                 .appearances
                 .iter()
-                .any(|appearance| appearance.id.0 == "iges:appearance:color#D1"),
+                .any(|appearance| appearance.id.as_str() == "iges:appearance:color#D1"),
             "color definition was not projected: {:#?}",
             result.report().losses
         );
@@ -409,7 +409,7 @@ fn color_definition_requires_a_standard_fallback_color() {
         .model
         .appearances
         .iter()
-        .any(|appearance| appearance.id.0 == "iges:appearance:color#D1"));
+        .any(|appearance| appearance.id.as_str() == "iges:appearance:color#D1"));
 }
 
 #[test]
@@ -474,7 +474,7 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         .model
         .bodies
         .iter()
-        .find(|body| body.id.0 == "iges:model:body#D11")
+        .find(|body| body.id.as_str() == "iges:model:body#D11")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     assert_eq!(
         body.color,
@@ -491,7 +491,7 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D11:D9")
+        .find(|face| face.id.as_str() == "iges:model:face#D11:D9")
         .unwrap();
     assert_eq!(
         face.color,
@@ -507,8 +507,10 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         .model
         .appearances
         .iter()
-        .any(|appearance| appearance.id.0 == "iges:appearance:color#D13"
-            && appearance.name.as_deref() == Some("custom")));
+        .any(
+            |appearance| appearance.id.as_str() == "iges:appearance:color#D13"
+                && appearance.name.as_deref() == Some("custom")
+        ));
     assert_eq!(result.ir().model.appearance_bindings.len(), 2);
     let native = result.ir().native.namespace("iges").unwrap();
     assert_eq!(native.version(), 6);

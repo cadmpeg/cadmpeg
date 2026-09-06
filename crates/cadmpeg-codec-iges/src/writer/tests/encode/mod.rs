@@ -1259,7 +1259,7 @@ fn encode_regenerates_decoded_multi_pcurve_bounded_sheet_without_source_bytes() 
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id.0 == "iges:model:coedge#D11:0:0")
+        .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D11:0:0")
         .unwrap_or_else(|| panic!("losses={:#?}", decoded.report().losses));
     assert_eq!(coedge.pcurves.len(), 2);
 

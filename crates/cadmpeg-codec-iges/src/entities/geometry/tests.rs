@@ -279,7 +279,7 @@ fn point_display_symbol_pointer_targets_follow_the_declared_dialect() {
         .model
         .points
         .iter()
-        .any(|point| point.id.0 == "iges:model:point#D5"));
+        .any(|point| point.id.as_str() == "iges:model:point#D5"));
     assert!(!v4.report().losses.iter().any(|loss| {
         loss.message
             .contains("Type 116 display symbol pointer is invalid")
@@ -296,7 +296,7 @@ fn point_display_symbol_pointer_targets_follow_the_declared_dialect() {
         .model
         .points
         .iter()
-        .any(|point| point.id.0 == "iges:model:point#D5"));
+        .any(|point| point.id.as_str() == "iges:model:point#D5"));
     assert!(!v5.report().losses.iter().any(|loss| {
         loss.message
             .contains("Type 116 display symbol pointer is invalid")
@@ -314,7 +314,7 @@ fn point_display_symbol_pointer_targets_follow_the_declared_dialect() {
             .model
             .points
             .iter()
-            .any(|point| point.id.0 == "iges:model:point#D5"));
+            .any(|point| point.id.as_str() == "iges:model:point#D5"));
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == IgesLossCode::DisplayDataNotProjected.kind()
                 && loss
@@ -407,7 +407,7 @@ fn type125_flash_forms_project_reference_points_and_retain_shape_parameters() {
             .model
             .points
             .iter()
-            .find(|point| point.id.0 == format!("iges:model:point#D{sequence}"))
+            .find(|point| point.id.as_str() == format!("iges:model:point#D{sequence}"))
             .unwrap();
         assert_eq!(point.position, cadmpeg_ir::math::Point3::new(x, y, 0.0));
     }

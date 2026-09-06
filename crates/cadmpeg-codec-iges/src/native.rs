@@ -5085,7 +5085,7 @@ pub(crate) fn store(
             occurrence_neutral_links
                 .entry(sequence)
                 .or_default()
-                .push(curve.id.0.clone());
+                .push(curve.id.as_str().to_owned());
         }
     }
     for surface in &ir.model.surfaces {
@@ -5099,7 +5099,7 @@ pub(crate) fn store(
             occurrence_neutral_links
                 .entry(sequence)
                 .or_default()
-                .push(surface.id.0.clone());
+                .push(surface.id.as_str().to_owned());
         }
     }
     for body in &ir.model.bodies {
@@ -5108,7 +5108,7 @@ pub(crate) fn store(
             occurrence_neutral_links
                 .entry(sequence)
                 .or_default()
-                .push(body.id.0.clone());
+                .push(body.id.as_str().to_owned());
         }
     }
     for point in &ir.model.points {
@@ -5118,7 +5118,7 @@ pub(crate) fn store(
             occurrence_neutral_links
                 .entry(sequence)
                 .or_default()
-                .push(point.id.0.clone());
+                .push(point.id.as_str().to_owned());
         }
     }
     let mut product_occurrences = Vec::new();
@@ -5211,13 +5211,13 @@ pub(crate) fn store(
                 "iges:topology:boundary-vertex#{}",
                 derivation
                     .vertex
-                    .0
+                    .as_str()
                     .strip_prefix("iges:model:vertex#")
-                    .unwrap_or(&derivation.vertex.0)
+                    .unwrap_or(derivation.vertex.as_str())
                     .replace(':', "_")
             ),
             source_entity: derivation.source_entity.clone(),
-            vertex: derivation.vertex.0.clone(),
+            vertex: derivation.vertex.as_str().to_owned(),
             representative: [
                 derivation.representative.x,
                 derivation.representative.y,

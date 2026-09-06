@@ -130,7 +130,7 @@ fn decode_brackets_explicit_edge_vertex_agreement_at_the_global_resolution() {
                 .model
                 .bodies
                 .iter()
-                .any(|body| body.id.0 == "iges:model:body#D27"),
+                .any(|body| body.id.as_str() == "iges:model:body#D27"),
             decoded,
             "{end_x}"
         );
@@ -159,7 +159,7 @@ fn decode_builds_a_vertex_only_pole_loop() {
         .model
         .loops
         .iter()
-        .find(|loop_| loop_.id.0 == "iges:model:loop#D11:D7")
+        .find(|loop_| loop_.id.as_str() == "iges:model:loop#D11:D7")
         .unwrap_or_else(|| {
             panic!(
                 "loops={:#?} losses={:#?}",
@@ -169,7 +169,7 @@ fn decode_builds_a_vertex_only_pole_loop() {
         });
     assert!(loop_.coedges().is_empty());
     let (vertex, pcurves) = loop_.singular_vertex().expect("vertex-loop boundary");
-    assert_eq!(vertex.0, "iges:model:vertex#D11:D5:1");
+    assert_eq!(vertex.as_str(), "iges:model:vertex#D11:D5:1");
     assert!(pcurves.is_empty());
     assert_eq!(
         loop_.boundary_role_in(&result.ir().model.faces),
@@ -197,7 +197,7 @@ fn decode_preserves_a_face_with_no_explicit_outer_loop() {
         .model
         .loops
         .iter()
-        .find(|loop_| loop_.id.0 == "iges:model:loop#D11:D7")
+        .find(|loop_| loop_.id.as_str() == "iges:model:loop#D11:D7")
         .unwrap();
     assert_eq!(
         loop_.boundary_role_in(&result.ir().model.faces),
@@ -221,7 +221,7 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
         .model
         .bodies
         .iter()
-        .find(|body| body.id.0 == format!("iges:model:body#D{solid_sequence}"))
+        .find(|body| body.id.as_str() == format!("iges:model:body#D{solid_sequence}"))
         .unwrap();
     assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Solid);
     let region = result
@@ -233,11 +233,11 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
         .unwrap();
     assert_eq!(region.shells.len(), 2);
     assert_eq!(
-        region.shells[0].0,
+        region.shells[0].as_str(),
         format!("iges:model:shell#D{solid_sequence}:D{outer_sequence}")
     );
     assert_eq!(
-        region.shells[1].0,
+        region.shells[1].as_str(),
         format!("iges:model:shell#D{solid_sequence}:D{void_sequence}")
     );
     let void_shell = result
@@ -305,7 +305,7 @@ fn decode_applies_manifold_solid_placement_at_body_scope_once() {
         .model
         .bodies
         .iter()
-        .find(|body| body.id.0 == "iges:model:body#D55")
+        .find(|body| body.id.as_str() == "iges:model:body#D55")
         .unwrap();
     assert_eq!(
         body.transform.as_ref().unwrap().rows(),
@@ -347,7 +347,7 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
         .model
         .bodies
         .iter()
-        .find(|body| body.id.0 == "iges:model:body#D55")
+        .find(|body| body.id.as_str() == "iges:model:body#D55")
         .unwrap();
     assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Solid);
     let region = result
@@ -410,7 +410,7 @@ fn decode_builds_shared_explicit_open_shell_topology() {
         .model
         .bodies
         .iter()
-        .find(|body| body.id.0 == "iges:model:body#D23")
+        .find(|body| body.id.as_str() == "iges:model:body#D23")
         .unwrap();
     assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Sheet);
     let shell = result
@@ -418,7 +418,7 @@ fn decode_builds_shared_explicit_open_shell_topology() {
         .model
         .shells
         .iter()
-        .find(|shell| shell.id.0 == "iges:model:shell#D23")
+        .find(|shell| shell.id.as_str() == "iges:model:shell#D23")
         .unwrap();
     assert_eq!(shell.faces.len(), 1);
     let face = result
@@ -478,7 +478,7 @@ fn decode_preserves_a_three_use_non_manifold_radial_ring() {
         .model
         .edges
         .iter()
-        .find(|edge| edge.id.0 == "iges:model:edge#D37:D23:1")
+        .find(|edge| edge.id.as_str() == "iges:model:edge#D37:D23:1")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     let uses = result
         .ir()

@@ -1344,7 +1344,10 @@ fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
             result.report().losses
         );
         let face = &result.ir().model.faces[0];
-        assert_eq!(face.surface, "iges:model:surface#D1".into());
+        assert_eq!(
+            face.surface,
+            "iges:model:surface#D1".try_into().expect("valid identity")
+        );
         assert_eq!(face.loops.len(), 2, "IGES {version}");
         let loop_roles = face
             .loops
@@ -1384,7 +1387,7 @@ fn decode_keeps_nonplane_single_parent_relations_native_and_transfers_the_bounde
         assert_eq!(result.ir().model.faces.len(), 1, "IGES {version}");
         assert_eq!(
             result.ir().model.faces[0].surface,
-            "iges:model:surface#D1".into(),
+            "iges:model:surface#D1".try_into().expect("valid identity"),
             "IGES {version}"
         );
         assert!(result.report().losses.iter().all(|loss| {

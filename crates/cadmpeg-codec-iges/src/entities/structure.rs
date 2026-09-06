@@ -1370,8 +1370,10 @@ fn predefined_associativity_valid(
 }
 
 fn vertex_position(index: &ModelIndex<'_>, vertex: &VertexId) -> Option<Point3> {
-    let vertex = index.vertices(&vertex.0)?;
-    index.points(&vertex.point.0).map(|point| point.position)
+    let vertex = index.vertices(vertex.as_str())?;
+    index
+        .points(vertex.point.as_str())
+        .map(|point| point.position)
 }
 
 fn plane_carrier(index: &ModelIndex<'_>, sequence: u32) -> Option<(Point3, Vector3)> {
@@ -1540,7 +1542,7 @@ fn bounded_plane_curve_is_simple(
             self_intersect == &Some(false)
                 && !segments.is_empty()
                 && segments.iter().all(|segment| {
-                    let Some(curve) = context.index.curves(&segment.curve.0) else {
+                    let Some(curve) = context.index.curves(segment.curve.as_str()) else {
                         return false;
                     };
                     if !active.insert(segment.curve.clone()) {
@@ -1672,7 +1674,7 @@ fn plane_boundary_edge(
         .as_ref()
         .ok_or(PlaneBoundaryError::MissingCurve)?;
     let curve = index
-        .curves(&curve_id.0)
+        .curves(curve_id.as_str())
         .ok_or(PlaneBoundaryError::MissingCurveCarrier)?;
     let geometry = curve.geometry.solved_cache().unwrap_or(&curve.geometry);
     let source_is_certified_simple = entries

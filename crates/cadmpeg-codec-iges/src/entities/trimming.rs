@@ -248,8 +248,8 @@ fn create_boundary_vertices(
 }
 
 fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<Point3> {
-    let point_id = &index.vertices(&id.0)?.point;
-    index.points(&point_id.0).map(|point| point.position)
+    let point_id = &index.vertices(id.as_str())?.point;
+    index.points(point_id.as_str()).map(|point| point.position)
 }
 
 pub(super) struct PcurveSupport<'a> {
@@ -545,7 +545,8 @@ fn surface_parameter_bound_intervals(
 ) -> Option<[Option<DeclaredInterval>; 4]> {
     let bounds = surface_parameter_bounds(index, surface_id)?;
     let mut intervals = bounds.map(|bound| bound.map(|value| DeclaredInterval::around(value, 0.0)));
-    let Some(sequence) = native_sequence_from_id(&surface_id.0, "iges:model:surface#D") else {
+    let Some(sequence) = native_sequence_from_id(surface_id.as_str(), "iges:model:surface#D")
+    else {
         return Some(intervals);
     };
     let Some(entry) = entries.get(&sequence).copied() else {
@@ -581,7 +582,7 @@ fn source_curve_control_intervals(
     }
     let result = (|| {
         let curve = ir.model.curves.iter().find(|curve| curve.id == *curve_id)?;
-        if let Some(sequence) = native_sequence_from_id(&curve_id.0, "iges:model:curve#D") {
+        if let Some(sequence) = native_sequence_from_id(curve_id.as_str(), "iges:model:curve#D") {
             let entry = entries.get(&sequence).copied()?;
             if entry.entity_type == 102 && entry.form == 0 {
                 let record = records.get(&sequence).copied()?;
@@ -637,7 +638,8 @@ fn source_curve_control_intervals(
                         })
                         .collect::<Vec<_>>()
                 };
-                let Some(sequence) = native_sequence_from_id(&curve_id.0, "iges:model:curve#D")
+                let Some(sequence) =
+                    native_sequence_from_id(curve_id.as_str(), "iges:model:curve#D")
                 else {
                     return Some(exact());
                 };
@@ -828,7 +830,7 @@ fn linear_boundary_model_points(
 ) -> Option<Vec<Point3>> {
     let mut points = Vec::new();
     for item in items {
-        let curve = index.curves(&item.model_curve.0)?;
+        let curve = index.curves(item.model_curve.as_str())?;
         let mut curve_points = match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
             CurveGeometry::Line { .. } => vec![item.start, item.end],
             CurveGeometry::Nurbs(nurbs) => {
@@ -870,7 +872,7 @@ fn linear_boundary_geometry(
     let model_points = linear_boundary_model_points(items, index, closure_tolerance)?;
     let model_plane = (*origin, *normal);
     if items.iter().any(|item| {
-        let Some(curve) = index.curves(&item.model_curve.0) else {
+        let Some(curve) = index.curves(item.model_curve.as_str()) else {
             return true;
         };
         !super::geometry::curve_geometry_coplanar(
@@ -1342,7 +1344,7 @@ fn surface_parameter_bounds(
         if !visiting.insert(surface_id.clone()) {
             return None;
         }
-        let procedural = index.procedural_surface_for_surface(&surface_id.0)?;
+        let procedural = index.procedural_surface_for_surface(surface_id.as_str())?;
         let bounds = match procedural.definition() {
             ProceduralSurfaceDefinition::Ruled { .. }
             | ProceduralSurfaceDefinition::Extrusion { .. } => procedural
@@ -1419,7 +1421,7 @@ fn edge_range_matches_curve(
     let Some(curve_id) = edge.curve.as_ref() else {
         return false;
     };
-    let Some(curve) = carrier_index.curves(&curve_id.0) else {
+    let Some(curve) = carrier_index.curves(curve_id.as_str()) else {
         return false;
     };
     let Some(range) = edge.param_range else {
@@ -1881,7 +1883,7 @@ pub(super) fn project(
         }
         let surface_id = SurfaceId::mint(format!("iges:model:surface#D{surface_sequence}"))
             .expect("identity grammar");
-        let Some(support_geometry) = carrier_index.surfaces(&surface_id.0).map(|surface| {
+        let Some(support_geometry) = carrier_index.surfaces(surface_id.as_str()).map(|surface| {
             surface
                 .geometry
                 .solved_cache()
@@ -2126,12 +2128,12 @@ pub(super) fn project(
                 .flat_map(|item| {
                     [
                         BoundaryVertexSourceEndpoint {
-                            edge: item.source_edge.id.0.clone(),
+                            edge: item.source_edge.id.as_str().to_owned(),
                             endpoint: BoundaryEndpoint::Start,
                             position: item.start,
                         },
                         BoundaryVertexSourceEndpoint {
-                            edge: item.source_edge.id.0.clone(),
+                            edge: item.source_edge.id.as_str().to_owned(),
                             endpoint: BoundaryEndpoint::End,
                             position: item.end,
                         },

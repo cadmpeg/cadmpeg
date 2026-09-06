@@ -85,7 +85,7 @@ fn sectioned_area_curves_coplanar(
     sequences.iter().all(|sequence| {
         let curve_id =
             CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar");
-        let Some(curve) = index.curves(&curve_id.0) else {
+        let Some(curve) = index.curves(curve_id.as_str()) else {
             return false;
         };
         if !active.insert(curve_id.clone()) {

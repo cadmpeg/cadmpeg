@@ -1129,7 +1129,7 @@ pub(super) fn curve_geometry_coplanar(
         CurveGeometry::Nurbs(curve) => curve.control_points().iter().copied().all(point_valid),
         CurveGeometry::Polyline(polyline) => polyline.points().iter().copied().all(point_valid),
         CurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
-            let Some(curve) = index.curves(&segment.curve.0) else {
+            let Some(curve) = index.curves(segment.curve.as_str()) else {
                 return false;
             };
             if !active.insert(segment.curve.clone()) {

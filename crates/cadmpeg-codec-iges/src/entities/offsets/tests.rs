@@ -257,7 +257,7 @@ fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D3")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .unwrap();
     let cadmpeg_ir::geometry::CurveGeometry::Circle { radius, .. } = *offset
         .geometry
@@ -272,7 +272,7 @@ fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
         .model
         .edges
         .iter()
-        .find(|edge| edge.id.0 == "iges:model:edge#D3")
+        .find(|edge| edge.id.as_str() == "iges:model:edge#D3")
         .unwrap();
     assert_eq!(edge.param_range, Some([0.0, std::f64::consts::FRAC_PI_2]));
     assert_eq!(result.ir().model.procedural_curves.len(), 1);
@@ -297,7 +297,7 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D3")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("placed offset carrier");
     let cadmpeg_ir::geometry::CurveGeometry::Circle {
         center,
@@ -324,7 +324,7 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
     else {
         panic!("expected an offset construction");
     };
-    assert_eq!(source.0, "iges:model:curve#D3-placed-source");
+    assert_eq!(source.as_str(), "iges:model:curve#D3-placed-source");
     assert!(vector_distance(*normal, Vector3::new(0.0, 0.0, 1.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
@@ -347,7 +347,7 @@ fn decode_places_uniform_offset_line_with_a_proper_transform() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D3")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("placed line offset carrier");
     let cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } = *offset
         .geometry
@@ -363,7 +363,7 @@ fn decode_places_uniform_offset_line_with_a_proper_transform() {
         .model
         .points
         .iter()
-        .find(|point| point.id.0 == "iges:model:point#D3:end")
+        .find(|point| point.id.as_str() == "iges:model:point#D3:end")
         .expect("placed line offset end point");
     assert!(end.position.distance(Point3::new(4.5, 2.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
@@ -387,7 +387,7 @@ fn decode_corrects_offset_normal_handedness_for_a_reflection() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D3")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("reflected offset carrier");
     let cadmpeg_ir::geometry::CurveGeometry::Circle {
         center,
@@ -410,7 +410,7 @@ fn decode_corrects_offset_normal_handedness_for_a_reflection() {
         .model
         .points
         .iter()
-        .find(|point| point.id.0 == "iges:model:point#D3:start")
+        .find(|point| point.id.as_str() == "iges:model:point#D3:start")
         .expect("reflected offset start point");
     assert!(start.position.distance(Point3::new(3.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
@@ -432,7 +432,7 @@ fn decode_maps_absolute_arc_parameters_to_the_neutral_domain() {
         .model
         .edges
         .iter()
-        .find(|edge| edge.id.0 == "iges:model:edge#D3")
+        .find(|edge| edge.id.as_str() == "iges:model:edge#D3")
         .expect("offset arc");
     assert_eq!(edge.param_range, Some([0.0, std::f64::consts::FRAC_PI_2]));
     let start = result
@@ -502,7 +502,7 @@ fn decode_applies_declared_real_significance_to_curve_offset_normals() {
             .model
             .curves
             .iter()
-            .any(|curve| curve.id.0 == "iges:model:curve#D3");
+            .any(|curve| curve.id.as_str() == "iges:model:curve#D3");
         assert_eq!(offset, decoded, "{normal_z}");
         if !decoded {
             assert!(result.report().losses.iter().any(|loss| loss
@@ -530,7 +530,7 @@ fn decode_solves_a_parameter_linear_line_offset() {
             .model
             .curves
             .iter()
-            .find(|curve| curve.id.0 == "iges:model:curve#D3")
+            .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
             .unwrap();
         let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
             offset.geometry.solved_cache().unwrap_or(&offset.geometry)
@@ -584,7 +584,7 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .unwrap();
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
         offset.geometry.solved_cache().unwrap_or(&offset.geometry)
@@ -617,7 +617,7 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
     else {
         panic!("expected a retained coordinate-function offset law");
     };
-    assert_eq!(function.0, "iges:model:curve#D3");
+    assert_eq!(function.as_str(), "iges:model:curve#D3");
     assert_eq!(*coordinate, 2);
     assert_eq!(*basis, cadmpeg_ir::geometry::CurveOffsetLawBasis::Parameter);
     assert_eq!(*function_parameter_offset, 0.0);

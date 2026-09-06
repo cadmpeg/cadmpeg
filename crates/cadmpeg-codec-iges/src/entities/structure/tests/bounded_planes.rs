@@ -42,9 +42,9 @@ fn bounded_plane_builds_a_sheet_face_in_v4_and_v5() {
             .model
             .faces
             .iter()
-            .find(|face| face.id.0 == "iges:model:face#bounded-plane-D1")
+            .find(|face| face.id.as_str() == "iges:model:face#bounded-plane-D1")
             .unwrap();
-        assert_eq!(face.surface.0, "iges:model:surface#D1");
+        assert_eq!(face.surface.as_str(), "iges:model:surface#D1");
         assert_eq!(face.loops.len(), 1);
         let loop_ = result
             .ir()
@@ -65,7 +65,7 @@ fn bounded_plane_builds_a_sheet_face_in_v4_and_v5() {
             .iter()
             .find(|coedge| coedge.id == loop_.coedges()[0])
             .unwrap();
-        assert_eq!(coedge.edge.0, "iges:model:edge#bounded-plane-D1");
+        assert_eq!(coedge.edge.as_str(), "iges:model:edge#bounded-plane-D1");
         assert!(!has_entity_projection_loss(&result), "{expected_version}");
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
         assert!(
@@ -89,7 +89,7 @@ fn bounded_plane_requires_a_closed_boundary_curve() {
         .model
         .surfaces
         .iter()
-        .any(|surface| surface.id.0 == "iges:model:surface#D1"));
+        .any(|surface| surface.id.as_str() == "iges:model:surface#D1"));
     assert!(result.ir().model.faces.is_empty());
     assert!(has_entity_projection_loss(&result));
 }
@@ -119,7 +119,7 @@ fn bounded_plane_accepts_a_simple_piecewise_linear_nurbs_boundary() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#bounded-plane-D1")
+        .find(|face| face.id.as_str() == "iges:model:face#bounded-plane-D1")
         .expect("piecewise-linear NURBS boundary face");
     assert_eq!(face.loops.len(), 1);
     assert!(
@@ -211,7 +211,7 @@ fn bounded_plane_accepts_a_simple_composite_line_boundary() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#bounded-plane-D1")
+        .find(|face| face.id.as_str() == "iges:model:face#bounded-plane-D1")
         .expect("composite line boundary face");
     assert_eq!(face.loops.len(), 1);
     assert!(
@@ -274,7 +274,7 @@ fn negative_bounded_plane_without_an_owner_is_not_invented_as_a_face() {
         .model
         .surfaces
         .iter()
-        .any(|surface| surface.id.0 == "iges:model:surface#D1"));
+        .any(|surface| surface.id.as_str() == "iges:model:surface#D1"));
     assert!(result.ir().model.faces.is_empty());
     assert!(has_entity_projection_loss(&result));
 }

@@ -720,12 +720,12 @@ pub(super) fn project(
     if !body_definitions.is_empty() {
         for (position, surface) in ir.model.surfaces.iter().enumerate() {
             surface_positions
-                .entry(surface.id.0.clone())
+                .entry(surface.id.as_str().to_owned())
                 .or_insert(position);
         }
         for (position, curve) in ir.model.curves.iter().enumerate() {
             curve_positions
-                .entry(curve.id.0.clone())
+                .entry(curve.id.as_str().to_owned())
                 .or_insert(position);
         }
     }
@@ -777,7 +777,7 @@ pub(super) fn project(
                     SurfaceId::mint(format!("iges:model:surface#D{}", face_definition.surface))
                         .expect("identity grammar");
                 let Some(support_geometry) = surface_positions
-                    .get(surface_id.0.as_str())
+                    .get(surface_id.as_str())
                     .and_then(|position| ir.model.surfaces.get(*position))
                     .map(|surface| surface.geometry.clone())
                 else {
@@ -940,20 +940,17 @@ pub(super) fn project(
                                 let mut positions = BTreeMap::<&str, Vec<usize>>::new();
                                 for (position, edge) in ir.model.edges.iter().enumerate() {
                                     if let Some(curve) = &edge.curve {
-                                        positions
-                                            .entry(curve.0.as_str())
-                                            .or_default()
-                                            .push(position);
+                                        positions.entry(curve.as_str()).or_default().push(position);
                                     }
                                 }
                                 positions
                             });
-                            let Some(candidates) = curve_edges.get(curve_id.0.as_str()) else {
+                            let Some(candidates) = curve_edges.get(curve_id.as_str()) else {
                                 valid = false;
                                 break;
                             };
                             let Some(curve) = curve_positions
-                                .get(curve_id.0.as_str())
+                                .get(curve_id.as_str())
                                 .and_then(|position| ir.model.curves.get(*position))
                             else {
                                 losses.push(entity_loss(

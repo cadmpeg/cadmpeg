@@ -92,7 +92,7 @@ fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
             .model
             .surfaces
             .iter()
-            .any(|surface| surface.id.0 == "iges:model:surface#D1"));
+            .any(|surface| surface.id.as_str() == "iges:model:surface#D1"));
         assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
         assert_eq!(result.report().losses.len(), 1);
         assert_eq!(
@@ -185,7 +185,7 @@ fn decode_projects_an_interval_certified_linear_bezier_ruled_surface() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0 == "iges:model:surface#D5")
+        .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
         .and_then(
             |surface| match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
                 SurfaceGeometry::Nurbs(surface) => Some(surface),
@@ -229,7 +229,7 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
             .model
             .curves
             .iter()
-            .find(|curve| curve.id.0 == format!("iges:model:curve#D{sequence}"))
+            .find(|curve| curve.id.as_str() == format!("iges:model:curve#D{sequence}"))
             .expect("rail curve");
         cadmpeg_ir::eval::curve_point(
             curve.geometry.solved_cache().unwrap_or(&curve.geometry),
@@ -521,7 +521,7 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0 == "iges:model:surface#D5")
+        .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
         .expect("line revolution surface");
     let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
         surface.geometry.solved_cache().unwrap_or(&surface.geometry)
@@ -543,7 +543,7 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
     else {
         panic!("expected an exact revolution definition");
     };
-    assert_eq!(directrix.0, "iges:model:curve#D3");
+    assert_eq!(directrix.as_str(), "iges:model:curve#D3");
     assert!(matches!(
         result
             .ir()
@@ -636,7 +636,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id.0 == "iges:model:surface#D5")
+            .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
             .expect("hyperbola revolution surface");
         let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
             surface.geometry.solved_cache().unwrap_or(&surface.geometry)
@@ -659,7 +659,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
         else {
             panic!("expected an exact revolution definition");
         };
-        assert_eq!(directrix.0, "iges:model:curve#D3");
+        assert_eq!(directrix.as_str(), "iges:model:curve#D3");
         assert_eq!(*angular_interval, [0.0, std::f64::consts::FRAC_PI_2]);
         let directrix_geometry = &result
             .ir()
@@ -715,7 +715,7 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
             .model
             .faces
             .iter()
-            .any(|face| face.id.0 == "iges:model:face#D13"),
+            .any(|face| face.id.as_str() == "iges:model:face#D13"),
         "losses={:#?}",
         result.report().losses
     );
@@ -724,7 +724,7 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0 == "iges:model:surface#D5")
+        .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
         .expect("trimmed revolution support");
     assert!(matches!(
         surface.geometry.solved_cache(),
@@ -787,7 +787,7 @@ fn decode_places_a_surface_of_revolution_and_its_procedural_carriers_once() {
         panic!("expected a revolution definition");
     };
     assert_eq!(axis_origin.x, 10.0);
-    assert_eq!(directrix.0, "iges:model:curve#D7-placed-generatrix");
+    assert_eq!(directrix.as_str(), "iges:model:curve#D7-placed-generatrix");
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -885,7 +885,7 @@ fn decode_solves_a_tabulated_surface_from_a_type_142_model_carrier() {
     else {
         panic!("expected an extrusion definition");
     };
-    assert_eq!(directrix.0, "iges:model:curve#D1");
+    assert_eq!(directrix.as_str(), "iges:model:curve#D1");
     assert!(
         result.report().losses.is_empty(),
         "{:?}",
@@ -917,7 +917,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id.0 == "iges:model:surface#D3")
+            .find(|surface| surface.id.as_str() == "iges:model:surface#D3")
             .expect("hyperbola tabulated surface");
         let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
             surface.geometry.solved_cache().unwrap_or(&surface.geometry)
@@ -941,7 +941,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
         else {
             panic!("expected an exact extrusion definition");
         };
-        assert_eq!(directrix.0, "iges:model:curve#D1");
+        assert_eq!(directrix.as_str(), "iges:model:curve#D1");
         assert_eq!(
             *native_position,
             Point3::new(3.086_161_269_630_487, 3.525_603_580_931_404, 2.0)
@@ -1013,7 +1013,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id.0 == "iges:model:surface#D5")
+            .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
             .expect("placed tabulated surface");
         let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
             surface.geometry.solved_cache().unwrap_or(&surface.geometry)
@@ -1037,7 +1037,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
         else {
             panic!("expected an exact placed extrusion definition");
         };
-        assert_eq!(directrix.0, "iges:model:curve#D5-placed-directrix");
+        assert_eq!(directrix.as_str(), "iges:model:curve#D5-placed-directrix");
         assert!(
             native_position.distance(Point3::new(
                 13.086_161_269_630_487,
@@ -1104,7 +1104,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id.0 == "iges:model:surface#D5")
+            .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
             .expect("placed NURBS tabulated surface");
         assert!(matches!(
             surface.geometry.solved_cache(),
@@ -1128,7 +1128,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
         else {
             panic!("expected an exact placed NURBS extrusion definition");
         };
-        assert_eq!(directrix.0, "iges:model:curve#D5-placed-directrix");
+        assert_eq!(directrix.as_str(), "iges:model:curve#D5-placed-directrix");
         assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 2.0));
         assert_eq!(*native_position, Point3::new(10.0, 20.0, 32.0));
         let directrix_geometry = &result
@@ -1295,7 +1295,7 @@ fn decode_solves_signed_analytic_offset_surfaces() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id.0 == "iges:model:surface#D3")
+            .find(|surface| surface.id.as_str() == "iges:model:surface#D3")
             .unwrap();
         let cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } = *offset
             .geometry
@@ -1332,7 +1332,7 @@ fn decode_uses_the_cylinder_normal_at_the_designated_parameters() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id.0 == "iges:model:surface#D7")
+            .find(|surface| surface.id.as_str() == "iges:model:surface#D7")
             .expect("offset cylinder");
         let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder { radius, .. } = *surface
             .geometry
@@ -1376,7 +1376,7 @@ fn decode_applies_declared_real_significance_to_offset_surface_indicators() {
             .model
             .surfaces
             .iter()
-            .any(|surface| surface.id.0 == "iges:model:surface#D3");
+            .any(|surface| surface.id.as_str() == "iges:model:surface#D3");
         assert_eq!(offset, decoded, "{components:?}");
         if !decoded {
             assert!(result.report().losses.iter().any(|loss| {
