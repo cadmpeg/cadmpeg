@@ -4283,7 +4283,7 @@ fn attach_parasolid_topology_string_attributes(
             .push(string_use);
     }
     for uses in uses_by_entity.values_mut() {
-        uses.sort_by_key(|string_use| string_use.reference_ordinal);
+        uses.sort_by_key(|string_use| string_use.position);
     }
     for context in &attribute_index.contexts {
         let reference = context.reference;
@@ -4295,7 +4295,7 @@ fn attach_parasolid_topology_string_attributes(
             let id = topology_attribute_id(
                 reference,
                 "topology-string-attribute",
-                string_use.reference_ordinal,
+                string_use.position.reference_ordinal(),
                 context.id_suffix,
             );
             let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
@@ -4306,7 +4306,7 @@ fn attach_parasolid_topology_string_attributes(
             annotations.derived(&id.0, "name");
             let generic_name = format!(
                 "parasolid_type_84_reference_{}",
-                string_use.reference_ordinal
+                string_use.position.reference_ordinal()
             );
             let name = attribute_index
                 .attribute_names
@@ -4663,7 +4663,7 @@ fn attach_parasolid_topology_numeric_attributes(
             .push(numeric_use);
     }
     for uses in uses_by_entity.values_mut() {
-        uses.sort_by_key(|numeric_use| numeric_use.reference_ordinal);
+        uses.sort_by_key(|numeric_use| numeric_use.position);
     }
     for context in &attribute_index.contexts {
         let reference = context.reference;
@@ -4706,7 +4706,7 @@ fn attach_parasolid_topology_numeric_attributes(
             let id = topology_attribute_id(
                 reference,
                 "topology-numeric-attribute",
-                numeric_use.reference_ordinal,
+                numeric_use.position.reference_ordinal(),
                 context.id_suffix,
             );
             let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
@@ -4717,7 +4717,7 @@ fn attach_parasolid_topology_numeric_attributes(
             annotations.derived(&id.0, "name");
             let generic_name = format!(
                 "parasolid_type_{lane}_reference_{}",
-                numeric_use.reference_ordinal
+                numeric_use.position.reference_ordinal()
             );
             let name = attribute_index
                 .attribute_names
@@ -4785,7 +4785,7 @@ fn attach_parasolid_topology_structured_attributes(
             .push(structured_use);
     }
     for uses in uses_by_entity.values_mut() {
-        uses.sort_by_key(|structured_use| structured_use.reference_ordinal);
+        uses.sort_by_key(|structured_use| structured_use.position);
     }
     for context in &attribute_index.contexts {
         let reference = context.reference;
@@ -4870,7 +4870,7 @@ fn attach_parasolid_topology_structured_attributes(
             let id = topology_attribute_id(
                 reference,
                 "topology-structured-attribute",
-                structured_use.reference_ordinal,
+                structured_use.position.reference_ordinal(),
                 context.id_suffix,
             );
             let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
@@ -4881,7 +4881,7 @@ fn attach_parasolid_topology_structured_attributes(
             annotations.derived(&id.0, "name");
             let generic_name = format!(
                 "parasolid_type_{family}_reference_{}",
-                structured_use.reference_ordinal
+                structured_use.position.reference_ordinal()
             );
             let name = attribute_index
                 .attribute_names
