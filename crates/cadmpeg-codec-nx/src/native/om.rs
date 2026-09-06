@@ -11,6 +11,8 @@ pub(crate) mod material_texture;
 pub(crate) mod object_uuid;
 mod reference_wire;
 mod state_index_wire;
+pub(crate) mod journal_group;
+use journal_group::OmOperationStateJournalGroup;
 use material_texture::MaterialTextureAsset;
 
 pub(crate) mod column_row;
@@ -119,27 +121,6 @@ impl OmAuditTrailRow {
     pub fn end_offset(&self) -> u64 {
         self.source_offset + self.record.byte_len() as u64
     }
-}
-
-/// One anchored state-journal group from a feature-history section.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OmOperationStateJournalGroup {
-    /// Globally unique group identity.
-    pub id: String,
-    /// Owning feature-history section link.
-    pub section_link: String,
-    /// Zero-based group ordinal in serialized order.
-    pub ordinal: u32,
-    /// Exact two-byte group selector.
-    pub selector: [u8; 2],
-    /// Ordered journal rows.
-    pub rows: Vec<crate::om::state_journal::JournalRow>,
-    /// Directory entry containing the feature-history section.
-    pub source_entry: String,
-    /// Absolute file offset of the `04` group opener.
-    pub source_offset: u64,
-    /// Absolute exclusive end offset after the final row.
-    pub end_offset: u64,
 }
 
 /// One row from the feature-history operation-state counter map.
@@ -600,20 +581,14 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
                 .enumerate()
                 .filter_map(move |(ordinal, group)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let rows = group.rows.into_iter()
-                        .map(|row| row.into_absolute(entry_offset))
-                        .collect::<Option<Vec<_>>>()?;
                     Some(OmOperationStateJournalGroup {
                         id: format!(
                             "nx:feature-history:operation-state-journal-group#{section_key}-{ordinal:010}"
                         ),
                         section_link: link.id.clone(),
                         ordinal,
-                        selector: group.selector,
-                        rows,
+                        frame: group.into_absolute(entry_offset)?,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + group.span.offset() as u64,
-                        end_offset: entry_offset + group.span.end_offset() as u64,
                     })
                 })
                 .collect()

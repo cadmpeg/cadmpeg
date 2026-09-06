@@ -23,9 +23,10 @@ pub(crate) mod unlabeled_record;
 use crate::native::om::column_row::{
     DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockTargetIndexRow,
 };
+use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::om::{
     data_blocks, DataBlockColumnIndexTable, DataBlockReference, DataBlockRole, Expression,
-    ExpressionDeclaration, OmOperationStateJournalGroup, OmSchemaRole,
+    ExpressionDeclaration, OmSchemaRole,
 };
 use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
 use crate::om::binary64_pair::{
@@ -5246,7 +5247,7 @@ pub fn feature_operation_state_journal_uses(
         .collect::<BTreeMap<_, _>>();
     let mut journal_rows = BTreeMap::new();
     for group in journal_groups {
-        for (row_ordinal, row) in group.rows.iter().enumerate() {
+        for (row_ordinal, row) in group.frame.rows().iter().enumerate() {
             let Some(row_ordinal) = u32::try_from(row_ordinal).ok() else {
                 continue;
             };

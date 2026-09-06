@@ -6,11 +6,12 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
 use crate::native::features::FeatureOperationStateJournalUse;
+use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::om::{
     audit_trail_rows, operation_state_counters, operation_state_groups,
     operation_state_journal_groups, operation_state_messages, operation_state_slot_lanes,
     operation_state_statuses, OmAuditTrailRow, OmOperationStateCounter,
-    OmOperationStateJournalGroup, OmOperationStateMessage, OmOperationStateMessageSeverity,
+    OmOperationStateMessage, OmOperationStateMessageSeverity,
     OmOperationStateSlotLane, OmOperationStateStatus, OmRollForwardStateGroup,
     OmRollForwardStateRow,
 };
@@ -129,17 +130,17 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
 
     let groups = operation_state_journal_groups(&container);
     assert_eq!(groups.len(), 2);
-    assert_eq!(groups[0].selector, [0x01, 0x02]);
-    assert_eq!(groups[0].rows.len(), 1);
-    assert_eq!(groups[0].rows[0].value().marker(), 0xc0);
-    assert_eq!(groups[0].rows[0].value().value(), 0x0001_0203);
-    assert_eq!(groups[0].rows[0].schema().value(), 0x310);
-    assert_eq!(groups[0].rows[0].ordinal().value(), 2);
-    assert_eq!(groups[1].selector, [0x05, 0x06]);
-    assert_eq!(groups[1].rows[0].value().marker(), 0xa0);
-    assert_eq!(groups[1].rows[0].value().value(), 0x0102);
-    assert_eq!(groups[1].rows[0].ordinal().value(), 3);
-    assert!(groups[1].source_offset > groups[0].source_offset);
+    assert_eq!(groups[0].frame.selector(), [0x01, 0x02]);
+    assert_eq!(groups[0].frame.rows().len(), 1);
+    assert_eq!(groups[0].frame.rows().first().value().marker(), 0xc0);
+    assert_eq!(groups[0].frame.rows().first().value().value(), 0x0001_0203);
+    assert_eq!(groups[0].frame.rows().first().schema().value(), 0x310);
+    assert_eq!(groups[0].frame.rows().first().ordinal().value(), 2);
+    assert_eq!(groups[1].frame.selector(), [0x05, 0x06]);
+    assert_eq!(groups[1].frame.rows().first().value().marker(), 0xa0);
+    assert_eq!(groups[1].frame.rows().first().value().value(), 0x0102);
+    assert_eq!(groups[1].frame.rows().first().ordinal().value(), 3);
+    assert!(groups[1].frame.offset() > groups[0].frame.offset());
 
     let result = NxCodec
         .decode(

@@ -6,6 +6,7 @@
 //! emission order; `phase` splits semantic islands for [`super::attach`].
 //! Stream choice (`nx:container` vs `nx:s{ordinal}`) lives in the `note` fn.
 
+use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
 use crate::native::features::object_frame::DataBlockObjectFrame;
@@ -305,7 +306,7 @@ impl ContainerNoted for OmAuditTrailRow {
 }
 impl ContainerNoted for OmOperationStateJournalGroup {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.frame.offset())
     }
 }
 impl ContainerNoted for OmOperationStateCounter {

@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::native::features::operation_record::FeatureOperationRecord;
-use crate::native::om::OmOperationStateJournalGroup;
+use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::om::state_journal::JournalRow;
 use crate::test_support::{
     composed_feature_history_payload, composed_feature_history_section, prt_with_named_payloads,
@@ -510,15 +510,13 @@ fn journal_group(
     section_link: &str,
     rows: Vec<JournalRow>,
 ) -> OmOperationStateJournalGroup {
+    let source_offset = rows[0].offset() - 4;
     OmOperationStateJournalGroup {
         id: id.to_string(),
         section_link: section_link.to_string(),
         ordinal: 0,
-        selector: [4, 0],
-        rows,
+        frame: crate::om::journal_group::JournalGroup::new([4, 0], source_offset, rows).unwrap(),
         source_entry: "/Root/UG_PART/UG_PART".to_string(),
-        source_offset: 480,
-        end_offset: 560,
     }
 }
 
@@ -566,7 +564,7 @@ fn operation_terminal_ordinal_joins_unique_section_journal_row() {
     let group = journal_group(
         "nx:feature-history:operation-state-journal-group#0000000000-0000000000",
         &label.section_link,
-        vec![journal_row(6, 500), journal_row(7, 520)],
+        vec![journal_row(6, 507), journal_row(7, 520)],
     );
     let frame = terminal_frame(&record.id, 7);
 

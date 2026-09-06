@@ -2,7 +2,8 @@
 //! Frame NX object-model entities using external boundary and identity arrays.
 
 pub(crate) mod state_journal;
-use state_journal::JournalRow;
+pub(crate) mod journal_group;
+use journal_group::JournalGroup;
 pub(crate) mod state_counter;
 use state_counter::StateCounterMap;
 pub(crate) mod column_row;
@@ -758,17 +759,6 @@ pub struct OperationStateGroupTable<'a> {
     pub groups: Vec<OperationStateGroup>,
     /// Exact table-boundary bytes after the final complete group.
     pub trailing_bytes: &'a [u8],
-}
-
-/// One state-journal group.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationStateJournalGroup {
-    /// Checked source position within its record area.
-    pub span: SourceSpan,
-    /// Two opener selector bytes.
-    pub selector: [u8; 2],
-    /// Journal rows in serialized order.
-    pub rows: Vec<JournalRow<usize>>,
 }
 
 /// One length-framed UTF-8 string in a bounded operation payload.
@@ -1609,7 +1599,7 @@ impl<'a> Section<'a> {
     /// separator form may be skipped when it leads to another complete group.
     /// Any other byte stops the journal so later record-region data cannot
     /// become state.
-    pub fn operation_state_journal_groups(&self) -> Option<Vec<OperationStateJournalGroup>> {
+    pub fn operation_state_journal_groups(&self) -> Option<Vec<JournalGroup<usize>>> {
         let is_feature_history = self
             .types
             .iter()
@@ -5117,38 +5107,6 @@ pub fn audit_trail_rows(
     Some(rows)
 }
 
-fn operation_state_journal_group_at(
-    bytes: &[u8],
-    at: usize,
-    end: usize,
-    base_offset: usize,
-) -> Option<OperationStateJournalGroup> {
-    if bytes.get(at) != Some(&0x04) {
-        return None;
-    }
-    let selector = [*bytes.get(at + 1)?, *bytes.get(at + 2)?];
-    if bytes.get(at + 3) != Some(&0) {
-        return None;
-    }
-    let mut cursor = at + 4;
-    if bytes.get(cursor) == Some(&0) {
-        cursor += 1;
-    }
-    let mut rows = Vec::new();
-    while cursor < end {
-        let Some(row) = JournalRow::read(bytes, cursor, end, base_offset) else {
-            break;
-        };
-        cursor = cursor.checked_add(row.byte_len())?;
-        rows.push(row);
-    }
-    (!rows.is_empty()).then_some(OperationStateJournalGroup {
-        span: SourceSpan::new(base_offset, at, cursor)?,
-        selector,
-        rows,
-    })
-}
-
 fn operation_state_journal_start(bytes: &[u8], product_end: usize) -> Option<usize> {
     let marker = bytes
         .get(product_end..)?
@@ -5186,7 +5144,7 @@ fn operation_state_journal_groups_before_boundary(
     start: usize,
     end: usize,
     base_offset: usize,
-) -> Option<Vec<OperationStateJournalGroup>> {
+) -> Option<Vec<JournalGroup<usize>>> {
     if start >= end || end > bytes.len() {
         return None;
     }
@@ -5194,27 +5152,27 @@ fn operation_state_journal_groups_before_boundary(
     let mut at = start;
     let mut previous_ordinal = None;
     loop {
-        let Some(group) = operation_state_journal_group_at(bytes, at, end, base_offset) else {
+        let Some(group) = JournalGroup::read(bytes, at, end, base_offset) else {
             let mut next = at;
             while bytes.get(next..next + 2) == Some(&[0x04, 0x00]) {
                 next += 2;
             }
             if next == at
-                || operation_state_journal_group_at(bytes, next, end, base_offset).is_none()
+                || JournalGroup::read(bytes, next, end, base_offset).is_none()
             {
                 break;
             }
             at = next;
             continue;
         };
-        for row in &group.rows {
+        for row in group.rows().iter() {
             let ordinal = row.ordinal().value();
             if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
                 return None;
             }
             previous_ordinal = Some(ordinal);
         }
-        at = group.span.local_end();
+        at = group.end_offset().checked_sub(base_offset)?;
         groups.push(group);
     }
     (!groups.is_empty()).then_some(groups)
@@ -5227,15 +5185,15 @@ pub fn operation_state_journal(
     start: usize,
     end: usize,
     base_offset: usize,
-) -> Option<Vec<OperationStateJournalGroup>> {
+) -> Option<Vec<JournalGroup<usize>>> {
     if start >= end || end > bytes.len() {
         return None;
     }
     let mut groups = Vec::new();
     let mut at = start;
     while at < end {
-        let group = operation_state_journal_group_at(bytes, at, end, base_offset)?;
-        at = group.span.local_end();
+        let group = JournalGroup::read(bytes, at, end, base_offset)?;
+        at = group.end_offset().checked_sub(base_offset)?;
         groups.push(group);
     }
     (!groups.is_empty() && at == end).then_some(groups)
