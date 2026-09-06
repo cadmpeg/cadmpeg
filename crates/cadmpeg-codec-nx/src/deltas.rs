@@ -8,7 +8,7 @@ use std::num::NonZeroU16;
 pub(crate) mod record_kind;
 pub(crate) mod reference_lanes;
 pub(crate) mod inline_schema_fields;
-use inline_schema_fields::{InlineBodyStateFields, InlineSchemaFields};
+use inline_schema_fields::{InlineBodyStateFields, InlineSchemaFields, TermUseValues};
 use reference_lanes::{MapEntries, TaggedReferences};
 pub(crate) mod packet_marker;
 pub(crate) mod xmt_reference;
@@ -1903,7 +1903,7 @@ fn inline_schema_declaration(
             (state_references.as_slice() == descending_from_xmt).then_some(())?;
             let (term_reference, numeric_values, end) =
                 type_41_schema_state(stream, state_end, gap_end)?;
-            (term_reference == state_references[1]).then_some(())?;
+            (u32::from(term_reference) == state_references[1]).then_some(())?;
             return Some(InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type38 {
                     xmt,
@@ -2069,7 +2069,7 @@ fn type_41_schema_state(
     stream: &[u8],
     offset: usize,
     gap_end: usize,
-) -> Option<(u32, [f64; 11], usize)> {
+) -> Option<(NonNullXmt, TermUseValues, usize)> {
     (stream.get(offset..offset.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
         == Some(TYPE_41_SCHEMA_HEADER))
     .then_some(())?;
@@ -2077,18 +2077,17 @@ fn type_41_schema_state(
     (View::u32_be_at(stream, at) == Some(1)).then_some(())?;
     at = at.checked_add(4)?;
     let (reference, consumed) = read_xmt(stream, at)?;
-    (reference > 1).then_some(())?;
+    let reference = NonNullXmt::try_from(reference).ok()?;
     at = at.checked_add(consumed)?;
     (stream.get(at..at.checked_add(2)?) == Some(&[0x4c, 0x3f])).then_some(())?;
     at = at.checked_add(2)?;
     let mut numeric_values = [0.0; 11];
     for value in &mut numeric_values {
         *value = View::f64_be_at(stream, at)?;
-        value.is_finite().then_some(())?;
         at = at.checked_add(8)?;
     }
     (at <= gap_end).then_some(())?;
-    Some((reference, numeric_values, at))
+    Some((reference, TermUseValues::try_from(numeric_values).ok()?, at))
 }
 
 fn inline_body_states(stream: &[u8], census: &Census) -> Vec<InlineBodyState> {
@@ -4086,7 +4085,7 @@ mod inline_schema_tests {
                     linked_references: vec![11, 12],
                     state_references: vec![40_003, 40_002, 40_001],
                     numeric_values: Some(
-                        [0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,]
+                        [0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,].try_into().unwrap()
                     ),
                 },
                 offset: 0,
@@ -4236,8 +4235,8 @@ mod inline_schema_tests {
             census.inline_schema_declarations,
             [InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type41 {
-                    reference: 86,
-                    numeric_values: [0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,],
+                    reference: 86.try_into().unwrap(),
+                    numeric_values: [0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,].try_into().unwrap(),
                 },
                 offset: 0,
                 end: bytes.len(),

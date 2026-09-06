@@ -2,6 +2,7 @@
 //! Shared source and native inline-schema payloads.
 
 use serde::{Deserialize, Serialize};
+use super::xmt_reference::NonNullXmt;
 
 /// Body of an inline schema declaration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -86,14 +87,14 @@ pub(crate) enum InlineSchemaFields {
         /// Non-null status-zero declaration-state references.
         state_references: Vec<u32>,
         /// Eleven finite binary64 values from the optional nested term-use state.
-        numeric_values: Option<[f64; 11]>,
+        numeric_values: Option<TermUseValues>,
     },
     /// Type 41 term-use declaration state.
     Type41 {
         /// Non-null stream-local term-use reference.
-        reference: u32,
+        reference: NonNullXmt,
         /// Eleven finite binary64 state values.
-        numeric_values: [f64; 11],
+        numeric_values: TermUseValues,
     },
 }
 
@@ -133,3 +134,35 @@ where
         .unwrap_or_else(default_type38_leading_statuses))
 }
 
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "[f64; 11]", into = "[f64; 11]")]
+pub(crate) struct TermUseValues([f64; 11]);
+
+impl TryFrom<[f64; 11]> for TermUseValues {
+    type Error = &'static str;
+    fn try_from(values: [f64; 11]) -> Result<Self, Self::Error> {
+        if values.iter().any(|value| !value.is_finite()) {
+            return Err("numeric_values: require eleven finite values");
+        }
+        Ok(Self(values))
+    }
+}
+impl From<TermUseValues> for [f64; 11] {
+    fn from(values: TermUseValues) -> Self { values.0 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{InlineSchemaFields, TermUseValues};
+
+    #[test]
+    fn term_use_wire_preserves_values_and_rejects_nonfinite_construction() {
+        let json = r#"{"schema":"type41","reference":86,"numeric_values":[0.5,-0.25,1.0,2.0,3.0,4.0,5.0,6.0,7.0,-0.0,9.0]}"#;
+        let fields: InlineSchemaFields = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&fields).unwrap(), json);
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(TermUseValues::try_from([value; 11]).unwrap_err().contains("numeric_values"));
+        }
+    }
+}
