@@ -451,13 +451,44 @@ pub struct SurfaceCurve {
     pub pos: usize,
 }
 
+/// Admitted serialized offset-surface status discriminator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "char", into = "char")]
+pub enum OffsetSurfaceDiscriminator {
+    V,
+    I,
+    U,
+}
+
+impl From<OffsetSurfaceDiscriminator> for char {
+    fn from(value: OffsetSurfaceDiscriminator) -> Self {
+        match value {
+            OffsetSurfaceDiscriminator::V => 'V',
+            OffsetSurfaceDiscriminator::I => 'I',
+            OffsetSurfaceDiscriminator::U => 'U',
+        }
+    }
+}
+
+impl TryFrom<char> for OffsetSurfaceDiscriminator {
+    type Error = &'static str;
+    fn try_from(value: char) -> Result<Self, Self::Error> {
+        match value {
+            'V' => Ok(Self::V),
+            'I' => Ok(Self::I),
+            'U' => Ok(Self::U),
+            _ => Err("invalid offset-surface discriminator"),
+        }
+    }
+}
+
 /// A type-60 offset surface referencing its support carrier.
 #[derive(Debug, Clone, Copy)]
 pub struct OffsetSurface {
     /// Cross-reference index of the offset surface record.
     pub xmt: u32,
     /// Serialized `V`, `I`, or `U` discriminator.
-    pub discriminator: char,
+    pub discriminator: OffsetSurfaceDiscriminator,
     /// Serialized true-offset flag.
     pub true_offset: bool,
     /// Cross-reference index of the support surface.
@@ -670,9 +701,9 @@ impl Graph {
             .filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 let discriminator = match node.bytes.get(at)? {
-                    b'V' => 'V',
-                    b'I' => 'I',
-                    b'U' => 'U',
+                    b'V' => OffsetSurfaceDiscriminator::V,
+                    b'I' => OffsetSurfaceDiscriminator::I,
+                    b'U' => OffsetSurfaceDiscriminator::U,
                     _ => return None,
                 };
                 at += 1;

@@ -3281,6 +3281,14 @@ pub struct ExternalReferenceRecordChild {
     pub directory_reference: String,
 }
 
+/// Byte order selected by a TIFF header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TiffByteOrder {
+    LittleEndian,
+    BigEndian,
+}
+
 /// Embedded NX material texture stored as a TIFF stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MaterialTextureAsset {
@@ -3289,7 +3297,7 @@ pub struct MaterialTextureAsset {
     /// Texture stream leaf name carried by the directory path.
     pub name: String,
     /// TIFF byte order: `little_endian` or `big_endian`.
-    pub byte_order: String,
+    pub byte_order: TiffByteOrder,
     /// TIFF format version. NX material textures use version 42.
     pub version: u16,
     /// Absolute byte offset of the first TIFF image-file directory, relative to the asset payload.
@@ -3337,8 +3345,14 @@ pub fn material_texture_assets(container: &Container) -> Vec<MaterialTextureAsse
             let (start, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
             let payload = container.data.get(start..start.checked_add(size)?)?;
             let (byte_order, version, first_ifd_offset) = match payload.get(..8)? {
-                [b'I', b'I', 42, 0, ..] => ("little_endian", 42, View::u32_le_at(payload, 4)?),
-                [b'M', b'M', 0, 42, ..] => ("big_endian", 42, View::u32_be_at(payload, 4)?),
+                [b'I', b'I', 42, 0, ..] => (
+                    TiffByteOrder::LittleEndian,
+                    42,
+                    View::u32_le_at(payload, 4)?,
+                ),
+                [b'M', b'M', 0, 42, ..] => {
+                    (TiffByteOrder::BigEndian, 42, View::u32_be_at(payload, 4)?)
+                }
                 _ => return None,
             };
             let first_ifd = usize::try_from(first_ifd_offset).ok()?;
@@ -3346,7 +3360,7 @@ pub fn material_texture_assets(container: &Container) -> Vec<MaterialTextureAsse
             Some(MaterialTextureAsset {
                 id: String::new(),
                 name: name.to_string(),
-                byte_order: byte_order.to_string(),
+                byte_order,
                 version,
                 first_ifd_offset,
                 byte_len: size as u64,

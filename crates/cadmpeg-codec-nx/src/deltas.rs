@@ -1499,10 +1499,9 @@ fn term_use_numeric_tails(stream: &[u8], census: &Census) -> Vec<TermUseNumericT
         .filter_map(|record| {
             let (term_use, parsed_end) = crate::intersection::term_use_at(stream, record.offset)?;
             (parsed_end == record.end && term_use.xmt == record.xmt).then_some(())?;
-            let value_count = match term_use.count {
-                1 => 8,
-                2 => 19,
-                _ => return None,
+            let value_count = match term_use.form {
+                crate::intersection::TermUseForm::LQuestion => 8,
+                crate::intersection::TermUseForm::Tf | crate::intersection::TermUseForm::Ts => 19,
             };
             let end = record.end.checked_add(value_count * 8)?;
             let bytes = stream.get(record.end..end)?;
@@ -1516,7 +1515,7 @@ fn term_use_numeric_tails(stream: &[u8], census: &Census) -> Vec<TermUseNumericT
                 .is_none_or(|start| *start >= end)
                 .then_some(TermUseNumericTail {
                     term_use_xmt: record.xmt,
-                    term_use_count: term_use.count,
+                    term_use_count: term_use.form.count(),
                     values,
                     offset: record.end,
                     end,

@@ -118,15 +118,33 @@ pub enum TermUseFraming {
     DescriptorInline,
 }
 
+/// Admitted endpoint-form encodings and their required leading counts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TermUseForm {
+    #[serde(rename = "L?")]
+    LQuestion,
+    #[serde(rename = "TF")]
+    Tf,
+    #[serde(rename = "TS")]
+    Ts,
+}
+
+impl TermUseForm {
+    pub fn count(self) -> u32 {
+        match self {
+            Self::LQuestion => 1,
+            Self::Tf | Self::Ts => 2,
+        }
+    }
+}
+
 /// A complete `term_use` endpoint record.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TermUse {
     /// Cross-reference index of the endpoint record.
     pub xmt: u32,
-    /// Serialized leading count.
-    pub count: u32,
-    /// Two-byte endpoint-form discriminator.
-    pub form: [u8; 2],
+    /// Endpoint form, including its required leading count.
+    pub form: TermUseForm,
     /// Endpoint position in millimetres.
     pub point: Point3,
     /// Serialized record framing.
@@ -1021,13 +1039,15 @@ fn term_at(
         .u32_be()?;
     let (xmt, xmt_len) = read_xmt(stream, base + 4)?;
     let payload = base + 4 + xmt_len;
-    let form: [u8; 2] = stream.get(payload..payload + 2)?.try_into().ok()?;
-    let valid = (count == 1 && form == *b"L?") || (count == 2 && matches!(&form, b"TF" | b"TS"));
-    valid.then_some(())?;
+    let form = match (count, stream.get(payload..payload + 2)?) {
+        (1, b"L?") => TermUseForm::LQuestion,
+        (2, b"TF") => TermUseForm::Tf,
+        (2, b"TS") => TermUseForm::Ts,
+        _ => return None,
+    };
     Some((
         TermUse {
             xmt,
-            count,
             form,
             point: point_m(stream, payload + 2)?,
             framing,

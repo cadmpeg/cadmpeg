@@ -135,7 +135,7 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
                 )
                 .expect("required invariant");
             assert_eq!(records.len(), 1);
-            assert_eq!(records[0].discriminator, discriminator);
+            assert_eq!(char::from(records[0].discriminator), discriminator);
             assert_eq!(records[0].true_offset, true_offset);
             assert_eq!(records[0].support_xmt, 6);
             assert_eq!(records[0].distance, 2.5);
@@ -365,8 +365,8 @@ fn decode_emits_charted_surface_intersection_construction() {
         .arena_as::<super::super::ParasolidTermUseRecord>("parasolid_term_use_records")
         .expect("required invariant");
     assert_eq!(terms.len(), 2);
-    assert_eq!(terms[0].count, 1);
-    assert_eq!(terms[0].form, "L?");
+    assert_eq!(terms[0].form.count(), 1);
+    assert_eq!(serde_json::to_value(terms[0].form).unwrap(), "L?");
     assert_eq!(terms[0].point, [0.0, 0.0, 0.0]);
     assert_eq!(terms[1].point, [10.0, 0.0, 0.0]);
     assert!(

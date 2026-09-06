@@ -24,7 +24,10 @@ fn decode_retains_strict_tiff_material_texture_assets() {
 
     assert_eq!(assets.len(), 1);
     assert_eq!(assets[0].name, "AISI Steel 4340");
-    assert_eq!(assets[0].byte_order, "little_endian");
+    assert_eq!(
+        serde_json::to_value(assets[0].byte_order).unwrap(),
+        "little_endian"
+    );
     assert_eq!(assets[0].version, 42);
     assert_eq!(assets[0].first_ifd_offset, 8);
     assert_eq!(assets[0].byte_len, texture.len() as u64);
@@ -345,24 +348,30 @@ fn decode_selects_dominant_rmfastload_body() {
     assert_eq!(object_ids.len(), 50);
     assert_eq!(object_ids[0].value, 1_000);
     assert_eq!(object_ids[49].value, 1_049);
-    assert!(result.ir().model.bodies[0]
-        .id
-        .as_str()
-        .starts_with("nx:s0:"));
+    assert!(
+        result.ir().model.bodies[0]
+            .id
+            .as_str()
+            .starts_with("nx:s0:")
+    );
     assert_eq!(result.ir().model.faces.len(), 50);
     assert_eq!(result.ir().model.surfaces.len(), 50);
-    assert!(result
-        .ir()
-        .model
-        .faces
-        .iter()
-        .all(|face| face.id.as_str().starts_with("nx:s0:")));
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .all(|surface| surface.id.as_str().starts_with("nx:s0:")));
+    assert!(
+        result
+            .ir()
+            .model
+            .faces
+            .iter()
+            .all(|face| face.id.as_str().starts_with("nx:s0:"))
+    );
+    assert!(
+        result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .all(|surface| surface.id.as_str().starts_with("nx:s0:"))
+    );
     assert_eq!(
         result
             .ir()
@@ -383,7 +392,7 @@ fn decode_selects_dominant_rmfastload_body() {
 #[test]
 fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
     use super::super::{
-        data_block_column_index_tables, DataBlockLinkedIndexRow, DataBlockTargetIndexRow,
+        DataBlockLinkedIndexRow, DataBlockTargetIndexRow, data_block_column_index_tables,
     };
 
     let linked = |id: &str, target: u32, mode: u8, offset: u64| DataBlockLinkedIndexRow {
@@ -470,8 +479,8 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
 #[test]
 fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     use super::super::{
-        external_reference_record_children, external_reference_record_string_uses,
-        ExternalReference, ExternalReferenceRecord,
+        ExternalReference, ExternalReferenceRecord, external_reference_record_children,
+        external_reference_record_string_uses,
     };
 
     let references = (0..4)

@@ -1520,7 +1520,7 @@ pub struct ParasolidOffsetSurfaceRecord {
     /// Cross-reference index of the offset surface.
     pub xmt: u32,
     /// Serialized `V`, `I`, or `U` discriminator.
-    pub discriminator: char,
+    pub discriminator: crate::topology::OffsetSurfaceDiscriminator,
     /// Serialized true-offset flag.
     pub true_offset: bool,
     /// Cross-reference index of the support surface.
@@ -1730,6 +1730,10 @@ impl ParasolidScanRecords for ParasolidBlendBoundRecord {
 
 /// Complete typed source record for one Parasolid `term_use` endpoint.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "ParasolidTermUseRecordWire",
+    into = "ParasolidTermUseRecordWire"
+)]
 pub struct ParasolidTermUseRecord {
     /// Globally unique record identity.
     pub id: String,
@@ -1737,16 +1741,67 @@ pub struct ParasolidTermUseRecord {
     pub stream_ordinal: u32,
     /// Cross-reference index of the endpoint.
     pub xmt: u32,
-    /// Serialized leading count.
-    pub count: u32,
     /// Two-byte endpoint-form discriminator as printable ASCII.
-    pub form: String,
+    pub form: crate::intersection::TermUseForm,
     /// Endpoint position in millimetres.
     pub point: [f64; 3],
     /// Serialized record framing.
     pub framing: crate::intersection::TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
     pub inflated_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct ParasolidTermUseRecordWire {
+    /// Globally unique record identity.
+    id: String,
+    /// Zero-based source stream ordinal.
+    stream_ordinal: u32,
+    /// Cross-reference index of the endpoint.
+    xmt: u32,
+    /// Serialized leading count.
+    count: u32,
+    /// Two-byte endpoint-form discriminator as printable ASCII.
+    form: crate::intersection::TermUseForm,
+    /// Endpoint position in millimetres.
+    point: [f64; 3],
+    /// Serialized record framing.
+    framing: crate::intersection::TermUseFraming,
+    /// Tag or inline-payload offset in the inflated stream.
+    inflated_offset: u64,
+}
+
+impl From<ParasolidTermUseRecord> for ParasolidTermUseRecordWire {
+    fn from(value: ParasolidTermUseRecord) -> Self {
+        Self {
+            count: value.form.count(),
+            id: value.id,
+            stream_ordinal: value.stream_ordinal,
+            xmt: value.xmt,
+            form: value.form,
+            point: value.point,
+            framing: value.framing,
+            inflated_offset: value.inflated_offset,
+        }
+    }
+}
+
+impl TryFrom<ParasolidTermUseRecordWire> for ParasolidTermUseRecord {
+    type Error = &'static str;
+    fn try_from(wire: ParasolidTermUseRecordWire) -> Result<Self, Self::Error> {
+        if wire.count != wire.form.count() {
+            return Err("term_use count disagrees with endpoint form");
+        }
+        Ok(Self {
+            id: wire.id,
+            stream_ordinal: wire.stream_ordinal,
+            xmt: wire.xmt,
+            form: wire.form,
+            point: wire.point,
+            framing: wire.framing,
+            inflated_offset: wire.inflated_offset,
+        })
+    }
 }
 
 /// Decode complete typed source records for Parasolid `term_use` endpoints.
@@ -1769,8 +1824,7 @@ impl ParasolidScanRecords for ParasolidTermUseRecord {
             id,
             stream_ordinal,
             xmt: row.xmt,
-            count: row.count,
-            form: String::from_utf8_lossy(&row.form).into_owned(),
+            form: row.form,
             point: [row.point.x, row.point.y, row.point.z],
             framing: row.framing,
             inflated_offset: row.pos as u64,
