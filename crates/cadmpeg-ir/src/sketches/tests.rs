@@ -1370,3 +1370,39 @@ fn solver_scalar_class_rejects_a_constraint_slot_mismatch() {
         }
     }
 }
+
+#[test]
+fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
+    use crate::sketches::SketchGeometry;
+
+    let wire = serde_json::json!({
+        "kind": "nurbs", "degree": 1,
+        "knots": [0.0, 0.0, 1.0, 1.0],
+        "control_points": [{"u": 2.0, "v": 3.0}, {"u": 4.0, "v": 5.0}],
+        "weights": [1.0, 0.5], "periodic": false
+    });
+    let geometry: SketchGeometry = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    for (field, value) in [
+        ("degree", serde_json::json!(0)),
+        ("degree", serde_json::json!(2)),
+        ("knots", serde_json::json!([0.0, 1.0])),
+        ("control_points", serde_json::json!([{"u": 2.0, "v": 3.0}])),
+        ("weights", serde_json::json!([1.0])),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = value;
+        assert!(
+            serde_json::from_value::<SketchGeometry>(invalid).is_err(),
+            "{field}"
+        );
+    }
+    let mut nonrational = wire;
+    nonrational.as_object_mut().unwrap().remove("weights");
+    nonrational.as_object_mut().unwrap().remove("periodic");
+    let SketchGeometry::Nurbs { curve } = serde_json::from_value(nonrational).unwrap() else {
+        panic!("NURBS geometry");
+    };
+    assert!(curve.weights().is_none());
+    assert!(!curve.periodic());
+}

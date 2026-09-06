@@ -7960,7 +7960,7 @@ impl<'de> Deserialize<'de> for PolarPcurveNurbs {
     }
 }
 
-/// Checked parameter-space NURBS payload.
+/// Checked two-dimensional NURBS payload for pcurves and sketch curves.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PcurveNurbs {
@@ -7999,6 +7999,18 @@ impl PcurveNurbs {
             weights,
             periodic,
         })
+    }
+
+    /// Lift each two-dimensional pole into model space without changing knot or weight cardinalities.
+    #[must_use]
+    pub fn lift(&self, lift: impl FnMut(Point2) -> Point3) -> NurbsCurve {
+        NurbsCurve {
+            degree: self.degree,
+            knots: self.knots.clone(),
+            control_points: self.control_points.iter().copied().map(lift).collect(),
+            weights: self.weights.clone(),
+            periodic: self.periodic,
+        }
     }
 
     /// Curve degree.

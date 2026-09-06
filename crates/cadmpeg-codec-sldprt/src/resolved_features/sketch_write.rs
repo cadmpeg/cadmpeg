@@ -1,7 +1,7 @@
 //! Sketch record patching in native streams.
 
 use super::SKETCH_POINT_TOLERANCE;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
     VertexId,
@@ -404,36 +404,21 @@ fn generated_sketch_curve(
                 param_range: Some([start, end]),
             })
         }
-        SketchGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        } => {
-            if *periodic || control_points.len() < 2 {
+        SketchGeometry::Nurbs { curve } => {
+            if curve.periodic() {
                 return Err(cadmpeg_core::CodecError::NotImplemented(
                     "source-less SLDPRT sketch writing requires a non-periodic NURBS with at least two poles".into(),
                 ));
             }
+            let control_points = curve.control_points();
             let start = control_points[0];
             let end = control_points[control_points.len() - 1];
-            let nurbs = NurbsCurve::new(
-                *degree,
-                knots.clone(),
-                control_points.iter().copied().map(lift).collect(),
-                weights.clone(),
-                false,
-            )
-            .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_string()))?;
+            let knots = curve.knots();
             Ok(GeneratedSketchCurve {
-                curve: CurveGeometry::Nurbs(nurbs),
+                curve: CurveGeometry::Nurbs(curve.lift(lift)),
                 start,
                 end,
-                param_range: knots
-                    .get(*degree as usize)
-                    .zip(knots.get(knots.len().saturating_sub(*degree as usize + 1)))
-                    .map(|(start, end)| [*start, *end]),
+                param_range: Some([knots[curve.degree() as usize], knots[control_points.len()]]),
             })
         }
         SketchGeometry::Point { .. }
@@ -652,11 +637,8 @@ fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
             };
             Some([point(start.0), point(end.0)])
         }
-        SketchGeometry::Nurbs {
-            control_points,
-            periodic: false,
-            ..
-        } if control_points.len() >= 2 => {
+        SketchGeometry::Nurbs { curve } if !curve.periodic() => {
+            let control_points = curve.control_points();
             Some([control_points[0], control_points[control_points.len() - 1]])
         }
         _ => None,
@@ -864,27 +846,11 @@ fn patch_direct_nurbs(
     body: &mut [u8],
     request: &CurvePatch,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let SketchGeometry::Nurbs {
-        degree,
-        ref knots,
-        ref control_points,
-        ref weights,
-        periodic,
-    } = request.geometry
-    else {
+    let SketchGeometry::Nurbs { ref curve } = request.geometry else {
         unreachable!();
     };
-    let curve = cadmpeg_ir::geometry::NurbsCurve::new(
-        degree,
-        knots.clone(),
-        control_points
-            .iter()
-            .map(|point| lift_point(*point, request.origin, request.u_axis, request.v_axis))
-            .collect(),
-        weights.clone(),
-        periodic,
-    )
-    .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_string()))?;
+    let curve =
+        curve.lift(|point| lift_point(point, request.origin, request.u_axis, request.v_axis));
     if !crate::brep::patch_nurbs_by_attr(body, request.carrier_attr, &curve) {
         return Err(cadmpeg_core::CodecError::NotImplemented(
             "SLDPRT sketch NURBS edit changes native storage shape".into(),

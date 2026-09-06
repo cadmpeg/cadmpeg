@@ -1460,8 +1460,8 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) {
             scale_point2(vertex, scale);
             focal_length.0 *= scale;
         }
-        SketchGeometry::Nurbs { control_points, .. } => {
-            for point in control_points {
+        SketchGeometry::Nurbs { curve } => {
+            for point in curve.control_points_mut() {
                 scale_point2(point, scale);
             }
         }

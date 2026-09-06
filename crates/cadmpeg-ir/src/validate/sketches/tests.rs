@@ -152,11 +152,14 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
             nurbs_id,
             sketch_id.clone(),
             SketchGeometry::Nurbs {
-                degree: 3,
-                knots: vec![0.0, 1.0],
-                control_points: vec![Point2::new(0.0, 0.0)],
-                weights: Some(vec![0.0]),
-                periodic: false,
+                curve: crate::geometry::PcurveNurbs::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                    Some(vec![0.0, 0.0]),
+                    false,
+                )
+                .unwrap(),
             },
         ),
     ]);
@@ -231,31 +234,37 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
             source.clone(),
             sketch.clone(),
             SketchGeometry::Nurbs {
-                degree: 2,
-                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                control_points: vec![
-                    Point2::new(0.0, 0.0),
-                    Point2::new(4.0, 3.0),
-                    Point2::new(10.0, 0.0),
-                ],
-                weights: None,
-                periodic: false,
+                curve: crate::geometry::PcurveNurbs::new(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    vec![
+                        Point2::new(0.0, 0.0),
+                        Point2::new(4.0, 3.0),
+                        Point2::new(10.0, 0.0),
+                    ],
+                    None,
+                    false,
+                )
+                .unwrap(),
             },
         ),
         SketchEntity::new(
             result.clone(),
             sketch.clone(),
             SketchGeometry::Nurbs {
-                degree: 3,
-                knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-                control_points: vec![
-                    result_start,
-                    Point2::new(result_start.u + 2.0, result_start.v + 1.5),
-                    Point2::new(result_end.u - 3.0, result_end.v + 1.5),
-                    result_end,
-                ],
-                weights: None,
-                periodic: false,
+                curve: crate::geometry::PcurveNurbs::new(
+                    3,
+                    vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+                    vec![
+                        result_start,
+                        Point2::new(result_start.u + 2.0, result_start.v + 1.5),
+                        Point2::new(result_end.u - 3.0, result_end.v + 1.5),
+                        result_end,
+                    ],
+                    None,
+                    false,
+                )
+                .unwrap(),
             },
         ),
     ]);
@@ -307,12 +316,12 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
     assert!(!offset_mismatch(&validate_neutral(&ir, Vec::new())));
 
     {
-        let SketchGeometry::Nurbs { control_points, .. } =
+        let SketchGeometry::Nurbs { curve } =
             &mut ir.model.sketch_entities[result_ordinal].geometry
         else {
             unreachable!("test result is a NURBS")
         };
-        control_points.reverse();
+        curve.control_points_mut().reverse();
     }
     let reversed_distance = crate::eval::fitted_nurbs_offset_frame_distance(
         &ir.model.sketch_entities[source_ordinal].geometry,
@@ -325,13 +334,16 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         "reversed fitted offset distance {reversed_distance}"
     );
     assert!(!offset_mismatch(&validate_neutral(&ir, Vec::new())));
-    let SketchGeometry::Nurbs { control_points, .. } =
-        &mut ir.model.sketch_entities[result_ordinal].geometry
+    let SketchGeometry::Nurbs { curve } = &mut ir.model.sketch_entities[result_ordinal].geometry
     else {
         unreachable!("test result is a NURBS")
     };
-    control_points.reverse();
-    control_points.last_mut().expect("result endpoint").u += 0.01;
+    curve.control_points_mut().reverse();
+    curve
+        .control_points_mut()
+        .last_mut()
+        .expect("result endpoint")
+        .u += 0.01;
     assert!(offset_mismatch(&validate_neutral(&ir, Vec::new())));
 }
 

@@ -1223,11 +1223,14 @@ fn generated_saved_geometry_forms_closed_profiles() {
         (
             10,
             SketchGeometry::Nurbs {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-                weights: None,
-                periodic: false,
+                curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                    None,
+                    false,
+                )
+                .unwrap(),
             },
         ),
         line(13, (0.0, 0.0), (0.0, 1.0)),

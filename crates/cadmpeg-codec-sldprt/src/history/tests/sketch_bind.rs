@@ -586,27 +586,19 @@ fn decode_projects_non_rational_and_rational_nurbs_sketch_geometry() {
         .sketch_entities
         .iter()
         .filter_map(|entity| match &entity.geometry {
-            SketchGeometry::Nurbs {
-                degree,
-                knots,
-                control_points,
-                weights,
-                periodic,
-            } => Some((degree, knots, control_points, weights, periodic)),
+            SketchGeometry::Nurbs { curve } => Some(curve),
             _ => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(splines.len(), 2);
-    assert!(splines.iter().all(|(degree, knots, points, _, periodic)| {
-        **degree == 2
-            && knots.as_slice() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
-            && points.len() == 3
-            && !**periodic
+    assert!(splines.iter().all(|curve| {
+        curve.degree() == 2
+            && curve.knots() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+            && curve.control_points().len() == 3
+            && !curve.periodic()
     }));
+    assert!(splines.iter().any(|curve| curve.weights().is_none()));
     assert!(splines
         .iter()
-        .any(|(_, _, _, weights, _)| weights.is_none()));
-    assert!(splines
-        .iter()
-        .any(|(_, _, _, weights, _)| { weights.as_deref() == Some(&[1.0, 0.5, 1.0]) }));
+        .any(|curve| curve.weights() == Some(&[1.0, 0.5, 1.0])));
 }

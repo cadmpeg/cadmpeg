@@ -447,16 +447,11 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     for entity in &mut decoded.ir_mut().model.sketch_entities {
-        let SketchGeometry::Nurbs {
-            control_points,
-            weights,
-            ..
-        } = &mut entity.geometry
-        else {
+        let SketchGeometry::Nurbs { curve } = &mut entity.geometry else {
             continue;
         };
-        control_points[1].v += 250.0;
-        if let Some(weights) = weights {
+        curve.control_points_mut()[1].v += 250.0;
+        if let Some(weights) = curve.weights_mut() {
             weights[1] = 0.75;
         }
     }
@@ -477,11 +472,7 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
         .sketch_entities
         .iter()
         .filter_map(|entity| match &entity.geometry {
-            SketchGeometry::Nurbs {
-                control_points,
-                weights,
-                ..
-            } => Some((control_points, weights)),
+            SketchGeometry::Nurbs { curve } => Some((curve.control_points(), curve.weights())),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -491,7 +482,7 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
         .all(|(points, _)| (points[1].v - 1250.0).abs() < 1.0e-12));
     assert!(splines
         .iter()
-        .any(|(_, weights)| weights.as_deref() == Some(&[1.0, 0.75, 1.0])));
+        .any(|(_, weights)| *weights == Some(&[1.0, 0.75, 1.0])));
 }
 
 #[test]

@@ -74,16 +74,22 @@ fn text_frame_curve_records(
         .iter()
         .filter_map(|relation| {
             let pattern = relation.definition.kind();
-            let crate::records::SketchRelationKind::TextFrame { text_reference } = pattern
-            else {
+            let crate::records::SketchRelationKind::TextFrame { text_reference } = pattern else {
                 return None;
             };
             let scope = native_stream(&relation.id)?.to_owned();
             if relation.unknown_constraint_bits() != 0
                 || relation.constraint_kinds().len() != 1
-                || relation.members.first().map(|member| member.reference.record_index())
+                || relation
+                    .members
+                    .first()
+                    .map(|member| member.reference.record_index())
                     != Some(*text_reference)
-                || !relation.auxiliary_references.values().copied().eq([*text_reference])
+                || !relation
+                    .auxiliary_references
+                    .values()
+                    .copied()
+                    .eq([*text_reference])
                 || relation.members.len() < 2
                 || relation.return_member_indices() != relation.member_indices()[1..]
                 || text_owners.get(&(scope.clone(), *text_reference))
@@ -270,13 +276,21 @@ pub fn project_sketch_design(
                 && poles.points().all(planar_point) =>
             {
                 SketchGeometry::Nurbs {
-                    degree: *degree,
-                    knots: knots.clone(),
-                    control_points: poles.points()
-                        .map(|point| Point2::new(point.x, point.y))
-                        .collect(),
-                    weights: poles.weights().next().is_some().then(|| poles.weights().copied().collect()),
-                    periodic: false,
+                    curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+                        *degree,
+                        knots.clone(),
+                        poles
+                            .points()
+                            .map(|point| Point2::new(point.x, point.y))
+                            .collect(),
+                        poles
+                            .weights()
+                            .next()
+                            .is_some()
+                            .then(|| poles.weights().copied().collect()),
+                        false,
+                    )
+                    .ok()?,
                 }
             }
             _ => return None,
@@ -399,8 +413,7 @@ pub fn project_spatial_sketch_design(
         else {
             continue;
         };
-        let Some(SketchCurveGeometry::Nurbs { poles, .. }) = curve.geometry.as_ref()
-        else {
+        let Some(SketchCurveGeometry::Nurbs { poles, .. }) = curve.geometry.as_ref() else {
             continue;
         };
         if curve.owner_reference != Some(relation.owner_reference)
@@ -538,10 +551,15 @@ pub fn project_spatial_sketch_design(
                         SpatialSketchGeometry::Nurbs {
                             degree: *degree,
                             knots: knots.clone(),
-                            control_points: poles.points()
+                            control_points: poles
+                                .points()
                                 .map(|point| transform_point(placement, point))
                                 .collect(),
-                            weights: poles.weights().next().is_some().then(|| poles.weights().copied().collect()),
+                            weights: poles
+                                .weights()
+                                .next()
+                                .is_some()
+                                .then(|| poles.weights().copied().collect()),
                             periodic: false,
                         }
                     }
@@ -709,7 +727,11 @@ pub fn project_spatial_sketch_constraints(
             let semantic_entities = relation
                 .return_members
                 .iter()
-                .map(|member| projected.get(&(scope, member.reference.record_index())).copied())
+                .map(|member| {
+                    projected
+                        .get(&(scope, member.reference.record_index()))
+                        .copied()
+                })
                 .collect::<Option<Vec<_>>>()?;
             let members = semantic_entities
                 .iter()

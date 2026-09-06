@@ -142,7 +142,11 @@ pub fn project_sketch_constraints(
         let input_entities = relation
             .members
             .iter()
-            .filter_map(|member| projected.get(&(scope, member.reference.record_index())).copied())
+            .filter_map(|member| {
+                projected
+                    .get(&(scope, member.reference.record_index()))
+                    .copied()
+            })
             .collect::<Vec<_>>();
         // The second reference run is the relation's semantic member order.
         // The interleaved first run is retained separately because
@@ -151,7 +155,11 @@ pub fn project_sketch_constraints(
         let semantic_entities = relation
             .return_members
             .iter()
-            .filter_map(|member| projected.get(&(scope, member.reference.record_index())).copied())
+            .filter_map(|member| {
+                projected
+                    .get(&(scope, member.reference.record_index()))
+                    .copied()
+            })
             .collect::<Vec<_>>();
         let exact = relation.unknown_constraint_bits() == 0
             && relation.constraint_kinds().len() == 1
@@ -458,9 +466,16 @@ pub(crate) fn exact_text_relation(
     let pattern = relation.definition.kind();
     match pattern {
         SketchRelationKind::TextFrame { text_reference }
-            if relation.members.first().map(|member| member.reference.record_index())
-                    == Some(*text_reference)
-                && relation.auxiliary_references.values().copied().eq([*text_reference])
+            if relation
+                .members
+                .first()
+                .map(|member| member.reference.record_index())
+                == Some(*text_reference)
+                && relation
+                    .auxiliary_references
+                    .values()
+                    .copied()
+                    .eq([*text_reference])
                 && relation.return_member_indices() == relation.member_indices()[1..] =>
         {
             let text = projected.get(&(scope, *text_reference))?;
@@ -470,7 +485,11 @@ pub(crate) fn exact_text_relation(
             let frame = relation
                 .return_members
                 .iter()
-                .map(|member| projected.get(&(scope, member.reference.record_index())).copied())
+                .map(|member| {
+                    projected
+                        .get(&(scope, member.reference.record_index()))
+                        .copied()
+                })
                 .collect::<Option<Vec<_>>>()?;
             (!frame.is_empty()
                 && frame.iter().all(|entity| {
@@ -490,8 +509,13 @@ pub(crate) fn exact_text_relation(
             glyph_transforms,
         } if relation.members.len() == 2
             && relation.members[1].reference.record_index() == *text_reference
-            && relation.auxiliary_references.values().copied().eq([*text_reference])
-            && relation.return_member_indices() == [relation.members[0].reference.record_index()] =>
+            && relation
+                .auxiliary_references
+                .values()
+                .copied()
+                .eq([*text_reference])
+            && relation.return_member_indices()
+                == [relation.members[0].reference.record_index()] =>
         {
             let path = projected.get(&(scope, relation.members[0].reference.record_index()))?;
             let text = projected.get(&(scope, *text_reference))?;
@@ -739,28 +763,17 @@ fn rotated_sketch_geometry_matches(
                 && scalar_close(ai.0, bi.0)
                 && optional_angle_bounds_match(ab.as_ref(), bb.as_ref())
         }
-        (
-            SketchGeometry::Nurbs {
-                degree: ad,
-                knots: ak,
-                control_points: ap,
-                weights: aw,
-                periodic: ax,
-            },
-            SketchGeometry::Nurbs {
-                degree: bd,
-                knots: bk,
-                control_points: bp,
-                weights: bw,
-                periodic: bx,
-            },
-        ) => {
-            ad == bd
-                && ax == bx
-                && equal_scalars(ak, bk)
-                && ap.len() == bp.len()
-                && ap.iter().zip(bp).all(|(a, b)| point_matches(*a, *b))
-                && match (aw, bw) {
+        (SketchGeometry::Nurbs { curve: first }, SketchGeometry::Nurbs { curve: second }) => {
+            first.degree() == second.degree()
+                && first.periodic() == second.periodic()
+                && equal_scalars(first.knots(), second.knots())
+                && first.control_points().len() == second.control_points().len()
+                && first
+                    .control_points()
+                    .iter()
+                    .zip(second.control_points())
+                    .all(|(a, b)| point_matches(*a, *b))
+                && match (first.weights(), second.weights()) {
                     (None, None) => true,
                     (Some(a), Some(b)) => equal_scalars(a, b),
                     _ => false,
@@ -856,33 +869,19 @@ pub(crate) fn translated_sketch_geometry_matches(
                 && scalar_close(first_minor_radius.0, second_minor_radius.0)
                 && optional_angle_bounds_match(first_bounds.as_ref(), second_bounds.as_ref())
         }
-        (
-            SketchGeometry::Nurbs {
-                degree: first_degree,
-                knots: first_knots,
-                control_points: first_points,
-                weights: first_weights,
-                periodic: first_periodic,
-            },
-            SketchGeometry::Nurbs {
-                degree: second_degree,
-                knots: second_knots,
-                control_points: second_points,
-                weights: second_weights,
-                periodic: second_periodic,
-            },
-        ) => {
-            *first_degree == *second_degree
-                && first_periodic == second_periodic
-                && equal_scalars(first_knots, second_knots)
-                && first_points.len() == second_points.len()
-                && first_points
+        (SketchGeometry::Nurbs { curve: first }, SketchGeometry::Nurbs { curve: second }) => {
+            first.degree() == second.degree()
+                && first.periodic() == second.periodic()
+                && equal_scalars(first.knots(), second.knots())
+                && first.control_points().len() == second.control_points().len()
+                && first
+                    .control_points()
                     .iter()
-                    .zip(second_points)
-                    .all(|(first, second)| point_matches(*first, *second))
-                && match (first_weights, second_weights) {
+                    .zip(second.control_points())
+                    .all(|(a, b)| point_matches(*a, *b))
+                && match (first.weights(), second.weights()) {
                     (None, None) => true,
-                    (Some(first), Some(second)) => equal_scalars(first, second),
+                    (Some(a), Some(b)) => equal_scalars(a, b),
                     _ => false,
                 }
         }
@@ -918,8 +917,8 @@ mod tests {
         translated_sketch_geometry_matches, RectangularPatternDistanceForm,
     };
     use crate::records::{
-        DesignParameter, SketchRelation, SketchRelationKind,
-        SketchRelationMember, SketchRelationReturnMember,
+        DesignParameter, SketchRelation, SketchRelationKind, SketchRelationMember,
+        SketchRelationReturnMember,
     };
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{
@@ -998,34 +997,42 @@ mod tests {
                 .clone()
                 .into_iter()
                 .map(SketchRelationMember::from_index)
-                .collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
+                .collect::<Vec<_>>())
+            .try_into()
+            .expect("uniform member resolution"),
             owner_reference_offset: 0,
-            definition: crate::records::SketchRelationDefinition::new(0x2000_0000, SketchRelationKind::from_pattern(Some(
-                crate::records::SketchPatternDefinition::Rectangular {
-                    directions: [
-                        crate::records::SketchPatternDirection {
-                            count_parameter: 20,
-                            distance_parameter: 21,
-                            evaluated_count,
-                            direction: [1.0, 0.0, 0.0],
-                            evaluated_distance,
-                        },
-                        crate::records::SketchPatternDirection {
-                            count_parameter: 22,
-                            distance_parameter: 23,
-                            evaluated_count: 1,
-                            direction: [0.0, 1.0, 0.0],
-                            evaluated_distance: 0.0,
-                        },
-                    ],
-                },
-            ))).expect("valid relation definition"),
+            definition: crate::records::SketchRelationDefinition::new(
+                0x2000_0000,
+                SketchRelationKind::from_pattern(Some(
+                    crate::records::SketchPatternDefinition::Rectangular {
+                        directions: [
+                            crate::records::SketchPatternDirection {
+                                count_parameter: 20,
+                                distance_parameter: 21,
+                                evaluated_count,
+                                direction: [1.0, 0.0, 0.0],
+                                evaluated_distance,
+                            },
+                            crate::records::SketchPatternDirection {
+                                count_parameter: 22,
+                                distance_parameter: 23,
+                                evaluated_count: 1,
+                                direction: [0.0, 1.0, 0.0],
+                                evaluated_distance: 0.0,
+                            },
+                        ],
+                    },
+                )),
+            )
+            .expect("valid relation definition"),
             entity_genesis: None,
             return_members: (members
                 .iter()
                 .copied()
                 .map(SketchRelationReturnMember::from_index)
-                .collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
+                .collect::<Vec<_>>())
+            .try_into()
+            .expect("uniform member resolution"),
             raw_bytes: Vec::new(),
         }
     }
@@ -1037,12 +1044,23 @@ mod tests {
             class_tag: "373".into(),
             record_index,
             source_ordinal: 0,
-            source: crate::records::DesignParameterSource::new("R-Pattern1-distance".into(), Some(record_index), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code6, offset: 0 })).unwrap(),
+            source: crate::records::DesignParameterSource::new(
+                "R-Pattern1-distance".into(),
+                Some(record_index),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code6,
+                    offset: 0,
+                }),
+            )
+            .unwrap(),
             expression: value.to_string(),
             expression_offset: 0,
             source_kind_offset: 0,
 
-            unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(0),
+            }),
             name: format!("d{record_index}"),
             name_offset: 0,
             evaluated_value: value,
@@ -1219,23 +1237,31 @@ mod tests {
                 SketchRelationMember::from_index(2),
                 SketchRelationMember::from_index(3),
                 SketchRelationMember::from_index(4),
-            ]).try_into().expect("uniform member resolution"),
+            ])
+            .try_into()
+            .expect("uniform member resolution"),
             owner_reference_offset: 0,
-            definition: crate::records::SketchRelationDefinition::new(0x1000_0000, SketchRelationKind::from_pattern(Some(
-                crate::records::SketchPatternDefinition::Circular {
-                    angle_parameter: 20,
-                    count_parameter: 21,
-                    evaluated_angle: angle,
-                    evaluated_count: 3,
-                },
-            ))).expect("valid relation definition"),
+            definition: crate::records::SketchRelationDefinition::new(
+                0x1000_0000,
+                SketchRelationKind::from_pattern(Some(
+                    crate::records::SketchPatternDefinition::Circular {
+                        angle_parameter: 20,
+                        count_parameter: 21,
+                        evaluated_angle: angle,
+                        evaluated_count: 3,
+                    },
+                )),
+            )
+            .expect("valid relation definition"),
             entity_genesis: None,
             return_members: (vec![
                 SketchRelationReturnMember::from_index(2),
                 SketchRelationReturnMember::from_index(3),
                 SketchRelationReturnMember::from_index(4),
                 SketchRelationReturnMember::from_index(1),
-            ]).try_into().expect("uniform member resolution"),
+            ])
+            .try_into()
+            .expect("uniform member resolution"),
             raw_bytes: Vec::new(),
         };
         let members = [&center, &seed, &middle, &last];
@@ -1324,23 +1350,31 @@ mod tests {
                 SketchRelationMember::from_index(2),
                 SketchRelationMember::from_index(3),
                 SketchRelationMember::from_index(4),
-            ]).try_into().expect("uniform member resolution"),
+            ])
+            .try_into()
+            .expect("uniform member resolution"),
             owner_reference_offset: 0,
-            definition: crate::records::SketchRelationDefinition::new(0x1000_0000, SketchRelationKind::from_pattern(Some(
-                crate::records::SketchPatternDefinition::Circular {
-                    angle_parameter: 20,
-                    count_parameter: 21,
-                    evaluated_angle: std::f64::consts::TAU,
-                    evaluated_count: 3,
-                },
-            ))).expect("valid relation definition"),
+            definition: crate::records::SketchRelationDefinition::new(
+                0x1000_0000,
+                SketchRelationKind::from_pattern(Some(
+                    crate::records::SketchPatternDefinition::Circular {
+                        angle_parameter: 20,
+                        count_parameter: 21,
+                        evaluated_angle: std::f64::consts::TAU,
+                        evaluated_count: 3,
+                    },
+                )),
+            )
+            .expect("valid relation definition"),
             entity_genesis: None,
             return_members: (vec![
                 SketchRelationReturnMember::from_index(2),
                 SketchRelationReturnMember::from_index(3),
                 SketchRelationReturnMember::from_index(4),
                 SketchRelationReturnMember::from_index(1),
-            ]).try_into().expect("uniform member resolution"),
+            ])
+            .try_into()
+            .expect("uniform member resolution"),
             raw_bytes: Vec::new(),
         };
         let members = [&center, &seed, &middle, &last];
@@ -1403,16 +1437,27 @@ mod tests {
             members: (vec![
                 SketchRelationMember::from_index(1),
                 SketchRelationMember::from_index(2),
-            ]).try_into().expect("uniform member resolution"),
+            ])
+            .try_into()
+            .expect("uniform member resolution"),
             owner_reference_offset: 0,
-            definition: crate::records::SketchRelationDefinition::new(0x200_0000_0000, SketchRelationKind::from_pattern(Some(
-                crate::records::SketchPatternDefinition::TextPath {
-                    text_reference: 2,
-                    glyph_transforms: vec![crate::records::SketchGlyphTransform::try_from(glyph).expect("finite native glyph")],
-                },
-            ))).expect("valid relation definition"),
+            definition: crate::records::SketchRelationDefinition::new(
+                0x200_0000_0000,
+                SketchRelationKind::from_pattern(Some(
+                    crate::records::SketchPatternDefinition::TextPath {
+                        text_reference: 2,
+                        glyph_transforms: vec![crate::records::SketchGlyphTransform::try_from(
+                            glyph,
+                        )
+                        .expect("finite native glyph")],
+                    },
+                )),
+            )
+            .expect("valid relation definition"),
             entity_genesis: Some(2),
-            return_members: (vec![SketchRelationReturnMember::from_index(1)]).try_into().expect("uniform member resolution"),
+            return_members: (vec![SketchRelationReturnMember::from_index(1)])
+                .try_into()
+                .expect("uniform member resolution"),
             raw_bytes: Vec::new(),
         };
         let projected =
@@ -1444,7 +1489,8 @@ mod tests {
                         crate::records::SketchGlyphTransform::try_from(rows).unwrap(),
                     ],
                 },
-            ).unwrap();
+            )
+            .unwrap();
             assert!(exact_text_relation(&relation, "scope", &projected).is_none());
         }
     }

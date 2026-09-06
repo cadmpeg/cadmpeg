@@ -834,7 +834,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
     }
     assert!(matches!(
         saved_spline_sketch_geometry(&spline),
-        Some(SketchGeometry::Nurbs { degree: 3, .. })
+        Some(SketchGeometry::Nurbs { curve }) if curve.degree() == 3
     ));
     let definition = crate::feature::FeatureDefinition {
         id: 917,
@@ -1067,16 +1067,19 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         reference: None,
     };
     let spline = SketchGeometry::Nurbs {
-        degree: 2,
-        knots: vec![2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0],
-        control_points: vec![
-            Point2::new(2.0, 0.0),
-            Point2::new(3.0, 0.75),
-            Point2::new(3.0, 1.25),
-            Point2::new(2.0, 2.0),
-        ],
-        weights: Some(vec![1.0, 0.75, 0.75, 1.0]),
-        periodic: false,
+        curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+            2,
+            vec![2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0],
+            vec![
+                Point2::new(2.0, 0.0),
+                Point2::new(3.0, 0.75),
+                Point2::new(3.0, 1.25),
+                Point2::new(2.0, 2.0),
+            ],
+            Some(vec![1.0, 0.75, 0.75, 1.0]),
+            false,
+        )
+        .unwrap(),
     };
     let segment = (spline.clone(), false, [2.0, 0.0], [2.0, 2.0]);
     let surface =

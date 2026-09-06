@@ -5727,3 +5727,10 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality"
 reason = "IR-85: scalar classes are fixed by their constraint slots; keep only solver-local keys and derive each numeric class in the unchanged JSON wire, rejecting mismatches on read."
+
+[[change]]
+commit = "f0bb0323aea2103b55341ab06d48146a8582cd3e"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::sketches::SketchGeometry::Nurbs"
+reason = "IR-85: use the checked PcurveNurbs payload to prevent independent pole, knot, and weight cardinalities; preserve the flat JSON representation."

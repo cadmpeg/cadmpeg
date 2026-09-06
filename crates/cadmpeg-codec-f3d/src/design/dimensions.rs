@@ -564,12 +564,18 @@ fn project_all_dimension_constraints(
                     &secondary_ids,
                     linear_tolerance,
                 )?;
-                let parameter = offset_parameter_factor(distance.0, parameter.evaluated_value * 10.0)
-                    .map(|factor| cadmpeg_ir::sketches::OffsetParameter {
-                        id: parameter_id,
-                        negated: factor.is_sign_negative(),
-                    });
-                return Some(Definition::Offset { pairs, distance, parameter });
+                let parameter =
+                    offset_parameter_factor(distance.0, parameter.evaluated_value * 10.0).map(
+                        |factor| cadmpeg_ir::sketches::OffsetParameter {
+                            id: parameter_id,
+                            negated: factor.is_sign_negative(),
+                        },
+                    );
+                return Some(Definition::Offset {
+                    pairs,
+                    distance,
+                    parameter,
+                });
             }
             if let Some(definition) = directional_point_dimension(
                 &locus_entities,
@@ -773,7 +779,10 @@ fn project_all_dimension_constraints(
                         .collect::<Vec<_>>();
                     operands.push(("owner", Some(group.owner_role), group.owner_reference));
                     operands.extend(
-                        group.loci.iter().map(|locus| ("return", None, locus.returned.value)),
+                        group
+                            .loci
+                            .iter()
+                            .map(|locus| ("return", None, locus.returned.value)),
                     );
                     native_definition(
                         scope,
@@ -806,9 +815,7 @@ fn project_all_dimension_constraints(
             let indices = frame
                 .operands
                 .iter()
-                .filter_map(|operand| {
-                    operand.geometry_record_index.map(std::num::NonZeroU32::get)
-                })
+                .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
                 .collect::<Vec<_>>();
             let sketch = sketches.get(&(scope, frame.owner_reference))?.clone();
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "annotation");
@@ -828,21 +835,16 @@ fn project_all_dimension_constraints(
                     let operands = frame
                         .operands
                         .iter()
-                        .map(|operand| {
-                            match operand.geometry_record_index {
-                                None => SketchNativeOperand {
-                                    native_kind: "null_locus".into(),
-                                    native_field: Some("locus".into()),
-                                    native_role: Some(operand.role),
-                                    object_index: 0,
-                                    native_ref: None,
-                                },
-                                Some(index) => native_operand(
-                                    scope,
-                                    "locus",
-                                    Some(operand.role),
-                                    index.get(),
-                                ),
+                        .map(|operand| match operand.geometry_record_index {
+                            None => SketchNativeOperand {
+                                native_kind: "null_locus".into(),
+                                native_field: Some("locus".into()),
+                                native_role: Some(operand.role),
+                                object_index: 0,
+                                native_ref: None,
+                            },
+                            Some(index) => {
+                                native_operand(scope, "locus", Some(operand.role), index.get())
                             }
                         })
                         .collect();
@@ -1692,7 +1694,8 @@ pub(crate) fn concentric_circle_dimension_definition(
         SketchGeometry, SketchLocus,
     };
 
-    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter)
+    {
         return None;
     }
     let evaluated_mm = parameter.evaluated_value * 10.0;
@@ -1755,7 +1758,8 @@ pub(crate) fn unique_point_line_dimension_definition(
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
 
-    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter)
+    {
         return None;
     }
     let evaluated_mm = parameter.evaluated_value * 10.0;
@@ -1803,7 +1807,8 @@ pub(crate) fn unique_parallel_line_dimension_definition(
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
 
-    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter)
+    {
         return None;
     }
     let evaluated_mm = parameter.evaluated_value * 10.0;
@@ -2736,7 +2741,8 @@ pub(crate) fn unique_spatial_parallel_line_dimension_definition(
         SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometry,
     };
 
-    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter)
+    {
         return None;
     }
     let expected = (parameter.evaluated_value * 10.0).abs();
@@ -2784,7 +2790,8 @@ pub(crate) fn owner_scoped_spatial_repeated_profile_line_distance_definition(
         SpatialSketchConstraintDefinition as Definition, SpatialSketchEntityPair,
     };
 
-    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+    if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter)
+    {
         return None;
     }
     let expected = (parameter.evaluated_value * 10.0).abs();
@@ -3477,9 +3484,7 @@ pub(crate) fn annotation_offset_dimension_definition(
     let non_null_indices = frame
         .operands
         .iter()
-        .filter_map(|operand| {
-            operand.geometry_record_index.map(std::num::NonZeroU32::get)
-        })
+        .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
         .collect::<Vec<_>>();
     let null_locus_count = frame
         .operands
@@ -3829,9 +3834,11 @@ pub fn bind_dimension_loci(
         let Some(scope) = native_stream(&frame.id) else {
             continue;
         };
-        for record_index in frame.operands.iter().filter_map(|operand| {
-            operand.geometry_record_index.map(std::num::NonZeroU32::get)
-        }) {
+        for record_index in frame
+            .operands
+            .iter()
+            .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
+        {
             insert_dimension_binding(&mut bindings, scope, record_index, frame.owner_reference)?;
         }
     }
@@ -5343,26 +5350,20 @@ pub(crate) fn point_lies_on_sketch_geometry(
                     None => true,
                 }
         }
-        SketchGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic: false,
-        } => {
+        SketchGeometry::Nurbs { curve } if !curve.periodic() => {
             let tolerance = EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                 * (1.0 + point.u.abs().max(point.v.abs()));
             cadmpeg_ir::eval::nurbs_pcurve_contains_point(
-                *degree,
-                knots,
-                control_points,
-                weights.as_deref(),
+                curve.degree(),
+                curve.knots(),
+                curve.control_points(),
+                curve.weights(),
                 point,
                 tolerance,
             )
             .unwrap_or(false)
         }
-        SketchGeometry::Nurbs { periodic: true, .. }
+        SketchGeometry::Nurbs { .. }
         | SketchGeometry::Text { .. }
         | SketchGeometry::ExternalReference { .. }
         | SketchGeometry::Native { .. } => false,
@@ -5383,10 +5384,7 @@ pub(crate) fn exact_counted_offset(
     use cadmpeg_ir::features::Length;
     use cadmpeg_ir::sketches::SketchOffsetPair;
 
-    if loci.len() != entities.len()
-        || loci.len() < 2
-        || !loci.len().is_multiple_of(2)
-    {
+    if loci.len() != entities.len() || loci.len() < 2 || !loci.len().is_multiple_of(2) {
         return None;
     }
     let source_count = loci.len() / 2;

@@ -2181,23 +2181,13 @@ fn transform_sketch_block_geometry(
             focal_length: *focal_length,
             bounds: *bounds,
         },
-        SketchGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        } => SketchGeometry::Nurbs {
-            degree: *degree,
-            knots: knots.clone(),
-            control_points: control_points
-                .iter()
-                .copied()
-                .map(point)
-                .collect::<Option<Vec<_>>>()?,
-            weights: weights.clone(),
-            periodic: *periodic,
-        },
+        SketchGeometry::Nurbs { curve } => {
+            let mut curve = curve.clone();
+            for pole in curve.control_points_mut() {
+                *pole = point(*pole)?;
+            }
+            SketchGeometry::Nurbs { curve }
+        }
         SketchGeometry::Text {
             text,
             font_family,

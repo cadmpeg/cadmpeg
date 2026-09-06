@@ -196,15 +196,18 @@ pub(super) fn project_edge(
             })
         }
         Some(CurveGeometry::Nurbs(nurbs)) => Some(SketchGeometry::Nurbs {
-            degree: nurbs.degree(),
-            knots: nurbs.knots().to_vec(),
-            control_points: nurbs
-                .control_points()
-                .iter()
-                .map(|point| project_point(*point, origin, u_axis, v_axis))
-                .collect(),
-            weights: nurbs.weights().map(<[f64]>::to_vec),
-            periodic: nurbs.periodic(),
+            curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+                nurbs.degree(),
+                nurbs.knots().to_vec(),
+                nurbs
+                    .control_points()
+                    .iter()
+                    .map(|point| project_point(*point, origin, u_axis, v_axis))
+                    .collect(),
+                nurbs.weights().map(<[f64]>::to_vec),
+                nurbs.periodic(),
+            )
+            .ok()?,
         }),
         None if edge.start == edge.end => Some(SketchGeometry::Point { position: start }),
         Some(CurveGeometry::Line { .. }) | None => line(),

@@ -653,9 +653,10 @@ pub(crate) fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f6
                 center.v + radius.0 * end_angle.0.sin(),
             ],
         ]),
-        SketchGeometry::Nurbs { control_points, .. } => {
-            let first = control_points.first()?;
-            let last = control_points.last()?;
+        SketchGeometry::Nurbs { curve } => {
+            let control_points = curve.control_points();
+            let first = control_points[0];
+            let last = control_points[control_points.len() - 1];
             Some([[first.u, first.v], [last.u, last.v]])
         }
         _ => None,

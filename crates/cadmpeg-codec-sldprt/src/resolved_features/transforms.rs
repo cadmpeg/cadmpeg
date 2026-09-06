@@ -762,15 +762,17 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
                 None => Vec::new(),
             }
         }
-        SketchGeometry::Nurbs { control_points, .. } if !control_points.is_empty() => vec![
-            locus(control_points[0], SketchLocus::Start(entity.id().clone())),
-            locus(
-                control_points[control_points.len() - 1],
-                SketchLocus::End(entity.id().clone()),
-            ),
-        ],
-        SketchGeometry::Nurbs { .. }
-        | SketchGeometry::Text { .. }
+        SketchGeometry::Nurbs { curve } => {
+            let control_points = curve.control_points();
+            vec![
+                locus(control_points[0], SketchLocus::Start(entity.id().clone())),
+                locus(
+                    control_points[control_points.len() - 1],
+                    SketchLocus::End(entity.id().clone()),
+                ),
+            ]
+        }
+        SketchGeometry::Text { .. }
         | SketchGeometry::ExternalReference { .. }
         | SketchGeometry::Native { .. } => Vec::new(),
     }

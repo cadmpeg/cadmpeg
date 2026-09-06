@@ -686,15 +686,11 @@ pub(crate) fn transfers_bounded_rational_sketch_nurbs() {
         .expect("sketch NURBS");
     assert!(matches!(
         &result.ir().model.sketch_entities[0].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Nurbs {
-            degree: 2,
-            knots,
-            control_points,
-            weights: Some(weights),
-            periodic: false,
-        } if knots == &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
-            && control_points.len() == 3
-            && weights == &[1.0, 0.5, 1.0]
+        cadmpeg_ir::sketches::SketchGeometry::Nurbs { curve }
+            if curve.degree() == 2 && !curve.periodic()
+            && curve.knots() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+            && curve.control_points().len() == 3
+            && curve.weights() == Some(&[1.0, 0.5, 1.0])
     ));
 }
 

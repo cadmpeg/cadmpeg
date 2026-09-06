@@ -15,13 +15,20 @@ const TEST_DISTANCE_EPSILON: f64 = 1.0e-9;
 const TEST_ANGLE_ROUNDING: f64 = 5.0e-7;
 
 fn offset_loci(rows: &[(u32, u32, u32)]) -> Vec<crate::records::DesignDimensionLocus> {
-    rows.iter().map(|&(geometry_record_index, role, returned)| crate::records::DesignDimensionLocus {
-        geometry_record_index,
-        geometry_reference_offset: 0,
-        role,
-        role_offset: 0,
-        returned: crate::records::Located { value: returned, offset: 0 },
-    }).collect()
+    rows.iter()
+        .map(
+            |&(geometry_record_index, role, returned)| crate::records::DesignDimensionLocus {
+                geometry_record_index,
+                geometry_reference_offset: 0,
+                role,
+                role_offset: 0,
+                returned: crate::records::Located {
+                    value: returned,
+                    offset: 0,
+                },
+            },
+        )
+        .collect()
 }
 
 #[test]
@@ -121,11 +128,14 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
             SketchEntityId(id.into()),
             SketchId("generated:sketch#0".into()),
             SketchGeometry::Nurbs {
-                degree,
-                knots,
-                control_points,
-                weights: None,
-                periodic: false,
+                curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+                    degree,
+                    knots,
+                    control_points,
+                    None,
+                    false,
+                )
+                .unwrap(),
             },
         )
     };
@@ -171,10 +181,14 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     ));
 
     let mut skewed = result;
-    let SketchGeometry::Nurbs { control_points, .. } = &mut skewed.geometry else {
+    let SketchGeometry::Nurbs { curve } = &mut skewed.geometry else {
         unreachable!("test result is a NURBS")
     };
-    control_points.last_mut().expect("result endpoint").u += 0.01;
+    curve
+        .control_points_mut()
+        .last_mut()
+        .expect("result endpoint")
+        .u += 0.01;
     let entities = HashMap::from([(1, &source), (2, &skewed)]);
     assert!(exact_counted_offset(
         &offset_loci(&[(1, 3, 1), (2, 0, 2)]),
@@ -706,11 +720,16 @@ fn offset_parameter_factor_preserves_curve_direction() {
 #[test]
 fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
     let placement = |stream: &str, suffix| DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
 
         id: format!("f3d:{stream}:design-sketch-placement#0"),
         scope_record_index: Some(10),
-        entity_id: crate::records::DesignEntityId::try_from(format!("0_{suffix}")).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from(format!("0_{suffix}"))
+            .expect("valid entity ID"),
 
         visibility: None,
 
@@ -718,7 +737,6 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         record_index: 11,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-
     };
     let owner = |stream: &str| DesignParameterOwner {
         id: format!("f3d:{stream}:design-parameter-owner#0"),

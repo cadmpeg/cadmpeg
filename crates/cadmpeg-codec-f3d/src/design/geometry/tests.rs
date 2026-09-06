@@ -291,15 +291,18 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
             end: Point2::new(10.0, 10.0),
         },
         SketchGeometry::Nurbs {
-            degree: 2,
-            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            control_points: vec![
-                Point2::new(10.0, 10.0),
-                Point2::new(5.0, 12.0),
-                Point2::new(0.0, 10.0),
-            ],
-            weights: Some(vec![1.0, 0.75, 1.0]),
-            periodic: false,
+            curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![
+                    Point2::new(10.0, 10.0),
+                    Point2::new(5.0, 12.0),
+                    Point2::new(0.0, 10.0),
+                ],
+                Some(vec![1.0, 0.75, 1.0]),
+                false,
+            )
+            .unwrap(),
         },
         SketchGeometry::Line {
             start: Point2::new(0.0, 10.0),
@@ -832,15 +835,18 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     ));
 
     let nurbs = entity(SketchGeometry::Nurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
-            Point2::new(1.0, 2.0),
-            Point2::new(2.0, 4.0),
-            Point2::new(3.0, 2.0),
-        ],
-        weights: Some(vec![1.0, 0.5, 1.0]),
-        periodic: false,
+        curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point2::new(1.0, 2.0),
+                Point2::new(2.0, 4.0),
+                Point2::new(3.0, 2.0),
+            ],
+            Some(vec![1.0, 0.5, 1.0]),
+            false,
+        )
+        .unwrap(),
     });
     assert!(point_on_sketch_entity(
         Point2::new(3.0, 2.0),
@@ -852,21 +858,14 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         &nurbs,
         1.0e-6
     ));
-    let SketchGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        ..
-    } = &nurbs.geometry
-    else {
+    let SketchGeometry::Nurbs { curve } = &nurbs.geometry else {
         unreachable!()
     };
     let interior = cadmpeg_ir::eval::nurbs_pcurve_uv(
-        *degree,
-        knots,
-        control_points,
-        weights.as_deref(),
+        curve.degree(),
+        curve.knots(),
+        curve.control_points(),
+        curve.weights(),
         0.375,
     )
     .unwrap();

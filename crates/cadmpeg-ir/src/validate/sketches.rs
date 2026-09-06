@@ -682,24 +682,13 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            SketchGeometry::Nurbs {
-                degree,
-                knots,
-                control_points,
-                weights,
-                ..
-            } => {
-                let expected = control_points.len().checked_add(*degree as usize + 1);
-                if *degree == 0
-                    || control_points.len() <= *degree as usize
-                    || expected != Some(knots.len())
-                    || knots.iter().any(|value| !value.is_finite())
-                    || !knots_nondecreasing(knots)
-                    || control_points.iter().any(|point| !finite2(*point))
-                    || weights.as_ref().is_some_and(|weights| {
-                        weights.len() != control_points.len()
-                            || weights.iter().any(|weight| nonpositive(*weight))
-                    })
+            SketchGeometry::Nurbs { curve } => {
+                if curve.knots().iter().any(|value| !value.is_finite())
+                    || !knots_nondecreasing(curve.knots())
+                    || curve.control_points().iter().any(|point| !finite2(*point))
+                    || curve
+                        .weights()
+                        .is_some_and(|weights| weights.iter().any(|weight| nonpositive(*weight)))
                 {
                     finding(findings, Check::ParameterDomain, id, "invalid sketch NURBS");
                 }
@@ -2081,11 +2070,8 @@ fn oriented_endpoints(
                 end.0,
             ),
         ),
-        SketchGeometry::Nurbs {
-            control_points,
-            periodic: false,
-            ..
-        } if control_points.len() >= 2 => {
+        SketchGeometry::Nurbs { curve } if !curve.periodic() => {
+            let control_points = curve.control_points();
             (control_points[0], control_points[control_points.len() - 1])
         }
         _ => return None,

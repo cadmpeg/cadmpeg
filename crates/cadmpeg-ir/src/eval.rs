@@ -18,8 +18,8 @@ use std::collections::BinaryHeap;
 
 use crate::geometry::{
     knots_nondecreasing, CurveGeometry, LawExpression, LawFormula, NurbsCurve, NurbsSurface,
-    OffsetSupportExtension, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
-    SurfaceGeometry, SurfaceParameterAxis, SweepSurfaceLayout,
+    OffsetSupportExtension, PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, SurfaceGeometry, SurfaceParameterAxis, SweepSurfaceLayout,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
@@ -2005,37 +2005,16 @@ pub fn fitted_nurbs_offset_frame_distance(
     if !linear_tolerance.is_finite() || linear_tolerance < 0.0 {
         return None;
     }
-    let (
-        SketchGeometry::Nurbs {
-            degree: source_degree,
-            knots: source_knots,
-            control_points: source_points,
-            weights: source_weights,
-            periodic: false,
-        },
-        SketchGeometry::Nurbs {
-            degree: result_degree,
-            knots: result_knots,
-            control_points: result_points,
-            weights: result_weights,
-            periodic: false,
-        },
-    ) = (source, result)
+    let (SketchGeometry::Nurbs { curve: source }, SketchGeometry::Nurbs { curve: result }) =
+        (source, result)
     else {
         return None;
     };
-    let source_frames = clamped_nurbs_pcurve_endpoint_frames(
-        *source_degree,
-        source_knots,
-        source_points,
-        source_weights.as_deref(),
-    )?;
-    let result_frames = clamped_nurbs_pcurve_endpoint_frames(
-        *result_degree,
-        result_knots,
-        result_points,
-        result_weights.as_deref(),
-    )?;
+    if source.periodic() || result.periodic() {
+        return None;
+    }
+    let source_frames = clamped_nurbs_pcurve_endpoint_frames(source)?;
+    let result_frames = clamped_nurbs_pcurve_endpoint_frames(result)?;
     let same = fitted_nurbs_offset_candidate(source_frames, result_frames, linear_tolerance);
     let reversed = fitted_nurbs_offset_candidate(
         source_frames,
@@ -2057,27 +2036,22 @@ pub fn fitted_nurbs_offset_frame_distance(
     }
 }
 
-fn clamped_nurbs_pcurve_endpoint_frames(
-    degree: u32,
-    knots: &[f64],
-    control_points: &[Point2],
-    weights: Option<&[f64]>,
-) -> Option<[(Point2, Point2); 2]> {
-    let [lower, upper] = nurbs_pcurve_parameter_domain(degree, knots, control_points.len())?;
-    let degree = usize::try_from(degree).ok()?;
-    if degree == 0
-        || control_points.len() < 2
-        || knots.iter().take(degree + 1).any(|knot| *knot != lower)
+fn clamped_nurbs_pcurve_endpoint_frames(curve: &PcurveNurbs) -> Option<[(Point2, Point2); 2]> {
+    let knots = curve.knots();
+    let control_points = curve.control_points();
+    let [lower, upper] =
+        nurbs_pcurve_parameter_domain(curve.degree(), knots, control_points.len())?;
+    let degree = curve.degree() as usize;
+    if knots.iter().take(degree + 1).any(|knot| *knot != lower)
         || knots
             .iter()
             .skip(control_points.len())
             .take(degree + 1)
             .any(|knot| *knot != upper)
-        || weights.is_some_and(|weights| {
-            weights.len() != control_points.len()
-                || weights
-                    .iter()
-                    .any(|weight| !weight.is_finite() || *weight <= 0.0)
+        || curve.weights().is_some_and(|weights| {
+            weights
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight <= 0.0)
         })
     {
         return None;

@@ -208,21 +208,27 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     spline: &crate::feature::FeatureSavedSpline,
 ) -> Option<SketchGeometry> {
     let nurbs = saved_spline_nurbs(spline)?;
-    nurbs
+    if !nurbs
         .control_points()
         .iter()
         .all(|point| point.z.abs() <= EPS_PLANAR_COORDINATE)
-        .then(|| SketchGeometry::Nurbs {
-            degree: nurbs.degree(),
-            knots: nurbs.knots().to_vec(),
-            control_points: nurbs
+    {
+        return None;
+    }
+    Some(SketchGeometry::Nurbs {
+        curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+            nurbs.degree(),
+            nurbs.knots().to_vec(),
+            nurbs
                 .control_points()
                 .iter()
                 .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
                 .collect(),
-            weights: nurbs.weights().map(<[f64]>::to_vec),
-            periodic: nurbs.periodic(),
-        })
+            nurbs.weights().map(<[f64]>::to_vec),
+            nurbs.periodic(),
+        )
+        .ok()?,
+    })
 }
 
 pub(in super::super) fn interpolation_spline_surface(
@@ -396,27 +402,10 @@ pub(in super::super) fn extruded_nurbs_surface(
 }
 
 pub(in super::super) fn sketch_nurbs_curve(geometry: &SketchGeometry) -> Option<NurbsCurve> {
-    let SketchGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic,
-    } = geometry
-    else {
+    let SketchGeometry::Nurbs { curve } = geometry else {
         return None;
     };
-    let nurbs = NurbsCurve::new(
-        *degree,
-        knots.clone(),
-        control_points
-            .iter()
-            .map(|point| Point3::new(point.u, point.v, 0.0))
-            .collect(),
-        weights.clone(),
-        *periodic,
-    )
-    .ok()?;
+    let nurbs = curve.lift(|point| Point3::new(point.u, point.v, 0.0));
     valid_positive_nurbs_curve(&nurbs).map(|()| nurbs)
 }
 

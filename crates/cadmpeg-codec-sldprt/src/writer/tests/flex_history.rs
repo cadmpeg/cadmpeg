@@ -59,15 +59,18 @@ fn encoder_writes_source_less_curved_sketches() {
             bounds: None,
         },
         SketchGeometry::Nurbs {
-            degree: 2,
-            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            control_points: vec![
-                Point2::new(6.0, 6.0),
-                Point2::new(10.0, 10.0),
-                Point2::new(6.0, 6.0),
-            ],
-            weights: Some(vec![1.0, 0.75, 1.0]),
-            periodic: false,
+            curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![
+                    Point2::new(6.0, 6.0),
+                    Point2::new(10.0, 10.0),
+                    Point2::new(6.0, 6.0),
+                ],
+                Some(vec![1.0, 0.75, 1.0]),
+                false,
+            )
+            .unwrap(),
         },
         SketchGeometry::Line {
             start: Point2::new(6.0, 0.0),

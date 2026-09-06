@@ -4,7 +4,7 @@
 use crate::design::profile_select::historical_face_points;
 use crate::records::{DesignExtrudeSelectionMember, SketchRelationOperand};
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
-use cadmpeg_ir::geometry::knots_nondecreasing;
+use cadmpeg_ir::geometry::{knots_nondecreasing, PcurveNurbs};
 use cadmpeg_ir::math::{Point2, Point3};
 use std::collections::{HashMap, HashSet};
 
@@ -481,19 +481,17 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
         }
         _ => return false,
     };
-    let SketchGeometry::Nurbs {
-        control_points,
-        weights,
-        periodic: false,
-        ..
-    } = &nurbs_entity.geometry
-    else {
+    let SketchGeometry::Nurbs { curve } = &nurbs_entity.geometry else {
         return false;
     };
-    if weights.as_ref().is_some_and(|weights| {
-        weights.len() != control_points.len() || weights.iter().any(|weight| *weight <= 0.0)
-    }) || sketch_geometry_parameter_range(&nurbs_entity.geometry)
-        != Some(nurbs.boundary.parameter_range)
+    if curve.periodic() {
+        return false;
+    }
+    if curve
+        .weights()
+        .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
+        || sketch_geometry_parameter_range(&nurbs_entity.geometry)
+            != Some(nurbs.boundary.parameter_range)
     {
         return false;
     }
@@ -501,8 +499,9 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
     if (point_distance(center, shared) - radius).abs() > tolerance {
         return false;
     }
-    let first_shared = point_distance(control_points[0], shared) <= tolerance;
-    let last_shared = control_points
+    let first_shared = point_distance(curve.control_points()[0], shared) <= tolerance;
+    let last_shared = curve
+        .control_points()
         .last()
         .is_some_and(|point| point_distance(*point, shared) <= tolerance);
     if first_shared == last_shared {
@@ -511,18 +510,20 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
     let endpoint = if first_shared {
         0
     } else {
-        control_points.len() - 1
+        curve.control_points().len() - 1
     };
     let normal = Point2::new(shared.u - center.u, shared.v - center.v);
     let support = |point: Point2| normal.u * (point.u - shared.u) + normal.v * (point.v - shared.v);
     let threshold = tolerance * radius;
-    support(control_points[endpoint]).abs() <= threshold
-        && (control_points
+    support(curve.control_points()[endpoint]).abs() <= threshold
+        && (curve
+            .control_points()
             .iter()
             .enumerate()
             .filter(|(index, _)| *index != endpoint)
             .all(|(_, point)| support(*point) > threshold)
-            || control_points
+            || curve
+                .control_points()
                 .iter()
                 .enumerate()
                 .filter(|(index, _)| *index != endpoint)
@@ -557,33 +558,28 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
     let SketchGeometry::Line { start, end } = line_entity.geometry else {
         return false;
     };
-    let SketchGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic: false,
-    } = &nurbs_entity.geometry
-    else {
+    let SketchGeometry::Nurbs { curve } = &nurbs_entity.geometry else {
         return false;
     };
-    if weights.as_ref().is_some_and(|weights| {
-        weights.len() != control_points.len() || weights.iter().any(|weight| *weight <= 0.0)
-    }) {
+    if curve.periodic() {
+        return false;
+    }
+    if curve
+        .weights()
+        .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
+    {
         return false;
     }
     let Some(domain) = sketch_geometry_parameter_range(&nurbs_entity.geometry) else {
         return false;
     };
-    if nurbs.boundary.parameter_range != domain
-        || usize::try_from(*degree).ok().is_none()
-        || knots.is_empty()
-    {
+    if nurbs.boundary.parameter_range != domain {
         return false;
     }
     let shared = nodes[shared_nodes[0]];
-    let first_shared = point_distance(control_points[0], shared) <= tolerance;
-    let last_shared = control_points
+    let first_shared = point_distance(curve.control_points()[0], shared) <= tolerance;
+    let last_shared = curve
+        .control_points()
         .last()
         .is_some_and(|point| point_distance(*point, shared) <= tolerance);
     if first_shared == last_shared {
@@ -599,13 +595,14 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
     let endpoint = if first_shared {
         0
     } else {
-        control_points.len() - 1
+        curve.control_points().len() - 1
     };
     let threshold = tolerance * line_length;
-    if side(control_points[endpoint]).abs() > threshold {
+    if side(curve.control_points()[endpoint]).abs() > threshold {
         return false;
     }
-    let mut signs = control_points
+    let mut signs = curve
+        .control_points()
         .iter()
         .enumerate()
         .filter(|(index, _)| *index != endpoint)
@@ -1052,22 +1049,12 @@ fn arrangement_edge_tubes(
                 target_error,
             )
         }
-        SketchGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic: false,
-        } if sketch_geometry_parameter_range(&entity.geometry)
-            == Some(edge.boundary.parameter_range) =>
+        SketchGeometry::Nurbs { curve }
+            if !curve.periodic()
+                && sketch_geometry_parameter_range(&entity.geometry)
+                    == Some(edge.boundary.parameter_range) =>
         {
-            certified_nurbs_tubes(
-                *degree,
-                knots,
-                control_points,
-                weights.as_deref(),
-                target_error,
-            )
+            certified_nurbs_tubes(curve, target_error)
         }
         _ => None,
     }
@@ -1115,15 +1102,9 @@ fn sketch_geometry_parameter_range(
             bounds: Some([start, end]),
             ..
         } => Some([start.0, end.0]),
-        SketchGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            periodic: false,
-            ..
-        } => Some([
-            *knots.get(usize::try_from(*degree).ok()?)?,
-            *knots.get(control_points.len())?,
+        SketchGeometry::Nurbs { curve } if !curve.periodic() => Some([
+            curve.knots()[curve.degree() as usize],
+            curve.knots()[curve.control_points().len()],
         ]),
         _ => None,
     }
@@ -1178,13 +1159,7 @@ fn sketch_geometry_speed_bound(
             minor_radius,
             ..
         } => Some(major_radius.0.max(minor_radius.0)),
-        SketchGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic: false,
-        } => nurbs_speed_bound(*degree, knots, control_points, weights.as_deref()),
+        SketchGeometry::Nurbs { curve } if !curve.periodic() => nurbs_speed_bound(curve),
         _ if range[0] == range[1] => None,
         _ => None,
     }
@@ -1223,17 +1198,11 @@ fn sketch_geometry_point(
                     + minor_radius.0 * parameter.sin() * axis_cosine,
             ))
         }
-        SketchGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic: false,
-        } => cadmpeg_ir::eval::nurbs_pcurve_uv(
-            *degree,
-            knots,
-            control_points,
-            weights.as_deref(),
+        SketchGeometry::Nurbs { curve } if !curve.periodic() => cadmpeg_ir::eval::nurbs_pcurve_uv(
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
+            curve.weights(),
             parameter,
         ),
         _ => None,
@@ -1677,19 +1646,9 @@ fn certified_profile_loop(
                 start_angle,
                 end_angle,
             } => certified_arc_tubes(*center, radius.0, start_angle.0, end_angle.0, target_error)?,
-            SketchGeometry::Nurbs {
-                degree,
-                knots,
-                control_points,
-                weights,
-                periodic: false,
-            } => certified_nurbs_tubes(
-                *degree,
-                knots,
-                control_points,
-                weights.as_deref(),
-                target_error,
-            )?,
+            SketchGeometry::Nurbs { curve } if !curve.periodic() => {
+                certified_nurbs_tubes(curve, target_error)?
+            }
             _ => return None,
         };
         if use_.reversed {
@@ -1785,17 +1744,17 @@ fn certified_arc_tubes(
 }
 
 fn certified_nurbs_tubes(
-    degree: u32,
-    knots: &[f64],
-    control_points: &[Point2],
-    weights: Option<&[f64]>,
+    curve: &PcurveNurbs,
     target_error: f64,
 ) -> Option<Vec<CertifiedCurveTube>> {
-    let speed = nurbs_speed_bound(degree, knots, control_points, weights)?;
-    let degree = usize::try_from(degree).ok()?;
+    let speed = nurbs_speed_bound(curve)?;
+    let degree = curve.degree() as usize;
+    let knots = curve.knots();
+    let control_points = curve.control_points();
+    let weights = curve.weights();
     let count = control_points.len();
     let mut tubes = Vec::new();
-    for span in knots.get(degree..=count)?.windows(2) {
+    for span in knots[degree..=count].windows(2) {
         if span[0] == span[1] {
             continue;
         }
@@ -1838,24 +1797,16 @@ fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
     (count <= MAX_SUBDIVISIONS as f64).then_some(count as usize)
 }
 
-fn nurbs_speed_bound(
-    degree: u32,
-    knots: &[f64],
-    control_points: &[Point2],
-    weights: Option<&[f64]>,
-) -> Option<f64> {
-    let degree_usize = usize::try_from(degree).ok()?;
+fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
+    let degree = curve.degree();
+    let degree_usize = degree as usize;
+    let knots = curve.knots();
+    let control_points = curve.control_points();
+    let weights = curve.weights();
     let count = control_points.len();
-    if degree_usize == 0
-        || count <= degree_usize
-        || knots.len() < count.checked_add(degree_usize)?.checked_add(1)?
-    {
-        return None;
-    }
     let owned_weights;
     let weights = match weights {
-        Some(weights) if weights.len() == count => weights,
-        Some(_) => return None,
+        Some(weights) => weights,
         None => {
             owned_weights = alloc_filled(count, 1.0, "f3d_nurbs_weights").ok()?;
             &owned_weights
@@ -2413,7 +2364,9 @@ pub(crate) fn historical_member_points_in_state(
             let kind = match member.resolved_geometry.as_ref()? {
                 SketchRelationOperand::Point { .. } => AsmHistoricalEntityKind::Point,
                 SketchRelationOperand::Curve { .. } => AsmHistoricalEntityKind::Curve,
-                SketchRelationOperand::Surface { .. } | SketchRelationOperand::Record { .. } => return None,
+                SketchRelationOperand::Surface { .. } | SketchRelationOperand::Record { .. } => {
+                    return None
+                }
             };
             (kind, i64::try_from(member.local_id).ok()?)
         }
@@ -2656,21 +2609,17 @@ pub(crate) fn point_on_sketch_entity(
                 ),
             }
         }
-        SketchGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic: false,
-        } => cadmpeg_ir::eval::nurbs_pcurve_contains_point(
-            *degree,
-            knots,
-            control_points,
-            weights.as_deref(),
-            point,
-            tolerance,
-        )
-        .unwrap_or(false),
+        SketchGeometry::Nurbs { curve } if !curve.periodic() => {
+            cadmpeg_ir::eval::nurbs_pcurve_contains_point(
+                curve.degree(),
+                curve.knots(),
+                curve.control_points(),
+                curve.weights(),
+                point,
+                tolerance,
+            )
+            .unwrap_or(false)
+        }
         _ => false,
     }
 }
@@ -3226,29 +3175,22 @@ pub(crate) fn sketch_entity_endpoints(
             };
             Some([point_at(start_angle.0), point_at(end_angle.0)])
         }
-        SketchGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic: false,
-        } => {
-            let degree_index = usize::try_from(*degree).ok()?;
-            let start_parameter = *knots.get(degree_index)?;
-            let end_parameter = *knots.get(control_points.len())?;
+        SketchGeometry::Nurbs { curve } if !curve.periodic() => {
+            let start_parameter = curve.knots()[curve.degree() as usize];
+            let end_parameter = curve.knots()[curve.control_points().len()];
             Some([
                 cadmpeg_ir::eval::nurbs_pcurve_uv(
-                    *degree,
-                    knots,
-                    control_points,
-                    weights.as_deref(),
+                    curve.degree(),
+                    curve.knots(),
+                    curve.control_points(),
+                    curve.weights(),
                     start_parameter,
                 )?,
                 cadmpeg_ir::eval::nurbs_pcurve_uv(
-                    *degree,
-                    knots,
-                    control_points,
-                    weights.as_deref(),
+                    curve.degree(),
+                    curve.knots(),
+                    curve.control_points(),
+                    curve.weights(),
                     end_parameter,
                 )?,
             ])

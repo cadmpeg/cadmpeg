@@ -1719,14 +1719,17 @@ fn sketch_nurbs(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchGeome
         .map(|(_, _, weight)| *weight)
         .collect::<Vec<_>>();
     Some(SketchGeometry::Nurbs {
-        degree,
-        knots: full_knots,
-        control_points,
-        weights: weights
-            .iter()
-            .any(|weight| (*weight - 1.0).abs() > f64::EPSILON)
-            .then_some(weights),
-        periodic,
+        curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+            degree,
+            full_knots,
+            control_points,
+            weights
+                .iter()
+                .any(|weight| (*weight - 1.0).abs() > f64::EPSILON)
+                .then_some(weights),
+            periodic,
+        )
+        .ok()?,
     })
 }
 

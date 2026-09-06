@@ -54,16 +54,19 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     let first_line_id = SketchEntityId("creo:model:sketch_entity#first-line".to_string());
     let second_line_id = SketchEntityId("creo:model:sketch_entity#second-line".to_string());
     let spline = SketchGeometry::Nurbs {
-        degree: 3,
-        knots: vec![2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0],
-        control_points: vec![
-            Point2::new(1.0, 0.0),
-            Point2::new(1.0, 0.552_284_749_8),
-            Point2::new(0.552_284_749_8, 1.0),
-            Point2::new(0.0, 1.0),
-        ],
-        weights: Some(vec![1.0, 0.75, 0.75, 1.0]),
-        periodic: false,
+        curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+            3,
+            vec![2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0],
+            vec![
+                Point2::new(1.0, 0.0),
+                Point2::new(1.0, 0.552_284_749_8),
+                Point2::new(0.552_284_749_8, 1.0),
+                Point2::new(0.0, 1.0),
+            ],
+            Some(vec![1.0, 0.75, 0.75, 1.0]),
+            false,
+        )
+        .unwrap(),
     };
     let first_line = SketchGeometry::Line {
         start: Point2::new(0.0, 1.0),
@@ -116,11 +119,14 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     assert!(!profile_strictly_contains(&profiles[0], [2.0, 2.0]));
     let diagonal = (
         SketchGeometry::Nurbs {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
-            weights: None,
-            periodic: false,
+            curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+                None,
+                false,
+            )
+            .unwrap(),
         },
         false,
         [0.0, 0.0],
