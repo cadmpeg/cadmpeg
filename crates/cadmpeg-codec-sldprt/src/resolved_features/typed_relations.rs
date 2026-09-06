@@ -135,12 +135,14 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 native_ref: Some(link.entity_ref.clone()),
             })
             .collect::<Vec<_>>();
-        operands.extend(owners.into_iter().map(|owner| SketchNativeOperand {
-            native_kind: "sldprt:marker-constraint-owner".into(),
-            native_field: None,
-            native_role: None,
-            object_index: owner.object_index.or(owner.local_id).unwrap_or(u32::MAX),
-            native_ref: Some(owner.id.clone()),
+        operands.extend(owners.into_iter().filter_map(|owner| {
+            Some(SketchNativeOperand {
+                native_kind: "sldprt:marker-constraint-owner".into(),
+                native_field: None,
+                native_role: None,
+                object_index: owner.object_index.or(owner.local_id)?,
+                native_ref: Some(owner.id.clone()),
+            })
         }));
         SketchConstraintDefinition::Native {
             native_kind: match marker.kind {

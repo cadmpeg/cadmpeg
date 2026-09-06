@@ -427,3 +427,41 @@ fn terminal_legacy_indexed_curve_retains_its_sibling_line_kind() {
         &[&terminal],
     ));
 }
+
+#[test]
+fn native_owner_operand_requires_a_source_index() {
+    let relation = SketchInputEntity::new(
+        "relation",
+        "lane",
+        0,
+        0,
+        SketchInputKind::Relation(crate::records::SketchRelationKind::Horizontal),
+    );
+    let mut owner = SketchInputEntity::new("owner", "lane", 1, 1, SketchInputKind::LineOrCircle);
+    owner.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 4,
+            entity_ref: relation.id.clone(),
+        }],
+    );
+    for index in [None, Some(7)] {
+        owner.local_id = index;
+        let markers = HashMap::from([
+            (relation.id.as_str(), &relation),
+            (owner.id.as_str(), &owner),
+        ]);
+        let Some(SketchConstraintDefinition::Native { operands, .. }) =
+            typed_marker_relation_definition(&relation, &markers, &HashMap::new())
+        else {
+            panic!("native relation");
+        };
+        assert_eq!(
+            operands
+                .iter()
+                .map(|operand| operand.object_index)
+                .collect::<Vec<_>>(),
+            index.into_iter().collect::<Vec<_>>()
+        );
+    }
+}
