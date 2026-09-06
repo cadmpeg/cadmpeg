@@ -124,7 +124,6 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     assert_eq!(construction.flags, [true, false]);
     let CompoundLoftTail::Zero {
         flags,
-        selector,
         direction,
         trailing_flags,
     } = &construction.tail
@@ -132,7 +131,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
         panic!("expected zero tail")
     };
     assert_eq!(*flags, [false, true]);
-    assert_eq!(*selector, 0);
+    assert_eq!(direction.selector(), 0);
     assert!(matches!(direction, CompoundLoftDirection::Vector { .. }));
     assert_eq!(*trailing_flags, [true, false]);
     let member_curve = scale.members[0].curve.clone();
@@ -186,7 +185,6 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     assert!(matches!(
         construction.tail,
         CompoundLoftTail::Zero {
-            selector: 0,
             direction: CompoundLoftDirection::Vector { .. },
             ..
         }
@@ -251,7 +249,6 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
         },
         CompoundLoftTail::Zero {
             flags: [false, true],
-            selector: 4,
             direction: CompoundLoftDirection::Curve {
                 curve,
                 selector: std::num::NonZeroI64::new(4).unwrap(),
@@ -330,11 +327,10 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
             (
                 CompoundLoftTail::Zero { .. },
                 CompoundLoftTail::Zero {
-                    selector: 4,
-                    direction: CompoundLoftDirection::Curve { .. },
+                    direction: CompoundLoftDirection::Curve { selector, .. },
                     ..
                 },
-            ) => {}
+            ) => assert_eq!(selector.get(), 4),
             _ => panic!("compound-loft tail shape changed"),
         }
     }

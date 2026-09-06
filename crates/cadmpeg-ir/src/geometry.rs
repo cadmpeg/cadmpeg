@@ -4936,6 +4936,45 @@ mod revision_compound_loft_direction_wire {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CompoundLoftDirectionWire {
+    selector: i64,
+    direction: CompoundLoftDirection,
+}
+
+mod compound_loft_direction_wire {
+    use super::{CompoundLoftDirection, CompoundLoftDirectionWire};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::num::NonZeroI64;
+
+    pub fn serialize<S>(direction: &CompoundLoftDirection, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        CompoundLoftDirectionWire {
+            selector: direction.selector(),
+            direction: direction.clone(),
+        }.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<CompoundLoftDirection, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = CompoundLoftDirectionWire::deserialize(deserializer)?;
+        match (wire.selector, wire.direction) {
+            (0, direction @ CompoundLoftDirection::Vector { .. }) => Ok(direction),
+            (selector, CompoundLoftDirection::Curve { curve, .. }) => {
+                NonZeroI64::new(selector)
+                    .map(|selector| CompoundLoftDirection::Curve { curve, selector })
+                    .ok_or_else(|| serde::de::Error::custom("compound-loft curve selector must be nonzero"))
+            }
+            _ => Err(serde::de::Error::custom("compound-loft vector selector must be zero")),
+        }
+    }
+}
+
 /// Structurally selected tail of `cl_loft_spl_sur`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4978,9 +5017,9 @@ pub enum CompoundLoftTail {
     Zero {
         /// Two leading flags.
         flags: [bool; 2],
-        /// Native direction selector.
-        selector: i64,
-        /// Vector or BS3 curve selected structurally.
+        /// Vector or BS3 curve with its derived native selector.
+        #[serde(flatten, with = "compound_loft_direction_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "CompoundLoftDirectionWire"))]
         direction: CompoundLoftDirection,
         /// Two trailing flags.
         trailing_flags: [bool; 2],

@@ -907,8 +907,6 @@ pub enum EmbeddedCompoundLoftTail {
     Zero {
         /// Two booleans opening the tail.
         flags: [bool; 2],
-        /// The integer selector serialized after the flags.
-        selector: i64,
         /// The direction carrier of the tail.
         direction: EmbeddedCompoundLoftDirection,
         /// Two booleans closing the tail.
@@ -2095,7 +2093,6 @@ fn compound_loft_spl_sur(
             let trailing_flags = [cur.take_bool()?, cur.take_bool()?];
             EmbeddedCompoundLoftTail::Zero {
                 flags: tail_flags,
-                selector,
                 direction,
                 trailing_flags,
             }

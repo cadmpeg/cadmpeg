@@ -5650,3 +5650,17 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::geometry::LoftSubdata::Type211"
 reason = "Preserve the two type-211 native header values independently of its fixed one-pair payload; callers now supply dimensions with the row."
+
+[[change]]
+commit = "ef1acabf8810588fc9e6d15af2707af9a3f31805"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::CompoundLoftTail::Zero::selector"
+reason = "IR-85: derive the native selector from CompoundLoftDirection; checked deserialization preserves the flat wire and exact nonzero curve selector."
+
+[[change]]
+commit = "ef1acabf8810588fc9e6d15af2707af9a3f31805"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Zero::selector"
+reason = "IR-85: the embedded direction owns the selector before projection into the neutral compound-loft tail."

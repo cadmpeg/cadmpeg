@@ -1704,7 +1704,6 @@ fn encode_native_compound_loft(
         }
         CompoundLoftTail::Zero {
             flags,
-            selector,
             direction,
             trailing_flags,
         } => {
@@ -1712,18 +1711,13 @@ fn encode_native_compound_loft(
             for flag in flags {
                 bytes.push(native_bool(*flag));
             }
-            native_i64(bytes, *selector);
+            native_i64(bytes, direction.selector());
             match direction {
-                CompoundLoftDirection::Vector { value } if *selector == 0 => {
+                CompoundLoftDirection::Vector { value } => {
                     native_vector(bytes, [value.x, value.y, value.z]);
                 }
-                CompoundLoftDirection::Curve { curve, .. } if *selector != 0 => {
+                CompoundLoftDirection::Curve { curve, .. } => {
                     native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
-                }
-                _ => {
-                    return Err(CodecError::Malformed(
-                        "compound-loft direction conflicts with its selector".into(),
-                    ));
                 }
             }
             for flag in trailing_flags {

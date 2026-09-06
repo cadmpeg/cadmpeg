@@ -691,3 +691,5 @@ fn solved_caches_reject_procedural_carriers_below_transform_chains() {
     assert_eq!(SolvedCurveGeometry::new(curve.clone()).unwrap().as_geometry(), &curve);
     assert_eq!(SolvedSurfaceGeometry::new(surface.clone()).unwrap().as_geometry(), &surface);
 }
+
+mod compound_loft;

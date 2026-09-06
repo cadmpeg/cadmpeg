@@ -828,7 +828,6 @@ fn emit_compound_loft_surface(
         },
         EmbeddedCompoundLoftTail::Zero {
             flags,
-            selector,
             direction,
             trailing_flags,
         } => {
@@ -854,7 +853,6 @@ fn emit_compound_loft_surface(
             };
             cadmpeg_ir::geometry::CompoundLoftTail::Zero {
                 flags,
-                selector,
                 direction,
                 trailing_flags,
             }
