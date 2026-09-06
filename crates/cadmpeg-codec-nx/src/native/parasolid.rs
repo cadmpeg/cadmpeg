@@ -10,7 +10,7 @@ use crate::framing::xmt_reference::XmtTarget;
 use crate::parasolid::name_references::NameReferences;
 
 use crate::deltas::Census;
-use crate::deltas::record_family::PointCoordinates;
+use crate::deltas::record_family::{PointCoordinates, RecordFamily};
 use crate::intersection::finite_point::FinitePoint;
 use crate::parasolid::attribute_field::AttributeField;
 use crate::parasolid::attribute_action::AttributeAction;
@@ -339,23 +339,6 @@ pub struct ParasolidDeltasRecord {
     pub byte_len: u64,
     /// Record tag offset in the inflated stream.
     pub inflated_offset: u64,
-}
-
-impl ParasolidDeltasRecord {
-    /// Numeric Parasolid node type.
-    pub const fn kind(&self) -> u16 {
-        self.family.kind()
-    }
-
-    /// Kernel node identity when serialized by this family.
-    pub const fn node_id(&self) -> Option<u32> {
-        self.family.node_id()
-    }
-
-    /// Stable family name used on the CADIR wire.
-    pub const fn family_name(&self) -> &'static str {
-        self.family.family_name()
-    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2622,7 +2605,16 @@ pub(crate) fn parasolid_entity_value_records(
                 .iter()
                 .filter_map(|record| {
                     (record.stream_ordinal == stream_ordinal as u32
-                        && matches!(record.kind(), 82..=89 | 98))
+                        && matches!(record.family,
+                            RecordFamily::Entity52
+                            | RecordFamily::Entity53
+                            | RecordFamily::Entity54
+                            | RecordFamily::Entity55
+                            | RecordFamily::Entity56
+                            | RecordFamily::Entity57
+                            | RecordFamily::Entity58
+                            | RecordFamily::Entity59
+                            | RecordFamily::Entity62))
                     .then(|| usize::try_from(record.inflated_offset).ok())
                     .flatten()
                 })
@@ -3550,7 +3542,7 @@ mod tests {
             revision_prefix_end as u64
         );
         assert_eq!(events.records.len(), 1);
-        assert_eq!(events.records[0].family_name(), "TYPE_45");
+        assert_eq!(events.records[0].family.family_name(), "TYPE_45");
         assert_eq!(events.records[0].xmt, 10);
         assert_eq!(events.records[0].inflated_offset, type_45_offset as u64);
         assert_eq!(events.records[0].byte_len, 24);
