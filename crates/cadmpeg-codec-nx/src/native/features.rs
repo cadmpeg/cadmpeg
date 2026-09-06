@@ -5244,9 +5244,7 @@ impl TryFrom<FeatureExtrudeConstructionProfileWire> for FeatureExtrudeConstructi
 pub struct FeatureExtrudePayload32Branch {
     pub id: String,
     pub operation_label: String,
-    pub body_object_index: u32,
-    pub scalar: f64,
-    pub raw_scalar: [u8; 8],
+    pub scalar: ShiftedBinary64,
     pub atoms: Vec<FeatureDataBlockToken<u32>>,
     pub first_indices: Vec<FeatureDataBlockToken<Vec<u8>>>,
     pub second_indices: Vec<FeatureDataBlockToken<Vec<u8>>>,
@@ -5313,9 +5311,9 @@ impl From<FeatureExtrudePayload32Branch> for FeatureExtrudePayload32BranchWire {
         Self {
             id: branch.id,
             operation_label: branch.operation_label,
-            body_object_index: branch.body_object_index,
-            scalar: branch.scalar,
-            raw_scalar: branch.raw_scalar,
+            body_object_index: branch.terminal.value,
+            scalar: branch.scalar.value(),
+            raw_scalar: branch.scalar.raw(),
             atom_indices: branch.atoms.iter().map(|token| token.value).collect(),
             atoms_be: branch.atoms.iter().map(|token| token.raw).collect(),
             atom_source_offsets: branch
@@ -5398,12 +5396,14 @@ impl TryFrom<FeatureExtrudePayload32BranchWire> for FeatureExtrudePayload32Branc
         {
             return Err("extrusion second_indices columns must have equal lengths".into());
         }
+        if wire.body_object_index != wire.terminal_object_index {
+            return Err("body_object_index must match terminal_object_index".into());
+        }
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            body_object_index: wire.body_object_index,
-            scalar: wire.scalar,
-            raw_scalar: wire.raw_scalar,
+            scalar: ShiftedBinary64::from_wire(wire.scalar, wire.raw_scalar)
+                .map_err(|error| format!("scalar/raw_scalar: {error}"))?,
             atoms: wire
                 .atom_indices
                 .into_iter()
@@ -11494,9 +11494,7 @@ pub fn feature_extrude_payload_32_branches(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                body_object_index: branch.body_object_index,
                 scalar: branch.scalar,
-                raw_scalar: branch.raw_scalar,
                 atoms: branch.atoms.into_iter().map(|token| FeatureDataBlockToken {
                     value: token.value,
                     raw: token.raw,
@@ -11594,7 +11592,7 @@ pub fn feature_extrude_32_constructions(
                 .replacen("extrude-payload-32-branch", "extrude-32-construction", 1),
             operation_label: branch.operation_label.clone(),
             branch: branch.id.clone(),
-            body_object_index: branch.body_object_index,
+            body_object_index: branch.terminal.value,
             profile_references: profile
                 .iter()
                 .map(|reference| reference.id.clone())

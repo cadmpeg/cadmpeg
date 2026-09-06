@@ -2710,12 +2710,8 @@ pub struct OperationBodyReferenceLane {
 pub struct ExtrudePayload32Branch {
     /// Absolute offset of the `32` branch marker.
     pub offset: usize,
-    /// Body object index anchoring the branch.
-    pub body_object_index: u32,
     /// Finite shifted-IEEE scalar following the branch marker.
-    pub scalar: f64,
-    /// Exact shifted-binary64 scalar encoding.
-    pub raw_scalar: [u8; 8],
+    pub scalar: ShiftedBinary64,
     /// Fixed-width wrapped compact indices with their source words and offsets.
     pub atoms: Vec<LaneToken<u32, u32>>,
     /// Ordered values in the first compact-index lane.
@@ -5518,8 +5514,7 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
         return None;
     }
     let branch_at = end + 1;
-    let raw_scalar = <[u8; 8]>::try_from(record.bytes.get(end + 4..end + 12)?).ok()?;
-    let scalar = shifted_ieee_f64(&raw_scalar)?;
+    let scalar = ShiftedBinary64::read(record.bytes.get(end + 4..end + 12)?)?;
     let mut at = end + 12;
     let mut atoms = counted_u32_atoms(record.bytes, &mut at)?;
     for token in &mut atoms {
@@ -5542,9 +5537,7 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
     }
     Some(ExtrudePayload32Branch {
         offset: record.offset() + branch_at,
-        body_object_index: reference.object_index,
         scalar,
-        raw_scalar,
         atoms,
         first_indices: first,
         second_indices: second,

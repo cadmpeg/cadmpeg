@@ -1446,9 +1446,7 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
     let branch = super::FeatureExtrudePayload32Branch {
         id: "branch".to_string(),
         operation_label: "operation".to_string(),
-        body_object_index: 42,
-        scalar: 1.0,
-        raw_scalar: [0x2f, 0xf0, 0, 0, 0, 0, 0, 0],
+        scalar: crate::om::scalar::ShiftedBinary64::read(&[0x2f, 0xf0, 0, 0, 0, 0, 0, 0]).unwrap(),
         atoms: vec![super::FeatureDataBlockToken {
             value: 1,
             raw: 0x3d80_0100,

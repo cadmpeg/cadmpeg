@@ -1294,9 +1294,9 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     };
     let branch = super::extrude_payload_32_branch(record).unwrap();
     assert_eq!(branch.offset, 105);
-    assert_eq!(branch.body_object_index, 115);
-    assert!(branch.scalar.is_finite());
-    assert_eq!(branch.raw_scalar, bytes[8..16]);
+    assert_eq!(branch.terminal_object_index, 115);
+    assert!(branch.scalar.value().is_finite());
+    assert_eq!(branch.scalar.raw(), bytes[8..16]);
     assert_eq!(
         branch
             .atoms
