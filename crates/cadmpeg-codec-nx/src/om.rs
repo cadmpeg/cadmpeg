@@ -2,6 +2,7 @@
 //! Frame NX object-model entities using external boundary and identity arrays.
 
 pub(crate) mod draft_identity;
+pub(crate) mod plane_descriptor;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -1804,19 +1805,6 @@ pub struct DatumPlaneObjectScalarPair {
     pub offset: usize,
     /// Checked scalar atoms with their payload-relative offsets.
     pub values: [LocatedBinary64; 2],
-}
-
-/// Exact 40-byte datum-plane descriptor block.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DatumPlaneDescriptorBlock {
-    /// Lowercase hexadecimal identity preceding the delimiter.
-    pub identity: String,
-    /// Exact descriptor suffix beginning with `?`.
-    pub suffix: Vec<u8>,
-    /// Non-null compact schema index following `?A`.
-    pub schema_index: u32,
-    /// Nonempty printable terminal label.
-    pub label: String,
 }
 
 /// Exact scalar pair following an object or sketch discriminator.
@@ -5189,40 +5177,8 @@ pub fn datum_plane_object_scalar_pairs(bytes: &[u8]) -> Vec<DatumPlaneObjectScal
 }
 
 /// Decode one complete datum-plane descriptor block.
-pub fn datum_plane_descriptor_block(bytes: &[u8]) -> Option<DatumPlaneDescriptorBlock> {
-    if bytes.len() != 40 {
-        return None;
-    }
-    let delimiter = bytes.iter().position(|byte| *byte == b'?')?;
-    let identity = bytes.get(..delimiter)?;
-    if identity.is_empty()
-        || !identity
-            .iter()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
-    {
-        return None;
-    }
-    let suffix = bytes.get(delimiter..)?;
-    if suffix.get(..2) != Some(b"?A") {
-        return None;
-    }
-    let (CompactIndex::Value(schema_index), width) = compact_index(suffix.get(2..)?)? else {
-        return None;
-    };
-    let label_start = 2 + width + 3;
-    if suffix.get(2 + width..label_start) != Some(&[0xff, 0x02, 0x01]) {
-        return None;
-    }
-    let label = suffix.get(label_start..)?;
-    if label.is_empty() || !label.iter().all(u8::is_ascii_graphic) {
-        return None;
-    }
-    Some(DatumPlaneDescriptorBlock {
-        identity: std::str::from_utf8(identity).ok()?.to_string(),
-        suffix: suffix.to_vec(),
-        schema_index,
-        label: std::str::from_utf8(label).ok()?.to_string(),
-    })
+pub fn datum_plane_descriptor_block(bytes: &[u8]) -> Option<plane_descriptor::PlaneDescriptor> {
+    plane_descriptor::PlaneDescriptor::read(bytes)
 }
 
 /// Decode every exactly framed scalar pair in a reconstructed object payload.

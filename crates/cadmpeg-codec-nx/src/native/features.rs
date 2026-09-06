@@ -22,6 +22,7 @@ use crate::om::scalar_run::FramedScalarRun;
 use crate::om::scalar_pair::{PairPosition, SketchPairForm, DatumPairForm, MixedPairForm};
 mod pair_wire;
 use crate::om::draft_identity::{DraftIdentityFrame, DraftIdentityForm};
+use crate::om::plane_descriptor::PlaneDescriptor;
 use crate::om::discriminators::DraftBinary32Branch;
 use crate::om::pattern::{PatternRow, PatternRows, PatternScalarEncoding, PatternTerminal, PatternValue, PatternWideValues};
 use crate::om::thru_curve_state::ThruCurveBranchItems;
@@ -1933,6 +1934,7 @@ impl TryFrom<FeatureDatumPlanePayloadWire> for FeatureDatumPlanePayload {
 
 /// Resolved typed descriptor of one datum-plane construction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureDatumPlaneDescriptorWire", into = "FeatureDatumPlaneDescriptorWire")]
 pub struct FeatureDatumPlaneDescriptor {
     /// Globally unique descriptor identity.
     pub id: String,
@@ -1944,16 +1946,68 @@ pub struct FeatureDatumPlaneDescriptor {
     pub ordinal: u32,
     /// Resolved source block.
     pub data_block: String,
-    /// Lowercase hexadecimal identity preceding the delimiter.
-    pub identity: String,
-    /// Exact descriptor suffix beginning with `?`.
-    pub suffix: Vec<u8>,
-    /// Non-null compact schema index following `?A`.
-    pub schema_index: u32,
-    /// Nonempty printable terminal label.
-    pub label: String,
+    /// Exact identity, schema token, and terminal label.
+    pub descriptor: PlaneDescriptor,
     /// Absolute source offset of the descriptor block.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureDatumPlaneDescriptorWire {
+    /// Globally unique descriptor identity.
+    id: String,
+    /// Owning `DATUM_PLANE` operation label.
+    operation_label: String,
+    /// Header carrying the descriptor reference.
+    datum_plane_header: String,
+    /// Zero-based descriptor-lane order.
+    ordinal: u32,
+    /// Resolved source block.
+    data_block: String,
+    /// Lowercase hexadecimal identity preceding the delimiter.
+    identity: String,
+    /// Exact descriptor suffix beginning with `?`.
+    suffix: Vec<u8>,
+    /// Non-null compact schema index following `?A`.
+    schema_index: u32,
+    /// Nonempty printable terminal label.
+    label: String,
+    /// Absolute source offset of the descriptor block.
+    source_offset: u64,
+}
+
+impl From<FeatureDatumPlaneDescriptor> for FeatureDatumPlaneDescriptorWire {
+    fn from(value: FeatureDatumPlaneDescriptor) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            datum_plane_header: value.datum_plane_header,
+            ordinal: value.ordinal,
+            data_block: value.data_block,
+            identity: value.descriptor.identity().to_owned(),
+            suffix: value.descriptor.suffix(),
+            schema_index: value.descriptor.schema_index(),
+            label: value.descriptor.label().to_owned(),
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureDatumPlaneDescriptorWire> for FeatureDatumPlaneDescriptor {
+    type Error = String;
+    fn try_from(wire: FeatureDatumPlaneDescriptorWire) -> Result<Self, Self::Error> {
+        let descriptor = PlaneDescriptor::from_wire(wire.identity, &wire.suffix, wire.schema_index, &wire.label)
+            .map_err(str::to_owned)?;
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            datum_plane_header: wire.datum_plane_header,
+            ordinal: wire.ordinal,
+            data_block: wire.data_block,
+            descriptor,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Datum-plane construction lane containing a reused block.
@@ -8239,7 +8293,7 @@ pub fn feature_datum_plane_csys_identity_uses(
         .flat_map(|plane| {
             csys_descriptors
                 .iter()
-                .filter(|csys| csys.identity == plane.identity)
+                .filter(|csys| csys.identity == plane.descriptor.identity())
                 .map(|csys| {
                     let plane_key = plane.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
                     let csys_key = csys.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
@@ -8247,7 +8301,7 @@ pub fn feature_datum_plane_csys_identity_uses(
                         id: format!(
                             "nx:feature-history:datum-plane-csys-identity-use#{plane_key}-{csys_key}"
                         ),
-                        identity: plane.identity.clone(),
+                        identity: plane.descriptor.identity().to_owned(),
                         datum_plane_descriptor: plane.id.clone(),
                         datum_plane_operation_label: plane.operation_label.clone(),
                         datum_csys_descriptor: csys.id.clone(),
@@ -8309,10 +8363,7 @@ pub fn feature_datum_plane_descriptors(
                         datum_plane_header: header.id.clone(),
                         ordinal: ordinal as u32,
                         data_block: data_block.clone(),
-                        identity: descriptor.identity,
-                        suffix: descriptor.suffix,
-                        schema_index: descriptor.schema_index,
-                        label: descriptor.label,
+                        descriptor,
                         source_offset,
                     })
                 })

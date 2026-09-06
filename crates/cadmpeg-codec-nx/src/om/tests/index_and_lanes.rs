@@ -843,16 +843,16 @@ fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {
 fn om_datum_plane_descriptor_requires_complete_lowercase_hex_identity() {
     let mut bytes = *b"793487222121a5474a9125451b8e31f5?A\xf0\x1e\xff\x02\x01\x33";
     let descriptor = super::datum_plane_descriptor_block(&bytes).unwrap();
-    assert_eq!(descriptor.identity, "793487222121a5474a9125451b8e31f5");
-    assert_eq!(descriptor.suffix, b"?A\xf0\x1e\xff\x02\x01\x33");
-    assert_eq!(descriptor.schema_index, 28_702);
-    assert_eq!(descriptor.label, "3");
+    assert_eq!(descriptor.identity(), "793487222121a5474a9125451b8e31f5");
+    assert_eq!(descriptor.suffix(), b"?A\xf0\x1e\xff\x02\x01\x33");
+    assert_eq!(descriptor.schema_index(), 28_702);
+    assert_eq!(descriptor.label(), "3");
 
     let short_bytes = *b"a75c5f0ed880dd1443b3c5c57908aae?A\xf0\x1f\xff\x02\x01\x66\x33";
     let short = super::datum_plane_descriptor_block(&short_bytes).unwrap();
-    assert_eq!(short.identity.len(), 31);
-    assert_eq!(short.schema_index, 28_703);
-    assert_eq!(short.label, "f3");
+    assert_eq!(short.identity().len(), 31);
+    assert_eq!(short.schema_index(), 28_703);
+    assert_eq!(short.label(), "f3");
 
     bytes[0] = b'G';
     assert!(super::datum_plane_descriptor_block(&bytes).is_none());

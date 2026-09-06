@@ -1141,10 +1141,7 @@ fn nx_datum_plane_csys_identity_uses_join_only_equal_typed_identities() {
         datum_plane_header: "plane-header".into(),
         ordinal: 0,
         data_block: "plane-block".into(),
-        identity: "012345678901234567890123456789".into(),
-        suffix: vec![b'?', b'A'],
-        schema_index: 1,
-        label: "p".into(),
+        descriptor: crate::om::plane_descriptor::PlaneDescriptor::read(b"012345678901234567890123456789?A\x01\xff\x02\x01abcd").unwrap(),
         source_offset: 10,
     };
     let csys = super::FeatureDatumCsysDescriptor {
@@ -1154,7 +1151,7 @@ fn nx_datum_plane_csys_identity_uses_join_only_equal_typed_identities() {
         reference_ordinal: 7,
         data_block: "csys-block".into(),
         prefix: vec![2, 1],
-        identity: plane.identity.clone(),
+        identity: plane.descriptor.identity().to_owned(),
         suffix: vec![b'?', b'A'],
         source_offset: 20,
     };

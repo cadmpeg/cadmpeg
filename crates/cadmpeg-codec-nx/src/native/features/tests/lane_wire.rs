@@ -428,3 +428,25 @@ fn draft_identity_frame_derives_prefix_form_and_preserves_wire() {
         assert!(error.to_string().contains(expected), "{error}");
     }
 }
+
+#[test]
+fn datum_plane_descriptor_derives_suffix_and_preserves_native_wire() {
+    let json = r#"{"id":"descriptor","operation_label":"operation","datum_plane_header":"header","ordinal":0,"data_block":"block","identity":"012345678901234567890123456789","suffix":[63,65,1,255,2,1,97,98,99,100],"schema_index":1,"label":"abcd","source_offset":10}"#;
+    let descriptor: FeatureDatumPlaneDescriptor = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&descriptor).unwrap(), json);
+    for (field, value) in [
+        ("schema_index", serde_json::json!(2)),
+        ("label", serde_json::json!("other")),
+        ("identity", serde_json::json!("")),
+        ("suffix", serde_json::json!([63, 65])),
+    ] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire[field] = value;
+        let error = serde_json::from_value::<FeatureDatumPlaneDescriptor>(wire).unwrap_err();
+        assert!(error.to_string().contains(field), "{error}");
+    }
+    let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+    wire["identity"] = serde_json::json!("012345678901234567890123456789?");
+    wire["suffix"].as_array_mut().unwrap().remove(0);
+    assert!(serde_json::from_value::<FeatureDatumPlaneDescriptor>(wire).unwrap_err().to_string().contains("identity"));
+}
