@@ -173,8 +173,9 @@ fn feature_body_segment_uses_require_one_alias_pair() {
 
 #[test]
 fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
+    use crate::native::features::object_frame::DataBlockObjectFrame;
     use super::{
-        DataBlockObjectFrame, FeatureBodyDataBlockUse, FeatureBodyReference,
+        FeatureBodyDataBlockUse, FeatureBodyReference,
         feature_body_segment_uses,
     };
     use crate::native::om::{DataBlock, DataBlockRole};
@@ -251,9 +252,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         id: "frame#0".into(),
         data_block: "block#11".into(),
         ordinal: 0,
-        object_id: parsed_frames[0].object_id,
-        raw_object_id: parsed_frames[0].raw_object_id.clone(),
-        source_offset: 100,
+        object: crate::om::compact::LocatedCompactIndex { atom: parsed_frames[0].atom, offset: 100 },
     };
     let uses = feature_body_segment_uses(
         std::slice::from_ref(&reference),
@@ -279,7 +278,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     );
 
     let mut mismatched_frame = object_frame.clone();
-    mismatched_frame.object_id = 12;
+    mismatched_frame.object.atom = crate::om::compact::CompactIndexAtom::read(&[12]).unwrap();
     assert!(
         feature_body_segment_uses(
             std::slice::from_ref(&reference),

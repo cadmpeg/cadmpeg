@@ -1753,17 +1753,6 @@ impl DatumCsysPayloadFixedPair {
     }
 }
 
-/// Compact object frame in a bounded offset-store block.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DataBlockObjectFrame {
-    /// Serialized persistent object ID.
-    pub object_id: u32,
-    /// Exact serialized compact object-index token.
-    pub raw_object_id: Vec<u8>,
-    /// Block-relative offset of the compact index.
-    pub offset: usize,
-}
-
 /// Fixed scalar header in one bounded extrusion payload.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtrudePayloadHeader {
@@ -4794,7 +4783,7 @@ pub fn draft_construction_identity_frames(bytes: &[u8]) -> Vec<draft_identity::D
 
 
 /// Decode compact object IDs followed by their complete frame discriminator.
-pub fn data_block_object_frames(bytes: &[u8]) -> Vec<DataBlockObjectFrame> {
+pub fn data_block_object_frames(bytes: &[u8]) -> Vec<LocatedCompactIndex> {
     const DISCRIMINATOR: [u8; 18] = [
         0x00, 0x72, 0x01, 0xc0, 0x20, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x01,
         0x02, 0x80, 0xa4,
@@ -4802,19 +4791,16 @@ pub fn data_block_object_frames(bytes: &[u8]) -> Vec<DataBlockObjectFrame> {
     let mut references = Vec::new();
     let mut offset = 0;
     while offset < bytes.len() {
-        let Some((CompactIndex::Value(object_id), width)) = compact_index(&bytes[offset..]) else {
+        let Some(atom) = CompactIndexAtom::read(&bytes[offset..]) else {
             offset += 1;
             continue;
         };
+        let width = atom.raw().len();
         if bytes.get(offset + width..offset + width + DISCRIMINATOR.len()) != Some(&DISCRIMINATOR) {
             offset += 1;
             continue;
         }
-        references.push(DataBlockObjectFrame {
-            object_id,
-            raw_object_id: bytes[offset..offset + width].to_vec(),
-            offset,
-        });
+        references.push(LocatedCompactIndex { atom, offset });
         offset += width + DISCRIMINATOR.len();
     }
     references

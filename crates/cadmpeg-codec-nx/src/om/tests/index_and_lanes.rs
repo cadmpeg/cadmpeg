@@ -69,22 +69,22 @@ fn om_data_block_object_frame_requires_complete_discriminator() {
 
     let references = super::data_block_object_frames(&bytes);
     assert_eq!(references.len(), 1);
-    assert_eq!(references[0].object_id, 370);
-    assert_eq!(references[0].raw_object_id, [0x81, 0x72]);
+    assert_eq!(references[0].atom.value(), 370);
+    assert_eq!(references[0].atom.raw(), [0x81, 0x72]);
     assert_eq!(references[0].offset, 1);
 
     bytes.extend_from_slice(&[0x73]);
     bytes.extend_from_slice(&discriminator);
     let references = super::data_block_object_frames(&bytes);
     assert_eq!(references.len(), 2);
-    assert_eq!(references[1].object_id, 0x73);
-    assert_eq!(references[1].raw_object_id, [0x73]);
+    assert_eq!(references[1].atom.value(), 0x73);
+    assert_eq!(references[1].atom.raw(), [0x73]);
     assert_eq!(references[1].offset, 22);
 
     bytes[8] ^= 1;
     let references = super::data_block_object_frames(&bytes);
     assert_eq!(references.len(), 1);
-    assert_eq!(references[0].object_id, 0x73);
+    assert_eq!(references[0].atom.value(), 0x73);
     let mut null = vec![0xff];
     null.extend_from_slice(&discriminator);
     assert!(super::data_block_object_frames(&null).is_empty());

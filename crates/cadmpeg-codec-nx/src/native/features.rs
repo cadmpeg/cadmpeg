@@ -13,6 +13,8 @@ pub(crate) mod unlabeled_record;
 pub(crate) mod operation_record;
 pub(crate) mod block_reference;
 pub(crate) mod swp104_branch;
+pub(crate) mod object_frame;
+use object_frame::DataBlockObjectFrame;
 use swp104_branch::FeatureSwp104LeadingBranch;
 use block_reference::{BlockReferencePosition, FeatureBlockConstructionReference};
 use operation_record::{FeatureOperationRecord, OperationRecordSpan};
@@ -5883,23 +5885,6 @@ impl From<FeatureBlockDimensionsWire> for FeatureBlockDimensions {
     }
 }
 
-/// Persistent object frame carried by one bounded offset-store block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataBlockObjectFrame {
-    /// Globally unique relation identity.
-    pub id: String,
-    /// Source block carrying the object frame.
-    pub data_block: String,
-    /// Zero-based frame order within the block.
-    pub ordinal: u32,
-    /// Serialized persistent object ID.
-    pub object_id: u32,
-    /// Exact serialized compact object-index token.
-    pub raw_object_id: Vec<u8>,
-    /// Absolute source offset of the compact object index.
-    pub source_offset: u64,
-}
-
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -7412,7 +7397,7 @@ fn unique_offset_store_body_frame<'a>(
 ) -> Option<&'a DataBlockObjectFrame> {
     let mut matches = object_frames.iter().filter(|frame| {
         frame.data_block == data_block_use.data_block
-            && frame.object_id == reference.body.value()
+            && frame.object.atom.value() == reference.body.value()
     });
     let frame = matches.next()?;
     matches.next().is_none().then_some(frame)
@@ -11636,9 +11621,7 @@ pub fn data_block_object_frames(container: &Container) -> Vec<DataBlockObjectFra
                     id: data_block_object_frame_id(data_block, ordinal),
                     data_block: data_block.clone(),
                     ordinal: ordinal as u32,
-                    object_id: frame.object_id,
-                    raw_object_id: frame.raw_object_id,
-                    source_offset: source_offset + frame.offset as u64,
+                    object: LocatedCompactIndex { atom: frame.atom, offset: source_offset + frame.offset as u64 },
                 })
                 .collect::<Vec<_>>()
         })

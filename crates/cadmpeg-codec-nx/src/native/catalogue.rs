@@ -6,6 +6,7 @@
 //! emission order; `phase` splits semantic islands for [`super::attach`].
 //! Stream choice (`nx:container` vs `nx:s{ordinal}`) lives in the `note` fn.
 
+use crate::native::features::object_frame::DataBlockObjectFrame;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
 use super::features::operation_record::FeatureOperationRecord;
 use std::collections::BTreeMap;
@@ -256,7 +257,7 @@ impl ContainerNoted for SegmentBodyLineageStatus {
 }
 impl ContainerNoted for DataBlockObjectFrame {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.object.offset)
     }
 }
 impl ContainerNoted for OffsetStoreNamedPoint {
