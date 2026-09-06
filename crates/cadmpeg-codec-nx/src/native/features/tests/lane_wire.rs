@@ -212,6 +212,32 @@ fn draft_index_lane_preserves_wire_and_groups_resolution_with_tokens() {
 }
 
 #[test]
+fn draft_index_lane_checks_compact_token_grammar() {
+    let json = r#"{"id":"lane","operation_label":"operation","declared_count":3,"indices":[4096,7],"raw_indices":[[144,0],[128,7]],"source_offsets":[110,120]}"#;
+    let lane: FeatureDraftConstructionIndexLane = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+    for raw in [vec![255], vec![144], vec![144, 0, 0], vec![1]] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["raw_indices"][0] = serde_json::json!(raw);
+        let error = serde_json::from_value::<FeatureDraftConstructionIndexLane>(wire).unwrap_err();
+        assert!(error.to_string().contains("indices[0]"));
+    }
+}
+
+#[test]
+fn draft_index_lane_requires_nonempty_byte_counted_members() {
+    for count in [0, 1, 254, 255] {
+        let wire = serde_json::json!({
+            "id": "lane", "operation_label": "operation", "declared_count": count + 1,
+            "indices": vec![1; count], "raw_indices": vec![vec![1]; count],
+            "source_offsets": vec![100; count],
+        });
+        assert_eq!(serde_json::from_value::<FeatureDraftConstructionIndexLane>(wire).is_ok(),
+            matches!(count, 1 | 254));
+    }
+}
+
+#[test]
 fn pattern_transform_lane_preserves_wire_and_requires_complete_rows() {
     let columns = &[
         "encodings",

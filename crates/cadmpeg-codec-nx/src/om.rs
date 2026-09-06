@@ -1591,7 +1591,7 @@ pub struct DraftFeaturePayloadReferenceField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DraftFeatureLeadingIndexLane {
     /// Non-null compact indices in serialized order with absolute token offsets.
-    pub indices: Vec<LaneToken<u32>>,
+    pub indices: CountedIndexMembers<LocatedCompactIndex, 1>,
 }
 
 /// End-anchored compact-index lane in a draft-feature payload.
@@ -3662,21 +3662,17 @@ pub fn draft_feature_leading_index_lane(
     at += 2;
     let mut indices = Vec::with_capacity(usize::from(declared_count - 1));
     for _ in 1..declared_count {
-        let offset = at;
-        let (CompactIndex::Value(value), width) = compact_index(record.payload.get(at..)?)? else {
-            return None;
-        };
-        at += width;
-        indices.push(LaneToken {
-            value,
-            offset: record.payload_offset + offset,
-            raw: record.payload[offset..at].to_vec(),
+        let token = LocatedCompactIndex::read(record.payload, at)?;
+        at += token.atom.raw().len();
+        indices.push(LocatedCompactIndex {
+            atom: token.atom,
+            offset: record.payload_offset + token.offset,
         });
     }
     (record.payload.get(at..at + 2) == Some(&[0x01, 0x02])).then_some(())?;
 
     Some(DraftFeatureLeadingIndexLane {
-        indices,
+        indices: CountedIndexMembers::new(indices).ok()?,
     })
 }
 

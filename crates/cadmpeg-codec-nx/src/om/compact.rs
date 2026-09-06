@@ -103,29 +103,36 @@ impl NullableCompactIndex {
     }
 }
 
-/// Nonempty members of a byte-counted lane with an anchor and a terminator.
+/// Nonempty members of a byte-counted lane reserving entries for its framing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CountedIndexMembers<T>(Vec<T>);
+pub(crate) struct CountedIndexMembers<T, const RESERVED: u8 = 2>(Vec<T>);
 
-impl<T> CountedIndexMembers<T> {
+impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
     pub(crate) fn new(members: Vec<T>) -> Result<Self, &'static str> {
-        if !(1..=253).contains(&members.len()) {
-            return Err("members: must contain 1 through 253 entries");
+        if !(1..=usize::from(u8::MAX - RESERVED)).contains(&members.len()) {
+            return Err("members: must be nonempty and fit the declared byte count");
         }
         Ok(Self(members))
     }
 
-    pub(crate) fn declared_count(&self) -> u8 { (self.0.len() + 2) as u8 }
+    pub(crate) fn declared_count(&self) -> u8 { (self.0.len() + usize::from(RESERVED)) as u8 }
 
     pub(crate) fn as_slice(&self) -> &[T] { &self.0 }
 
-    pub(crate) fn map<U>(self, f: impl FnMut(T) -> U) -> CountedIndexMembers<U> {
+    pub(crate) fn map<U>(self, f: impl FnMut(T) -> U) -> CountedIndexMembers<U, RESERVED> {
         CountedIndexMembers(self.0.into_iter().map(f).collect())
     }
 
-    pub(crate) fn try_map<U>(self, f: impl FnMut(T) -> Option<U>) -> Option<CountedIndexMembers<U>> {
+    pub(crate) fn try_map<U>(self, f: impl FnMut(T) -> Option<U>) -> Option<CountedIndexMembers<U, RESERVED>> {
         Some(CountedIndexMembers(self.0.into_iter().map(f).collect::<Option<Vec<_>>>()?))
     }
+}
+
+impl<T, const RESERVED: u8> IntoIterator for CountedIndexMembers<T, RESERVED> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
 }
 
 #[cfg(test)]
@@ -161,12 +168,24 @@ mod tests {
     #[test]
     fn counted_members_reserve_anchor_and_terminator_in_the_byte_count() {
         for len in [1, 253] {
-            let members = CountedIndexMembers::new(vec![0; len]).unwrap();
+            let members = CountedIndexMembers::<_>::new(vec![0; len]).unwrap();
             assert_eq!(usize::from(members.declared_count()), len + 2);
             assert_eq!(members.try_map(Some).unwrap().as_slice().len(), len);
         }
         for len in [0, 254] {
-            assert!(CountedIndexMembers::new(vec![0; len]).is_err());
+            assert!(CountedIndexMembers::<_>::new(vec![0; len]).is_err());
         }
     }
+    #[test]
+    fn counted_members_with_one_owner_allow_254_references() {
+        for len in [1, 254] {
+            let members = CountedIndexMembers::<_, 1>::new(vec![0; len]).unwrap();
+            assert_eq!(usize::from(members.declared_count()), len + 1);
+            assert_eq!(members.map(|value| value + 1).into_iter().count(), len);
+        }
+        for len in [0, 255] {
+            assert!(CountedIndexMembers::<_, 1>::new(vec![0; len]).is_err());
+        }
+    }
+
 }
