@@ -8,6 +8,7 @@ use cadmpeg_core::decode::alloc_filled;
 use crate::deltas::Census;
 
 mod support_uv_wire;
+mod chart_wire;
 
 use super::substrate::{ParsedStreams, StreamView};
 
@@ -1887,6 +1888,7 @@ impl ParasolidScanRecords for ParasolidSupportUvRecord {
 
 /// Complete typed source record for one physical Parasolid `CHART_s` record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "chart_wire::ChartWire", into = "chart_wire::ChartWire")]
 pub struct ParasolidChartRecord {
     /// Globally unique physical-record identity.
     pub id: String,
@@ -1894,28 +1896,10 @@ pub struct ParasolidChartRecord {
     pub stream_ordinal: u32,
     /// Cross-reference index of the chart.
     pub xmt: u32,
-    /// Serialized leading point count.
-    pub count: u32,
-    /// Base chart parameter.
-    pub base_parameter: f64,
-    /// Chord-to-parameter scale.
-    pub base_scale: f64,
-    /// Redundant serialized chart count.
-    pub chart_count: u32,
-    /// Chordal error in Parasolid metres.
-    pub chordal_error: f64,
-    /// Angular error in radians.
-    pub angular_error: f64,
-    /// Two serialized missing-parameter sentinels.
-    pub parameter_errors: [f64; 2],
-    /// Model-space chart points in millimetres.
-    pub points: Vec<[f64; 3]>,
-    /// Native ext11 parameters, when present.
-    pub native_parameters: Option<Vec<f64>>,
-    /// Two ordered ext11 support-UV lanes.
-    pub ext_support_uv: [Option<Vec<[f64; 2]>>; 2],
-    /// Hvec point layout.
-    pub point_layout: crate::intersection::ChartPointLayout,
+    /// Checked chart preamble.
+    pub preamble: crate::intersection::chart_samples::ChartPreamble,
+    /// Points with exactly the fields admitted by their Hvec layout.
+    pub data: crate::intersection::chart_samples::SourceChartData,
     /// Serialized record framing.
     pub framing: crate::intersection::ChartFraming,
     /// Type-tag offset in the inflated stream.
@@ -1940,21 +1924,8 @@ pub fn parasolid_chart_records(streams: &[Stream]) -> Vec<ParasolidChartRecord> 
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: chart.xmt,
-                count: chart.count,
-                base_parameter: chart.base_parameter,
-                base_scale: chart.base_scale,
-                chart_count: chart.chart_count,
-                chordal_error: chart.chordal_error,
-                angular_error: chart.angular_error,
-                parameter_errors: chart.parameter_errors,
-                points: chart
-                    .points
-                    .into_iter()
-                    .map(|point| [point.x, point.y, point.z])
-                    .collect(),
-                native_parameters: chart.native_parameters,
-                ext_support_uv: chart.ext_support_uv,
-                point_layout: chart.point_layout,
+                preamble: chart.preamble,
+                data: chart.data,
                 framing: chart.framing,
                 inflated_offset: chart.pos as u64,
             });

@@ -57,7 +57,7 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
     let pending = vec![
         (
             validated_id.clone(),
-            crate::intersection::chart_samples::ChartSamples::new(
+            crate::intersection::chart_samples::ChartSamples::from_test_values(
                 points.clone(),
                 parameters.clone(),
             )
@@ -67,7 +67,7 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
         ),
         (
             unvalidated_id.clone(),
-            crate::intersection::chart_samples::ChartSamples::new(points, parameters).unwrap(),
+            crate::intersection::chart_samples::ChartSamples::from_test_values(points, parameters).unwrap(),
             0.01,
             SerializedSupportUv::default(),
         ),
@@ -129,7 +129,7 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
     let parameter_range = context.parameter_range;
     let pending = vec![(
         procedural.id.clone(),
-        crate::intersection::chart_samples::ChartSamples::new(points.clone(), parameters).unwrap(),
+        crate::intersection::chart_samples::ChartSamples::from_test_values(points.clone(), parameters).unwrap(),
         0.01,
         SerializedSupportUv::default(),
     )];
@@ -213,7 +213,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
     };
     let pending = vec![(
         procedural_id,
-        crate::intersection::chart_samples::ChartSamples::new(
+        crate::intersection::chart_samples::ChartSamples::from_test_values(
             points.clone(),
             parameter_range.to_vec(),
         )
@@ -373,7 +373,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
         .collect::<Vec<_>>();
     let pending = vec![(
         procedural_id,
-        crate::intersection::chart_samples::ChartSamples::new(points, vec![0.0, 1.0]).unwrap(),
+        crate::intersection::chart_samples::ChartSamples::from_test_values(points, vec![0.0, 1.0]).unwrap(),
         FIT_TOLERANCE,
         SerializedSupportUv::from_values([
             Some(

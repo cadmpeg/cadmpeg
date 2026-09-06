@@ -12,7 +12,7 @@ pub(crate) mod chart_samples;
 pub(crate) mod support_uv_values;
 use support_uv_values::{SupportUvPacking, SupportUvValues};
 
-use chart_samples::ChartSamples;
+use chart_samples::{ChartSamples, ChartPreamble, SourceChartData, MISSING_PARAMETER};
 
 use crate::framing::read_xmt_width as read_xmt;
 use crate::layout::chart_s_preamble as chart_preamble;
@@ -20,7 +20,6 @@ use crate::topology::{self, CompositeCurve};
 
 const EPS_INTERSECTION_CHART_POINTS_E9: f64 = 1.0e-9;
 
-const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
 const INLINE_TERM_TAIL: &[u8] = b"\x00\x00\x00\x01\x01\x63\x43\x5a";
 const INLINE_UV_TAIL: &[u8] = b"\x00\x00\x00\x02\x01\x66\x01";
 /// Two ordered optional support-surface parameter lanes.
@@ -65,28 +64,10 @@ pub enum BlendBoundFraming {
 pub struct ChartSourceRecord {
     /// Cross-reference index of the chart.
     pub xmt: u32,
-    /// Serialized leading point count.
-    pub count: u32,
-    /// Base chart parameter.
-    pub base_parameter: f64,
-    /// Chord-to-parameter scale.
-    pub base_scale: f64,
-    /// Redundant serialized chart count.
-    pub chart_count: u32,
-    /// Chordal error in Parasolid metres.
-    pub chordal_error: f64,
-    /// Angular error in radians.
-    pub angular_error: f64,
-    /// Two serialized missing-parameter sentinels.
-    pub parameter_errors: [f64; 2],
-    /// Model-space chart points in millimetres.
-    pub points: Vec<Point3>,
-    /// Native ext11 parameters, when present.
-    pub native_parameters: Option<Vec<f64>>,
-    /// Two ordered ext11 support-UV lanes.
-    pub ext_support_uv: SupportUv,
-    /// Hvec point layout.
-    pub point_layout: ChartPointLayout,
+    /// Checked chart preamble.
+    pub preamble: ChartPreamble,
+    /// Points with exactly the fields admitted by their Hvec layout.
+    pub data: SourceChartData,
     /// Serialized record framing.
     pub framing: ChartFraming,
     /// Type-tag offset in the inflated stream.
@@ -302,14 +283,6 @@ struct Chart {
     samples: ChartSamples,
     fit_tolerance: f64,
     ext_support_uv: SupportUv,
-}
-
-#[derive(Debug, Clone)]
-struct ChartPoints {
-    points: Vec<Point3>,
-    native_parameters: Option<Vec<f64>>,
-    ext_support_uv: SupportUv,
-    end: usize,
 }
 
 /// Decode type-38 and single-byte `0x5a` records whose referenced chart and
@@ -707,29 +680,16 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
         if duplicates.contains(&source.xmt) {
             continue;
         }
-        let fit_tolerance = source.chordal_error * 1000.0;
+        let fit_tolerance = source.preamble.chordal_error() * 1000.0;
         if !fit_tolerance.is_finite() {
             continue;
         }
-        let mut parameter = source.base_parameter;
-        let chord_parameters = std::iter::once(parameter)
-            .chain(source.points.windows(2).map(|pair| {
-                let chord_m = distance(pair[0], pair[1]) / 1000.0;
-                parameter += chord_m * source.base_scale;
-                parameter
-            }))
-            .collect();
-        let has_native_parameters = source.native_parameters.is_some();
-        let Ok(samples) = ChartSamples::new(
-            source.points,
-            source.native_parameters.unwrap_or(chord_parameters),
-        ) else {
-            continue;
-        };
+        let has_native_parameters = source.data.point_layout() == ChartPointLayout::Ext11;
+        let (samples, ext_support_uv) = source.data.into_samples(source.preamble);
         let candidate = Chart {
             samples,
             fit_tolerance,
-            ext_support_uv: source.ext_support_uv,
+            ext_support_uv,
         };
         match out.entry(source.xmt) {
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -802,7 +762,6 @@ pub(crate) fn chart_source_record_at(
             .child(base, stream.len())
             .and_then(|mut view| view.u32_be())
             .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count >= 2)
         else {
             continue;
         };
@@ -822,41 +781,21 @@ pub(crate) fn chart_source_record_at(
             head.f64_be(), head.f64_be(), head.u32_be(), head.f64_be(), head.f64_be(),
             head.f64_be(), head.f64_be(),
         ) else { continue; };
-        let parameter_errors = [e0, e1];
-        if chart_count as usize != count
-            || ![base_parameter, base_scale, chordal_error, angular_error]
-                .iter()
-                .all(|value| value.is_finite())
-            || base_scale == 0.0
-            || chordal_error <= 0.0
-            || parameter_errors != [MISSING_PARAMETER, MISSING_PARAMETER]
-        {
+        if chart_count as usize != count || [e0, e1] != [MISSING_PARAMETER, MISSING_PARAMETER] {
             continue;
         }
-        let block = preamble + chart_preamble::LEN;
-        let Some(chart_points) = chart_points(stream, block, count, point_layout) else {
+        let Ok(preamble_values) = ChartPreamble::new(base_parameter, base_scale, chordal_error, angular_error) else {
             continue;
         };
-        let point_layout = if chart_points.native_parameters.is_some() {
-            ChartPointLayout::Ext11
-        } else {
-            ChartPointLayout::Xyz3
+        let block = preamble + chart_preamble::LEN;
+        let Some((data, end)) = chart_points(stream, block, count, point_layout) else {
+            continue;
         };
-        let end = chart_points.end;
         return Some((
             ChartSourceRecord {
                 xmt,
-                count: count as u32,
-                base_parameter,
-                base_scale,
-                chart_count,
-                chordal_error,
-                angular_error,
-                parameter_errors,
-                points: chart_points.points,
-                native_parameters: chart_points.native_parameters,
-                ext_support_uv: chart_points.ext_support_uv,
-                point_layout,
+                preamble: preamble_values,
+                data,
                 framing: if escape == 0 {
                     ChartFraming::Direct
                 } else {
@@ -875,7 +814,7 @@ fn chart_points(
     block: usize,
     count: usize,
     point_layout: ChartPointLayout,
-) -> Option<ChartPoints> {
+) -> Option<(SourceChartData, usize)> {
     let point_width = match point_layout {
         ChartPointLayout::Xyz3 => 24,
         ChartPointLayout::Ext11 => 88,
@@ -883,34 +822,10 @@ fn chart_points(
     let end = block.checked_add(count.checked_mul(point_width)?)?;
     stream.get(block..end)?;
     if point_layout == ChartPointLayout::Xyz3 {
-        let mut previous = None;
-        let mut has_difference = false;
-        for index in 0..count {
-            let point = point_m(stream, block + index * 24)?;
-            if previous.is_some_and(|previous| previous != point) {
-                has_difference = true;
-            }
-            previous = Some(point);
-        }
-        has_difference.then_some(())?;
         let points = (0..count)
             .map(|index| point_m(stream, block + index * 24))
             .collect::<Option<Vec<_>>>()?;
-        return Some(ChartPoints {
-            points,
-            native_parameters: None,
-            ext_support_uv: [None, None],
-            end,
-        });
-    }
-
-    let mut previous_parameter = None;
-    for index in 0..count {
-        let (_, parameter, _) = chart_ext_point_at(stream, block + index * 88)?;
-        if previous_parameter.is_some_and(|previous| parameter <= previous) {
-            return None;
-        }
-        previous_parameter = Some(parameter);
+        return Some((SourceChartData::xyz3(points).ok()?, end));
     }
 
     let mut points = Vec::with_capacity(count);
@@ -933,12 +848,7 @@ fn chart_points(
             }
         }
     }
-    Some(ChartPoints {
-        points,
-        native_parameters: Some(native_parameters),
-        ext_support_uv,
-        end,
-    })
+    Some((SourceChartData::ext11(points, native_parameters, ext_support_uv).ok()?, end))
 }
 
 fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2]; 2])> {

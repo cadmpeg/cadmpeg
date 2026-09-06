@@ -1282,7 +1282,7 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
     }
     let pending = vec![(
         procedural_id,
-        crate::intersection::chart_samples::ChartSamples::new(
+        crate::intersection::chart_samples::ChartSamples::from_test_values(
             vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
@@ -1330,7 +1330,7 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
     }
     let pending = vec![(
         procedural_id,
-        crate::intersection::chart_samples::ChartSamples::new(
+        crate::intersection::chart_samples::ChartSamples::from_test_values(
             vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
@@ -1444,7 +1444,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
         .collect::<Vec<_>>();
     let pending = vec![(
         procedural_id,
-        crate::intersection::chart_samples::ChartSamples::new(points, vec![0.0, 1.0]).unwrap(),
+        crate::intersection::chart_samples::ChartSamples::from_test_values(points, vec![0.0, 1.0]).unwrap(),
         FIT_TOLERANCE,
         SerializedSupportUv::from_values([
             Some(
@@ -1583,7 +1583,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
     let parameters = vec![0.0, 2.0, 5.0];
     let pending = vec![(
         procedural_id,
-        crate::intersection::chart_samples::ChartSamples::new(points.clone(), parameters.clone())
+        crate::intersection::chart_samples::ChartSamples::from_test_values(points.clone(), parameters.clone())
             .unwrap(),
         1.0e-3,
         SerializedSupportUv::default(),
@@ -1755,14 +1755,14 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
     let pending = vec![
         (
             dependent_id,
-            crate::intersection::chart_samples::ChartSamples::new(points, parameters.clone())
+            crate::intersection::chart_samples::ChartSamples::from_test_values(points, parameters.clone())
                 .unwrap(),
             0.01,
             SerializedSupportUv::default(),
         ),
         (
             spine_id,
-            crate::intersection::chart_samples::ChartSamples::new(
+            crate::intersection::chart_samples::ChartSamples::from_test_values(
                 vec![
                     cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                     cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
@@ -1822,7 +1822,7 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
     let pending = vec![
         (
             successful_id,
-            crate::intersection::chart_samples::ChartSamples::new(
+            crate::intersection::chart_samples::ChartSamples::from_test_values(
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.01, 0.0, 0.0)],
                 vec![0.0, 0.01],
             )
@@ -1832,7 +1832,7 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
         ),
         (
             failed_id,
-            crate::intersection::chart_samples::ChartSamples::new(
+            crate::intersection::chart_samples::ChartSamples::from_test_values(
                 vec![
                     Point3::new(100.0, 100.0, 100.0),
                     Point3::new(100.01, 100.0, 100.0),
@@ -1910,7 +1910,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     }
     let pending = vec![(
         procedural_id,
-        crate::intersection::chart_samples::ChartSamples::new(
+        crate::intersection::chart_samples::ChartSamples::from_test_values(
             vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
@@ -1964,7 +1964,7 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
     }
     let pending = vec![(
         procedural_id,
-        crate::intersection::chart_samples::ChartSamples::new(
+        crate::intersection::chart_samples::ChartSamples::from_test_values(
             vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),

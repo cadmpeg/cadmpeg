@@ -397,15 +397,15 @@ fn decode_emits_charted_surface_intersection_construction() {
         .arena_as::<super::super::ParasolidChartRecord>("parasolid_chart_records")
         .expect("required invariant");
     assert_eq!(charts.len(), 1);
-    assert_eq!(charts[0].count, 2);
-    assert_eq!(charts[0].base_parameter, 0.0);
-    assert_eq!(charts[0].base_scale, 1.0);
-    assert_eq!(charts[0].chart_count, 2);
-    assert_eq!(charts[0].chordal_error, 0.000_01);
-    assert_eq!(charts[0].angular_error, 0.001);
-    assert_eq!(charts[0].points, [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]);
+    assert_eq!(charts[0].data.count(), 2);
+    assert_eq!(charts[0].preamble.base_parameter(), 0.0);
+    assert_eq!(charts[0].preamble.base_scale(), 1.0);
+    assert_eq!(serde_json::to_value(&charts[0]).unwrap()["chart_count"], 2);
+    assert_eq!(charts[0].preamble.chordal_error(), 0.000_01);
+    assert_eq!(charts[0].preamble.angular_error(), 0.001);
+    assert_eq!(charts[0].data.points().iter().map(|point| [point.x, point.y, point.z]).collect::<Vec<_>>(), [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]);
     assert!(matches!(
-        charts[0].point_layout,
+        charts[0].data.point_layout(),
         crate::intersection::ChartPointLayout::Xyz3
     ));
 

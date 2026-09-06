@@ -409,9 +409,8 @@ fn intersection_chart_accepts_encoded_count_without_arbitrary_ceiling() {
     )
     .try_into()
     .expect("one wide chart");
-    assert_eq!(chart.count, count as u32);
-    assert_eq!(chart.chart_count, count as u32);
-    assert_eq!(chart.points.len(), count);
+    assert_eq!(chart.data.count(), count as u32);
+    assert_eq!(chart.data.points().len(), count);
 }
 
 #[test]
@@ -448,7 +447,7 @@ fn intersection_chart_scan_does_not_admit_nested_counted_candidates() {
     );
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].xmt, 21);
-    assert_eq!(records[0].points.len(), count);
+    assert_eq!(records[0].data.points().len(), count);
 }
 
 #[test]
@@ -550,10 +549,10 @@ fn intersection_chart_layout_is_selected_by_stream_kind() {
     .try_into()
     .expect("one ext11 chart");
     assert_eq!(
-        chart.point_layout,
+        chart.data.point_layout(),
         crate::intersection::ChartPointLayout::Ext11
     );
-    assert_eq!(chart.native_parameters, Some(vec![2.0, 5.0]));
+    assert_eq!(chart.data.native_parameters().map(<[f64]>::to_vec), Some(vec![2.0, 5.0]));
 }
 
 #[test]
@@ -571,8 +570,8 @@ fn intersection_chart_accepts_finite_model_coordinates_without_magnitude_bound()
     )
     .try_into()
     .expect("one large-coordinate chart");
-    assert_eq!(chart.points[0].x, 1_000_000.0);
-    assert_eq!(chart.points[1].x, 1_000_010.0);
+    assert_eq!(chart.data.points()[0].x, 1_000_000.0);
+    assert_eq!(chart.data.points()[1].x, 1_000_010.0);
 }
 
 #[test]
