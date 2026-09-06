@@ -9,6 +9,9 @@ use crate::parasolid::attribute_field::AttributeField;
 use crate::parasolid::attribute_action::AttributeAction;
 use std::num::NonZeroU32;
 
+pub(crate) mod structured_value_kind;
+use structured_value_kind::StructuredValueKind;
+
 pub(crate) mod field_use_wire;
 use field_use_wire::{FieldPosition, FieldUseWire};
 
@@ -2114,7 +2117,7 @@ pub struct ParasolidEntity51StructuredUse {
     /// Stream-local referenced xmt.
     pub referenced_xmt: u32,
     /// Structured value-record family.
-    pub kind: ParasolidAttributeFieldValueKind,
+    pub kind: StructuredValueKind,
     /// Uniquely resolved structured value record.
     pub value_record: String,
     /// Offset of the owning type-81 record in the inflated stream.
@@ -2755,12 +2758,12 @@ pub fn parasolid_entity_51_structured_uses(
     tags: &[ParasolidEntity58TagRecord],
     unicode: &[ParasolidEntity62UnicodeRecord],
 ) -> Vec<ParasolidEntity51StructuredUse> {
-    let mut values = BTreeMap::<(u32, u32), Vec<(ParasolidAttributeFieldValueKind, &str)>>::new();
+    let mut values = BTreeMap::<(u32, u32), Vec<(StructuredValueKind, &str)>>::new();
     for record in vectors {
         let kind = match record.kind {
-            ParasolidVectorValueKind::Points => ParasolidAttributeFieldValueKind::Points,
-            ParasolidVectorValueKind::Vectors => ParasolidAttributeFieldValueKind::Vectors,
-            ParasolidVectorValueKind::Directions => ParasolidAttributeFieldValueKind::Directions,
+            ParasolidVectorValueKind::Points => StructuredValueKind::Points,
+            ParasolidVectorValueKind::Vectors => StructuredValueKind::Vectors,
+            ParasolidVectorValueKind::Directions => StructuredValueKind::Directions,
         };
         values
             .entry((record.stream_ordinal, record.xmt))
@@ -2771,7 +2774,7 @@ pub fn parasolid_entity_51_structured_uses(
         .iter()
         .map(|record| {
             (
-                ParasolidAttributeFieldValueKind::Axes,
+                StructuredValueKind::Axes,
                 record.stream_ordinal,
                 record.xmt,
                 record.id.as_str(),
@@ -2779,7 +2782,7 @@ pub fn parasolid_entity_51_structured_uses(
         })
         .chain(tags.iter().map(|record| {
             (
-                ParasolidAttributeFieldValueKind::Tags,
+                StructuredValueKind::Tags,
                 record.stream_ordinal,
                 record.xmt,
                 record.id.as_str(),
@@ -2787,7 +2790,7 @@ pub fn parasolid_entity_51_structured_uses(
         }))
         .chain(unicode.iter().map(|record| {
             (
-                ParasolidAttributeFieldValueKind::Unicode,
+                StructuredValueKind::Unicode,
                 record.stream_ordinal,
                 record.xmt,
                 record.id.as_str(),
@@ -3024,7 +3027,7 @@ pub fn parasolid_attribute_field_uses(
             .or_default()
             .push((
                 structured_use.stream_ordinal,
-                structured_use.kind,
+                structured_use.kind.into(),
                 structured_use.id.as_str(),
                 structured_use.value_record.as_str(),
                 structured_use.inflated_offset,
@@ -4047,7 +4050,7 @@ mod tests {
         );
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].reference_ordinal, 5);
-        assert_eq!(uses[0].kind, ParasolidAttributeFieldValueKind::Points);
+        assert_eq!(uses[0].kind, StructuredValueKind::Points);
         assert_eq!(uses[0].value_record, "point");
 
         let colliding_tag = ParasolidEntity58TagRecord {
@@ -4080,12 +4083,12 @@ mod tests {
     #[test]
     fn structured_value_families_match_only_their_declared_field_codes() {
         let kinds = [
-            ParasolidAttributeFieldValueKind::Points,
-            ParasolidAttributeFieldValueKind::Vectors,
-            ParasolidAttributeFieldValueKind::Directions,
-            ParasolidAttributeFieldValueKind::Axes,
-            ParasolidAttributeFieldValueKind::Tags,
-            ParasolidAttributeFieldValueKind::Unicode,
+            StructuredValueKind::Points,
+            StructuredValueKind::Vectors,
+            StructuredValueKind::Directions,
+            StructuredValueKind::Axes,
+            StructuredValueKind::Tags,
+            StructuredValueKind::Unicode,
         ];
         let definition = ParasolidAttributeDefinition {
             id: "definition".into(),
@@ -4133,11 +4136,11 @@ mod tests {
         );
         assert_eq!(
             uses.iter().map(|use_| use_.value_kind).collect::<Vec<_>>(),
-            kinds
+            kinds.map(ParasolidAttributeFieldValueKind::from)
         );
 
         let mut mismatched = structured;
-        mismatched[0].kind = ParasolidAttributeFieldValueKind::Vectors;
+        mismatched[0].kind = StructuredValueKind::Vectors;
         let uses =
             parasolid_attribute_field_uses(&[class_use], &[definition], &[], &[], &mismatched);
         assert_eq!(uses.len(), 5);

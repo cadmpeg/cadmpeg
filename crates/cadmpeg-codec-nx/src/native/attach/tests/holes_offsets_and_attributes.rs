@@ -1779,12 +1779,13 @@ fn topology_attribute_index_retains_linked_type_81_records() {
 
 #[test]
 fn topology_structured_attribute_values_preserve_serialized_lanes() {
+    use crate::native::parasolid::structured_value_kind::StructuredValueKind as Kind;
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::AnnotationBuilder;
 
     use crate::native::parasolid::{
-        ParasolidAttributeFieldValueKind as Kind, ParasolidEntity51StructuredUse,
+        ParasolidEntity51StructuredUse,
         ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord,
         ParasolidEntityVectorRecord, ParasolidTopologyAttributeListReference,
         ParasolidVectorValueKind,

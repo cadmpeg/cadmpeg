@@ -4791,7 +4791,7 @@ fn attach_parasolid_topology_structured_attributes(
         let reference = context.reference;
         let entity = context.entity;
         for structured_use in uses_by_entity.get(entity).into_iter().flatten() {
-            use crate::native::parasolid::ParasolidAttributeFieldValueKind as Kind;
+            use crate::native::parasolid::structured_value_kind::StructuredValueKind as Kind;
             use crate::native::parasolid::ParasolidVectorValueKind;
             let (values, source_offset, tag, family) = match structured_use.kind {
                 Kind::Points | Kind::Vectors | Kind::Directions => {
@@ -4866,7 +4866,6 @@ fn attach_parasolid_topology_structured_attributes(
                         "98_unicode",
                     )
                 }
-                Kind::UnsignedIntegers | Kind::Doubles | Kind::String => continue,
             };
             let id = topology_attribute_id(
                 reference,
