@@ -2,6 +2,7 @@
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{ModelCheckpoint, ModelDraft};
@@ -20,7 +21,6 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
-use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
@@ -704,13 +704,13 @@ impl<'a> DecodeContext<'a> {
     #[cfg(test)]
     pub(crate) fn reject_duplicate_entity_candidate(&mut self) -> String {
         self.ir.model.points.push(Point {
-            id: "rhino:test:duplicate-point".into(),
+            id: "rhino:test:point#duplicate".into(),
             position: Point3::new(1.0, 2.0, 3.0),
             source_object: None,
         });
         let result = self.validate_candidate(|candidate, _annotations| {
             let point = Point {
-                id: "rhino:test:duplicate-point".into(),
+                id: "rhino:test:point#duplicate".into(),
                 position: Point3::new(0.0, 0.0, 0.0),
                 source_object: None,
             };
@@ -2067,10 +2067,10 @@ impl<'a> DecodeContext<'a> {
             let member_order = match self.resolve_object(member_id) {
                 ObjectReference::Resolved(order) => order,
                 ObjectReference::Missing => {
-                    return Err(format!("definition member {member_id} is missing"))
+                    return Err(format!("definition member {member_id} is missing"));
                 }
                 ObjectReference::Ambiguous => {
-                    return Err(format!("definition member {member_id} is ambiguous"))
+                    return Err(format!("definition member {member_id} is ambiguous"));
                 }
             };
             let member = &self.scan.objects[member_order];
@@ -2130,6 +2130,9 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Curve>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing curves".to_string())?
         {
+            if let Some(cache) = curve.geometry.solved_cache() {
+                curve.geometry = cache.clone();
+            }
             transform_curve(curve, transform)?;
             links.push(curve.id.to_string());
             derived_ids.push(curve.id.to_string());
@@ -2138,6 +2141,9 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Surface>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing surfaces".to_string())?
         {
+            if let Some(cache) = surface.geometry.solved_cache() {
+                surface.geometry = cache.clone();
+            }
             transform_surface(surface, transform)?;
             links.push(surface.id.to_string());
             derived_ids.push(surface.id.to_string());
@@ -4478,7 +4484,7 @@ pub(crate) fn embedded_brep_json(
         instance_path: Vec::new(),
     };
     let unknown =
-        UnknownId::mint("rhino:history:embedded-brep".to_string()).expect("identity grammar");
+        UnknownId::mint("rhino:history:brep#embedded".to_string()).expect("identity grammar");
     let mut mesh_budget = crate::mesh::MeshBudget::from_session(expand.ctx());
     let staged = stage_brep(BrepTransferInput {
         expand,
@@ -4496,26 +4502,31 @@ pub(crate) fn embedded_brep_json(
     if staged.kind != BrepTransferKind::FullTopology {
         return None;
     }
-    let model = staged.draft.model();
-    serde_json::to_string(&serde_json::json!({
-        "kind": "brep",
-        "bodies": model.bodies,
-        "regions": model.regions,
-        "shells": model.shells,
-        "faces": model.faces,
-        "loops": model.loops,
-        "coedges": model.coedges,
-        "edges": model.edges,
-        "vertices": model.vertices,
-        "points": model.points,
-        "surfaces": model.surfaces,
-        "curves": model.curves,
-        "procedural_curves": model.procedural_curves,
-        "procedural_surfaces": model.procedural_surfaces,
-        "pcurves": model.pcurves,
-        "tessellations": model.tessellations,
-    }))
-    .ok()
+    // Model serialization supplies loop-ring context for the coedge wire form.
+    let mut value = serde_json::to_value(staged.draft.model()).ok()?;
+    let object = value.as_object_mut()?;
+    object.retain(|key, _| {
+        matches!(
+            key.as_str(),
+            "bodies"
+                | "regions"
+                | "shells"
+                | "faces"
+                | "loops"
+                | "coedges"
+                | "edges"
+                | "vertices"
+                | "points"
+                | "surfaces"
+                | "curves"
+                | "procedural_curves"
+                | "procedural_surfaces"
+                | "pcurves"
+                | "tessellations"
+        )
+    });
+    object.insert("kind".into(), serde_json::json!("brep"));
+    serde_json::to_string(&value).ok()
 }
 
 /// Rhino trim curves live in the surface's native parameter space. A plane's
@@ -5234,7 +5245,7 @@ fn transform_decoded_curve(
         crate::curves::DecodedCurve::Leaf { geometry, warnings } => {
             let source = std::mem::replace(geometry, CurveGeometry::Unknown { record: None });
             let mut carrier = Curve {
-                id: "rhino:hatch:placement".into(),
+                id: "rhino:hatch:curve#placement".into(),
                 geometry: source,
                 source_object: None,
             };

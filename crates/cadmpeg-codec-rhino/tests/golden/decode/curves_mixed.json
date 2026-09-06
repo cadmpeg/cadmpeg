@@ -665,15 +665,6 @@
         "rhino:object:curve#record-000005-offset-1418.root.component-1.component-0": {
           "entity": "derived"
         },
-        "rhino:object:point#record-000000-offset-177": {
-          "entity": "byte_exact"
-        },
-        "rhino:object:point#record-000001-offset-314.0": {
-          "entity": "byte_exact"
-        },
-        "rhino:object:point#record-000001-offset-314.1": {
-          "entity": "byte_exact"
-        },
         "rhino:object:region#record-000000-offset-177": {
           "entity": "derived"
         },

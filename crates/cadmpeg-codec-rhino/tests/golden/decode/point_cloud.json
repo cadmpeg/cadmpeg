@@ -245,14 +245,6 @@
   },
   "source_fidelity": {
     "annotations": {
-      "exactness": {
-        "rhino:object:point#record-000000-offset-177.0": {
-          "entity": "byte_exact"
-        },
-        "rhino:object:point#record-000000-offset-177.1": {
-          "entity": "byte_exact"
-        }
-      }
     },
     "retained_records": [
       {

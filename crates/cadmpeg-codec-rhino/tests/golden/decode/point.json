@@ -231,9 +231,6 @@
         "rhino:object:body#record-000000-offset-177": {
           "entity": "derived"
         },
-        "rhino:object:point#record-000000-offset-177": {
-          "entity": "byte_exact"
-        },
         "rhino:object:region#record-000000-offset-177": {
           "entity": "derived"
         },

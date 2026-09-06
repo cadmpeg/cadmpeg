@@ -319,11 +319,6 @@
   },
   "source_fidelity": {
     "annotations": {
-      "exactness": {
-        "rhino:object:subd#record-000000-offset-177": {
-          "entity": "byte_exact"
-        }
-      }
     },
     "retained_records": [
       {

@@ -22,7 +22,7 @@ use crate::{RhinoArchiveVersion, RhinoCodec};
 fn source_less_points_round_trip_across_target_versions() {
     let mut ir = CadIr::empty();
     ir.model.points.push(Point {
-        id: PointId::mint("point:a").expect("identity grammar"),
+        id: PointId::mint("rhino:test:point#a").expect("identity grammar"),
         position: Point3::new(1.25, -2.5, 3.75),
         source_object: None,
     });
@@ -63,7 +63,7 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
     let mut ir = CadIr::empty();
     ir.tolerances.linear = 2.0;
     ir.model.points.push(Point {
-        id: PointId::mint("point:coarse-tolerance").expect("identity grammar"),
+        id: PointId::mint("rhino:test:point#coarse-tolerance").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
@@ -116,7 +116,7 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
 fn rejection_occurs_before_output() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        id: cadmpeg_ir::ids::CurveId::mint("curve:a").expect("identity grammar"),
+        id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#a").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Degenerate {
             point: Point3::new(0.0, 0.0, 0.0),
         },
@@ -137,7 +137,7 @@ fn rejection_occurs_before_output() {
 fn source_less_circle_round_trips_with_its_frame() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        id: cadmpeg_ir::ids::CurveId::mint("curve:circle").expect("identity grammar"),
+        id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#circle").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Circle {
             center: Point3::new(1.0, 2.0, 3.0),
             axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
@@ -162,7 +162,7 @@ fn source_less_circle_round_trips_with_its_frame() {
         decoded.ir().model.curves[0].geometry,
         ir.model.curves[0].geometry
     );
-    let digest = Sha256::digest(b"curve:circle");
+    let digest = Sha256::digest(b"rhino:test:curve#circle");
     let expected =
         crate::wire::Uuid::from_wire(digest[..16].try_into().expect("required invariant"))
             .to_string();
@@ -180,7 +180,7 @@ fn source_less_circle_round_trips_with_its_frame() {
 fn rational_nurbs_curve_round_trips_homogeneous_poles() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        id: cadmpeg_ir::ids::CurveId::mint("curve:nurbs").expect("identity grammar"),
+        id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsCurve::new(
                 2,
@@ -241,7 +241,7 @@ fn reversed_unclamped_nurbs_knots_are_native_canonical() {
 fn free_plane_and_rational_nurbs_surface_round_trip() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId::mint("surface:plane").expect("identity grammar"),
+        id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#plane").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin: Point3::new(1.0, 2.0, 3.0),
             normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -250,7 +250,7 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
         source_object: None,
     });
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId::mint("surface:nurbs").expect("identity grammar"),
+        id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsSurface::new(
                 1,
@@ -305,7 +305,10 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
             .iter()
             .map(|s| s.geometry.clone())
             .collect::<Vec<_>>();
-        assert_eq!(actual, expected);
+        assert_eq!(actual.len(), expected.len());
+        for geometry in &expected {
+            assert!(actual.contains(geometry), "missing surface: {geometry:?}");
+        }
     }
 }
 

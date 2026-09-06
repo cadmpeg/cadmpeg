@@ -71,7 +71,7 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
 #[test]
 fn body_instance_transform_composes_before_existing_body_transform() {
     let mut body = Body {
-        id: "body".into(),
+        id: "rhino:test:body#1".into(),
         kind: BodyKind::General,
         regions: Vec::new(),
         transform: Some(
@@ -1074,7 +1074,7 @@ fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
             .model
             .points
             .iter()
-            .filter(|point| point.id.0 == "rhino:test:duplicate-point")
+            .filter(|point| point.id.0 == "rhino:test:point#duplicate")
             .collect::<Vec<_>>();
         assert_eq!(matching.len(), 1);
         assert_eq!(
