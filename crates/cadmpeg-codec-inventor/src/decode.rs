@@ -24,11 +24,10 @@ use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::{
-    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
-    AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord, EmbeddedReferenceRecord,
-    ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord,
-    PmAppRenderingStyleRecord, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
-    PmGraphicsStyleCollectionRecord, PresentationRecordIssueRecord, PropertyRecord,
+    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
+    DatabaseRecord, EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord,
+    MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
+    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
     ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord,
     RevisionPayloadForm, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
@@ -905,19 +904,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             suffix_sha256: sha256_hex(placement.suffix.window()),
         })
         .collect::<Vec<_>>();
-    let assembly_record_issues = assembly_inventory
-        .issues
-        .iter()
-        .map(|issue| AssemblyRecordIssueRecord {
-            id: format!(
-                "inventor:assembly:record-issue#{}-{}",
-                issue.segment_token, issue.record_ordinal
-            ),
-            segment_token: issue.segment_token.clone(),
-            record_ordinal: issue.record_ordinal,
-            detail: issue.detail.clone(),
-        })
-        .collect::<Vec<_>>();
     let pm_app_default_styles = presentation_inventory
         .default_styles
         .iter()
@@ -1038,19 +1024,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             terminal_state: style.terminal_state,
         })
         .collect::<Vec<_>>();
-    let presentation_record_issues = presentation_inventory
-        .issues
-        .iter()
-        .map(|issue| PresentationRecordIssueRecord {
-            id: format!(
-                "inventor:presentation:record-issue#{}-{}",
-                issue.segment_token, issue.record_ordinal
-            ),
-            segment_token: issue.segment_token.clone(),
-            record_ordinal: issue.record_ordinal,
-            detail: issue.detail.clone(),
-        })
-        .collect::<Vec<_>>();
     let assembly_projection = crate::assembly::project_occurrences(
         &ufrx_occurrences,
         &external_references,
@@ -1089,13 +1062,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             .saturating_add(external_references.len())
             .saturating_add(assembly_occurrences.len())
             .saturating_add(assembly_placements.len())
-            .saturating_add(assembly_record_issues.len())
+            .saturating_add(assembly_inventory.issues.len())
             .saturating_add(pm_app_default_styles.len())
             .saturating_add(pm_app_rendering_styles.len())
             .saturating_add(pm_graphics_faces.len())
             .saturating_add(pm_graphics_style_collections.len())
             .saturating_add(pm_graphics_primary_color_styles.len())
-            .saturating_add(presentation_record_issues.len())
+            .saturating_add(presentation_inventory.issues.len())
             .saturating_add(design_inventory.parameters.len())
             .saturating_add(design_inventory.expressions.len())
             .saturating_add(design_inventory.units.len())
@@ -1142,7 +1115,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     namespace.set_arena("external_references", &external_references)?;
     namespace.set_arena("assembly_occurrences", &assembly_occurrences)?;
     namespace.set_arena("assembly_placements", &assembly_placements)?;
-    namespace.set_arena("assembly_record_issues", &assembly_record_issues)?;
+    namespace.set_arena("assembly_record_issues", &assembly_inventory.issues)?;
     namespace.set_arena("pm_app_default_styles", &pm_app_default_styles)?;
     namespace.set_arena("pm_app_rendering_styles", &pm_app_rendering_styles)?;
     namespace.set_arena("pm_graphics_faces", &pm_graphics_faces)?;
@@ -1154,7 +1127,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         "pm_graphics_primary_color_styles",
         &pm_graphics_primary_color_styles,
     )?;
-    namespace.set_arena("presentation_record_issues", &presentation_record_issues)?;
+    namespace.set_arena("presentation_record_issues", &presentation_inventory.issues)?;
     namespace.set_arena("pm_dc_parameters", &design_inventory.parameters)?;
     namespace.set_arena("pm_dc_expressions", &design_inventory.expressions)?;
     namespace.set_arena("pm_dc_units", &design_inventory.units)?;
@@ -1341,16 +1314,16 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 segment_bulk_issues.len()
             )));
         }
-        if !assembly_record_issues.is_empty() {
+        if !assembly_inventory.issues.is_empty() {
             losses.push(InventorLossCode::AssemblyRecordMalformed.note(format!(
                 "{} typed Inventor assembly record(s) are malformed or outside the implemented branch.",
-                assembly_record_issues.len()
+                assembly_inventory.issues.len()
             )));
         }
-        if !presentation_record_issues.is_empty() {
+        if !presentation_inventory.issues.is_empty() {
             losses.push(InventorLossCode::PresentationRecordMalformed.note(format!(
                 "{} typed Inventor presentation record(s) are malformed or outside the implemented branch.",
-                presentation_record_issues.len()
+                presentation_inventory.issues.len()
             )));
         }
         if !design_inventory.issues.is_empty() {
@@ -1614,7 +1587,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             ),
             (
                 crate::coverage::PRESENTATION_RECORD_ISSUES,
-                presentation_record_issues.len(),
+                presentation_inventory.issues.len(),
             ),
             (
                 crate::coverage::PM_DC_PARAMETERS,
@@ -1729,7 +1702,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             ),
             (
                 crate::coverage::ASSEMBLY_RECORD_ISSUES,
-                assembly_record_issues.len(),
+                assembly_inventory.issues.len(),
             ),
             (
                 crate::coverage::ACTIVE_KERNEL_CARRIERS,

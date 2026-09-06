@@ -11,6 +11,7 @@ use cadmpeg_ir::products::{
 };
 use cadmpeg_ir::transform::Transform;
 
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::native::{
     AssemblyOccurrenceRecord, AssemblyPlacementRecord, ExternalReferenceRecord,
     UfrxOccurrenceRecord,
@@ -34,7 +35,7 @@ const PLACEMENT_TYPE_B9: [u8; 16] = [
 pub(crate) struct AssemblyInventory<'a> {
     pub(crate) occurrences: Vec<AssemblyOccurrence>,
     pub(crate) placements: Vec<AssemblyPlacement<'a>>,
-    pub(crate) issues: Vec<AssemblyRecordIssue>,
+    pub(crate) issues: Vec<RecordIssue>,
 }
 
 #[derive(Debug)]
@@ -77,13 +78,6 @@ struct CompactTransform {
     prefixed: bool,
     encoding: [u16; 2],
     matrix: [[f64; 4]; 4],
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AssemblyRecordIssue {
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
-    pub(crate) detail: String,
 }
 
 #[derive(Debug)]
@@ -241,7 +235,8 @@ pub(crate) fn inventory<'a>(
                 continue;
             };
             if let Err(error) = result {
-                issues.push(AssemblyRecordIssue {
+                issues.push(RecordIssue {
+                    family: RecordIssueFamily::Assembly,
                     segment_token: segment.pair.token.as_str().into(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,

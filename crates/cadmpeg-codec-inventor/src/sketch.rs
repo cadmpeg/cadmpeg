@@ -14,6 +14,7 @@ use cadmpeg_ir::sketches::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::pmdc::{
     content_header, reference_list, type_id_string, Cursor, PmDcContentHeader, PmDcReference,
     PmDcReferenceList,
@@ -80,7 +81,7 @@ pub(crate) struct SketchInventory {
     pub(crate) transforms: Vec<PmDcTransform>,
     pub(crate) directions: Vec<PmDcDirection>,
     pub(crate) constraints: Vec<PmDcSketchConstraint>,
-    pub(crate) issues: Vec<SketchRecordIssue>,
+    pub(crate) issues: Vec<RecordIssue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -386,8 +387,6 @@ pub(crate) struct PmDcDirection {
     pub(crate) direction: [f64; 3],
 }
 
-pub(crate) use crate::native::TypedRecordIssue as SketchRecordIssue;
-
 pub(crate) fn inventory(
     ctx: &DecodeContext<'_>,
     document: &RseInventory<'_>,
@@ -476,13 +475,10 @@ pub(crate) fn inventory(
                 _ => continue,
             };
             if let Err(error) = result {
-                inventory.issues.push(SketchRecordIssue {
-                    id: format!(
-                        "inventor:pmdc:sketch-record-issue#{}-{}",
-                        segment.pair.token.as_str(),
-                        record.ordinal
-                    ),
-                    type_id: type_id_string(record.type_id),
+                inventory.issues.push(RecordIssue {
+                    family: RecordIssueFamily::Sketch {
+                        type_id: type_id_string(record.type_id),
+                    },
                     segment_token: segment.pair.token.as_str().into(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,

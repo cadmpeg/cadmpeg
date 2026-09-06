@@ -6,24 +6,21 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_asm::brep::records::FaceNativeKey;
 use cadmpeg_ir::{CadIr, Check, Finding, NativeUnknownRecord, Severity};
 
-use crate::design::{
-    DesignRecordIssue, PmDcExpression, PmDcExpressionKind, PmDcParameter, PmDcUnit, PmDcUnitKind,
-};
+use crate::design::{PmDcExpression, PmDcExpressionKind, PmDcParameter, PmDcUnit, PmDcUnitKind};
 use crate::feature::{
-    FeatureRecordIssue, PmDcEntityStyleLink, PmDcFeature, PmDcFeatureLabel, PmDcFeatureProperty,
+    PmDcEntityStyleLink, PmDcFeature, PmDcFeatureLabel, PmDcFeatureProperty,
     PmDcFeaturePropertyKind, PmDcFeatureTerminator, PmDcPatternFeature,
 };
 use crate::sketch::{
     PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity,
-    PmDcSketchEntityKind, PmDcTransform, SketchRecordIssue,
+    PmDcSketchEntityKind, PmDcTransform,
 };
 
 use crate::native::{
-    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
-    AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord, EmbeddedReferenceRecord,
-    ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord,
-    PmAppRenderingStyleRecord, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
-    PmGraphicsStyleCollectionRecord, PresentationRecordIssueRecord, PropertyRecord,
+    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
+    DatabaseRecord, EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord,
+    MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
+    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinAssetRecord,
     ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord, RevisionRecord, RseRecordRecord,
     SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
@@ -32,6 +29,7 @@ use crate::native::{
     INVENTOR_NATIVE_VERSION,
 };
 use crate::pmdc::PmDcReferenceList;
+use crate::record_issue::RecordIssue;
 
 const ARENAS: &[&str] = &[
     "active_carrier",
@@ -659,7 +657,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         findings.push(finding(
             Check::NativeLinks,
             format!("Inventor sketch record: {}", issue.detail),
-            Some(issue.id.clone()),
+            Some(issue.id()),
         ));
     }
 }
@@ -1034,7 +1032,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         findings.push(finding(
             Check::NativeLinks,
             format!("Inventor feature record: {}", issue.detail),
-            Some(issue.id.clone()),
+            Some(issue.id()),
         ));
     }
 }
@@ -1270,7 +1268,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         findings.push(finding(
             Check::NativeLinks,
             format!("Inventor presentation record: {}", issue.detail),
-            Some(issue.id.clone()),
+            Some(issue.id()),
         ));
     }
 }
@@ -1341,31 +1339,31 @@ struct NativeData {
     external_references: Vec<ExternalReferenceRecord>,
     assembly_occurrences: Vec<AssemblyOccurrenceRecord>,
     assembly_placements: Vec<AssemblyPlacementRecord>,
-    assembly_record_issues: Vec<AssemblyRecordIssueRecord>,
+    assembly_record_issues: Vec<RecordIssue>,
     pm_app_default_styles: Vec<PmAppDefaultStyleRecord>,
     pm_app_rendering_styles: Vec<PmAppRenderingStyleRecord>,
     pm_graphics_faces: Vec<PmGraphicsFaceRecord>,
     pm_graphics_style_collections: Vec<PmGraphicsStyleCollectionRecord>,
     pm_graphics_primary_color_styles: Vec<PmGraphicsPrimaryColorStyleRecord>,
     face_native_keys: Vec<FaceNativeKey>,
-    presentation_record_issues: Vec<PresentationRecordIssueRecord>,
+    presentation_record_issues: Vec<RecordIssue>,
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
     pm_dc_units: Vec<PmDcUnit>,
-    design_record_issues: Vec<DesignRecordIssue>,
+    design_record_issues: Vec<RecordIssue>,
     pm_dc_sketches: Vec<PmDcSketch>,
     pm_dc_sketch_entities: Vec<PmDcSketchEntity>,
     pm_dc_sketch_constraints: Vec<PmDcSketchConstraint>,
     pm_dc_transforms: Vec<PmDcTransform>,
     pm_dc_directions: Vec<PmDcDirection>,
-    sketch_record_issues: Vec<SketchRecordIssue>,
+    sketch_record_issues: Vec<RecordIssue>,
     pm_dc_features: Vec<PmDcFeature>,
     pm_dc_pattern_features: Vec<PmDcPatternFeature>,
     pm_dc_feature_terminators: Vec<PmDcFeatureTerminator>,
     pm_dc_feature_properties: Vec<PmDcFeatureProperty>,
     pm_dc_feature_labels: Vec<PmDcFeatureLabel>,
     pm_dc_entity_style_links: Vec<PmDcEntityStyleLink>,
-    feature_record_issues: Vec<FeatureRecordIssue>,
+    feature_record_issues: Vec<RecordIssue>,
     active_carrier: Vec<ActiveCarrierRecord>,
     unknowns: Vec<NativeUnknownRecord>,
 }
@@ -2115,7 +2113,7 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 "Inventor assembly record {}:{} is unavailable: {}",
                 issue.segment_token, issue.record_ordinal, issue.detail
             ),
-            Some(issue.id.clone()),
+            Some(issue.id()),
         ));
     }
     let mut projected = crate::assembly::project_occurrences(

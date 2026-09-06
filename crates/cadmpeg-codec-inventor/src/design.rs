@@ -8,6 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
 use serde::{Deserialize, Serialize};
 
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::pmdc::{type_id_string, Cursor, PmDcContentHeader, PmDcReference};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
@@ -58,7 +59,7 @@ pub(crate) struct DesignInventory {
     pub(crate) parameters: Vec<PmDcParameter>,
     pub(crate) expressions: Vec<PmDcExpression>,
     pub(crate) units: Vec<PmDcUnit>,
-    pub(crate) issues: Vec<DesignRecordIssue>,
+    pub(crate) issues: Vec<RecordIssue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -173,8 +174,6 @@ pub(crate) enum PmDcUnitDimension {
     Dimensionless,
 }
 
-pub(crate) use crate::native::TypedRecordIssue as DesignRecordIssue;
-
 pub(crate) fn inventory(
     ctx: &DecodeContext<'_>,
     document: &RseInventory<'_>,
@@ -285,13 +284,10 @@ pub(crate) fn inventory(
                 continue;
             };
             if let Err(error) = result {
-                inventory.issues.push(DesignRecordIssue {
-                    id: format!(
-                        "inventor:pmdc:record-issue#{}-{}",
-                        segment.pair.token.as_str(),
-                        record.ordinal
-                    ),
-                    type_id: type_id_string(record.type_id),
+                inventory.issues.push(RecordIssue {
+                    family: RecordIssueFamily::Design {
+                        type_id: type_id_string(record.type_id),
+                    },
                     segment_token: segment.pair.token.as_str().into(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,

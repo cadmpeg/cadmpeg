@@ -10,6 +10,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, BodyId, FaceId};
 use cadmpeg_ir::topology::Color;
 
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::pmdc::PmDcReference;
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
@@ -36,7 +37,7 @@ pub(crate) struct PresentationInventory<'a> {
     pub(crate) graphics_faces: Vec<Located<PmGraphicsFace>>,
     pub(crate) graphics_style_collections: Vec<Located<PmGraphicsStyleCollection>>,
     pub(crate) graphics_primary_color_styles: Vec<Located<PmGraphicsPrimaryColorStyle>>,
-    pub(crate) issues: Vec<PresentationRecordIssue>,
+    pub(crate) issues: Vec<RecordIssue>,
 }
 
 /// A parsed presentation record with the inventory location stamped once.
@@ -147,8 +148,6 @@ pub(crate) struct RenderingStyleExtension {
     pub(crate) style_values: [u16; 2],
     pub(crate) guid: String,
 }
-
-pub(crate) use crate::assembly::AssemblyRecordIssue as PresentationRecordIssue;
 
 pub(crate) struct PresentationProjection {
     pub(crate) appearances: Vec<Appearance>,
@@ -452,7 +451,8 @@ pub(crate) fn inventory<'a>(
                 _ => continue,
             };
             if let Err(error) = parsed {
-                issues.push(PresentationRecordIssue {
+                issues.push(RecordIssue {
+                    family: RecordIssueFamily::Presentation,
                     segment_token: segment.pair.token.as_str().into(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,

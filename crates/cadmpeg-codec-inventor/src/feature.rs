@@ -16,6 +16,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
 use serde::{Deserialize, Serialize};
 
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::pmdc::{
     content_header, reference_list, type_id_string, u32_list, Cursor, PmDcContentHeader,
     PmDcReferenceList, PmDcU32List,
@@ -109,7 +110,7 @@ pub(crate) struct FeatureInventory {
     pub(crate) properties: Vec<PmDcFeatureProperty>,
     pub(crate) labels: Vec<PmDcFeatureLabel>,
     pub(crate) entity_style_links: Vec<PmDcEntityStyleLink>,
-    pub(crate) issues: Vec<FeatureRecordIssue>,
+    pub(crate) issues: Vec<RecordIssue>,
 }
 
 pub(crate) struct FeatureProjection {
@@ -298,8 +299,6 @@ pub(crate) struct PmDcFeatureTerminator {
     pub(crate) state: i32,
 }
 
-pub(crate) use crate::native::TypedRecordIssue as FeatureRecordIssue;
-
 pub(crate) fn inventory(
     ctx: &DecodeContext<'_>,
     document: &RseInventory<'_>,
@@ -429,13 +428,10 @@ pub(crate) fn inventory(
                 ),
             };
             if let Err(error) = parsed {
-                inventory.issues.push(FeatureRecordIssue {
-                    id: format!(
-                        "inventor:pmdc:feature-record-issue#{}-{}",
-                        segment.pair.token.as_str(),
-                        record.ordinal
-                    ),
-                    type_id: type_id_string(record.type_id),
+                inventory.issues.push(RecordIssue {
+                    family: RecordIssueFamily::Feature {
+                        type_id: type_id_string(record.type_id),
+                    },
                     segment_token: segment.pair.token.as_str().into(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,
