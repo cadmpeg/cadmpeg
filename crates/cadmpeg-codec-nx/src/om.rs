@@ -8,6 +8,7 @@ use reference_value::{DirectReference, LocatedReference, RecordReference, Tagged
 
 pub(crate) mod draft_identity;
 pub(crate) mod draft_terminal;
+pub(crate) mod datum_index;
 pub(crate) mod plane_descriptor;
 pub(crate) mod csys_descriptor;
 pub(crate) mod reference_index;
@@ -1224,17 +1225,6 @@ pub struct DatumPlaneSingleReferenceBranch {
 pub struct DatumPlaneDoubleReferenceBranch {
     /// Canonical payload object indices in branch order.
     pub references: [PayloadObjectReference<reference_index::PayloadIndexToken>; 2],
-}
-
-/// Complete terminal compact-index lane in a reconstructed datum-plane payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DatumPlaneObjectIndexLane<O = usize> {
-    /// Payload-relative offset of the opening `01` marker.
-    pub offset: O,
-    /// Ordered non-null compact indices and their payload-relative offsets.
-    pub indices: CountedIndexMembers<LocatedCompactIndex<O>, 1>,
-    /// Big-endian trailer word after the zero separator.
-    pub trailer: u32,
 }
 
 /// Exact scalar pair following a datum-plane object-record discriminator.
@@ -3973,52 +3963,6 @@ pub fn datum_plane_double_reference_branch(
     Some(DatumPlaneDoubleReferenceBranch {
         references: [first, second],
     })
-}
-
-/// Decode unique datum-plane index lanes ending at the logical payload boundary.
-pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndexLane> {
-    let mut lanes = Vec::new();
-    for start in 0..bytes.len().saturating_sub(7) {
-        if bytes[start] != 0x01 {
-            continue;
-        }
-        let declared_count = bytes[start + 1];
-        if declared_count < 2 {
-            continue;
-        }
-        let mut scan_at = start + 2;
-        let mut complete = true;
-        for _ in 1..declared_count {
-            let Some((CompactIndex::Value(_), width)) =
-                bytes.get(scan_at..).and_then(compact_index)
-            else {
-                complete = false;
-                break;
-            };
-            scan_at += width;
-        }
-        if !complete || bytes.get(scan_at) != Some(&0x00) || scan_at + 5 != bytes.len() {
-            continue;
-        }
-        let mut at = start + 2;
-        let indices = (1..declared_count).map(|_| {
-            let token = LocatedCompactIndex::read(&bytes[..scan_at], at)?;
-            at += token.atom.raw().len();
-            Some(token)
-        }).collect::<Option<Vec<_>>>();
-        let Some(indices) = indices.and_then(|indices| CountedIndexMembers::new(indices).ok()) else {
-            continue;
-        };
-        let Some(trailer) = View::u32_be_at(bytes, scan_at + 1) else {
-            continue;
-        };
-        lanes.push(DatumPlaneObjectIndexLane {
-            offset: start,
-            indices,
-            trailer,
-        });
-    }
-    lanes
 }
 
 /// Decode every exactly framed scalar pair in a reconstructed datum-plane payload.

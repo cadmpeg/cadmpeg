@@ -602,33 +602,29 @@ fn om_datum_plane_object_index_lane_ends_at_logical_payload_boundary() {
     let bytes = [
         0x80, 0xab, 0x01, 0x04, 0x81, 0x01, 0x01, 0x01, 0x00, 0x12, 0x34, 0x56, 0x78,
     ];
-    let lanes = super::datum_plane_object_index_lanes(&bytes);
+    let lanes = crate::om::datum_index::scan(&bytes);
     assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].offset, 2);
-    assert_eq!(lanes[0].indices.as_slice().len() + 1, 4);
+    assert_eq!(lanes[0].offset(), 2);
+    assert_eq!(usize::from(lanes[0].declared_count()), 4);
     assert_eq!(
         lanes[0]
-            .indices
-            .as_slice()
-            .iter()
+            .indices()
             .map(|token| (token.atom.value(), token.offset))
             .collect::<Vec<_>>(),
         [(257, 4), (1, 6), (1, 7)]
     );
     assert_eq!(
         lanes[0]
-            .indices
-            .as_slice()
-            .iter()
+            .indices()
             .map(|token| token.atom.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x81, 0x01], vec![1], vec![1]]
     );
-    assert_eq!(lanes[0].trailer, 0x1234_5678);
+    assert_eq!(lanes[0].trailer(), 0x1234_5678);
 
     let mut trailing = bytes.to_vec();
     trailing.push(0);
-    assert!(super::datum_plane_object_index_lanes(&trailing).is_empty());
+    assert!(crate::om::datum_index::scan(&trailing).is_empty());
 }
 
 #[test]

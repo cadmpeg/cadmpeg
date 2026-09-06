@@ -114,7 +114,7 @@ fn datum_plane_payload_retains_checked_compact_tokens() {
         wire["index_lane_declared_count"] = serde_json::json!(count + 1);
         wire["index_lane_values"] = serde_json::json!(vec![2; count]);
         wire["index_lane_raw_indices"] = serde_json::json!(vec![vec![2]; count]);
-        wire["index_lane_value_offsets"] = serde_json::json!(vec![4; count]);
+        wire["index_lane_value_offsets"] = serde_json::json!((4..4 + count).collect::<Vec<_>>());
         assert_eq!(serde_json::from_value::<super::FeatureDatumPlanePayload>(wire).is_ok(), count == 254);
     }
 }
@@ -557,4 +557,25 @@ fn sketch_reference_wire_derives_terminal_and_retains_zero_count_form() {
             assert!(serde_json::from_value::<FeatureSketchReference>(invalid).unwrap_err().to_string().contains("terminal"));
         }
     }
+}
+
+#[test]
+fn datum_plane_payload_rejects_detached_member_positions_and_frame_overflow() {
+    let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"hash","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":3,"index_lane_values":[4096,1],"index_lane_raw_indices":[[144,0],[128,1]],"index_lane_value_offsets":[4,6],"index_lane_trailer":0}"#;
+    for offsets in [[3, 6], [4, 5], [4, u64::MAX]] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["index_lane_value_offsets"] = serde_json::json!(offsets);
+        let error = serde_json::from_value::<super::FeatureDatumPlanePayload>(wire).unwrap_err();
+        assert!(error.to_string().contains("index_lane_value_offsets"));
+    }
+    let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+    let origin = u64::MAX - 11;
+    wire["index_lane_offset"] = serde_json::json!(origin);
+    wire["index_lane_value_offsets"] = serde_json::json!([origin + 2, origin + 4]);
+    let payload: super::FeatureDatumPlanePayload = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(payload).unwrap(), wire);
+    wire["index_lane_offset"] = serde_json::json!(origin + 1);
+    wire["index_lane_value_offsets"] = serde_json::json!([origin + 3, origin + 5]);
+    let error = serde_json::from_value::<super::FeatureDatumPlanePayload>(wire).unwrap_err();
+    assert!(error.to_string().contains("index_lane_offset"));
 }
