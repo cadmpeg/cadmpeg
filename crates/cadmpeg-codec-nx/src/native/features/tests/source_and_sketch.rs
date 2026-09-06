@@ -81,11 +81,8 @@ fn nx_feature_source_content_orders_payload_text() {
 #[test]
 fn nx_symbolic_thread_retains_all_complete_type_three_text_frames() {
     let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
+        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "SYMBOLIC_THREAD",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
     };
     let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5\0\x03\x05CUT\0";
     let record = crate::om::OperationRecord {
@@ -109,11 +106,8 @@ fn nx_symbolic_thread_retains_all_complete_type_three_text_frames() {
 #[test]
 fn nx_symbolic_thread_requires_two_complete_type_three_text_frames() {
     let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
+        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "SYMBOLIC_THREAD",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
     };
     let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5";
     let record = crate::om::OperationRecord {

@@ -6,6 +6,7 @@ pub(crate) mod plane_descriptor;
 pub(crate) mod csys_descriptor;
 pub(crate) mod reference_index;
 pub(crate) mod header_references;
+use header_references::{HeaderReferences, OperationHeader};
 pub(crate) mod common_frame;
 pub(crate) mod body_write;
 pub(crate) mod direct_reference;
@@ -1082,16 +1083,10 @@ pub struct Section<'a> {
 /// A feature operation name in a size-framed feature-history record area.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationLabel<'a> {
-    /// Absolute offset of the fixed operation-header marker.
-    pub header_offset: usize,
-    /// Absolute offset of the `03` label tag within the containing entry.
-    pub offset: usize,
+    /// Complete operation header and its exact reference encodings.
+    pub header: OperationHeader,
     /// Printable operation name without its terminating NUL.
     pub value: &'a str,
-    /// Four object-index slots in header order; `None` is the `ff` sentinel.
-    pub object_indices: [Option<u32>; 4],
-    /// Absolute byte offset of each object-index token in header order.
-    pub object_index_offsets: [usize; 4],
 }
 
 /// One operation record bounded by consecutive validated operation headers.
@@ -1110,25 +1105,19 @@ pub struct OperationRecord<'a> {
 impl OperationRecord<'_> {
     /// Absolute offset of the fixed operation-header marker.
     pub fn offset(&self) -> usize {
-        self.label.header_offset
+        self.label.header.offset()
     }
 }
 
 /// One unlabeled operation record bounded by validated operation headers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnlabeledOperationRecord<'a> {
-    /// Absolute offset of the fixed operation-header marker.
-    pub offset: usize,
+    /// Complete operation header and its exact reference encodings.
+    pub header: OperationHeader,
     /// Complete record bytes through the next operation header or section end.
     pub bytes: &'a [u8],
-    /// Absolute offset of the first byte after the four header slots.
-    pub payload_offset: usize,
     /// Serialized payload after the four header slots.
     pub payload: &'a [u8],
-    /// Four object-index slots in header order; `None` is the `ff` sentinel.
-    pub object_indices: [Option<u32>; 4],
-    /// Absolute byte offset of each object-index token in header order.
-    pub object_index_offsets: [usize; 4],
 }
 
 /// Terminal common-frame suffix with its independently matched preceding frame.
@@ -2204,7 +2193,7 @@ impl<'a> Section<'a> {
         let end = self
             .cached_operation_labels
             .first()
-            .and_then(|label| label.header_offset.checked_sub(base_offset))
+            .and_then(|label| label.header.offset().checked_sub(base_offset))
             .unwrap_or(bytes.len());
         operation_state_journal_groups_before_boundary(bytes, start, end, base_offset)
     }
@@ -2310,15 +2299,7 @@ pub fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<
         .collect()
 }
 
-#[derive(Debug, Clone, Copy)]
-struct OperationHeaderLayout {
-    offset: usize,
-    fields_end: usize,
-    object_indices: [Option<u32>; 4],
-    object_index_offsets: [usize; 4],
-}
-
-fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<OperationHeaderLayout> {
+fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<OperationHeader> {
     const PREFIX: &[u8] = &[0x80, 0xcd, 0x01, 0x04, 0x01];
     const SCALAR_LEN: usize = 8;
     let mut headers = Vec::new();
@@ -2336,31 +2317,14 @@ fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<Operatio
         {
             continue;
         }
-        let mut at = scalar_at + SCALAR_LEN + 2;
-        let mut object_indices = [None; 4];
-        let mut object_index_offsets = [0; 4];
-        let mut valid = true;
-        for (slot, offset) in object_indices
-            .iter_mut()
-            .zip(object_index_offsets.iter_mut())
-        {
-            *offset = base_offset + at;
-            let Some((value, next)) = feature_object_index(bytes, at) else {
-                valid = false;
-                break;
-            };
-            *slot = value;
-            at = next;
-        }
-        if !valid {
+        let Some(objects) = HeaderReferences::read(&bytes[scalar_at + SCALAR_LEN + 2..]) else {
             continue;
-        }
-        headers.push(OperationHeaderLayout {
-            offset: base_offset + marker,
-            fields_end: at,
-            object_indices,
-            object_index_offsets,
-        });
+        };
+        let Some(header) = base_offset.checked_add(marker)
+            .and_then(|offset| OperationHeader::new(offset, objects)) else {
+            continue;
+        };
+        headers.push(header);
     }
     headers
 }
@@ -2368,9 +2332,9 @@ fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<Operatio
 fn operation_label_at(
     bytes: &[u8],
     base_offset: usize,
-    header: OperationHeaderLayout,
+    header: OperationHeader,
 ) -> Option<OperationLabel<'_>> {
-    let at = header.fields_end;
+    let at = header.end_offset().checked_sub(base_offset)?;
     if bytes.get(at) != Some(&0x03) {
         return None;
     }
@@ -2393,11 +2357,8 @@ fn operation_label_at(
         return None;
     };
     Some(OperationLabel {
-        header_offset: header.offset,
-        offset: base_offset + at,
+        header,
         value,
-        object_indices: header.object_indices,
-        object_index_offsets: header.object_index_offsets,
     })
 }
 
@@ -2413,12 +2374,12 @@ fn operation_records_with_labels_and_ordinals<'a>(
         .filter_map(|(ordinal, header)| {
             let label = labels
                 .iter()
-                .find(|label| label.header_offset == header.offset)?;
-            let start = label.header_offset.checked_sub(base_offset)?;
+                .find(|label| label.header.offset() == header.offset())?;
+            let start = label.header.offset().checked_sub(base_offset)?;
             let end = headers
                 .get(ordinal + 1)
-                .map_or(bytes.len(), |next| next.offset - base_offset);
-            let label_at = label.offset.checked_sub(base_offset)?;
+                .map_or(bytes.len(), |next| next.offset() - base_offset);
+            let label_at = label.header.end_offset().checked_sub(base_offset)?;
             let payload_start = label_at
                 .checked_add(usize::from(*bytes.get(label_at + 1)?))?
                 .checked_add(1)?;
@@ -2447,23 +2408,20 @@ fn unlabeled_operation_records_with_ordinals<'a>(
         .filter_map(|(ordinal, header)| {
             if labels
                 .iter()
-                .any(|label| label.header_offset == header.offset)
+                .any(|label| label.header.offset() == header.offset())
             {
                 return None;
             }
-            let start = header.offset.checked_sub(base_offset)?;
+            let start = header.offset().checked_sub(base_offset)?;
             let end = headers
                 .get(ordinal + 1)
-                .map_or(bytes.len(), |next| next.offset - base_offset);
+                .map_or(bytes.len(), |next| next.offset() - base_offset);
             Some((
                 ordinal,
                 UnlabeledOperationRecord {
-                    offset: header.offset,
+                    header: *header,
                     bytes: bytes.get(start..end)?,
-                    payload_offset: base_offset + header.fields_end,
-                    payload: bytes.get(header.fields_end..end)?,
-                    object_indices: header.object_indices,
-                    object_index_offsets: header.object_index_offsets,
+                    payload: bytes.get(header.end_offset().checked_sub(base_offset)?..end)?,
                 },
             ))
         })
@@ -5175,7 +5133,7 @@ pub fn operation_body_write_frames(record: OperationRecord<'_>) -> Vec<BodyWrite
 pub fn unlabeled_operation_body_write_frames(
     record: UnlabeledOperationRecord<'_>,
 ) -> Vec<BodyWriteFrame<usize>> {
-    body_write_frames(record.payload, record.payload_offset)
+    body_write_frames(record.payload, record.header.end_offset())
 }
 
 fn body_write_frames(payload: &[u8], payload_offset: usize) -> Vec<BodyWriteFrame<usize>> {
@@ -6274,7 +6232,7 @@ fn boolean_operations_with_labels(
                 "INTERSECT" => BooleanOperationKind::Intersect,
                 _ => return None,
             };
-            let at = label.offset.checked_sub(base_offset)?;
+            let at = label.header.end_offset().checked_sub(base_offset)?;
             let label_end = at.checked_add(usize::from(*bytes.get(at + 1)?))? + 1;
             if bytes.get(label_end..label_end + BODY_HEADER.len()) != Some(BODY_HEADER) {
                 return None;
@@ -6290,7 +6248,7 @@ fn boolean_operations_with_labels(
             }
             let target = targets.into_iter().next()?;
             Some(BooleanOperation {
-                offset: label.offset,
+                offset: label.header.end_offset(),
                 kind,
                 target,
                 tools,

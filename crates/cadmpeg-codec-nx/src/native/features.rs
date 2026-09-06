@@ -6356,42 +6356,23 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
         };
         let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        let Some(record_area) = section.record_area else {
-            continue;
-        };
-        let record_area_offset = record_area.offset;
-        let record_area = record_area.bytes;
         labels.extend(
             section
                 .operation_records_with_label_ordinals()
                 .into_iter()
-                .filter_map(|(ordinal, record)| {
+                .map(|(ordinal, record)| {
                     let label = record.label;
-                    let raw_object_indices: [Option<Vec<u8>>; 4] = std::array::from_fn(|slot| {
-                        let start = label.object_index_offsets[slot] - record_area_offset;
-                        let end = if slot + 1 < label.object_index_offsets.len() {
-                            label.object_index_offsets[slot + 1] - record_area_offset
-                        } else {
-                            label.offset - record_area_offset
-                        };
-                        record_area.get(start..end).map(<[u8]>::to_vec)
-                    });
-                    let raw_object_indices: [Vec<u8>; 4] = raw_object_indices
-                        .into_iter()
-                        .collect::<Option<Vec<_>>>()?
-                        .try_into()
-                        .ok()?;
-                    Some(FeatureOperationLabel {
+                    FeatureOperationLabel {
                         id: format!(
                             "nx:feature-history:operation-label#{section_key}-{ordinal:010}"
                         ),
                         section_link: link.id.clone(),
                         ordinal: ordinal as u32,
                         value: label.value.to_string(),
-                        objects: crate::om::header_references::HeaderReferences::from_wire(label.object_indices, raw_object_indices.each_ref().map(Vec::as_slice)).ok()?,
+                        objects: label.header.objects(),
                         stable_identity: None,
-                        source_offset: entry_offset + label.offset as u64,
-                    })
+                        source_offset: entry_offset + label.header.end_offset() as u64,
+                    }
                 }),
         );
     }
@@ -6408,7 +6389,7 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
             let Some(operation) = section
                 .boolean_operations()
                 .into_iter()
-                .find(|operation| operation.offset == record.label.offset)
+                .find(|operation| operation.offset == record.label.header.end_offset())
             else {
                 return;
             };
@@ -6453,7 +6434,7 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let stable_identity =
-                operation_header_identity_key(record.label.object_indices, &block_identities);
+                operation_header_identity_key(record.label.header.objects().values(), &block_identities);
             if let Some(key) = &stable_identity {
                 *identity_counts.entry(key.clone()).or_default() += 1;
             }
@@ -6499,16 +6480,16 @@ pub fn feature_unlabeled_operation_records(
                     "nx:feature-history:unlabeled-operation-record#{section_key}-{operation_ordinal:010}"
                 ),
                 ordinal: operation_ordinal as u32,
-                object_indices: record.object_indices,
-                object_index_source_offsets: record
-                    .object_index_offsets
+                object_indices: record.header.objects().values(),
+                object_index_source_offsets: record.header
+                    .object_offsets()
                     .map(|offset| entry_offset + offset as u64),
                 byte_len: record.bytes.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
                 payload_byte_len: record.payload.len() as u64,
                 payload_sha256: cadmpeg_ir::hash::sha256_hex(record.payload),
-                payload_source_offset: entry_offset + record.payload_offset as u64,
-                source_offset: entry_offset + record.offset as u64,
+                payload_source_offset: entry_offset + record.header.end_offset() as u64,
+                source_offset: entry_offset + record.header.offset() as u64,
             });
         },
     );
@@ -7768,35 +7749,13 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
     let mut inputs = Vec::new();
     visit_feature_history_operation_records(
         container,
-        |section, section_key, entry_offset, operation_ordinal, record| {
+        |_section, section_key, entry_offset, operation_ordinal, record| {
             let label = record.label;
-            for (input_slot, object_index) in label.object_indices.into_iter().enumerate() {
-                let Some(object_index) = object_index else {
+            for (input_slot, object) in label.header.objects().0.into_iter().enumerate() {
+                let Some(object) = object else {
                     continue;
                 };
-                let Some(data_block) = unique_offset_data_block(&indexed, object_index) else {
-                    continue;
-                };
-                let Some(record_area) = section.record_area else {
-                    continue;
-                };
-                let record_area_offset = record_area.offset;
-                let token_offset = label.object_index_offsets[input_slot];
-                let token_end = label
-                    .object_index_offsets
-                    .get(input_slot + 1)
-                    .copied()
-                    .unwrap_or(label.offset);
-                let Some(start) = token_offset.checked_sub(record_area_offset) else {
-                    continue;
-                };
-                let Some(end) = token_end.checked_sub(record_area_offset) else {
-                    continue;
-                };
-                let Some(raw_object_index) = record_area.bytes.get(start..end) else {
-                    continue;
-                };
-                let Ok(object) = crate::om::reference_index::FeatureReferenceToken::from_wire(object_index, raw_object_index) else {
+                let Some(data_block) = unique_offset_data_block(&indexed, object.value()) else {
                     continue;
                 };
                 let operation_label = format!(
@@ -7810,7 +7769,7 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
                     input_slot: input_slot as u8,
                     object,
                     data_block,
-                    source_offset: entry_offset + label.object_index_offsets[input_slot] as u64,
+                    source_offset: entry_offset + label.header.object_offsets()[input_slot] as u64,
                 });
             }
         },

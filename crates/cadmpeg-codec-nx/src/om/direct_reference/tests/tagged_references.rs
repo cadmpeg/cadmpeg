@@ -9,11 +9,8 @@ fn record(payload: &[u8], payload_offset: usize) -> OperationRecord<'_> {
         payload_offset,
         payload,
         label: OperationLabel {
-            header_offset: 100,
-            offset: 119,
+            header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
             value: "EXTRUDE",
-            object_indices: [None; 4],
-            object_index_offsets: [115, 116, 117, 118],
         },
     }
 }

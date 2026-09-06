@@ -57,11 +57,8 @@ fn om_surface_payload_strings_require_exact_length_utf8_and_terminator() {
 #[test]
 fn om_projected_curve_references_require_one_complete_field() {
     let label = super::super::OperationLabel {
-        header_offset: 100,
-        offset: 119,
+        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "CPROJ",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
     };
     let payload =
         b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0";
@@ -106,11 +103,8 @@ fn om_projected_curve_references_require_one_complete_field() {
 #[test]
 fn om_combined_projected_curve_references_require_the_complete_graph() {
     let label = super::super::OperationLabel {
-        header_offset: 100,
-        offset: 119,
+        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "CPROJ_CMB",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
     };
     let payload = b"\x3c\x32\x01\x02\x32\x01\x04\x36\x01\x33\xf1\x03\x18\x33\xf1\x03\x19\x00\xf1\x03\x1a\x00\x00\x00\x00\x00\x00\xf1\x03\x1b\x16\x01\x02\xf1\x03\x18\x01\x02\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x03\x1c\x00\x81\x5c\x16\x01\x02\xf1\x03\x19\x01\x02\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x03\x1d\x00\x81\x5c\xff\x01\xff\x01\xf1\x03\x1e\xf1\x03\x1f\x04\x02";
     let record = super::super::OperationRecord {
@@ -174,11 +168,8 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
 #[test]
 fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
     let label = super::super::OperationLabel {
-        header_offset: 100,
-        offset: 119,
+        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "Pattern Geometry",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
     };
     let nullable = b"\x61\xf1\x1b\x08\xff\x00\xff\x01\xf1\x1b\x09\xf1\x1b\x0a\x61\xf1\x1b\x0b\xff\x00\xff\x01\xf1\x1b\x0c\xf1\x1b\x0d\xff\x62\xf1\x1b\x0e\xf1\x1b\x0f\xff\x00\x00\x01\xf1\x1b\x10\xff\xff\xff\x01";
     let record = super::super::OperationRecord {
@@ -251,11 +242,8 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
 fn om_pattern_transform_lanes_require_counted_family_rows() {
     let feature_payload = b"\xaa\x01\x03\x60\x01\x00\x00\x50\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\x60\x01\x00\x00\xd0\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x9f\xfe\x01\x02\x00\x00\xff\x00\x00\x5f\x00\x00\x01";
     let label = super::super::OperationLabel {
-        header_offset: 100,
-        offset: 119,
+        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "Pattern Feature",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
     };
     let record = super::super::OperationRecord {
         bytes: feature_payload,

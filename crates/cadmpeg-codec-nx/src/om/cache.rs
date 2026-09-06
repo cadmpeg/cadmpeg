@@ -173,28 +173,19 @@ impl SectionLayout {
 
 #[derive(Debug, Clone)]
 struct CachedOperationLabel {
-    header_offset: usize,
-    offset: usize,
+    header: super::header_references::OperationHeader,
     value: String,
-    object_indices: [Option<u32>; 4],
-    object_index_offsets: [usize; 4],
 }
 
 impl From<&OperationLabel<'_>> for CachedOperationLabel {
     fn from(value: &OperationLabel<'_>) -> Self {
-        Self {
-            header_offset: value.header_offset, offset: value.offset, value: value.value.to_owned(),
-            object_indices: value.object_indices, object_index_offsets: value.object_index_offsets,
-        }
+        Self { header: value.header, value: value.value.to_owned() }
     }
 }
 
 impl CachedOperationLabel {
     fn materialize(&self) -> OperationLabel<'_> {
-        OperationLabel {
-            header_offset: self.header_offset, offset: self.offset, value: &self.value,
-            object_indices: self.object_indices, object_index_offsets: self.object_index_offsets,
-        }
+        OperationLabel { header: self.header, value: &self.value }
     }
 }
 

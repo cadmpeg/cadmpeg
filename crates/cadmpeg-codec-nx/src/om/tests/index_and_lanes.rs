@@ -368,11 +368,8 @@ fn om_simple_hole_lane_requires_two_identical_nonempty_scalar_runs() {
     payload.extend_from_slice(b"Hole_X");
     payload.push(0x00);
     let label = super::OperationLabel {
-        header_offset: 100,
-        offset: 120,
+        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "SIMPLE HOLE",
-        object_indices: [None; 4],
-        object_index_offsets: [0; 4],
     };
     let record = super::OperationRecord {
         bytes: &payload,
@@ -424,11 +421,8 @@ fn om_simple_hole_lane_accepts_one_repeated_scalar() {
         payload_offset: 200,
         payload: &payload,
         label: super::OperationLabel {
-            header_offset: 100,
-            offset: 120,
+            header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
             value: "SIMPLE HOLE",
-            object_indices: [None; 4],
-            object_index_offsets: [0; 4],
         },
     };
     let lane = super::simple_hole_repeated_scalar_lane(record).unwrap();
@@ -473,11 +467,8 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     payload.extend_from_slice(b"Hole_X");
     payload.push(0x00);
     let label = super::OperationLabel {
-        header_offset: 100,
-        offset: 120,
+        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "SIMPLE HOLE",
-        object_indices: [None; 4],
-        object_index_offsets: [0; 4],
     };
     let record = super::OperationRecord {
         bytes: &payload,
@@ -552,11 +543,8 @@ fn om_hole_package_lane_retains_the_exact_four_block_group() {
         payload_offset: 200,
         payload: &payload,
         label: super::OperationLabel {
-            header_offset: 100,
-            offset: 120,
+            header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
             value: "HOLE PACKAGE",
-            object_indices: [None; 4],
-            object_index_offsets: [0; 4],
         },
     };
     let lane = super::hole_package_construction_group_lane(record).unwrap();
@@ -600,11 +588,8 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
     }
     payload.extend_from_slice(&[0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
     let label = super::OperationLabel {
-        header_offset: 10,
-        offset: 20,
+        header: crate::om::header_references::OperationHeader::new(10, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "DATUM_CSYS",
-        object_indices: [None; 4],
-        object_index_offsets: [0; 4],
     };
     let record = super::OperationRecord {
         bytes: &payload,
@@ -666,11 +651,8 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
         0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x03, 0x29, 0x01, 0x02, 0xf1, 0x02, 0xcf,
     ];
     let label = super::OperationLabel {
-        header_offset: 10,
-        offset: 20,
+        header: crate::om::header_references::OperationHeader::new(10, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "DATUM_PLANE",
-        object_indices: [None; 4],
-        object_index_offsets: [0; 4],
     };
     let record = super::OperationRecord {
         bytes: &payload,
@@ -1031,11 +1013,8 @@ fn om_draft_binary32_lanes_require_complete_typed_atoms_and_terminator() {
 #[test]
 fn om_operation_primary_body_reference_requires_one_complete_field() {
     let label = super::OperationLabel {
-        header_offset: 100,
-        offset: 100,
+        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "EXTRUDE",
-        object_indices: [None; 4],
-        object_index_offsets: [0; 4],
     };
     let bytes = [0x01, 0x02, 0x10, 0x90, 0x19, 0x42, 0xff];
     let record = super::OperationRecord {
@@ -1083,11 +1062,8 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
 #[test]
 fn om_operation_body_write_is_not_a_direct_primary_body_reference() {
     let label = super::OperationLabel {
-        header_offset: 100,
-        offset: 100,
+        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "EXTRUDE",
-        object_indices: [None; 4],
-        object_index_offsets: [0; 4],
     };
     let bytes = [
         0x01, 0x02, 0x0b, 0xa0, 0x66, 0xa4, 0x97, 0x75, 0x01, 0x02, 0x10, 0x43, 0xff,
@@ -1126,11 +1102,8 @@ fn om_operation_body_write_is_not_a_direct_primary_body_reference() {
 #[test]
 fn om_operation_object_relation_requires_complete_canonical_endpoints() {
     let label = super::OperationLabel {
-        header_offset: 50,
-        offset: 100,
+        header: crate::om::header_references::OperationHeader::new(50, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "EXTRUDE",
-        object_indices: [None; 4],
-        object_index_offsets: [0; 4],
     };
     let payload = [
         0x01, 0x02, 0x17, 0x81, 0x23, 0x97, 0x75, 0x01, 0x02, 0x10, 0x86, 0x45, 0xff, 0x01, 0x02,
@@ -1205,11 +1178,8 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
         frame
     };
     let label = super::OperationLabel {
-        header_offset: 100,
-        offset: 100,
+        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "FSET",
-        object_indices: [None; 4],
-        object_index_offsets: [0; 4],
     };
     let bytes = [
         0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
@@ -1230,7 +1200,7 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
     );
 
     let label = super::OperationLabel {
-        header_offset: 0,
+        header: crate::om::header_references::OperationHeader::new(0, label.header.objects()).unwrap(),
         ..label
     };
     let direct = [
@@ -1341,11 +1311,8 @@ fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
             payload_offset: 100,
             payload,
             label: super::OperationLabel {
-                header_offset: 0,
-                offset: 0,
+                header: crate::om::header_references::OperationHeader::new(0, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
                 value: "FSET",
-                object_indices: [None; 4],
-                object_index_offsets: [0; 4],
             },
         }
     }
@@ -1401,11 +1368,8 @@ fn om_delete_reference_field_requires_five_canonical_nullable_slots() {
             payload_offset: 100,
             payload,
             label: super::OperationLabel {
-                header_offset: 0,
-                offset: 0,
+                header: crate::om::header_references::OperationHeader::new(0, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
                 value: "DELETE",
-                object_indices: [None; 4],
-                object_index_offsets: [0; 4],
             },
         }
     }
@@ -1620,15 +1584,15 @@ fn om_operation_labels_require_the_complete_frame() {
     let bytes = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x01\x82\x40\x90\x17\xd3\xff\x03\x07UNITE\0\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x02\x03\xff\xff\x03\x08SKETCH\0";
     let labels = super::operation_labels(bytes, 100);
     assert_eq!(labels.len(), 2);
-    assert_eq!(labels[0].offset, 122);
-    assert_eq!(labels[0].header_offset, 100);
+    assert_eq!(labels[0].header.end_offset(), 122);
+    assert_eq!(labels[0].header.offset(), 100);
     assert_eq!(labels[0].value, "UNITE");
     assert_eq!(
-        labels[0].object_indices,
+        labels[0].header.objects().values(),
         [Some(1), Some(576), Some(6099), None]
     );
     assert_eq!(labels[1].value, "SKETCH");
-    assert_eq!(labels[1].object_indices, [Some(2), Some(3), None, None]);
+    assert_eq!(labels[1].header.objects().values(), [Some(2), Some(3), None, None]);
 
     assert!(super::operation_labels(b"\xff\xff\x03\x07UNITE\0", 0).is_empty());
     let mut invalid = bytes.to_vec();
@@ -1659,11 +1623,8 @@ fn om_operation_records_use_consecutive_validated_headers() {
 #[test]
 fn om_operation_payload_strings_require_complete_utf8_frames() {
     let label = super::OperationLabel {
-        header_offset: 100,
-        offset: 119,
+        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "SIMPLE HOLE",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
     };
     let payload = b"\x00\x04\x07BLOCK\0\x04\x04\xc3\x97\0\x04\x07BROKEN";
     let record = super::OperationRecord {
@@ -1682,11 +1643,8 @@ fn om_operation_payload_strings_require_complete_utf8_frames() {
 #[test]
 fn om_operation_payload_text_frames_retain_marker_and_order() {
     let label = super::OperationLabel {
-        header_offset: 100,
-        offset: 119,
+        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "SYMBOLIC_THREAD",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
     };
     let payload = b"\x03\x05CUT\0\x04\x06DONE\0\x03\x0bM Profile\0";
     let record = super::OperationRecord {

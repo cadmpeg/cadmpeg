@@ -20,11 +20,8 @@ fn om_pattern_counted_reference_lane_requires_exact_terminator() {
         payload_offset,
         payload: &payload,
         label: OperationLabel {
-            header_offset: 100,
-            offset: 119,
+            header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
             value: "Pattern Feature",
-            object_indices: [None; 4],
-            object_index_offsets: [115, 116, 117, 118],
         },
     };
     let lane = pattern_payload_counted_reference_lane(record).expect("complete lane");
