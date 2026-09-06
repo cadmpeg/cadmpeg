@@ -3852,27 +3852,115 @@ pub struct FeatureExtrudePayloadHeader {
 
 /// Exact terminal discriminator lane from a bounded operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureOperationTerminalDiscriminatorWire",
+    into = "FeatureOperationTerminalDiscriminatorWire"
+)]
 pub struct FeatureOperationTerminalDiscriminator {
-    /// Globally unique lane identity.
     pub id: String,
-    /// Owning operation label.
     pub operation_label: String,
-    /// Two compact type indices following the footer prelude.
-    pub type_indices: [u32; 2],
-    /// Exact compact-index tokens for the two type indices.
-    pub raw_type_indices: [Vec<u8>; 2],
-    /// Absolute file offsets of the two type-index tokens.
-    pub type_index_source_offsets: [u64; 2],
-    /// Four serialized one-byte flags.
+    pub type_indices: [FeatureIndexToken; 2],
     pub flags: [u8; 4],
-    /// Compact values preceding the payload terminator.
-    pub trailing_indices: Vec<u32>,
-    /// Exact compact-index tokens in the trailing lane.
-    pub raw_trailing_indices: Vec<Vec<u8>>,
-    /// Absolute file offsets of the trailing compact-index tokens.
-    pub trailing_index_source_offsets: Vec<u64>,
-    /// Absolute file offset of the footer prelude.
+    pub trailing_indices: Vec<FeatureIndexToken>,
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureOperationTerminalDiscriminatorWire {
+    /// Globally unique lane identity.
+    id: String,
+    /// Owning operation label.
+    operation_label: String,
+    /// Two compact type indices following the footer prelude.
+    type_indices: [u32; 2],
+    /// Exact compact-index tokens for the two type indices.
+    raw_type_indices: [Vec<u8>; 2],
+    /// Absolute file offsets of the two type-index tokens.
+    type_index_source_offsets: [u64; 2],
+    /// Four serialized one-byte flags.
+    flags: [u8; 4],
+    /// Compact values preceding the payload terminator.
+    trailing_indices: Vec<u32>,
+    /// Exact compact-index tokens in the trailing lane.
+    raw_trailing_indices: Vec<Vec<u8>>,
+    /// Absolute file offsets of the trailing compact-index tokens.
+    trailing_index_source_offsets: Vec<u64>,
+    /// Absolute file offset of the footer prelude.
+    source_offset: u64,
+}
+
+impl From<FeatureOperationTerminalDiscriminator> for FeatureOperationTerminalDiscriminatorWire {
+    fn from(lane: FeatureOperationTerminalDiscriminator) -> Self {
+        Self {
+            id: lane.id,
+            operation_label: lane.operation_label,
+            type_indices: lane.type_indices.each_ref().map(|token| token.value),
+            raw_type_indices: lane.type_indices.each_ref().map(|token| token.raw.clone()),
+            type_index_source_offsets: lane
+                .type_indices
+                .each_ref()
+                .map(|token| token.source_offset),
+            flags: lane.flags,
+            trailing_indices: lane
+                .trailing_indices
+                .iter()
+                .map(|token| token.value)
+                .collect(),
+            raw_trailing_indices: lane
+                .trailing_indices
+                .iter()
+                .map(|token| token.raw.clone())
+                .collect(),
+            trailing_index_source_offsets: lane
+                .trailing_indices
+                .iter()
+                .map(|token| token.source_offset)
+                .collect(),
+            source_offset: lane.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureOperationTerminalDiscriminatorWire> for FeatureOperationTerminalDiscriminator {
+    type Error = String;
+
+    fn try_from(wire: FeatureOperationTerminalDiscriminatorWire) -> Result<Self, Self::Error> {
+        if wire.trailing_indices.len() != wire.raw_trailing_indices.len()
+            || wire.trailing_indices.len() != wire.trailing_index_source_offsets.len()
+        {
+            return Err(
+                "terminal discriminator trailing token columns must have equal lengths".into(),
+            );
+        }
+        let mut slot = 0;
+        let type_indices = wire.raw_type_indices.map(|raw| {
+            let token = FeatureIndexToken {
+                value: wire.type_indices[slot],
+                raw,
+                source_offset: wire.type_index_source_offsets[slot],
+            };
+            slot += 1;
+            token
+        });
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            type_indices,
+            flags: wire.flags,
+            trailing_indices: wire
+                .trailing_indices
+                .into_iter()
+                .zip(wire.raw_trailing_indices)
+                .zip(wire.trailing_index_source_offsets)
+                .map(|((value, raw), source_offset)| FeatureIndexToken {
+                    value,
+                    raw,
+                    source_offset,
+                })
+                .collect(),
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Serialized width form of an extrusion payload scalar.
@@ -10029,19 +10117,17 @@ pub fn feature_operation_terminal_discriminators(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                type_indices: lane.type_indices,
-                raw_type_indices: lane.raw_type_indices,
-                type_index_source_offsets: lane
-                    .type_index_offsets
-                    .map(|offset| entry_offset + offset as u64),
+                type_indices: std::array::from_fn(|slot| FeatureIndexToken {
+                    value: lane.type_indices[slot],
+                    raw: lane.raw_type_indices[slot].clone(),
+                    source_offset: entry_offset + lane.type_index_offsets[slot] as u64,
+                }),
                 flags: lane.flags,
-                trailing_indices: lane.trailing_indices.iter().map(|token| token.value).collect(),
-                raw_trailing_indices: lane.trailing_indices.iter().map(|token| token.raw.clone()).collect(),
-                trailing_index_source_offsets: lane
-                    .trailing_indices
-                    .iter()
-                    .map(|token| entry_offset + token.offset as u64)
-                    .collect(),
+                trailing_indices: lane.trailing_indices.into_iter().map(|token| FeatureIndexToken {
+                    value: token.value,
+                    raw: token.raw,
+                    source_offset: entry_offset + token.offset as u64,
+                }).collect(),
                 source_offset: entry_offset + lane.offset as u64,
             });
         },

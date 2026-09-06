@@ -127,3 +127,18 @@ fn identical_instance_lane_preserves_wire_and_requires_complete_selectors() {
         &["selectors", "raw_selectors", "selector_source_offsets"],
     );
 }
+
+#[test]
+fn terminal_discriminator_preserves_wire_and_requires_complete_tokens() {
+    check_lane_wire::<FeatureOperationTerminalDiscriminator>(
+        r#"{"id":"lane","operation_label":"operation","type_indices":[7,8],"raw_type_indices":[[7],[8]],"type_index_source_offsets":[110,120],"flags":[1,2,3,4],"trailing_indices":[9,10],"raw_trailing_indices":[[9],[10]],"trailing_index_source_offsets":[130,140],"source_offset":100}"#,
+        &[
+            "type_indices",
+            "raw_type_indices",
+            "type_index_source_offsets",
+            "trailing_indices",
+            "raw_trailing_indices",
+            "trailing_index_source_offsets",
+        ],
+    );
+}
