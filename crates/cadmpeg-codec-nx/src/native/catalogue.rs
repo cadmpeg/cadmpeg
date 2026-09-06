@@ -374,12 +374,12 @@ impl ContainerNoted for FeatureOperationObjectReference {
 }
 impl ContainerNoted for FeatureOperationCommonFrame {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.frame.offset())
     }
 }
 impl ContainerNoted for FeatureOperationTerminalFrame {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.frame.offset())
     }
 }
 impl ContainerNoted for FeatureOperationStateJournalUse {

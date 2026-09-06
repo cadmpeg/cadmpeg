@@ -532,13 +532,8 @@ fn terminal_frame(operation_record: &str, local_ordinal: u32) -> FeatureOperatio
         id: "nx:feature-history:operation-terminal-frame#0000000000-0000000000".to_string(),
         operation_record: operation_record.to_string(),
         immediate_common_frame: None,
-        local_ordinal,
-        raw_local_ordinal: vec![local_ordinal as u8],
-        object_index: None,
-        raw_object_index: vec![0xff],
-        data_block: None,
-        source_offset: 420,
-        object_index_source_offset: 421,
+        frame: crate::om::common_frame::TerminalFrame::<u64, Option<String>>::new(
+            crate::om::common_frame::CommonFrameSuffix::from_wire(local_ordinal, &[local_ordinal as u8], None, &[0xff]).unwrap().with_target(None).unwrap(), 420).unwrap(),
     }
 }
 

@@ -1202,6 +1202,12 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
 
 #[test]
 fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
+    let terminal = |value, raw: &[u8], object, object_raw: &[u8], offset, object_offset| {
+        let suffix = crate::om::common_frame::CommonFrameSuffix::from_wire(value, raw, object, object_raw).unwrap();
+        let frame = crate::om::common_frame::TerminalFrame::<usize>::new(suffix, offset).unwrap();
+        assert_eq!(frame.offset() + 2 * frame.suffix().raw_local_ordinal().len(), object_offset);
+        frame
+    };
     let label = super::OperationLabel {
         header_offset: 100,
         offset: 100,
@@ -1223,12 +1229,7 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
         super::operation_terminal_frame(record),
         Some(super::OperationTerminalFrame {
             immediate_common_frame_offset: Some(104),
-            local_ordinal: 0x0123,
-            raw_local_ordinal: vec![0x81, 0x23],
-            object_index: None,
-            raw_object_index: vec![0xff],
-            offset: 120,
-            object_index_offset: 124,
+            frame: terminal(0x0123, &[0x81, 0x23], None, &[0xff], 120, 124),
         })
     );
 
@@ -1249,12 +1250,7 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
         }),
         Some(super::OperationTerminalFrame {
             immediate_common_frame_offset: Some(200),
-            local_ordinal: 41,
-            raw_local_ordinal: vec![0x29],
-            object_index: Some(65),
-            raw_object_index: vec![0x41],
-            offset: 216,
-            object_index_offset: 218,
+            frame: terminal(41, &[0x29], Some(65), &[0x41], 216, 218),
         })
     );
 
@@ -1307,9 +1303,9 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
     })
     .try_into()
     .expect("one DELETE common frame");
-    assert_eq!(delete_common.indices, [1, 0, 0]);
-    assert_eq!(delete_common.marker, [1, 1, 1]);
-    assert_eq!(delete_common.state, [6, 1, 1, 0, 1, 0, 0, 0]);
+    assert_eq!(delete_common.prefix().indices(), [1, 0, 0]);
+    assert_eq!(delete_common.prefix().marker(), [1, 1, 1]);
+    assert_eq!(delete_common.state(), [6, 1, 1, 0, 1, 0, 0, 0]);
 
     let suffix_only = [0x02, 0x02, 0xff, 0x00];
     let suffix = super::operation_terminal_frame(super::OperationRecord {
@@ -1320,8 +1316,8 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
     })
     .expect("canonical suffix without immediate state prefix");
     assert!(suffix.immediate_common_frame_offset.is_none());
-    assert_eq!(suffix.local_ordinal, 2);
-    assert_eq!(suffix.offset, 400);
+    assert_eq!(suffix.frame.suffix().local_ordinal(), 2);
+    assert_eq!(suffix.frame.offset(), 400);
 
     let mut embedded = direct.to_vec();
     embedded.extend_from_slice(&[0xaa, 0x02, 0x02, 0xff, 0x00]);
@@ -1334,10 +1330,10 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
     let [common] = super::operation_common_frames(embedded_record)
         .try_into()
         .expect("one embedded common frame");
-    assert_eq!(common.offset, 500);
-    assert_eq!(common.end_offset, 520);
+    assert_eq!(common.offset(), 500);
+    assert_eq!(common.end_offset(), 520);
     let outer = super::operation_terminal_frame(embedded_record).expect("outer suffix");
-    assert_eq!(outer.offset, 521);
+    assert_eq!(outer.frame.offset(), 521);
     assert!(outer.immediate_common_frame_offset.is_none());
 }
 

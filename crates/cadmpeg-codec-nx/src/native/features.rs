@@ -6,6 +6,7 @@ use reference::{ConstructionReference, NullableConstructionReference};
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+mod common_frame_wire;
 use crate::printable_string::PrintableString;
 use crate::native::om::{
     data_blocks, DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow,
@@ -344,88 +345,22 @@ impl TryFrom<FeatureOperationObjectReferenceWire> for FeatureOperationObjectRefe
 
 /// Exactly framed common record in one bounded feature operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "common_frame_wire::CommonFrameWire", into = "common_frame_wire::CommonFrameWire")]
 pub struct FeatureOperationCommonFrame {
-    /// Globally unique common-frame identity.
     pub id: String,
-    /// Owning bounded operation record.
     pub operation_record: String,
-    /// Zero-based frame order within the operation payload.
     pub ordinal: u32,
-    /// Three compact prefix indices.
-    pub indices: [u32; 3],
-    /// Exact compact-index tokens in order.
-    pub raw_indices: [Vec<u8>; 3],
-    /// Fixed marker selecting the index layout.
-    pub marker: [u8; 3],
-    /// Exact eight-byte state lane following the fixed state marker.
-    ///
-    /// The first three bytes remain an untyped operation-state prefix. The
-    /// admitted field mappings begin at byte three; callers must not treat the
-    /// prefix, or any other state byte, as feature suppression without the
-    /// separate serialized owner and typed-value joins.
-    pub state: [u8; 8],
-    /// Whether legacy operation modules are inactive, when the stored field is boolean.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub legacy_inactive_modules: Option<bool>,
-    /// Whether the operation modifies Parasolid data, when the stored field is boolean.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub modifies_parasolid_data: Option<bool>,
-    /// Exact two-byte `m_splitTrackingData` representation.
-    #[serde(default)]
-    pub split_tracking_data: [u8; 2],
-    /// Serialized operation group count.
-    #[serde(default)]
-    pub group_count: u8,
-    /// Duplicated frame-local ordinal.
-    pub local_ordinal: u32,
-    /// Exact canonical token repeated for the local ordinal.
-    pub raw_local_ordinal: Vec<u8>,
-    /// Nullable object reference following the duplicated ordinal.
-    pub object_index: Option<u32>,
-    /// Exact canonical nullable object-reference token.
-    pub raw_object_index: Vec<u8>,
-    /// Unique target in the native offset-store data-block arena, when found.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_block: Option<String>,
-    /// Exact serialized frame byte length.
-    pub byte_len: u64,
-    /// Absolute offset of the first compact index token.
-    pub source_offset: u64,
-    /// Absolute offsets of the compact prefix-index tokens.
-    pub index_source_offsets: [u64; 3],
-    /// Absolute offset of the first state byte.
-    pub state_source_offset: u64,
-    /// Absolute offset of the first local-ordinal token.
-    pub local_ordinal_source_offset: u64,
-    /// Absolute offset of the object-reference token.
-    pub object_index_source_offset: u64,
+    pub frame: crate::om::common_frame::CommonFrame<u64, Option<String>>,
 }
 
 /// Canonical terminal common-frame suffix of one feature operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "common_frame_wire::TerminalFrameWire", into = "common_frame_wire::TerminalFrameWire")]
 pub struct FeatureOperationTerminalFrame {
-    /// Globally unique frame identity.
     pub id: String,
-    /// Owning bounded operation record.
     pub operation_record: String,
-    /// Exact common frame when it occurs immediately before this suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub immediate_common_frame: Option<String>,
-    /// Duplicated frame-local ordinal.
-    pub local_ordinal: u32,
-    /// Exact canonical token repeated for the local ordinal.
-    pub raw_local_ordinal: Vec<u8>,
-    /// Nullable object reference following the duplicated ordinal.
-    pub object_index: Option<u32>,
-    /// Exact canonical nullable object-reference token.
-    pub raw_object_index: Vec<u8>,
-    /// Unique target in the native offset-store data-block arena, when found.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_block: Option<String>,
-    /// Absolute offset of the first local-ordinal token.
-    pub source_offset: u64,
-    /// Absolute offset of the object-reference token.
-    pub object_index_source_offset: u64,
+    pub frame: crate::om::common_frame::TerminalFrame<u64, Option<String>>,
 }
 
 /// Exact join from an operation terminal ordinal to its state-journal row.
@@ -7026,61 +6961,19 @@ pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOper
                 .into_iter()
                 .enumerate()
             {
+                let Some(offset) = entry_offset.checked_add(frame.offset() as u64) else { continue; };
+                let Some(frame) = crate::om::common_frame::CommonFrame::<u64, Option<String>>::new(frame.prefix(), frame.state(), (*frame.suffix()).map_target(|index, ()| unique_offset_data_block(&indexed, index)), offset) else { continue; };
                 frames.push(FeatureOperationCommonFrame {
                     id: format!(
                         "nx:feature-history:operation-common-frame#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                     ),
-                    operation_record: operation_record.clone(),
-                    ordinal: ordinal as u32,
-                    indices: frame.indices,
-                    raw_indices: frame.raw_indices,
-                    marker: frame.marker,
-                    state: frame.state,
-                    legacy_inactive_modules: operation_legacy_inactive_modules(frame.state),
-                    modifies_parasolid_data: operation_modifies_parasolid_data(frame.state),
-                    split_tracking_data: operation_split_tracking_data(frame.state),
-                    group_count: frame.state[7],
-                    local_ordinal: frame.local_ordinal,
-                    raw_local_ordinal: frame.raw_local_ordinal,
-                    object_index: frame.object_index,
-                    raw_object_index: frame.raw_object_index,
-                    data_block: frame
-                        .object_index
-                        .and_then(|object_index| unique_offset_data_block(&indexed, object_index)),
-                    byte_len: (frame.end_offset - frame.offset) as u64,
-                    source_offset: entry_offset + frame.offset as u64,
-                    index_source_offsets: frame
-                        .index_offsets
-                        .map(|offset| entry_offset + offset as u64),
-                    state_source_offset: entry_offset + frame.state_offset as u64,
-                    local_ordinal_source_offset: entry_offset
-                        + frame.local_ordinal_offset as u64,
-                    object_index_source_offset: entry_offset + frame.object_index_offset as u64,
+                    operation_record: operation_record.clone(), ordinal: ordinal as u32,
+                    frame,
                 });
             }
         },
     );
     frames
-}
-
-fn operation_legacy_inactive_modules(state: [u8; 8]) -> Option<bool> {
-    match state[3] {
-        0 => Some(false),
-        1 => Some(true),
-        _ => None,
-    }
-}
-
-fn operation_modifies_parasolid_data(state: [u8; 8]) -> Option<bool> {
-    match state[4] {
-        0 => Some(false),
-        1 => Some(true),
-        _ => None,
-    }
-}
-
-fn operation_split_tracking_data(state: [u8; 8]) -> [u8; 2] {
-    [state[5], state[6]]
 }
 
 /// Decode canonical terminal common-frame suffixes from bounded operations.
@@ -7100,33 +6993,21 @@ pub fn feature_operation_terminal_frames(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
             let immediate_common_frame = frame.immediate_common_frame_offset.and_then(|offset| {
-                let matches = common_frames
-                    .iter()
-                    .filter(|common| {
-                        common.operation_record == operation_record
-                            && common.source_offset == entry_offset + offset as u64
-                    })
-                    .collect::<Vec<_>>();
-                let [common] = matches.as_slice() else {
-                    return None;
-                };
-                Some(common.id.clone())
+                let offset = entry_offset.checked_add(offset as u64)?;
+                let mut matches = common_frames.iter().filter(|common| {
+                    common.operation_record == operation_record && common.frame.offset() == offset
+                });
+                let common = matches.next()?;
+                matches.next().is_none().then(|| common.id.clone())
             });
+            let Some(offset) = entry_offset.checked_add(frame.frame.offset() as u64) else { return; };
+            let Some(frame) = crate::om::common_frame::TerminalFrame::<u64, Option<String>>::new((*frame.frame.suffix()).map_target(|index, ()| unique_offset_data_block(&indexed, index)), offset) else { return; };
             frames.push(FeatureOperationTerminalFrame {
                 id: format!(
                     "nx:feature-history:operation-terminal-frame#{section_key}-{operation_ordinal:010}"
                 ),
-                operation_record,
-                immediate_common_frame,
-                local_ordinal: frame.local_ordinal,
-                raw_local_ordinal: frame.raw_local_ordinal,
-                object_index: frame.object_index,
-                raw_object_index: frame.raw_object_index,
-                data_block: frame
-                    .object_index
-                    .and_then(|object_index| unique_offset_data_block(&indexed, object_index)),
-                source_offset: entry_offset + frame.offset as u64,
-                object_index_source_offset: entry_offset + frame.object_index_offset as u64,
+                operation_record, immediate_common_frame,
+                frame,
             });
         },
     );
@@ -7174,7 +7055,7 @@ pub fn feature_operation_state_journal_uses(
             continue;
         };
         let Some(Some((group, journal_row_ordinal, row))) =
-            journal_rows.get(&(label.section_link.as_str(), frame.local_ordinal))
+            journal_rows.get(&(label.section_link.as_str(), frame.frame.suffix().local_ordinal()))
         else {
             continue;
         };
@@ -7196,9 +7077,9 @@ pub fn feature_operation_state_journal_uses(
             operation_terminal_frame: frame.id.clone(),
             journal_group: group.id.clone(),
             journal_row_ordinal: *journal_row_ordinal,
-            operation_local_ordinal: frame.local_ordinal,
+            operation_local_ordinal: frame.frame.suffix().local_ordinal(),
             journal_state_ordinal: row.state_ordinal.value(),
-            operation_source_offset: frame.source_offset,
+            operation_source_offset: frame.frame.offset(),
             journal_source_offset: row.source_offset,
         });
     }
