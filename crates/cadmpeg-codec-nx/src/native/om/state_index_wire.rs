@@ -249,10 +249,11 @@ pub(super) enum OmRollForwardStateRowWire {
     },
 }
 
-impl From<OmRollForwardStateRow> for OmRollForwardStateRowWire {
-    fn from(value: OmRollForwardStateRow) -> Self {
+impl OmRollForwardStateRowWire {
+    pub(super) fn from_row(ordinal: u8, value: OmRollForwardStateRow) -> Self {
+        let ordinal = u32::from(ordinal);
         match value {
-            OmRollForwardStateRow::List { ordinal, object_index, position, source_offset } => Self::List {
+            OmRollForwardStateRow::List { object_index, position, source_offset } => Self::List {
                 ordinal,
                 object_index: object_index.value(),
                 raw_object_index: object_index.raw().to_vec(),
@@ -260,7 +261,7 @@ impl From<OmRollForwardStateRow> for OmRollForwardStateRowWire {
                 raw_position: position.raw().to_vec(),
                 source_offset,
             },
-            OmRollForwardStateRow::Pair { ordinal, tag, first, second, source_offset } => Self::Pair {
+            OmRollForwardStateRow::Pair { tag, first, second, source_offset } => Self::Pair {
                 ordinal,
                 tag,
                 first: first.value(),
@@ -271,20 +272,19 @@ impl From<OmRollForwardStateRow> for OmRollForwardStateRowWire {
             },
         }
     }
-}
 
-impl TryFrom<OmRollForwardStateRowWire> for OmRollForwardStateRow {
-    type Error = String;
-    fn try_from(wire: OmRollForwardStateRowWire) -> Result<Self, Self::Error> {
-        Ok(match wire {
-            OmRollForwardStateRowWire::List { ordinal, object_index, raw_object_index, position, raw_position, source_offset } => Self::List {
-                ordinal,
+    pub(super) fn into_row(self, expected_ordinal: u8) -> Result<OmRollForwardStateRow, String> {
+        let ordinal = match &self { Self::List { ordinal, .. } | Self::Pair { ordinal, .. } => *ordinal };
+        if ordinal != u32::from(expected_ordinal) {
+            return Err("rows.ordinal: disagrees with row position".to_string());
+        }
+        Ok(match self {
+            OmRollForwardStateRowWire::List { ordinal: _, object_index, raw_object_index, position, raw_position, source_offset } => OmRollForwardStateRow::List {
                 object_index: StateIndexToken::from_wire(object_index, &raw_object_index).map_err(|error| format!("object_index/raw_object_index: {error}"))?,
                 position: StateIndexToken::from_wire(position, &raw_position).map_err(|error| format!("position/raw_position: {error}"))?,
                 source_offset,
             },
-            OmRollForwardStateRowWire::Pair { ordinal, tag, first, raw_first, second, raw_second, source_offset } => Self::Pair {
-                ordinal,
+            OmRollForwardStateRowWire::Pair { ordinal: _, tag, first, raw_first, second, raw_second, source_offset } => OmRollForwardStateRow::Pair {
                 tag,
                 first: StateIndexToken::from_wire(first, &raw_first).map_err(|error| format!("first/raw_first: {error}"))?,
                 second: StateIndexToken::from_wire(second, &raw_second).map_err(|error| format!("second/raw_second: {error}"))?,
@@ -351,6 +351,12 @@ mod tests {
         assert_eq!(serde_json::to_string(&value).unwrap(), json);
     }
 
+    fn preserves_row_wire(json: &str) {
+        let wire: OmRollForwardStateRowWire = serde_json::from_str(json).unwrap();
+        let row = wire.into_row(0).unwrap();
+        assert_eq!(serde_json::to_string(&OmRollForwardStateRowWire::from_row(0, row)).unwrap(), json);
+    }
+
     #[test]
     fn state_index_records_preserve_scalar_and_token_fields() {
         preserves_wire::<OmAuditTrailRow>(r#"{"id":"audit","section_link":"section","ordinal":2,"raw_ordinal":[2],"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"raw":[4,2,19,224,0,0,0,0,160,0,0],"source_entry":"om","source_offset":0,"end_offset":11}"#);
@@ -358,8 +364,8 @@ mod tests {
         preserves_wire::<OmOperationStateCounter>(r#"{"id":"counter","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":[0],"introduced_state":0,"modified_state":0,"object_index_source_offset":2,"source_entry":"om","source_offset":0}"#);
         preserves_wire::<OmOperationStateStatus>(r#"{"id":"status","section_link":"section","ordinal":0,"status_code":65,"raw_status_code":[65],"object_index":1,"raw_object_index":[1],"payload":"Plain","source_entry":"om","source_offset":0,"end_offset":3}"#);
         preserves_wire::<OmOperationStateStatusPayload>(r#"{"Linked":{"link_code":75,"object_index":1,"raw_object_index":[1]}}"#);
-        preserves_wire::<OmRollForwardStateRow>(r#"{"List":{"ordinal":0,"object_index":0,"raw_object_index":[144,0,0],"position":1,"raw_position":[1],"source_offset":0}}"#);
-        preserves_wire::<OmRollForwardStateRow>(r#"{"Pair":{"ordinal":0,"tag":79,"first":0,"raw_first":[0],"second":1,"raw_second":[1],"source_offset":0}}"#);
+        preserves_row_wire(r#"{"List":{"ordinal":0,"object_index":0,"raw_object_index":[144,0,0],"position":1,"raw_position":[1],"source_offset":0}}"#);
+        preserves_row_wire(r#"{"Pair":{"ordinal":0,"tag":79,"first":0,"raw_first":[0],"second":1,"raw_second":[1],"source_offset":0}}"#);
         preserves_wire::<OmOperationStateSlot>(r#"{"ordinal":0,"object_index":null,"raw_object_index":[255]}"#);
         preserves_wire::<OmOperationStateSlot>(r#"{"ordinal":1,"object_index":255,"raw_object_index":[144,0,255]}"#);
     }

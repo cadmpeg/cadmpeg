@@ -101,6 +101,15 @@ impl<R> StateGroupMembers<R> {
         }
     }
 
+    pub(crate) fn try_map_rows<U, E>(self, mut map: impl FnMut(u8, R) -> Result<U, E>) -> Result<StateGroupMembers<U>, E> {
+        Ok(StateGroupMembers(match self.0 {
+            GroupBody::Empty => GroupBody::Empty,
+            GroupBody::CountedZero => GroupBody::CountedZero,
+            GroupBody::Counted(rows) => GroupBody::Counted(rows.into_iter().enumerate()
+                .map(|(ordinal, row)| map(ordinal as u8, row)).collect::<Result<_, _>>()?),
+        }))
+    }
+
     pub(crate) fn map_rows<U>(self, mut map: impl FnMut(u8, R) -> U) -> StateGroupMembers<U> {
         StateGroupMembers(match self.0 {
             GroupBody::Empty => GroupBody::Empty,

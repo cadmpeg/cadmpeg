@@ -343,3 +343,14 @@ fn roll_forward_groups_preserve_zero_row_headers_and_reject_count_mismatch() {
     assert!(serde_json::from_str::<OmRollForwardStateGroup>(json)
         .unwrap_err().to_string().contains("declared_count/rows"));
 }
+
+#[test]
+fn roll_forward_group_derives_row_ordinals() {
+    let json = r#"{"id":"group","section_link":"section","ordinal":0,"opener":[1,0],"count_prefix":1,"declared_count":2,"rows":[{"List":{"ordinal":0,"object_index":1,"raw_object_index":[1],"position":1,"raw_position":[1],"source_offset":4}}],"table_trailing_bytes":[],"source_entry":"om","source_offset":0,"table_end_offset":8}"#;
+    let group: OmRollForwardStateGroup = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&group).unwrap(), json);
+    let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+    wire["rows"][0]["List"]["ordinal"] = 1.into();
+    assert!(serde_json::from_value::<OmRollForwardStateGroup>(wire)
+        .unwrap_err().to_string().contains("rows.ordinal"));
+}
