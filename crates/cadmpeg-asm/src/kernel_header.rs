@@ -138,3 +138,36 @@ fn read_tagged_f64(bytes: &[u8], at: usize) -> Option<(f64, usize)> {
     let value = View::f64_le_at(bytes, at + 1)?;
     Some((value, at + 9))
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn partial_binary_headers_retain_linear_tolerance_without_angular() {
+        for (magic, header_len) in [
+            (b"ASM BinaryFile4".as_slice(), crate::layout::asmheader_binaryfile4::LEN),
+            (b"ASM BinaryFile8".as_slice(), crate::layout::asmheader_binaryfile8::LEN),
+            (b"ACIS BinaryFile".as_slice(), crate::layout::acisheader_binaryfile4::LEN),
+        ] {
+            let mut bytes = magic.to_vec();
+            bytes.resize(header_len, 0);
+            bytes.extend_from_slice(&[7, 0, 7, 0, 7, 0]);
+            for value in [1.0_f64, 0.125] {
+                bytes.push(6);
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            let parse = if magic.starts_with(b"ASM") {
+                crate::asm_header::parse
+            } else {
+                crate::acis_header::parse
+            };
+            let header = parse(&bytes).expect("recognized partial header");
+            assert_eq!(header.linear, Some(0.125));
+            assert_eq!(header.angular, None);
+            bytes.push(6);
+            bytes.extend_from_slice(&0.25_f64.to_le_bytes());
+            let header = parse(&bytes).expect("recognized complete header");
+            assert_eq!(header.linear, Some(0.125));
+            assert_eq!(header.angular, Some(0.25));
+        }
+    }
+}
