@@ -1414,7 +1414,6 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
         .push(cadmpeg_ir::geometry::ProceduralSurface::new(
             construction_id,
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound {
-                parameters: Vec::new(),
                 components: Vec::new(),
             },
             None,
