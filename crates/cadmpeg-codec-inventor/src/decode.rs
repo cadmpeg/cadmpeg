@@ -23,13 +23,13 @@ use crate::dialect::{dialect_loss, kernel_dialect_loss, DialectRecovery};
 use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
+use crate::native::protein::{ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord};
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
     DatabaseRecord, EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord,
     MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
     PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
-    ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord,
     RevisionPayloadForm, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
     SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
     SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxModelStateParameterRecord,
@@ -220,28 +220,19 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             }
         }
     }
-    let (protein, protein_entries) = match &container.protein {
-        ProteinState::Absent => (
-            ProteinRecord::Absent {
-                id: "inventor:protein:state#root".into(),
-            },
-            Vec::new(),
-        ),
-        ProteinState::Empty { stream } => (
-            ProteinRecord::Empty {
-                id: "inventor:protein:state#root".into(),
-                directory_id: stream.directory_id(),
-            },
-            Vec::new(),
-        ),
-        ProteinState::Malformed { stream, detail } => (
-            ProteinRecord::Malformed {
-                id: "inventor:protein:state#root".into(),
-                directory_id: stream.directory_id(),
-                detail: detail.clone(),
-            },
-            Vec::new(),
-        ),
+    let protein = match &container.protein {
+        ProteinState::Absent => ProteinRecord::Absent {
+            id: "inventor:protein:state#root".into(),
+        },
+        ProteinState::Empty { stream } => ProteinRecord::Empty {
+            id: "inventor:protein:state#root".into(),
+            directory_id: stream.directory_id(),
+        },
+        ProteinState::Malformed { stream, detail } => ProteinRecord::Malformed {
+            id: "inventor:protein:state#root".into(),
+            directory_id: stream.directory_id(),
+            detail: detail.clone(),
+        },
         ProteinState::Package(package) => {
             let entries = package
                 .archive
@@ -258,16 +249,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     uncompressed_size: entry.uncompressed_size,
                 })
                 .collect::<Vec<_>>();
-            (
-                ProteinRecord::Package {
-                    id: "inventor:protein:state#root".into(),
-                    directory_id: package.stream.directory_id(),
-                    declared_len: std::num::NonZeroU32::new(package.declared_len)
-                        .expect("a Protein package declares a nonempty length"),
-                    entry_count: entries.len() as u64,
-                },
+            ProteinRecord::Package {
+                id: "inventor:protein:state#root".into(),
+                directory_id: package.stream.directory_id(),
+                declared_len: package.declared_len,
                 entries,
-            )
+            }
         }
     };
     let (protein_instances, protein_semantic_issue) = match &container.protein {
@@ -1052,7 +1039,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             .saturating_add(properties.len())
             .saturating_add(property_set_issues.len())
             .saturating_add(1)
-            .saturating_add(protein_entries.len())
+            .saturating_add(protein.entries().len())
             .saturating_add(protein_assets.len())
             .saturating_add(protein_rejections.len())
             .saturating_add(1)
@@ -1104,8 +1091,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     namespace.set_arena("property_sections", &property_sections)?;
     namespace.set_arena("properties", &properties)?;
     namespace.set_arena("property_set_issues", &property_set_issues)?;
-    namespace.set_arena("protein", std::slice::from_ref(&protein))?;
-    namespace.set_arena("protein_entries", &protein_entries)?;
+    protein.install(namespace)?;
     namespace.set_arena("protein_assets", &protein_assets)?;
     namespace.set_arena("protein_rejections", &protein_rejections)?;
     namespace.set_arena("ufrx", std::slice::from_ref(&ufrx))?;
@@ -1550,7 +1536,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             (crate::coverage::PROPERTY_SETS, property_sets.len()),
             (crate::coverage::PROPERTIES, properties.len()),
             (crate::coverage::PREVIEW_ASSETS, preview_asset_count),
-            (crate::coverage::PROTEIN_ENTRIES, protein_entries.len()),
+            (crate::coverage::PROTEIN_ENTRIES, protein.entries().len()),
             (crate::coverage::PROTEIN_ASSETS, protein_assets.len()),
             (
                 crate::coverage::PROTEIN_REJECTIONS,

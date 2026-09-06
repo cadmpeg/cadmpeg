@@ -16,17 +16,17 @@ use crate::sketch::{
     PmDcSketchEntityKind, PmDcTransform,
 };
 
+use crate::native::protein::{ProteinAssetRecord, ProteinRecord, ProteinRejectionRecord};
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
     DatabaseRecord, EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord,
     MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
     PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, PropertyRecord,
-    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinAssetRecord,
-    ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord, RevisionRecord, RseRecordRecord,
-    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
-    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
-    UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord, UnpairedSegmentRecord,
-    INVENTOR_NATIVE_VERSION,
+    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, RevisionRecord,
+    RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
+    SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
+    StructuralIssueRecord, UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord,
+    UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
 };
 use crate::pmdc::PmDcReferenceList;
 use crate::record_issue::RecordIssue;
@@ -1328,9 +1328,8 @@ struct NativeData {
     property_sections: Vec<PropertySectionRecord>,
     properties: Vec<PropertyRecord>,
     property_issues: Vec<PropertySetIssueRecord>,
-    protein: Vec<ProteinRecord>,
+    protein: ProteinRecord,
     protein_assets: Vec<ProteinAssetRecord>,
-    protein_entries: Vec<ProteinEntryRecord>,
     protein_rejections: Vec<ProteinRejectionRecord>,
     ufrx: Vec<UfrxRecord>,
     ufrx_model_states: Vec<UfrxModelStateRecord>,
@@ -1392,9 +1391,8 @@ impl NativeData {
             property_sections: namespace.arena_as("property_sections")?,
             properties: namespace.arena_as("properties")?,
             property_issues: namespace.arena_as("property_set_issues")?,
-            protein: namespace.arena_as("protein")?,
+            protein: ProteinRecord::read(namespace)?,
             protein_assets: namespace.arena_as("protein_assets")?,
-            protein_entries: namespace.arena_as("protein_entries")?,
             protein_rejections: namespace.arena_as("protein_rejections")?,
             ufrx: namespace.arena_as("ufrx")?,
             ufrx_model_states: namespace.arena_as("ufrx_model_states")?,
@@ -1752,23 +1750,12 @@ fn validate_properties(data: &NativeData, findings: &mut Vec<Finding>) {
 }
 
 fn validate_protein(data: &NativeData, findings: &mut Vec<Finding>) {
-    if data.protein.len() != 1 {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!(
-                "Inventor native data has {} Protein state records",
-                data.protein.len()
-            ),
-            None,
-        ));
-        return;
-    }
     unique(
         findings,
-        data.protein_entries.iter().map(|record| record.ordinal),
+        data.protein.entries().iter().map(|record| record.ordinal),
         "Protein entry ordinal",
     );
-    let record = &data.protein[0];
+    let record = &data.protein;
     if let ProteinRecord::Malformed { id, detail, .. } = record {
         findings.push(finding(
             Check::NativeLinks,
@@ -1787,7 +1774,8 @@ fn validate_protein_assets(data: &NativeData, findings: &mut Vec<Finding>) {
         "Protein decoded-record position",
     );
     let entry_names = data
-        .protein_entries
+        .protein
+        .entries()
         .iter()
         .map(|entry| entry.name.as_str())
         .collect::<HashSet<_>>();
@@ -1822,7 +1810,8 @@ fn validate_protein_rejections(data: &NativeData, findings: &mut Vec<Finding>) {
         "Protein rejected-record position",
     );
     let entry_names = data
-        .protein_entries
+        .protein
+        .entries()
         .iter()
         .map(|entry| entry.name.as_str())
         .collect::<HashSet<_>>();

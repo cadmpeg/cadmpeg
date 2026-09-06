@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Inventor Protein package framing and inventory.
 
+use std::num::NonZeroU32;
+
 use cadmpeg_container::compound::{CompoundSnapshot, CompoundStreamId};
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -24,7 +26,7 @@ pub(crate) enum ProteinState<'a> {
 #[derive(Debug)]
 pub(crate) struct ProteinEnvelope<'a> {
     pub(crate) stream: CompoundStreamId,
-    pub(crate) declared_len: u32,
+    pub(crate) declared_len: NonZeroU32,
     pub(crate) archive: ArchiveSnapshot<'a>,
     pub(crate) payload: View<'a>,
 }
@@ -68,7 +70,7 @@ pub(crate) fn parse<'a>(
 enum ParsedProtein<'a> {
     Empty,
     Package {
-        declared_len: u32,
+        declared_len: NonZeroU32,
         archive: ArchiveSnapshot<'a>,
         payload: View<'a>,
     },
@@ -80,16 +82,16 @@ fn parse_stream<'a>(
 ) -> Result<ParsedProtein<'a>, CodecError> {
     let mut header = source;
     let declared_len = header.req_u32_le()?;
-    if declared_len == 0 {
+    let Some(declared_len) = NonZeroU32::new(declared_len) else {
         if source.window().len() != protein_header::LEN {
             return Err(CodecError::Malformed(
                 "empty Inventor Protein stream has trailing bytes".into(),
             ));
         }
         return Ok(ParsedProtein::Empty);
-    }
+    };
     let payload_len = source.window().len().saturating_sub(protein_header::LEN);
-    if declared_len as usize != payload_len {
+    if declared_len.get() as usize != payload_len {
         return Err(CodecError::malformed(format_args!(
             "Inventor Protein declares {declared_len} bytes but stores {payload_len}"
         )));
@@ -210,7 +212,7 @@ mod tests {
             else {
                 panic!("package state")
             };
-            assert_eq!(declared_len, zip.len() as u32);
+            assert_eq!(declared_len.get(), zip.len() as u32);
             assert_eq!(archive.entries().len(), 1);
         });
     }
@@ -255,7 +257,7 @@ mod tests {
             else {
                 panic!("package state")
             };
-            assert_eq!(declared_len as usize, payload.window().len());
+            assert_eq!(declared_len.get() as usize, payload.window().len());
             let instances =
                 decode_instances_from(ctx, &archive, payload).expect("instances decode");
             assert_eq!(instances.len(), 1);
