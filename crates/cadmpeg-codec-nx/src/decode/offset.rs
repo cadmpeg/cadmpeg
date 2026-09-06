@@ -75,7 +75,7 @@ pub(crate) fn saved_offset_carriers(
         .iter()
         .filter(|offset| !face_surfaces.contains(&offset.xmt))
     {
-        let Some(support_id) = surfaces_by_xmt.get(&offset.support) else {
+        let Some(support_id) = surfaces_by_xmt.get(&offset.state.support()) else {
             continue;
         };
         let Some(support) = ir
@@ -94,7 +94,7 @@ pub(crate) fn saved_offset_carriers(
             let key = (
                 support_id.clone(),
                 (*candidate_id).clone(),
-                offset.distance.to_bits(),
+                offset.state.distance().to_bits(),
                 tolerance.to_bits(),
             );
             let fit = if let Some(fit) = fit_cache.get(&key).copied() {
@@ -103,7 +103,7 @@ pub(crate) fn saved_offset_carriers(
                 let fit = certified_offset_cache_fit_with_budget(
                     support,
                     candidate,
-                    offset.distance,
+                    offset.state.distance(),
                     tolerance,
                     geometry_budget,
                 );

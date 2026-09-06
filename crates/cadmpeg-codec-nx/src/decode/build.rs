@@ -373,7 +373,7 @@ pub(crate) fn try_decode_geometry(
             &adaptive_geometry_budget,
         );
         for (oi, offset) in view.offset_surfaces.iter().copied().enumerate() {
-            let Some(support) = surfaces_by_xmt.get(&offset.support).cloned() else {
+            let Some(support) = surfaces_by_xmt.get(&offset.state.support()).cloned() else {
                 continue;
             };
             let procedural_id = ProceduralSurfaceId::mint(format!("nx:s{si}:offset#{oi}"))
@@ -414,7 +414,7 @@ pub(crate) fn try_decode_geometry(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset {
                     support,
-                    distance: offset.distance,
+                    distance: offset.state.distance(),
                     // OFFSET_SURF status fields do not select parameter direction.
                     u_sense: None,
                     v_sense: None,

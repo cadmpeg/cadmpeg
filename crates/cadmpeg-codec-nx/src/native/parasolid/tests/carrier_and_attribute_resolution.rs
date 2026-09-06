@@ -137,8 +137,8 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
             assert_eq!(records.len(), 1);
             assert_eq!(char::from(records[0].discriminator), discriminator);
             assert_eq!(records[0].true_offset, true_offset);
-            assert_eq!(records[0].support_xmt, 6);
-            assert_eq!(records[0].distance, 2.5);
+            assert_eq!(records[0].state.support(), 6);
+            assert_eq!(records[0].state.distance(), 2.5);
             let carrier = result
                 .ir()
                 .model
@@ -503,4 +503,13 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
     assert_eq!(records[0].state.points(), [[0.0; 3]; 2]);
     assert_eq!(records[0].state.parameters(), [0.000_25, 0.000_75]);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+}
+
+#[test]
+fn offset_surface_record_wire_retains_flags_and_checked_state() {
+    let wire = r#"{"id":"offset","stream_ordinal":0,"xmt":2,"discriminator":"V","true_offset":false,"support_xmt":6,"distance":-0.0,"inflated_offset":8}"#;
+    let record: ParasolidOffsetSurfaceRecord = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+    let invalid = wire.replace("\"support_xmt\":6", "\"support_xmt\":1");
+    assert!(serde_json::from_str::<ParasolidOffsetSurfaceRecord>(&invalid).is_err());
 }

@@ -18,7 +18,7 @@ fn nx_offset_surface_accepts_unbounded_representable_distance() {
     let [surface] = surfaces.as_slice() else {
         panic!("offset surface")
     };
-    assert_eq!(surface.distance, 1_001_000.0);
+    assert_eq!(surface.state.distance(), 1_001_000.0);
 
     put_f64(&mut stream, offset + 23, f64::INFINITY);
     assert!(crate::topology::offset_surfaces(&stream).is_empty());

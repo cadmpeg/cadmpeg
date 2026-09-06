@@ -680,7 +680,7 @@ fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
     assert_eq!(
         crate::topology::offset_surfaces(&merged)
             .iter()
-            .map(|surface| surface.distance)
+            .map(|surface| surface.state.distance())
             .collect::<Vec<_>>(),
         [4.5]
     );

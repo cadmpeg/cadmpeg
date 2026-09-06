@@ -4,6 +4,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+use crate::topology::offset_surface_state::OffsetSurfaceState;
 use crate::framing::xmt_reference::XmtTarget;
 use crate::parasolid::name_references::NameReferences;
 
@@ -1189,10 +1190,9 @@ pub struct ParasolidOffsetSurfaceRecord {
     pub discriminator: crate::topology::OffsetSurfaceDiscriminator,
     /// Serialized true-offset flag.
     pub true_offset: bool,
-    /// Cross-reference index of the support surface.
-    pub support_xmt: u32,
-    /// Signed offset distance in millimetres.
-    pub distance: f64,
+    /// Checked support reference and signed model distance.
+    #[serde(flatten)]
+    pub state: OffsetSurfaceState,
     /// Record tag offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -1221,8 +1221,7 @@ impl ParasolidStreamRecords for ParasolidOffsetSurfaceRecord {
             xmt: row.xmt,
             discriminator: row.discriminator,
             true_offset: row.true_offset,
-            support_xmt: row.support,
-            distance: row.distance,
+            state: row.state,
             inflated_offset: row.pos as u64,
         }
     }

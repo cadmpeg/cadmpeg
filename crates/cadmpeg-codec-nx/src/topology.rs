@@ -19,6 +19,8 @@ use crate::framing::{
 use crate::vec3_at::vec3_be_at;
 pub(crate) mod trimmed_curve_state;
 use trimmed_curve_state::TrimmedCurveState;
+pub(crate) mod offset_surface_state;
+use offset_surface_state::OffsetSurfaceState;
 pub(crate) mod surface_curve_state;
 use surface_curve_state::SurfaceCurveState;
 
@@ -483,10 +485,8 @@ pub struct OffsetSurface {
     pub discriminator: OffsetSurfaceDiscriminator,
     /// Serialized true-offset flag.
     pub true_offset: bool,
-    /// Cross-reference index of the support surface.
-    pub support: u32,
-    /// Signed offset distance in millimetres.
-    pub distance: f64,
+    /// Checked support reference and signed model distance.
+    pub state: OffsetSurfaceState,
     /// Record type-tag offset in the inflated stream.
     pub pos: usize,
 }
@@ -692,12 +692,7 @@ impl Graph {
         self.of_kind(60)
             .filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
-                let discriminator = match node.bytes.get(at)? {
-                    b'V' => OffsetSurfaceDiscriminator::V,
-                    b'I' => OffsetSurfaceDiscriminator::I,
-                    b'U' => OffsetSurfaceDiscriminator::U,
-                    _ => return None,
-                };
+                let discriminator = OffsetSurfaceDiscriminator::try_from(char::from(*node.bytes.get(at)?)).ok()?;
                 at += 1;
                 let true_offset = match node.bytes.get(at)? {
                     0 => false,
@@ -708,12 +703,11 @@ impl Graph {
                 let support = read_and_advance(&node.bytes, &mut at)?;
                 let distance = View::f64_be_at(&node.bytes, at)?;
                 let distance = distance * 1000.0;
-                (support > 1 && distance.is_finite()).then_some(OffsetSurface {
+                Some(OffsetSurface {
                     xmt: node.xmt,
                     discriminator,
                     true_offset,
-                    support,
-                    distance,
+                    state: OffsetSurfaceState::new(support, distance).ok()?,
                     pos: node.pos,
                 })
             })
