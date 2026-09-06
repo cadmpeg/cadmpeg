@@ -32,7 +32,6 @@ pub(crate) mod owner_chart;
 use owner_chart::{
     CatiaOwnerChartAddress, CatiaOwnerChartAliasBinding, CatiaOwnerChartBridge,
     CatiaOwnerChartBridgeReference, CatiaOwnerChartCarrier, CatiaOwnerChartRelation,
-    CatiaOwnerChartSideAxis,
 };
 
 use crate::catalog;
@@ -8273,17 +8272,9 @@ fn consolidated_owner_packets(
                             terminal_controls,
                         },
                     },
-                    side_axis: match chart.side_axis() {
-                        crate::families::b2::records::B2OwnerChartSideAxis::FirstParameter => {
-                            CatiaOwnerChartSideAxis::FirstParameter
-                        }
-                        crate::families::b2::records::B2OwnerChartSideAxis::SecondParameter => {
-                            CatiaOwnerChartSideAxis::SecondParameter
-                        }
-                    },
                     parameter_point_byte_offsets: chart
-                        .parameter_points()
-                        .map(|point| point.pos as u64),
+                        .parameter_point_offsets()
+                        .map(|pos| pos as u64),
                 },
             )
         })

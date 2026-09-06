@@ -275,18 +275,6 @@ pub(crate) struct B2OwnerBoundaryEdge {
     pub endpoint_records: [usize; 2],
 }
 
-/// Parameter axis held constant by selectors `0x05` and `0x09` in an owner
-/// chart.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum B2OwnerChartSideAxis {
-    /// Selectors `0x05` and `0x09` carry the lower and upper first-parameter
-    /// sides.
-    FirstParameter,
-    /// Selectors `0x05` and `0x09` carry the lower and upper second-parameter
-    /// sides.
-    SecondParameter,
-}
-
 /// Carrier production that opens a fixed owner chart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum B2OwnerChartCarrier {
@@ -354,31 +342,23 @@ pub struct B2OwnerChart {
     pub carrier: B2OwnerChartCarrier,
     /// Immediately following class-`0x37` bridge record.
     pub bridge: B2OwnerChartBridge,
-    /// Selector record with prefix `0x05`.
-    pub selector_05: B2ParameterPoint,
-    /// Selector record with prefix `0x09`.
-    pub selector_09: B2ParameterPoint,
-    /// Selector record with prefix `0x0d`.
-    pub selector_0d: B2ParameterPoint,
-    /// Selector record with prefix `0x11`.
-    pub selector_11: B2ParameterPoint,
+    /// Offset of the selector record with prefix `0x05`.
+    pub selector_05: usize,
+    /// Offset of the selector record with prefix `0x09`.
+    pub selector_09: usize,
+    /// Offset of the selector record with prefix `0x0d`.
+    pub selector_0d: usize,
+    /// Offset of the selector record with prefix `0x11`.
+    pub selector_11: usize,
 }
 
 impl B2OwnerChart {
-    pub fn side_axis(&self) -> B2OwnerChartSideAxis {
-        if self.carrier == B2OwnerChartCarrier::B28 {
-            B2OwnerChartSideAxis::FirstParameter
-        } else {
-            B2OwnerChartSideAxis::SecondParameter
-        }
-    }
-
-    pub fn parameter_points(&self) -> [&B2ParameterPoint; 4] {
+    pub fn parameter_point_offsets(&self) -> [usize; 4] {
         [
-            &self.selector_05,
-            &self.selector_09,
-            &self.selector_0d,
-            &self.selector_11,
+            self.selector_05,
+            self.selector_09,
+            self.selector_0d,
+            self.selector_11,
         ]
     }
 }
@@ -1108,7 +1088,7 @@ pub(crate) fn b2_owner_charts_from_records(
             {
                 return None;
             }
-            let [selector_05, selector_09, selector_0d, selector_11] = points;
+            let [selector_05, selector_09, selector_0d, selector_11] = points.map(|point| point.pos);
             Some(B2OwnerChart {
                 owner_pos: owner.pos,
                 source_index: owner.source_index,

@@ -397,28 +397,27 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
 
 #[test]
 fn owner_chart_requires_exact_source_closed_selector_rectangle() {
-    use crate::families::b2::records::{
-        B2OwnerChartBridge, B2OwnerChartCarrier, B2OwnerChartSideAxis,
-    };
+    use crate::families::b2::records::{B2OwnerChartBridge, B2OwnerChartCarrier};
+    use crate::native::owner_chart::CatiaOwnerChartSideAxis;
 
     for (carrier_class, carrier, carrier_selector, side_axis) in [
         (
             0x28,
             B2OwnerChartCarrier::B28,
             0x05,
-            B2OwnerChartSideAxis::FirstParameter,
+            CatiaOwnerChartSideAxis::FirstParameter,
         ),
         (
             0x2b,
             B2OwnerChartCarrier::B2b,
             0x09,
-            B2OwnerChartSideAxis::SecondParameter,
+            CatiaOwnerChartSideAxis::SecondParameter,
         ),
         (
             0x32,
             B2OwnerChartCarrier::A32,
             0x11,
-            B2OwnerChartSideAxis::SecondParameter,
+            CatiaOwnerChartSideAxis::SecondParameter,
         ),
     ] {
         let bytes = b2_owner_chart_stream(carrier_class);
@@ -430,7 +429,14 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
             });
         assert_eq!(chart.source_index, 0);
         assert_eq!(chart.carrier, carrier);
-        assert_eq!(chart.side_axis(), side_axis);
+        let native = crate::native::CatiaNative::decode(&bytes);
+        assert_eq!(
+            native.consolidated_owner_packets[0]
+                .owner_chart()
+                .expect("source-closed owner chart")
+                .side_axis(),
+            side_axis
+        );
         let B2OwnerChartBridge::SupportedSurface {
             carrier_surface,
             support_surfaces,
@@ -460,7 +466,14 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
         assert_eq!(controls, [carrier_selector, 0x05, 0x03, 0x05, 0x01, 0x05]);
         assert_eq!(construction_radius, 1.0);
         assert_eq!(
-            chart.parameter_points().map(|point| point.prefix.as_u8()),
+            chart.parameter_point_offsets().map(|pos| {
+                crate::families::b2::records::b2_parameter_points(&bytes)
+                    .into_iter()
+                    .find(|point| point.pos == pos)
+                    .expect("chart selector record")
+                    .prefix
+                    .as_u8()
+            }),
             [0x05, 0x09, 0x0d, 0x11]
         );
 
@@ -504,7 +517,14 @@ fn owner_chart_applies_to_width_coded_identity_dialect() {
             });
         assert_eq!(chart.carrier, carrier);
         assert_eq!(
-            chart.parameter_points().map(|point| point.prefix.as_u8()),
+            chart.parameter_point_offsets().map(|pos| {
+                crate::families::b2::records::b2_parameter_points(&bytes)
+                    .into_iter()
+                    .find(|point| point.pos == pos)
+                    .expect("chart selector record")
+                    .prefix
+                    .as_u8()
+            }),
             [0x05, 0x09, 0x0d, 0x11]
         );
     }

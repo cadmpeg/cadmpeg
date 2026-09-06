@@ -204,6 +204,10 @@ pub enum CatiaOwnerChartBridge {
 /// Source-closed carrier chart terminated by an owner packet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaOwnerChartRelationWire",
+    into = "CatiaOwnerChartRelationWire"
+)]
 pub struct CatiaOwnerChartRelation {
     /// Carrier record byte offset.
     pub carrier_byte_offset: u64,
@@ -211,16 +215,86 @@ pub struct CatiaOwnerChartRelation {
     pub carrier: CatiaOwnerChartCarrier,
     /// Immediately following class-`0x37` bridge record.
     pub bridge: CatiaOwnerChartBridge,
-    /// Axis held constant by selectors `0x05` and `0x09`.
-    pub side_axis: CatiaOwnerChartSideAxis,
     /// Byte offsets of selectors `0x05`, `0x09`, `0x0d`, and `0x11`.
     pub parameter_point_byte_offsets: [u64; 4],
+}
+
+impl CatiaOwnerChartRelation {
+    pub fn side_axis(&self) -> CatiaOwnerChartSideAxis {
+        match self.carrier {
+            CatiaOwnerChartCarrier::B28 => CatiaOwnerChartSideAxis::FirstParameter,
+            CatiaOwnerChartCarrier::B2b | CatiaOwnerChartCarrier::A32 => {
+                CatiaOwnerChartSideAxis::SecondParameter
+            }
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaOwnerChartRelationWire {
+    carrier_byte_offset: u64,
+    carrier: CatiaOwnerChartCarrier,
+    bridge: CatiaOwnerChartBridge,
+    side_axis: CatiaOwnerChartSideAxis,
+    parameter_point_byte_offsets: [u64; 4],
+}
+
+impl From<CatiaOwnerChartRelation> for CatiaOwnerChartRelationWire {
+    fn from(value: CatiaOwnerChartRelation) -> Self {
+        let side_axis = value.side_axis();
+        Self {
+            carrier_byte_offset: value.carrier_byte_offset,
+            carrier: value.carrier,
+            bridge: value.bridge,
+            side_axis,
+            parameter_point_byte_offsets: value.parameter_point_byte_offsets,
+        }
+    }
+}
+
+impl TryFrom<CatiaOwnerChartRelationWire> for CatiaOwnerChartRelation {
+    type Error = String;
+
+    fn try_from(wire: CatiaOwnerChartRelationWire) -> Result<Self, Self::Error> {
+        let value = Self {
+            carrier_byte_offset: wire.carrier_byte_offset,
+            carrier: wire.carrier,
+            bridge: wire.bridge,
+            parameter_point_byte_offsets: wire.parameter_point_byte_offsets,
+        };
+        if wire.side_axis != value.side_axis() {
+            return Err("owner-chart side axis does not match carrier".to_owned());
+        }
+        Ok(value)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn relation_wire_checks_the_carrier_derived_axis() {
+        for carrier_class in [0x28, 0x2b, 0x32] {
+            let bytes = crate::test_support::b2_owner_chart_stream(carrier_class);
+            let native = crate::native::CatiaNative::decode(&bytes);
+            let relation = native.consolidated_owner_packets[0]
+                .owner_chart()
+                .expect("source-closed owner chart");
+            let mut wire = serde_json::to_value(relation).expect("serialize owner chart");
+            let decoded: CatiaOwnerChartRelation =
+                serde_json::from_value(wire.clone()).expect("valid owner chart");
+            assert_eq!(&decoded, relation);
+            wire["side_axis"] = json!(if carrier_class == 0x28 {
+                "second_parameter"
+            } else {
+                "first_parameter"
+            });
+            assert!(serde_json::from_value::<CatiaOwnerChartRelation>(wire).is_err());
+        }
+    }
 
     #[test]
     fn reference_wire_preserves_all_addressing_forms_and_width_coded_aliases() {

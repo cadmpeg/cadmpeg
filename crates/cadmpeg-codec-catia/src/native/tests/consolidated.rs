@@ -953,7 +953,7 @@ fn native_namespace_retains_source_closed_owner_chart() {
     let chart = packet.owner_chart().expect("owner chart relation");
     assert_eq!(chart.carrier, CatiaOwnerChartCarrier::B2b);
     assert_eq!(
-        chart.side_axis,
+        chart.side_axis(),
         CatiaOwnerChartSideAxis::SecondParameter
     );
     let CatiaOwnerChartBridge::SupportedSurface {
