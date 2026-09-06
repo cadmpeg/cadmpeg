@@ -18,6 +18,8 @@ use crate::om::nonempty::NonEmpty;
 use crate::om::sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLaneForm};
 use crate::om::fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 use crate::om::scalar_run::FramedScalarRun;
+use crate::om::scalar_pair::{PairPosition, SketchPairForm, DatumPairForm, MixedPairForm};
+mod pair_wire;
 use crate::om::discriminators::DraftBinary32Branch;
 use crate::om::pattern::{PatternRow, PatternRows, PatternScalarEncoding, PatternTerminal, PatternValue, PatternWideValues};
 use crate::om::thru_curve_state::ThruCurveBranchItems;
@@ -1522,6 +1524,7 @@ impl Serialize for FeaturePayloadScalarPair {
 
 /// One exactly framed signed Q1.55 pair in a reconstructed datum-CSYS payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "pair_wire::FeatureDatumCsysPayloadFixedPairWire", into = "pair_wire::FeatureDatumCsysPayloadFixedPairWire")]
 pub struct FeatureDatumCsysPayloadFixedPair {
     /// Globally unique fixed-pair identity.
     pub id: String,
@@ -1532,14 +1535,9 @@ pub struct FeatureDatumCsysPayloadFixedPair {
     /// Zero-based frame order within the payload.
     pub ordinal: u32,
     /// Ordered dimensionless Q1.55 values.
-    #[serde(flatten, with = "crate::om::fixed::pair_wire")]
     pub values: [Q155; 2],
-    /// Exact discriminator selecting the pair branch.
-    pub discriminator: Vec<u8>,
-    /// Payload-relative offset of the discriminator.
-    pub payload_offset: u64,
-    /// Payload-relative offsets of the two `30` atom markers.
-    pub value_payload_offsets: [u64; 2],
+    /// Closed pair framing and checked payload position.
+    pub position: PairPosition<DatumPairForm>,
     /// Absolute source offset of the discriminator.
     pub source_offset: u64,
     /// Absolute source offsets of the two `30` atom markers.
@@ -2111,6 +2109,7 @@ pub enum FeaturePatternKind {
 
 /// One exactly framed scaled shifted-binary64 pair in a reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "pair_wire::FeatureSketchPayloadFixedPairWire", into = "pair_wire::FeatureSketchPayloadFixedPairWire")]
 pub struct FeatureSketchPayloadFixedPair {
     /// Globally unique fixed-pair identity.
     pub id: String,
@@ -2121,14 +2120,9 @@ pub struct FeatureSketchPayloadFixedPair {
     /// Zero-based frame order within the payload.
     pub ordinal: u32,
     /// Ordered values reconstructed from the `30` shifted-binary64 atoms and scaled by `1/4`.
-    #[serde(flatten, with = "crate::om::sketch_scalar::pair_wire")]
     pub values: [SketchScaledAtom; 2],
-    /// Exact discriminator and branch prefix selecting the pair layout.
-    pub discriminator: Vec<u8>,
-    /// Payload-relative offset of the discriminator.
-    pub payload_offset: u64,
-    /// Payload-relative offsets of the two atom markers.
-    pub value_payload_offsets: [u64; 2],
+    /// Closed pair framing and checked payload position.
+    pub position: PairPosition<SketchPairForm>,
     /// Absolute source offset of the discriminator.
     pub source_offset: u64,
     /// Absolute source offsets of the two atom markers.
@@ -2137,6 +2131,7 @@ pub struct FeatureSketchPayloadFixedPair {
 
 /// One exactly framed mixed scaled shifted-binary64/binary32 pair in a reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "pair_wire::FeatureSketchPayloadMixedPairWire", into = "pair_wire::FeatureSketchPayloadMixedPairWire")]
 pub struct FeatureSketchPayloadMixedPair {
     /// Globally unique mixed-pair identity.
     pub id: String,
@@ -2147,14 +2142,9 @@ pub struct FeatureSketchPayloadMixedPair {
     /// Zero-based frame order within the payload.
     pub ordinal: u32,
     /// Exact scaled binary64 and binary32 atoms.
-    #[serde(flatten)]
     pub scalars: SketchMixedScalars,
-    /// Exact discriminator selecting the mixed pair layout.
-    pub discriminator: Vec<u8>,
-    /// Payload-relative offset of the discriminator.
-    pub payload_offset: u64,
-    /// Payload-relative offsets of the two atom markers.
-    pub value_payload_offsets: [u64; 2],
+    /// Closed pair framing and checked payload position.
+    pub position: PairPosition<MixedPairForm>,
     /// Absolute source offset of the discriminator.
     pub source_offset: u64,
     /// Absolute source offsets of the two atom markers.
@@ -8233,9 +8223,7 @@ pub fn feature_datum_csys_payload_fixed_pairs(
                 datum_csys_payload: payload.id.clone(),
                 ordinal: ordinal as u32,
                 values: pair.values,
-                discriminator: pair.discriminator().to_vec(),
-                payload_offset: pair.offset as u64,
-                value_payload_offsets: pair.value_offsets().map(|offset| offset as u64),
+                position: PairPosition::new(pair.form, pair.offset as u64)?,
                 source_offset: source_offset(pair.offset)?,
                 value_source_offsets: [
                     source_offset(pair.value_offsets()[0])?,
@@ -8659,9 +8647,7 @@ pub fn feature_sketch_payload_fixed_pairs(
                 construction_payload: payload.id.clone(),
                 ordinal: ordinal as u32,
                 values: pair.values,
-                discriminator: pair.discriminator().to_vec(),
-                payload_offset: pair.offset as u64,
-                value_payload_offsets: pair.value_offsets().map(|offset| offset as u64),
+                position: PairPosition::new(pair.form, pair.offset as u64)?,
                 source_offset: source_offset(pair.offset)?,
                 value_source_offsets: [
                     source_offset(pair.value_offsets()[0])?,
@@ -8689,9 +8675,7 @@ pub fn feature_sketch_payload_mixed_pairs(
                 construction_payload: payload.id.clone(),
                 ordinal: ordinal as u32,
                 scalars: pair.scalars,
-                discriminator: pair.discriminator().to_vec(),
-                payload_offset: pair.offset as u64,
-                value_payload_offsets: pair.value_offsets().map(|offset| offset as u64),
+                position: PairPosition::new(MixedPairForm, pair.offset as u64)?,
                 source_offset: source_offset(pair.offset)?,
                 value_source_offsets: [
                     source_offset(pair.value_offsets()[0])?,
@@ -8910,20 +8894,20 @@ pub fn feature_sketch_payload_named_records(
                 .iter()
                 .filter(|pair| {
                     pair.construction_payload == payload.id
-                        && pair.payload_offset > name.payload_offset
-                        && pair.payload_offset < end
+                        && pair.position.offset() > name.payload_offset
+                        && pair.position.offset() < end
                 })
                 .collect::<Vec<_>>();
-            record_fixed_pairs.sort_by_key(|pair| pair.payload_offset);
+            record_fixed_pairs.sort_by_key(|pair| pair.position.offset());
             let mut record_mixed_pairs = mixed_pairs
                 .iter()
                 .filter(|pair| {
                     pair.construction_payload == payload.id
-                        && pair.payload_offset > name.payload_offset
-                        && pair.payload_offset < end
+                        && pair.position.offset() > name.payload_offset
+                        && pair.position.offset() < end
                 })
                 .collect::<Vec<_>>();
-            record_mixed_pairs.sort_by_key(|pair| pair.payload_offset);
+            record_mixed_pairs.sort_by_key(|pair| pair.position.offset());
             records.push(FeatureSketchPayloadNamedRecord {
                 id: format!(
                     "nx:feature-history:sketch-payload-record#{}-{ordinal:010}",
@@ -9031,7 +9015,7 @@ pub fn feature_sketch_fixed_points(
                 .filter(|fixed_pair_id| {
                     fixed_pairs
                         .get(fixed_pair_id.as_str())
-                        .is_some_and(|pair| matches!(pair.discriminator.first(), Some(0x04 | 0x08)))
+                        .is_some_and(|pair| matches!(pair.position.form(), SketchPairForm::Legacy | SketchPairForm::Short | SketchPairForm::Extended))
                 })
                 .collect::<Vec<_>>();
             let [fixed_pair_id] = point_pairs.as_slice() else {

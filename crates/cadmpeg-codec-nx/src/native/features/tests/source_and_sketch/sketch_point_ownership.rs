@@ -1,3 +1,4 @@
+use crate::om::scalar_pair::{PairPosition, SketchPairForm};
 use super::*;
 
 #[test]
@@ -41,9 +42,7 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
         construction_payload: "payload".to_string(),
         ordinal: 0,
         values: [[0; 7], [8, 0, 0, 0, 0, 0, 0]].map(crate::om::sketch_scalar::SketchScaledAtom::from_raw),
-        discriminator: vec![0x04],
-        payload_offset: 20,
-        value_payload_offsets: [28, 37],
+        position: PairPosition::new(SketchPairForm::Legacy, 20).unwrap(),
         source_offset: 1020,
         value_source_offsets: [1028, 1037],
     };
@@ -52,10 +51,8 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     let auxiliary_pair = FeatureSketchPayloadFixedPair {
         id: "auxiliary-pair".to_string(),
         ordinal: 1,
-        discriminator: vec![0x0b],
-        payload_offset: 40,
+        position: PairPosition::new(SketchPairForm::ThreeMember, 40).unwrap(),
         source_offset: 1040,
-        value_payload_offsets: [55, 64],
         value_source_offsets: [1055, 1064],
         ..pair.clone()
     };

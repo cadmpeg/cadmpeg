@@ -45,3 +45,56 @@ impl DatumPairForm {
         match self { Self::Initial => DISCRIMINATORS[0], Self::Continuation => DISCRIMINATORS[1] }
     }
 }
+
+/// Closed framing contract for two scalar atoms.
+pub(crate) trait PairForm: Copy + 'static {
+    const ALL_FORMS: &'static [Self];
+    fn prefix(self) -> &'static [u8];
+    fn second_delta(self) -> u64;
+}
+impl PairForm for SketchPairForm {
+    const ALL_FORMS: &'static [Self] = &Self::ALL;
+    fn prefix(self) -> &'static [u8] { self.discriminator() }
+    fn second_delta(self) -> u64 { 8 + self.separator_width() as u64 }
+}
+impl PairForm for DatumPairForm {
+    const ALL_FORMS: &'static [Self] = &Self::ALL;
+    fn prefix(self) -> &'static [u8] { self.discriminator() }
+    fn second_delta(self) -> u64 { 9 }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MixedPairForm;
+impl PairForm for MixedPairForm {
+    const ALL_FORMS: &'static [Self] = &[Self];
+    fn prefix(self) -> &'static [u8] { SketchPairForm::Legacy.discriminator() }
+    fn second_delta(self) -> u64 { 9 }
+}
+
+/// Pair position whose derived atom offsets fit the payload address space.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PairPosition<F> {
+    form: F,
+    offset: u64,
+}
+impl<F: PairForm> PairPosition<F> {
+    pub(crate) fn new(form: F, offset: u64) -> Option<Self> {
+        offset.checked_add(form.prefix().len() as u64)?.checked_add(form.second_delta())?;
+        Some(Self { form, offset })
+    }
+    pub(crate) fn from_wire(discriminator: &[u8], offset: u64, values: [u64; 2]) -> Result<Self, String> {
+        let form = F::ALL_FORMS.iter().copied().find(|form| form.prefix() == discriminator)
+            .ok_or("discriminator: unsupported scalar-pair framing")?;
+        let position = Self::new(form, offset).ok_or("payload_offset: scalar-pair offsets overflow")?;
+        if position.value_offsets() != values {
+            return Err("value_payload_offsets: differ from scalar-pair framing".into());
+        }
+        Ok(position)
+    }
+    pub(crate) fn form(self) -> F { self.form }
+    pub(crate) fn discriminator(self) -> &'static [u8] { self.form.prefix() }
+    pub(crate) fn offset(self) -> u64 { self.offset }
+    pub(crate) fn value_offsets(self) -> [u64; 2] {
+        let first = self.offset + self.form.prefix().len() as u64;
+        [first, first + self.form.second_delta()]
+    }
+}
