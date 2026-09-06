@@ -346,14 +346,21 @@ mod tests {
 
     fn native(fields: Vec<ValueField>) -> CatiaNative {
         let mut native = CatiaNative::default();
+        let payload = fields.iter().flat_map(|field| {
+            let ValueField::Inline { code, bytes, .. } = field else {
+                panic!("appearance fixture requires inline fields");
+            };
+            [0x8e, *code, 0x84].into_iter().chain(bytes.iter().copied())
+        }).collect::<Vec<_>>();
+        let fields = crate::value_block::tokenize(&payload);
         native.value_blocks.push(CatiaValueBlock {
             id: "values".into(),
             byte_offset: 0,
-            byte_len: 0,
-            declared_len: 0,
+            byte_len: payload.len() as u64 + 7,
+            declared_len: payload.len() as u64 + 6,
             object_graph: None,
             catalog: "catalog".into(),
-            payload: vec![],
+            payload,
             fields,
             schema_selections: vec![],
         });
@@ -493,7 +500,7 @@ mod tests {
                 && matches!(
                     &binding.target,
                     AppearanceTarget::Source { source_id }
-                        if source_id == "values:field#0000000000:000001"
+                        if source_id == "values:field#0000000007:000001"
                 )
         }));
         assert!(ir
