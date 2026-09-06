@@ -2253,12 +2253,16 @@ pub struct PointFeaturePayloadHeader {
 /// Exact six-scalar lane selected by a point-feature construction header.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PointFeatureScalarLane {
-    /// Six finite scalar values in byte order.
-    pub values: [f64; 6],
-    /// Exact shifted-binary64 encodings in byte order.
-    pub raw_values: [[u8; 8]; 6],
-    /// Scalar marker offsets across the concatenated preceding and target blocks.
-    pub value_offsets: [usize; 6],
+    /// Six checked shifted-binary64 atoms in byte order.
+    pub values: [ShiftedBinary64; 6],
+    /// Start of the contiguous lane in the joined blocks.
+    offset: usize,
+}
+
+impl PointFeatureScalarLane {
+    pub fn value_offsets(&self) -> [usize; 6] {
+        std::array::from_fn(|i| self.offset + i * 8)
+    }
 }
 
 /// Exact construction-reference graph in a draft-feature payload.
@@ -4664,29 +4668,15 @@ pub fn point_feature_scalar_lane(
     let mut lane = Vec::with_capacity(48);
     lane.extend_from_slice(&preceding_block[preceding_start..]);
     lane.extend_from_slice(target_block.get(..45)?);
-    let raw_values: [[u8; 8]; 6] = lane
+    let values = lane
         .chunks_exact(8)
-        .map(|bytes| bytes.try_into().expect("eight-byte chunk"))
-        .collect::<Vec<_>>()
-        .try_into()
-        .ok()?;
-    let values = raw_values
-        .iter()
-        .map(|bytes| shifted_ieee_f64(bytes))
+        .map(ShiftedBinary64::read)
         .collect::<Option<Vec<_>>>()?
         .try_into()
         .ok()?;
     Some(PointFeatureScalarLane {
         values,
-        raw_values,
-        value_offsets: [
-            preceding_start,
-            preceding_block.len() + 5,
-            preceding_block.len() + 13,
-            preceding_block.len() + 21,
-            preceding_block.len() + 29,
-            preceding_block.len() + 37,
-        ],
+        offset: preceding_start,
     })
 }
 

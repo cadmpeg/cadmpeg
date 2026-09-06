@@ -157,7 +157,7 @@ fn terminal_discriminator_preserves_wire_and_requires_complete_tokens() {
 #[test]
 fn point_scalar_lane_preserves_wire_and_requires_six_complete_tokens() {
     check_lane_wire::<FeaturePointConstructionScalarLane>(
-        r#"{"id":"lane","operation_label":"operation","construction_header":"header","data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],"raw_values":[[1,2,3,4,5,6,7,8],[2,3,4,5,6,7,8,9],[3,4,5,6,7,8,9,10],[4,5,6,7,8,9,10,11],[5,6,7,8,9,10,11,12],[6,7,8,9,10,11,12,13]],"source_offsets":[100,110,120,200,210,220]}"#,
+        r#"{"id":"lane","operation_label":"operation","construction_header":"header","data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0],[48,8,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0]],"source_offsets":[100,110,120,200,210,220]}"#,
         &["values", "raw_values", "source_offsets"],
     );
 }

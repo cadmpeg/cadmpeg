@@ -3556,7 +3556,7 @@ pub struct FeaturePointConstructionHeader {
 /// Exact cross-block scalar lane selected by a point-construction header.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
-    from = "FeaturePointConstructionScalarLaneWire",
+    try_from = "FeaturePointConstructionScalarLaneWire",
     into = "FeaturePointConstructionScalarLaneWire"
 )]
 pub struct FeaturePointConstructionScalarLane {
@@ -3569,8 +3569,7 @@ pub struct FeaturePointConstructionScalarLane {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FeatureBinary64ScalarToken {
-    pub value: f64,
-    pub raw: [u8; 8],
+    pub scalar: ShiftedBinary64,
     pub source_offset: u64,
 }
 
@@ -3599,26 +3598,32 @@ impl From<FeaturePointConstructionScalarLane> for FeaturePointConstructionScalar
             operation_label: lane.operation_label,
             construction_header: lane.construction_header,
             data_blocks: lane.data_blocks,
-            values: lane.values.map(|token| token.value),
-            raw_values: lane.values.map(|token| token.raw),
+            values: lane.values.map(|token| token.scalar.value()),
+            raw_values: lane.values.map(|token| token.scalar.raw()),
             source_offsets: lane.values.map(|token| token.source_offset),
         }
     }
 }
 
-impl From<FeaturePointConstructionScalarLaneWire> for FeaturePointConstructionScalarLane {
-    fn from(wire: FeaturePointConstructionScalarLaneWire) -> Self {
-        Self {
+impl TryFrom<FeaturePointConstructionScalarLaneWire> for FeaturePointConstructionScalarLane {
+    type Error = String;
+
+    fn try_from(wire: FeaturePointConstructionScalarLaneWire) -> Result<Self, Self::Error> {
+        let [a, b, c, d, e, f] = std::array::from_fn::<_, 6, _>(|i| {
+            ShiftedBinary64::from_wire(wire.values[i], wire.raw_values[i])
+                .map_err(|error| format!("values/raw_values[{i}]: {error}"))
+        });
+        let scalars = [a?, b?, c?, d?, e?, f?];
+        Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
             construction_header: wire.construction_header,
             data_blocks: wire.data_blocks,
             values: std::array::from_fn(|slot| FeatureBinary64ScalarToken {
-                value: wire.values[slot],
-                raw: wire.raw_values[slot],
+                scalar: scalars[slot],
                 source_offset: wire.source_offsets[slot],
             }),
-        }
+        })
     }
 }
 
@@ -10306,7 +10311,7 @@ pub fn feature_point_construction_scalar_lanes(
             continue;
         };
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        let source_offsets = lane.value_offsets.map(|offset| {
+        let source_offsets = lane.value_offsets().map(|offset| {
             if offset < preceding.bytes.len() {
                 entry_offset + preceding.offset as u64 + offset as u64
             } else {
@@ -10329,8 +10334,7 @@ pub fn feature_point_construction_scalar_lanes(
                 format!("nx:om-data-blocks-{section_ordinal}:block#{target_ordinal}"),
             ],
             values: std::array::from_fn(|slot| FeatureBinary64ScalarToken {
-                value: lane.values[slot],
-                raw: lane.raw_values[slot],
+                scalar: lane.values[slot],
                 source_offset: source_offsets[slot],
             }),
         });
