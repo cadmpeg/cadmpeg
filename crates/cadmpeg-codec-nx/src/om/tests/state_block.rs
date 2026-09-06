@@ -1,5 +1,5 @@
-use super::*;
 use crate::om::roll_forward::OperationStateGroupRow;
+use crate::om::state_status::StateStatusPayload;
 
 #[test]
 fn operation_state_indices_retain_each_admitted_form() {
@@ -104,23 +104,23 @@ fn operation_state_status_table_retains_plain_link_diagnostic_and_opaque_rows() 
     let table =
         super::operation_state_status_table(&bytes, 0, bytes.len(), 700).expect("status table");
     assert_eq!(table.rows.len(), 4);
-    assert_eq!(table.rows[0].status_code.value(), 0x41);
+    assert_eq!(table.rows[0].body().status_code.value(), 0x41);
     assert!(matches!(
-        table.rows[0].payload,
-        OperationStateStatusPayload::Plain
+        table.rows[0].body().payload,
+        StateStatusPayload::Plain
     ));
     assert!(matches!(
-        table.rows[1].payload,
-        OperationStateStatusPayload::Linked {
+        table.rows[1].body().payload,
+        StateStatusPayload::Linked {
             link_code,
             ..
         } if u8::from(link_code) == 0x45
     ));
-    let OperationStateStatusPayload::Diagnostic { message } = table.rows[2].payload else {
+    let StateStatusPayload::Diagnostic(message) = table.rows[2].body().payload else {
         panic!("diagnostic row was not typed");
     };
-    assert_eq!(message.body().text.as_str(), "bad curve");
-    let OperationStateStatusPayload::Opaque { raw } = table.rows[3].payload else {
+    assert_eq!(message.text.as_str(), "bad curve");
+    let StateStatusPayload::Opaque { raw } = table.rows[3].body().payload else {
         panic!("opaque state lane was not retained");
     };
     assert_eq!(raw, &[0x1e, 0x01, 0x41, 0xff, 0x83, 0xad, 0xff, 0x02, 0x11]);
@@ -145,8 +145,8 @@ fn operation_state_block_keeps_inline_diagnostics_out_of_standalone_messages() {
         .expect("complete operation-state block");
     assert_eq!(block.rows.len(), 1);
     assert!(matches!(
-        block.rows[0].payload,
-        OperationStateStatusPayload::Diagnostic { .. }
+        block.rows[0].body().payload,
+        StateStatusPayload::Diagnostic(..)
     ));
     assert_eq!(block.messages.len(), 1);
     assert_eq!(block.messages[0].body().text.as_str(), "standalone");
@@ -167,8 +167,8 @@ fn operation_state_status_table_ignores_incomplete_preceding_operation_lane() {
         .expect("complete status chain");
     assert_eq!(block.offset, 500 + 13);
     assert_eq!(block.rows.len(), 2);
-    assert_eq!(Some(block.rows[0].object_index.value()), Some(0x20));
-    assert_eq!(block.rows[1].status_code.value(), 0x44);
+    assert_eq!(Some(block.rows[0].body().object_index.value()), Some(0x20));
+    assert_eq!(block.rows[1].body().status_code.value(), 0x44);
     assert_eq!(block.status_end_offset, 500 + boundary);
 }
 

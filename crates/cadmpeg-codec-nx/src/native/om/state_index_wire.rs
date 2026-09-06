@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native operation-state index projections at the JSON boundary.
 
-use super::{
-    OmAuditTrailRow, OmOperationStateCounter, OmOperationStateStatus, OmOperationStateStatusPayload,
-};
+use super::{OmAuditTrailRow, OmOperationStateCounter};
 use crate::om::roll_forward::OperationStateGroupRow;
 use crate::om::state_index::StateIndexToken;
-use crate::om::state_message::StateMessage;
 use crate::om::state_slots::StateSlots;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
@@ -130,58 +127,6 @@ impl TryFrom<OmOperationStateCounterWire> for OmOperationStateCounter {
             ordinal: wire.ordinal,
             frame,
             source_entry: wire.source_entry,
-        })
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub(super) struct OmOperationStateStatusWire {
-    id: String,
-    section_link: String,
-    ordinal: u32,
-    status_code: u32,
-    raw_status_code: Vec<u8>,
-    object_index: u32,
-    raw_object_index: Vec<u8>,
-    payload: OmOperationStateStatusPayload,
-    source_entry: String,
-    source_offset: u64,
-    end_offset: u64,
-}
-
-impl From<OmOperationStateStatus> for OmOperationStateStatusWire {
-    fn from(value: OmOperationStateStatus) -> Self {
-        Self {
-            id: value.id,
-            section_link: value.section_link,
-            ordinal: value.ordinal,
-            status_code: value.status_code.value(),
-            raw_status_code: value.status_code.raw().to_vec(),
-            object_index: value.object_index.value(),
-            raw_object_index: value.object_index.raw().to_vec(),
-            payload: value.payload,
-            source_entry: value.source_entry,
-            source_offset: value.source_offset,
-            end_offset: value.end_offset,
-        }
-    }
-}
-
-impl TryFrom<OmOperationStateStatusWire> for OmOperationStateStatus {
-    type Error = String;
-    fn try_from(wire: OmOperationStateStatusWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: wire.id,
-            section_link: wire.section_link,
-            ordinal: wire.ordinal,
-            status_code: StateIndexToken::from_wire(wire.status_code, &wire.raw_status_code)
-                .map_err(|error| format!("status_code/raw_status_code: {error}"))?,
-            object_index: StateIndexToken::from_wire(wire.object_index, &wire.raw_object_index)
-                .map_err(|error| format!("object_index/raw_object_index: {error}"))?,
-            payload: wire.payload,
-            source_entry: wire.source_entry,
-            source_offset: wire.source_offset,
-            end_offset: wire.end_offset,
         })
     }
 }
@@ -336,61 +281,11 @@ impl OmRollForwardStateRowWire {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub(super) enum OmOperationStateStatusPayloadWire {
-    Plain,
-    Linked {
-        link_code: crate::om::state_link::StateLinkCode,
-        object_index: u32,
-        raw_object_index: Vec<u8>,
-    },
-    Diagnostic(StateMessage<String>),
-    Opaque {
-        raw: Vec<u8>,
-    },
-}
-
-impl From<OmOperationStateStatusPayload> for OmOperationStateStatusPayloadWire {
-    fn from(value: OmOperationStateStatusPayload) -> Self {
-        match value {
-            OmOperationStateStatusPayload::Plain => Self::Plain,
-            OmOperationStateStatusPayload::Linked {
-                link_code,
-                object_index,
-            } => Self::Linked {
-                link_code,
-                object_index: object_index.value(),
-                raw_object_index: object_index.raw().to_vec(),
-            },
-            OmOperationStateStatusPayload::Diagnostic(value) => Self::Diagnostic(value),
-            OmOperationStateStatusPayload::Opaque { raw } => Self::Opaque { raw },
-        }
-    }
-}
-
-impl TryFrom<OmOperationStateStatusPayloadWire> for OmOperationStateStatusPayload {
-    type Error = String;
-    fn try_from(wire: OmOperationStateStatusPayloadWire) -> Result<Self, Self::Error> {
-        Ok(match wire {
-            OmOperationStateStatusPayloadWire::Plain => Self::Plain,
-            OmOperationStateStatusPayloadWire::Linked {
-                link_code,
-                object_index,
-                raw_object_index,
-            } => Self::Linked {
-                link_code,
-                object_index: StateIndexToken::from_wire(object_index, &raw_object_index)
-                    .map_err(|error| format!("object_index/raw_object_index: {error}"))?,
-            },
-            OmOperationStateStatusPayloadWire::Diagnostic(value) => Self::Diagnostic(value),
-            OmOperationStateStatusPayloadWire::Opaque { raw } => Self::Opaque { raw },
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native::om::state_status::OmOperationStateStatus;
+    use crate::om::state_status::StateStatusPayload;
 
     fn preserves_wire<T: Serialize + serde::de::DeserializeOwned>(json: &str) {
         let value: T = serde_json::from_str(json).unwrap();
@@ -479,7 +374,7 @@ mod tests {
         preserves_wire::<OmOperationStateStatus>(
             r#"{"id":"status","section_link":"section","ordinal":0,"status_code":65,"raw_status_code":[65],"object_index":1,"raw_object_index":[1],"payload":"Plain","source_entry":"om","source_offset":0,"end_offset":3}"#,
         );
-        preserves_wire::<OmOperationStateStatusPayload>(
+        preserves_wire::<StateStatusPayload<String, Vec<u8>>>(
             r#"{"Linked":{"link_code":75,"object_index":1,"raw_object_index":[1]}}"#,
         );
         preserves_row_wire(

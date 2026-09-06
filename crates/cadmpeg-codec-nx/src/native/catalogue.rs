@@ -8,6 +8,7 @@
 
 use crate::native::om::roll_forward::OmRollForwardStateGroup;
 use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
+use crate::native::om::state_status::OmOperationStateStatus;
 use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
@@ -328,7 +329,7 @@ impl ContainerNoted for OmOperationStateMessage {
 }
 impl ContainerNoted for OmOperationStateStatus {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.source_offset())
     }
 }
 impl ContainerNoted for OmOperationStateSlotLane {

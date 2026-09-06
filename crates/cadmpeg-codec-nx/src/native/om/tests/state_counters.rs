@@ -2,8 +2,10 @@
 
 use crate::native::om::roll_forward::OmRollForwardStateGroup;
 use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
+use crate::native::om::state_status::OmOperationStateStatus;
 use crate::om::roll_forward::OperationStateGroupRow;
 use crate::om::state_message::{StateMessage, StateMessageSeverity};
+use crate::om::state_status::StateStatusPayload;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -15,7 +17,6 @@ use crate::native::om::{
     audit_trail_rows, operation_state_counters, operation_state_groups,
     operation_state_journal_groups, operation_state_messages, operation_state_slot_lanes,
     operation_state_statuses, OmAuditTrailRow, OmOperationStateCounter, OmOperationStateMessage,
-    OmOperationStateStatus,
 };
 use crate::test_support::{
     composed_feature_history_payload_with_operation_state_statuses,
@@ -272,18 +273,18 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
 
     let statuses = operation_state_statuses(&container);
     assert_eq!(statuses.len(), 2);
-    assert_eq!(statuses[0].status_code.value(), 0x41);
-    assert_eq!(statuses[0].object_index.value(), 0x20);
-    assert_eq!(statuses[0].status_code.raw(), [0x41]);
+    assert_eq!(statuses[0].body().status_code.value(), 0x41);
+    assert_eq!(statuses[0].body().object_index.value(), 0x20);
+    assert_eq!(statuses[0].body().status_code.raw(), [0x41]);
     assert!(matches!(
-        statuses[0].payload,
-        crate::native::om::OmOperationStateStatusPayload::Plain
+        statuses[0].body().payload,
+        StateStatusPayload::Plain
     ));
-    assert_eq!(statuses[1].status_code.value(), 0x44);
-    assert_eq!(statuses[1].object_index.value(), 0x21);
+    assert_eq!(statuses[1].body().status_code.value(), 0x44);
+    assert_eq!(statuses[1].body().object_index.value(), 0x21);
     assert!(matches!(
-        statuses[1].payload,
-        crate::native::om::OmOperationStateStatusPayload::Linked {
+        statuses[1].body().payload,
+        StateStatusPayload::Linked {
             link_code,
             object_index,
             ..

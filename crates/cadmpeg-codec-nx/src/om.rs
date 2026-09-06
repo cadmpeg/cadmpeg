@@ -60,19 +60,20 @@ use sketch_scalar::{SketchMixedScalars, SketchScalarLaneForm, SketchScaledAtom};
 pub(crate) mod fixed;
 use fixed::{Q155Atom, Q155LaneFrame, Q155Marker, Q155};
 pub(crate) mod nonempty;
-pub(crate) mod source_span;
+#[cfg(test)]
+mod source_span;
 pub(crate) mod state_index;
 pub(crate) mod state_slots;
 pub(crate) mod state_tagged_value;
-use source_span::SourceSpan;
+pub(crate) mod state_status;
+use state_status::{operation_state_opaque_lane_end_at, operation_state_status_row_at, OperationStateStatus};
 pub(crate) mod state_slot_lane;
 use state_slot_lane::StateSlotLane;
 pub(crate) mod state_link;
-use state_link::StateLinkCode;
 pub(crate) mod roll_forward;
 use roll_forward::{operation_state_group_at, operation_state_group_end_at, OperationStateGroupTable};
 pub(crate) mod state_group;
-use state_index::{OperationStateIndex, StateIndexToken};
+use state_index::OperationStateIndex;
 pub(crate) mod state_message_text;
 use nonempty::NonEmpty;
 pub(crate) mod state_message;
@@ -629,43 +630,6 @@ impl<'a> UnlabeledOperationRecord<'a> {
 pub struct OperationTerminalFrame {
     pub immediate_common_frame_offset: Option<usize>,
     pub frame: TerminalFrame<usize>,
-}
-
-/// Payload form of one per-object operation-state status row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStateStatusPayload<'a> {
-    /// Normal built/healthy object state, encoded as `3f`.
-    Plain,
-    /// Status with a link-code and one linked object index.
-    Linked {
-        /// Serialized link discriminator.
-        link_code: StateLinkCode,
-        /// Linked object index between the two `ff` sentinels.
-        object_index: StateIndexToken,
-    },
-    /// Status carrying the exact inline diagnostic record.
-    Diagnostic {
-        /// Inline diagnostic record beginning at the payload's `03` marker.
-        message: OperationStateMessage<'a>,
-    },
-    /// A typed status code whose payload lane has no settled subgrammar.
-    Opaque {
-        /// Exact bytes from the first payload byte through its lane terminator.
-        raw: &'a [u8],
-    },
-}
-
-/// One per-object status row in the operation-state block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationStateStatus<'a> {
-    /// Checked source position within its record area.
-    pub span: SourceSpan,
-    /// Exact non-null status-code token and decoded value.
-    pub status_code: StateIndexToken,
-    /// Object carrying this status.
-    pub object_index: StateIndexToken,
-    /// Status payload, retained without naming suppression codes.
-    pub payload: OperationStateStatusPayload<'a>,
 }
 
 /// A bounded sequence of operation-state status rows.
@@ -4324,7 +4288,7 @@ fn operation_state_status_end_at(
         precomputed_end.or_else(|| StateSlotLane::end_at(bytes, at, end))
     } else {
         operation_state_status_row_at(bytes, at, end, base_offset, opaque_lane_starts)
-            .map(|row| row.span.local_end())
+            .map(|row| row.end_offset() - base_offset)
     }
 }
 
@@ -4342,17 +4306,6 @@ fn operation_state_path_at(
         .binary_search_by(|(offset, _)| offset.cmp(&at).reverse())
         .ok()
         .map(|index| paths[index].1)
-}
-
-fn operation_state_opaque_lane_end_at(
-    lane_starts: &[usize],
-    at: usize,
-    end: usize,
-) -> Option<usize> {
-    let index = lane_starts.binary_search(&at).unwrap_or_else(|index| index);
-    let lane_start = *lane_starts.get(index)?;
-    let lane_end = lane_start.checked_add(2)?;
-    (lane_end <= end).then_some(lane_end)
 }
 
 fn operation_state_block_before_boundary(
@@ -4501,11 +4454,11 @@ fn operation_state_block_before_boundary(
                     base_offset,
                     Some(&opaque_lane_starts),
                 )?;
-                let row_end = row.span.local_end();
+                let row_end = row.end_offset() - base_offset;
                 (row_end == next).then_some(())?;
                 rows.push(row);
                 at = next;
-                status_end_offset = row.span.end_offset();
+                status_end_offset = row.end_offset();
             }
         } else {
             let message = message?;
@@ -4544,96 +4497,6 @@ pub fn operation_state_messages(
     messages
 }
 
-fn operation_state_opaque_payload_end(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
-    const MAX_OPAQUE_STATUS_BYTES: usize = 64 * 1024;
-    let first = *bytes.get(at)?;
-    if !matches!(first, 0x02 | 0x1e | 0xff) {
-        return None;
-    }
-    if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
-        return Some(at + 3);
-    }
-    let search_end = end.min(at.saturating_add(MAX_OPAQUE_STATUS_BYTES));
-    for cursor in at..search_end.saturating_sub(1) {
-        if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
-            return Some(cursor + 2);
-        }
-    }
-    None
-}
-
-fn operation_state_link_payload(
-    bytes: &[u8],
-    payload_at: usize,
-    end: usize,
-    base_offset: usize,
-) -> Option<(OperationStateStatusPayload<'_>, usize)> {
-    let link_code = StateLinkCode::try_from(*bytes.get(payload_at)?).ok()?;
-    if bytes.get(payload_at + 1) != Some(&0xff) {
-        return None;
-    }
-    let linked_at = payload_at.checked_add(2)?;
-    let linked = OperationStateIndex::read_at(bytes, linked_at, base_offset)?.token()?;
-    let sentinel_at = linked_at.checked_add(linked.raw().len())?;
-    if bytes.get(sentinel_at) != Some(&0xff) {
-        return None;
-    }
-    let payload_end = sentinel_at.checked_add(1)?;
-    (payload_end <= end).then_some((
-        OperationStateStatusPayload::Linked {
-            link_code,
-            object_index: linked,
-        },
-        payload_end,
-    ))
-}
-
-fn operation_state_status_row_at<'a>(
-    bytes: &'a [u8],
-    at: usize,
-    end: usize,
-    base_offset: usize,
-    opaque_lane_starts: Option<&[usize]>,
-) -> Option<OperationStateStatus<'a>> {
-    let status_code = OperationStateIndex::read_at(bytes, at, base_offset)?.token()?;
-    let object_at = at.checked_add(status_code.raw().len())?;
-    let object_index = OperationStateIndex::read_at(bytes, object_at, base_offset)?.token()?;
-    let payload_at = object_at.checked_add(object_index.raw().len())?;
-    if payload_at >= end {
-        return None;
-    }
-    let (payload, payload_end) = match bytes[payload_at] {
-        0x3f => (OperationStateStatusPayload::Plain, payload_at + 1),
-        0x03 => {
-            let message = OperationStateMessage::read(bytes, payload_at, base_offset)?;
-            let payload_end = message.end_offset() - base_offset;
-            (
-                OperationStateStatusPayload::Diagnostic { message },
-                payload_end,
-            )
-        }
-        0x02 | 0x1e | 0xff => {
-            let precomputed_end = opaque_lane_starts
-                .and_then(|starts| operation_state_opaque_lane_end_at(starts, payload_at, end));
-            let payload_end = precomputed_end
-                .or_else(|| operation_state_opaque_payload_end(bytes, payload_at, end))?;
-            (
-                OperationStateStatusPayload::Opaque {
-                    raw: bytes.get(payload_at..payload_end)?,
-                },
-                payload_end,
-            )
-        }
-        _ => operation_state_link_payload(bytes, payload_at, end, base_offset)?,
-    };
-    (payload_end <= end).then_some(OperationStateStatus {
-        span: SourceSpan::new(base_offset, at, payload_end)?,
-        status_code,
-        object_index,
-        payload,
-    })
-}
-
 /// Decode a bounded sequence of per-object operation-state status rows.
 #[cfg(test)]
 pub fn operation_state_status_table(
@@ -4661,7 +4524,7 @@ pub fn operation_state_status_table(
         let Some(row) = operation_state_status_row_at(bytes, at, end, base_offset, None) else {
             break;
         };
-        at = row.span.local_end();
+        at = row.end_offset() - base_offset;
         rows.push(row);
     }
     (!rows.is_empty()).then_some(OperationStateStatusTable {

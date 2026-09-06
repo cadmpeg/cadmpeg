@@ -5,7 +5,6 @@
 use super::*;
 use crate::om::control_leading_value::ControlLeadingValue;
 use crate::om::reference_value::{DirectReference, RecordReference};
-use crate::om::state_index::StateIndexToken;
 use crate::om::state_message::StateMessage;
 use crate::printable_string::PrintableString;
 pub(crate) mod material_texture;
@@ -37,6 +36,8 @@ use roll_forward::OmRollForwardStateGroup;
 use crate::om::IndexedStore;
 pub(crate) mod state_slot_lane;
 use state_slot_lane::OmOperationStateSlotLane;
+pub(crate) mod state_status;
+use state_status::OmOperationStateStatus;
 
 /// Semantic family declared by a linked OM section's class registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -160,58 +161,6 @@ pub struct OmOperationStateMessage {
     pub source_entry: String,
     /// Absolute file offset of the opening `03` marker.
     pub source_offset: u64,
-}
-
-/// Native payload retained by one operation-state status row.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "state_index_wire::OmOperationStateStatusPayloadWire",
-    into = "state_index_wire::OmOperationStateStatusPayloadWire"
-)]
-pub enum OmOperationStateStatusPayload {
-    /// Normal built/healthy state marker.
-    Plain,
-    /// Status carrying one linked object index.
-    Linked {
-        /// Serialized link discriminator.
-        link_code: crate::om::state_link::StateLinkCode,
-        /// Linked object index.
-        object_index: StateIndexToken,
-    },
-    /// Status carrying an inline diagnostic message.
-    Diagnostic(StateMessage<String>),
-    /// Typed status whose payload grammar is not assigned.
-    Opaque {
-        /// Exact bounded payload bytes.
-        raw: Vec<u8>,
-    },
-}
-
-/// One per-object operation-state status row.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "state_index_wire::OmOperationStateStatusWire",
-    into = "state_index_wire::OmOperationStateStatusWire"
-)]
-pub struct OmOperationStateStatus {
-    /// Globally unique status-row identity.
-    pub id: String,
-    /// Owning feature-history section link.
-    pub section_link: String,
-    /// Zero-based row ordinal within the status table.
-    pub ordinal: u32,
-    /// Decoded non-null status-code value.
-    pub status_code: StateIndexToken,
-    /// Decoded non-null object carrying the status.
-    pub object_index: StateIndexToken,
-    /// Exact typed status payload.
-    pub payload: OmOperationStateStatusPayload,
-    /// Directory entry containing the feature-history section.
-    pub source_entry: String,
-    /// Absolute file offset of the status-code token.
-    pub source_offset: u64,
-    /// Absolute exclusive end offset of the row.
-    pub end_offset: u64,
 }
 
 /// Decode internally pointed record areas from linked OM sections.
@@ -492,39 +441,14 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                 .enumerate()
                 .filter_map(move |(ordinal, row)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let status_code = row.status_code;
-                    let object_index = row.object_index;
-                    let payload = match row.payload {
-                        crate::om::OperationStateStatusPayload::Plain => {
-                            OmOperationStateStatusPayload::Plain
-                        }
-                        crate::om::OperationStateStatusPayload::Linked {
-                            link_code,
-                            object_index,
-                        } => OmOperationStateStatusPayload::Linked {
-                            link_code,
-                            object_index,
-                        },
-                        crate::om::OperationStateStatusPayload::Diagnostic { message } => {
-                            OmOperationStateStatusPayload::Diagnostic(message.body().into_owned())
-                        }
-                        crate::om::OperationStateStatusPayload::Opaque { raw } => {
-                            OmOperationStateStatusPayload::Opaque { raw: raw.to_vec() }
-                        }
-                    };
-                    Some(OmOperationStateStatus {
-                        id: format!(
-                            "nx:feature-history:operation-state-status#{section_key}-{ordinal:010}"
-                        ),
-                        section_link: link.id.clone(),
+                    OmOperationStateStatus::new(
+                        format!("nx:feature-history:operation-state-status#{section_key}-{ordinal:010}"),
+                        link.id.clone(),
                         ordinal,
-                        status_code,
-                        object_index,
-                        payload,
-                        source_entry: entry.name.clone(),
-                        source_offset: entry_offset + row.span.offset() as u64,
-                        end_offset: entry_offset + row.span.end_offset() as u64,
-                    })
+                        row.body().into_owned(),
+                        entry.name.clone(),
+                        entry_offset.checked_add(row.offset() as u64)?,
+                    )
                 })
                 .collect()
         })
