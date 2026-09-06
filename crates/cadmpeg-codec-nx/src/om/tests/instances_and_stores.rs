@@ -90,13 +90,13 @@ fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
     assert_eq!(
         lane.trailing_references
             .iter()
-            .map(|reference| reference.object_index)
+            .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
         [15850, 15851]
     );
     assert_eq!(lane.trailing_references[0].offset, 280);
     assert_eq!(
-        lane.trailing_references[0].raw_object_index,
+        lane.trailing_references[0].token.raw().to_vec(),
         [0x90, 0x3d, 0xea]
     );
 
@@ -227,7 +227,7 @@ fn om_geometry_instance_reference_requires_one_complete_field() {
         label,
     };
     let field = super::pattern_payload_references(record).expect("complete field");
-    assert_eq!(field.references[0].object_index, 801);
+    assert_eq!(field.references[0].token.value(), 801);
     assert_eq!(field.references[0].offset, 205);
 
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
@@ -256,7 +256,7 @@ fn om_point_feature_header_requires_the_complete_leading_envelope() {
         label,
     };
     let header = super::point_feature_payload_header(record).expect("complete header");
-    assert_eq!(header.reference.object_index, 7311);
+    assert_eq!(header.reference.token.value(), 7311);
     assert_eq!(header.reference.offset, 207);
     assert_eq!(header.mode, 0x02);
 
@@ -355,7 +355,7 @@ fn om_draft_feature_references_require_one_complete_graph() {
         field
             .references
             .clone()
-            .map(|reference| reference.object_index),
+            .map(|reference| reference.token.value()),
         [7036, 7037, 7038, 7039]
     );
     assert_eq!(
@@ -450,7 +450,7 @@ fn om_surface_feature_references_require_the_complete_common_envelope() {
         field
             .references
             .iter()
-            .map(|reference| reference.object_index)
+            .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
         [582, 583, 584, 585, 586, 587, 588, 589, 590, 591, 592, 598, 599, 600,]
     );
@@ -513,12 +513,12 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
         field
             .references
             .iter()
-            .map(|reference| reference.object_index)
+            .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
         [289, 290, 291, 292, 293, 294, 295, 296, 297]
     );
     assert_eq!(field.references[0].offset, 205);
-    assert_eq!(field.references[8].raw_object_index, [0xf1, 0x01, 0x29]);
+    assert_eq!(field.references[8].token.raw().to_vec(), [0xf1, 0x01, 0x29]);
     assert_eq!(field.trailing_control.get(), 1);
     assert_eq!(field.trailing_value, [0x5e, 0x38]);
 
@@ -580,8 +580,8 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     assert_eq!(group.branches.as_slice()[0].mode.get(), 0x15);
     assert_eq!(group.branches.as_slice()[0].members.declared_count(), 2);
     assert_eq!(group.branches.as_slice()[0].members.state_lane(), [0; 5]);
-    assert_eq!(group.branches.as_slice()[0].members.as_slice()[0].object_index, 0x31);
-    assert_eq!(group.branches.as_slice()[0].terminal.object_index, 0x32);
+    assert_eq!(group.branches.as_slice()[0].members.as_slice()[0].token.value(), 0x31);
+    assert_eq!(group.branches.as_slice()[0].terminal.token.value(), 0x32);
     assert_eq!(<[u8; 2]>::from(group.branches.as_slice()[0].suffix), [0x81, 0x58]);
     assert_eq!(group.terminator.bytes(), &[0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]);
 
@@ -628,12 +628,12 @@ fn om_surface_feature_branches_require_one_complete_counted_group() {
     assert_eq!(group.branches.as_slice()[0].members.declared_count(), 4);
     assert!(group.branches.as_slice()[0].witnessed);
     assert_eq!(group.branches.as_slice()[0].members.len(), 3);
-    assert_eq!(group.branches.as_slice()[0].terminal.object_index, 7159);
+    assert_eq!(group.branches.as_slice()[0].terminal.token.value(), 7159);
     assert_eq!(group.branches.as_slice()[0].suffix, [0x81, 0x58, 0x01, 0x02]);
     assert_eq!(group.branches.as_slice()[1].members.declared_count(), 5);
     assert!(!group.branches.as_slice()[1].witnessed);
     assert_eq!(group.branches.as_slice()[1].members.len(), 4);
-    assert_eq!(group.branches.as_slice()[1].terminal.object_index, 7164);
+    assert_eq!(group.branches.as_slice()[1].terminal.token.value(), 7164);
     assert_eq!(group.branches.as_slice()[1].suffix, [0x81, 0x1c]);
 
     let studio_payload = [
@@ -695,7 +695,7 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
     let references: [super::PayloadObjectReference; 5] =
         field.references.clone().try_into().unwrap();
     assert_eq!(
-        references.clone().map(|reference| reference.object_index),
+        references.clone().map(|reference| reference.token.value()),
         [255, 256, 257, 258, 259]
     );
     assert_eq!(
@@ -706,7 +706,7 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
         field
             .references
             .iter()
-            .map(|reference| reference.raw_object_index.as_slice())
+            .map(|reference| reference.token.raw())
             .collect::<Vec<_>>(),
         [
             &[0xf0, 0xff][..],
@@ -725,7 +725,7 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
     .unwrap();
     assert_eq!(field.declared_count, 0);
     assert_eq!(field.references.len(), 1);
-    assert_eq!(field.references[0].object_index, 0x42);
+    assert_eq!(field.references[0].token.value(), 0x42);
     let two = b"\x01\x00\x01\x02\xf0\x41\x00\x00\xf0\x42\x01\x00\x00\x00";
     let field = super::sketch_payload_references(super::OperationRecord {
         payload: two,
@@ -738,7 +738,7 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
         field
             .references
             .iter()
-            .map(|reference| reference.object_index)
+            .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
         [0x41, 0x42]
     );
@@ -783,11 +783,11 @@ fn om_extrude_profile_references_require_matching_witness_field() {
     assert_eq!(field.references[1].witness_offset.unwrap(), 218);
     let references = field.references;
     assert_eq!(references.len(), 2);
-    assert_eq!(references[0].reference.object_index, 255);
-    assert_eq!(references[0].reference.raw_object_index, [0xf0, 0xff]);
+    assert_eq!(references[0].reference.token.value(), 255);
+    assert_eq!(references[0].reference.token.raw().to_vec(), [0xf0, 0xff]);
     assert_eq!(references[0].reference.offset, 205);
-    assert_eq!(references[1].reference.object_index, 256);
-    assert_eq!(references[1].reference.raw_object_index, [0xf1, 0x01, 0x00]);
+    assert_eq!(references[1].reference.token.value(), 256);
+    assert_eq!(references[1].reference.token.raw().to_vec(), [0xf1, 0x01, 0x00]);
     assert_eq!(references[1].reference.offset, 207);
 
     let without_witness = &payload[..14];
@@ -898,11 +898,11 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
             .members
             .as_slice()
             .iter()
-            .map(|reference| reference.object_index)
+            .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
         [0x31, 0x32]
     );
-    assert_eq!(branch.terminal.object_index, 0x33);
+    assert_eq!(branch.terminal.token.value(), 0x33);
     assert_eq!(branch.end_offset, 259);
 
     let mut malformed_witness = payload.clone();
@@ -1426,10 +1426,10 @@ fn om_block_construction_field_decodes_ordered_canonical_references() {
     let field = super::block_construction_references(record).unwrap();
     assert_eq!(field.control, 0x26);
     assert_eq!(field.references.len(), 19);
-    assert_eq!(field.references[0].object_index, 1);
-    assert_eq!(field.references[0].raw_object_index, [0xf0, 0x01]);
-    assert_eq!(field.references[18].object_index, 256);
-    assert_eq!(field.references[18].raw_object_index, [0xf1, 0x01, 0x00]);
+    assert_eq!(field.references[0].token.value(), 1);
+    assert_eq!(field.references[0].token.raw().to_vec(), [0xf0, 0x01]);
+    assert_eq!(field.references[18].token.value(), 256);
+    assert_eq!(field.references[18].token.raw().to_vec(), [0xf1, 0x01, 0x00]);
     assert_eq!(field.references[0].offset, 206);
 
     let mut invalid = payload.clone();
@@ -1450,8 +1450,8 @@ fn om_boolean_operations_decode_counted_target_and_tools() {
     let operations = super::boolean_operations_with_labels(bytes, 100, &super::operation_labels(bytes, 100));
     assert_eq!(operations.len(), 1);
     assert_eq!(operations[0].kind, super::BooleanOperationKind::Subtract);
-    assert_eq!(operations[0].target.object_index, 6494);
-    assert_eq!(operations[0].target.raw_object_index, [0x90, 0x19, 0x5e]);
+    assert_eq!(operations[0].target.token.value(), 6494);
+    assert_eq!(operations[0].target.token.raw().to_vec(), [0x90, 0x19, 0x5e]);
     assert_eq!(
         operations[0].target.offset,
         100 + bytes
@@ -1463,7 +1463,7 @@ fn om_boolean_operations_decode_counted_target_and_tools() {
         operations[0]
             .tools
             .iter()
-            .map(|token| token.object_index)
+            .map(|token| token.token.value())
             .collect::<Vec<_>>(),
         [6495, 6468, 6467, 6496]
     );
@@ -1471,7 +1471,7 @@ fn om_boolean_operations_decode_counted_target_and_tools() {
         operations[0]
             .tools
             .iter()
-            .map(|token| token.raw_object_index.clone())
+            .map(|token| token.token.raw().to_vec())
             .collect::<Vec<_>>(),
         [
             vec![0x90, 0x19, 0x5f],

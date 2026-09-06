@@ -566,7 +566,7 @@ fn om_hole_package_lane_retains_the_exact_four_block_group() {
     assert_eq!(
         lane.references
             .iter()
-            .map(|reference| reference.object_index)
+            .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
         [205, 206, 207, 208]
     );
@@ -618,7 +618,7 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
         field
             .references
             .each_ref()
-            .map(|reference| reference.object_index),
+            .map(|reference| reference.token.value()),
         [42, 43, 44, 45, 46, 47, 48, 49]
     );
     assert_eq!(
@@ -632,7 +632,7 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
         field
             .references
             .iter()
-            .map(|reference| reference.raw_object_index.clone())
+            .map(|reference| reference.token.raw().to_vec())
             .collect::<Vec<_>>(),
         (42..50).map(|value| vec![0xf0, value]).collect::<Vec<_>>()
     );
@@ -728,7 +728,7 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
         double
             .references
             .each_ref()
-            .map(|reference| reference.object_index),
+            .map(|reference| reference.token.value()),
         [631, 632]
     );
     assert_eq!(
@@ -755,7 +755,7 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
         count_three
             .references
             .each_ref()
-            .map(|reference| reference.object_index),
+            .map(|reference| reference.token.value()),
         [719, 720]
     );
     assert_eq!(
@@ -1371,21 +1371,21 @@ fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
         graph
             .first
             .each_ref()
-            .map(|reference| reference.object_index),
+            .map(|reference| reference.token.value()),
         [6464, 6465]
     );
     assert_eq!(
         graph
             .second
             .each_ref()
-            .map(|reference| reference.object_index),
+            .map(|reference| reference.token.value()),
         [6448, 6449, 6450]
     );
     assert_eq!(
         graph
             .first
             .each_ref()
-            .map(|reference| reference.raw_object_index.as_slice()),
+            .map(|reference| reference.token.raw()),
         [[0x90, 0x19, 0x40].as_slice(), [0x90, 0x19, 0x41].as_slice(),]
     );
 

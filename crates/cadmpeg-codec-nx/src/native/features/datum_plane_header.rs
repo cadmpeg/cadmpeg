@@ -101,8 +101,8 @@ pub(crate) fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureD
                     crate::om::datum_plane_double_reference_branch(record).map(|branch| {
                         Branch::Double {
                             objects: branch.references.map(|reference| FeatureIndexToken {
-                                value: reference.object_index,
-                                raw: reference.raw_object_index,
+                                value: reference.token.value(),
+                                raw: reference.token.raw().to_vec(),
                                 source_offset: entry_offset + reference.offset as u64,
                             }),
                         }
