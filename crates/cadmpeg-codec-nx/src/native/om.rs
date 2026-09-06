@@ -1771,8 +1771,12 @@ pub struct DataBlock {
 /// Admitted complete grammar selected for one offset-store control block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataBlockControlFormKind {
-    ZeroPrefixed,
-    ProductAnchored { leading: Option<ControlLeadingValue> },
+    ZeroPrefixed { value_count: std::num::NonZeroU32 },
+    ProductAnchored {
+        leading: Option<ControlLeadingValue>,
+        value_count: std::num::NonZeroU32,
+        byte_len: std::num::NonZeroU64,
+    },
 }
 
 /// Atomic classification of one complete offset-store control lane.
@@ -1788,12 +1792,23 @@ pub struct DataBlockControlForm {
     pub data_block: String,
     /// Selected complete control grammar.
     pub kind: DataBlockControlFormKind,
-    /// Number of values in the admitted control array.
-    pub value_count: u32,
-    /// Exact serialized opening control-block length.
-    pub byte_len: u64,
     /// Absolute file offset of the control block.
     pub source_offset: u64,
+}
+
+impl DataBlockControlFormKind {
+    pub fn value_count(self) -> u32 {
+        match self {
+            Self::ZeroPrefixed { value_count } | Self::ProductAnchored { value_count, .. } => value_count.get(),
+        }
+    }
+
+    pub fn byte_len(self) -> u64 {
+        match self {
+            Self::ZeroPrefixed { value_count } => u64::from(value_count.get()) * 4,
+            Self::ProductAnchored { byte_len, .. } => byte_len.get(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1820,10 +1835,10 @@ enum DataBlockControlFormKindWire {
 impl From<DataBlockControlForm> for DataBlockControlFormWire {
     fn from(value: DataBlockControlForm) -> Self {
         let (kind, leading_value_width, leading_value) = match value.kind {
-            DataBlockControlFormKind::ZeroPrefixed => {
+            DataBlockControlFormKind::ZeroPrefixed { .. } => {
                 (DataBlockControlFormKindWire::ZeroPrefixed, None, None)
             }
-            DataBlockControlFormKind::ProductAnchored { leading } => (
+            DataBlockControlFormKind::ProductAnchored { leading, .. } => (
                 DataBlockControlFormKindWire::ProductAnchored,
                 leading.map(ControlLeadingValue::width),
                 leading.map(ControlLeadingValue::value),
@@ -1833,10 +1848,10 @@ impl From<DataBlockControlForm> for DataBlockControlFormWire {
             id: value.id,
             data_block: value.data_block,
             kind,
-            value_count: value.value_count,
+            value_count: value.kind.value_count(),
             leading_value_width,
             leading_value,
-            byte_len: value.byte_len,
+            byte_len: value.kind.byte_len(),
             source_offset: value.source_offset,
         }
     }
@@ -1846,16 +1861,26 @@ impl TryFrom<DataBlockControlFormWire> for DataBlockControlForm {
     type Error = String;
 
     fn try_from(wire: DataBlockControlFormWire) -> Result<Self, Self::Error> {
+        let value_count = std::num::NonZeroU32::new(wire.value_count)
+            .ok_or("control-form value_count must be nonzero")?;
+        let byte_len = std::num::NonZeroU64::new(wire.byte_len)
+            .ok_or("control-form byte_len must be nonzero")?;
         let kind = match (wire.kind, wire.leading_value_width, wire.leading_value) {
             (DataBlockControlFormKindWire::ZeroPrefixed, None, None) => {
-                DataBlockControlFormKind::ZeroPrefixed
+                let kind = DataBlockControlFormKind::ZeroPrefixed { value_count };
+                if kind.byte_len() != byte_len.get() {
+                    return Err("control-form byte_len must equal four times value_count".to_owned());
+                }
+                kind
             }
             (DataBlockControlFormKindWire::ProductAnchored, None, None) => {
-                DataBlockControlFormKind::ProductAnchored { leading: None }
+                DataBlockControlFormKind::ProductAnchored { leading: None, value_count, byte_len }
             }
             (DataBlockControlFormKindWire::ProductAnchored, Some(width), Some(value)) => {
                 DataBlockControlFormKind::ProductAnchored {
                     leading: Some(ControlLeadingValue::from_wire(width, value)?),
+                    value_count,
+                    byte_len,
                 }
             }
             _ => {
@@ -1869,8 +1894,6 @@ impl TryFrom<DataBlockControlFormWire> for DataBlockControlForm {
             id: wire.id,
             data_block: wire.data_block,
             kind,
-            value_count: wire.value_count,
-            byte_len: wire.byte_len,
             source_offset: wire.source_offset,
         })
     }
@@ -4039,29 +4062,30 @@ pub fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlFo
         .enumerate()
         .filter_map(|(section_ordinal, (entry, section))| {
             let (control, _, records) = section.as_offset_only()?;
-            let (kind, value_count) = match crate::om::offset_store_control_form(
+            let kind = match crate::om::offset_store_control_form(
                 control.bytes,
                 records.first().map(|record| record.bytes),
             )? {
                 crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => {
-                    (DataBlockControlFormKind::ZeroPrefixed, values.len())
+                    DataBlockControlFormKind::ZeroPrefixed {
+                        value_count: std::num::NonZeroU32::new(u32::try_from(values.len()).ok()?)?,
+                    }
                 }
                 crate::om::OffsetStoreControlForm::ProductAnchored {
                     leading_value,
                     values,
                 } => {
-                    (
-                        DataBlockControlFormKind::ProductAnchored { leading: leading_value },
-                        values.len(),
-                    )
+                    DataBlockControlFormKind::ProductAnchored {
+                        leading: leading_value,
+                        value_count: std::num::NonZeroU32::new(u32::try_from(values.len()).ok()?)?,
+                        byte_len: std::num::NonZeroU64::new(control.bytes.len() as u64)?,
+                    }
                 }
             };
             Some(DataBlockControlForm {
                 id: format!("nx:om-data-block-control-forms:form#{section_ordinal}"),
                 data_block: format!("nx:om-data-blocks-{section_ordinal}:block#0"),
                 kind,
-                value_count: u32::try_from(value_count).ok()?,
-                byte_len: control.bytes.len() as u64,
                 source_offset: entry.file_span.map_or(0, |(offset, _)| offset)
                     + control.offset as u64,
             })
@@ -6539,9 +6563,9 @@ mod tests {
         let forms = super::data_block_control_forms(&container);
         assert_eq!(forms.len(), 1);
         assert_eq!(forms[0].data_block, blocks[0].id);
-        assert_eq!(forms[0].kind, super::DataBlockControlFormKind::ZeroPrefixed);
-        assert_eq!(forms[0].value_count, 2);
-        assert_eq!(forms[0].byte_len, blocks[0].byte_len);
+        assert_eq!(forms[0].kind, super::DataBlockControlFormKind::ZeroPrefixed { value_count: std::num::NonZeroU32::new(2).unwrap() });
+        assert_eq!(forms[0].kind.value_count(), 2);
+        assert_eq!(forms[0].kind.byte_len(), blocks[0].byte_len);
         let control_values = super::data_block_control_values(&container);
         assert_eq!(control_values.len(), 2);
         assert_eq!(control_values[0].data_block, blocks[0].id);
@@ -6612,6 +6636,28 @@ mod tests {
     }
 
     #[test]
+    fn control_form_wire_checks_nonempty_counts_and_derived_length() {
+        let json = r#"{"id":"c","data_block":"b","kind":"zero_prefixed","value_count":2,"byte_len":8,"source_offset":0}"#;
+        let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        for (field, invalid) in [("value_count", 0), ("byte_len", 0), ("byte_len", 7)] {
+            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            wire[field] = invalid.into();
+            assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
+                .unwrap_err().to_string().contains(field));
+        }
+        let json = r#"{"id":"c","data_block":"b","kind":"product_anchored","value_count":2,"byte_len":1,"source_offset":0}"#;
+        let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        for field in ["value_count", "byte_len"] {
+            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            wire[field] = 0.into();
+            assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
+                .unwrap_err().to_string().contains(field));
+        }
+    }
+
+    #[test]
     fn control_leading_value_preserves_wire_and_rejects_width_mismatch() {
         let json = r#"{"id":"c","data_block":"b","kind":"product_anchored","value_count":2,"leading_value_width":2,"leading_value":0,"byte_len":26,"source_offset":0}"#;
         let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
@@ -6638,9 +6684,11 @@ mod tests {
             forms[0].kind,
             super::DataBlockControlFormKind::ProductAnchored {
                 leading: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()),
+                value_count: std::num::NonZeroU32::new(2).unwrap(),
+                byte_len: std::num::NonZeroU64::new(26).unwrap(),
             }
         );
-        assert_eq!(forms[0].value_count, 2);
+        assert_eq!(forms[0].kind.value_count(), 2);
         assert!(super::data_block_control_values(&container).is_empty());
         assert_eq!(super::data_block_control_index_values(&container).len(), 2);
     }
