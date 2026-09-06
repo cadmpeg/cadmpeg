@@ -17,16 +17,16 @@ use crate::sketch::{
 };
 
 use crate::native::protein::{ProteinAssetRecord, ProteinRecord, ProteinRejectionRecord};
+use crate::native::ufrx::UfrxRecord;
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
-    DatabaseRecord, EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord,
-    MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
+    DatabaseRecord, INVENTOR_NATIVE_VERSION, MetaSectionRecord, MetaTypeRecord,
+    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
     PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, RevisionRecord,
     RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
     SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
-    StructuralIssueRecord, UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord,
-    UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
+    StructuralIssueRecord, UnpairedSegmentRecord,
 };
 use crate::pmdc::PmDcReferenceList;
 use crate::record_issue::RecordIssue;
@@ -1331,11 +1331,7 @@ struct NativeData {
     protein: ProteinRecord,
     protein_assets: Vec<ProteinAssetRecord>,
     protein_rejections: Vec<ProteinRejectionRecord>,
-    ufrx: Vec<UfrxRecord>,
-    ufrx_model_states: Vec<UfrxModelStateRecord>,
-    ufrx_occurrences: Vec<UfrxOccurrenceRecord>,
-    embedded_references: Vec<EmbeddedReferenceRecord>,
-    external_references: Vec<ExternalReferenceRecord>,
+    ufrx: UfrxRecord,
     assembly_occurrences: Vec<AssemblyOccurrenceRecord>,
     assembly_placements: Vec<AssemblyPlacementRecord>,
     assembly_record_issues: Vec<RecordIssue>,
@@ -1394,11 +1390,7 @@ impl NativeData {
             protein: ProteinRecord::read(namespace)?,
             protein_assets: namespace.arena_as("protein_assets")?,
             protein_rejections: namespace.arena_as("protein_rejections")?,
-            ufrx: namespace.arena_as("ufrx")?,
-            ufrx_model_states: namespace.arena_as("ufrx_model_states")?,
-            ufrx_occurrences: namespace.arena_as("ufrx_occurrences")?,
-            embedded_references: namespace.arena_as("embedded_references")?,
-            external_references: namespace.arena_as("external_references")?,
+            ufrx: UfrxRecord::read(namespace)?,
             assembly_occurrences: namespace.arena_as("assembly_occurrences")?,
             assembly_placements: namespace.arena_as("assembly_placements")?,
             assembly_record_issues: namespace.arena_as("assembly_record_issues")?,
@@ -1871,35 +1863,28 @@ fn validate_protein_record_coverage(data: &NativeData, findings: &mut Vec<Findin
 }
 
 fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
-    if data.ufrx.len() != 1 {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!(
-                "Inventor native data has {} UFRxDoc state records",
-                data.ufrx.len()
-            ),
-            None,
-        ));
-        return;
-    }
     unique(
         findings,
-        data.external_references.iter().map(|record| record.ordinal),
+        data.ufrx
+            .external_references()
+            .iter()
+            .map(|record| record.ordinal),
         "external reference ordinal",
     );
     unique(
         findings,
-        data.ufrx_model_states.iter().map(|record| record.ordinal),
+        data.ufrx.model_states().iter().map(|record| record.ordinal),
         "UFRxDoc model-state ordinal",
     );
     unique(
         findings,
-        data.external_references
+        data.ufrx
+            .external_references()
             .iter()
             .map(|record| record.reference_id),
         "external reference id",
     );
-    let record = &data.ufrx[0];
+    let record = &data.ufrx;
     if let UfrxRecord::Malformed { id, detail, .. } = record {
         findings.push(finding(
             Check::NativeLinks,
@@ -1908,11 +1893,12 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         ));
     }
     let model_state_ordinals = data
-        .ufrx_model_states
+        .ufrx
+        .model_states()
         .iter()
         .map(|state| state.ordinal)
         .collect::<HashSet<_>>();
-    for state in &data.ufrx_model_states {
+    for state in data.ufrx.model_states() {
         if state.name.is_empty() || state.suffix_len != 77 || state.suffix_sha256.len() != 64 {
             findings.push(finding(
                 Check::NativeLinks,
@@ -1921,8 +1907,9 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             ));
         }
     }
-    if model_state_ordinals.len() != data.ufrx_model_states.len()
-        || model_state_ordinals != (0..data.ufrx_model_states.len() as u32).collect::<HashSet<_>>()
+    if model_state_ordinals.len() != data.ufrx.model_states().len()
+        || model_state_ordinals
+            != (0..data.ufrx.model_states().len() as u32).collect::<HashSet<_>>()
     {
         findings.push(finding(
             Check::NativeLinks,
@@ -1960,7 +1947,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             ));
         }
     }
-    for reference in &data.external_references {
+    for reference in data.ufrx.external_references() {
         if reference.path.is_empty()
             && reference
                 .document_id
@@ -1976,10 +1963,13 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     }
     unique(
         findings,
-        data.embedded_references.iter().map(|record| record.ordinal),
+        data.ufrx
+            .embedded_references()
+            .iter()
+            .map(|record| record.ordinal),
         "embedded reference ordinal",
     );
-    for reference in &data.embedded_references {
+    for reference in data.ufrx.embedded_references() {
         if reference.record_len == 0 || reference.record_sha256.len() != 64 {
             findings.push(finding(
                 Check::NativeLinks,
@@ -1990,13 +1980,15 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     }
     unique(
         findings,
-        data.ufrx_occurrences
+        data.ufrx
+            .occurrences()
             .iter()
             .map(|occurrence| occurrence.occurrence_id),
         "UFRxDoc occurrence id",
     );
     let reference_ids = data
-        .external_references
+        .ufrx
+        .external_references()
         .iter()
         .map(|reference| reference.reference_id)
         .collect::<HashSet<_>>();
@@ -2007,7 +1999,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         .collect::<HashSet<_>>();
     let mut actual_counts = HashMap::<u32, u64>::new();
     let assembly_document = is_assembly_document(ir);
-    for occurrence in &data.ufrx_occurrences {
+    for occurrence in data.ufrx.occurrences() {
         *actual_counts
             .entry(occurrence.file_reference_id)
             .or_default() += 1;
@@ -2025,7 +2017,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             ));
         }
     }
-    for reference in &data.external_references {
+    for reference in data.ufrx.external_references() {
         if actual_counts
             .get(&reference.reference_id)
             .copied()
@@ -2078,9 +2070,10 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
         }
     }
-    if is_assembly_document(ir) && !data.external_references.is_empty() {
+    if is_assembly_document(ir) && !data.ufrx.external_references().is_empty() {
         let declared = data
-            .external_references
+            .ufrx
+            .external_references()
             .iter()
             .map(|reference| u64::from(reference.occurrence_count))
             .sum::<u64>();
@@ -2106,8 +2099,8 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         ));
     }
     let mut projected = crate::assembly::project_occurrences(
-        &data.ufrx_occurrences,
-        &data.external_references,
+        data.ufrx.occurrences(),
+        data.ufrx.external_references(),
         &data.assembly_occurrences,
         &data.assembly_placements,
     );

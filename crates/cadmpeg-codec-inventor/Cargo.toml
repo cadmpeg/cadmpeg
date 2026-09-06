@@ -26,11 +26,11 @@ cadmpeg-protein.workspace = true
 encoding_rs.workspace = true
 schemars = { workspace = true, optional = true }
 serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 cadmpeg-test-support = { workspace = true }
 flate2.workspace = true
-serde_json.workspace = true
 zip.workspace = true
 
 [lints]

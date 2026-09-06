@@ -3,19 +3,17 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::ids::OccurrenceId;
 use cadmpeg_ir::products::{
     ExternalDocumentReference, Occurrence, OccurrenceParent, PrototypeReference,
 };
 use cadmpeg_ir::transform::Transform;
 
+use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
+use crate::native::{AssemblyOccurrenceRecord, AssemblyPlacementRecord};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
-use crate::native::{
-    AssemblyOccurrenceRecord, AssemblyPlacementRecord, ExternalReferenceRecord,
-    UfrxOccurrenceRecord,
-};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const SUPPRESSED_REFERENCE_STATE: u16 = 0x2000;

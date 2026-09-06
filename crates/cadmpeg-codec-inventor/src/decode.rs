@@ -3,10 +3,10 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_asm::brep::transfer::{AsmTransferRemainder, transfer_into_ir};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -19,22 +19,27 @@ use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, Unknown
 
 use crate::container::InventorContainer;
 use crate::database::{RevisionPayload, VersionTuple};
-use crate::dialect::{dialect_loss, kernel_dialect_loss, DialectRecovery};
+use crate::dialect::{DialectRecovery, dialect_loss, kernel_dialect_loss};
 use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
-use crate::native::protein::{ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord};
+use crate::native::protein::{
+    ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord,
+};
+use crate::native::ufrx::{
+    EmbeddedReferenceRecord, ExternalReferenceRecord, UfrxModelStateParameterRecord,
+    UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord, UfrxRepresentationRecord,
+};
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
-    DatabaseRecord, EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord,
-    MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
+    DatabaseRecord, INVENTOR_NATIVE_VERSION, MetaSectionRecord, MetaTypeRecord,
+    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
     PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
     RevisionPayloadForm, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
     SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
-    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxModelStateParameterRecord,
-    UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord, UfrxRepresentationRecord,
-    UnpairedMember, UnpairedSegmentRecord, VersionTupleRecord, INVENTOR_NATIVE_VERSION,
+    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UnpairedMember,
+    UnpairedSegmentRecord, VersionTupleRecord,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
@@ -302,48 +307,30 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .collect::<Vec<_>>();
     ir.model.appearances = material_catalog.appearances;
     let protein_appearance_count = ir.model.appearances.len();
-    let ufrx_projection = match &container.ufrx {
-        UfrxState::Absent => (
-            UfrxRecord::Absent {
-                id: "inventor:ufrx:state#root".into(),
-            },
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
-        UfrxState::Malformed { stream, detail } => (
-            UfrxRecord::Malformed {
-                id: "inventor:ufrx:state#root".into(),
-                directory_id: stream.directory_id(),
-                detail: detail.clone(),
-            },
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
+    let ufrx = match &container.ufrx {
+        UfrxState::Absent => UfrxRecord::Absent {
+            id: "inventor:ufrx:state#root".into(),
+        },
+        UfrxState::Malformed { stream, detail } => UfrxRecord::Malformed {
+            id: "inventor:ufrx:state#root".into(),
+            directory_id: stream.directory_id(),
+            detail: detail.clone(),
+        },
         UfrxState::Unsupported {
             stream,
             schema,
             section_versions,
             source,
             detail,
-        } => (
-            UfrxRecord::Unsupported {
-                id: "inventor:ufrx:state#root".into(),
-                directory_id: stream.directory_id(),
-                schema: *schema,
-                section_versions: section_versions.clone(),
-                tail_len: source.window().len() as u64,
-                tail_sha256: sha256_hex(source.window()),
-                detail: detail.clone(),
-            },
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
+        } => UfrxRecord::Unsupported {
+            id: "inventor:ufrx:state#root".into(),
+            directory_id: stream.directory_id(),
+            schema: *schema,
+            section_versions: section_versions.clone(),
+            tail_len: source.window().len() as u64,
+            tail_sha256: sha256_hex(source.window()),
+            detail: detail.clone(),
+        },
         UfrxState::Parsed(document) => {
             let model_states = document
                 .model_states
@@ -432,40 +419,36 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     record_sha256: sha256_hex(occurrence.source.window()),
                 })
                 .collect::<Vec<_>>();
-            (
-                UfrxRecord::ParsedPrefix {
-                    id: "inventor:ufrx:state#root".into(),
-                    directory_id: document.stream.directory_id(),
-                    schema: document.schema,
-                    section_versions: document.section_versions.clone(),
-                    original_file_name: document.original_file_name.clone(),
-                    caption: document.caption.clone(),
-                    representation: document.representation.as_ref().map(|state| {
-                        UfrxRepresentationRecord {
-                            prefix: state.prefix,
-                            active_representation: state.active_representation.clone(),
-                            active_representation_kind: state.active_representation_kind.clone(),
-                            secondary_active_lod_state: state.secondary_active_lod_state,
-                            active_model_state: state.active_model_state.clone(),
-                            active_model_state_state: state.active_model_state_state,
-                        }
-                    }),
-                    model_state_count: model_states.len() as u64,
-                    reference_count: references.len() as u64,
-                    embedded_reference_count: embedded.len() as u64,
-                    occurrence_count: occurrences.len() as u64,
-                    tail_len: document.unparsed_tail.window().len() as u64,
-                    tail_sha256: sha256_hex(document.unparsed_tail.window()),
-                },
-                model_states,
-                embedded,
-                references,
-                occurrences,
-            )
+            UfrxRecord::ParsedPrefix {
+                id: "inventor:ufrx:state#root".into(),
+                directory_id: document.stream.directory_id(),
+                schema: document.schema,
+                section_versions: document.section_versions.clone(),
+                original_file_name: document.original_file_name.clone(),
+                caption: document.caption.clone(),
+                representation: document.representation.as_ref().map(|state| {
+                    UfrxRepresentationRecord {
+                        prefix: state.prefix,
+                        active_representation: state.active_representation.clone(),
+                        active_representation_kind: state.active_representation_kind.clone(),
+                        secondary_active_lod_state: state.secondary_active_lod_state,
+                        active_model_state: state.active_model_state.clone(),
+                        active_model_state_state: state.active_model_state_state,
+                    }
+                }),
+                model_states: model_states,
+                external_references: references,
+                embedded_references: embedded,
+                occurrences: occurrences,
+                tail_len: document.unparsed_tail.window().len() as u64,
+                tail_sha256: sha256_hex(document.unparsed_tail.window()),
+            }
         }
     };
-    let (ufrx, ufrx_model_states, embedded_references, external_references, ufrx_occurrences) =
-        ufrx_projection;
+    let ufrx_model_states = ufrx.model_states();
+    let external_references = ufrx.external_references();
+    let embedded_references = ufrx.embedded_references();
+    let ufrx_occurrences = ufrx.occurrences();
     if matches!(document_kind, DocumentKind::Unknown | DocumentKind::Mixed) {
         if let Some(property_kind) = metadata.document_kind.take() {
             document_kind = property_kind;
@@ -1094,11 +1077,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     protein.install(namespace)?;
     namespace.set_arena("protein_assets", &protein_assets)?;
     namespace.set_arena("protein_rejections", &protein_rejections)?;
-    namespace.set_arena("ufrx", std::slice::from_ref(&ufrx))?;
-    namespace.set_arena("ufrx_model_states", &ufrx_model_states)?;
-    namespace.set_arena("embedded_references", &embedded_references)?;
-    namespace.set_arena("ufrx_occurrences", &ufrx_occurrences)?;
-    namespace.set_arena("external_references", &external_references)?;
+    ufrx.install(namespace)?;
     namespace.set_arena("assembly_occurrences", &assembly_occurrences)?;
     namespace.set_arena("assembly_placements", &assembly_placements)?;
     namespace.set_arena("assembly_record_issues", &assembly_inventory.issues)?;
