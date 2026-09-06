@@ -357,7 +357,7 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
     for surface in &ir.model.surfaces {
         let Some(id) = surface
             .id
-            .0
+            .as_str()
             .strip_prefix("creo:visibgeom:surface#")
             .or_else(|| surface.id.as_str().strip_prefix("creo:novisgeom:surface#"))
             .and_then(|id| id.parse().ok())
@@ -794,7 +794,7 @@ pub fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u3
         .filter_map(|surface| {
             surface
                 .id
-                .0
+                .as_str()
                 .strip_prefix("creo:visibgeom:surface#")?
                 .parse()
                 .ok()

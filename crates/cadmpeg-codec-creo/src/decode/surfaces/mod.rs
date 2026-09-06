@@ -112,7 +112,10 @@ mod tests {
             offset: 0,
         });
 
-        assert_eq!(native_surface_id(&scan, 17).0, "creo:novisgeom:surface#17");
+        assert_eq!(
+            native_surface_id(&scan, 17).as_str(),
+            "creo:novisgeom:surface#17"
+        );
     }
 }
 

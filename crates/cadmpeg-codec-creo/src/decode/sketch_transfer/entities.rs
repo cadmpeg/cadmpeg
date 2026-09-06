@@ -656,7 +656,7 @@ pub(super) fn transfer_section_entities(
                     "{}:saved_spline#{suffix}",
                     sketch_native_ref(sketch_id)
                 )))
-                .with_geometry_ref(transform.map(|_| curve_id.0.clone())),
+                .with_geometry_ref(transform.map(|_| curve_id.as_str().to_owned())),
         );
         if let Some(external_id) = external_id.filter(|_| generated) {
             generated_saved_geometries.push((external_id, geometry));

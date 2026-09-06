@@ -515,7 +515,7 @@ pub(crate) fn transfer_curve_expression_features(
             .expect("identity grammar");
             annotate(
                 annotations,
-                &curve_id.0,
+                curve_id.as_str(),
                 &source_section,
                 record.offset as u64,
                 "curve_expression_carrier",
@@ -523,7 +523,7 @@ pub(crate) fn transfer_curve_expression_features(
             );
             annotate(
                 annotations,
-                &procedural_id.0,
+                procedural_id.as_str(),
                 &source_section,
                 record.offset as u64,
                 "curve_expression_helix",

@@ -745,7 +745,7 @@ fn model_typed_nonlinear_curve_ids(ir: &CadIr) -> BTreeSet<u32> {
         .filter_map(|curve| {
             let id = curve
                 .id
-                .0
+                .as_str()
                 .strip_prefix("creo:visibgeom:curve#")?
                 .parse()
                 .ok()?;

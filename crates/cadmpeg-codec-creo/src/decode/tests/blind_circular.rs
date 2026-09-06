@@ -1602,7 +1602,9 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     let model_surfaces = std::mem::take(&mut ir.model.surfaces);
     ir.model.surfaces = model_surfaces
         .iter()
-        .filter(|surface| surface.id == SurfaceId::from("creo:visibgeom:surface#33"))
+        .filter(|surface| {
+            surface.id == SurfaceId::mint("creo:visibgeom:surface#33").expect("valid identity")
+        })
         .cloned()
         .collect();
     assert_eq!(

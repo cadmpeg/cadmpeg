@@ -36,7 +36,7 @@ fn unique_model_surface_geometries(ir: &CadIr) -> Option<BTreeMap<u32, SurfaceGe
     for surface in &ir.model.surfaces {
         let Some(surface_id) = surface
             .id
-            .0
+            .as_str()
             .strip_prefix("creo:visibgeom:surface#")
             .and_then(|id| id.parse::<u32>().ok())
         else {
