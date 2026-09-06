@@ -10738,13 +10738,8 @@ pub fn feature_extrude_profile_references(
             };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let witness_offsets = decoded.witness_references.as_ref().map(|witnesses| {
-                witnesses
-                    .iter()
-                    .map(|witness| entry_offset + witness.offset as u64)
-                    .collect::<Vec<_>>()
-            });
-            references.extend(decoded.references.into_iter().enumerate().map(|(ordinal, reference)| {
+            references.extend(decoded.references.into_iter().enumerate().map(|(ordinal, row)| {
+                let reference = row.reference;
                 FeatureExtrudeProfileReference {
                     id: format!(
                         "nx:feature-history:extrude-profile-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
@@ -10752,9 +10747,7 @@ pub fn feature_extrude_profile_references(
                     operation_label: operation_label.clone(),
                     ordinal: ordinal as u32,
                     field_tag: decoded.field_tag,
-                    witness_source_offset: witness_offsets
-                        .as_ref()
-                        .and_then(|offsets| offsets.get(ordinal).copied()),
+                    witness_source_offset: row.witness_offset.map(|offset| entry_offset + offset as u64),
                     object_index: reference.object_index,
                     raw_object_index: reference.raw_object_index,
                     data_block: unique_offset_data_block(&indexed, reference.object_index),

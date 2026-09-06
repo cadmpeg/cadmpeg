@@ -787,17 +787,16 @@ fn om_extrude_profile_references_require_matching_witness_field() {
     };
     let field = super::extrude_profile_references(record).unwrap();
     assert_eq!(field.field_tag, 0x16);
-    let witnesses = field.witness_references.as_ref().unwrap();
-    assert_eq!(witnesses[0].offset, 216);
-    assert_eq!(witnesses[1].offset, 218);
+    assert_eq!(field.references[0].witness_offset.unwrap(), 216);
+    assert_eq!(field.references[1].witness_offset.unwrap(), 218);
     let references = field.references;
     assert_eq!(references.len(), 2);
-    assert_eq!(references[0].object_index, 255);
-    assert_eq!(references[0].raw_object_index, [0xf0, 0xff]);
-    assert_eq!(references[0].offset, 205);
-    assert_eq!(references[1].object_index, 256);
-    assert_eq!(references[1].raw_object_index, [0xf1, 0x01, 0x00]);
-    assert_eq!(references[1].offset, 207);
+    assert_eq!(references[0].reference.object_index, 255);
+    assert_eq!(references[0].reference.raw_object_index, [0xf0, 0xff]);
+    assert_eq!(references[0].reference.offset, 205);
+    assert_eq!(references[1].reference.object_index, 256);
+    assert_eq!(references[1].reference.raw_object_index, [0xf1, 0x01, 0x00]);
+    assert_eq!(references[1].reference.offset, 207);
 
     let without_witness = &payload[..14];
     let field = super::extrude_profile_references(super::OperationRecord {
@@ -806,7 +805,10 @@ fn om_extrude_profile_references_require_matching_witness_field() {
         ..record
     })
     .unwrap();
-    assert!(field.witness_references.is_none());
+    assert!(field
+        .references
+        .iter()
+        .all(|row| row.witness_offset.is_none()));
     assert_eq!(field.references.len(), 2);
     let mut alternate_tag = payload.to_vec();
     alternate_tag[2] = 0x5d;
