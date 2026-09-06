@@ -1272,10 +1272,10 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             1,
             crate::records::SketchPointClosure::Selector0State0,
             None,
+            0.0,
         ),
         paired_reference: 0,
         coordinates: Point2::new(0.0, 0.0),
-        depth: 0.0,
         companion: None,
     });
     native.sketch_curve_identities.push(SketchCurveIdentity {

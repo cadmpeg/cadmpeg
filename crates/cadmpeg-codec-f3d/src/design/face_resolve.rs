@@ -2143,7 +2143,7 @@ pub(crate) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
 }
 
 pub(crate) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
-    point.depth.is_finite().then_some(point.depth)
+    point.depth().is_finite().then_some(point.depth())
 }
 
 #[cfg(test)]

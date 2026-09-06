@@ -1358,7 +1358,7 @@ pub(crate) fn decode_sketch_points_from_stream(
         let (u, v, depth) = (
             decoded.coordinates[0] * 10.0,
             decoded.coordinates[1] * 10.0,
-            decoded.coordinates[2] * 10.0,
+            decoded.record_form.depth(),
         );
         if !u.is_finite() || !v.is_finite() || !depth.is_finite() {
             return Err(CodecError::malformed(format_args!(
@@ -1424,7 +1424,6 @@ pub(crate) fn decode_sketch_points_from_stream(
             record_form: decoded.record_form,
             paired_reference: decoded.paired_reference,
             coordinates: Point2::new(u, v),
-            depth,
             companion: Some(companion),
         });
     }
@@ -2182,7 +2181,7 @@ struct DecodedSketchPoint {
     coordinate_offset: u32,
     record_form: SketchPointRecordForm,
     paired_reference: u32,
-    coordinates: [f64; 3],
+    coordinates: [f64; 2],
 }
 
 impl DecodedSketchPoint {
@@ -2260,7 +2259,7 @@ fn decode_version_zero_sketch_point(
         coordinate_offset,
         record_form: SketchPointRecordForm::Version0 { flag: flag == 1 },
         paired_reference,
-        coordinates: [x, y, 0.0],
+        coordinates: [x, y],
     })
 }
 
@@ -2309,8 +2308,8 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     let coordinates = [
         View::f64_le_at(payload, cursor)?,
         View::f64_le_at(payload, cursor.checked_add(8)?)?,
-        View::f64_le_at(payload, cursor.checked_add(16)?)?,
     ];
+    let depth = View::f64_le_at(payload, cursor.checked_add(16)?)? * 10.0;
     cursor = cursor.checked_add(24)?;
     let selector = View::u64_le_at(payload, cursor)?;
     let state = *payload.get(cursor.checked_add(8)?)?;
@@ -2350,6 +2349,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
                 (
                     SketchPointRecordForm::Version8 {
+                        depth,
                         persistent_id,
                         flags: seven.map(|flag| flag == 1),
                     },
@@ -2360,6 +2360,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
                 (
                     SketchPointRecordForm::Version10 {
+                        depth,
                         persistent_id,
                         flags: seven.map(|flag| flag == 1),
                         closure: crate::records::SketchPointClosure10::from_closure(closure)?,
@@ -2377,6 +2378,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 }
                 (
                     SketchPointRecordForm::Version10InlineTyped {
+                        depth,
                         trailing_reference,
                         persistent_id,
                         flags: seven.map(|flag| flag == 1),
@@ -2395,6 +2397,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 }
                 (
                     SketchPointRecordForm::Version11InlineTyped {
+                        depth,
                         entity_genesis,
                         trailing_reference,
                         persistent_id,
@@ -2416,6 +2419,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
                 (
                     SketchPointRecordForm::Version11 {
+                        depth,
                         entity_genesis,
                         padded_paired_reference,
                         persistent_id,

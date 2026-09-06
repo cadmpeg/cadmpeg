@@ -3417,6 +3417,19 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
         }
         let point: SketchPoint = serde_json::from_value(base.clone()).expect("omitted zero flags");
         assert_eq!(serde_json::to_value(point).unwrap(), base);
+        for depth in [-7.5, 2.5] {
+            let mut wire = base.clone();
+            wire["depth"] = json!(depth);
+            let decoded = serde_json::from_value::<SketchPoint>(wire.clone());
+            if count > 1 {
+                let point = decoded.expect("three-dimensional point form");
+                assert_eq!(point.depth(), depth);
+                assert_eq!(serde_json::to_value(point).unwrap(), wire);
+            } else {
+                let error = decoded.unwrap_err();
+                assert!(error.to_string().contains("depth"), "{error}");
+            }
+        }
         for genesis in [0, 9, u64::MAX] {
             let mut wire = base.clone();
             wire["entity_genesis"] = json!(genesis);

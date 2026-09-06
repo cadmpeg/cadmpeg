@@ -251,10 +251,10 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
             20,
             crate::records::SketchPointClosure::Selector0State0,
             None,
+            0.0,
         ),
         paired_reference: 0,
         coordinates: Point2::new(1.0, 2.0),
-        depth: 0.0,
         companion: None,
     };
     let relation = |stream: &str| SketchRelation {

@@ -812,10 +812,10 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             u64::from(record_index),
             crate::records::SketchPointClosure::Selector0State0,
             None,
+            0.0,
         ),
         paired_reference: 0,
         coordinates: Point2::new(0.0, y),
-        depth: 0.0,
         companion: None,
     };
     let points = [point(40, 0.0), point(41, 2.0)];

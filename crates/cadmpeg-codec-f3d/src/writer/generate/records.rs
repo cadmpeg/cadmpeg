@@ -481,7 +481,7 @@ fn encode_sketch_point(
 ) -> Result<(), CodecError> {
     if !point.coordinates.u.is_finite()
         || !point.coordinates.v.is_finite()
-        || !point.depth.is_finite()
+        || !point.depth().is_finite()
     {
         return Err(CodecError::Malformed(
             "source-less sketch point coordinates must be finite".into(),
@@ -496,6 +496,7 @@ fn encode_sketch_point(
     let SketchPointRecordForm::Version11 {
         padded_paired_reference,
         entity_genesis,
+        depth,
         persistent_id,
         flags,
         closure,
@@ -526,7 +527,7 @@ fn encode_sketch_point(
         .copy_from_slice(&(point.coordinates.u / LEN_TO_MM).to_le_bytes());
     record[97 + shift..105 + shift]
         .copy_from_slice(&(point.coordinates.v / LEN_TO_MM).to_le_bytes());
-    record.extend_from_slice(&(point.depth / LEN_TO_MM).to_le_bytes());
+    record.extend_from_slice(&(depth / LEN_TO_MM).to_le_bytes());
     record.extend_from_slice(&closure.selector().to_le_bytes());
     record.push(closure.state());
     record.extend_from_slice(&[0; 12]);

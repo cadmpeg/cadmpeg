@@ -106,7 +106,8 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
         );
         assert_eq!(decoded.record_form.persistent_id(), Some(500));
         assert_eq!(decoded.paired_reference, COMPANION);
-        assert_eq!(decoded.coordinates, [1.25, -2.5, 0.25]);
+        assert_eq!(decoded.coordinates, [1.25, -2.5]);
+        assert_eq!(decoded.record_form.depth(), 0.25 * 10.0);
         assert_eq!(
             decoded.record_form.closure(),
             SketchPointClosure::from_pair(selector, state)
@@ -125,7 +126,8 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
             assert_eq!(
                 decoded.record_form,
                 SketchPointRecordForm::Version11 {
-            entity_genesis: None,
+                    depth: 0.25 * 10.0,
+                    entity_genesis: None,
                     padded_paired_reference,
                     persistent_id: 500,
                     flags: [false; 8],
@@ -171,7 +173,8 @@ fn version_zero_point_retains_its_one_flag_and_source_local_identity() {
     );
     assert_eq!(decoded.record_form.persistent_id(), None);
     assert_eq!(decoded.record_form.flags(), [1, 0, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(decoded.coordinates, [1.25, -2.5, 0.0]);
+    assert_eq!(decoded.coordinates, [1.25, -2.5]);
+    assert_eq!(decoded.record_form.depth(), 0.0);
     assert_eq!(decoded.record_form.closure(), None);
 }
 

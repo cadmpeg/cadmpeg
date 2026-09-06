@@ -202,10 +202,10 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
             20,
             crate::records::SketchPointClosure::Selector0State0,
             Some(2),
+            0.0,
         ),
         paired_reference: 0,
         coordinates: Point2::new(120.0, 30.0),
-        depth: 0.0,
         companion: None,
     };
     let mut identityless_point = point.clone();
@@ -767,10 +767,10 @@ fn sketch_member_run_backfills_relation_free_owners() {
             u64::from(record_index),
             crate::records::SketchPointClosure::Selector0State0,
             Some(2),
+            0.0,
         ),
         paired_reference: 0,
         coordinates: Point2::new(0.0, 0.0),
-        depth: 0.0,
         companion: None,
     };
 

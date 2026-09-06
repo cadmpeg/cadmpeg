@@ -130,10 +130,10 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             14,
             crate::records::SketchPointClosure::Selector4State0,
             None,
+            0.0,
         ),
         paired_reference: 15,
         coordinates: Point2::new(0.0, 0.0),
-        depth: 0.0,
         companion: None,
     };
     let text = SketchText {
@@ -255,10 +255,10 @@ fn point_closure_does_not_mark_construction_geometry() {
             10,
             crate::records::SketchPointClosure::Selector4State0,
             None,
+            0.0,
         ),
         paired_reference: 11,
         coordinates: Point2::new(0.0, 0.0),
-        depth: 0.0,
         companion: None,
     };
     let standalone_point = SketchPoint {
@@ -272,10 +272,10 @@ fn point_closure_does_not_mark_construction_geometry() {
             11,
             crate::records::SketchPointClosure::Selector2State1,
             None,
+            0.0,
         ),
         paired_reference: 12,
         coordinates: Point2::new(2.0, 0.0),
-        depth: 0.0,
         companion: None,
     };
     let curve = SketchCurveIdentity {
@@ -343,10 +343,10 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             10,
             crate::records::SketchPointClosure::Selector0State0,
             None,
+            0.0,
         ),
         paired_reference: 0,
         coordinates: Point2::new(2.5, 4.0),
-        depth: 0.0,
         companion: None,
     };
     let line = SketchCurveIdentity {
@@ -785,10 +785,10 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             5,
             crate::records::SketchPointClosure::Selector0State0,
             None,
+            4.5,
         ),
         paired_reference: 0,
         coordinates: Point2::new(2.5, 3.5),
-        depth: 4.5,
         companion: None,
     };
     let mut midpoint_relation = relation.clone();

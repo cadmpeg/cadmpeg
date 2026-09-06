@@ -8125,7 +8125,7 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
     for point in &native.sketch_points {
         if !point.coordinates.u.is_finite()
             || !point.coordinates.v.is_finite()
-            || !point.depth.is_finite()
+            || !point.depth().is_finite()
         {
             findings.push(Finding {
                 check: Check::Bounds,
@@ -8156,20 +8156,7 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             | crate::records::SketchPointRecordForm::Version11InlineTyped { .. }
                     ))
         });
-        let identity_form_valid = match point.record_form {
-            crate::records::SketchPointRecordForm::Version0 { .. } => {
-                point.depth == 0.0
-            }
-            crate::records::SketchPointRecordForm::Version8 { persistent_id, .. }
-            | crate::records::SketchPointRecordForm::Version10 { persistent_id, .. }
-            | crate::records::SketchPointRecordForm::Version10InlineTyped {
-                persistent_id, ..
-            }
-            | crate::records::SketchPointRecordForm::Version11 { persistent_id, .. }
-            | crate::records::SketchPointRecordForm::Version11InlineTyped {
-                persistent_id, ..
-            } => persistent_id != 0,
-        };
+        let identity_form_valid = point.persistent_id().is_none_or(|persistent_id| persistent_id != 0);
         if !companion_curves_unique || !companion_form_valid || !identity_form_valid
         {
             findings.push(Finding {

@@ -346,10 +346,10 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
             u64::from(record_index),
             crate::records::SketchPointClosure::Selector0State0,
             None,
+            0.0,
         ),
         paired_reference: 0,
         coordinates: Point2::new(0.0, 0.0),
-        depth: 0.0,
         companion: Some(crate::records::SketchPointCompanion {
             prefix_present_zero: false,
             reference_encoding: Default::default(),
