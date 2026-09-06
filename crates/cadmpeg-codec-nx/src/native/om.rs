@@ -1242,9 +1242,9 @@ impl From<ClassDefinition> for ClassDefinitionWire {
             name: value.name,
             ordinal: value.ordinal,
             trailing_code: value.trailing_code,
-            registry_storage_code: registry.map(|layout| layout.storage_code.value),
-            registry_base_class: registry.map(|layout| layout.base_class),
-            registry_reference: registry.map(|layout| layout.reference),
+            registry_storage_code: registry.map(|layout| layout.storage_code.value()),
+            registry_base_class: registry.map(|layout| layout.base_class.map_or(0, std::num::NonZeroU32::get)),
+            registry_reference: registry.map(|layout| layout.reference.get()),
             registry_suffix: value.registry_suffix,
             layout_prefix: layout
                 .as_ref()
@@ -1369,8 +1369,8 @@ impl From<FieldDefinition> for FieldDefinitionWire {
             name: value.name,
             ordinal: value.ordinal,
             trailing_code: value.trailing_code,
-            registry_storage_code: registry.map(|layout| layout.storage_code.value),
-            registry_owner_class: registry.map(|layout| layout.owner_class),
+            registry_storage_code: registry.map(|layout| layout.storage_code.value()),
+            registry_owner_class: registry.map(|layout| layout.owner_class.get()),
             registry_suffix: value.registry_suffix,
             layout_prefix: layout
                 .as_ref()
