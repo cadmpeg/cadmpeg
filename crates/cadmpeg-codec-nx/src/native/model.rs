@@ -9,6 +9,7 @@ use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
 use crate::container::Container;
 use crate::native::features::block_reference::FeatureBlockConstructionReference;
+use crate::native::features::body_scalar_triple::FeatureOperationBodyScalarTriple;
 use crate::native::features::datum_plane_header::{
     feature_datum_plane_headers, FeatureDatumPlaneHeader,
 };

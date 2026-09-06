@@ -21,6 +21,8 @@ use reference::ConstructionReference;
 #[allow(clippy::wildcard_imports)]
 use super::*;
 pub(crate) mod block_reference;
+pub(crate) mod body_scalar_triple;
+use body_scalar_triple::FeatureOperationBodyScalarTriple;
 mod body_write_wire;
 mod common_frame_wire;
 pub(crate) mod object_frame;
@@ -49,8 +51,6 @@ use crate::om::compact::LocatedCompactIndex;
 use crate::om::fixed::Q155;
 use crate::om::nonempty::NonEmpty;
 use crate::om::reference_index::PayloadIndexToken;
-use crate::om::scalar::PayloadScalarAtom;
-use crate::om::scalar::PayloadScalarEncoding;
 
 use crate::om::scalar::ShiftedBinary64;
 use crate::om::scalar::ShiftedScalar;
@@ -2717,94 +2717,6 @@ impl TryFrom<FeatureExtrudePayloadHeaderWire> for FeatureExtrudePayloadHeader {
             operation_label: wire.operation_label,
             scalars: [first?, second?],
             source_offset: wire.source_offset,
-        })
-    }
-}
-
-/// Three typed scalars anchored to an ordered operation body reference.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureOperationBodyScalarTripleWire",
-    into = "FeatureOperationBodyScalarTripleWire"
-)]
-pub struct FeatureOperationBodyScalarTriple {
-    /// Globally unique scalar-clause identity.
-    pub id: String,
-    /// Owning operation label.
-    pub operation_label: String,
-    /// Zero-based body-reference occurrence order.
-    pub body_reference_ordinal: u32,
-    /// Serialized body object index.
-    pub body_object_index: u32,
-    /// Branch discriminator following the body-reference terminator.
-    pub branch: u8,
-    /// Three checked scalar atoms and their absolute source offsets.
-    pub values: [FeatureBodyScalarToken; 3],
-}
-
-#[derive(Serialize, Deserialize)]
-struct FeatureOperationBodyScalarTripleWire {
-    /// Globally unique scalar-clause identity.
-    id: String,
-    /// Owning operation label.
-    operation_label: String,
-    /// Zero-based body-reference occurrence order.
-    body_reference_ordinal: u32,
-    /// Serialized body object index.
-    body_object_index: u32,
-    /// Branch discriminator following the body-reference terminator.
-    branch: u8,
-    /// Ordered finite scalar values.
-    values: [f64; 3],
-    /// Ordered serialized width forms.
-    encodings: [PayloadScalarEncoding; 3],
-    /// Exact serialized scalar atoms in value order.
-    raw_values: [Vec<u8>; 3],
-    /// Absolute file offsets of the three scalar markers.
-    source_offsets: [u64; 3],
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FeatureBodyScalarToken {
-    pub atom: PayloadScalarAtom,
-    pub source_offset: u64,
-}
-
-impl From<FeatureOperationBodyScalarTriple> for FeatureOperationBodyScalarTripleWire {
-    fn from(value: FeatureOperationBodyScalarTriple) -> Self {
-        Self {
-            id: value.id,
-            operation_label: value.operation_label,
-            body_reference_ordinal: value.body_reference_ordinal,
-            body_object_index: value.body_object_index,
-            branch: value.branch,
-            values: value.values.map(|token| token.atom.value()),
-            encodings: value.values.map(|token| token.atom.encoding()),
-            raw_values: value.values.map(|token| token.atom.raw().to_vec()),
-            source_offsets: value.values.map(|token| token.source_offset),
-        }
-    }
-}
-
-impl TryFrom<FeatureOperationBodyScalarTripleWire> for FeatureOperationBodyScalarTriple {
-    type Error = String;
-
-    fn try_from(wire: FeatureOperationBodyScalarTripleWire) -> Result<Self, Self::Error> {
-        let [a, b, c] = std::array::from_fn::<_, 3, _>(|i| {
-            PayloadScalarAtom::from_wire(wire.values[i], wire.encodings[i], &wire.raw_values[i])
-                .map(|atom| FeatureBodyScalarToken {
-                    atom,
-                    source_offset: wire.source_offsets[i],
-                })
-                .map_err(|error| format!("scalar[{i}]: {error}"))
-        });
-        Ok(Self {
-            id: wire.id,
-            operation_label: wire.operation_label,
-            body_reference_ordinal: wire.body_reference_ordinal,
-            body_object_index: wire.body_object_index,
-            branch: wire.branch,
-            values: [a?, b?, c?],
         })
     }
 }
@@ -7159,7 +7071,12 @@ pub fn feature_operation_body_scalar_triples(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            for triple in crate::om::operation_body_scalar_triples(record.body_view()) {
+            for triple in
+                crate::om::body_scalar_triple::operation_body_scalar_triples(record.body_view())
+            {
+                let Some(scalars) = triple.scalars.relocate(entry_offset) else {
+                    continue;
+                };
                 triples.push(FeatureOperationBodyScalarTriple {
                     id: format!(
                         "nx:feature-history:operation-body-scalar-triple#{section_key}-{operation_ordinal:010}-{}",
@@ -7171,10 +7088,7 @@ pub fn feature_operation_body_scalar_triples(
                     body_reference_ordinal: triple.body_reference_ordinal,
                     body_object_index: triple.body_object_index,
                     branch: triple.branch,
-                    values: triple.scalars.map(|scalar| FeatureBodyScalarToken {
-                        atom: scalar.atom,
-                        source_offset: entry_offset + scalar.offset as u64,
-                    }),
+                    scalars,
                 });
             }
         },

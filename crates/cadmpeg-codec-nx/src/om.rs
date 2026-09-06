@@ -49,6 +49,7 @@ pub(crate) mod compact;
 use compact::{CompactIndexAtom, LocatedCompactIndex, NullableCompactIndex};
 pub(crate) mod color;
 use color::{ColorComponent, PaletteIndex, BACKGROUND_NAME, PALETTE_SIZE};
+pub(crate) mod body_scalar_triple;
 pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 pub(crate) mod extrude_32;
@@ -870,28 +871,6 @@ pub struct HolePackageConstructionGroupLane {
     pub branch: NonZeroU8,
     /// Ordered first and second construction-block pairs.
     pub references: [PayloadObjectReference; 4],
-}
-
-/// One typed scalar in a bounded operation payload.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PayloadScalar {
-    /// Absolute offset of the scalar marker.
-    pub offset: usize,
-    /// Checked scalar atom with a derived value and width.
-    pub atom: PayloadScalarAtom,
-}
-
-/// One three-scalar clause anchored to an ordered operation body reference.
-#[derive(Debug, Clone, PartialEq)]
-pub struct OperationBodyScalarTriple {
-    /// Zero-based body-reference occurrence order.
-    pub body_reference_ordinal: u32,
-    /// Serialized body object index.
-    pub body_object_index: u32,
-    /// Branch discriminator following the body-reference terminator.
-    pub branch: u8,
-    /// Three scalar atoms in byte order.
-    pub scalars: [PayloadScalar; 3],
 }
 
 /// One wrapped member index in a branch-`11` operation body clause.
@@ -2057,38 +2036,6 @@ pub fn extrude_payload_header(record: OperationPayload<'_>) -> Option<ExtrudePay
             ShiftedBinary64::read(record.payload().get(13..21)?)?,
         ],
     })
-}
-
-/// Decode complete three-scalar clauses following ordered operation body fields.
-pub fn operation_body_scalar_triples(
-    record: OperationBodyInput<'_>,
-) -> Vec<OperationBodyScalarTriple> {
-    operation_body_references(record)
-        .into_iter()
-        .enumerate()
-        .filter_map(|(ordinal, reference)| {
-            let token = reference.offset - record.offset();
-            let end = token + reference.object_index.raw().len();
-            let branch = *record.bytes().get(end + 1)?;
-            let mut at = end + 2;
-            let mut read = || {
-                let atom = PayloadScalarAtom::read(record.bytes().get(at..)?)?;
-                let scalar = PayloadScalar {
-                    offset: record.offset() + at,
-                    atom,
-                };
-                at += scalar.atom.raw().len();
-                Some(scalar)
-            };
-            let scalars = [read()?, read()?, read()?];
-            Some(OperationBodyScalarTriple {
-                body_reference_ordinal: ordinal as u32,
-                body_object_index: reference.object_index.value(),
-                branch,
-                scalars,
-            })
-        })
-        .collect()
 }
 
 /// Decode wrapped member lanes following branch-`11` body scalar clauses.

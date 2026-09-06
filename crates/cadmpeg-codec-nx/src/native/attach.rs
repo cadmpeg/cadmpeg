@@ -1690,8 +1690,10 @@ fn attach_feature_operations(
         records_by_operation(extrude_payload_32_branches, |branch| {
             &branch.operation_label
         });
-    let mut operation_body_scalar_triples_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyScalarTriple>>::new();
+    let mut operation_body_scalar_triples_by_operation = BTreeMap::<
+        &str,
+        Vec<&crate::native::features::body_scalar_triple::FeatureOperationBodyScalarTriple>,
+    >::new();
     for triple in operation_body_scalar_triples {
         operation_body_scalar_triples_by_operation
             .entry(triple.operation_label.as_str())

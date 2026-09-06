@@ -1039,7 +1039,7 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
     let bytes = b"\x01\x02\x10\x42\xff\x1c\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\xaa\x01\x02\x10\x43\xff\x11\x30\x00\x00\x00\x00\x00\x00\x00\x00\x00";
     let record =
         crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
-    let triples = super::operation_body_scalar_triples(record);
+    let triples = crate::om::body_scalar_triple::operation_body_scalar_triples(record);
     assert_eq!(triples.len(), 2);
     assert_eq!(triples[0].body_reference_ordinal, 0);
     assert_eq!(triples[0].body_object_index, 66);
@@ -1047,30 +1047,30 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
     assert_eq!(
         triples[0]
             .scalars
+            .atoms()
             .each_ref()
-            .map(|scalar| scalar.atom.value()),
+            .map(|scalar| scalar.value()),
         [0.0, 3.0, -170.0]
     );
     assert_eq!(
         triples[0]
             .scalars
+            .atoms()
             .each_ref()
-            .map(|scalar| scalar.atom.encoding()),
+            .map(|scalar| scalar.encoding()),
         [
             crate::om::scalar::PayloadScalarEncoding::Zero,
             crate::om::scalar::PayloadScalarEncoding::Binary32,
             crate::om::scalar::PayloadScalarEncoding::Binary64,
         ]
     );
-    assert_eq!(
-        triples[0].scalars.each_ref().map(|scalar| scalar.offset),
-        [106, 107, 111]
-    );
+    assert_eq!(triples[0].scalars.source_offsets(), [106, 107, 111]);
     assert_eq!(
         triples[0]
             .scalars
+            .atoms()
             .each_ref()
-            .map(|scalar| scalar.atom.raw()),
+            .map(|scalar| scalar.raw()),
         [&bytes[6..7], &bytes[7..11], &bytes[11..19]]
     );
     assert_eq!(triples[1].body_reference_ordinal, 1);
@@ -1079,12 +1079,13 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
     assert_eq!(
         triples[1]
             .scalars
+            .atoms()
             .each_ref()
-            .map(|scalar| scalar.atom.value()),
+            .map(|scalar| scalar.value()),
         [2.0, 0.0, 0.0]
     );
     let truncated = &bytes[..bytes.len() - 1];
-    let truncated_triples = super::operation_body_scalar_triples(
+    let truncated_triples = crate::om::body_scalar_triple::operation_body_scalar_triples(
         crate::om::operation_record::OperationBodyInput::new(
             truncated,
             record.offset(),
