@@ -450,3 +450,22 @@ fn datum_plane_descriptor_derives_suffix_and_preserves_native_wire() {
     wire["suffix"].as_array_mut().unwrap().remove(0);
     assert!(serde_json::from_value::<FeatureDatumPlaneDescriptor>(wire).unwrap_err().to_string().contains("identity"));
 }
+
+#[test]
+fn datum_csys_descriptor_preserves_wire_and_rejects_invalid_identity_or_position() {
+    let json = r#"{"id":"descriptor","operation_label":"operation","construction":"construction","reference_ordinal":7,"data_block":"block","prefix":[2,1],"identity":"012345678901234567890123456789","suffix":[63,65],"source_offset":10,"identity_source_offset":12}"#;
+    let descriptor: FeatureDatumCsysDescriptor = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&descriptor).unwrap(), json);
+    for (field, value) in [
+        ("reference_ordinal", serde_json::json!(4)),
+        ("identity", serde_json::json!("abcd")),
+        ("prefix", serde_json::json!([2, 1, 97])),
+        ("source_offset", serde_json::json!(u64::MAX)),
+        ("identity_source_offset", serde_json::json!(13)),
+    ] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire[field] = value;
+        let error = serde_json::from_value::<FeatureDatumCsysDescriptor>(wire).unwrap_err();
+        assert!(error.to_string().contains(field), "{error}");
+    }
+}

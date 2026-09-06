@@ -1148,19 +1148,20 @@ fn nx_datum_plane_csys_identity_uses_join_only_equal_typed_identities() {
         id: "csys-descriptor".into(),
         operation_label: "operation#2".into(),
         construction: "csys-construction".into(),
-        reference_ordinal: 7,
+        reference_ordinal: crate::om::csys_descriptor::CsysDescriptorSlot::Seven,
         data_block: "csys-block".into(),
-        prefix: vec![2, 1],
-        identity: plane.descriptor.identity().to_owned(),
-        suffix: vec![b'?', b'A'],
-        source_offset: 20,
+        descriptor: crate::om::csys_descriptor::LocatedCsysDescriptor::new(
+            crate::om::csys_descriptor::CsysDescriptor::from_wire(
+                vec![2, 1], plane.descriptor.identity().to_owned().try_into().unwrap(), vec![b'?', b'A'],
+            ).unwrap(), 20,
+        ).unwrap(),
     };
     let uses = super::feature_datum_plane_csys_identity_uses(&[plane], &[csys]);
     assert_eq!(uses.len(), 1);
-    assert_eq!(uses[0].identity, "012345678901234567890123456789");
+    assert_eq!(uses[0].identity.as_str(), "012345678901234567890123456789");
     assert_eq!(uses[0].datum_plane_operation_label, "operation#4");
     assert_eq!(uses[0].datum_csys_operation_label, "operation#2");
-    assert_eq!(uses[0].datum_csys_reference_ordinal, 7);
+    assert_eq!(u8::from(uses[0].datum_csys_reference_ordinal), 7);
 }
 
 #[test]

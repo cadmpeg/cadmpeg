@@ -23,6 +23,7 @@ use crate::om::scalar_pair::{PairPosition, SketchPairForm, DatumPairForm, MixedP
 mod pair_wire;
 use crate::om::draft_identity::{DraftIdentityFrame, DraftIdentityForm};
 use crate::om::plane_descriptor::PlaneDescriptor;
+use crate::om::csys_descriptor::{CsysDescriptor, CsysDescriptorSlot, CsysIdentity, LocatedCsysDescriptor};
 use crate::om::discriminators::DraftBinary32Branch;
 use crate::om::pattern::{PatternRow, PatternRows, PatternScalarEncoding, PatternTerminal, PatternValue, PatternWideValues};
 use crate::om::thru_curve_state::ThruCurveBranchItems;
@@ -1683,23 +1684,11 @@ pub struct FeatureDatumCsysDescriptor {
     /// Construction carrying the descriptor lane.
     pub construction: String,
     /// Construction reference ordinal in the range 5–7.
-    pub reference_ordinal: u8,
+    pub reference_ordinal: CsysDescriptorSlot,
     /// Resolved source block.
     pub data_block: String,
-    /// Exact bytes preceding the hexadecimal identity.
-    pub prefix: Vec<u8>,
-    /// Lowercase 30–32 digit hexadecimal identity.
-    pub identity: String,
-    /// Exact bytes following the hexadecimal identity.
-    pub suffix: Vec<u8>,
-    /// Absolute source offset of the block.
-    pub source_offset: u64,
-}
-
-impl FeatureDatumCsysDescriptor {
-    pub fn identity_source_offset(&self) -> u64 {
-        self.source_offset + self.prefix.len() as u64
-    }
+    /// Checked descriptor bytes and source position.
+    pub descriptor: LocatedCsysDescriptor,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1728,17 +1717,17 @@ struct FeatureDatumCsysDescriptorWire {
 
 impl From<FeatureDatumCsysDescriptor> for FeatureDatumCsysDescriptorWire {
     fn from(value: FeatureDatumCsysDescriptor) -> Self {
-        let identity_source_offset = value.identity_source_offset();
+        let identity_source_offset = value.descriptor.identity_source_offset();
         Self {
             id: value.id,
             operation_label: value.operation_label,
             construction: value.construction,
-            reference_ordinal: value.reference_ordinal,
+            reference_ordinal: value.reference_ordinal.into(),
             data_block: value.data_block,
-            prefix: value.prefix,
-            identity: value.identity,
-            suffix: value.suffix,
-            source_offset: value.source_offset,
+            prefix: value.descriptor.descriptor().prefix().to_vec(),
+            identity: value.descriptor.descriptor().identity().as_str().to_owned(),
+            suffix: value.descriptor.descriptor().suffix().to_vec(),
+            source_offset: value.descriptor.source_offset(),
             identity_source_offset,
         }
     }
@@ -1748,19 +1737,19 @@ impl TryFrom<FeatureDatumCsysDescriptorWire> for FeatureDatumCsysDescriptor {
     type Error = String;
 
     fn try_from(wire: FeatureDatumCsysDescriptorWire) -> Result<Self, Self::Error> {
-        if wire.source_offset.checked_add(wire.prefix.len() as u64) != Some(wire.identity_source_offset) {
+        let identity = CsysIdentity::try_from(wire.identity).map_err(str::to_owned)?;
+        let descriptor = CsysDescriptor::from_wire(wire.prefix, identity, wire.suffix).map_err(str::to_owned)?;
+        let descriptor = LocatedCsysDescriptor::new(descriptor, wire.source_offset).map_err(str::to_owned)?;
+        if descriptor.identity_source_offset() != wire.identity_source_offset {
             return Err("identity_source_offset must equal source_offset plus prefix length".into());
         }
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
             construction: wire.construction,
-            reference_ordinal: wire.reference_ordinal,
+            reference_ordinal: CsysDescriptorSlot::try_from(wire.reference_ordinal).map_err(str::to_owned)?,
             data_block: wire.data_block,
-            prefix: wire.prefix,
-            identity: wire.identity,
-            suffix: wire.suffix,
-            source_offset: wire.source_offset,
+            descriptor,
         })
     }
 }
@@ -1772,7 +1761,7 @@ pub struct FeatureDatumPlaneCsysIdentityUse {
     /// Globally unique relation identity.
     pub id: String,
     /// Shared lowercase hexadecimal identity.
-    pub identity: String,
+    pub identity: CsysIdentity,
     /// Typed datum-plane descriptor.
     pub datum_plane_descriptor: String,
     /// Datum-plane operation carrying the descriptor.
@@ -1782,7 +1771,7 @@ pub struct FeatureDatumPlaneCsysIdentityUse {
     /// Datum-CSYS operation carrying the descriptor.
     pub datum_csys_operation_label: String,
     /// Datum-CSYS construction reference ordinal.
-    pub datum_csys_reference_ordinal: u8,
+    pub datum_csys_reference_ordinal: CsysDescriptorSlot,
 }
 
 /// One compact index in a datum-plane terminal index lane.
@@ -8261,21 +8250,20 @@ pub fn feature_datum_csys_descriptors(
     constructions
         .iter()
         .flat_map(|construction| {
-            (5..8)
-                .filter_map(|reference_ordinal| {
-                    let data_block = &construction.data_blocks[reference_ordinal];
+            [CsysDescriptorSlot::Five, CsysDescriptorSlot::Six, CsysDescriptorSlot::Seven]
+                .into_iter()
+                .filter_map(|slot| {
+                    let reference_ordinal = u8::from(slot);
+                    let data_block = &construction.data_blocks[usize::from(reference_ordinal)];
                     let &(bytes, source_offset) = blocks.get(data_block)?;
                     let descriptor = crate::om::datum_csys_descriptor_block(bytes)?;
                     Some(FeatureDatumCsysDescriptor {
                         id: format!("{}-descriptor-{reference_ordinal}", construction.id),
                         operation_label: construction.operation_label.clone(),
                         construction: construction.id.clone(),
-                        reference_ordinal: reference_ordinal as u8,
+                        reference_ordinal: slot,
                         data_block: data_block.clone(),
-                        prefix: descriptor.prefix,
-                        identity: descriptor.identity,
-                        suffix: descriptor.suffix,
-                        source_offset,
+                        descriptor: LocatedCsysDescriptor::new(descriptor, source_offset).ok()?,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -8293,7 +8281,7 @@ pub fn feature_datum_plane_csys_identity_uses(
         .flat_map(|plane| {
             csys_descriptors
                 .iter()
-                .filter(|csys| csys.identity == plane.descriptor.identity())
+                .filter(|csys| csys.descriptor.descriptor().identity().as_str() == plane.descriptor.identity())
                 .map(|csys| {
                     let plane_key = plane.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
                     let csys_key = csys.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
@@ -8301,7 +8289,7 @@ pub fn feature_datum_plane_csys_identity_uses(
                         id: format!(
                             "nx:feature-history:datum-plane-csys-identity-use#{plane_key}-{csys_key}"
                         ),
-                        identity: plane.descriptor.identity().to_owned(),
+                        identity: csys.descriptor.descriptor().identity().clone(),
                         datum_plane_descriptor: plane.id.clone(),
                         datum_plane_operation_label: plane.operation_label.clone(),
                         datum_csys_descriptor: csys.id.clone(),

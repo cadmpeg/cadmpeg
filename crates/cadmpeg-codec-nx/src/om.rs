@@ -3,6 +3,7 @@
 
 pub(crate) mod draft_identity;
 pub(crate) mod plane_descriptor;
+pub(crate) mod csys_descriptor;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -1871,17 +1872,6 @@ impl DatumCsysPayloadFixedPair {
         let first = self.offset + self.discriminator().len();
         [first, first + 8 + 1]
     }
-}
-
-/// One bounded datum-CSYS descriptor block with a unique hexadecimal identity.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DatumCsysDescriptorBlock {
-    /// Exact bytes preceding the identity.
-    pub prefix: Vec<u8>,
-    /// Lowercase 30–32 digit hexadecimal identity.
-    pub identity: String,
-    /// Exact bytes following the identity.
-    pub suffix: Vec<u8>,
 }
 
 /// Compact object frame in a bounded offset-store block.
@@ -5444,32 +5434,8 @@ pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<FramedScalarRun<Dr
 }
 
 /// Decode a bounded datum-CSYS descriptor containing one unique maximal identity run.
-pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<DatumCsysDescriptorBlock> {
-    let mut candidate = None;
-    let mut at = 0;
-    while at < bytes.len() {
-        if !(bytes[at].is_ascii_digit() || (b'a'..=b'f').contains(&bytes[at])) {
-            at += 1;
-            continue;
-        }
-        let start = at;
-        while at < bytes.len() && (bytes[at].is_ascii_digit() || (b'a'..=b'f').contains(&bytes[at]))
-        {
-            at += 1;
-        }
-        if (30..=32).contains(&(at - start)) {
-            if candidate.is_some() {
-                return None;
-            }
-            candidate = Some((start, at));
-        }
-    }
-    let (start, end) = candidate?;
-    Some(DatumCsysDescriptorBlock {
-        prefix: bytes[..start].to_vec(),
-        identity: std::str::from_utf8(&bytes[start..end]).ok()?.to_string(),
-        suffix: bytes[end..].to_vec(),
-    })
+pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<csys_descriptor::CsysDescriptor> {
+    csys_descriptor::CsysDescriptor::read(bytes)
 }
 
 /// Decode every complete identity frame in a reconstructed draft construction payload.

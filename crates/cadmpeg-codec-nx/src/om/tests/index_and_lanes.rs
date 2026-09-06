@@ -901,10 +901,10 @@ fn om_datum_csys_scalar_pairs_require_discriminator_and_separator() {
 fn om_datum_csys_descriptor_requires_one_maximal_hex_identity() {
     let bytes = b"\x02\x01ae166162820ea2d993e1fdf49091850e?A\x80\xa0\xf0\x26";
     let descriptor = super::datum_csys_descriptor_block(bytes).unwrap();
-    assert_eq!(descriptor.prefix, [0x02, 0x01]);
-    assert_eq!(descriptor.identity, "ae166162820ea2d993e1fdf49091850e");
-    assert_eq!(descriptor.prefix.len(), 2);
-    assert_eq!(descriptor.suffix, b"?A\x80\xa0\xf0\x26");
+    assert_eq!(descriptor.prefix(), [0x02, 0x01]);
+    assert_eq!(descriptor.identity().as_str(), "ae166162820ea2d993e1fdf49091850e");
+    assert_eq!(descriptor.prefix().len(), 2);
+    assert_eq!(descriptor.suffix(), b"?A\x80\xa0\xf0\x26");
 
     let mut ambiguous = bytes.to_vec();
     ambiguous.extend_from_slice(b"012345678901234567890123456789");
