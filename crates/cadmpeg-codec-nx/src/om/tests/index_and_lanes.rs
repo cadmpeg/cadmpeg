@@ -705,12 +705,12 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
         ..record
     })
     .unwrap();
-    assert_eq!(branch.descriptor_index, 76);
-    assert_eq!(branch.raw_descriptor_index, [0x80, 0x4c]);
-    assert_eq!(branch.descriptor_offset, 110);
-    assert_eq!(branch.object_index, 699);
-    assert_eq!(branch.raw_object_index, [0xf1, 0x02, 0xbb]);
-    assert_eq!(branch.object_offset, 113);
+    assert_eq!(branch.descriptor.atom.value(), 76);
+    assert_eq!(branch.descriptor.atom.raw().to_vec(), [0x80, 0x4c]);
+    assert_eq!(branch.descriptor.offset, 110);
+    assert_eq!(branch.object.token.value(), 699);
+    assert_eq!(branch.object.token.raw().to_vec(), [0xf1, 0x02, 0xbb]);
+    assert_eq!(branch.object.offset, 113);
 
     let double_payload = [
         0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x02, 0x29, 0x01, 0x02, 0xf1, 0x02, 0x77, 0x01, 0x01,
@@ -779,11 +779,11 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
             ..record
         })
         .unwrap();
-    assert_eq!(descriptor_count_three.descriptor_index, 77);
-    assert_eq!(descriptor_count_three.raw_descriptor_index, [0x80, 0x4d]);
-    assert_eq!(descriptor_count_three.descriptor_offset, 110);
-    assert_eq!(descriptor_count_three.object_index, 721);
-    assert_eq!(descriptor_count_three.object_offset, 116);
+    assert_eq!(descriptor_count_three.descriptor.atom.value(), 77);
+    assert_eq!(descriptor_count_three.descriptor.atom.raw().to_vec(), [0x80, 0x4d]);
+    assert_eq!(descriptor_count_three.descriptor.offset, 110);
+    assert_eq!(descriptor_count_three.object.token.value(), 721);
+    assert_eq!(descriptor_count_three.object.offset, 116);
 }
 
 #[test]

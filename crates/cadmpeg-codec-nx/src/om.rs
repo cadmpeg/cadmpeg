@@ -1767,18 +1767,10 @@ pub struct DatumPlanePayloadHeader {
 /// Count-two datum-plane branch shared by tags `1b` and `23`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatumPlaneSingleReferenceBranch {
-    /// Non-null compact descriptor index.
-    pub descriptor_index: u32,
-    /// Exact serialized compact descriptor-index token.
-    pub raw_descriptor_index: Vec<u8>,
-    /// Absolute offset of the compact descriptor index.
-    pub descriptor_offset: usize,
-    /// Canonical payload object index.
-    pub object_index: u32,
-    /// Exact serialized payload object-index token.
-    pub raw_object_index: Vec<u8>,
-    /// Absolute offset of the canonical width marker.
-    pub object_offset: usize,
+    /// Non-null compact descriptor with its absolute source offset.
+    pub descriptor: LocatedCompactIndex,
+    /// Canonical payload object reference with its absolute source offset.
+    pub object: PayloadObjectReference,
 }
 
 /// Two canonical references carried by a tag-`29` datum-plane branch.
@@ -4935,27 +4927,18 @@ pub fn datum_plane_single_reference_branch(
         return None;
     }
     let mut at = 10;
-    let descriptor_offset = record.payload_offset + at;
-    let (CompactIndex::Value(descriptor_index), width) = compact_index(record.payload.get(at..)?)?
-    else {
-        return None;
-    };
-    let raw_descriptor_index = record.payload[at..at + width].to_vec();
-    at += width;
+    let mut descriptor = LocatedCompactIndex::read(record.payload, at)?;
+    at += descriptor.atom.raw().len();
+    descriptor.offset += record.payload_offset;
     (record.payload.get(at) == Some(&0x01)).then_some(())?;
     at += 1;
     let object_offset = record.payload_offset + at;
     let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-    let raw_object_index = record.payload[at..at + width].to_vec();
     at += width;
     (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
     Some(DatumPlaneSingleReferenceBranch {
-        descriptor_index,
-        raw_descriptor_index,
-        descriptor_offset,
-        object_index: object_index.value(),
-        raw_object_index,
-        object_offset,
+        descriptor,
+        object: PayloadObjectReference { token: object_index, offset: object_offset },
     })
 }
 
@@ -4977,27 +4960,18 @@ pub fn datum_plane_descriptor_reference_branch(
         return None;
     }
     let mut at = 10;
-    let descriptor_offset = record.payload_offset + at;
-    let (CompactIndex::Value(descriptor_index), width) = compact_index(record.payload.get(at..)?)?
-    else {
-        return None;
-    };
-    let raw_descriptor_index = record.payload[at..at + width].to_vec();
-    at += width;
+    let mut descriptor = LocatedCompactIndex::read(record.payload, at)?;
+    at += descriptor.atom.raw().len();
+    descriptor.offset += record.payload_offset;
     (record.payload.get(at..at + SEPARATOR.len()) == Some(&SEPARATOR)).then_some(())?;
     at += SEPARATOR.len();
     let object_offset = record.payload_offset + at;
     let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-    let raw_object_index = record.payload[at..at + width].to_vec();
     at += width;
     (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
     Some(DatumPlaneSingleReferenceBranch {
-        descriptor_index,
-        raw_descriptor_index,
-        descriptor_offset,
-        object_index: object_index.value(),
-        raw_object_index,
-        object_offset,
+        descriptor,
+        object: PayloadObjectReference { token: object_index, offset: object_offset },
     })
 }
 

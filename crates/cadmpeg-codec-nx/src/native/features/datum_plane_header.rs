@@ -87,14 +87,14 @@ pub(crate) fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureD
             let branch = crate::om::datum_plane_descriptor_reference_branch(record)
                 .map(|branch| Branch::Single {
                     descriptor: FeatureIndexToken {
-                        value: branch.descriptor_index,
-                        raw: branch.raw_descriptor_index,
-                        source_offset: entry_offset + branch.descriptor_offset as u64,
+                        value: branch.descriptor.atom.value(),
+                        raw: branch.descriptor.atom.raw().to_vec(),
+                        source_offset: entry_offset + branch.descriptor.offset as u64,
                     },
                     object: FeatureIndexToken {
-                        value: branch.object_index,
-                        raw: branch.raw_object_index,
-                        source_offset: entry_offset + branch.object_offset as u64,
+                        value: branch.object.token.value(),
+                        raw: branch.object.token.raw().to_vec(),
+                        source_offset: entry_offset + branch.object.offset as u64,
                     },
                 })
                 .or_else(|| {
