@@ -30,59 +30,91 @@ pub enum OperationStateGroupRow {
 
 /// One counted group whose row positions follow from its header and tokens.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct OperationStateGroup {
-    offset: usize,
+pub(crate) struct OperationStateGroup<O = usize> {
+    offset: O,
     opener: OperationStateGroupOpener,
     members: StateGroupMembers<OperationStateGroupRow>,
 }
 
 impl OperationStateGroupRow {
-    fn byte_len(self) -> usize {
+    pub(crate) fn byte_len(self) -> u16 {
         match self {
             Self::List {
                 object_index,
                 position,
-            } => 2 + object_index.raw().len() + position.raw().len(),
-            Self::Pair { first, second, .. } => 3 + first.raw().len() + second.raw().len(),
+            } => 2 + u16::from(object_index.byte_len()) + u16::from(position.byte_len()),
+            Self::Pair { first, second, .. } => {
+                3 + u16::from(first.byte_len()) + u16::from(second.byte_len())
+            }
         }
     }
 }
 
-impl OperationStateGroup {
-    pub(crate) fn offset(&self) -> usize {
+impl<O: Copy + From<u16> + std::ops::Add<Output = O>> OperationStateGroup<O> {
+    pub(crate) fn offset(&self) -> O {
         self.offset
     }
     pub(crate) fn opener(&self) -> OperationStateGroupOpener {
         self.opener
     }
-    #[cfg(test)]
     pub(crate) fn members(&self) -> &StateGroupMembers<OperationStateGroupRow> {
         &self.members
     }
-    fn header_len(&self) -> usize {
-        3 + usize::from(self.members.count().prefix().is_some())
+    fn header_len(&self) -> u16 {
+        3 + u16::from(self.members.count().prefix().is_some())
     }
-    pub(crate) fn end_offset(&self) -> usize {
-        self.offset
-            + self.header_len()
+    fn byte_len(&self) -> u16 {
+        self.header_len()
             + self
                 .members
                 .rows()
                 .iter()
                 .copied()
                 .map(OperationStateGroupRow::byte_len)
-                .sum::<usize>()
+                .sum::<u16>()
+    }
+    pub(crate) fn end_offset(&self) -> O {
+        self.offset + O::from(self.byte_len())
     }
     pub(crate) fn map_rows<R>(
         self,
-        mut map: impl FnMut(usize, OperationStateGroupRow) -> R,
+        mut map: impl FnMut(u8, O, OperationStateGroupRow) -> R,
     ) -> StateGroupMembers<R> {
-        let mut offset = self.offset + self.header_len();
-        self.members.map_rows(|_, row| {
+        let mut offset = self.offset + O::from(self.header_len());
+        self.members.map_rows(|ordinal, row| {
             let row_offset = offset;
-            offset += row.byte_len();
-            map(row_offset, row)
+            offset = offset + O::from(row.byte_len());
+            map(ordinal, row_offset, row)
         })
+    }
+}
+
+impl OperationStateGroup {
+    pub(crate) fn into_absolute(self, base: u64) -> Option<OperationStateGroup<u64>> {
+        OperationStateGroup::new(
+            base.checked_add(u64::try_from(self.offset).ok()?)?,
+            self.opener,
+            self.members,
+        )
+        .ok()
+    }
+}
+
+impl OperationStateGroup<u64> {
+    pub(crate) fn new(
+        offset: u64,
+        opener: OperationStateGroupOpener,
+        members: StateGroupMembers<OperationStateGroupRow>,
+    ) -> Result<Self, &'static str> {
+        let group = Self {
+            offset,
+            opener,
+            members,
+        };
+        offset
+            .checked_add(u64::from(group.byte_len()))
+            .ok_or("source_offset: roll-forward group extent overflows")?;
+        Ok(group)
     }
 }
 
@@ -186,18 +218,34 @@ pub(crate) struct OperationStateGroupTable {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum GroupTableFooter {
+pub(crate) enum GroupTableFooter {
     Empty,
     Marker,
 }
 
+impl TryFrom<&[u8]> for GroupTableFooter {
+    type Error = &'static str;
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        match bytes {
+            [] => Ok(Self::Empty),
+            [1, 1] => Ok(Self::Marker),
+            _ => Err("table_trailing_bytes: invalid roll-forward table footer"),
+        }
+    }
+}
+
+impl GroupTableFooter {
+    pub(crate) fn bytes(self) -> &'static [u8] {
+        match self {
+            Self::Empty => &[],
+            Self::Marker => &[1, 1],
+        }
+    }
+}
+
 impl OperationStateGroupTable {
     pub(super) fn new(groups: Vec<OperationStateGroup>, trailing_bytes: &[u8]) -> Option<Self> {
-        let footer = match trailing_bytes {
-            [] => GroupTableFooter::Empty,
-            [1, 1] => GroupTableFooter::Marker,
-            _ => return None,
-        };
+        let footer = GroupTableFooter::try_from(trailing_bytes).ok()?;
         let groups = super::nonempty::NonEmpty::new(groups)?;
         let mut end = groups.first().offset();
         for group in groups.iter() {
@@ -215,11 +263,11 @@ impl OperationStateGroupTable {
     pub(crate) fn end_offset(&self) -> usize {
         self.groups.last().end_offset() + self.trailing_bytes().len()
     }
+    pub(crate) fn footer(&self) -> GroupTableFooter {
+        self.footer
+    }
     pub(crate) fn trailing_bytes(&self) -> &'static [u8] {
-        match self.footer {
-            GroupTableFooter::Empty => &[],
-            GroupTableFooter::Marker => &[1, 1],
-        }
+        self.footer.bytes()
     }
     pub(crate) fn groups(&self) -> &super::nonempty::NonEmpty<OperationStateGroup> {
         &self.groups
@@ -241,7 +289,7 @@ mod tests {
         let group = operation_state_group_at(&bytes, 0, bytes.len(), 900).unwrap();
         assert_eq!(group.offset(), 900);
         assert_eq!(group.end_offset(), 917);
-        let positions = group.map_rows(|offset, _| offset);
+        let positions = group.map_rows(|_, offset, _| offset);
         assert_eq!(positions.rows(), &[904, 909]);
         assert!(operation_state_group_at(&bytes, 0, bytes.len(), usize::MAX - 16).is_none());
     }

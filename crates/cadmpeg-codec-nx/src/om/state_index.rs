@@ -47,6 +47,14 @@ impl StateIndexToken {
         }
     }
 
+    pub(crate) fn byte_len(self) -> u8 {
+        match self.0 {
+            IndexBytes::Direct(_) => 1,
+            IndexBytes::Compact(_) => 2,
+            IndexBytes::Word(_) | IndexBytes::Packed(_) => 3,
+        }
+    }
+
     pub(crate) fn raw(&self) -> &[u8] {
         match &self.0 {
             IndexBytes::Direct(value) => std::slice::from_ref(value),

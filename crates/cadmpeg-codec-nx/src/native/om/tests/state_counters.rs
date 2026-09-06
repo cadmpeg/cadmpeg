@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::native::om::roll_forward::OmRollForwardStateGroup;
+use crate::om::roll_forward::OperationStateGroupRow;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -10,10 +12,8 @@ use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::om::{
     audit_trail_rows, operation_state_counters, operation_state_groups,
     operation_state_journal_groups, operation_state_messages, operation_state_slot_lanes,
-    operation_state_statuses, OmAuditTrailRow, OmOperationStateCounter,
-    OmOperationStateMessage, OmOperationStateMessageSeverity,
-    OmOperationStateSlotLane, OmOperationStateStatus, OmRollForwardStateGroup,
-    OmRollForwardStateRow,
+    operation_state_statuses, OmAuditTrailRow, OmOperationStateCounter, OmOperationStateMessage,
+    OmOperationStateMessageSeverity, OmOperationStateSlotLane, OmOperationStateStatus,
 };
 use crate::test_support::{
     composed_feature_history_payload_with_operation_state_statuses,
@@ -183,27 +183,27 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
 
     let groups = operation_state_groups(&container);
     assert_eq!(groups.len(), 3);
-    assert_eq!(groups[0].members.count().declared_count(), 3);
-    assert_eq!(groups[0].members.rows().len(), 2);
+    assert_eq!(groups[0].frame.members().count().declared_count(), 3);
+    assert_eq!(groups[0].frame.members().rows().len(), 2);
     assert!(matches!(
-        groups[0].members.rows()[0],
-        OmRollForwardStateRow::List {
+        groups[0].frame.members().rows()[0],
+        OperationStateGroupRow::List {
             object_index,
             ..
         } if object_index.value() == 0x3ba
     ));
     assert!(matches!(
-        groups[1].members.rows()[0],
-        OmRollForwardStateRow::Pair {
+        groups[1].frame.members().rows()[0],
+        OperationStateGroupRow::Pair {
             tag: crate::om::discriminators::OperationStatePairTag::Form4f,
             first,
             second,
             ..
         } if first.value() == 0x42d && second.value() == 0x3e1
     ));
-    assert_eq!(groups[2].members.count().declared_count(), 0);
-    assert_eq!(groups[0].table_trailing_bytes, [0x01, 0x01]);
-    assert!(groups[0].table_end_offset > groups[0].source_offset);
+    assert_eq!(groups[2].frame.members().count().declared_count(), 0);
+    assert_eq!(groups[0].table_footer.bytes(), [0x01, 0x01]);
+    assert!(groups[0].table_end_offset > groups[0].frame.offset());
 
     let result = NxCodec
         .decode(

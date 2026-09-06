@@ -3,8 +3,9 @@
 
 use super::{
     OmAuditTrailRow, OmOperationStateCounter, OmOperationStateMessageBody, OmOperationStateStatus,
-    OmOperationStateStatusPayload, OmRollForwardStateRow,
+    OmOperationStateStatusPayload,
 };
+use crate::om::roll_forward::OperationStateGroupRow;
 use crate::om::state_index::StateIndexToken;
 use crate::om::state_slots::StateSlots;
 use serde::ser::SerializeSeq;
@@ -259,15 +260,12 @@ pub(super) enum OmRollForwardStateRowWire {
 }
 
 impl OmRollForwardStateRowWire {
-    // This conversion consumes the input carrier at the typed construction boundary.
-    #[allow(clippy::needless_pass_by_value)]
-    pub(super) fn from_row(ordinal: u8, value: OmRollForwardStateRow) -> Self {
+    pub(super) fn from_row(ordinal: u8, source_offset: u64, value: OperationStateGroupRow) -> Self {
         let ordinal = u32::from(ordinal);
         match value {
-            OmRollForwardStateRow::List {
+            OperationStateGroupRow::List {
                 object_index,
                 position,
-                source_offset,
             } => Self::List {
                 ordinal,
                 object_index: object_index.value(),
@@ -276,12 +274,7 @@ impl OmRollForwardStateRowWire {
                 raw_position: position.raw().to_vec(),
                 source_offset,
             },
-            OmRollForwardStateRow::Pair {
-                tag,
-                first,
-                second,
-                source_offset,
-            } => Self::Pair {
+            OperationStateGroupRow::Pair { tag, first, second } => Self::Pair {
                 ordinal,
                 tag,
                 first: first.value(),
@@ -293,7 +286,17 @@ impl OmRollForwardStateRowWire {
         }
     }
 
-    pub(super) fn into_row(self, expected_ordinal: u8) -> Result<OmRollForwardStateRow, String> {
+    pub(super) fn into_row(
+        self,
+        expected_ordinal: u8,
+        expected_offset: u64,
+    ) -> Result<OperationStateGroupRow, String> {
+        let source_offset = match &self {
+            Self::List { source_offset, .. } | Self::Pair { source_offset, .. } => *source_offset,
+        };
+        if source_offset != expected_offset {
+            return Err("rows.source_offset: disagrees with row position".to_string());
+        }
         let ordinal = match &self {
             Self::List { ordinal, .. } | Self::Pair { ordinal, .. } => *ordinal,
         };
@@ -307,13 +310,12 @@ impl OmRollForwardStateRowWire {
                 raw_object_index,
                 position,
                 raw_position,
-                source_offset,
-            } => OmRollForwardStateRow::List {
+                source_offset: _,
+            } => OperationStateGroupRow::List {
                 object_index: StateIndexToken::from_wire(object_index, &raw_object_index)
                     .map_err(|error| format!("object_index/raw_object_index: {error}"))?,
                 position: StateIndexToken::from_wire(position, &raw_position)
                     .map_err(|error| format!("position/raw_position: {error}"))?,
-                source_offset,
             },
             OmRollForwardStateRowWire::Pair {
                 ordinal: _,
@@ -322,14 +324,13 @@ impl OmRollForwardStateRowWire {
                 raw_first,
                 second,
                 raw_second,
-                source_offset,
-            } => OmRollForwardStateRow::Pair {
+                source_offset: _,
+            } => OperationStateGroupRow::Pair {
                 tag,
                 first: StateIndexToken::from_wire(first, &raw_first)
                     .map_err(|error| format!("first/raw_first: {error}"))?,
                 second: StateIndexToken::from_wire(second, &raw_second)
                     .map_err(|error| format!("second/raw_second: {error}"))?,
-                source_offset,
             },
         })
     }
@@ -398,9 +399,9 @@ mod tests {
 
     fn preserves_row_wire(json: &str) {
         let wire: OmRollForwardStateRowWire = serde_json::from_str(json).unwrap();
-        let row = wire.into_row(0).unwrap();
+        let row = wire.into_row(0, 0).unwrap();
         assert_eq!(
-            serde_json::to_string(&OmRollForwardStateRowWire::from_row(0, row)).unwrap(),
+            serde_json::to_string(&OmRollForwardStateRowWire::from_row(0, 0, row)).unwrap(),
             json
         );
     }
