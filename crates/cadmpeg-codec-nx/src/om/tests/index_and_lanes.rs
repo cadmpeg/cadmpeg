@@ -507,8 +507,8 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
     let label = "DATUM_PLANE";
     let record = crate::om::operation_record::OperationPayload::new(&payload, 100, label).unwrap();
     assert_eq!(
-        super::datum_plane_payload_header(record),
-        Some(super::DatumPlanePayloadHeader {
+        crate::om::datum_plane_header::datum_plane_payload_header(record),
+        Some(crate::om::datum_plane_header::DatumPlanePayloadHeader {
             control: 0x22,
             declared_count: 3,
             branch_tag: 0x29,
@@ -516,7 +516,7 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
     );
     let mut malformed = payload;
     malformed[6] = 1;
-    assert!(super::datum_plane_payload_header(
+    assert!(crate::om::datum_plane_header::datum_plane_payload_header(
         crate::om::operation_record::OperationPayload::new(
             &malformed,
             record.payload_offset(),
@@ -530,7 +530,7 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
         0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x02, 0x23, 0x01, 0x02, 0x80, 0x4c, 0x01, 0xf1, 0x02,
         0xbb, 0x00, 0x14, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00,
     ];
-    let branch = super::datum_plane_single_reference_branch(
+    let branch = crate::om::datum_plane_header::datum_plane_descriptor_reference_branch(
         crate::om::operation_record::OperationPayload::new(
             &branch_payload,
             record.payload_offset(),
@@ -552,7 +552,7 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x0d,
     ];
-    let double = super::datum_plane_double_reference_branch(
+    let double = crate::om::datum_plane_header::datum_plane_double_reference_branch(
         crate::om::operation_record::OperationPayload::new(
             &double_payload,
             record.payload_offset(),
@@ -582,7 +582,7 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
         0xff, 0xff, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d,
     ];
-    let count_three = super::datum_plane_double_reference_branch(
+    let count_three = crate::om::datum_plane_header::datum_plane_double_reference_branch(
         crate::om::operation_record::OperationPayload::new(
             &count_three_payload,
             record.payload_offset(),
@@ -612,15 +612,16 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
         0xff, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d,
     ];
-    let descriptor_count_three = super::datum_plane_descriptor_reference_branch(
-        crate::om::operation_record::OperationPayload::new(
-            &descriptor_count_three_payload,
-            record.payload_offset(),
-            record.name(),
+    let descriptor_count_three =
+        crate::om::datum_plane_header::datum_plane_descriptor_reference_branch(
+            crate::om::operation_record::OperationPayload::new(
+                &descriptor_count_three_payload,
+                record.payload_offset(),
+                record.name(),
+            )
+            .unwrap(),
         )
-        .unwrap(),
-    )
-    .unwrap();
+        .unwrap();
     assert_eq!(descriptor_count_three.descriptor.atom.value(), 77);
     assert_eq!(
         descriptor_count_three.descriptor.atom.raw().to_vec(),

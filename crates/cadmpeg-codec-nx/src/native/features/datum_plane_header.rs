@@ -8,8 +8,8 @@ use super::{
 };
 use crate::container::Container;
 use crate::om::compact::CompactIndexAtom;
+use crate::om::datum_plane_header::{self, DoubleForm, SingleForm};
 use crate::om::reference_index::PayloadIndexToken;
-use crate::om::DatumPlanePayloadHeader;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -18,23 +18,38 @@ use std::collections::BTreeSet;
 pub(crate) struct FeatureDatumPlaneHeader {
     pub id: String,
     pub operation_label: String,
-    header: DatumPlanePayloadHeader,
-    branch: Option<ReferenceBranch>,
+    control: u8,
+    construction: Construction,
     pub source_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Construction {
+    HeaderOnly { declared_count: u8, branch_tag: u8 },
+    Decoded(ReferenceBranch),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Branch<B> {
     Single {
+        form: SingleForm,
         descriptor: ConstructionReference<B, CompactIndexAtom>,
         object: ConstructionReference<B, PayloadIndexToken>,
     },
     Double {
+        form: DoubleForm,
         objects: [ConstructionReference<B, PayloadIndexToken>; 2],
     },
 }
 
 impl<B> Branch<B> {
+    fn header(&self) -> (u8, u8) {
+        match self {
+            Self::Single { form, .. } => form.header(),
+            Self::Double { form, .. } => (form.count(), 0x29),
+        }
+    }
+
     fn descriptor(&self) -> Option<&ConstructionReference<B, CompactIndexAtom>> {
         match self {
             Self::Single { descriptor, .. } => Some(descriptor),
@@ -45,7 +60,7 @@ impl<B> Branch<B> {
     fn objects(&self) -> &[ConstructionReference<B, PayloadIndexToken>] {
         match self {
             Self::Single { object, .. } => std::slice::from_ref(object),
-            Self::Double { objects } => objects,
+            Self::Double { objects, .. } => objects,
         }
     }
 
@@ -78,7 +93,12 @@ impl Branch<()> {
             }
         };
         Some(match self {
-            Self::Single { descriptor, object } => Branch::Single {
+            Self::Single {
+                form,
+                descriptor,
+                object,
+            } => Branch::Single {
+                form: *form,
                 descriptor: ConstructionReference {
                     token: descriptor.token,
                     data_block: block(descriptor.token.value())?,
@@ -87,8 +107,10 @@ impl Branch<()> {
                 object: resolve_object(object, block(object.token.value())?),
             },
             Self::Double {
+                form,
                 objects: [first, second],
             } => Branch::Double {
+                form: *form,
                 objects: [
                     resolve_object(first, block(first.token.value())?),
                     resolve_object(second, block(second.token.value())?),
@@ -109,26 +131,33 @@ impl FeatureDatumPlaneHeader {
         &self,
         lane: DatumPlaneBlockLane,
     ) -> impl Iterator<Item = &String> {
-        let blocks = match (&self.branch, lane) {
+        let blocks = match (&self.construction, lane) {
             (
-                Some(ReferenceBranch::Resolved(Branch::Single { descriptor, .. })),
+                Construction::Decoded(ReferenceBranch::Resolved(Branch::Single {
+                    descriptor, ..
+                })),
                 DatumPlaneBlockLane::Descriptor,
             ) => [Some(&descriptor.data_block), None],
             (
-                Some(ReferenceBranch::Resolved(Branch::Single { object, .. })),
+                Construction::Decoded(ReferenceBranch::Resolved(Branch::Single { object, .. })),
                 DatumPlaneBlockLane::Object,
             ) => [Some(&object.data_block), None],
             (
-                Some(ReferenceBranch::Resolved(Branch::Double {
+                Construction::Decoded(ReferenceBranch::Resolved(Branch::Double {
                     objects: [first, second],
+                    ..
                 })),
                 DatumPlaneBlockLane::Object,
             ) => [Some(&first.data_block), Some(&second.data_block)],
             (
-                Some(ReferenceBranch::Resolved(Branch::Double { .. })),
+                Construction::Decoded(ReferenceBranch::Resolved(Branch::Double { .. })),
                 DatumPlaneBlockLane::Descriptor,
             )
-            | (Some(ReferenceBranch::Unresolved(_)) | None, _) => [None, None],
+            | (
+                Construction::Decoded(ReferenceBranch::Unresolved(_))
+                | Construction::HeaderOnly { .. },
+                _,
+            ) => [None, None],
         };
         blocks.into_iter().flatten()
     }
@@ -142,7 +171,9 @@ pub(crate) fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureD
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(header) = crate::om::datum_plane_payload_header(record.payload_view()) else {
+            let Some(header) =
+                datum_plane_header::datum_plane_payload_header(record.payload_view())
+            else {
                 return;
             };
             let object = |reference: crate::om::PayloadObjectReference<PayloadIndexToken>| {
@@ -152,22 +183,26 @@ pub(crate) fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureD
                     source_offset: entry_offset + reference.offset as u64,
                 }
             };
-            let branch = crate::om::datum_plane_descriptor_reference_branch(record.payload_view())
-                .map(|branch| Branch::Single {
-                    descriptor: ConstructionReference {
-                        token: branch.descriptor.atom,
-                        data_block: (),
-                        source_offset: entry_offset + branch.descriptor.offset as u64,
-                    },
-                    object: object(branch.object),
-                })
-                .or_else(|| {
-                    crate::om::datum_plane_double_reference_branch(record.payload_view()).map(
-                        |branch| Branch::Double {
-                            objects: branch.references.map(object),
+            let branch =
+                datum_plane_header::datum_plane_descriptor_reference_branch(record.payload_view())
+                    .map(|branch| Branch::Single {
+                        form: branch.form,
+                        descriptor: ConstructionReference {
+                            token: branch.descriptor.atom,
+                            data_block: (),
+                            source_offset: entry_offset + branch.descriptor.offset as u64,
                         },
-                    )
-                });
+                        object: object(branch.object),
+                    })
+                    .or_else(|| {
+                        datum_plane_header::datum_plane_double_reference_branch(
+                            record.payload_view(),
+                        )
+                        .map(|branch| Branch::Double {
+                            form: branch.form,
+                            objects: branch.references.map(object),
+                        })
+                    });
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let input_prefixes = inputs
@@ -201,8 +236,14 @@ pub(crate) fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureD
                     "nx:feature-history:datum-plane-header#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label,
-                header,
-                branch,
+                control: header.control,
+                construction: branch.map_or(
+                    Construction::HeaderOnly {
+                        declared_count: header.declared_count,
+                        branch_tag: header.branch_tag,
+                    },
+                    Construction::Decoded,
+                ),
                 source_offset: entry_offset + record.payload_offset() as u64,
             });
         },
@@ -252,12 +293,20 @@ struct HeaderWire {
 
 impl Serialize for FeatureDatumPlaneHeader {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (declared_count, branch_tag) = match &self.construction {
+            Construction::HeaderOnly {
+                declared_count,
+                branch_tag,
+            } => (*declared_count, *branch_tag),
+            Construction::Decoded(ReferenceBranch::Unresolved(branch)) => branch.header(),
+            Construction::Decoded(ReferenceBranch::Resolved(branch)) => branch.header(),
+        };
         let mut wire = HeaderWire {
             id: self.id.clone(),
             operation_label: self.operation_label.clone(),
-            control: self.header.control,
-            declared_count: self.header.declared_count,
-            branch_tag: self.header.branch_tag,
+            control: self.control,
+            declared_count,
+            branch_tag,
             descriptor_indices: Vec::new(),
             raw_descriptor_indices: Vec::new(),
             object_indices: Vec::new(),
@@ -268,12 +317,14 @@ impl Serialize for FeatureDatumPlaneHeader {
             object_source_offsets: Vec::new(),
             source_offset: self.source_offset,
         };
-        match &self.branch {
-            Some(ReferenceBranch::Unresolved(branch)) => branch.write_wire(&mut wire, |()| None),
-            Some(ReferenceBranch::Resolved(branch)) => {
+        match &self.construction {
+            Construction::Decoded(ReferenceBranch::Unresolved(branch)) => {
+                branch.write_wire(&mut wire, |()| None)
+            }
+            Construction::Decoded(ReferenceBranch::Resolved(branch)) => {
                 branch.write_wire(&mut wire, |block| Some(block.clone()));
             }
-            None => {}
+            Construction::HeaderOnly { .. } => {}
         }
         wire.serialize(serializer)
     }
@@ -325,24 +376,19 @@ impl<'de> Deserialize<'de> for FeatureDatumPlaneHeader {
         .map_err(serde::de::Error::custom)?;
         let branch = match (descriptors.as_slice(), objects.as_slice()) {
             ([], []) => None,
-            ([descriptor], [object])
-                if matches!(
-                    (wire.declared_count, wire.branch_tag),
-                    (2, 0x1b | 0x23) | (3, 0x28)
-                ) =>
-            {
-                Some(Branch::Single {
-                    descriptor: descriptor.clone(),
-                    object: object.clone(),
-                })
-            }
-            ([], [first, second])
-                if matches!((wire.declared_count, wire.branch_tag), (2 | 3, 0x29)) =>
-            {
-                Some(Branch::Double {
-                    objects: [first.clone(), second.clone()],
-                })
-            }
+            ([descriptor], [object]) => Some(Branch::Single {
+                form: SingleForm::from_header(wire.declared_count, wire.branch_tag).ok_or_else(
+                    || serde::de::Error::custom("declared_count/branch_tag: invalid single branch"),
+                )?,
+                descriptor: descriptor.clone(),
+                object: object.clone(),
+            }),
+            ([], [first, second]) => Some(Branch::Double {
+                form: DoubleForm::from_header(wire.declared_count, wire.branch_tag).ok_or_else(
+                    || serde::de::Error::custom("declared_count/branch_tag: invalid double branch"),
+                )?,
+                objects: [first.clone(), second.clone()],
+            }),
             _ => {
                 return Err(serde::de::Error::custom(
                     "datum-plane references do not match declared_count/branch_tag",
@@ -378,12 +424,14 @@ impl<'de> Deserialize<'de> for FeatureDatumPlaneHeader {
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            header: DatumPlanePayloadHeader {
-                control: wire.control,
-                declared_count: wire.declared_count,
-                branch_tag: wire.branch_tag,
-            },
-            branch,
+            control: wire.control,
+            construction: branch.map_or(
+                Construction::HeaderOnly {
+                    declared_count: wire.declared_count,
+                    branch_tag: wire.branch_tag,
+                },
+                Construction::Decoded,
+            ),
             source_offset: wire.source_offset,
         })
     }
