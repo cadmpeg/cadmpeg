@@ -93,6 +93,7 @@ pub(crate) mod nurbs;
 pub(crate) mod om;
 pub(crate) mod om_tokens;
 pub(crate) mod parasolid;
+mod printable_string;
 pub(crate) mod topology;
 mod vec3_at;
 

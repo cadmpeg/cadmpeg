@@ -5,7 +5,7 @@ use cadmpeg_core::decode::View;
 use crate::framing::read_and_advance as read_xmt;
 use crate::framing::xmt_reference::NonNullXmt;
 use crate::parasolid::counted_values::{CountedLane, CountedValues};
-use crate::parasolid::printable_string::PrintableString;
+use crate::printable_string::PrintableString;
 use crate::parasolid::unicode_value::{UnicodeLane, UnicodeValue};
 
 /// A framed record with a checked family-specific value.

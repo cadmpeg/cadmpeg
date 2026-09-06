@@ -1269,7 +1269,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         next_definition_xmt: None,
         identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: crate::parasolid::printable_string::PrintableString::new("SDL/TYSA_DENSITY".to_string()).unwrap(),
+        name: crate::printable_string::PrintableString::new("SDL/TYSA_DENSITY".to_string()).unwrap(),
         type_id: std::num::NonZeroU32::new(8004).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: None,
@@ -1381,7 +1381,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         next_definition_xmt: None,
         identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: crate::parasolid::printable_string::PrintableString::new("SDL/TYSA_DENSITY".to_string()).unwrap(),
+        name: crate::printable_string::PrintableString::new("SDL/TYSA_DENSITY".to_string()).unwrap(),
         type_id: std::num::NonZeroU32::new(8004).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: None,
@@ -1445,7 +1445,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     );
 
     let generic_definition = ParasolidAttributeDefinition {
-        name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+        name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
         field_names_xmt: crate::framing::xmt_reference::XmtTarget::from_wire(25),
         ..definition.clone()
     };
@@ -1463,7 +1463,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     );
 
     let named_definition = ParasolidAttributeDefinition {
-        name: crate::parasolid::printable_string::PrintableString::new("PVM/25_1".to_string()).unwrap(),
+        name: crate::printable_string::PrintableString::new("PVM/25_1".to_string()).unwrap(),
         field_names_xmt: crate::framing::xmt_reference::XmtTarget::from_wire(25),
         ..definition.clone()
     };
@@ -1528,7 +1528,7 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
         next_definition_xmt: None,
         identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: crate::parasolid::printable_string::PrintableString::new("SDL/TYSA_BLEND_ID".to_string()).unwrap(),
+        name: crate::printable_string::PrintableString::new("SDL/TYSA_BLEND_ID".to_string()).unwrap(),
         type_id: std::num::NonZeroU32::new(8004).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: None,
@@ -1622,7 +1622,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         next_definition_xmt: None,
         identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+        name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
         type_id: std::num::NonZeroU32::new(8000).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: None,

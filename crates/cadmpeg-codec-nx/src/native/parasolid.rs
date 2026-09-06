@@ -30,7 +30,7 @@ use entity51_wire::Entity51Wire;
 use crate::parasolid::entity_references::{EntityReferences, FieldPosition};
 use crate::parasolid::counted_values::CountedValues;
 use crate::parasolid::unicode_value::UnicodeValue;
-use crate::parasolid::printable_string::PrintableString;
+use crate::printable_string::PrintableString;
 pub(crate) mod named_fields;
 use named_fields::NamedField;
 mod support_uv_wire;
@@ -3998,7 +3998,7 @@ mod tests {
             next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(10).unwrap(),
             identifier_inflated_offset: 32,
-            name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+            name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: None,
@@ -4211,7 +4211,7 @@ mod tests {
             next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(10).unwrap(),
             identifier_inflated_offset: 32,
-            name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+            name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: None,
@@ -4270,7 +4270,7 @@ mod tests {
             next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
             identifier_inflated_offset: 10,
-            name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+            name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: XmtTarget::from_wire(field_names_xmt),
@@ -4404,7 +4404,7 @@ mod tests {
             next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
             identifier_inflated_offset: 10,
-            name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+            name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: XmtTarget::from_wire(25),
@@ -4656,7 +4656,7 @@ mod tests {
             next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
             identifier_inflated_offset: 80,
-            name: crate::parasolid::printable_string::PrintableString::new("UG2/PMARK_ATTRIBUTE".to_string()).unwrap(),
+            name: crate::printable_string::PrintableString::new("UG2/PMARK_ATTRIBUTE".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(9000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: None,
@@ -4735,7 +4735,7 @@ mod tests {
             next_definition_xmt: None,
             identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
             identifier_inflated_offset: 10,
-            name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+            name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: None,

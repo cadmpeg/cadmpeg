@@ -31,8 +31,7 @@ pub(crate) mod unicode_value;
 pub(crate) mod counted_values;
 
 
-pub(crate) mod printable_string;
-use printable_string::PrintableString;
+use crate::printable_string::PrintableString;
 
 pub(crate) mod entity_references;
 pub(crate) mod name_references;
