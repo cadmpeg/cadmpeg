@@ -1573,7 +1573,7 @@ pub struct IdenticalInstanceOutputPayloadLane {
     /// Schema index framing the serialized count.
     pub count_schema_index: IdenticalInstanceSchemaIndex,
     /// Ordered non-null compact selectors with their exact source tokens.
-    pub selectors: Vec<LaneToken<u32>>,
+    pub selectors: compact::CountedIndexMembers<LocatedCompactIndex>,
 }
 
 /// Exact construction header in a point-feature payload.
@@ -3557,7 +3557,7 @@ pub fn identical_instance_output_payload_lane(
     if record.label.value != "IDENTICAL INSTANCE OUTPUT" {
         return None;
     }
-    let validate = |start: usize| {
+    let decode = |start: usize| {
         let leading_schema_index = *record.payload.get(start)?;
         let count_schema_index = IdenticalInstanceSchemaIndex::new(*record.payload.get(start + 1)?)?;
         (record.payload.get(start + 2) == Some(&0x01)).then_some(())?;
@@ -3565,39 +3565,6 @@ pub fn identical_instance_output_payload_lane(
         (declared_count >= 2).then_some(())?;
         let [first_schema_index, second_schema_index, third_schema_index] =
             count_schema_index.row_indices();
-        let mut at = start + 4;
-        for ordinal in 2..=declared_count {
-            (record.payload.get(at) == Some(&first_schema_index)).then_some(())?;
-            (record.payload.get(at + 1) == Some(&second_schema_index)).then_some(())?;
-            (record.payload.get(at + 2..at + 4) == Some(&ROW_MIDDLE)).then_some(())?;
-            (record.payload.get(at + 4) == Some(&third_schema_index)).then_some(())?;
-            at += 5;
-            let (CompactIndex::Value(_), width) = compact_index(record.payload.get(at..)?)? else {
-                return None;
-            };
-            at += width;
-            (record.payload.get(at) == Some(&0x00)).then_some(())?;
-            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
-            at += 2;
-        }
-        let terminal_count = declared_count.checked_add(1)?;
-        (record.payload.get(at) == Some(&0x00)).then_some(())?;
-        (record.payload.get(at + 1) == Some(&terminal_count)).then_some(())?;
-        (record.payload.get(at + 2..at + 2 + SENTINEL.len()) == Some(&SENTINEL)).then_some(())?;
-        Some((
-            leading_schema_index,
-            count_schema_index,
-            declared_count,
-            [first_schema_index, second_schema_index, third_schema_index],
-        ))
-    };
-    let decode = |start: usize| {
-        let (
-            leading_schema_index,
-            count_schema_index,
-            declared_count,
-            [first_schema_index, second_schema_index, third_schema_index],
-        ) = validate(start)?;
         let mut at = start + 4;
         let mut selectors = Vec::with_capacity(usize::from(declared_count - 1));
         for ordinal in 2..=declared_count {
@@ -3607,13 +3574,10 @@ pub fn identical_instance_output_payload_lane(
             (record.payload.get(at + 4) == Some(&third_schema_index)).then_some(())?;
             at += 5;
             let selector_offset = at;
-            let (selector, width) = compact_index(record.payload.get(at..)?)?;
-            let CompactIndex::Value(selector) = selector else {
-                return None;
-            };
-            selectors.push(LaneToken {
-                value: selector,
-                raw: record.payload[at..at + width].to_vec(),
+            let atom = CompactIndexAtom::read(record.payload.get(at..)?)?;
+            let width = atom.raw().len();
+            selectors.push(LocatedCompactIndex {
+                atom,
                 offset: record.payload_offset + selector_offset,
             });
             at += width;
@@ -3629,7 +3593,7 @@ pub fn identical_instance_output_payload_lane(
             offset: record.payload_offset + start,
             leading_schema_index,
             count_schema_index,
-            selectors,
+            selectors: compact::CountedIndexMembers::new(selectors).ok()?,
         })
     };
     unique_candidate((0..record.payload.len().saturating_sub(3)).filter_map(decode))

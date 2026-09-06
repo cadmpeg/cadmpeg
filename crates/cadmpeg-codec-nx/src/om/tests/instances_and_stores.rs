@@ -156,23 +156,26 @@ fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
     assert_eq!(lane.leading_schema_index, 0x34);
     assert_eq!(lane.count_schema_index.value(), 0x13);
     assert_eq!(lane.count_schema_index.row_indices(), [0x14, 0x15, 0x16]);
-    assert_eq!(lane.selectors.len() + 1, 4);
+    assert_eq!(lane.selectors.as_slice().len() + 1, 4);
     assert_eq!(
         lane.selectors
+            .as_slice()
             .iter()
-            .map(|row| row.value)
+            .map(|row| row.atom.value())
             .collect::<Vec<_>>(),
         [0x20, 0x0f, 0x123]
     );
     assert_eq!(
         lane.selectors
+            .as_slice()
             .iter()
-            .map(|row| row.raw.clone())
+            .map(|row| row.atom.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x80, 0x20], vec![0x0f], vec![0x81, 0x23]]
     );
     assert_eq!(
         lane.selectors
+            .as_slice()
             .iter()
             .map(|row| row.offset)
             .collect::<Vec<_>>(),

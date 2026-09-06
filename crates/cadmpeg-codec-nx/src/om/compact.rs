@@ -119,6 +119,10 @@ impl<T> CountedIndexMembers<T> {
 
     pub(crate) fn as_slice(&self) -> &[T] { &self.0 }
 
+    pub(crate) fn map<U>(self, f: impl FnMut(T) -> U) -> CountedIndexMembers<U> {
+        CountedIndexMembers(self.0.into_iter().map(f).collect())
+    }
+
     pub(crate) fn try_map<U>(self, f: impl FnMut(T) -> Option<U>) -> Option<CountedIndexMembers<U>> {
         Some(CountedIndexMembers(self.0.into_iter().map(f).collect::<Option<Vec<_>>>()?))
     }

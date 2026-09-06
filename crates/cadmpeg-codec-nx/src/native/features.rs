@@ -3769,7 +3769,7 @@ pub struct FeatureIdenticalInstanceOutputLane {
     /// Schema index framing the serialized count.
     pub count_schema_index: crate::om::IdenticalInstanceSchemaIndex,
     /// Ordered complete source tokens.
-    pub selectors: Vec<FeatureIndexToken>,
+    pub selectors: crate::om::compact::CountedIndexMembers<crate::om::compact::LocatedCompactIndex<u64>>,
     /// Absolute source offset of the leading schema index.
     pub source_offset: u64,
 }
@@ -3807,18 +3807,20 @@ impl From<FeatureIdenticalInstanceOutputLane> for FeatureIdenticalInstanceOutput
             leading_schema_index: lane.leading_schema_index,
             count_schema_index: lane.count_schema_index.value(),
             row_schema_indices: lane.count_schema_index.row_indices(),
-            declared_count: lane.selectors.len() + 1,
+            declared_count: usize::from(lane.selectors.declared_count()) - 1,
             source_offset: lane.source_offset,
-            selectors: lane.selectors.iter().map(|token| token.value).collect(),
+            selectors: lane.selectors.as_slice().iter().map(|token| token.atom.value()).collect(),
             raw_selectors: lane
                 .selectors
+                .as_slice()
                 .iter()
-                .map(|token| token.raw.clone())
+                .map(|token| token.atom.raw().to_vec())
                 .collect(),
             selector_source_offsets: lane
                 .selectors
+                .as_slice()
                 .iter()
-                .map(|token| token.source_offset)
+                .map(|token| token.offset)
                 .collect(),
         }
     }
@@ -3849,17 +3851,19 @@ impl TryFrom<FeatureIdenticalInstanceOutputLaneWire> for FeatureIdenticalInstanc
             leading_schema_index: wire.leading_schema_index,
             count_schema_index,
             source_offset: wire.source_offset,
-            selectors: wire
+            selectors: crate::om::compact::CountedIndexMembers::new(wire
                 .selectors
                 .into_iter()
                 .zip(wire.raw_selectors)
                 .zip(wire.selector_source_offsets)
-                .map(|((value, raw), source_offset)| FeatureIndexToken {
-                    value,
-                    raw,
-                    source_offset,
+                .map(|((value, raw), offset)| {
+                    Ok(crate::om::compact::LocatedCompactIndex {
+                        atom: crate::om::compact::CompactIndexAtom::from_wire(value, &raw)
+                            .map_err(|error| format!("selectors/raw_selectors: {error}"))?,
+                        offset,
+                    })
                 })
-                .collect(),
+                .collect::<Result<Vec<_>, String>>()?).map_err(|error| format!("selectors: {error}"))?,
         })
     }
 }
@@ -10304,11 +10308,10 @@ pub fn feature_identical_instance_output_lanes(
                 ),
                 leading_schema_index: lane.leading_schema_index,
                 count_schema_index: lane.count_schema_index,
-                selectors: lane.selectors.into_iter().map(|token| FeatureIndexToken {
-                    value: token.value,
-                    raw: token.raw,
-                    source_offset: entry_offset + token.offset as u64,
-                }).collect(),
+                selectors: lane.selectors.map(|token| crate::om::compact::LocatedCompactIndex {
+                    atom: token.atom,
+                    offset: entry_offset + token.offset as u64,
+                }),
                 source_offset: entry_offset + lane.offset as u64,
             });
         },

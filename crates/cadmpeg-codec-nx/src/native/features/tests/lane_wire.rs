@@ -575,3 +575,33 @@ fn pattern_transform_selectors_require_matching_compact_tokens() {
         assert!(error.to_string().contains("selectors"), "{error}");
     }
 }
+
+#[test]
+fn identical_instance_selectors_check_tokens_and_terminal_count_capacity() {
+    let json = r#"{"id":"lane","operation_label":"operation","leading_schema_index":4,"count_schema_index":5,"row_schema_indices":[6,7,8],"declared_count":2,"selectors":[4096],"raw_selectors":[[144,0]],"source_offset":100,"selector_source_offsets":[110]}"#;
+    check_lane_wire::<FeatureIdenticalInstanceOutputLane>(json, &[]);
+    for (field, value) in [
+        ("selectors", serde_json::json!([4097])),
+        ("raw_selectors", serde_json::json!([[144]])),
+        ("raw_selectors", serde_json::json!([[144, 0, 0]])),
+        ("raw_selectors", serde_json::json!([[255]])),
+    ] {
+        let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+        malformed[field] = value;
+        let error = serde_json::from_value::<FeatureIdenticalInstanceOutputLane>(malformed).unwrap_err();
+        assert!(error.to_string().contains("selectors"), "{error}");
+    }
+    for count in [253, 254] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["declared_count"] = serde_json::json!(count + 1);
+        wire["selectors"] = serde_json::json!(vec![1; count]);
+        wire["raw_selectors"] = serde_json::json!(vec![vec![1]; count]);
+        wire["selector_source_offsets"] = serde_json::json!(vec![110; count]);
+        let result = serde_json::from_value::<FeatureIdenticalInstanceOutputLane>(wire.clone());
+        if count == 253 {
+            assert_eq!(serde_json::to_value(result.unwrap()).unwrap(), wire);
+        } else {
+            assert!(result.unwrap_err().to_string().contains("selectors"));
+        }
+    }
+}
