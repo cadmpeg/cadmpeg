@@ -4422,7 +4422,7 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
             .definitions_by_id
             .get(class_use.attribute_definition.as_str())?
             .as_ref()?;
-        let field_name = match (definition.name.as_str(), field_use.field_ordinal) {
+        let field_name = match (definition.name.as_str(), field_use.position.field_ordinal()) {
             ("SDL/TYSA_DENSITY", 0) => "density".to_string(),
             ("SDL/TYSA_DENSITY", 1) => "units".to_string(),
             _ if self
@@ -4435,13 +4435,13 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
                     .get(definition.id.as_str())
                     .and_then(Option::as_ref)?
                     .fields
-                    .get(field_use.field_ordinal as usize)?
+                    .get(field_use.position.field_ordinal() as usize)?
                     .name
                     .clone()
             }
             _ => format!(
                 "field_{}.parasolid_type_{}",
-                field_use.field_ordinal, field_use.field_code
+                field_use.position.field_ordinal(), field_use.value_kind.field_code()
             ),
         };
         Some(format!("{}.{}", definition.name, field_name))

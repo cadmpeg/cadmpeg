@@ -6,6 +6,9 @@ use super::*;
 
 use crate::deltas::Census;
 
+pub(crate) mod field_use_wire;
+use field_use_wire::{FieldPosition, FieldUseWire};
+
 pub(crate) mod topology_attribute_kind;
 use topology_attribute_kind::TopologyAttributeKind;
 
@@ -2154,8 +2157,25 @@ pub enum ParasolidAttributeFieldValueKind {
     Unicode,
 }
 
+impl ParasolidAttributeFieldValueKind {
+    pub(crate) fn field_code(self) -> u8 {
+        match self {
+            Self::UnsignedIntegers => 1,
+            Self::Doubles => 2,
+            Self::String => 3,
+            Self::Points => 4,
+            Self::Vectors => 5,
+            Self::Directions => 6,
+            Self::Axes => 7,
+            Self::Tags => 8,
+            Self::Unicode => 10,
+        }
+    }
+}
+
 /// One uniquely typed type-81 field reference joined to its type-80 declaration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FieldUseWire", into = "FieldUseWire")]
 pub struct ParasolidAttributeFieldUse {
     /// Globally unique relation identity.
     pub id: String,
@@ -2167,12 +2187,8 @@ pub struct ParasolidAttributeFieldUse {
     pub entity_51_record: String,
     /// Uniquely matched attribute definition.
     pub attribute_definition: String,
-    /// Zero-based position in the type-80 field declaration.
-    pub field_ordinal: u32,
-    /// Declared type-80 field code.
-    pub field_code: u8,
-    /// Zero-based position in the complete type-81 reference lane.
-    pub reference_ordinal: u32,
+    /// Position in the field declaration and complete type-81 reference lane.
+    pub position: FieldPosition,
     /// Resolved value-record family.
     pub value_kind: ParasolidAttributeFieldValueKind,
     /// Type-81-to-value relation carrying this field.
@@ -3031,21 +3047,10 @@ pub fn parasolid_attribute_field_uses(
             else {
                 return None;
             };
-            let field_ordinal = reference_ordinal.checked_sub(5)?;
+            let position = FieldPosition::from_reference(reference_ordinal)?;
+            let field_ordinal = position.field_ordinal();
             let field_code = *definition.field_codes.get(field_ordinal as usize)?;
-            matches!(
-                (field_code, value_kind),
-                (1, ParasolidAttributeFieldValueKind::UnsignedIntegers)
-                    | (2, ParasolidAttributeFieldValueKind::Doubles)
-                    | (3, ParasolidAttributeFieldValueKind::String)
-                    | (4, ParasolidAttributeFieldValueKind::Points)
-                    | (5, ParasolidAttributeFieldValueKind::Vectors)
-                    | (6, ParasolidAttributeFieldValueKind::Directions)
-                    | (7, ParasolidAttributeFieldValueKind::Axes)
-                    | (8, ParasolidAttributeFieldValueKind::Tags)
-                    | (10, ParasolidAttributeFieldValueKind::Unicode)
-            )
-            .then_some(())?;
+            (field_code == value_kind.field_code()).then_some(())?;
             let (_, class_key) = class_use.id.rsplit_once('#')?;
             Some(ParasolidAttributeFieldUse {
                 id: format!("nx:s{stream_ordinal}:attribute-field-use#{class_key}-{field_ordinal}"),
@@ -3053,9 +3058,7 @@ pub fn parasolid_attribute_field_uses(
                 attribute_class_use: class_use.id.clone(),
                 entity_51_record: entity_51_record.to_string(),
                 attribute_definition: class_use.attribute_definition.clone(),
-                field_ordinal,
-                field_code,
-                reference_ordinal,
+                position,
                 value_kind: *value_kind,
                 value_use: (*value_use).to_string(),
                 value_record: (*value_record).to_string(),
@@ -3084,7 +3087,7 @@ pub fn parasolid_topology_attribute_fields_have_untransferred_values(
     let mut fields_by_identity = BTreeMap::<(&str, u32), Vec<&ParasolidAttributeFieldUse>>::new();
     for field_use in field_uses {
         fields_by_identity
-            .entry((field_use.entity_51_record.as_str(), field_use.field_ordinal))
+            .entry((field_use.entity_51_record.as_str(), field_use.position.field_ordinal()))
             .or_default()
             .push(field_use);
     }
@@ -3933,24 +3936,24 @@ mod tests {
             "nx:s2:attribute-class-use#class-use"
         );
         assert_eq!(uses[0].attribute_definition, "definition");
-        assert_eq!(uses[0].field_ordinal, 0);
-        assert_eq!(uses[0].field_code, 1);
-        assert_eq!(uses[0].reference_ordinal, 5);
+        assert_eq!(uses[0].position.field_ordinal(), 0);
+        assert_eq!(uses[0].value_kind.field_code(), 1);
+        assert_eq!(uses[0].position.reference_ordinal(), 5);
         assert_eq!(
             uses[0].value_kind,
             ParasolidAttributeFieldValueKind::UnsignedIntegers
         );
         assert_eq!(uses[0].value_use, "numeric-use");
         assert_eq!(uses[0].value_record, "integers");
-        assert_eq!(uses[1].field_ordinal, 1);
-        assert_eq!(uses[1].field_code, 2);
+        assert_eq!(uses[1].position.field_ordinal(), 1);
+        assert_eq!(uses[1].value_kind.field_code(), 2);
         assert_eq!(
             uses[1].value_kind,
             ParasolidAttributeFieldValueKind::Doubles
         );
         assert_eq!(uses[1].value_record, "doubles");
-        assert_eq!(uses[2].field_ordinal, 2);
-        assert_eq!(uses[2].field_code, 3);
+        assert_eq!(uses[2].position.field_ordinal(), 2);
+        assert_eq!(uses[2].value_kind.field_code(), 3);
         assert_eq!(uses[2].value_kind, ParasolidAttributeFieldValueKind::String);
         assert_eq!(uses[2].value_record, "string");
 
@@ -4135,7 +4138,7 @@ mod tests {
         let uses =
             parasolid_attribute_field_uses(&[class_use], &[definition], &[], &[], &mismatched);
         assert_eq!(uses.len(), 5);
-        assert!(uses.iter().all(|use_| use_.field_ordinal != 0));
+        assert!(uses.iter().all(|use_| use_.position.field_ordinal() != 0));
     }
 
     #[test]
@@ -4181,9 +4184,7 @@ mod tests {
             attribute_class_use: class_use.id.clone(),
             entity_51_record: entity.id.clone(),
             attribute_definition: "definition".into(),
-            field_ordinal: 0,
-            field_code: 4,
-            reference_ordinal: 5,
+            position: crate::native::parasolid::field_use_wire::FieldPosition::from_reference(5).unwrap(),
             value_kind: ParasolidAttributeFieldValueKind::Points,
             value_use: "point-use".into(),
             value_record: "points".into(),
