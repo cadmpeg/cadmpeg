@@ -27,9 +27,12 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
             family: FeatureInputRelationFamily::CircleDiameter,
             class_ref: "circle-class".into(),
             feature_ref: feature.into(),
-            scalar_refs: Vec::new(),
-            parameter_scalar_ref: None,
-            display_scalar_ref: None,
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                Vec::new(),
+                None,
+                None,
+            )
+            .unwrap(),
             operands: vec![FeatureInputOperand {
                 offset: 0,
                 reference_ref: "reference".into(),

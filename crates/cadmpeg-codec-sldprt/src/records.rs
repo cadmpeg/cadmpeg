@@ -7,6 +7,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub(crate) mod relation_scalars;
+
 /// One semantic product-manufacturing dimension from `PMISemanticDataDB`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -491,16 +493,26 @@ pub struct FeatureInputRelationInstance {
     pub class_ref: String,
     /// Native sketch feature owning the relation.
     pub feature_ref: String,
-    /// Scalar records carrying measured and target values.
-    pub scalar_refs: Vec<String>,
-    /// Unique driving scalar carrying the target parameter.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameter_scalar_ref: Option<String>,
-    /// Unique display-role scalar attached to the relation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_scalar_ref: Option<String>,
+    /// Scalar members and their selected parameter and display roles.
+    #[serde(flatten)]
+    #[cfg_attr(feature = "schema", schemars(with = "relation_scalars::Wire"))]
+    pub scalars: relation_scalars::RelationScalars,
     /// Operand cells shared by the participating scalar records.
     pub operands: Vec<FeatureInputOperand>,
+}
+
+impl FeatureInputRelationInstance {
+    pub fn scalar_refs(&self) -> &[String] {
+        self.scalars.refs()
+    }
+
+    pub fn parameter_scalar_ref(&self) -> Option<&str> {
+        self.scalars.parameter()
+    }
+
+    pub fn display_scalar_ref(&self) -> Option<&str> {
+        self.scalars.display()
+    }
 }
 
 /// Native sketch-relation family.

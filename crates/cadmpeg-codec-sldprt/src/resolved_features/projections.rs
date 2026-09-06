@@ -154,18 +154,18 @@ pub(crate) fn bind_parameter_scalars<'a>(
             .relation_instances
             .iter()
             .filter(|relation| relation.family != FeatureInputRelationFamily::Angle)
-            .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
+            .filter_map(|relation| relation.parameter_scalar_ref())
             .collect::<HashSet<_>>();
         let angle_scalars = lane
             .relation_instances
             .iter()
             .filter(|relation| relation.family == FeatureInputRelationFamily::Angle)
-            .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
+            .filter_map(|relation| relation.parameter_scalar_ref())
             .collect::<HashSet<_>>();
         let detached_scalars = lane
             .relation_instances
             .iter()
-            .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
+            .filter_map(|relation| relation.parameter_scalar_ref())
             .filter(|id| {
                 lane.scalars
                     .iter()
@@ -357,7 +357,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
 
     for lane in lanes {
         for relation in &lane.relation_instances {
-            if relation.parameter_scalar_ref.is_some()
+            if relation.parameter_scalar_ref().is_some()
                 || owned.get(&relation.id).is_some_and(Option::is_some)
                 || relation_ids.contains(&relation.id)
             {

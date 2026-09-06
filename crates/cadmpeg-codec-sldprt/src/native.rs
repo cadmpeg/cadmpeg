@@ -563,14 +563,14 @@ impl SldprtNative {
         if let Some(record) = relation_instances.iter().find(|record| {
             !class_ids.contains(record.class_ref.as_str())
                 || !feature_ids.contains(record.feature_ref.as_str())
-                || record.scalar_refs.is_empty()
-                || (record.scalar_refs.len() > 3
+                || record.scalar_refs().is_empty()
+                || (record.scalar_refs().len() > 3
                     && !repeated_circle_display_shape_valid(record, &scalars, &names))
                 || record
-                    .scalar_refs
+                    .scalar_refs()
                     .iter()
                     .enumerate()
-                    .any(|(index, scalar)| record.scalar_refs[..index].contains(scalar))
+                    .any(|(index, scalar)| record.scalar_refs()[..index].contains(scalar))
                 || classes
                     .iter()
                     .find(|class| class.id == record.class_ref)
@@ -582,18 +582,10 @@ impl SldprtNative {
                         )
                     })
                 || record
-                    .scalar_refs
+                    .scalar_refs()
                     .iter()
                     .any(|scalar| !scalar_ids.contains(scalar.as_str()))
-                || record
-                    .parameter_scalar_ref
-                    .as_deref()
-                    .is_some_and(|scalar| !record.scalar_refs.iter().any(|value| value == scalar))
-                || record
-                    .display_scalar_ref
-                    .as_deref()
-                    .is_some_and(|scalar| !record.scalar_refs.iter().any(|value| value == scalar))
-                || record.parameter_scalar_ref.as_deref().is_some_and(|id| {
+                || record.parameter_scalar_ref().is_some_and(|id| {
                     scalars
                         .iter()
                         .find(|scalar| scalar.id == id)
@@ -601,7 +593,7 @@ impl SldprtNative {
                             scalar.role != crate::records::FeatureInputScalarRole::Driving
                         })
                 })
-                || record.display_scalar_ref.as_deref().is_some_and(|id| {
+                || record.display_scalar_ref().is_some_and(|id| {
                     scalars
                         .iter()
                         .find(|scalar| scalar.id == id)
@@ -1185,19 +1177,10 @@ impl SldprtNative {
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || !relation_instance_shape_valid(record, lane)
                     || record
-                        .scalar_refs
+                        .scalar_refs()
                         .iter()
                         .any(|scalar| !scalar_ids.contains(scalar.as_str()))
-                    || record
-                        .parameter_scalar_ref
-                        .as_deref()
-                        .is_some_and(|scalar| {
-                            !record.scalar_refs.iter().any(|value| value == scalar)
-                        })
-                    || record.display_scalar_ref.as_deref().is_some_and(|scalar| {
-                        !record.scalar_refs.iter().any(|value| value == scalar)
-                    })
-                    || record.parameter_scalar_ref.as_deref().is_some_and(|id| {
+                    || record.parameter_scalar_ref().is_some_and(|id| {
                         lane.scalars
                             .iter()
                             .find(|scalar| scalar.id == id)
@@ -1205,7 +1188,7 @@ impl SldprtNative {
                                 scalar.role != crate::records::FeatureInputScalarRole::Driving
                             })
                     })
-                    || record.display_scalar_ref.as_deref().is_some_and(|id| {
+                    || record.display_scalar_ref().is_some_and(|id| {
                         lane.scalars
                             .iter()
                             .find(|scalar| scalar.id == id)
@@ -1365,7 +1348,7 @@ fn relation_instance_shape_valid(
     record: &FeatureInputRelationInstance,
     lane: &FeatureInputLane,
 ) -> bool {
-    if record.scalar_refs.is_empty() {
+    if record.scalar_refs().is_empty() {
         return false;
     }
     let Some(class) = lane
@@ -1383,7 +1366,7 @@ fn relation_instance_shape_valid(
         return false;
     }
     let mut positions = Vec::new();
-    for scalar_ref in &record.scalar_refs {
+    for scalar_ref in record.scalar_refs() {
         let Some((position, scalar)) = lane
             .scalars
             .iter()
@@ -1399,7 +1382,7 @@ fn relation_instance_shape_valid(
     }
     let repeated_circle_display =
         repeated_circle_display_shape_valid(record, &lane.scalars, &lane.names);
-    if record.scalar_refs.len() > 3 && !repeated_circle_display {
+    if record.scalar_refs().len() > 3 && !repeated_circle_display {
         return false;
     }
     let scalar_operands_match = |scalar: &crate::records::FeatureInputScalar| {
@@ -1445,7 +1428,7 @@ fn relation_instance_shape_valid(
     match detached.as_slice() {
         [] => true,
         [(position, scalar)] => {
-            record.parameter_scalar_ref.as_deref() == Some(scalar.id.as_str())
+            record.parameter_scalar_ref() == Some(scalar.id.as_str())
                 && *position > operand_scalars.last().expect("nonempty operand scalars").0
         }
         _ => false,
@@ -1458,19 +1441,19 @@ fn repeated_circle_display_shape_valid(
     names: &[FeatureInputName],
 ) -> bool {
     if record.family != crate::records::FeatureInputRelationFamily::CircleDiameter
-        || record.parameter_scalar_ref.is_some()
-        || record.display_scalar_ref.is_some()
-        || record.scalar_refs.len() < 2
+        || record.parameter_scalar_ref().is_some()
+        || record.display_scalar_ref().is_some()
+        || record.scalar_refs().len() < 2
         || record.operands.len() != 1
     {
         return false;
     }
     let records = record
-        .scalar_refs
+        .scalar_refs()
         .iter()
         .filter_map(|scalar_id| scalars.iter().find(|scalar| scalar.id == *scalar_id))
         .collect::<Vec<_>>();
-    if records.len() != record.scalar_refs.len() {
+    if records.len() != record.scalar_refs().len() {
         return false;
     }
     if records

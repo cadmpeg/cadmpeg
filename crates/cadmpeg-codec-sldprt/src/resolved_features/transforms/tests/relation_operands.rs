@@ -774,9 +774,12 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
-        scalar_refs: Vec::new(),
-        parameter_scalar_ref: None,
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            Vec::new(),
+            None,
+            None,
+        )
+        .unwrap(),
         operands: vec![FeatureInputOperand {
             offset: 5,
             reference_ref: "shared-reference".into(),
@@ -1336,9 +1339,12 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
-        scalar_refs: Vec::new(),
-        parameter_scalar_ref: Some("scalar".into()),
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["scalar".into()],
+            Some("scalar".into()),
+            None,
+        )
+        .unwrap(),
         operands: [&first, &second]
             .into_iter()
             .enumerate()
@@ -1433,9 +1439,12 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
         family: FeatureInputRelationFamily::LineLineDistance,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
-        scalar_refs: Vec::new(),
-        parameter_scalar_ref: Some("scalar".into()),
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["scalar".into()],
+            Some("scalar".into()),
+            None,
+        )
+        .unwrap(),
         operands: [7, 10]
             .into_iter()
             .map(|entity_index| FeatureInputOperand {
@@ -1525,9 +1534,12 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
         family: FeatureInputRelationFamily::LineLineDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
-        scalar_refs: Vec::new(),
-        parameter_scalar_ref: Some("scalar".into()),
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["scalar".into()],
+            Some("scalar".into()),
+            None,
+        )
+        .unwrap(),
         operands: vec![
             FeatureInputOperand {
                 offset: 0,

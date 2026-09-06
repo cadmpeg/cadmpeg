@@ -2392,8 +2392,7 @@ pub(crate) fn project_relation_bindings(
                 definition,
                 name: None,
                 driving: relation
-                    .parameter_scalar_ref
-                    .as_ref()
+                    .parameter_scalar_ref()
                     .map(|_| true)
                     .or_else(|| has_display_scalar.then_some(false)),
                 active,
@@ -2496,7 +2495,7 @@ pub(crate) fn owned_relation_parameters<'a>(
     let mut owned = HashMap::new();
     for lane in &lanes {
         for relation in &lane.relation_instances {
-            let Some(scalar) = relation.parameter_scalar_ref.as_deref() else {
+            let Some(scalar) = relation.parameter_scalar_ref() else {
                 continue;
             };
             let parameter = parameters_by_scalar
@@ -2514,11 +2513,11 @@ pub(crate) fn owned_relation_parameters<'a>(
     }
     for lane in &lanes {
         for relation in &lane.relation_instances {
-            if relation.parameter_scalar_ref.is_some() {
+            if relation.parameter_scalar_ref().is_some() {
                 continue;
             }
             let exact_matches = relation
-                .scalar_refs
+                .scalar_refs()
                 .iter()
                 .filter_map(|scalar| parameters_by_scalar.get(scalar.as_str()).copied())
                 .collect::<Vec<_>>();
@@ -2554,7 +2553,7 @@ pub(super) fn relation_display_scalar<'a>(
     relation: &FeatureInputRelationInstance,
     lane: &'a FeatureInputLane,
 ) -> Option<&'a FeatureInputScalar> {
-    if let Some(display_id) = relation.display_scalar_ref.as_deref() {
+    if let Some(display_id) = relation.display_scalar_ref() {
         return lane
             .scalars
             .iter()
@@ -2562,7 +2561,7 @@ pub(super) fn relation_display_scalar<'a>(
             .filter(|scalar| scalar.role == FeatureInputScalarRole::Display);
     }
     let candidates = relation
-        .scalar_refs
+        .scalar_refs()
         .iter()
         .filter_map(|scalar_id| lane.scalars.iter().find(|scalar| scalar.id == *scalar_id))
         .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
@@ -2579,15 +2578,15 @@ pub(super) fn relation_display_scalar_for_parameter<'a>(
 ) -> Option<&'a FeatureInputScalar> {
     relation_display_scalar(relation, lane).or_else(|| {
         if relation.family != FeatureInputRelationFamily::CircleDiameter
-            || relation.parameter_scalar_ref.is_some()
-            || relation.display_scalar_ref.is_some()
-            || relation.scalar_refs.len() < 2
+            || relation.parameter_scalar_ref().is_some()
+            || relation.display_scalar_ref().is_some()
+            || relation.scalar_refs().len() < 2
             || relation.operands.len() != 1
         {
             return None;
         }
         let scalars = relation
-            .scalar_refs
+            .scalar_refs()
             .iter()
             .filter_map(|scalar_id| lane.scalars.iter().find(|scalar| scalar.id == *scalar_id))
             .collect::<Vec<_>>();
@@ -2624,7 +2623,7 @@ pub(super) fn relation_display_scalar_for_parameter<'a>(
             }
             entity_indices.push(operand.entity_index);
         }
-        (scalars.len() == relation.scalar_refs.len()).then_some(first)
+        (scalars.len() == relation.scalar_refs().len()).then_some(first)
     })
 }
 
@@ -2707,10 +2706,9 @@ fn relation_parameter_by_driving_name<'a>(
         .map(|name| (name.id.as_str(), name.value.as_str()))
         .collect::<HashMap<_, _>>();
     let mut driving_names = relation
-        .parameter_scalar_ref
-        .as_deref()
+        .parameter_scalar_ref()
         .into_iter()
-        .chain(relation.scalar_refs.iter().map(String::as_str))
+        .chain(relation.scalar_refs().iter().map(String::as_str))
         .filter_map(|scalar| scalars.get(scalar))
         .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
         .filter_map(|scalar| names.get(scalar.name.as_str()).copied())
@@ -2822,9 +2820,12 @@ mod relation_geometry_tests {
             family: FeatureInputRelationFamily::PointPointDistance,
             class_ref: "class".into(),
             feature_ref: "feature-native".into(),
-            scalar_refs: vec!["terminal".into()],
-            parameter_scalar_ref: Some("terminal".into()),
-            display_scalar_ref: None,
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                vec!["terminal".into()],
+                Some("terminal".into()),
+                None,
+            )
+            .unwrap(),
             operands: vec![operand(40, 12), operand(52, 13)],
         };
         let lane = FeatureInputLane {
@@ -3022,9 +3023,12 @@ mod relation_geometry_tests {
             family: FeatureInputRelationFamily::LineLineDistance,
             class_ref: "class".into(),
             feature_ref: FEATURE.into(),
-            scalar_refs: vec!["scalar".into()],
-            parameter_scalar_ref: Some("scalar".into()),
-            display_scalar_ref: None,
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                vec!["scalar".into()],
+                Some("scalar".into()),
+                None,
+            )
+            .unwrap(),
             operands: [0_u16, 1]
                 .into_iter()
                 .enumerate()
@@ -3094,8 +3098,12 @@ mod relation_geometry_tests {
             .expect("synthetic relation");
         fallback_relation.id = "fallback-relation".into();
         fallback_relation.offset = 31;
-        fallback_relation.scalar_refs = vec!["fallback-scalar".into()];
-        fallback_relation.parameter_scalar_ref = Some("fallback-scalar".into());
+        fallback_relation.scalars = crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["fallback-scalar".into()],
+            Some("fallback-scalar".into()),
+            None,
+        )
+        .unwrap();
         for (operand, entity_index) in fallback_relation.operands.iter_mut().zip([1_u16, 2]) {
             operand.entity_index = entity_index;
         }
@@ -3354,9 +3362,12 @@ mod relation_geometry_tests {
             family: FeatureInputRelationFamily::PointLineDistance,
             class_ref: "class".into(),
             feature_ref: FEATURE.into(),
-            scalar_refs: vec!["scalar".into()],
-            parameter_scalar_ref: Some("scalar".into()),
-            display_scalar_ref: None,
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                vec!["scalar".into()],
+                Some("scalar".into()),
+                None,
+            )
+            .unwrap(),
             operands: vec![operand(0), operand(1)],
         };
         let lane = FeatureInputLane {

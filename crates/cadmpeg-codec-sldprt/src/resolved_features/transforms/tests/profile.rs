@@ -46,9 +46,12 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
-        scalar_refs: Vec::new(),
-        parameter_scalar_ref: None,
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            Vec::new(),
+            None,
+            None,
+        )
+        .unwrap(),
         operands: ["corner", "center"]
             .into_iter()
             .enumerate()
@@ -268,9 +271,12 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
-        scalar_refs: Vec::new(),
-        parameter_scalar_ref: None,
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            Vec::new(),
+            None,
+            None,
+        )
+        .unwrap(),
         operands: vec![FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),

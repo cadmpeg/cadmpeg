@@ -77,7 +77,7 @@ pub(crate) fn enrich_history_parameters<'a>(
             .collect::<HashMap<_, _>>();
         for relation in &lane.relation_instances {
             let unit = relation_unit(relation.family);
-            for scalar in &relation.scalar_refs {
+            for scalar in relation.scalar_refs() {
                 scalar_units.insert(scalar.as_str(), unit);
             }
         }

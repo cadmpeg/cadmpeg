@@ -604,7 +604,7 @@ fn encoder_writes_source_less_curved_sketches() {
         .iter()
         .find(|relation| {
             relation.family == crate::records::FeatureInputRelationFamily::CircleDiameter
-                && relation.parameter_scalar_ref.as_deref()
+                && relation.parameter_scalar_ref()
                     == decoded
                         .ir()
                         .model

@@ -363,7 +363,7 @@ pub(crate) fn project_compact_sketch_profiles(
                             | FeatureInputRelationFamily::CircleDiameter
                     )
                 })
-                .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
+                .filter_map(|relation| relation.parameter_scalar_ref())
                 .filter_map(|scalar| lane.scalars.iter().find(|record| record.id == scalar))
                 .map(|scalar| scalar.value * NATIVE_TO_IR)
                 .collect::<Vec<_>>();
@@ -2801,9 +2801,12 @@ mod detached_legacy_sketch_tests {
                 family: FeatureInputRelationFamily::CircleDiameter,
                 class_ref: class_id.into(),
                 feature_ref: feature_id.into(),
-                scalar_refs: Vec::new(),
-                parameter_scalar_ref: None,
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    Vec::new(),
+                    None,
+                    None,
+                )
+                .unwrap(),
                 operands: Vec::new(),
             }],
             body_selections: Vec::new(),

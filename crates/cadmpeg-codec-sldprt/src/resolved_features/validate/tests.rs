@@ -172,7 +172,9 @@ fn native_validation_rejects_edited_relation_instance() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_input_lanes[0].relation_instances[0].parameter_scalar_ref = None;
+        native.feature_input_lanes[0].relation_instances[0]
+            .scalars
+            .clear_parameter();
     });
 
     assert!(crate::validate_native(decoded.ir()).iter().any(|finding| {

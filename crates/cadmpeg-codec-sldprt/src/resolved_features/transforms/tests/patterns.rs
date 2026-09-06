@@ -972,9 +972,12 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
             family: FeatureInputRelationFamily::LineLineDistance,
             class_ref: "class".into(),
             feature_ref: "feature-native".into(),
-            scalar_refs: vec![scalar.into()],
-            parameter_scalar_ref: Some(scalar.into()),
-            display_scalar_ref: None,
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                vec![scalar.into()],
+                Some(scalar.into()),
+                None,
+            )
+            .unwrap(),
             operands: vec![operand(offset + 1, first), operand(offset + 2, second)],
         }
     };
@@ -1142,9 +1145,12 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         family: FeatureInputRelationFamily::PointLineDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
-        scalar_refs: vec!["scalar".into()],
-        parameter_scalar_ref: Some("scalar".into()),
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["scalar".into()],
+            Some("scalar".into()),
+            None,
+        )
+        .unwrap(),
         operands: vec![
             FeatureInputOperand {
                 offset: 101,
@@ -1318,9 +1324,12 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         family: FeatureInputRelationFamily::PointLineDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
-        scalar_refs: vec!["scalar".into()],
-        parameter_scalar_ref: Some("scalar".into()),
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["scalar".into()],
+            Some("scalar".into()),
+            None,
+        )
+        .unwrap(),
         operands: vec![
             FeatureInputOperand {
                 offset: 101,
@@ -1465,9 +1474,12 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
                 family,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
-                scalar_refs: vec![scalar.into()],
-                parameter_scalar_ref: Some(scalar.into()),
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    vec![scalar.into()],
+                    Some(scalar.into()),
+                    None,
+                )
+                .unwrap(),
                 operands: vec![operand(0, known), operand(1, "missing")],
             }
         };

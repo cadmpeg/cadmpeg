@@ -1247,8 +1247,8 @@ fn repeated_dimensioned_circular_entities(
     // one diameter value for several circular entities. Its scalar operands
     // identify native indices, but the decoded profile is the authoritative
     // neutral roster, so resolve the run by its unique radius population.
-    let repeated_display = relation.parameter_scalar_ref.is_none()
-        && relation.scalar_refs.len() >= 2
+    let repeated_display = relation.parameter_scalar_ref().is_none()
+        && relation.scalar_refs().len() >= 2
         && relation.operands.len() == 1
         && parameter.native_ref.is_none()
         && super::relation_geometry::is_reference_relation_parameter(parameter)
@@ -1257,7 +1257,7 @@ fn repeated_dimensioned_circular_entities(
             .get(super::relation_geometry::RELATION_PARAMETER_ID_PROPERTY)
             == Some(&relation.id);
     let parameter_native_ref = parameter.native_ref.as_deref();
-    if !repeated_display && relation.parameter_scalar_ref.as_deref() != parameter_native_ref {
+    if !repeated_display && relation.parameter_scalar_ref() != parameter_native_ref {
         return None;
     }
     let cadmpeg_ir::features::ParameterValue::Length(value) = parameter.value.as_ref()? else {
@@ -1287,7 +1287,7 @@ fn repeated_dimensioned_circular_entities(
             same_dimension_length(radius, expected_radius).then(|| entity.id().clone())
         })
         .collect::<Vec<_>>();
-    (entities.len() >= 2 && entities.len() <= relation.scalar_refs.len()).then_some(entities)
+    (entities.len() >= 2 && entities.len() <= relation.scalar_refs().len()).then_some(entities)
 }
 
 // Reduce a set of candidate locus pairs to the sole survivor: order the pairs

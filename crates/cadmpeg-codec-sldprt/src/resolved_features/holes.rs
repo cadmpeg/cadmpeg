@@ -4103,8 +4103,7 @@ fn compact_position_relations(
                 return None;
             }
             let scalar = relation
-                .parameter_scalar_ref
-                .as_deref()
+                .parameter_scalar_ref()
                 .and_then(|id| scalars.get(id))?;
             (scalar.role == FeatureInputScalarRole::Driving
                 && scalar.value.is_finite()

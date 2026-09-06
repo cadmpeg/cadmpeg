@@ -84,15 +84,18 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
-        scalar_refs: vec!["display".into()],
-        parameter_scalar_ref: None,
-        display_scalar_ref: Some("display".into()),
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["display".into()],
+            None,
+            Some("display".into()),
+        )
+        .unwrap(),
         operands: vec![display_operand],
     }];
 
     bind_circle_dimension_centers(&mut relations, &lane);
 
-    assert_eq!(relations[0].scalar_refs, ["display", "driver"]);
+    assert_eq!(relations[0].scalar_refs(), ["display", "driver"]);
     assert_eq!(relations[0].operands.len(), 2);
     assert_eq!(
         relations[0].operands[1].entity_ref.as_deref(),
@@ -139,9 +142,12 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
-        scalar_refs: vec!["scalar".into()],
-        parameter_scalar_ref: Some("scalar".into()),
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["scalar".into()],
+            Some("scalar".into()),
+            None,
+        )
+        .unwrap(),
         operands: vec![
             FeatureInputOperand {
                 offset: 1,
@@ -374,9 +380,12 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "native-feature".into(),
-        scalar_refs: vec!["scalar".into()],
-        parameter_scalar_ref: None,
-        display_scalar_ref: Some("scalar".into()),
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["scalar".into()],
+            None,
+            Some("scalar".into()),
+        )
+        .unwrap(),
         operands: Vec::new(),
     };
     assert_eq!(
@@ -470,7 +479,11 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     let mut exact_lane = lane.clone();
     exact_lane.scalars[0].role = FeatureInputScalarRole::Native;
     exact_lane.relation_instances = vec![FeatureInputRelationInstance {
-        display_scalar_ref: None,
+        scalars: {
+            let mut scalars = relation.scalars.clone();
+            scalars.clear_display();
+            scalars
+        },
         ..relation.clone()
     }];
     assert_eq!(
@@ -484,9 +497,12 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     );
     let driving_relation = FeatureInputRelationInstance {
         id: "driving-relation".into(),
-        parameter_scalar_ref: Some("existing-driver".into()),
-        display_scalar_ref: None,
-        scalar_refs: vec!["existing-driver".into()],
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["existing-driver".into()],
+            Some("existing-driver".into()),
+            None,
+        )
+        .unwrap(),
         ..relation.clone()
     };
     let ownership = owned_relation_parameters(
@@ -509,9 +525,12 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     driving_scalar.role = FeatureInputScalarRole::Driving;
     let driving_relation = FeatureInputRelationInstance {
         id: "driving-by-name-relation".into(),
-        parameter_scalar_ref: Some(driving_scalar.id.clone()),
-        display_scalar_ref: None,
-        scalar_refs: vec![driving_scalar.id.clone()],
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec![driving_scalar.id.clone()],
+            Some(driving_scalar.id.clone()),
+            None,
+        )
+        .unwrap(),
         ..relation.clone()
     };
     let driving_parameter = DesignParameter {
@@ -546,11 +565,8 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     detached_lane.scalars.push(detached);
     let mut detached_relation = vec![relation.clone()];
     bind_detached_relation_drivers(&mut detached_relation, &detached_lane);
-    assert_eq!(
-        detached_relation[0].parameter_scalar_ref.as_deref(),
-        Some("driver")
-    );
-    assert_eq!(detached_relation[0].scalar_refs, ["scalar", "driver"]);
+    assert_eq!(detached_relation[0].parameter_scalar_ref(), Some("driver"));
+    assert_eq!(detached_relation[0].scalar_refs(), ["scalar", "driver"]);
 
     let mut parameter = parameter;
     parameter.value = Some(ParameterValue::Integer(12));
@@ -580,13 +596,21 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
             relation_instances: vec![
                 FeatureInputRelationInstance {
                     family: FeatureInputRelationFamily::PointPointDistance,
-                    parameter_scalar_ref: Some("driver".into()),
+                    scalars: {
+                        let mut scalars = relation.scalars.clone();
+                        scalars.push_parameter("driver".into());
+                        scalars
+                    },
                     ..relation.clone()
                 },
                 FeatureInputRelationInstance {
                     id: "other-relation".into(),
                     family: FeatureInputRelationFamily::Angle,
-                    parameter_scalar_ref: Some("other-driver".into()),
+                    scalars: {
+                        let mut scalars = relation.scalars.clone();
+                        scalars.push_parameter("other-driver".into());
+                        scalars
+                    },
                     ..relation
                 },
             ],
@@ -768,8 +792,12 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         offset: 80,
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "circle-class".into(),
-        parameter_scalar_ref: Some("circle-scalar".into()),
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["circle-scalar".into()],
+            Some("circle-scalar".into()),
+            None,
+        )
+        .unwrap(),
         operands: vec![FeatureInputOperand {
             offset: 81,
             reference_ref: "circle-reference".into(),
@@ -777,7 +805,6 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
             entity_index: 0,
             entity_ref: Some("circle-center".into()),
         }],
-        scalar_refs: Vec::new(),
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -1215,9 +1242,12 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
             family: FeatureInputRelationFamily::CircleDiameter,
             class_ref: class.id.clone(),
             feature_ref: "feature-native".into(),
-            scalar_refs: Vec::new(),
-            parameter_scalar_ref: Some("parameter-scalar".into()),
-            display_scalar_ref: None,
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                vec!["parameter-scalar".into()],
+                Some("parameter-scalar".into()),
+                None,
+            )
+            .unwrap(),
             operands: vec![operand.clone()],
         }],
         body_selections: Vec::new(),

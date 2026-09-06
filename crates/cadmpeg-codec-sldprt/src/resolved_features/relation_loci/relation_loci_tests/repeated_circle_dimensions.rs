@@ -27,9 +27,12 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
-        scalar_refs: vec!["display".into(), "driver".into()],
-        parameter_scalar_ref: Some("driver".into()),
-        display_scalar_ref: Some("display".into()),
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["display".into(), "driver".into()],
+            Some("driver".into()),
+            Some("display".into()),
+        )
+        .unwrap(),
         operands: vec![FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
@@ -96,9 +99,12 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
-        scalar_refs: vec!["scalar-0".into(), "scalar-1".into(), "scalar-2".into()],
-        parameter_scalar_ref: None,
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["scalar-0".into(), "scalar-1".into(), "scalar-2".into()],
+            None,
+            None,
+        )
+        .unwrap(),
         operands: vec![FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),

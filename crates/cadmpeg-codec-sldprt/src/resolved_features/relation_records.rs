@@ -353,16 +353,6 @@ pub(super) fn relation_instances(
         .enumerate()
         .map(
             |(ordinal, (feature_ref, family, class_ref, operands, scalars, _))| {
-                let driving = scalars
-                    .iter()
-                    .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
-                    .copied()
-                    .collect::<Vec<_>>();
-                let display = scalars
-                    .iter()
-                    .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
-                    .copied()
-                    .collect::<Vec<_>>();
                 let offset = scalars[0].offset;
                 FeatureInputRelationInstance {
                     id: format!(
@@ -377,9 +367,9 @@ pub(super) fn relation_instances(
                     family,
                     class_ref,
                     feature_ref,
-                    scalar_refs: scalars.iter().map(|scalar| scalar.id.clone()).collect(),
-                    parameter_scalar_ref: (driving.len() == 1).then(|| driving[0].id.clone()),
-                    display_scalar_ref: (display.len() == 1).then(|| display[0].id.clone()),
+                    scalars: crate::records::relation_scalars::RelationScalars::from_scalars(
+                        scalars,
+                    ),
                     operands,
                 }
             },
@@ -399,7 +389,7 @@ pub(super) fn relation_instances(
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut claimed_scalar_refs = instances
         .iter()
-        .flat_map(|relation| relation.scalar_refs.iter().cloned())
+        .flat_map(|relation| relation.scalar_refs().iter().cloned())
         .collect::<HashSet<_>>();
     for binding in &lane.relation_bindings {
         let Some(feature_ref) = binding
@@ -430,11 +420,7 @@ pub(super) fn relation_instances(
             family: binding.family,
             class_ref: binding.class_ref.clone(),
             feature_ref: feature_ref.to_owned(),
-            scalar_refs: vec![scalar.id.clone()],
-            parameter_scalar_ref: matches!(scalar.role, FeatureInputScalarRole::Driving)
-                .then(|| scalar.id.clone()),
-            display_scalar_ref: matches!(scalar.role, FeatureInputScalarRole::Display)
-                .then(|| scalar.id.clone()),
+            scalars: crate::records::relation_scalars::RelationScalars::from_scalars([scalar]),
             operands: scalar.operands.clone(),
         });
     }
@@ -692,8 +678,11 @@ mod relation_records_tests {
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
-        assert_eq!(relation.parameter_scalar_ref, Some(driving.id.clone()));
-        assert_eq!(relation.scalar_refs, vec![driving.id]);
+        assert_eq!(
+            relation.parameter_scalar_ref().map(str::to_owned),
+            Some(driving.id.clone())
+        );
+        assert_eq!(relation.scalar_refs(), vec![driving.id]);
     }
 
     #[test]
@@ -714,8 +703,11 @@ mod relation_records_tests {
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
-        assert_eq!(relation.parameter_scalar_ref, Some(driving.id.clone()));
-        assert_eq!(relation.scalar_refs, vec![driving.id]);
+        assert_eq!(
+            relation.parameter_scalar_ref().map(str::to_owned),
+            Some(driving.id.clone())
+        );
+        assert_eq!(relation.scalar_refs(), vec![driving.id]);
     }
 
     #[test]
@@ -766,11 +758,17 @@ mod relation_records_tests {
         );
         assert_eq!(relation.class_ref, horizontal.id);
         assert_eq!(
-            relation.scalar_refs,
+            relation.scalar_refs(),
             vec![display.id.clone(), driving.id.clone()]
         );
-        assert_eq!(relation.display_scalar_ref, Some(display.id));
-        assert_eq!(relation.parameter_scalar_ref, Some(driving.id));
+        assert_eq!(
+            relation.display_scalar_ref().map(str::to_owned),
+            Some(display.id)
+        );
+        assert_eq!(
+            relation.parameter_scalar_ref().map(str::to_owned),
+            Some(driving.id)
+        );
     }
 
     #[test]
@@ -901,7 +899,7 @@ mod relation_records_tests {
         assert_eq!(
             relations
                 .iter()
-                .map(|relation| relation.scalar_refs.len())
+                .map(|relation| relation.scalar_refs().len())
                 .collect::<Vec<_>>(),
             vec![2, 1]
         );
@@ -945,11 +943,8 @@ mod relation_records_tests {
             instances[1].family,
             FeatureInputRelationFamily::LineLineDistance
         );
-        assert_eq!(instances[1].scalar_refs, vec!["scalar-30"]);
-        assert_eq!(
-            instances[1].display_scalar_ref.as_deref(),
-            Some("scalar-30")
-        );
+        assert_eq!(instances[1].scalar_refs(), vec!["scalar-30"]);
+        assert_eq!(instances[1].display_scalar_ref(), Some("scalar-30"));
     }
 
     #[test]
@@ -985,9 +980,9 @@ mod relation_records_tests {
         let [relation] = instances.as_slice() else {
             panic!("one circle relation");
         };
-        assert_eq!(relation.scalar_refs, vec![first.id]);
-        assert_eq!(relation.display_scalar_ref, Some("scalar-20".into()));
-        assert!(relation.parameter_scalar_ref.is_none());
+        assert_eq!(relation.scalar_refs(), vec![first.id]);
+        assert_eq!(relation.display_scalar_ref(), Some("scalar-20"));
+        assert!(relation.parameter_scalar_ref().is_none());
         assert_eq!(
             circle_dimension_handle_driver(relation, &lane).map(|scalar| scalar.id.as_str()),
             Some("scalar-50")
@@ -1022,8 +1017,8 @@ mod relation_records_tests {
         let [relation] = instances.as_slice() else {
             panic!("one circle relation");
         };
-        assert_eq!(relation.scalar_refs.len(), 1);
-        assert!(relation.parameter_scalar_ref.is_none());
+        assert_eq!(relation.scalar_refs().len(), 1);
+        assert!(relation.parameter_scalar_ref().is_none());
         assert!(circle_dimension_handle_driver(relation, &lane).is_none());
     }
 
@@ -1066,11 +1061,11 @@ mod relation_records_tests {
             panic!("one repeated circle relation");
         };
         assert_eq!(
-            relation.scalar_refs,
+            relation.scalar_refs(),
             vec!["scalar-20", "scalar-30", "scalar-40"]
         );
-        assert!(relation.parameter_scalar_ref.is_none());
-        assert!(relation.display_scalar_ref.is_none());
+        assert!(relation.parameter_scalar_ref().is_none());
+        assert!(relation.display_scalar_ref().is_none());
         assert_eq!(relation.operands, first.operands);
     }
 
@@ -1285,7 +1280,10 @@ mod relation_records_tests {
         let [relation] = instances.as_slice() else {
             panic!("one grouped relation instance");
         };
-        assert_eq!(relation.parameter_scalar_ref, Some(driving.id));
+        assert_eq!(
+            relation.parameter_scalar_ref().map(str::to_owned),
+            Some(driving.id)
+        );
         assert_eq!(
             relation
                 .operands
@@ -1307,7 +1305,7 @@ mod relation_records_tests {
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
-        assert!(relation.parameter_scalar_ref.is_none());
+        assert!(relation.parameter_scalar_ref().is_none());
         assert_eq!(
             relation
                 .operands
@@ -1511,8 +1509,7 @@ pub(super) fn bind_circle_dimension_centers(
             && relation.operands.len() == 1
     }) {
         let Some(display) = relation
-            .display_scalar_ref
-            .as_deref()
+            .display_scalar_ref()
             .and_then(|id| scalars.get(id).copied())
         else {
             continue;
@@ -1576,8 +1573,8 @@ pub(super) fn bind_circle_dimension_centers(
         };
         relation.operands = source.operands.clone();
         for (_, scalar) in candidates {
-            if !relation.scalar_refs.contains(&scalar.id) {
-                relation.scalar_refs.push(scalar.id.clone());
+            if !relation.scalar_refs().contains(&scalar.id) {
+                relation.scalars.push(scalar.id.clone());
             }
         }
     }
@@ -1601,8 +1598,8 @@ pub(super) fn circle_dimension_handle_driver<'a>(
     lane: &'a FeatureInputLane,
 ) -> Option<&'a FeatureInputScalar> {
     if relation.family != FeatureInputRelationFamily::CircleDiameter
-        || relation.parameter_scalar_ref.is_some()
-        || relation.scalar_refs.len() != 1
+        || relation.parameter_scalar_ref().is_some()
+        || relation.scalar_refs().len() != 1
     {
         return None;
     }
@@ -1614,7 +1611,7 @@ pub(super) fn circle_dimension_handle_driver<'a>(
         .map(|name| (name.id.as_str(), name.value.as_str()))
         .collect::<HashMap<_, _>>();
     let first = relation
-        .scalar_refs
+        .scalar_refs()
         .first()
         .and_then(|id| scalars.iter().find(|scalar| scalar.id == *id))
         .copied()
@@ -1681,7 +1678,7 @@ pub(super) fn bind_detached_relation_drivers(
         .collect::<HashMap<_, _>>();
     let claimed = relations
         .iter()
-        .flat_map(|relation| &relation.scalar_refs)
+        .flat_map(|relation| relation.scalar_refs())
         .map(String::as_str)
         .collect::<HashSet<_>>();
     let mut drivers = HashMap::<(String, String), Vec<&FeatureInputScalar>>::new();
@@ -1703,11 +1700,11 @@ pub(super) fn bind_detached_relation_drivers(
     }
     let mut candidates = HashMap::<(String, String), Vec<usize>>::new();
     for (index, relation) in relations.iter().enumerate() {
-        if relation.parameter_scalar_ref.is_some() {
+        if relation.parameter_scalar_ref().is_some() {
             continue;
         }
         let relation_names = relation
-            .scalar_refs
+            .scalar_refs()
             .iter()
             .filter_map(|id| scalars.get(id.as_str()))
             .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
@@ -1733,8 +1730,7 @@ pub(super) fn bind_detached_relation_drivers(
             continue;
         };
         let relation = &mut relations[*relation_index];
-        relation.scalar_refs.push(driver.id.clone());
-        relation.parameter_scalar_ref = Some(driver.id.clone());
+        relation.scalars.push_parameter(driver.id.clone());
     }
 }
 
@@ -1887,9 +1883,8 @@ fn relation_target_value(
     lane: &FeatureInputLane,
 ) -> Option<f64> {
     let scalar_id = relation
-        .parameter_scalar_ref
-        .as_deref()
-        .or(relation.display_scalar_ref.as_deref())?;
+        .parameter_scalar_ref()
+        .or(relation.display_scalar_ref())?;
     let scalar = lane.scalars.iter().find(|scalar| scalar.id == scalar_id)?;
     scalar.value.is_finite().then_some(scalar.value)
 }

@@ -419,9 +419,12 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
-        scalar_refs: Vec::new(),
-        parameter_scalar_ref: None,
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            Vec::new(),
+            None,
+            None,
+        )
+        .unwrap(),
         operands: ["marker-a", "marker-c"]
             .into_iter()
             .enumerate()

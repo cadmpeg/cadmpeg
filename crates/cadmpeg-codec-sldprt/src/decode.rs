@@ -1865,7 +1865,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                         .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
                         && !lane.relation_instances.iter().any(|relation| {
                             relation.class_ref == binding.class_ref
-                                && relation.scalar_refs.contains(&binding.scalar_ref)
+                                && relation.scalar_refs().contains(&binding.scalar_ref)
                         })
                 })
                 .count();

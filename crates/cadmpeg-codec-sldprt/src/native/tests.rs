@@ -415,9 +415,9 @@ fn native_store_rejects_nonlocal_relation_scalar_groups() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut native = sldprt_native(decoded.ir());
-    let duplicate = native.feature_input_lanes[0].relation_instances[0].scalar_refs[0].clone();
+    let duplicate = native.feature_input_lanes[0].relation_instances[0].scalar_refs()[0].clone();
     native.feature_input_lanes[0].relation_instances[0]
-        .scalar_refs
+        .scalars
         .push(duplicate);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -449,8 +449,8 @@ fn native_load_rejects_nonadjacent_duplicate_relation_scalars() {
         .arena_as("feature_input_relation_instances")
         .unwrap();
     let relation = relations.first_mut().expect("relation instance");
-    assert_eq!(relation.scalar_refs.len(), 2);
-    relation.scalar_refs.push(relation.scalar_refs[0].clone());
+    assert_eq!(relation.scalar_refs().len(), 2);
+    relation.scalars.push(relation.scalar_refs()[0].clone());
     namespace
         .set_arena("feature_input_relation_instances", &relations)
         .unwrap();

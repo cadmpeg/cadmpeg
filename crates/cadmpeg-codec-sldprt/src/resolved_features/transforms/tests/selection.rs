@@ -191,9 +191,12 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 family: FeatureInputRelationFamily::CircleDiameter,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
-                scalar_refs: Vec::new(),
-                parameter_scalar_ref: None,
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    Vec::new(),
+                    None,
+                    None,
+                )
+                .unwrap(),
                 operands: vec![FeatureInputOperand {
                     offset: 91,
                     reference_ref: "reference".into(),
@@ -210,9 +213,12 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 family: FeatureInputRelationFamily::PointPointDistance,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
-                scalar_refs: Vec::new(),
-                parameter_scalar_ref: None,
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    Vec::new(),
+                    None,
+                    None,
+                )
+                .unwrap(),
                 operands: vec![
                     FeatureInputOperand {
                         offset: 95,
@@ -238,9 +244,12 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 family: FeatureInputRelationFamily::LineLineDistance,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
-                scalar_refs: Vec::new(),
-                parameter_scalar_ref: None,
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    Vec::new(),
+                    None,
+                    None,
+                )
+                .unwrap(),
                 operands: vec![FeatureInputOperand {
                     offset: 93,
                     reference_ref: "line-reference".into(),
@@ -257,9 +266,12 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 family: FeatureInputRelationFamily::PointPointDistance,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
-                scalar_refs: Vec::new(),
-                parameter_scalar_ref: None,
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    Vec::new(),
+                    None,
+                    None,
+                )
+                .unwrap(),
                 operands: vec![
                     FeatureInputOperand {
                         offset: 98,
@@ -285,9 +297,12 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 family: FeatureInputRelationFamily::Angle,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
-                scalar_refs: Vec::new(),
-                parameter_scalar_ref: None,
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    Vec::new(),
+                    None,
+                    None,
+                )
+                .unwrap(),
                 operands: vec![
                     FeatureInputOperand {
                         offset: 101,
@@ -313,9 +328,12 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 family: FeatureInputRelationFamily::LineLineDistance,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
-                scalar_refs: Vec::new(),
-                parameter_scalar_ref: None,
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    Vec::new(),
+                    None,
+                    None,
+                )
+                .unwrap(),
                 operands: vec![
                     FeatureInputOperand {
                         offset: 104,
@@ -507,9 +525,12 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
             family: FeatureInputRelationFamily::PointPointDistance,
             class_ref: "class".into(),
             feature_ref: "feature-native".into(),
-            scalar_refs: Vec::new(),
-            parameter_scalar_ref: None,
-            display_scalar_ref: None,
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                Vec::new(),
+                None,
+                None,
+            )
+            .unwrap(),
             operands: vec![FeatureInputOperand {
                 offset: 91,
                 reference_ref: "reference".into(),
@@ -627,9 +648,12 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
-        scalar_refs: vec!["distance".into()],
-        parameter_scalar_ref: Some("distance".into()),
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["distance".into()],
+            Some("distance".into()),
+            None,
+        )
+        .unwrap(),
         operands: vec![
             FeatureInputOperand {
                 offset: 4,
