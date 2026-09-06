@@ -108,3 +108,44 @@ pub(crate) fn data_block_abr_reference_lanes(container: &Container) -> Vec<DataB
         .collect()
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::container;
+    use crate::test_support::{offset_only_indexed_om_section, prt_with_named_payloads};
+
+    #[test]
+    fn native_abr_lane_resolves_nullable_slots_within_its_offset_store() {
+        let mut store = offset_only_indexed_om_section();
+        let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
+        let end_at = index_start + 3 * 4;
+        let end = u32::from_le_bytes(
+            store[end_at..end_at + 4]
+                .try_into()
+                .expect("required invariant"),
+        ) as usize;
+        let mut lane = vec![0x11, 0x02];
+        lane.extend_from_slice(&[0xff; 15]);
+        lane.extend_from_slice(&[0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03]);
+        store.splice(end..end, lane.iter().copied());
+        store[end_at..end_at + 4].copy_from_slice(&((end + lane.len()) as u32).to_le_bytes());
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
+        let container = container::scan_bytes(file).expect("required invariant");
+
+        let lanes = crate::native::om::compact_lane::data_block_abr_reference_lanes(&container);
+        assert_eq!(lanes.len(), 1);
+        assert_eq!(
+            lanes[0].frame.slots()[0].atom.map(|target| target.atom.value()),
+            Some(2)
+        );
+        assert_eq!(
+            lanes[0].frame.slots()[0]
+                .atom
+                .map(|target| target.target.as_str()),
+            Some("nx:om-data-blocks-0:block#2")
+        );
+        assert!(lanes[0].frame.slots()[1..].iter().all(|slot| slot.atom.is_none()));
+        assert_eq!(lanes[0].frame.slots().len(), 16);
+        assert_eq!(lanes[0].frame.slots()[0].offset, lanes[0].frame.offset() + 1);
+    }
+
+}

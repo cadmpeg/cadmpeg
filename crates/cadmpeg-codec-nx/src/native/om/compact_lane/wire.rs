@@ -185,4 +185,71 @@ mod tests {
         let error = serde_json::from_value::<DataBlockAbrReferenceLane>(invalid).unwrap_err();
         assert!(error.to_string().contains("source_offset"), "{error}");
     }
+    #[test]
+    fn counted_lane_wire_preserves_member_columns() {
+        let json = r#"{"id":"lane","data_block":"block","ordinal":0,"declared_count":3,"anchor_index":1,"raw_anchor_index":[1],"anchor_data_block":"anchor","member_indices":[2],"raw_member_indices":[[2]],"member_data_blocks":["member"],"source_offset":9,"anchor_source_offset":11,"member_source_offsets":[12]}"#;
+        let lane: crate::native::om::compact_lane::DataBlockCountedIndexLane = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            lane.frame.members().map(|index| (index.atom, index.target.as_str(), index.offset)).collect::<Vec<_>>(),
+            [(crate::om::compact::CompactIndexAtom::read(&[2]).unwrap(), "member", 12)]
+        );
+        assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+        for field in [
+            "member_indices",
+            "raw_member_indices",
+            "member_data_blocks",
+            "member_source_offsets",
+        ] {
+            let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+            malformed[field] = serde_json::json!([]);
+            assert!(serde_json::from_value::<crate::native::om::compact_lane::DataBlockCountedIndexLane>(malformed).is_err());
+        }
+        for (field, invalid) in [
+            ("declared_count", serde_json::json!(4)),
+            ("raw_anchor_index", serde_json::json!([255])),
+            ("raw_member_indices", serde_json::json!([[3]])),
+        ] {
+            let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+            malformed[field] = invalid;
+            let error = serde_json::from_value::<crate::native::om::compact_lane::DataBlockCountedIndexLane>(malformed).unwrap_err();
+            assert!(error.to_string().contains(field), "{error}");
+        }
+
+    }
+
+    #[test]
+    fn abr_lane_wire_preserves_sixteen_nullable_columns() {
+        let json = r#"{"id":"lane","section_ordinal":0,"ordinal":0,"slot_indices":[2,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"raw_slot_indices":[[2],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255],[255]],"slot_data_blocks":["block",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"slot_source_offsets":[10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],"source_entry":"entry","source_offset":9}"#;
+        let lane: crate::native::om::compact_lane::DataBlockAbrReferenceLane = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            (lane.frame.slots()[0].atom.map(|index| (index.atom, index.target.as_str())), lane.frame.slots()[0].offset),
+            (Some((crate::om::compact::CompactIndexAtom::read(&[2]).unwrap(), "block")), 10)
+        );
+        assert!(lane.frame.slots()[1..].iter().all(|slot| slot.atom.is_none()));
+        assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+        for field in [
+            "slot_indices",
+            "raw_slot_indices",
+            "slot_data_blocks",
+            "slot_source_offsets",
+        ] {
+            let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+            malformed[field].as_array_mut().unwrap().pop();
+            assert!(serde_json::from_value::<crate::native::om::compact_lane::DataBlockAbrReferenceLane>(malformed).is_err());
+        }
+        for field in ["slot_indices", "slot_data_blocks"] {
+            let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+            malformed[field][0] = serde_json::Value::Null;
+            assert!(serde_json::from_value::<crate::native::om::compact_lane::DataBlockAbrReferenceLane>(malformed).is_err());
+        }
+        for (slot, raw) in [(0, vec![3]), (1, vec![0])] {
+            let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+            malformed["raw_slot_indices"][slot] = serde_json::json!(raw);
+            let error = serde_json::from_value::<crate::native::om::compact_lane::DataBlockAbrReferenceLane>(malformed).unwrap_err();
+            assert!(error.to_string().contains("raw_slot_indices"), "{error}");
+        }
+
+    }
+
+
 }

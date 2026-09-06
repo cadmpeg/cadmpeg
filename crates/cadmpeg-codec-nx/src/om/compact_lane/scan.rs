@@ -85,3 +85,79 @@ pub(crate) fn counted_lanes(bytes: &[u8]) -> Vec<CountedLane> {
     lanes
 }
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn om_offset_store_counted_index_lane_requires_complete_non_null_members() {
+        let bytes = [
+            0xaa, 0x01, 0x06, 0x42, 0x62, 0x80, 0x48, 0x80, 0x50, 0x7c, 0x01, 0x11, 0xbb,
+        ];
+        let lanes = crate::om::compact_lane::scan::counted_lanes(&bytes);
+        assert_eq!(lanes.len(), 1);
+        assert_eq!(lanes[0].offset(), 1);
+        assert_eq!(lanes[0].declared_count(), 6);
+        assert_eq!(lanes[0].anchor().atom.value(), 0x42);
+        assert_eq!(lanes[0].anchor().atom.raw(), [0x42]);
+        assert_eq!(lanes[0].anchor().offset, 3);
+        assert_eq!(
+            lanes[0]
+                .members()
+                .map(|token| (token.atom.value(), token.offset))
+                .collect::<Vec<_>>(),
+            vec![(0x62, 4), (0x48, 5), (0x50, 7), (0x7c, 9)]
+        );
+        assert_eq!(
+            lanes[0]
+                .members()
+                .map(|token| token.atom.raw().to_vec())
+                .collect::<Vec<_>>(),
+            [vec![0x62], vec![0x80, 0x48], vec![0x80, 0x50], vec![0x7c]]
+        );
+
+        assert!(
+            crate::om::compact_lane::scan::counted_lanes(&[0x01, 0x03, 0x42, 0xff, 0x01, 0x11,]).is_empty()
+        );
+        assert!(
+            crate::om::compact_lane::scan::counted_lanes(&[0x01, 0x03, 0x42, 0x80, 0x01, 0x11,]).is_empty()
+        );
+        assert!(
+            crate::om::compact_lane::scan::counted_lanes(&[0x01, 0x03, 0x42, 0x62, 0x01, 0x10,]).is_empty()
+        );
+    }
+
+    #[test]
+    fn om_offset_store_abr_lane_requires_sixteen_slots_and_exact_terminator() {
+        let mut bytes = vec![0xaa, 0x11];
+        bytes.extend_from_slice(&[0xff; 6]);
+        bytes.extend_from_slice(&[0x82, 0x83]);
+        bytes.extend_from_slice(&[0xff; 9]);
+        bytes.extend_from_slice(&[0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03, 0xbb]);
+
+        let lanes = crate::om::compact_lane::scan::abr_lanes(&bytes);
+        assert_eq!(lanes.len(), 1);
+        assert_eq!(lanes[0].offset(), 1);
+        assert_eq!(lanes[0].slots().len(), 16);
+        assert_eq!(
+            (lanes[0].slots()[6].atom.map(|index| index.atom.value()), lanes[0].slots()[6].offset),
+            (Some(643), 8)
+        );
+        assert_eq!(lanes[0].slots()[6].atom.unwrap().atom.raw(), [0x82, 0x83]);
+        assert!(lanes[0]
+            .slots()
+            .iter()
+            .enumerate()
+            .all(|(slot, token)| slot == 6 || token.atom.map_or(&[0xff][..], |index| index.atom.raw()) == [0xff]));
+        assert!(lanes[0]
+            .slots()
+            .iter()
+            .enumerate()
+            .all(|(slot, token)| slot == 6 || token.atom.is_none()));
+
+        bytes[23] = b'X';
+        assert!(crate::om::compact_lane::scan::abr_lanes(&bytes).is_empty());
+        bytes[23] = b'R';
+        bytes.remove(18);
+        assert!(crate::om::compact_lane::scan::abr_lanes(&bytes).is_empty());
+    }
+
+}
