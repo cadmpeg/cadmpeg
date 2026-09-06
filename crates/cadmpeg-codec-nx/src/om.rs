@@ -1918,9 +1918,9 @@ pub struct HolePackageConstructionGroupLane {
     /// Payload-relative offset of the fixed lane prefix.
     pub offset: usize,
     /// Compact selector preceding the repeated branch byte.
-    pub selector: u8,
+    pub selector: NonZeroU8,
     /// Branch byte repeated between the two reference pairs.
-    pub branch: u8,
+    pub branch: NonZeroU8,
     /// Ordered first and second construction-block pairs.
     pub references: [PayloadObjectReference; 4],
 }
@@ -2823,20 +2823,17 @@ pub fn hole_package_construction_group_lane(
             continue;
         }
         let Some(lane) = (|| {
-            let selector = *record.payload.get(start + 5)?;
-            let branch = *record.payload.get(start + 7)?;
-            if selector == 0
-                || branch == 0
-                || record.payload.get(start + 6) != Some(&0)
+            let selector = NonZeroU8::new(*record.payload.get(start + 5)?)?;
+            let branch = NonZeroU8::new(*record.payload.get(start + 7)?)?;
+            if record.payload.get(start + 6) != Some(&0)
                 || record.payload.get(start + 8..start + 12) != Some(&ZEROES)
             {
                 return None;
             }
             let mut at = start + 12;
-            let mut references = Vec::with_capacity(4);
-            for ordinal in 0..4 {
+            let references = std::array::from_fn::<_, 4, _>(|ordinal| {
                 if ordinal == 2 {
-                    if record.payload.get(at) != Some(&branch)
+                    if record.payload.get(at) != Some(&branch.get())
                         || record.payload.get(at + 1..at + 5) != Some(&ZEROES)
                     {
                         return None;
@@ -2845,12 +2842,14 @@ pub fn hole_package_construction_group_lane(
                 }
                 let reference_offset = at;
                 let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-                references.push(PayloadObjectReference {
+                at += width;
+                Some(PayloadObjectReference {
                     offset: record.payload_offset + reference_offset,
                     token: object_index,
-                });
-                at += width;
-            }
+                })
+            });
+            let [a, b, c, d] = references;
+            let references = [a?, b?, c?, d?];
             if record.payload.get(at..at + SUFFIX.len()) != Some(&SUFFIX) {
                 return None;
             }
@@ -2858,7 +2857,7 @@ pub fn hole_package_construction_group_lane(
                 offset: start,
                 selector,
                 branch,
-                references: references.try_into().ok()?,
+                references,
             })
         })() else {
             continue;
@@ -4882,19 +4881,18 @@ pub fn datum_csys_references(record: OperationRecord<'_>) -> Option<DatumCsysRef
         return None;
     }
     let mut at = 1 + HEADER_SUFFIX.len();
-    let mut references = Vec::with_capacity(8);
-    for _ in 0..8 {
+    let references = std::array::from_fn::<_, 8, _>(|_| {
         let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-        references.push(PayloadObjectReference {
-            offset: record.payload_offset + at,
-            token: object_index,
-        });
+        let offset = record.payload_offset + at;
         at += width;
-    }
+        Some(PayloadObjectReference { offset, token: object_index })
+    });
+    let [a, b, c, d, e, f, g, h] = references;
+    let references = [a?, b?, c?, d?, e?, f?, g?, h?];
     (record.payload.get(at..at + TRAILER.len()) == Some(&TRAILER)).then_some(())?;
     Some(DatumCsysReferenceField {
         control: record.payload[0],
-        references: references.try_into().ok()?,
+        references,
     })
 }
 

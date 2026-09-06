@@ -561,8 +561,8 @@ fn om_hole_package_lane_retains_the_exact_four_block_group() {
     };
     let lane = super::hole_package_construction_group_lane(record).unwrap();
     assert_eq!(lane.offset, 1);
-    assert_eq!(lane.selector, 0x46);
-    assert_eq!(lane.branch, 0x11);
+    assert_eq!(lane.selector.get(), 0x46);
+    assert_eq!(lane.branch.get(), 0x11);
     assert_eq!(
         lane.references
             .iter()

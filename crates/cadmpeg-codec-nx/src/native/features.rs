@@ -743,9 +743,9 @@ pub struct FeatureHolePackageConstructionGroupLane {
     /// Owning `HOLE PACKAGE` operation label.
     pub operation_label: String,
     /// Compact selector preceding the repeated branch byte.
-    pub selector: u8,
+    pub selector: NonZeroU8,
     /// Branch byte repeated between the two reference pairs.
-    pub branch: u8,
+    pub branch: NonZeroU8,
     /// Four checked references with their resolved targets and source offsets.
     pub references: [ConstructionReference<String>; 4],
     /// Payload-relative offset of the lane prefix.
@@ -783,8 +783,8 @@ impl From<FeatureHolePackageConstructionGroupLane> for FeatureHolePackageConstru
         Self {
             id: value.id,
             operation_label: value.operation_label,
-            selector: value.selector,
-            branch: value.branch,
+            selector: value.selector.get(),
+            branch: value.branch.get(),
             object_indices: value.references.each_ref().map(|reference| reference.token.value()),
             raw_object_indices: value.references.each_ref().map(|reference| reference.token.raw().to_vec()),
             data_blocks: value.references.each_ref().map(|reference| reference.data_block.clone()),
@@ -812,8 +812,8 @@ impl TryFrom<FeatureHolePackageConstructionGroupLaneWire> for FeatureHolePackage
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            selector: wire.selector,
-            branch: wire.branch,
+            selector: NonZeroU8::new(wire.selector).ok_or("selector: zero is not a construction selector")?,
+            branch: NonZeroU8::new(wire.branch).ok_or("branch: zero is not a construction branch")?,
             references: [a?, b?, c?, d?],
             payload_offset: wire.payload_offset,
             source_offset: wire.source_offset,

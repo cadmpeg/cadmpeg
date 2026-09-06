@@ -303,7 +303,13 @@ fn fixed_reference_groups_preserve_wire_and_check_each_token() {
         }
     }
     check::<super::FeatureDatumCsysConstruction>(r#"{"id":"c","operation_label":"o","control":19,"object_indices":[0,1,2,3,4,5,6,7],"raw_object_indices":[[0],[1],[2],[3],[4],[5],[6],[7]],"data_blocks":["a","b","c","d","e","f","g","h"],"source_offsets":[10,11,12,13,14,15,16,17]}"#, "raw_object_indices");
-    check::<super::FeatureHolePackageConstructionGroupLane>(r#"{"id":"c","operation_label":"o","selector":70,"branch":17,"object_indices":[1,2,3,4],"raw_object_indices":[[240,1],[240,2],[240,3],[240,4]],"data_blocks":["a","b","c","d"],"payload_offset":20,"source_offset":120,"reference_source_offsets":[132,134,141,143]}"#, "raw_object_indices");
+    let hole = r#"{"id":"c","operation_label":"o","selector":70,"branch":17,"object_indices":[1,2,3,4],"raw_object_indices":[[240,1],[240,2],[240,3],[240,4]],"data_blocks":["a","b","c","d"],"payload_offset":20,"source_offset":120,"reference_source_offsets":[132,134,141,143]}"#;
+    check::<super::FeatureHolePackageConstructionGroupLane>(hole, "raw_object_indices");
+    for field in ["selector", "branch"] {
+        let mut invalid: serde_json::Value = serde_json::from_str(hole).unwrap();
+        invalid[field] = serde_json::json!(0);
+        assert!(serde_json::from_value::<super::FeatureHolePackageConstructionGroupLane>(invalid).is_err());
+    }
     let fset = r#"{"id":"g","operation_label":"o","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":[[144,0,1],[144,0,2]],"first_data_blocks":["a",null],"second_object_indices":[3,4,5],"raw_second_object_indices":[[144,0,3],[144,0,4],[144,0,5]],"second_data_blocks":[null,"d","e"],"source_offset":10,"first_source_offsets":[11,14],"second_source_offsets":[17,20,23]}"#;
     check::<super::FeatureFsetReferenceGraph>(fset, "raw_first_object_indices");
     check::<super::FeatureFsetReferenceGraph>(fset, "raw_second_object_indices");
