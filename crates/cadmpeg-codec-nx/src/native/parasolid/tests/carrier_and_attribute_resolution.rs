@@ -367,8 +367,8 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(terms.len(), 2);
     assert_eq!(terms[0].form.count(), 1);
     assert_eq!(serde_json::to_value(terms[0].form).unwrap(), "L?");
-    assert_eq!(terms[0].point, [0.0, 0.0, 0.0]);
-    assert_eq!(terms[1].point, [10.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(terms[0].point), [0.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(terms[1].point), [10.0, 0.0, 0.0]);
     assert!(
         terms
             .iter()

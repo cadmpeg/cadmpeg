@@ -11,6 +11,7 @@ use crate::parasolid::name_references::NameReferences;
 
 use crate::deltas::Census;
 use crate::deltas::record_family::PointCoordinates;
+use crate::intersection::finite_point::FinitePoint;
 use crate::parasolid::attribute_field::AttributeField;
 use crate::parasolid::attribute_action::AttributeAction;
 use std::num::NonZeroU32;
@@ -1475,7 +1476,7 @@ pub struct ParasolidTermUseRecord {
     /// Two-byte endpoint-form discriminator as printable ASCII.
     pub form: crate::intersection::TermUseForm,
     /// Endpoint position in millimetres.
-    pub point: [f64; 3],
+    pub point: FinitePoint,
     /// Serialized record framing.
     pub framing: crate::intersection::TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
@@ -1495,7 +1496,7 @@ struct ParasolidTermUseRecordWire {
     /// Two-byte endpoint-form discriminator as printable ASCII.
     form: crate::intersection::TermUseForm,
     /// Endpoint position in millimetres.
-    point: [f64; 3],
+    point: FinitePoint,
     /// Serialized record framing.
     framing: crate::intersection::TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
@@ -1535,6 +1536,18 @@ impl TryFrom<ParasolidTermUseRecordWire> for ParasolidTermUseRecord {
     }
 }
 
+#[cfg(test)]
+mod term_use_wire_tests {
+    use super::ParasolidTermUseRecord;
+
+    #[test]
+    fn finite_endpoint_retains_the_native_point_array_and_open_identity() {
+        let json = r#"{"id":"term","stream_ordinal":0,"xmt":0,"count":2,"form":"TF","point":[0.0,-0.0,1.0],"framing":"direct","inflated_offset":10}"#;
+        let record: ParasolidTermUseRecord = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), json);
+    }
+}
+
 /// Decode complete typed source records for Parasolid `term_use` endpoints.
 pub fn parasolid_term_use_records(streams: &[Stream]) -> Vec<ParasolidTermUseRecord> {
     per_parasolid_scan::<ParasolidTermUseRecord>(streams)
@@ -1556,7 +1569,7 @@ impl ParasolidScanRecords for ParasolidTermUseRecord {
             stream_ordinal,
             xmt: row.xmt,
             form: row.form,
-            point: [row.point.x, row.point.y, row.point.z],
+            point: row.point,
             framing: row.framing,
             inflated_offset: row.pos as u64,
         }
