@@ -41,8 +41,7 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
         ordinal: None,
         id: "reference#0".to_string(),
         operation_label: "operation#0".to_string(),
-        body_object_index: 10,
-        raw_body_object_index: vec![10],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10]).unwrap(),
         source_offset: 0,
     }];
     let booleans = [FeatureBooleanOperation {
@@ -98,8 +97,7 @@ fn unique_feature_body_references_require_one_field_per_operation() {
             ordinal: None,
             id: id.to_string(),
             operation_label: operation_label.to_string(),
-            body_object_index,
-            raw_body_object_index: vec![body_object_index as u8],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(body_object_index, &[body_object_index as u8]).unwrap(),
             source_offset: 0,
         };
     let references = [
@@ -120,8 +118,7 @@ fn feature_body_segment_uses_require_one_alias_pair() {
         ordinal: None,
         id: "nx:feature-history:body-reference#0".into(),
         operation_label: "operation#0".into(),
-        body_object_index: 11,
-        raw_body_object_index: vec![11],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(11, &[11]).unwrap(),
         source_offset: 90,
     };
     let binding = SegmentBodyBinding {
@@ -160,8 +157,7 @@ fn feature_body_segment_uses_require_one_alias_pair() {
         ordinal: None,
         id: "nx:feature-history:body-reference#1".into(),
         operation_label: reference.operation_label.clone(),
-        body_object_index: 12,
-        raw_body_object_index: vec![12],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(12, &[12]).unwrap(),
         source_offset: 91,
     };
     assert!(
@@ -190,8 +186,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         ordinal: None,
         id: "reference#0".into(),
         operation_label: "operation#0".into(),
-        body_object_index: 11,
-        raw_body_object_index: vec![11],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(11, &[11]).unwrap(),
         source_offset: 90,
     };
     let data_block_use = FeatureBodyDataBlockUse {
@@ -250,7 +245,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     ];
     let mut block_bytes = Vec::new();
     let object_id_offset = block_bytes.len();
-    block_bytes.push(reference.body_object_index as u8);
+    block_bytes.push(reference.body.value() as u8);
     block_bytes.extend_from_slice(&discriminator);
     let parsed_frames = crate::om::data_block_object_frames(&block_bytes);
     assert_eq!(parsed_frames.len(), 1);
@@ -412,8 +407,7 @@ fn feature_body_segment_uses_reject_primary_index_offset_collision() {
         ordinal: None,
         id: "reference#0".into(),
         operation_label: "operation#0".into(),
-        body_object_index: 11,
-        raw_body_object_index: vec![11],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(11, &[11]).unwrap(),
         source_offset: 90,
     };
     let data_block_use = FeatureBodyDataBlockUse {
@@ -447,8 +441,7 @@ fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
         ordinal: None,
         id: "reference#99".into(),
         operation_label: "operation#0".into(),
-        body_object_index: 99,
-        raw_body_object_index: vec![99],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(99, &[99]).unwrap(),
         source_offset: 90,
     };
     let input = FeatureInputBlock {
@@ -499,8 +492,7 @@ fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
         ordinal: None,
         id: "reference#99".into(),
         operation_label: "operation#0".into(),
-        body_object_index: 99,
-        raw_body_object_index: vec![99],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(99, &[99]).unwrap(),
         source_offset: 90,
     };
     let input = |slot: u8, object_index: u32, data_block: &str| FeatureInputBlock {
@@ -557,8 +549,7 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
         ordinal: None,
         id: "nx:feature-history:body-reference#0".into(),
         operation_label: "operation#0".into(),
-        body_object_index: 72,
-        raw_body_object_index: vec![72],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(72, &[72]).unwrap(),
         source_offset: 90,
     };
     let input = FeatureInputBlock {
@@ -598,8 +589,7 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
         ordinal: None,
         id: "nx:feature-history:body-reference#1".into(),
         operation_label: "operation#0".into(),
-        body_object_index: 73,
-        raw_body_object_index: vec![73],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(73, &[73]).unwrap(),
         source_offset: 91,
     };
     assert!(
@@ -630,8 +620,7 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
         ordinal: None,
         id: "reference#30".to_string(),
         operation_label: "operation#0".to_string(),
-        body_object_index: 30,
-        raw_body_object_index: vec![30],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(30, &[30]).unwrap(),
         source_offset: 0,
     }];
     let booleans = [FeatureBooleanOperation {

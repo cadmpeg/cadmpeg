@@ -126,11 +126,12 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         body_object_index: 10,
         body_reference_ordinal: 0,
         ordinal,
-        operand_object_index: object_index,
-        raw_operand_object_index: vec![object_index as u8],
+        operand: crate::om::compact::LocatedCompactIndex {
+            atom: crate::om::compact::CompactIndexAtom::from_wire(object_index, &[object_index as u8]).unwrap(),
+            offset: u64::from(ordinal),
+        },
         operand_data_block: None,
         segment_body_bindings: vec![format!("binding#{ordinal}")],
-        source_offset: u64::from(ordinal),
     };
     let operands = [operand(0, 20), operand(1, 30)];
     let references = operands.iter().collect::<Vec<_>>();
@@ -228,11 +229,12 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
             body_object_index: 72,
             body_reference_ordinal: 0,
             ordinal,
-            operand_object_index: object_index,
-            raw_operand_object_index: vec![object_index as u8],
+            operand: crate::om::compact::LocatedCompactIndex {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(object_index, &[object_index as u8]).unwrap(),
+                offset: u64::from(ordinal),
+            },
             operand_data_block: Some(data_block.to_string()),
             segment_body_bindings: Vec::new(),
-            source_offset: u64::from(ordinal),
         }
     };
     let offset_operands = [
@@ -337,11 +339,12 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
         body_object_index: 114,
         body_reference_ordinal: 0,
         ordinal: 0,
-        operand_object_index: 113,
-        raw_operand_object_index: vec![113],
+        operand: crate::om::compact::LocatedCompactIndex {
+            atom: crate::om::compact::CompactIndexAtom::from_wire(113, &[113]).unwrap(),
+            offset: 0,
+        },
         operand_data_block: Some("nx:om-data-blocks-2:block#113".to_string()),
         segment_body_bindings: Vec::new(),
-        source_offset: 0,
     };
     assert_eq!(
         super::offset_store_trim_body_feature_definition(std::slice::from_ref(&body), &[&operand],),
@@ -390,11 +393,12 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
         body_object_index: 10,
         body_reference_ordinal: 0,
         ordinal: 0,
-        operand_object_index: 20,
-        raw_operand_object_index: vec![20],
+        operand: crate::om::compact::LocatedCompactIndex {
+            atom: crate::om::compact::CompactIndexAtom::from_wire(20, &[20]).unwrap(),
+            offset: 0,
+        },
         operand_data_block: None,
         segment_body_bindings: vec!["binding#0".to_string()],
-        source_offset: 0,
     }];
     let references = operands.iter().collect::<Vec<_>>();
     let roots = BTreeMap::from([(10, 10), (20, 20)]);

@@ -98,6 +98,27 @@ fn datum_plane_payload_derives_terminal_index_count() {
 }
 
 #[test]
+fn datum_plane_payload_retains_checked_compact_tokens() {
+    let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"hash","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":3,"index_lane_values":[4096,1],"index_lane_raw_indices":[[144,0],[128,1]],"index_lane_value_offsets":[4,6],"index_lane_trailer":0}"#;
+    let payload: super::FeatureDatumPlanePayload = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&payload).unwrap(), json);
+    for raw in [vec![255], vec![144], vec![144, 0, 0], vec![1]] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["index_lane_raw_indices"][0] = serde_json::json!(raw);
+        let error = serde_json::from_value::<super::FeatureDatumPlanePayload>(wire).unwrap_err();
+        assert!(error.to_string().contains("index_lane_values[0]"));
+    }
+    for count in [0, 254, 255] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["index_lane_declared_count"] = serde_json::json!(count + 1);
+        wire["index_lane_values"] = serde_json::json!(vec![2; count]);
+        wire["index_lane_raw_indices"] = serde_json::json!(vec![vec![2]; count]);
+        wire["index_lane_value_offsets"] = serde_json::json!(vec![4; count]);
+        assert_eq!(serde_json::from_value::<super::FeatureDatumPlanePayload>(wire).is_ok(), count == 254);
+    }
+}
+
+#[test]
 fn symbolic_thread_text_frame_derives_marker() {
     let json = r#"{"id":"frame","symbolic_thread":"thread","ordinal":0,"marker":3,"value":"CUT","source_offset":10}"#;
     let frame: super::FeatureSymbolicThreadTextFrame = serde_json::from_str(json).unwrap();
@@ -357,5 +378,75 @@ fn body_11_continuation_preserves_wire_and_checks_both_token_grammars() {
         let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
         invalid[field] = serde_json::json!([255]);
         assert!(serde_json::from_value::<super::super::FeatureOperationBody11Continuation>(invalid).is_err());
+    }
+}
+
+#[test]
+fn operation_body_member_preserves_exact_compact_token_and_rejects_invalid_wire() {
+    for (value, raw) in [(1, "[1]"), (1, "[128,1]"), (4097, "[144,1]")] {
+        let wire = format!(r#"{{"id":"member","operation_label":"operation","body_reference_ordinal":0,"body_object_index":66,"ordinal":0,"member_index":{value},"raw_member_index":{raw},"source_offset":122}}"#);
+        let record: super::super::FeatureOperationBodyMember = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        for invalid_raw in [serde_json::json!([]), serde_json::json!([255]), serde_json::json!([128]), serde_json::json!([144,0,1])] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+            invalid["raw_member_index"] = invalid_raw;
+            let error = serde_json::from_value::<super::super::FeatureOperationBodyMember>(invalid).unwrap_err();
+            assert!(error.to_string().contains("member_index"));
+        }
+        let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+        invalid["member_index"] = serde_json::json!(value + 1);
+        assert!(serde_json::from_value::<super::super::FeatureOperationBodyMember>(invalid).is_err());
+    }
+}
+
+#[test]
+fn operation_body_operand_preserves_exact_token_and_optional_relations() {
+    for relations in ["", r#", "operand_data_block":"block", "segment_body_bindings":["binding"]"#] {
+        let wire = format!(r#"{{"id":"operand","operation_label":"operation","body_object_index":66,"body_reference_ordinal":0,"ordinal":0,"operand_object_index":4097,"raw_operand_object_index":[144,1]{relations},"source_offset":122}}"#).replace(", ", ",");
+        let record: super::super::FeatureOperationBodyOperand = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        for raw in [serde_json::json!([]), serde_json::json!([255]), serde_json::json!([144]), serde_json::json!([144,0,1]), serde_json::json!([1])] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+            invalid["raw_operand_object_index"] = raw;
+            let error = serde_json::from_value::<super::super::FeatureOperationBodyOperand>(invalid).unwrap_err();
+            assert!(error.to_string().contains("operand_object_index"));
+        }
+    }
+}
+
+#[test]
+fn operation_object_reference_requires_canonical_feature_token() {
+    for (value, raw) in [(0, "[0]"), (128, "[128,128]"), (4096, "[144,16,0]")] {
+        let wire = format!(r#"{{"id":"reference","operation_label":"operation","operation_record":"record","ordinal":0,"object_index":{value},"raw_object_index":{raw},"object_index_source_offset":10,"byte_len":4,"source_offset":7}}"#);
+        let record: FeatureOperationObjectReference = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        for invalid_raw in [serde_json::json!([]), serde_json::json!([255]), serde_json::json!([128,0]),
+            serde_json::json!([144,0,0]), serde_json::json!([240,0]), serde_json::json!([144,16]),
+            serde_json::json!([0,0])] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+            invalid["raw_object_index"] = invalid_raw;
+            assert!(serde_json::from_value::<FeatureOperationObjectReference>(invalid).unwrap_err().to_string().contains("object_index/raw_object_index"));
+        }
+        let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+        invalid["object_index"] = serde_json::json!(value + 1);
+        assert!(serde_json::from_value::<FeatureOperationObjectReference>(invalid).is_err());
+    }
+}
+
+#[test]
+fn body_reference_preserves_alternate_widths_and_rejects_invalid_tokens() {
+    for (value, raw) in [(0, "[0]"), (0, "[128,0]"), (0, "[144,0,0]"), (6466, "[144,25,66]")] {
+        let wire = format!(r#"{{"id":"reference","operation_label":"operation","body_object_index":{value},"raw_body_object_index":{raw},"source_offset":10}}"#);
+        let record: FeatureBodyReference = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        for raw in [serde_json::json!([]), serde_json::json!([255]), serde_json::json!([144,0]),
+            serde_json::json!([240,0]), serde_json::json!([0,0])] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+            invalid["raw_body_object_index"] = raw;
+            assert!(serde_json::from_value::<FeatureBodyReference>(invalid).unwrap_err().to_string().contains("body_object_index/raw_body_object_index"));
+        }
+        let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+        invalid["body_object_index"] = serde_json::json!(value + 1);
+        assert!(serde_json::from_value::<FeatureBodyReference>(invalid).is_err());
     }
 }

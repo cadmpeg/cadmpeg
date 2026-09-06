@@ -248,14 +248,6 @@ fn raw_compact_token<T>(bytes: &[u8], token: CompactToken<T>) -> Vec<u8> {
     bytes[token.offset..token.offset + token.width].to_vec()
 }
 
-/// One decoded value with its exact source token.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LaneToken<T, R = Vec<u8>> {
-    pub value: T,
-    pub offset: usize,
-    pub raw: R,
-}
-
 /// One counted compact-index lane ending in the exact `01 11` marker.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OffsetStoreCountedIndexLane {
@@ -1591,18 +1583,14 @@ pub struct DraftFeaturePayloadReferenceField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DraftFeatureLeadingIndexLane {
     /// Non-null compact indices in serialized order with absolute token offsets.
-    pub indices: Vec<LaneToken<u32>>,
+    pub indices: CountedIndexMembers<LocatedCompactIndex, 1>,
 }
 
 /// End-anchored compact-index lane in a draft-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DraftFeatureTerminalLane {
-    /// Two non-null compact indices in serialized order.
-    pub indices: [u32; 2],
-    /// Exact two-byte compact-index tokens in serialized order.
-    pub raw_indices: [[u8; 2]; 2],
-    /// Absolute offsets of the compact-index tokens.
-    pub index_offsets: [usize; 2],
+pub struct DraftFeatureTerminalLane<O = usize> {
+    /// Two exact two-byte compact indices and their source offsets.
+    pub indices: [LocatedCompactIndex<O, compact::ExtendedCompactIndex>; 2],
     /// Three uninterpreted bytes preceding the terminal zero.
     pub tail: [u8; 3],
 }
@@ -1750,23 +1738,23 @@ pub struct DatumPlaneSingleReferenceBranch {
     /// Non-null compact descriptor with its absolute source offset.
     pub descriptor: LocatedCompactIndex,
     /// Canonical payload object reference with its absolute source offset.
-    pub object: PayloadObjectReference,
+    pub object: PayloadObjectReference<reference_index::PayloadIndexToken>,
 }
 
 /// Two canonical references carried by a tag-`29` datum-plane branch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatumPlaneDoubleReferenceBranch {
     /// Canonical payload object indices in branch order.
-    pub references: [PayloadObjectReference; 2],
+    pub references: [PayloadObjectReference<reference_index::PayloadIndexToken>; 2],
 }
 
 /// Complete terminal compact-index lane in a reconstructed datum-plane payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DatumPlaneObjectIndexLane {
+pub struct DatumPlaneObjectIndexLane<O = usize> {
     /// Payload-relative offset of the opening `01` marker.
-    pub offset: usize,
+    pub offset: O,
     /// Ordered non-null compact indices and their payload-relative offsets.
-    pub indices: Vec<LaneToken<u32>>,
+    pub indices: CountedIndexMembers<LocatedCompactIndex<O>, 1>,
     /// Big-endian trailer word after the zero separator.
     pub trailer: u32,
 }
@@ -1936,12 +1924,8 @@ pub struct OperationBodyMember {
     pub body_object_index: u32,
     /// Zero-based member order in the counted lane.
     pub ordinal: u32,
-    /// Decoded compact index.
-    pub member_index: u32,
-    /// Exact compact-index token.
-    pub raw_member_index: Vec<u8>,
-    /// Absolute offset of the compact-index marker.
-    pub offset: usize,
+    /// Exact compact index and its absolute source position.
+    pub member: LocatedCompactIndex,
 }
 
 /// Exact continuation following a `TRIM BODY` branch-`11` member lane.
@@ -2020,9 +2004,7 @@ pub struct OperationBodyReference {
     /// Absolute offset of the object-index token.
     pub offset: usize,
     /// Referenced body object index.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    pub object_index: reference_index::FeatureReferenceToken,
 }
 
 /// One exact body-write frame in a bounded operation record.
@@ -2061,9 +2043,7 @@ pub struct OperationTaggedReference {
     /// Byte between the opening marker and the object index.
     pub tag: u8,
     /// Referenced feature object index.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    pub object_index: reference_index::CanonicalFeatureReferenceToken,
     /// Absolute offset of the object-index token.
     pub object_index_offset: usize,
     /// Exclusive absolute end offset after the fixed field suffix.
@@ -2079,9 +2059,7 @@ pub struct OperationDataBlockReference {
     /// Absolute offset of the opening `01 02` marker.
     pub offset: usize,
     /// Referenced feature object index.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    pub object_index: reference_index::CanonicalFeatureReferenceToken,
     /// Absolute offset of the object-index token.
     pub object_index_offset: usize,
     /// Exclusive absolute end offset after the fixed field suffix.
@@ -2093,10 +2071,8 @@ pub struct OperationDataBlockReference {
 pub struct DataBlockObjectReference {
     /// Byte offset of the object-index token within the containing byte range.
     pub offset: usize,
-    /// Referenced OM object ID.
-    pub object_index: u32,
-    /// Exact serialized object-index token.
-    pub raw_object_index: Vec<u8>,
+    /// Required feature index with its exact encoding.
+    pub object_index: reference_index::FeatureReferenceToken,
 }
 
 /// Boolean operation kind stored after an operation label.
@@ -3662,21 +3638,17 @@ pub fn draft_feature_leading_index_lane(
     at += 2;
     let mut indices = Vec::with_capacity(usize::from(declared_count - 1));
     for _ in 1..declared_count {
-        let offset = at;
-        let (CompactIndex::Value(value), width) = compact_index(record.payload.get(at..)?)? else {
-            return None;
-        };
-        at += width;
-        indices.push(LaneToken {
-            value,
-            offset: record.payload_offset + offset,
-            raw: record.payload[offset..at].to_vec(),
+        let token = LocatedCompactIndex::read(record.payload, at)?;
+        at += token.atom.raw().len();
+        indices.push(LocatedCompactIndex {
+            atom: token.atom,
+            offset: record.payload_offset + token.offset,
         });
     }
     (record.payload.get(at..at + 2) == Some(&[0x01, 0x02])).then_some(())?;
 
     Some(DraftFeatureLeadingIndexLane {
-        indices,
+        indices: CountedIndexMembers::new(indices).ok()?,
     })
 }
 
@@ -3690,74 +3662,19 @@ pub fn draft_feature_terminal_lane(
     if record.label.value != "DRAFT" {
         return None;
     }
-    let mut candidate = None;
-    for start in 0..record.payload.len() {
-        let mut at = start;
-        let first_offset = at;
-        if !record
-            .payload
-            .get(at)
-            .is_some_and(|marker| (0x80..=0xfe).contains(marker))
-        {
-            continue;
-        }
-        let Some((CompactIndex::Value(first), first_width)) =
-            record.payload.get(at..).and_then(compact_index)
-        else {
-            continue;
-        };
-        at += first_width;
-        let second_offset = at;
-        if !record
-            .payload
-            .get(at)
-            .is_some_and(|marker| (0x80..=0xfe).contains(marker))
-        {
-            continue;
-        }
-        let Some((CompactIndex::Value(second), second_width)) =
-            record.payload.get(at..).and_then(compact_index)
-        else {
-            continue;
-        };
-        at += second_width;
-        if record.payload.get(at..at + FIXED.len()) != Some(&FIXED) {
-            continue;
-        }
-        at += FIXED.len();
-        let Some(tail) = record
-            .payload
-            .get(at..at + 3)
-            .and_then(|bytes| bytes.try_into().ok())
-        else {
-            continue;
-        };
-        at += 3;
-        if at + 1 != record.payload.len() || record.payload.get(at) != Some(&0x00) {
-            continue;
-        }
-        let lane = DraftFeatureTerminalLane {
-            indices: [first, second],
-            raw_indices: [
-                record.payload[first_offset..first_offset + first_width]
-                    .try_into()
-                    .ok()?,
-                record.payload[second_offset..second_offset + second_width]
-                    .try_into()
-                    .ok()?,
-            ],
-            index_offsets: [
-                record.payload_offset + first_offset,
-                record.payload_offset + second_offset,
-            ],
-            tail,
-        };
-        if candidate.is_some() {
-            return None;
-        }
-        candidate = Some(lane);
-    }
-    candidate
+    let start = record.payload.len().checked_sub(4 + FIXED.len() + 4)?;
+    let first = compact::ExtendedCompactIndex::read(record.payload.get(start..)?)?;
+    let second = compact::ExtendedCompactIndex::read(record.payload.get(start + 2..)?)?;
+    let at = start + 4;
+    (record.payload.get(at..at + FIXED.len()) == Some(&FIXED)).then_some(())?;
+    let at = at + FIXED.len();
+    let tail = record.payload.get(at..at + 3)?.try_into().ok()?;
+    (record.payload.get(at + 3) == Some(&0x00)).then_some(())?;
+    Some(DraftFeatureTerminalLane {
+        indices: [LocatedCompactIndex { atom: first, offset: record.payload_offset + start },
+            LocatedCompactIndex { atom: second, offset: record.payload_offset + start + 2 }],
+        tail,
+    })
 }
 
 /// Decode the exact common construction-reference envelope in a bounded
@@ -4323,10 +4240,7 @@ pub fn operation_body_scalar_triples(
         .enumerate()
         .filter_map(|(ordinal, reference)| {
             let token = reference.offset.checked_sub(record.offset())?;
-            let (_, end) = feature_object_index(record.bytes, token)?;
-            if record.bytes.get(end) != Some(&0xff) {
-                return None;
-            }
+            let end = token + reference.object_index.raw().len();
             let branch = *record.bytes.get(end + 1)?;
             let mut at = end + 2;
             let mut scalars = Vec::with_capacity(3);
@@ -4341,7 +4255,7 @@ pub fn operation_body_scalar_triples(
             }
             Some(OperationBodyScalarTriple {
                 body_reference_ordinal: ordinal as u32,
-                body_object_index: reference.object_index,
+                body_object_index: reference.object_index.value(),
                 branch,
                 scalars: scalars.try_into().ok()?,
             })
@@ -4358,9 +4272,7 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
             let Some(token) = reference.offset.checked_sub(record.offset()) else {
                 return Vec::new();
             };
-            let Some((_, end)) = feature_object_index(record.bytes, token) else {
-                return Vec::new();
-            };
+            let end = token + reference.object_index.raw().len();
             if record.bytes.get(end..end + 2) != Some(&[0xff, 0x11]) {
                 return Vec::new();
             }
@@ -4408,23 +4320,20 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
                 }
                 at += 1;
                 let member_at = at;
-                let Some((CompactIndex::Value(member_index), width)) =
-                    record.bytes.get(at..).and_then(compact_index)
+                let Some(atom) = record.bytes.get(at..).and_then(CompactIndexAtom::read)
                 else {
                     return Vec::new();
                 };
-                at += width;
+                at += atom.raw().len();
                 if record.bytes.get(at) != Some(&0x00) {
                     return Vec::new();
                 }
                 at += 1;
                 members.push(OperationBodyMember {
                     body_reference_ordinal: body_ordinal as u32,
-                    body_object_index: reference.object_index,
+                    body_object_index: reference.object_index.value(),
                     ordinal: ordinal as u32,
-                    member_index,
-                    raw_member_index: record.bytes[member_at..member_at + width].to_vec(),
-                    offset: record.offset() + member_at,
+                    member: LocatedCompactIndex { atom, offset: record.offset() + member_at },
                 });
             }
             members
@@ -4444,7 +4353,7 @@ pub fn operation_body_11_continuations(
         .enumerate()
         .filter_map(|(body_ordinal, reference)| {
             let token = reference.offset.checked_sub(record.offset())?;
-            let (_, end) = feature_object_index(record.bytes, token)?;
+            let end = token + reference.object_index.raw().len();
             if record.bytes.get(end..end + 2) != Some(&[0xff, 0x11]) {
                 return None;
             }
@@ -4495,7 +4404,7 @@ pub fn operation_body_11_continuations(
             }
             Some(OperationBody11Continuation {
                 body_reference_ordinal: body_ordinal as u32,
-                body_object_index: reference.object_index,
+                body_object_index: reference.object_index.value(),
                 continuation,
                 terminal: PayloadObjectReference {
                     token: terminal_token,
@@ -4515,10 +4424,7 @@ pub fn operation_body_reference_lanes(
         .enumerate()
         .filter_map(|(body_ordinal, reference)| {
             let token = reference.offset.checked_sub(record.offset())?;
-            let (_, end) = feature_object_index(record.bytes, token)?;
-            if record.bytes.get(end) != Some(&0xff) {
-                return None;
-            }
+            let end = token + reference.object_index.raw().len();
             let branch = discriminators::OperationBodyReferenceBranch::try_from(*record.bytes.get(end + 1)?).ok()?;
             let mut at = end + 2;
             for _ in 0..3 {
@@ -4550,7 +4456,7 @@ pub fn operation_body_reference_lanes(
             };
             Some(OperationBodyReferenceLane {
                 body_reference_ordinal: body_ordinal as u32,
-                body_object_index: reference.object_index,
+                body_object_index: reference.object_index.value(),
                 branch,
                 values,
             })
@@ -4580,7 +4486,7 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
     }
     let reference = operation_body_reference(record)?;
     let token = reference.offset.checked_sub(record.offset())?;
-    let (_, end) = feature_object_index(record.bytes, token)?;
+    let end = token + reference.object_index.raw().len();
     if record.bytes.get(end..end + 4) != Some(&[0xff, 0x32, 0x00, 0x00]) {
         return None;
     }
@@ -4601,7 +4507,7 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
     }
     let terminal_token = ReferenceIndexToken::read_feature(record.bytes.get(at + 2..)?)?;
     let next = at + 2 + terminal_token.raw().len();
-    if terminal_token.value() != reference.object_index
+    if terminal_token.value() != reference.object_index.value()
         || record.bytes.get(next..next + 2) != Some(&[0x00, 0x00])
     {
         return None;
@@ -4723,8 +4629,8 @@ pub fn datum_plane_single_reference_branch(
     (record.payload.get(at) == Some(&0x01)).then_some(())?;
     at += 1;
     let object_offset = record.payload_offset + at;
-    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-    at += width;
+    let object_index = reference_index::PayloadIndexToken::read(record.payload.get(at..)?)?;
+    at += object_index.raw().len();
     (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
     Some(DatumPlaneSingleReferenceBranch {
         descriptor,
@@ -4756,8 +4662,8 @@ pub fn datum_plane_descriptor_reference_branch(
     (record.payload.get(at..at + SEPARATOR.len()) == Some(&SEPARATOR)).then_some(())?;
     at += SEPARATOR.len();
     let object_offset = record.payload_offset + at;
-    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-    at += width;
+    let object_index = reference_index::PayloadIndexToken::read(record.payload.get(at..)?)?;
+    at += object_index.raw().len();
     (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
     Some(DatumPlaneSingleReferenceBranch {
         descriptor,
@@ -4787,12 +4693,12 @@ pub fn datum_plane_double_reference_branch(
         return None;
     }
     let mut at = 10;
-    let (first_index, first_width) = payload_object_index(record.payload.get(at..)?)?;
+    let first_index = reference_index::PayloadIndexToken::read(record.payload.get(at..)?)?;
     let first = PayloadObjectReference {
         offset: record.payload_offset + at,
         token: first_index,
     };
-    at += first_width;
+    at += first_index.raw().len();
     let middle = if header.declared_count == 2 {
         COUNT_TWO_MIDDLE.as_slice()
     } else {
@@ -4800,12 +4706,12 @@ pub fn datum_plane_double_reference_branch(
     };
     (record.payload.get(at..at + middle.len()) == Some(middle)).then_some(())?;
     at += middle.len();
-    let (second_index, second_width) = payload_object_index(record.payload.get(at..)?)?;
+    let second_index = reference_index::PayloadIndexToken::read(record.payload.get(at..)?)?;
     let second = PayloadObjectReference {
         offset: record.payload_offset + at,
         token: second_index,
     };
-    at += second_width;
+    at += second_index.raw().len();
     let suffix = if header.declared_count == 2 {
         COUNT_TWO_SUFFIX.as_slice()
     } else {
@@ -4843,25 +4749,15 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
             continue;
         }
         let mut at = start + 2;
-        let mut indices = Vec::with_capacity(usize::from(declared_count) - 1);
-        let mut complete = true;
-        for _ in 1..declared_count {
-            let Some((CompactIndex::Value(value), width)) = bytes.get(at..).and_then(compact_index)
-            else {
-                complete = false;
-                break;
-            };
-            indices.push(LaneToken {
-                value,
-                offset: at,
-                raw: bytes[at..at + width].to_vec(),
-            });
-            at += width;
-        }
-        if !complete || bytes.get(at) != Some(&0x00) || at + 5 != bytes.len() {
+        let indices = (1..declared_count).map(|_| {
+            let token = LocatedCompactIndex::read(&bytes[..scan_at], at)?;
+            at += token.atom.raw().len();
+            Some(token)
+        }).collect::<Option<Vec<_>>>();
+        let Some(indices) = indices.and_then(|indices| CountedIndexMembers::new(indices).ok()) else {
             continue;
-        }
-        let Some(trailer) = View::u32_be_at(bytes, at + 1) else {
+        };
+        let Some(trailer) = View::u32_be_at(bytes, scan_at + 1) else {
             continue;
         };
         lanes.push(DatumPlaneObjectIndexLane {
@@ -5365,16 +5261,16 @@ fn operation_body_reference_candidates(
         }
         if window == [0x01, 0x02, 0x10] {
             let token = marker + 3;
-            let Some((Some(object_index), end)) = feature_object_index(record.bytes, token) else {
+            let Some(object_index) = reference_index::FeatureReferenceToken::read(&record.bytes[token..]) else {
                 continue;
             };
+            let end = token + object_index.raw().len();
             if record.bytes.get(end) != Some(&0xff) {
                 continue;
             }
             return Some(OperationBodyReference {
                 offset: record.offset() + token,
                 object_index,
-                raw_object_index: record.bytes[token..end].to_vec(),
             });
         }
     })
@@ -5478,13 +5374,10 @@ pub fn operation_tagged_references(record: OperationRecord<'_>) -> Vec<Operation
         .filter_map(|(offset, window)| (window == PREFIX).then_some(offset))
     {
         let token = marker + PREFIX.len();
-        let Some((Some(object_index), end)) = feature_object_index(record.payload, token) else {
+        let Some(object_index) = reference_index::CanonicalFeatureReferenceToken::read(&record.payload[token..]) else {
             continue;
         };
-        let raw_object_index = &record.payload[token..end];
-        if !canonical_feature_object_index(Some(object_index), raw_object_index) {
-            continue;
-        }
+        let end = token + object_index.raw().len();
         let Some(suffix_end) = end.checked_add(SUFFIX.len()) else {
             continue;
         };
@@ -5495,7 +5388,6 @@ pub fn operation_tagged_references(record: OperationRecord<'_>) -> Vec<Operation
             offset: record.payload_offset + marker,
             tag: 0x17,
             object_index,
-            raw_object_index: raw_object_index.to_vec(),
             object_index_offset: record.payload_offset + token,
             end_offset: record.payload_offset + suffix_end,
         });
@@ -5520,13 +5412,10 @@ pub fn operation_data_block_references(
         .filter_map(|(offset, window)| (window == PREFIX).then_some(offset))
     {
         let token = marker + PREFIX.len();
-        let Some((Some(object_index), end)) = feature_object_index(record.payload, token) else {
+        let Some(object_index) = reference_index::CanonicalFeatureReferenceToken::read(&record.payload[token..]) else {
             continue;
         };
-        let raw_object_index = &record.payload[token..end];
-        if !canonical_feature_object_index(Some(object_index), raw_object_index) {
-            continue;
-        }
+        let end = token + object_index.raw().len();
         let Some(suffix_end) = end.checked_add(SUFFIX.len()) else {
             continue;
         };
@@ -5536,7 +5425,6 @@ pub fn operation_data_block_references(
         references.push(OperationDataBlockReference {
             offset: record.payload_offset + marker,
             object_index,
-            raw_object_index: raw_object_index.to_vec(),
             object_index_offset: record.payload_offset + token,
             end_offset: record.payload_offset + suffix_end,
         });
@@ -6706,10 +6594,11 @@ pub fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReferenc
             continue;
         }
         let token = at + 2;
-        let Some((Some(object_index), end)) = feature_object_index(bytes, token) else {
+        let Some(object_index) = reference_index::FeatureReferenceToken::read(&bytes[token..]) else {
             at += 1;
             continue;
         };
+        let end = token + object_index.raw().len();
         if bytes.get(end..end + 2) != Some(&[0x02, 0x0b]) {
             at += 1;
             continue;
@@ -6717,7 +6606,6 @@ pub fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReferenc
         references.push(DataBlockObjectReference {
             offset: token,
             object_index,
-            raw_object_index: bytes[token..end].to_vec(),
         });
         at = end + 2;
     }

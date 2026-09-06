@@ -794,20 +794,22 @@ fn om_datum_plane_object_index_lane_ends_at_logical_payload_boundary() {
     let lanes = super::datum_plane_object_index_lanes(&bytes);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].offset, 2);
-    assert_eq!(lanes[0].indices.len() + 1, 4);
+    assert_eq!(lanes[0].indices.as_slice().len() + 1, 4);
     assert_eq!(
         lanes[0]
             .indices
+            .as_slice()
             .iter()
-            .map(|token| (token.value, token.offset))
+            .map(|token| (token.atom.value(), token.offset))
             .collect::<Vec<_>>(),
         [(257, 4), (1, 6), (1, 7)]
     );
     assert_eq!(
         lanes[0]
             .indices
+            .as_slice()
             .iter()
-            .map(|token| token.raw.clone())
+            .map(|token| token.atom.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x81, 0x01], vec![1], vec![1]]
     );
@@ -1046,8 +1048,7 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
         super::operation_body_reference(record),
         Some(super::OperationBodyReference {
             offset: 103,
-            object_index: 6466,
-            raw_object_index: vec![0x90, 0x19, 0x42],
+            object_index: crate::om::reference_index::FeatureReferenceToken::from_wire(6466, &[0x90, 0x19, 0x42]).unwrap(),
         })
     );
 
@@ -1062,13 +1063,11 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
         [
             super::OperationBodyReference {
                 offset: 103,
-                object_index: 6466,
-                raw_object_index: vec![0x90, 0x19, 0x42],
+                object_index: crate::om::reference_index::FeatureReferenceToken::from_wire(6466, &[0x90, 0x19, 0x42]).unwrap(),
             },
             super::OperationBodyReference {
                 offset: 110,
-                object_index: 6466,
-                raw_object_index: vec![0x90, 0x19, 0x42],
+                object_index: crate::om::reference_index::FeatureReferenceToken::from_wire(6466, &[0x90, 0x19, 0x42]).unwrap(),
             },
         ]
     );
@@ -1463,18 +1462,15 @@ fn om_data_block_object_references_require_complete_field_frames() {
         [
             super::DataBlockObjectReference {
                 offset: 2,
-                object_index: 42,
-                raw_object_index: vec![0x2a],
+                object_index: crate::om::reference_index::FeatureReferenceToken::from_wire(42, &[0x2a]).unwrap(),
             },
             super::DataBlockObjectReference {
                 offset: 8,
-                object_index: 201,
-                raw_object_index: vec![0x80, 0xc9],
+                object_index: crate::om::reference_index::FeatureReferenceToken::from_wire(201, &[0x80, 0xc9]).unwrap(),
             },
             super::DataBlockObjectReference {
                 offset: 14,
-                object_index: 6466,
-                raw_object_index: vec![0x90, 0x19, 0x42],
+                object_index: crate::om::reference_index::FeatureReferenceToken::from_wire(6466, &[0x90, 0x19, 0x42]).unwrap(),
             },
         ]
     );

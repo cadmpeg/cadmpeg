@@ -2017,7 +2017,26 @@ impl TryFrom<DataBlockControlClassReferenceWire> for DataBlockControlClassRefere
 
 /// Ordered object reference carried by an offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "DataBlockReferenceWire", into = "DataBlockReferenceWire")]
 pub struct DataBlockReference {
+    /// Globally unique reference identity.
+    pub id: String,
+    /// Owning block in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Zero-based reference order within the block.
+    pub ordinal: u32,
+    /// Referenced persistent OM object ID.
+    pub object: crate::om::reference_index::FeatureReferenceToken,
+    /// Uniquely resolved object record in the same directory entry.
+    pub target_record: Option<String>,
+    /// Uniquely resolved parameter declaration carrying this object ID.
+    pub target_expression_declaration: Option<String>,
+    /// Absolute file offset of the object-index token.
+    pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DataBlockReferenceWire {
     /// Globally unique reference identity.
     pub id: String,
     /// Owning block in the native `data_blocks` arena.
@@ -2036,6 +2055,32 @@ pub struct DataBlockReference {
     pub target_expression_declaration: Option<String>,
     /// Absolute file offset of the object-index token.
     pub source_offset: u64,
+}
+
+impl From<DataBlockReference> for DataBlockReferenceWire {
+    fn from(value: DataBlockReference) -> Self {
+        Self {
+            id: value.id, data_block: value.data_block, ordinal: value.ordinal,
+            object_id: value.object.value(), raw_object_id: value.object.raw().to_vec(),
+            target_record: value.target_record,
+            target_expression_declaration: value.target_expression_declaration,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<DataBlockReferenceWire> for DataBlockReference {
+    type Error = String;
+    fn try_from(value: DataBlockReferenceWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: value.id, data_block: value.data_block, ordinal: value.ordinal,
+            object: crate::om::reference_index::FeatureReferenceToken::from_wire(value.object_id, &value.raw_object_id)
+                .map_err(|error| format!("object_id/raw_object_id: {error}"))?,
+            target_record: value.target_record,
+            target_expression_declaration: value.target_expression_declaration,
+            source_offset: value.source_offset,
+        })
+    }
 }
 
 /// Complete counted block-index lane carried by one offset-store block.
@@ -4415,7 +4460,7 @@ pub fn data_block_references(
                         .into_iter()
                         .enumerate()
                         .map(|(ordinal, reference)| {
-                            let key = (entry.name.clone(), reference.object_index);
+                            let key = (entry.name.clone(), reference.object_index.value());
                             let unique = |candidates: Option<&Vec<String>>| {
                                 let [target] = candidates?.as_slice() else {
                                     return None;
@@ -4430,8 +4475,7 @@ pub fn data_block_references(
                                     "nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"
                                 ),
                                 ordinal: ordinal as u32,
-                                object_id: reference.object_index,
-                                raw_object_id: reference.raw_object_index,
+                                object: reference.object_index,
                                 target_record: unique(target_records.get(&key)),
                                 target_expression_declaration: unique(declarations.get(&key)),
                                 source_offset: entry_offset
@@ -5598,6 +5642,22 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
 #[cfg(test)]
 mod tests {
     #![allow(unused_imports)]
+    #[test]
+    fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
+        for (value, raw) in [(0, vec![0]), (0, vec![0x80, 0]), (0, vec![0x90, 0, 0]), (6466, vec![0x90, 0x19, 0x42])] {
+            let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
+                "object_id":value, "raw_object_id":raw, "source_offset":12});
+            let record: super::DataBlockReference = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        }
+        for (value, raw) in [(1, vec![0]), (0, vec![0xff]), (0, vec![0xf0, 0]),
+            (0, vec![0x90, 0]), (0, vec![0, 0])] {
+            let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
+                "object_id":value, "raw_object_id":raw, "source_offset":12});
+            assert!(serde_json::from_value::<super::DataBlockReference>(wire).unwrap_err().to_string().contains("object_id/raw_object_id"));
+        }
+    }
+
     mod expression_wire;
     mod native_units;
     mod state_counters;
@@ -6455,8 +6515,7 @@ mod tests {
             id: format!("nx:om-data-block-references-2-45:reference#{ordinal}"),
             data_block: input.data_block.clone(),
             ordinal,
-            object_id: 201 + ordinal,
-            raw_object_id: vec![0x80, (201 + ordinal) as u8],
+            object: crate::om::reference_index::FeatureReferenceToken::from_wire(201 + ordinal, &[0x80, (201 + ordinal) as u8]).unwrap(),
             target_record: Some(format!("nx:om-record-directory-0:entry#{ordinal}")),
             target_expression_declaration: declaration.map(str::to_string),
             source_offset: 800 + u64::from(ordinal),

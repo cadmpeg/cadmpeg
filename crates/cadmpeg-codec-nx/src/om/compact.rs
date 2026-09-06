@@ -2,7 +2,7 @@
 //! Exact non-null compact indices and bounded counted-lane members.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Encoding { Direct(u8), Extended([u8; 2]) }
+enum Encoding { Direct(u8), Extended(ExtendedCompactIndex) }
 
 /// Exact compact-index encoding, excluding the `ff` null token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,22 +12,21 @@ impl CompactIndexAtom {
     pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
         match bytes.first().copied()? {
             value @ 0..=0x7f => Some(Self(Encoding::Direct(value))),
-            high @ 0x80..=0xfe => Some(Self(Encoding::Extended([high, *bytes.get(1)?]))),
-            _ => None,
+            _ => ExtendedCompactIndex::read(bytes).map(|index| Self(Encoding::Extended(index))),
         }
     }
 
     pub(crate) fn value(self) -> u32 {
         match self.0 {
             Encoding::Direct(value) => u32::from(value),
-            Encoding::Extended([high, low]) => u32::from(high - 0x80) * 256 + u32::from(low),
+            Encoding::Extended(index) => index.value(),
         }
     }
 
     pub(crate) fn raw(&self) -> &[u8] {
         match &self.0 {
             Encoding::Direct(value) => std::slice::from_ref(value),
-            Encoding::Extended(raw) => raw,
+            Encoding::Extended(index) => index.raw(),
         }
     }
 
@@ -40,23 +39,48 @@ impl CompactIndexAtom {
     }
 }
 
-/// Extended compact index inside a `3d high low 00` word.
+/// Non-null compact index restricted to its two-byte encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct WrappedCompactIndex([u8; 2]);
+pub(crate) struct ExtendedCompactIndex([u8; 2]);
 
-impl WrappedCompactIndex {
-    pub(crate) fn read(raw: u32) -> Option<Self> {
-        let [marker, high, low, terminal] = raw.to_be_bytes();
-        (marker == 0x3d && terminal == 0 && (0x80..=0xfe).contains(&high))
-            .then_some(Self([high, low]))
+impl ExtendedCompactIndex {
+    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+        match bytes {
+            [high @ 0x80..=0xfe, low, ..] => Some(Self([*high, *low])),
+            _ => None,
+        }
     }
 
     pub(crate) fn value(self) -> u32 {
         u32::from(self.0[0] - 0x80) * 256 + u32::from(self.0[1])
     }
 
+    pub(crate) fn raw(&self) -> &[u8; 2] { &self.0 }
+
+    pub(crate) fn from_wire(value: u32, raw: &[u8; 2]) -> Result<Self, &'static str> {
+        let index = Self::read(raw).ok_or("invalid two-byte compact index")?;
+        if index.value() != value { return Err("index/raw token: value mismatch"); }
+        Ok(index)
+    }
+}
+
+/// Extended compact index inside a `3d high low 00` word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WrappedCompactIndex(ExtendedCompactIndex);
+
+impl WrappedCompactIndex {
+    pub(crate) fn read(raw: u32) -> Option<Self> {
+        let [marker, high, low, terminal] = raw.to_be_bytes();
+        (marker == 0x3d && terminal == 0).then_some(())?;
+        ExtendedCompactIndex::read(&[high, low]).map(Self)
+    }
+
+    pub(crate) fn value(self) -> u32 {
+        self.0.value()
+    }
+
     pub(crate) fn raw(self) -> u32 {
-        0x3d00_0000 | (u32::from(self.0[0]) << 16) | (u32::from(self.0[1]) << 8)
+        0x3d00_0000 | (u32::from(self.0.raw()[0]) << 16) | (u32::from(self.0.raw()[1]) << 8)
     }
 
     pub(crate) fn from_wire(value: u32, raw: u32) -> Result<Self, &'static str> {
@@ -103,29 +127,36 @@ impl NullableCompactIndex {
     }
 }
 
-/// Nonempty members of a byte-counted lane with an anchor and a terminator.
+/// Nonempty members of a byte-counted lane reserving entries for its framing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CountedIndexMembers<T>(Vec<T>);
+pub(crate) struct CountedIndexMembers<T, const RESERVED: u8 = 2>(Vec<T>);
 
-impl<T> CountedIndexMembers<T> {
+impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
     pub(crate) fn new(members: Vec<T>) -> Result<Self, &'static str> {
-        if !(1..=253).contains(&members.len()) {
-            return Err("members: must contain 1 through 253 entries");
+        if !(1..=usize::from(u8::MAX - RESERVED)).contains(&members.len()) {
+            return Err("members: must be nonempty and fit the declared byte count");
         }
         Ok(Self(members))
     }
 
-    pub(crate) fn declared_count(&self) -> u8 { (self.0.len() + 2) as u8 }
+    pub(crate) fn declared_count(&self) -> u8 { (self.0.len() + usize::from(RESERVED)) as u8 }
 
     pub(crate) fn as_slice(&self) -> &[T] { &self.0 }
 
-    pub(crate) fn map<U>(self, f: impl FnMut(T) -> U) -> CountedIndexMembers<U> {
+    pub(crate) fn map<U>(self, f: impl FnMut(T) -> U) -> CountedIndexMembers<U, RESERVED> {
         CountedIndexMembers(self.0.into_iter().map(f).collect())
     }
 
-    pub(crate) fn try_map<U>(self, f: impl FnMut(T) -> Option<U>) -> Option<CountedIndexMembers<U>> {
+    pub(crate) fn try_map<U>(self, f: impl FnMut(T) -> Option<U>) -> Option<CountedIndexMembers<U, RESERVED>> {
         Some(CountedIndexMembers(self.0.into_iter().map(f).collect::<Option<Vec<_>>>()?))
     }
+}
+
+impl<T, const RESERVED: u8> IntoIterator for CountedIndexMembers<T, RESERVED> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
 }
 
 #[cfg(test)]
@@ -161,12 +192,24 @@ mod tests {
     #[test]
     fn counted_members_reserve_anchor_and_terminator_in_the_byte_count() {
         for len in [1, 253] {
-            let members = CountedIndexMembers::new(vec![0; len]).unwrap();
+            let members = CountedIndexMembers::<_>::new(vec![0; len]).unwrap();
             assert_eq!(usize::from(members.declared_count()), len + 2);
             assert_eq!(members.try_map(Some).unwrap().as_slice().len(), len);
         }
         for len in [0, 254] {
-            assert!(CountedIndexMembers::new(vec![0; len]).is_err());
+            assert!(CountedIndexMembers::<_>::new(vec![0; len]).is_err());
         }
     }
+    #[test]
+    fn counted_members_with_one_owner_allow_254_references() {
+        for len in [1, 254] {
+            let members = CountedIndexMembers::<_, 1>::new(vec![0; len]).unwrap();
+            assert_eq!(usize::from(members.declared_count()), len + 1);
+            assert_eq!(members.map(|value| value + 1).into_iter().count(), len);
+        }
+        for len in [0, 255] {
+            assert!(CountedIndexMembers::<_, 1>::new(vec![0; len]).is_err());
+        }
+    }
+
 }

@@ -3,10 +3,13 @@
 
 use super::{
     feature_input_blocks, unique_offset_data_block, visit_feature_history_operation_records,
-    DatumPlaneBlockLane, FeatureIndexToken, FeatureResolvedIndexToken,
+    DatumPlaneBlockLane,
 };
+use super::reference::ConstructionReference;
 use crate::container::Container;
 use crate::om::DatumPlanePayloadHeader;
+use crate::om::compact::CompactIndexAtom;
+use crate::om::reference_index::PayloadIndexToken;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -21,35 +24,62 @@ pub(crate) struct FeatureDatumPlaneHeader {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Branch<T> {
-    Single { descriptor: T, object: T },
-    Double { objects: [T; 2] },
+enum Branch<B> {
+    Single {
+        descriptor: ConstructionReference<B, CompactIndexAtom>,
+        object: ConstructionReference<B, PayloadIndexToken>,
+    },
+    Double { objects: [ConstructionReference<B, PayloadIndexToken>; 2] },
 }
 
-impl<T> Branch<T> {
-    fn references(&self, lane: DatumPlaneBlockLane) -> &[T] {
-        match (self, lane) {
-            (Self::Single { descriptor, .. }, DatumPlaneBlockLane::Descriptor) => {
-                std::slice::from_ref(descriptor)
-            }
-            (Self::Single { object, .. }, DatumPlaneBlockLane::Object) => {
-                std::slice::from_ref(object)
-            }
-            (Self::Double { .. }, DatumPlaneBlockLane::Descriptor) => &[],
-            (Self::Double { objects }, DatumPlaneBlockLane::Object) => objects,
+impl<B> Branch<B> {
+    fn descriptor(&self) -> Option<&ConstructionReference<B, CompactIndexAtom>> {
+        match self {
+            Self::Single { descriptor, .. } => Some(descriptor),
+            Self::Double { .. } => None,
         }
     }
 
-    fn try_map<U>(&self, mut map: impl FnMut(&T) -> Option<U>) -> Option<Branch<U>> {
+    fn objects(&self) -> &[ConstructionReference<B, PayloadIndexToken>] {
+        match self {
+            Self::Single { object, .. } => std::slice::from_ref(object),
+            Self::Double { objects } => objects,
+        }
+    }
+
+    fn write_wire(&self, wire: &mut HeaderWire, block: impl Fn(&B) -> Option<String>) {
+        if let Some(reference) = self.descriptor() {
+            wire.descriptor_indices.push(reference.token.value());
+            wire.raw_descriptor_indices.push(reference.token.raw().to_vec());
+            wire.descriptor_source_offsets.push(reference.source_offset);
+            wire.descriptor_data_blocks.extend(block(&reference.data_block));
+        }
+        for reference in self.objects() {
+            wire.object_indices.push(reference.token.value());
+            wire.raw_object_indices.push(reference.token.raw().to_vec());
+            wire.object_source_offsets.push(reference.source_offset);
+            wire.object_data_blocks.extend(block(&reference.data_block));
+        }
+    }
+}
+
+impl Branch<()> {
+    fn resolve(&self, mut block: impl FnMut(u32) -> Option<String>) -> Option<Branch<String>> {
+        let resolve_object = |reference: &ConstructionReference<(), PayloadIndexToken>, data_block| {
+            ConstructionReference { token: reference.token, data_block, source_offset: reference.source_offset }
+        };
         Some(match self {
             Self::Single { descriptor, object } => Branch::Single {
-                descriptor: map(descriptor)?,
-                object: map(object)?,
+                descriptor: ConstructionReference {
+                    token: descriptor.token,
+                    data_block: block(descriptor.token.value())?,
+                    source_offset: descriptor.source_offset,
+                },
+                object: resolve_object(object, block(object.token.value())?),
             },
-            Self::Double {
-                objects: [first, second],
-            } => Branch::Double {
-                objects: [map(first)?, map(second)?],
+            Self::Double { objects: [first, second] } => Branch::Double {
+                objects: [resolve_object(first, block(first.token.value())?),
+                    resolve_object(second, block(second.token.value())?)],
             },
         })
     }
@@ -57,19 +87,26 @@ impl<T> Branch<T> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ReferenceBranch {
-    Unresolved(Branch<FeatureIndexToken>),
-    Resolved(Branch<FeatureResolvedIndexToken>),
+    Unresolved(Branch<()>),
+    Resolved(Branch<String>),
 }
 
 impl FeatureDatumPlaneHeader {
-    pub(super) fn resolved_references(
+    pub(super) fn resolved_data_blocks(
         &self,
         lane: DatumPlaneBlockLane,
-    ) -> &[FeatureResolvedIndexToken] {
-        match &self.branch {
-            Some(ReferenceBranch::Resolved(branch)) => branch.references(lane),
-            Some(ReferenceBranch::Unresolved(_)) | None => &[],
-        }
+    ) -> impl Iterator<Item = &String> {
+        let blocks = match (&self.branch, lane) {
+            (Some(ReferenceBranch::Resolved(Branch::Single { descriptor, .. })), DatumPlaneBlockLane::Descriptor) =>
+                [Some(&descriptor.data_block), None],
+            (Some(ReferenceBranch::Resolved(Branch::Single { object, .. })), DatumPlaneBlockLane::Object) =>
+                [Some(&object.data_block), None],
+            (Some(ReferenceBranch::Resolved(Branch::Double { objects: [first, second] })), DatumPlaneBlockLane::Object) =>
+                [Some(&first.data_block), Some(&second.data_block)],
+            (Some(ReferenceBranch::Resolved(Branch::Double { .. })), DatumPlaneBlockLane::Descriptor)
+            | (Some(ReferenceBranch::Unresolved(_)) | None, _) => [None, None],
+        };
+        blocks.into_iter().flatten()
     }
 }
 
@@ -84,28 +121,23 @@ pub(crate) fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureD
             let Some(header) = crate::om::datum_plane_payload_header(record) else {
                 return;
             };
+            let object = |reference: crate::om::PayloadObjectReference<PayloadIndexToken>| ConstructionReference {
+                token: reference.token,
+                data_block: (),
+                source_offset: entry_offset + reference.offset as u64,
+            };
             let branch = crate::om::datum_plane_descriptor_reference_branch(record)
                 .map(|branch| Branch::Single {
-                    descriptor: FeatureIndexToken {
-                        value: branch.descriptor.atom.value(),
-                        raw: branch.descriptor.atom.raw().to_vec(),
+                    descriptor: ConstructionReference {
+                        token: branch.descriptor.atom,
+                        data_block: (),
                         source_offset: entry_offset + branch.descriptor.offset as u64,
                     },
-                    object: FeatureIndexToken {
-                        value: branch.object.token.value(),
-                        raw: branch.object.token.raw().to_vec(),
-                        source_offset: entry_offset + branch.object.offset as u64,
-                    },
+                    object: object(branch.object),
                 })
                 .or_else(|| {
                     crate::om::datum_plane_double_reference_branch(record).map(|branch| {
-                        Branch::Double {
-                            objects: branch.references.map(|reference| FeatureIndexToken {
-                                value: reference.token.value(),
-                                raw: reference.token.raw().to_vec(),
-                                source_offset: entry_offset + reference.offset as u64,
-                            }),
-                        }
+                        Branch::Double { objects: branch.references.map(object) }
                     })
                 });
             let operation_label =
@@ -114,24 +146,17 @@ pub(crate) fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureD
                 .iter()
                 .filter(|input| input.operation_label == operation_label)
                 .filter_map(|input| {
-                    input
-                        .data_block
-                        .rsplit_once(":block#")
-                        .map(|(prefix, _)| prefix)
+                    input.data_block.rsplit_once(":block#").map(|(prefix, _)| prefix)
                 })
                 .collect::<BTreeSet<_>>();
             let branch = branch.map(|branch| {
                 let resolved = (input_prefixes.len() == 1).then_some(()).and_then(|()| {
                     let input_prefix = *input_prefixes.iter().next()?;
-                    branch.try_map(|token| {
-                        let data_block = unique_offset_data_block(&indexed, token.value)?;
-                        data_block
-                            .rsplit_once(":block#")
+                    branch.resolve(|index| {
+                        let data_block = unique_offset_data_block(&indexed, index)?;
+                        data_block.rsplit_once(":block#")
                             .is_some_and(|(prefix, _)| prefix == input_prefix)
-                            .then(|| FeatureResolvedIndexToken {
-                                token: token.clone(),
-                                data_block,
-                            })
+                            .then_some(data_block)
                     })
                 });
                 resolved.map_or_else(
@@ -211,157 +236,67 @@ impl Serialize for FeatureDatumPlaneHeader {
             object_source_offsets: Vec::new(),
             source_offset: self.source_offset,
         };
-        for lane in [DatumPlaneBlockLane::Descriptor, DatumPlaneBlockLane::Object] {
-            let (indices, raw, offsets, blocks) = match lane {
-                DatumPlaneBlockLane::Descriptor => (
-                    &mut wire.descriptor_indices,
-                    &mut wire.raw_descriptor_indices,
-                    &mut wire.descriptor_source_offsets,
-                    &mut wire.descriptor_data_blocks,
-                ),
-                DatumPlaneBlockLane::Object => (
-                    &mut wire.object_indices,
-                    &mut wire.raw_object_indices,
-                    &mut wire.object_source_offsets,
-                    &mut wire.object_data_blocks,
-                ),
-            };
-            match &self.branch {
-                Some(ReferenceBranch::Unresolved(branch)) => {
-                    for token in branch.references(lane) {
-                        indices.push(token.value);
-                        raw.push(token.raw.clone());
-                        offsets.push(token.source_offset);
-                    }
-                }
-                Some(ReferenceBranch::Resolved(branch)) => {
-                    for reference in branch.references(lane) {
-                        indices.push(reference.token.value);
-                        raw.push(reference.token.raw.clone());
-                        offsets.push(reference.token.source_offset);
-                        blocks.push(reference.data_block.clone());
-                    }
-                }
-                None => {}
-            }
+        match &self.branch {
+            Some(ReferenceBranch::Unresolved(branch)) => branch.write_wire(&mut wire, |()| None),
+            Some(ReferenceBranch::Resolved(branch)) => branch.write_wire(&mut wire, |block| Some(block.clone())),
+            None => {}
         }
         wire.serialize(serializer)
     }
 }
 
+fn wire_tokens<T>(
+    indices: Vec<u32>, raw: Vec<Vec<u8>>, offsets: Vec<u64>, field: &str,
+    read: impl Fn(u32, &[u8]) -> Result<T, &'static str>,
+) -> Result<Vec<ConstructionReference<(), T>>, String> {
+    if indices.len() != raw.len() || indices.len() != offsets.len() {
+        return Err(format!("{field}: token columns differ in length"));
+    }
+    indices.into_iter().zip(raw).zip(offsets).enumerate()
+        .map(|(slot, ((value, raw), source_offset))| Ok(ConstructionReference {
+            token: read(value, &raw).map_err(|error| format!("{field}[{slot}]: {error}"))?,
+            data_block: (),
+            source_offset,
+        })).collect()
+}
+
 impl<'de> Deserialize<'de> for FeatureDatumPlaneHeader {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = HeaderWire::deserialize(deserializer)?;
-        let tokens = |indices: Vec<u32>, raw: Vec<Vec<u8>>, offsets: Vec<u64>| {
-            if indices.len() != raw.len() || indices.len() != offsets.len() {
-                return Err(serde::de::Error::custom(
-                    "datum-plane token columns differ in length",
-                ));
-            }
-            Ok(indices
-                .into_iter()
-                .zip(raw)
-                .zip(offsets)
-                .map(|((value, raw), source_offset)| FeatureIndexToken {
-                    value,
-                    raw,
-                    source_offset,
-                })
-                .collect::<Vec<_>>())
-        };
-        let descriptors = tokens(
-            wire.descriptor_indices,
-            wire.raw_descriptor_indices,
-            wire.descriptor_source_offsets,
-        )?;
-        let objects = tokens(
-            wire.object_indices,
-            wire.raw_object_indices,
-            wire.object_source_offsets,
-        )?;
+        let descriptors = wire_tokens(wire.descriptor_indices, wire.raw_descriptor_indices,
+            wire.descriptor_source_offsets, "descriptor_indices", CompactIndexAtom::from_wire)
+            .map_err(serde::de::Error::custom)?;
+        let objects = wire_tokens(wire.object_indices, wire.raw_object_indices,
+            wire.object_source_offsets, "object_indices", PayloadIndexToken::from_wire)
+            .map_err(serde::de::Error::custom)?;
         let branch = match (descriptors.as_slice(), objects.as_slice()) {
             ([], []) => None,
             ([descriptor], [object])
-                if matches!(
-                    (wire.declared_count, wire.branch_tag),
-                    (2, 0x1b | 0x23) | (3, 0x28)
-                ) =>
+                if matches!((wire.declared_count, wire.branch_tag), (2, 0x1b | 0x23) | (3, 0x28)) =>
             {
-                Some(Branch::Single {
-                    descriptor: descriptor.clone(),
-                    object: object.clone(),
-                })
+                Some(Branch::Single { descriptor: descriptor.clone(), object: object.clone() })
             }
             ([], [first, second])
                 if matches!((wire.declared_count, wire.branch_tag), (2 | 3, 0x29)) =>
             {
-                Some(Branch::Double {
-                    objects: [first.clone(), second.clone()],
-                })
+                Some(Branch::Double { objects: [first.clone(), second.clone()] })
             }
-            _ => {
-                return Err(serde::de::Error::custom(
-                    "datum-plane references do not match the construction branch",
-                ))
-            }
+            _ => return Err(serde::de::Error::custom(
+                "datum-plane references do not match declared_count/branch_tag")),
         };
-        let branch = if wire.descriptor_data_blocks.is_empty() && wire.object_data_blocks.is_empty()
-        {
+        let branch = if wire.descriptor_data_blocks.is_empty() && wire.object_data_blocks.is_empty() {
             branch.map(ReferenceBranch::Unresolved)
         } else {
-            match branch {
-                Some(Branch::Single { descriptor, object }) => {
-                    let [descriptor_block]: [String; 1] =
-                        wire.descriptor_data_blocks.try_into().map_err(|_| {
-                            serde::de::Error::custom(
-                                "single datum-plane branch requires one resolved descriptor",
-                            )
-                        })?;
-                    let [object_block]: [String; 1] =
-                        wire.object_data_blocks.try_into().map_err(|_| {
-                            serde::de::Error::custom(
-                                "single datum-plane branch requires one resolved object",
-                            )
-                        })?;
-                    Some(ReferenceBranch::Resolved(Branch::Single {
-                        descriptor: FeatureResolvedIndexToken {
-                            token: descriptor,
-                            data_block: descriptor_block,
-                        },
-                        object: FeatureResolvedIndexToken {
-                            token: object,
-                            data_block: object_block,
-                        },
-                    }))
-                }
-                Some(Branch::Double {
-                    objects: [first, second],
-                }) if wire.descriptor_data_blocks.is_empty() => {
-                    let [first_block, second_block]: [String; 2] =
-                        wire.object_data_blocks.try_into().map_err(|_| {
-                            serde::de::Error::custom(
-                                "double datum-plane branch requires two resolved objects",
-                            )
-                        })?;
-                    Some(ReferenceBranch::Resolved(Branch::Double {
-                        objects: [
-                            FeatureResolvedIndexToken {
-                                token: first,
-                                data_block: first_block,
-                            },
-                            FeatureResolvedIndexToken {
-                                token: second,
-                                data_block: second_block,
-                            },
-                        ],
-                    }))
-                }
-                Some(Branch::Double { .. }) | None => {
-                    return Err(serde::de::Error::custom(
-                        "datum-plane blocks have no matching references",
-                    ))
-                }
+            let Some(branch) = branch else {
+                return Err(serde::de::Error::custom("data_blocks have no matching references"));
+            };
+            if wire.descriptor_data_blocks.len() != usize::from(branch.descriptor().is_some())
+                || wire.object_data_blocks.len() != branch.objects().len() {
+                return Err(serde::de::Error::custom("descriptor_data_blocks/object_data_blocks require complete branch resolution"));
             }
+            let mut blocks = wire.descriptor_data_blocks.into_iter().chain(wire.object_data_blocks);
+            Some(ReferenceBranch::Resolved(branch.resolve(|_| blocks.next())
+                .ok_or_else(|| serde::de::Error::custom("data_blocks: incomplete branch resolution"))?))
         };
         Ok(Self {
             id: wire.id,
@@ -386,9 +321,9 @@ mod tests {
         for json in [
             r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":255,"source_offset":10}"#,
             r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":27,"source_offset":10}"#,
-            r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":27,"descriptor_indices":[3],"raw_descriptor_indices":[[3]],"object_indices":[4],"raw_object_indices":[[4]],"descriptor_data_blocks":["descriptor"],"object_data_blocks":["object"],"descriptor_source_offsets":[20],"object_source_offsets":[21],"source_offset":10}"#,
-            r#"{"id":"header","operation_label":"operation","control":1,"declared_count":3,"branch_tag":41,"object_indices":[3,4],"raw_object_indices":[[3],[4]],"object_data_blocks":["first","second"],"object_source_offsets":[20,21],"source_offset":10}"#,
-            r#"{"id":"header","operation_label":"operation","control":1,"declared_count":3,"branch_tag":40,"descriptor_indices":[3],"raw_descriptor_indices":[[3]],"object_indices":[4],"raw_object_indices":[[4]],"descriptor_source_offsets":[20],"object_source_offsets":[21],"source_offset":10}"#,
+            r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":27,"descriptor_indices":[3],"raw_descriptor_indices":[[3]],"object_indices":[4],"raw_object_indices":[[240,4]],"descriptor_data_blocks":["descriptor"],"object_data_blocks":["object"],"descriptor_source_offsets":[20],"object_source_offsets":[21],"source_offset":10}"#,
+            r#"{"id":"header","operation_label":"operation","control":1,"declared_count":3,"branch_tag":41,"object_indices":[3,4],"raw_object_indices":[[240,3],[240,4]],"object_data_blocks":["first","second"],"object_source_offsets":[20,21],"source_offset":10}"#,
+            r#"{"id":"header","operation_label":"operation","control":1,"declared_count":3,"branch_tag":40,"descriptor_indices":[3],"raw_descriptor_indices":[[3]],"object_indices":[4],"raw_object_indices":[[240,4]],"descriptor_source_offsets":[20],"object_source_offsets":[21],"source_offset":10}"#,
         ] {
             let header: FeatureDatumPlaneHeader = serde_json::from_str(json).unwrap();
             assert_eq!(serde_json::to_string(&header).unwrap(), json);
@@ -397,7 +332,7 @@ mod tests {
 
     #[test]
     fn wire_requires_complete_branch_tokens_and_atomic_resolution() {
-        let json = r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":27,"descriptor_indices":[3],"raw_descriptor_indices":[[3]],"object_indices":[4],"raw_object_indices":[[4]],"descriptor_data_blocks":["descriptor"],"object_data_blocks":["object"],"descriptor_source_offsets":[20],"object_source_offsets":[21],"source_offset":10}"#;
+        let json = r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":27,"descriptor_indices":[3],"raw_descriptor_indices":[[3]],"object_indices":[4],"raw_object_indices":[[240,4]],"descriptor_data_blocks":["descriptor"],"object_data_blocks":["object"],"descriptor_source_offsets":[20],"object_source_offsets":[21],"source_offset":10}"#;
         for column in [
             "descriptor_indices",
             "raw_descriptor_indices",
@@ -419,4 +354,31 @@ mod tests {
         wire["branch_tag"] = 41.into();
         assert!(serde_json::from_value::<FeatureDatumPlaneHeader>(wire).is_err());
     }
+    #[test]
+    fn branch_tokens_preserve_distinct_descriptor_and_object_grammars() {
+        let json = r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":27,"descriptor_indices":[4096],"raw_descriptor_indices":[[144,0]],"object_indices":[256],"raw_object_indices":[[241,1,0]],"descriptor_data_blocks":["descriptor"],"object_data_blocks":["object"],"descriptor_source_offsets":[20],"object_source_offsets":[22],"source_offset":10}"#;
+        let header: FeatureDatumPlaneHeader = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&header).unwrap(), json);
+        assert_eq!(header.resolved_data_blocks(super::DatumPlaneBlockLane::Descriptor)
+            .map(String::as_str).collect::<Vec<_>>(), ["descriptor"]);
+        assert_eq!(header.resolved_data_blocks(super::DatumPlaneBlockLane::Object)
+            .map(String::as_str).collect::<Vec<_>>(), ["object"]);
+        for (column, raw) in [
+            ("raw_descriptor_indices", vec![255]),
+            ("raw_descriptor_indices", vec![144]),
+            ("raw_descriptor_indices", vec![144, 0, 0]),
+            ("raw_descriptor_indices", vec![1]),
+            ("raw_object_indices", vec![144, 1, 0]),
+            ("raw_object_indices", vec![241, 1]),
+            ("raw_object_indices", vec![241, 1, 0, 0]),
+            ("raw_object_indices", vec![240, 1]),
+        ] {
+            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            wire[column][0] = serde_json::json!(raw);
+            let error = serde_json::from_value::<FeatureDatumPlaneHeader>(wire).unwrap_err();
+            let field = if column == "raw_descriptor_indices" { "descriptor_indices" } else { "object_indices" };
+            assert!(error.to_string().contains(field));
+        }
+    }
+
 }

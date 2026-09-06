@@ -20,7 +20,7 @@ use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncodin
 use crate::om::branch_items::BranchItems;
 use crate::om::nonempty::NonEmpty;
 use crate::om::reference_index::{PayloadIndexToken, ReferenceIndexToken};
-use crate::om::compact::{CompactIndexAtom, LocatedCompactIndex, WrappedCompactIndex};
+use crate::om::compact::{CompactIndexAtom, CountedIndexMembers, ExtendedCompactIndex, LocatedCompactIndex, WrappedCompactIndex};
 use crate::om::sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLaneForm};
 use crate::om::fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 use crate::om::scalar_run::FramedScalarRun;
@@ -264,7 +264,32 @@ pub struct FeatureBodyWriteGroupPartitionUse {
 /// The optional tag and object identity are native evidence. They do not assign a
 /// body, operand, input, or output role.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureOperationObjectReferenceWire", into = "FeatureOperationObjectReferenceWire")]
 pub struct FeatureOperationObjectReference {
+    /// Globally unique reference identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Owning bounded operation-record identity.
+    pub operation_record: String,
+    /// Zero-based reference order within the operation payload.
+    pub ordinal: u32,
+    /// Byte between the opening `01 02` marker and the object index.
+    pub tag: Option<u8>,
+    /// Referenced feature object index.
+    pub object: crate::om::reference_index::CanonicalFeatureReferenceToken,
+    /// Unique target in the native offset-store data-block arena, when found.
+    pub data_block: Option<String>,
+    /// Absolute offset of the object-index token.
+    pub object_index_source_offset: u64,
+    /// Exact serialized field byte length.
+    pub byte_len: u64,
+    /// Absolute offset of the opening `01 02` marker.
+    pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureOperationObjectReferenceWire {
     /// Globally unique reference identity.
     pub id: String,
     /// Owning operation-label identity.
@@ -289,6 +314,32 @@ pub struct FeatureOperationObjectReference {
     pub byte_len: u64,
     /// Absolute offset of the opening `01 02` marker.
     pub source_offset: u64,
+}
+
+impl From<FeatureOperationObjectReference> for FeatureOperationObjectReferenceWire {
+    fn from(value: FeatureOperationObjectReference) -> Self {
+        Self {
+            id: value.id, operation_label: value.operation_label, operation_record: value.operation_record,
+            ordinal: value.ordinal, tag: value.tag,
+            object_index: value.object.value(), raw_object_index: value.object.raw().to_vec(),
+            data_block: value.data_block, object_index_source_offset: value.object_index_source_offset,
+            byte_len: value.byte_len, source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureOperationObjectReferenceWire> for FeatureOperationObjectReference {
+    type Error = String;
+    fn try_from(value: FeatureOperationObjectReferenceWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: value.id, operation_label: value.operation_label, operation_record: value.operation_record,
+            ordinal: value.ordinal, tag: value.tag,
+            object: crate::om::reference_index::CanonicalFeatureReferenceToken::from_wire(value.object_index, &value.raw_object_index)
+                .map_err(|error| format!("object_index/raw_object_index: {error}"))?,
+            data_block: value.data_block, object_index_source_offset: value.object_index_source_offset,
+            byte_len: value.byte_len, source_offset: value.source_offset,
+        })
+    }
 }
 
 /// Exactly framed common record in one bounded feature operation.
@@ -891,7 +942,22 @@ pub enum SimpleHoleEndTreatment {
 
 /// Primary selection or ordered body-reference field in one feature operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureBodyReferenceWire", into = "FeatureBodyReferenceWire")]
 pub struct FeatureBodyReference {
+    /// Globally unique reference identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Zero-based field order; absent for the primary body selection.
+    pub ordinal: Option<u32>,
+    /// Serialized reference index interpreted through its resolved namespace.
+    pub body: crate::om::reference_index::FeatureReferenceToken,
+    /// Absolute file offset of the object-index token.
+    pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureBodyReferenceWire {
     /// Globally unique reference identity.
     pub id: String,
     /// Owning operation-label identity.
@@ -905,6 +971,24 @@ pub struct FeatureBodyReference {
     pub raw_body_object_index: Vec<u8>,
     /// Absolute file offset of the object-index token.
     pub source_offset: u64,
+}
+
+impl From<FeatureBodyReference> for FeatureBodyReferenceWire {
+    fn from(value: FeatureBodyReference) -> Self {
+        Self { id: value.id, operation_label: value.operation_label, ordinal: value.ordinal,
+            body_object_index: value.body.value(), raw_body_object_index: value.body.raw().to_vec(),
+            source_offset: value.source_offset }
+    }
+}
+
+impl TryFrom<FeatureBodyReferenceWire> for FeatureBodyReference {
+    type Error = String;
+    fn try_from(value: FeatureBodyReferenceWire) -> Result<Self, Self::Error> {
+        Ok(Self { id: value.id, operation_label: value.operation_label, ordinal: value.ordinal,
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(value.body_object_index, &value.raw_body_object_index)
+                .map_err(|error| format!("body_object_index/raw_body_object_index: {error}"))?,
+            source_offset: value.source_offset })
+    }
 }
 
 /// Unambiguous reuse of one segment body image by a primary feature body field.
@@ -1885,22 +1969,6 @@ pub struct FeatureDatumPlaneCsysIdentityUse {
     pub datum_csys_reference_ordinal: CsysDescriptorSlot,
 }
 
-/// One compact index in a datum-plane terminal index lane.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureDatumPlaneIndexLaneEntry {
-    pub value: u32,
-    pub raw: Vec<u8>,
-    pub offset: u64,
-}
-
-/// Unique terminal compact-index lane of a reconstructed datum-plane payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureDatumPlaneIndexLane {
-    pub offset: u64,
-    pub trailer: u32,
-    pub entries: Vec<FeatureDatumPlaneIndexLaneEntry>,
-}
-
 /// Exact logical datum-plane object payload reconstructed in lane order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -1917,7 +1985,7 @@ pub struct FeatureDatumPlanePayload {
     /// Ordered source blocks and the hash of their concatenated bytes.
     pub content: FeaturePayloadContent<Vec<FeaturePayloadBlock>>,
     /// Unique terminal index lane, when the payload has exactly one.
-    pub index_lane: Option<FeatureDatumPlaneIndexLane>,
+    pub index_lane: Option<crate::om::DatumPlaneObjectIndexLane<u64>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1954,10 +2022,10 @@ impl From<FeatureDatumPlanePayload> for FeatureDatumPlanePayloadWire {
             None => (None, None, Vec::new(), Vec::new(), Vec::new(), None),
             Some(lane) => (
                 Some(lane.offset),
-                Some(lane.entries.len() + 1),
-                lane.entries.iter().map(|entry| entry.value).collect(),
-                lane.entries.iter().map(|entry| entry.raw.clone()).collect(),
-                lane.entries.iter().map(|entry| entry.offset).collect(),
+                Some(usize::from(lane.indices.declared_count())),
+                lane.indices.as_slice().iter().map(|entry| entry.atom.value()).collect(),
+                lane.indices.as_slice().iter().map(|entry| entry.atom.raw().to_vec()).collect(),
+                lane.indices.as_slice().iter().map(|entry| entry.offset).collect(),
                 Some(lane.trailer),
             ),
         };
@@ -1991,30 +2059,27 @@ impl TryFrom<FeatureDatumPlanePayloadWire> for FeatureDatumPlanePayload {
             ) {
                 (None, None, None, true) => None,
                 (Some(offset), Some(declared_count), Some(trailer), _) => {
-                    if !(2..=255).contains(&declared_count)
-                        || declared_count != wire.index_lane_values.len() + 1
+                    if declared_count != wire.index_lane_values.len() + 1
                     {
                         return Err("index_lane_declared_count must fit a byte and equal the nonempty entry count plus one".to_owned());
                     }
                     if wire.index_lane_values.len() != wire.index_lane_raw_indices.len()
                         || wire.index_lane_values.len() != wire.index_lane_value_offsets.len()
                     {
-                        return Err("datum-plane index lane entry vectors disagree".to_owned());
+                        return Err("index_lane_values/index_lane_raw_indices/index_lane_value_offsets differ in length".to_owned());
                     }
-                    Some(FeatureDatumPlaneIndexLane {
+                    let indices = wire.index_lane_values.into_iter()
+                        .zip(wire.index_lane_raw_indices).zip(wire.index_lane_value_offsets)
+                        .enumerate().map(|(slot, ((value, raw), offset))| Ok(LocatedCompactIndex {
+                            atom: CompactIndexAtom::from_wire(value, &raw)
+                                .map_err(|error| format!("index_lane_values[{slot}]: {error}"))?,
+                            offset,
+                        })).collect::<Result<Vec<_>, String>>()?;
+                    Some(crate::om::DatumPlaneObjectIndexLane {
                         offset,
                         trailer,
-                        entries: wire
-                            .index_lane_values
-                            .into_iter()
-                            .zip(wire.index_lane_raw_indices)
-                            .zip(wire.index_lane_value_offsets)
-                            .map(|((value, raw), offset)| FeatureDatumPlaneIndexLaneEntry {
-                                value,
-                                raw,
-                                offset,
-                            })
-                            .collect(),
+                        indices: CountedIndexMembers::new(indices)
+                            .map_err(|error| format!("index_lane_declared_count: {error}"))?,
                     })
                 }
                 _ => return Err(
@@ -3596,13 +3661,6 @@ impl TryFrom<FeaturePatternTransformLaneWire> for FeaturePatternTransformLane {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureIndexToken {
-    pub value: u32,
-    pub raw: Vec<u8>,
-    pub source_offset: u64,
-}
-
 /// Exact counted instance-output lane carried by a bounded operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -3975,14 +4033,8 @@ pub struct FeatureDraftConstructionIndexLane {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeatureDraftConstructionIndices {
-    Unresolved(Vec<FeatureIndexToken>),
-    Resolved(Vec<FeatureResolvedIndexToken>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureResolvedIndexToken {
-    pub token: FeatureIndexToken,
-    pub data_block: String,
+    Unresolved(CountedIndexMembers<LocatedCompactIndex<u64>, 1>),
+    Resolved(CountedIndexMembers<ConstructionReference<String, CompactIndexAtom>, 1>),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -4008,11 +4060,11 @@ struct FeatureDraftConstructionIndexLaneWire {
 impl From<FeatureDraftConstructionIndexLane> for FeatureDraftConstructionIndexLaneWire {
     fn from(lane: FeatureDraftConstructionIndexLane) -> Self {
         let (tokens, data_blocks): (Vec<_>, _) = match lane.indices {
-            FeatureDraftConstructionIndices::Unresolved(tokens) => (tokens, None),
+            FeatureDraftConstructionIndices::Unresolved(tokens) => (tokens.into_iter().collect(), None),
             FeatureDraftConstructionIndices::Resolved(tokens) => {
                 let (tokens, blocks) = tokens
                     .into_iter()
-                    .map(|row| (row.token, row.data_block))
+                    .map(|row| (LocatedCompactIndex { atom: row.token, offset: row.source_offset }, row.data_block))
                     .unzip();
                 (tokens, Some(blocks))
             }
@@ -4021,10 +4073,10 @@ impl From<FeatureDraftConstructionIndexLane> for FeatureDraftConstructionIndexLa
             id: lane.id,
             operation_label: lane.operation_label,
             declared_count: tokens.len() + 1,
-            indices: tokens.iter().map(|token| token.value).collect(),
-            raw_indices: tokens.iter().map(|token| token.raw.clone()).collect(),
+            indices: tokens.iter().map(|token| token.atom.value()).collect(),
+            raw_indices: tokens.iter().map(|token| token.atom.raw().to_vec()).collect(),
             data_blocks,
-            source_offsets: tokens.iter().map(|token| token.source_offset).collect(),
+            source_offsets: tokens.iter().map(|token| token.offset).collect(),
         }
     }
 }
@@ -4051,18 +4103,21 @@ impl TryFrom<FeatureDraftConstructionIndexLaneWire> for FeatureDraftConstruction
             .into_iter()
             .zip(wire.raw_indices)
             .zip(wire.source_offsets)
-            .map(|((value, raw), source_offset)| FeatureIndexToken {
-                value,
-                raw,
-                source_offset,
-            });
+            .enumerate()
+            .map(|(slot, ((value, raw), offset))| Ok(LocatedCompactIndex {
+                atom: CompactIndexAtom::from_wire(value, &raw)
+                    .map_err(|error| format!("indices[{slot}]: {error}"))?,
+                offset,
+            }))
+            .collect::<Result<Vec<_>, String>>()?;
+        let tokens = tokens.into_iter();
         let indices = match wire.data_blocks {
-            None => FeatureDraftConstructionIndices::Unresolved(tokens.collect()),
+            None => FeatureDraftConstructionIndices::Unresolved(CountedIndexMembers::new(tokens.collect()).map_err(|error| format!("indices: {error}"))?),
             Some(blocks) => FeatureDraftConstructionIndices::Resolved(
-                tokens
+                CountedIndexMembers::new(tokens
                     .zip(blocks)
-                    .map(|(token, data_block)| FeatureResolvedIndexToken { token, data_block })
-                    .collect(),
+                    .map(|(token, data_block)| ConstructionReference { token: token.atom, source_offset: token.offset, data_block })
+                    .collect()).map_err(|error| format!("indices: {error}"))?,
             ),
         };
         Ok(Self {
@@ -4407,14 +4462,8 @@ pub struct FeatureDraftConstructionTerminalLane {
     pub id: String,
     /// Owning `DRAFT` operation label.
     pub operation_label: String,
-    /// Two non-null compact indices in serialized order.
-    pub indices: [u32; 2],
-    /// Exact two-byte compact-index tokens in serialized order.
-    pub raw_indices: [[u8; 2]; 2],
-    /// Exact uninterpreted bytes preceding the terminal zero.
-    pub tail: [u8; 3],
-    /// Absolute source offsets of the compact-index tokens.
-    pub index_source_offsets: [u64; 2],
+    /// Checked terminal indices and tail with absolute source offsets.
+    pub lane: crate::om::DraftFeatureTerminalLane<u64>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -4440,11 +4489,11 @@ impl From<FeatureDraftConstructionTerminalLane> for FeatureDraftConstructionTerm
         Self {
             id: lane.id,
             operation_label: lane.operation_label,
-            indices: lane.indices,
-            raw_indices: lane.raw_indices,
-            tail: lane.tail,
-            index_source_offsets: lane.index_source_offsets,
-            source_offset: lane.index_source_offsets[0],
+            indices: lane.lane.indices.map(|token| token.atom.value()),
+            raw_indices: lane.lane.indices.map(|token| *token.atom.raw()),
+            tail: lane.lane.tail,
+            index_source_offsets: lane.lane.indices.map(|token| token.offset),
+            source_offset: lane.lane.indices[0].offset,
         }
     }
 }
@@ -4456,13 +4505,20 @@ impl TryFrom<FeatureDraftConstructionTerminalLaneWire> for FeatureDraftConstruct
         if wire.source_offset != wire.index_source_offsets[0] {
             return Err("source_offset must equal the first index_source_offsets entry".into());
         }
+        let [first, second] = [0, 1].map(|slot| -> Result<_, String> {
+            Ok(LocatedCompactIndex {
+                atom: ExtendedCompactIndex::from_wire(wire.indices[slot], &wire.raw_indices[slot])
+                    .map_err(|error| format!("indices[{slot}]: {error}"))?,
+                offset: wire.index_source_offsets[slot],
+            })
+        });
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            indices: wire.indices,
-            raw_indices: wire.raw_indices,
-            tail: wire.tail,
-            index_source_offsets: wire.index_source_offsets,
+            lane: crate::om::DraftFeatureTerminalLane {
+                indices: [first?, second?],
+                tail: wire.tail,
+            },
         })
     }
 }
@@ -5126,7 +5182,24 @@ impl TryFrom<FeatureOperationBodyScalarTripleWire> for FeatureOperationBodyScala
 
 /// Ordered member index in a branch-`11` operation body clause.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureOperationBodyMemberWire", into = "FeatureOperationBodyMemberWire")]
 pub struct FeatureOperationBodyMember {
+    /// Globally unique member identity.
+    pub id: String,
+    /// Owning operation label.
+    pub operation_label: String,
+    /// Zero-based body-reference occurrence order.
+    pub body_reference_ordinal: u32,
+    /// Serialized body object index.
+    pub body_object_index: u32,
+    /// Zero-based member order in the counted lane.
+    pub ordinal: u32,
+    /// Exact compact index and its absolute file position.
+    pub member: LocatedCompactIndex<u64>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureOperationBodyMemberWire {
     /// Globally unique member identity.
     pub id: String,
     /// Owning operation label.
@@ -5145,9 +5218,61 @@ pub struct FeatureOperationBodyMember {
     pub source_offset: u64,
 }
 
+impl From<FeatureOperationBodyMember> for FeatureOperationBodyMemberWire {
+    fn from(value: FeatureOperationBodyMember) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            body_reference_ordinal: value.body_reference_ordinal,
+            body_object_index: value.body_object_index,
+            ordinal: value.ordinal,
+            member_index: value.member.atom.value(),
+            raw_member_index: value.member.atom.raw().to_vec(),
+            source_offset: value.member.offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureOperationBodyMemberWire> for FeatureOperationBodyMember {
+    type Error = String;
+    fn try_from(wire: FeatureOperationBodyMemberWire) -> Result<Self, Self::Error> {
+        let atom = CompactIndexAtom::from_wire(wire.member_index, &wire.raw_member_index)
+            .map_err(|error| format!("operation body member member_index: {error}"))?;
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            body_reference_ordinal: wire.body_reference_ordinal,
+            body_object_index: wire.body_object_index,
+            ordinal: wire.ordinal,
+            member: LocatedCompactIndex { atom, offset: wire.source_offset },
+        })
+    }
+}
+
 /// Wrapped operation member resolved in the feature-body identity namespace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureOperationBodyOperandWire", into = "FeatureOperationBodyOperandWire")]
 pub struct FeatureOperationBodyOperand {
+    /// Globally unique operand identity.
+    pub id: String,
+    /// Owning operation label.
+    pub operation_label: String,
+    /// Body clause containing the operand.
+    pub body_object_index: u32,
+    /// Zero-based body-reference occurrence order.
+    pub body_reference_ordinal: u32,
+    /// Zero-based operand order in the wrapped member lane.
+    pub ordinal: u32,
+    /// Exact operand compact index and its absolute file position.
+    pub operand: LocatedCompactIndex<u64>,
+    /// Same-store offset data block named by the operand, when resolved.
+    pub operand_data_block: Option<String>,
+    /// Segment body bindings naming the same body image.
+    pub segment_body_bindings: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureOperationBodyOperandWire {
     /// Globally unique operand identity.
     pub id: String,
     /// Owning operation label.
@@ -5170,6 +5295,41 @@ pub struct FeatureOperationBodyOperand {
     pub segment_body_bindings: Vec<String>,
     /// Absolute file offset of the compact-index marker.
     pub source_offset: u64,
+}
+
+impl From<FeatureOperationBodyOperand> for FeatureOperationBodyOperandWire {
+    fn from(value: FeatureOperationBodyOperand) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            body_object_index: value.body_object_index,
+            body_reference_ordinal: value.body_reference_ordinal,
+            ordinal: value.ordinal,
+            operand_object_index: value.operand.atom.value(),
+            raw_operand_object_index: value.operand.atom.raw().to_vec(),
+            operand_data_block: value.operand_data_block,
+            segment_body_bindings: value.segment_body_bindings,
+            source_offset: value.operand.offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureOperationBodyOperandWire> for FeatureOperationBodyOperand {
+    type Error = String;
+    fn try_from(wire: FeatureOperationBodyOperandWire) -> Result<Self, Self::Error> {
+        let atom = CompactIndexAtom::from_wire(wire.operand_object_index, &wire.raw_operand_object_index)
+            .map_err(|error| format!("operation body operand operand_object_index: {error}"))?;
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            body_object_index: wire.body_object_index,
+            body_reference_ordinal: wire.body_reference_ordinal,
+            ordinal: wire.ordinal,
+            operand: LocatedCompactIndex { atom, offset: wire.source_offset },
+            operand_data_block: wire.operand_data_block,
+            segment_body_bindings: wire.segment_body_bindings,
+        })
+    }
 }
 
 impl FeatureOperationBodyOperand {
@@ -6799,9 +6959,8 @@ pub fn feature_operation_tagged_references(
                     operation_record: operation_record.clone(),
                     ordinal: ordinal as u32,
                     tag: Some(reference.tag),
-                    object_index: reference.object_index,
-                    raw_object_index: reference.raw_object_index,
-                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    object: reference.object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index.value()),
                     object_index_source_offset: entry_offset
                         + reference.object_index_offset as u64,
                     byte_len: (reference.end_offset - reference.offset) as u64,
@@ -6840,9 +6999,8 @@ pub fn feature_operation_data_block_references(
                     operation_label: operation_label.clone(),
                     operation_record: operation_record.clone(),
                     ordinal: ordinal as u32,
-                    object_index: reference.object_index,
-                    raw_object_index: reference.raw_object_index,
-                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    object: reference.object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index.value()),
                     object_index_source_offset: entry_offset
                         + reference.object_index_offset as u64,
                     byte_len: (reference.end_offset - reference.offset) as u64,
@@ -7584,8 +7742,7 @@ pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReferenc
                     "nx:feature-history:body-reference#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label,
-                body_object_index: reference.object_index,
-                raw_body_object_index: reference.raw_object_index,
+                body: reference.object_index,
                 source_offset: entry_offset + reference.offset as u64,
             });
         },
@@ -7634,8 +7791,7 @@ pub fn feature_body_reference_occurrences(container: &Container) -> Vec<FeatureB
                         ),
                         operation_label: operation_label.clone(),
                         ordinal: Some(ordinal as u32),
-                        body_object_index: reference.object_index,
-                        raw_body_object_index: reference.raw_object_index,
+                        body: reference.object_index,
                         source_offset: entry_offset + reference.offset as u64,
                     }),
             );
@@ -7659,7 +7815,7 @@ fn unique_offset_store_body_frame<'a>(
 ) -> Option<&'a DataBlockObjectFrame> {
     let mut matches = object_frames.iter().filter(|frame| {
         frame.data_block == data_block_use.data_block
-            && frame.object_id == reference.body_object_index
+            && frame.object_id == reference.body.value()
     });
     let frame = matches.next()?;
     matches.next().is_none().then_some(frame)
@@ -7717,12 +7873,12 @@ pub fn feature_body_segment_uses(
                     .find(|use_| use_.feature_body_reference == reference.id)?;
                 unique_offset_store_body_frame(reference, data_block_use, object_frames)?;
                 crate::native::segments::unique_segment_body_alias_binding(
-                    reference.body_object_index,
+                    reference.body.value(),
                     bindings,
                 )?
             } else {
                 crate::native::segments::unique_segment_body_binding(
-                    reference.body_object_index,
+                    reference.body.value(),
                     bindings,
                 )?
             };
@@ -7802,7 +7958,7 @@ pub fn feature_body_data_block_uses(
                 .iter()
                 .filter(|block| {
                     block.section_ordinal == *section_ordinal
-                        && block.block_ordinal == reference.body_object_index
+                        && block.block_ordinal == reference.body.value()
                 })
                 .collect::<Vec<_>>();
             let [block] = matches.as_slice() else {
@@ -8219,40 +8375,29 @@ pub fn feature_datum_plane_payloads(
     headers
         .iter()
         .filter(|header| {
-            !header
-                .resolved_references(DatumPlaneBlockLane::Object)
-                .is_empty()
+            header.resolved_data_blocks(DatumPlaneBlockLane::Object).next().is_some()
         })
         .filter_map(|header| {
             let data_blocks = header
-                .resolved_references(DatumPlaneBlockLane::Object)
-                .iter()
-                .map(|reference| reference.data_block.clone())
+                .resolved_data_blocks(DatumPlaneBlockLane::Object)
+                .cloned()
                 .collect::<Vec<_>>();
             let (payload, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             let lanes = crate::om::datum_plane_object_index_lanes(&payload);
-            let lane = match lanes.as_slice() {
-                [lane] => Some(lane),
-                _ => None,
-            };
+            let lane = <[_; 1]>::try_from(lanes).ok().map(|[lane]| lane);
             let key = header.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
             Some(FeatureDatumPlanePayload {
                 id: format!("nx:feature-history:datum-plane-payload#{key}"),
                 operation_label: header.operation_label.clone(),
                 datum_plane_header: header.id.clone(),
                 content,
-                index_lane: lane.map(|lane| FeatureDatumPlaneIndexLane {
+                index_lane: lane.map(|lane| crate::om::DatumPlaneObjectIndexLane {
                     offset: lane.offset as u64,
                     trailer: lane.trailer,
-                    entries: lane
-                        .indices
-                        .iter()
-                        .map(|token| FeatureDatumPlaneIndexLaneEntry {
-                            value: token.value,
-                            raw: token.raw.clone(),
-                            offset: token.offset as u64,
-                        })
-                        .collect(),
+                    indices: lane.indices.map(|token| LocatedCompactIndex {
+                        atom: token.atom,
+                        offset: token.offset as u64,
+                    }),
                 }),
             })
         })
@@ -8497,11 +8642,9 @@ pub fn feature_datum_plane_descriptors(
         .iter()
         .flat_map(|header| {
             header
-                .resolved_references(DatumPlaneBlockLane::Descriptor)
-                .iter()
+                .resolved_data_blocks(DatumPlaneBlockLane::Descriptor)
                 .enumerate()
-                .filter_map(|(ordinal, reference)| {
-                    let data_block = &reference.data_block;
+                .filter_map(|(ordinal, data_block)| {
                     let (bytes, source_offset) = blocks.get(data_block)?.to_owned();
                     let descriptor = crate::om::datum_plane_descriptor_block(bytes)?;
                     Some(FeatureDatumPlaneDescriptor {
@@ -8531,10 +8674,9 @@ pub fn feature_datum_plane_block_uses(
             .rsplit_once('#')
             .map_or(header.operation_label.as_str(), |(_, key)| key);
         for lane in [DatumPlaneBlockLane::Descriptor, DatumPlaneBlockLane::Object] {
-            for (reference_ordinal, reference) in
-                header.resolved_references(lane).iter().enumerate()
+            for (reference_ordinal, data_block) in
+                header.resolved_data_blocks(lane).enumerate()
             {
-                let data_block = &reference.data_block;
                 for input in inputs
                     .iter()
                     .filter(|input| input.data_block == *data_block)
@@ -10434,27 +10576,25 @@ pub fn feature_draft_construction_index_lanes(
                         .references
                         .iter()
                         .map(|reference| reference.token.value())
-                        .chain(lane.indices.iter().map(|token| token.value))
+                        .chain(lane.indices.as_slice().iter().map(|token| token.atom.value()))
                         .collect::<Vec<_>>();
                     unique_offset_data_store(&indexed, &complete_indices)
                 });
-            let tokens = lane.indices.into_iter().map(|token| FeatureIndexToken {
-                value: token.value,
-                raw: token.raw,
-                source_offset: entry_offset + token.offset as u64,
+            let tokens = lane.indices.map(|token| LocatedCompactIndex {
+                atom: token.atom,
+                offset: entry_offset + token.offset as u64,
             });
             let indices = match section_ordinal {
-                None => FeatureDraftConstructionIndices::Unresolved(tokens.collect()),
+                None => FeatureDraftConstructionIndices::Unresolved(tokens),
                 Some(section_ordinal) => FeatureDraftConstructionIndices::Resolved(
                     tokens
                         .map(|token| {
                             let data_block = format!(
                                 "nx:om-data-blocks-{section_ordinal}:block#{}",
-                                token.value
+                                token.atom.value()
                             );
-                            FeatureResolvedIndexToken { token, data_block }
-                        })
-                        .collect(),
+                            ConstructionReference { token: token.atom, source_offset: token.offset, data_block }
+                        }),
                 ),
             };
             lanes.push(FeatureDraftConstructionIndexLane {
@@ -10484,6 +10624,7 @@ pub fn feature_draft_construction_payloads(
                 return None;
             };
             let data_blocks = tokens
+                .as_slice()
                 .iter()
                 .map(|row| row.data_block.clone())
                 .collect::<Vec<_>>();
@@ -10517,7 +10658,7 @@ pub fn feature_draft_construction_graph_payloads(
             let FeatureDraftConstructionIndices::Resolved(tokens) = &lane.indices else {
                 return None;
             };
-            let store = tokens.first()?.data_block.rsplit_once(":block#")?.0;
+            let store = tokens.as_slice().first()?.data_block.rsplit_once(":block#")?.0;
             let mut graph = references
                 .iter()
                 .filter(|reference| reference.operation_label == lane.operation_label)
@@ -10711,12 +10852,13 @@ pub fn feature_draft_construction_terminal_lanes(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                indices: lane.indices,
-                raw_indices: lane.raw_indices,
-                tail: lane.tail,
-                index_source_offsets: lane
-                    .index_offsets
-                    .map(|offset| entry_offset + offset as u64),
+                lane: crate::om::DraftFeatureTerminalLane {
+                    indices: lane.indices.map(|token| LocatedCompactIndex {
+                        atom: token.atom,
+                        offset: entry_offset + token.offset as u64,
+                    }),
+                    tail: lane.tail,
+                },
             });
         },
     );
@@ -11179,9 +11321,7 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
                         body_reference_ordinal: member.body_reference_ordinal,
                         body_object_index: member.body_object_index,
                         ordinal: member.ordinal,
-                        member_index: member.member_index,
-                        raw_member_index: member.raw_member_index,
-                        source_offset: entry_offset + member.offset as u64,
+                        member: LocatedCompactIndex { atom: member.member.atom, offset: entry_offset + member.member.offset as u64 },
                     }),
             );
         },
@@ -11229,7 +11369,7 @@ pub fn feature_operation_body_operands(
     members
         .iter()
         .filter_map(|member| {
-            if member.member_index == member.body_object_index {
+            if member.member.atom.value() == member.body_object_index {
                 return None;
             }
             let member_store = unique_stores.get(member.operation_label.as_str()).copied();
@@ -11238,7 +11378,7 @@ pub fn feature_operation_body_operands(
                 return None;
             }
             let operand_data_block = member_store.and_then(|store| {
-                let id = format!("{store}:block#{}", member.member_index);
+                let id = format!("{store}:block#{}", member.member.atom.value());
                 block_ids.contains(id.as_str()).then_some(id)
             });
             let same_namespace_reference = references.iter().any(|reference| match member_store {
@@ -11254,8 +11394,8 @@ pub fn feature_operation_body_operands(
                 bindings
                     .iter()
                     .filter(|binding| {
-                        binding.body_object_index == member.member_index
-                            || binding.body_alias_object_index == member.member_index
+                        binding.body_object_index == member.member.atom.value()
+                            || binding.body_alias_object_index == member.member.atom.value()
                     })
                     .map(|binding| binding.id.clone())
                     .collect::<Vec<_>>()
@@ -11276,11 +11416,9 @@ pub fn feature_operation_body_operands(
                 body_object_index: member.body_object_index,
                 body_reference_ordinal: member.body_reference_ordinal,
                 ordinal: member.ordinal,
-                operand_object_index: member.member_index,
-                raw_operand_object_index: member.raw_member_index.clone(),
+                operand: member.member,
                 operand_data_block,
                 segment_body_bindings,
-                source_offset: member.source_offset,
             })
         })
         .collect()
@@ -12045,7 +12183,7 @@ pub fn feature_parameter_bindings(
                     .get(expression_declaration.as_str())
                     .and_then(|matches| matches.as_slice().first().filter(|_| matches.len() == 1))
                     .map(|expression| (*expression).to_string()),
-                object_id: reference.object_id,
+                object_id: reference.object.value(),
                 source_offset: reference.source_offset,
             });
         }

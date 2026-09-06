@@ -877,7 +877,7 @@ fn decode_retains_role_scoped_om_record_area_header() {
         .expect("required invariant");
     assert_eq!(body_references.len(), 1);
     assert_eq!(body_references[0].operation_label, labels[0].id);
-    assert_eq!(body_references[0].body_object_index, 6466);
+    assert_eq!(body_references[0].body.value(), 6466);
     let body_reference_occurrences = result
         .ir()
         .native
@@ -888,7 +888,7 @@ fn decode_retains_role_scoped_om_record_area_header() {
     assert_eq!(body_reference_occurrences.len(), 1);
     assert_eq!(body_reference_occurrences[0].operation_label, labels[0].id);
     assert_eq!(body_reference_occurrences[0].ordinal, Some(0));
-    assert_eq!(body_reference_occurrences[0].body_object_index, 6466);
+    assert_eq!(body_reference_occurrences[0].body.value(), 6466);
     let feature = result.ir().model.features.first().expect("neutral feature");
     assert_eq!(feature.name.as_deref(), Some("UNITE"));
     assert_eq!(feature.suppressed, None);
@@ -947,7 +947,7 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
     assert_eq!(references.len(), 1);
     assert!(references[0].data_block.ends_with(":block#2"));
     assert_ne!(references[0].data_block, inputs[0].data_block);
-    assert_eq!(references[0].object_id, 42);
+    assert_eq!(references[0].object.value(), 42);
     assert_eq!(references[0].target_record, None);
 }
 
@@ -1263,17 +1263,17 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         body_reference_ordinal: 0,
         body_object_index: 10,
         ordinal,
-        member_index,
-        raw_member_index: vec![member_index as u8],
-        source_offset: u64::from(ordinal),
+        member: crate::om::compact::LocatedCompactIndex {
+            atom: crate::om::compact::CompactIndexAtom::from_wire(member_index, &[member_index as u8]).unwrap(),
+            offset: u64::from(ordinal),
+        },
     };
     let members = [member(0, 20), member(1, 30), member(2, 10)];
     let references = [FeatureBodyReference {
         id: "reference".to_string(),
         operation_label: "earlier".to_string(),
         ordinal: Some(0),
-        body_object_index: 20,
-        raw_body_object_index: vec![20],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(20, &[20]).unwrap(),
         source_offset: 0,
     }];
     let bindings = [SegmentBodyBinding {
@@ -1291,7 +1291,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     assert_eq!(
         operands
             .iter()
-            .map(|operand| operand.operand_object_index)
+            .map(|operand| operand.operand.atom.value())
             .collect::<Vec<_>>(),
         [20, 30]
     );
@@ -1384,7 +1384,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         &bindings,
     );
     assert_eq!(distinct_member_operand.len(), 1);
-    assert_eq!(distinct_member_operand[0].operand_object_index, 30);
+    assert_eq!(distinct_member_operand[0].operand.atom.value(), 30);
     assert_eq!(
         distinct_member_operand[0].operand_data_block.as_deref(),
         Some("nx:om-data-blocks-1:block#30")

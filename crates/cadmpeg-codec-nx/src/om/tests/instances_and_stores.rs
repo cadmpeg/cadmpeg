@@ -366,25 +366,27 @@ fn om_draft_feature_references_require_one_complete_graph() {
         [230, 235, 273, 280]
     );
     let lane = super::draft_feature_leading_index_lane(record).expect("complete index lane");
-    assert_eq!(lane.indices.len() + 1, 3);
+    assert_eq!(lane.indices.as_slice().len() + 1, 3);
     assert_eq!(
         lane.indices
+            .as_slice()
             .iter()
-            .map(|token| (token.value, token.offset))
+            .map(|token| (token.atom.value(), token.offset))
             .collect::<Vec<_>>(),
         vec![(148, 224), (585, 226)]
     );
     assert_eq!(
         lane.indices
+            .as_slice()
             .iter()
-            .map(|token| token.raw.clone())
+            .map(|token| token.atom.raw().to_vec())
             .collect::<Vec<_>>(),
         vec![vec![0x80, 0x94], vec![0x82, 0x49]]
     );
     let terminal_lane = super::draft_feature_terminal_lane(record).expect("complete terminal lane");
-    assert_eq!(terminal_lane.indices, [350, 184]);
-    assert_eq!(terminal_lane.raw_indices, [[0x81, 0x5e], [0x80, 0xb8]]);
-    assert_eq!(terminal_lane.index_offsets, [284, 286]);
+    assert_eq!(terminal_lane.indices.map(|token| token.atom.value()), [350, 184]);
+    assert_eq!(terminal_lane.indices.map(|token| *token.atom.raw()), [[0x81, 0x5e], [0x80, 0xb8]]);
+    assert_eq!(terminal_lane.indices.map(|token| token.offset), [284, 286]);
     assert_eq!(terminal_lane.tail, [0x29, 0x29, 0x0c]);
 
     let mut malformed = payload.clone();
@@ -1115,11 +1117,11 @@ fn om_operation_body_branch_11_decodes_wrapped_member_lane_atomically() {
     assert_eq!(members.len(), 2);
     assert_eq!(members[0].body_reference_ordinal, 0);
     assert_eq!(members[0].body_object_index, 66);
-    assert_eq!(members[0].member_index, 127);
-    assert_eq!(members[0].raw_member_index, [0x7f]);
-    assert_eq!(members[0].offset, 122);
-    assert_eq!(members[1].member_index, 1);
-    assert_eq!(members[1].raw_member_index, [0x80, 0x01]);
+    assert_eq!(members[0].member.atom.value(), 127);
+    assert_eq!(members[0].member.atom.raw(), [0x7f]);
+    assert_eq!(members[0].member.offset, 122);
+    assert_eq!(members[1].member.atom.value(), 1);
+    assert_eq!(members[1].member.atom.raw(), [0x80, 0x01]);
 
     let truncated = &bytes[..bytes.len() - 1];
     assert!(super::operation_body_members(super::OperationRecord {

@@ -51,22 +51,19 @@ fn operation_data_block_references_retain_canonical_indices_and_bounds() {
         [
             OperationDataBlockReference {
                 offset: payload_offset + first_start,
-                object_index: 0x6a,
-                raw_object_index: vec![0x6a],
+                object_index: crate::om::reference_index::CanonicalFeatureReferenceToken::from_wire(0x6a, &[0x6a]).unwrap(),
                 object_index_offset: payload_offset + first_start + 3,
                 end_offset: payload_offset + first_start + first.len(),
             },
             OperationDataBlockReference {
                 offset: payload_offset + second_start,
-                object_index: 0x645,
-                raw_object_index: vec![0x86, 0x45],
+                object_index: crate::om::reference_index::CanonicalFeatureReferenceToken::from_wire(0x645, &[0x86, 0x45]).unwrap(),
                 object_index_offset: payload_offset + second_start + 3,
                 end_offset: payload_offset + second_start + second.len(),
             },
             OperationDataBlockReference {
                 offset: payload_offset + third_start,
-                object_index: 0x1234,
-                raw_object_index: vec![0x90, 0x12, 0x34],
+                object_index: crate::om::reference_index::CanonicalFeatureReferenceToken::from_wire(0x1234, &[0x90, 0x12, 0x34]).unwrap(),
                 object_index_offset: payload_offset + third_start + 3,
                 end_offset: payload_offset + third_start + third.len(),
             },
