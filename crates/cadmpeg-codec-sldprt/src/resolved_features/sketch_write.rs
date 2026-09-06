@@ -28,7 +28,8 @@ pub(super) fn sketch_brep(
         ))
     })?;
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let prefix = format!("generated:sldprt:sketch:{}", sketch.id.as_str());
+    let sketch_key = sketch.id.as_str().replace('%', "%25").replace('#', "%23");
+    let prefix = format!("generated:sldprt:sketch#{sketch_key}");
     let body_id = BodyId::mint(format!("{prefix}:body")).expect("identity grammar");
     let region_id = RegionId::mint(format!("{prefix}:region")).expect("identity grammar");
     let shell_id = ShellId::mint(format!("{prefix}:shell")).expect("identity grammar");
