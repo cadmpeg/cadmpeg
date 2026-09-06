@@ -156,7 +156,7 @@ fn source_parameter_map_rejects_non_affine_curve_and_non_curve_domains() {
 
 #[test]
 fn offset_source_range_uses_the_unique_curve_endpoint_match() {
-    let source_id = CurveId::mint("source").expect("identity grammar");
+    let source_id = CurveId::mint("test:model:curve#source").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: source_id.clone(),
@@ -168,62 +168,62 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     });
     ir.model.points.extend([
         Point {
-            id: PointId::mint("wrong-start-point").expect("identity grammar"),
+            id: PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
             position: Point3::new(10.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId::mint("wrong-end-point").expect("identity grammar"),
+            id: PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
             position: Point3::new(11.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId::mint("matching-start-point").expect("identity grammar"),
+            id: PointId::mint("test:model:point#matching-start-point").expect("identity grammar"),
             position: Point3::new(0.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId::mint("matching-end-point").expect("identity grammar"),
+            id: PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
             position: Point3::new(2.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: VertexId::mint("wrong-start").expect("identity grammar"),
-            point: PointId::mint("wrong-start-point").expect("identity grammar"),
+            id: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
+            point: PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId::mint("wrong-end").expect("identity grammar"),
-            point: PointId::mint("wrong-end-point").expect("identity grammar"),
+            id: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
+            point: PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId::mint("matching-start").expect("identity grammar"),
-            point: PointId::mint("matching-start-point").expect("identity grammar"),
+            id: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+            point: PointId::mint("test:model:point#matching-start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId::mint("matching-end").expect("identity grammar"),
-            point: PointId::mint("matching-end-point").expect("identity grammar"),
+            id: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
+            point: PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
             tolerance: None,
         },
     ]);
     ir.model.edges.extend([
         Edge {
-            id: EdgeId::mint("wrong-occurrence").expect("identity grammar"),
+            id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
             curve: Some(source_id.clone()),
-            start: VertexId::mint("wrong-start").expect("identity grammar"),
-            end: VertexId::mint("wrong-end").expect("identity grammar"),
+            start: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
+            end: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
             param_range: Some([5.0, 6.0]),
             tolerance: None,
         },
         Edge {
-            id: EdgeId::mint("matching-occurrence").expect("identity grammar"),
+            id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
             curve: Some(source_id.clone()),
-            start: VertexId::mint("matching-start").expect("identity grammar"),
-            end: VertexId::mint("matching-end").expect("identity grammar"),
+            start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+            end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
             param_range: Some([0.0, 2.0]),
             tolerance: None,
         },
@@ -231,7 +231,7 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
 
     let source = &ir.model.curves[0];
     assert_eq!(
-        super::source_parameter_range(&ir, &source_id, &source.geometry, EPS_OFFSET_ENDPOINT_MATCH,),
+        super::source_parameter_range(&ir, &source_id, source.geometry.solved_cache().unwrap_or(&source.geometry), EPS_OFFSET_ENDPOINT_MATCH,),
         Some([0.0, 2.0])
     );
 }
@@ -252,7 +252,11 @@ fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
         .iter()
         .find(|curve| curve.id.0 == "iges:model:curve#D3")
         .unwrap();
-    let cadmpeg_ir::geometry::CurveGeometry::Circle { radius, .. } = offset.geometry else {
+    let cadmpeg_ir::geometry::CurveGeometry::Circle { radius, .. } = *offset
+        .geometry
+        .solved_cache()
+        .expect("solved offset carrier")
+    else {
         panic!("expected an exact circular offset carrier");
     };
     assert_eq!(radius, 1.5);
@@ -293,7 +297,10 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
         axis,
         ref_direction,
         radius,
-    } = offset.geometry
+    } = *offset
+        .geometry
+        .solved_cache()
+        .expect("solved offset carrier")
     else {
         panic!("expected an exact placed circular offset carrier");
     };
@@ -335,7 +342,11 @@ fn decode_places_uniform_offset_line_with_a_proper_transform() {
         .iter()
         .find(|curve| curve.id.0 == "iges:model:curve#D3")
         .expect("placed line offset carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } = offset.geometry else {
+    let cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } = *offset
+        .geometry
+        .solved_cache()
+        .expect("solved offset carrier")
+    else {
         panic!("expected an exact placed line offset carrier");
     };
     assert!(origin.distance(Point3::new(4.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
@@ -376,7 +387,10 @@ fn decode_corrects_offset_normal_handedness_for_a_reflection() {
         axis,
         ref_direction,
         radius,
-    } = offset.geometry
+    } = *offset
+        .geometry
+        .solved_cache()
+        .expect("solved offset carrier")
     else {
         panic!("expected an exact reflected circular offset carrier");
     };
@@ -511,7 +525,7 @@ fn decode_solves_a_parameter_linear_line_offset() {
             .iter()
             .find(|curve| curve.id.0 == "iges:model:curve#D3")
             .unwrap();
-        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &offset.geometry else {
+        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = offset.geometry.solved_cache().unwrap_or(&offset.geometry) else {
             panic!("expected an exact degree-one offset carrier");
         };
         assert_eq!(nurbs.knots(), [0.0, 0.0, 10.0, 10.0]);
@@ -563,7 +577,9 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
         .iter()
         .find(|curve| curve.id.0 == "iges:model:curve#D5")
         .unwrap();
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &offset.geometry else {
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
+        offset.geometry.solved_cache().unwrap_or(&offset.geometry)
+    else {
         panic!("expected an exact function-offset carrier");
     };
     assert_eq!(nurbs.knots(), [0.0, 0.0, 10.0, 10.0]);

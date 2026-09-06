@@ -96,7 +96,7 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
 #[test]
 fn type_508_requires_an_explicit_isoparametric_flag() {
     let pcurve = PcurveUse {
-        pcurve: "pcurve#type-508".into(),
+        pcurve: "test:model:pcurve#type-508".into(),
         isoparametric: Some(false),
         parameter_range: None,
     };
@@ -178,11 +178,11 @@ fn number_preserves_distinct_finite_values() {
 
 #[test]
 fn generated_resolution_covers_large_coordinate_endpoint_admission() {
-    let point_start = PointId::mint("point#start").expect("identity grammar");
-    let point_end = PointId::mint("point#end").expect("identity grammar");
-    let vertex_start = VertexId::mint("vertex#start").expect("identity grammar");
-    let vertex_end = VertexId::mint("vertex#end").expect("identity grammar");
-    let curve_id = CurveId::mint("curve#line").expect("identity grammar");
+    let point_start = PointId::mint("test:model:point#start").expect("identity grammar");
+    let point_end = PointId::mint("test:model:point#end").expect("identity grammar");
+    let vertex_start = VertexId::mint("test:model:vertex#start").expect("identity grammar");
+    let vertex_end = VertexId::mint("test:model:vertex#end").expect("identity grammar");
+    let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.points.extend([
         Point {
@@ -217,7 +217,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
         source_object: None,
     });
     ir.model.edges.push(Edge {
-        id: EdgeId::mint("edge#line").expect("identity grammar"),
+        id: EdgeId::mint("test:model:edge#line").expect("identity grammar"),
         curve: Some(curve_id),
         start: vertex_start,
         end: vertex_end,
@@ -233,7 +233,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
 fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     let mut ir = CadIr::empty();
     ir.model.points.push(Point {
-        id: PointId::mint("point#global-profile").expect("identity grammar"),
+        id: PointId::mint("test:model:point#global-profile").expect("identity grammar"),
         source_object: None,
         position: Point3::new(123.0, -4.0, 5.0),
     });
@@ -285,7 +285,7 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     assert!(global_text.starts_with(
         "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H"
     ));
-    assert!(global_text.contains(",1.2300000000000000D+02,"));
+    assert!(global_text.contains(",1.2300000000000000D2,"));
     assert!(global_text.contains(",6Hauthor,7Hcadmpeg,11,0,0H,0H;"));
 }
 
@@ -332,7 +332,7 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
     let mut ir = CadIr::empty();
     ir.tolerances.linear = 2.5;
     ir.model.points.push(Point {
-        id: PointId::mint("point#resolution-floor").expect("identity grammar"),
+        id: PointId::mint("test:model:point#resolution-floor").expect("identity grammar"),
         source_object: None,
         position: Point3::new(1.0, 2.0, 3.0),
     });
@@ -779,13 +779,13 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::Face;
 
-    let face_id = FaceId::from("face");
-    let inner_id = LoopId::from("inner");
-    let outer_id = LoopId::from("outer");
+    let face_id = FaceId::from("test:model:face#face");
+    let inner_id = LoopId::from("test:model:loop#inner");
+    let outer_id = LoopId::from("test:model:loop#outer");
     let face = Face {
         id: face_id.clone(),
-        shell: ShellId::from("shell"),
-        surface: SurfaceId::from("surface"),
+        shell: ShellId::from("test:model:shell#shell"),
+        surface: SurfaceId::from("test:model:surface#surface"),
         sense: Sense::Forward,
         loops: cadmpeg_ir::topology::FaceLoops::classified(
             Some(outer_id.clone()),
@@ -824,13 +824,13 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::Face;
 
-    let face_id = FaceId::from("face");
-    let inner_id = LoopId::from("inner");
-    let unclassified_id = LoopId::from("unclassified");
+    let face_id = FaceId::from("test:model:face#face");
+    let inner_id = LoopId::from("test:model:loop#inner");
+    let unclassified_id = LoopId::from("test:model:loop#unclassified");
     let face = Face {
         id: face_id.clone(),
-        shell: ShellId::from("shell"),
-        surface: SurfaceId::from("surface"),
+        shell: ShellId::from("test:model:shell#shell"),
+        surface: SurfaceId::from("test:model:surface#surface"),
         sense: Sense::Forward,
         loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
             unclassified_id.clone(),

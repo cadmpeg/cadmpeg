@@ -203,7 +203,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
     for (name, nurbs, expected) in cases {
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
-            id: CurveId::mint(format!("curve#{name}")).expect("identity grammar"),
+            id: CurveId::mint(format!("test:model:curve#{name}")).expect("identity grammar"),
             geometry: CurveGeometry::Nurbs(nurbs),
             source_object: None,
         });

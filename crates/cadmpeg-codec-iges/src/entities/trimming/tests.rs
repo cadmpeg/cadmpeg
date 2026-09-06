@@ -324,8 +324,8 @@ fn face_tolerance_policy_separates_declared_and_coordinate_bounds() {
 
 #[test]
 fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
-    let curve_id = CurveId::mint("curve").expect("identity grammar");
-    let surface_id = SurfaceId::mint("surface").expect("identity grammar");
+    let curve_id = CurveId::mint("test:model:curve#curve").expect("identity grammar");
+    let surface_id = SurfaceId::mint("test:model:surface#surface").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
@@ -346,63 +346,63 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     });
     let candidates = vec![
         Edge {
-            id: EdgeId::mint("wrong-occurrence").expect("identity grammar"),
+            id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId::mint("wrong-start").expect("identity grammar"),
-            end: VertexId::mint("wrong-end").expect("identity grammar"),
+            start: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
+            end: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
             param_range: Some([1.0, 2.0]),
             tolerance: None,
         },
         Edge {
-            id: EdgeId::mint("matching-occurrence").expect("identity grammar"),
+            id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
             curve: Some(curve_id),
-            start: VertexId::mint("matching-start").expect("identity grammar"),
-            end: VertexId::mint("matching-end").expect("identity grammar"),
+            start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+            end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
             param_range: Some([0.0, 2.0]),
             tolerance: None,
         },
     ];
     ir.model.points.extend([
         Point {
-            id: PointId::mint("wrong-point-start").expect("identity grammar"),
+            id: PointId::mint("test:model:point#wrong-point-start").expect("identity grammar"),
             position: Point3::new(10.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId::mint("wrong-point-end").expect("identity grammar"),
+            id: PointId::mint("test:model:point#wrong-point-end").expect("identity grammar"),
             position: Point3::new(11.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId::mint("matching-point-start").expect("identity grammar"),
+            id: PointId::mint("test:model:point#matching-point-start").expect("identity grammar"),
             position: Point3::new(0.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId::mint("matching-point-end").expect("identity grammar"),
+            id: PointId::mint("test:model:point#matching-point-end").expect("identity grammar"),
             position: Point3::new(2.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: VertexId::mint("wrong-start").expect("identity grammar"),
-            point: PointId::mint("wrong-point-start").expect("identity grammar"),
+            id: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
+            point: PointId::mint("test:model:point#wrong-point-start").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId::mint("wrong-end").expect("identity grammar"),
-            point: PointId::mint("wrong-point-end").expect("identity grammar"),
+            id: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
+            point: PointId::mint("test:model:point#wrong-point-end").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId::mint("matching-start").expect("identity grammar"),
-            point: PointId::mint("matching-point-start").expect("identity grammar"),
+            id: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+            point: PointId::mint("test:model:point#matching-point-start").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId::mint("matching-end").expect("identity grammar"),
-            point: PointId::mint("matching-point-end").expect("identity grammar"),
+            id: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
+            point: PointId::mint("test:model:point#matching-point-end").expect("identity grammar"),
             tolerance: None,
         },
     ]);
@@ -439,17 +439,17 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         true,
     )
     .expect("unique pcurve-compatible edge");
-    assert_eq!(selected.id.as_str(), "matching-occurrence");
+    assert_eq!(selected.id.as_str(), "test:model:edge#matching-occurrence");
     assert_eq!(start, Point3::new(0.0, 0.0, 0.0));
     assert_eq!(end, Point3::new(2.0, 0.0, 0.0));
     assert!(pcurves_agree);
 
     let mut ambiguous_candidates = candidates.clone();
     ambiguous_candidates.push(Edge {
-        id: EdgeId::mint("duplicate-occurrence").expect("identity grammar"),
-        curve: Some(CurveId::mint("curve").expect("identity grammar")),
-        start: VertexId::mint("matching-start").expect("identity grammar"),
-        end: VertexId::mint("matching-end").expect("identity grammar"),
+        id: EdgeId::mint("test:model:edge#duplicate-occurrence").expect("identity grammar"),
+        curve: Some(CurveId::mint("test:model:curve#curve").expect("identity grammar")),
+        start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+        end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
         param_range: Some([0.0, 2.0]),
         tolerance: None,
     });
@@ -1500,7 +1500,9 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
         .iter()
         .find(|surface| surface.id.0 == "iges:model:surface#D5")
         .unwrap();
-    let SurfaceGeometry::Procedural { construction, .. } = &surface.geometry else {
+    let SurfaceGeometry::Procedural { construction, .. } =
+        surface.geometry.solved_cache().unwrap_or(&surface.geometry)
+    else {
         panic!("expected a procedural revolution surface");
     };
     let procedural = result

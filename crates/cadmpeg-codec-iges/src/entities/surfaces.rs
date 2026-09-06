@@ -299,7 +299,7 @@ fn equal_arc_length_parameterization(
                     == CurveId::mint(format!("iges:model:curve#D{sequence}"))
                         .expect("identity grammar")
             })
-            .map(|curve| &curve.geometry)
+            .map(|curve| curve.geometry.solved_cache().unwrap_or(&curve.geometry))
     };
     let Some((first, second)) = curve_geometry(first_sequence).zip(curve_geometry(second_sequence))
     else {
@@ -330,10 +330,11 @@ fn bounded_evaluable_curve(
     curve_id: &CurveId,
     tolerance: f64,
     index: &CompositeIndex,
-) -> Option<(CurveGeometry, [f64; 2])> {
+) -> Option<(CurveGeometry, [f64; 2])>{
     let curve = index.curve_by_id(ir, curve_id)?;
+    let geometry = curve.geometry.solved_cache().unwrap_or(&curve.geometry);
     if matches!(
-        &curve.geometry,
+        geometry,
         CurveGeometry::Composite { .. }
             | CurveGeometry::Procedural { .. }
             | CurveGeometry::Unknown { .. }
@@ -348,7 +349,7 @@ fn bounded_evaluable_curve(
     {
         return None;
     }
-    let geometry = curve.geometry.clone();
+    let geometry = geometry.clone();
     parameter_interval
         .into_iter()
         .all(|parameter| cadmpeg_ir::eval::curve_point(&geometry, parameter).is_some())
@@ -379,7 +380,7 @@ fn curve_geometry<'a>(ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a CurveGeom
         .curves
         .iter()
         .find(|curve| curve.id == *curve_id)
-        .map(|curve| &curve.geometry)
+        .map(|curve| curve.geometry.solved_cache().unwrap_or(&curve.geometry))
 }
 
 #[derive(Clone)]

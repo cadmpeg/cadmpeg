@@ -1376,7 +1376,7 @@ fn vertex_position(index: &ModelIndex<'_>, vertex: &VertexId) -> Option<Point3> 
 
 fn plane_carrier(index: &ModelIndex<'_>, sequence: u32) -> Option<(Point3, Vector3)> {
     let surface = index.surfaces(&format!("iges:model:surface#D{sequence}"))?;
-    match &surface.geometry {
+    match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
         SurfaceGeometry::Plane { origin, normal, .. } => Some((*origin, *normal)),
         _ => None,
     }
@@ -1547,7 +1547,7 @@ fn bounded_plane_curve_is_simple(
                         return false;
                     }
                     let valid = bounded_plane_curve_is_simple(
-                        &curve.geometry,
+                        curve.geometry.solved_cache().unwrap_or(&curve.geometry),
                         context,
                         false,
                         None,
@@ -1674,13 +1674,14 @@ fn plane_boundary_edge(
     let curve = index
         .curves(&curve_id.0)
         .ok_or(PlaneBoundaryError::MissingCurveCarrier)?;
+    let geometry = curve.geometry.solved_cache().unwrap_or(&curve.geometry);
     let source_is_certified_simple = entries
         .get(&boundary_sequence)
         .is_some_and(|entry| entry.entity_type == 106 && entry.form == 63);
     let mut active = BTreeSet::new();
     if !active.insert(curve_id.clone())
         || !bounded_plane_curve_is_simple(
-            &curve.geometry,
+            geometry,
             PlaneBoundarySimplicity {
                 index,
                 plane,
@@ -1695,7 +1696,7 @@ fn plane_boundary_edge(
         return Err(PlaneBoundaryError::NotSimple);
     }
     if !curve_geometry_coplanar(
-        &curve.geometry,
+        geometry,
         index,
         Transform::identity(),
         plane,

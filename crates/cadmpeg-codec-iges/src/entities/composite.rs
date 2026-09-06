@@ -951,7 +951,13 @@ fn bounded_edge_for_curve(
                 .collect(),
         ),
     };
-    select_composite_edge(ir, index, &curve.geometry, &edge_candidates, tolerance)
+    select_composite_edge(
+        ir,
+        index,
+        curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+        &edge_candidates,
+        tolerance,
+    )
 }
 
 fn bounded_nurbs_for_id(
@@ -961,7 +967,7 @@ fn bounded_nurbs_for_id(
     join_tolerance: Option<f64>,
     ctx: Option<&DecodeContext<'_>>,
     index: Option<&CompositeIndex>,
-) -> Option<(NurbsCurve, [f64; 2])> {
+) -> Option<(NurbsCurve, [f64; 2])>{
     let _nested = ctx
         .map(|ctx| ctx.enter_nested("iges_composite_flatten", None))
         .transpose()
@@ -989,7 +995,8 @@ fn bounded_nurbs_for_id(
             .and_then(|position| ir.model.curves.get(*position))?,
         None => ir.model.curves.iter().find(|curve| curve.id == *curve_id)?,
     };
-    if let CurveGeometry::Composite { segments, .. } = &curve.geometry {
+    let geometry = curve.geometry.solved_cache().unwrap_or(&curve.geometry);
+    if let CurveGeometry::Composite { segments, .. } = geometry {
         let children = segments
             .iter()
             .map(|segment| {
@@ -1014,7 +1021,7 @@ fn bounded_nurbs_for_id(
     }
     let edge = bounded_edge_for_curve(ir, curve_id, join_tolerance.unwrap_or(0.0), index)?;
     let interval = edge.param_range?;
-    match &curve.geometry {
+    match geometry {
         CurveGeometry::Nurbs(nurbs) => Some((trim_nurbs_to_interval(nurbs, interval)?, interval)),
         CurveGeometry::Line { .. } => Some((
             NurbsCurve::new(
@@ -1178,7 +1185,13 @@ fn curve_endpoints(
     let curve_position = index.curve_positions.get(curve_id)?;
     let curve = ir.model.curves.get(*curve_position)?;
     let candidates = index.edges.get(curve_id)?;
-    let edge = select_composite_edge(ir, Some(index), &curve.geometry, candidates, tolerance)?;
+    let edge = select_composite_edge(
+        ir,
+        Some(index),
+        curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+        candidates,
+        tolerance,
+    )?;
     Some((
         point_for_vertex(ir, &edge.start, Some(index))?,
         point_for_vertex(ir, &edge.end, Some(index))?,

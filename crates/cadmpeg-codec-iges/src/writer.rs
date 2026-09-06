@@ -161,7 +161,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             append_surface_entities(&mut entities, ir, &surface.geometry, version)?;
         }
         for directrix in ir.model.surfaces.iter().filter_map(|surface| {
-            let SurfaceGeometry::Procedural { construction, .. } = &surface.geometry else {
+            let SurfaceGeometry::Procedural { construction, cache: None } = &surface.geometry else {
                 return None;
             };
             ir.model
@@ -569,7 +569,7 @@ fn is_native_surface_construction(
     if !matches!(
         geometry,
         SurfaceGeometry::Procedural {
-            construction: owner, ..
+            construction: owner, cache: None,
         } if owner == construction
     ) {
         return false;
@@ -4353,6 +4353,7 @@ fn surface_entities_for_ir(
     base_index: usize,
     version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
+    let geometry = geometry.solved_cache().unwrap_or(geometry);
     match geometry {
         SurfaceGeometry::Procedural { construction, .. } => {
             let procedural = ir

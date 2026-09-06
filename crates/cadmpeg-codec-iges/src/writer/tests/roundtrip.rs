@@ -419,7 +419,7 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
             .decode(&mut Cursor::new(produced), &DecodeOptions::default())
             .expect("degree-zero output decodes");
         let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
-            &round_trip.ir().model.curves[0].geometry
+            round_trip.ir().model.curves[0].geometry.solved_cache().unwrap_or(&round_trip.ir().model.curves[0].geometry)
         else {
             panic!("{version:?}: expected a NURBS carrier");
         };
@@ -477,7 +477,7 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (u32, 
             .decode(&mut Cursor::new(produced), &DecodeOptions::default())
             .expect("degree-zero surface output decodes");
         let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
-            &round_trip.ir().model.surfaces[0].geometry
+            round_trip.ir().model.surfaces[0].geometry.solved_cache().unwrap_or(&round_trip.ir().model.surfaces[0].geometry)
         else {
             panic!("{version:?}: expected a NURBS surface carrier");
         };
@@ -837,7 +837,7 @@ fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
                 .surfaces
                 .iter()
                 .any(|surface| matches!(
-                    surface.geometry,
+                    *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
                     cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_)
                 )),
             "{version:?}: no NURBS tabulated surface"
