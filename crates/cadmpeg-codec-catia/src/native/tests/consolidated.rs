@@ -897,6 +897,8 @@ fn native_namespace_retains_boundary_face_node_for_checked_cycle_prelude() {
     let [packet] = native.consolidated_owner_packets.as_slice() else {
         panic!("one consolidated owner packet")
     };
+    // A boundary prelude is separated from the owner by its four edge records.
+    assert!(packet.face_node.is_none());
     let cycle = packet
         .boundary_cycle()
         .expect("closed fixed-owner boundary cycle");
