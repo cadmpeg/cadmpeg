@@ -3031,7 +3031,6 @@ pub struct FeaturePatternTransformLane {
     pub id: String,
     pub operation_label: String,
     pub row_schema_index: u8,
-    pub declared_count: u8,
     pub rows: FeaturePatternTransformRows,
     pub source_offset: u64,
 }
@@ -3067,7 +3066,8 @@ struct FeaturePatternTransformLaneWire {
     /// Row byte layout selected by the terminal mode.
     layout: FeaturePatternTransformLayout,
     /// Count including the implicit seed row.
-    declared_count: u8,
+    #[serde(deserialize_with = "deserialize_reference_lane_count")]
+    declared_count: usize,
     /// Scalar encodings selected independently in row order.
     encodings: Vec<FeaturePatternTransformEncoding>,
     /// Ordered finite row scalars.
@@ -3112,7 +3112,7 @@ impl From<FeaturePatternTransformLane> for FeaturePatternTransformLaneWire {
             operation_label: lane.operation_label,
             row_schema_index: lane.row_schema_index,
             layout,
-            declared_count: lane.declared_count,
+            declared_count: scalar.len() + wide.len() + 1,
             encodings: Vec::new(),
             values: Vec::new(),
             raw_values: Vec::new(),
@@ -3141,6 +3141,9 @@ impl TryFrom<FeaturePatternTransformLaneWire> for FeaturePatternTransformLane {
     type Error = String;
 
     fn try_from(wire: FeaturePatternTransformLaneWire) -> Result<Self, Self::Error> {
+        if wire.declared_count != wire.selectors.len() + 1 {
+            return Err("declared_count must equal the row count plus the implicit seed".into());
+        }
         let width = match wire.layout {
             FeaturePatternTransformLayout::ScalarRows => 1,
             FeaturePatternTransformLayout::WideRows => 5,
@@ -3213,7 +3216,6 @@ impl TryFrom<FeaturePatternTransformLaneWire> for FeaturePatternTransformLane {
             id: wire.id,
             operation_label: wire.operation_label,
             row_schema_index: wire.row_schema_index,
-            declared_count: wire.declared_count,
             rows,
             source_offset: wire.source_offset,
         })
@@ -3247,12 +3249,8 @@ pub struct FeatureMultiInstanceOutputLane {
     pub id: String,
     /// Owning `Multi Instance Output` operation label.
     pub operation_label: String,
-    /// Count including the implicit seed row.
-    pub declared_count: u8,
     /// Ordered complete source tokens.
     pub rows: Vec<FeatureMultiInstanceOutputRow>,
-    /// Count including the implicit seed instance.
-    pub instance_count: u8,
     /// Ordered complete source tokens.
     pub trailing_references: Vec<FeatureIndexToken>,
     /// Absolute source offset of the opening `25 01, count` field.
@@ -3266,7 +3264,8 @@ struct FeatureMultiInstanceOutputLaneWire {
     /// Owning `Multi Instance Output` operation label.
     operation_label: String,
     /// Count including the implicit seed row.
-    declared_count: u8,
+    #[serde(deserialize_with = "deserialize_reference_lane_count")]
+    declared_count: usize,
     /// Ordered non-null compact selectors.
     selectors: Vec<u32>,
     /// Exact compact-index selector tokens in row order.
@@ -3276,7 +3275,8 @@ struct FeatureMultiInstanceOutputLaneWire {
     /// Ordered serialized row indices.
     row_indices: Vec<u8>,
     /// Count including the implicit seed instance.
-    instance_count: u8,
+    #[serde(deserialize_with = "deserialize_reference_lane_count")]
+    instance_count: usize,
     /// Ordered non-null trailing object indices.
     trailing_object_indices: Vec<u32>,
     /// Exact trailing object-index tokens in row order.
@@ -3294,8 +3294,8 @@ impl From<FeatureMultiInstanceOutputLane> for FeatureMultiInstanceOutputLaneWire
         Self {
             id: lane.id,
             operation_label: lane.operation_label,
-            declared_count: lane.declared_count,
-            instance_count: lane.instance_count,
+            declared_count: lane.rows.len() + 1,
+            instance_count: lane.trailing_references.len() + 1,
             source_offset: lane.source_offset,
             selectors: lane.rows.iter().map(|token| token.value).collect(),
             raw_selectors: lane.rows.iter().map(|token| token.raw.clone()).collect(),
@@ -3324,6 +3324,12 @@ impl From<FeatureMultiInstanceOutputLane> for FeatureMultiInstanceOutputLaneWire
 impl TryFrom<FeatureMultiInstanceOutputLaneWire> for FeatureMultiInstanceOutputLane {
     type Error = String;
     fn try_from(wire: FeatureMultiInstanceOutputLaneWire) -> Result<Self, Self::Error> {
+        if wire.declared_count != wire.selectors.len() + 1 {
+            return Err("declared_count must equal the row count plus the implicit seed".into());
+        }
+        if wire.instance_count != wire.trailing_object_indices.len() + 1 {
+            return Err("instance_count must equal the trailing reference count plus the implicit seed".into());
+        }
         if wire.raw_selectors.len() != wire.selectors.len()
             || wire.ordinals.len() != wire.selectors.len()
             || wire.row_indices.len() != wire.selectors.len()
@@ -3341,8 +3347,6 @@ impl TryFrom<FeatureMultiInstanceOutputLaneWire> for FeatureMultiInstanceOutputL
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            declared_count: wire.declared_count,
-            instance_count: wire.instance_count,
             source_offset: wire.source_offset,
             rows: wire
                 .selectors
@@ -3393,8 +3397,6 @@ pub struct FeatureIdenticalInstanceOutputLane {
     pub count_schema_index: u8,
     /// Three consecutive schema indices framing every selector row.
     pub row_schema_indices: [u8; 3],
-    /// Count including the implicit owner row.
-    pub declared_count: u8,
     /// Ordered complete source tokens.
     pub selectors: Vec<FeatureIndexToken>,
     /// Absolute source offset of the leading schema index.
@@ -3414,7 +3416,8 @@ struct FeatureIdenticalInstanceOutputLaneWire {
     /// Three consecutive schema indices framing every selector row.
     row_schema_indices: [u8; 3],
     /// Count including the implicit owner row.
-    declared_count: u8,
+    #[serde(deserialize_with = "deserialize_reference_lane_count")]
+    declared_count: usize,
     /// Ordered non-null compact selectors.
     selectors: Vec<u32>,
     /// Exact compact-index selector tokens in row order.
@@ -3433,7 +3436,7 @@ impl From<FeatureIdenticalInstanceOutputLane> for FeatureIdenticalInstanceOutput
             leading_schema_index: lane.leading_schema_index,
             count_schema_index: lane.count_schema_index,
             row_schema_indices: lane.row_schema_indices,
-            declared_count: lane.declared_count,
+            declared_count: lane.selectors.len() + 1,
             source_offset: lane.source_offset,
             selectors: lane.selectors.iter().map(|token| token.value).collect(),
             raw_selectors: lane
@@ -3453,6 +3456,9 @@ impl From<FeatureIdenticalInstanceOutputLane> for FeatureIdenticalInstanceOutput
 impl TryFrom<FeatureIdenticalInstanceOutputLaneWire> for FeatureIdenticalInstanceOutputLane {
     type Error = String;
     fn try_from(wire: FeatureIdenticalInstanceOutputLaneWire) -> Result<Self, Self::Error> {
+        if wire.declared_count != wire.selectors.len() + 1 {
+            return Err("declared_count must equal the row count plus the implicit seed".into());
+        }
         if wire.raw_selectors.len() != wire.selectors.len()
             || wire.selector_source_offsets.len() != wire.selectors.len()
         {
@@ -3467,7 +3473,6 @@ impl TryFrom<FeatureIdenticalInstanceOutputLaneWire> for FeatureIdenticalInstanc
             leading_schema_index: wire.leading_schema_index,
             count_schema_index: wire.count_schema_index,
             row_schema_indices: wire.row_schema_indices,
-            declared_count: wire.declared_count,
             source_offset: wire.source_offset,
             selectors: wire
                 .selectors
@@ -9854,7 +9859,6 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 row_schema_index: lane.row_schema_index,
-                declared_count: lane.declared_count,
                 rows: match lane.rows {
                     crate::om::PatternTransformRows::Scalar(rows) => FeaturePatternTransformRows::Scalar(
                         rows.into_iter().map(|row| native_pattern_transform_row(row, entry_offset)).collect()),
@@ -9915,7 +9919,6 @@ pub fn feature_multi_instance_output_lanes(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                declared_count: lane.declared_count,
                 rows: lane.rows.into_iter().map(|row| FeatureMultiInstanceOutputRow {
                     value: row.selector.value,
                     raw: row.selector.raw,
@@ -9923,7 +9926,6 @@ pub fn feature_multi_instance_output_lanes(
                     row_index: row.row_index,
                     source_offset: entry_offset + row.selector.offset as u64,
                 }).collect(),
-                instance_count: lane.instance_count,
                 trailing_references: lane.trailing_references.into_iter().map(|reference| FeatureIndexToken {
                     value: reference.object_index,
                     raw: reference.raw_object_index,
@@ -9958,7 +9960,6 @@ pub fn feature_identical_instance_output_lanes(
                 leading_schema_index: lane.leading_schema_index,
                 count_schema_index: lane.count_schema_index,
                 row_schema_indices: lane.row_schema_indices,
-                declared_count: lane.declared_count,
                 selectors: lane.selectors.into_iter().map(|token| FeatureIndexToken {
                     value: token.value,
                     raw: token.raw,

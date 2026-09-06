@@ -254,7 +254,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         lane.rows,
         super::super::PatternTransformRows::Scalar(_)
     ));
-    assert_eq!(lane.declared_count, 3);
+    assert_eq!(lane.rows().count() + 1, 3);
     assert_eq!(
         lane.rows()
             .flat_map(|(values, _)| values)
@@ -374,7 +374,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         relative_lane.rows,
         super::super::PatternTransformRows::Scalar(_)
     ));
-    assert_eq!(relative_lane.declared_count, 4);
+    assert_eq!(relative_lane.rows().count() + 1, 4);
     assert_eq!(
         relative_lane
             .rows()
@@ -411,7 +411,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         wide_lane.rows,
         super::super::PatternTransformRows::Wide(_)
     ));
-    assert_eq!(wide_lane.declared_count, 3);
+    assert_eq!(wide_lane.rows().count() + 1, 3);
     assert_eq!(
         wide_lane
             .rows()

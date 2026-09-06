@@ -2169,8 +2169,6 @@ pub struct PatternPayloadTransformLane {
     pub offset: usize,
     /// Schema index framing every row in the lane.
     pub row_schema_index: u8,
-    /// Count including the implicit seed row.
-    pub declared_count: u8,
     pub rows: PatternTransformRows,
 }
 
@@ -2187,12 +2185,8 @@ pub struct MultiInstanceOutputRow {
 pub struct MultiInstanceOutputPayloadLane {
     /// Absolute offset of the opening `25 01, count` field.
     pub offset: usize,
-    /// Count including the implicit seed row.
-    pub declared_count: u8,
     /// Serialized output rows.
     pub rows: Vec<MultiInstanceOutputRow>,
-    /// Count including the implicit seed instance.
-    pub instance_count: u8,
     /// Ordered non-null trailing object references.
     pub trailing_references: Vec<PayloadObjectReference>,
 }
@@ -2208,8 +2202,6 @@ pub struct IdenticalInstanceOutputPayloadLane {
     pub count_schema_index: u8,
     /// Three consecutive schema indices framing every selector row.
     pub row_schema_indices: [u8; 3],
-    /// Count including the implicit owner row.
-    pub declared_count: u8,
     /// Ordered non-null compact selectors with their exact source tokens.
     pub selectors: Vec<LaneToken<u32>>,
 }
@@ -4300,7 +4292,6 @@ pub fn pattern_payload_transform_lane(
         Some(PatternPayloadTransformLane {
             offset: record.payload_offset + start,
             row_schema_index,
-            declared_count,
             rows: PatternTransformRows::Scalar(rows),
         })
     };
@@ -4386,7 +4377,6 @@ pub fn pattern_payload_transform_lane(
         Some(PatternPayloadTransformLane {
             offset: record.payload_offset + start,
             row_schema_index,
-            declared_count,
             rows: PatternTransformRows::Wide(rows),
         })
     };
@@ -4506,9 +4496,7 @@ pub fn multi_instance_output_payload_lane(
         (record.payload.get(at..at + 2) == Some(&[0x01, instance_count])).then_some(())?;
         Some(MultiInstanceOutputPayloadLane {
             offset: record.payload_offset + start + 8,
-            declared_count,
             rows,
-            instance_count,
             trailing_references,
         })
     };
@@ -4600,7 +4588,6 @@ pub fn identical_instance_output_payload_lane(
             leading_schema_index,
             count_schema_index,
             row_schema_indices: [first_schema_index, second_schema_index, third_schema_index],
-            declared_count,
             selectors,
         })
     };

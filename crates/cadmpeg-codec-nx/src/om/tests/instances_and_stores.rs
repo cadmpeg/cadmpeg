@@ -67,7 +67,7 @@ fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
     };
     let lane = super::multi_instance_output_payload_lane(record).expect("complete output lane");
     assert_eq!(lane.offset, 209);
-    assert_eq!(lane.declared_count, 7);
+    assert_eq!(lane.rows.len() + 1, 7);
     assert_eq!(
         lane.rows
             .iter()
@@ -86,7 +86,7 @@ fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
             .collect::<Vec<_>>(),
         [2, 3, 4, 5, 6, 7]
     );
-    assert_eq!(lane.instance_count, 3);
+    assert_eq!(lane.trailing_references.len() + 1, 3);
     assert_eq!(
         lane.rows
             .iter()
@@ -163,7 +163,7 @@ fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
     assert_eq!(lane.leading_schema_index, 0x34);
     assert_eq!(lane.count_schema_index, 0x13);
     assert_eq!(lane.row_schema_indices, [0x14, 0x15, 0x16]);
-    assert_eq!(lane.declared_count, 4);
+    assert_eq!(lane.selectors.len() + 1, 4);
     assert_eq!(
         lane.selectors
             .iter()
