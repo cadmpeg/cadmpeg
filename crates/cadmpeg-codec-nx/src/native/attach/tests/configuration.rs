@@ -714,9 +714,11 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     let mut annotations = AnnotationBuilder::new();
     super::attach_active_configuration_feature_states(&mut missing_dependency, &mut annotations);
     assert_eq!(missing_dependency.model.features[0].suppressed, None);
-    assert!(missing_dependency.model.configurations[0]
-        .feature_states
-        .is_empty());
+    assert!(
+        missing_dependency.model.configurations[0]
+            .feature_states
+            .is_empty()
+    );
 
     let mut unresolved_bodies = CadIr::empty();
     unresolved_bodies.model.features = vec![producer("writer")];
@@ -728,9 +730,11 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     )];
     super::attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations);
     assert_eq!(unresolved_bodies.model.features[0].suppressed, None);
-    assert!(unresolved_bodies.model.configurations[0]
-        .feature_states
-        .is_empty());
+    assert!(
+        unresolved_bodies.model.configurations[0]
+            .feature_states
+            .is_empty()
+    );
 
     let mut contradicted = CadIr::empty();
     contradicted.model.features = vec![producer("writer")];
@@ -743,9 +747,11 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     )];
     super::attach_active_configuration_feature_states(&mut contradicted, &mut annotations);
     assert_eq!(contradicted.model.features[0].suppressed, Some(true));
-    assert!(contradicted.model.configurations[0]
-        .feature_states
-        .is_empty());
+    assert!(
+        contradicted.model.configurations[0]
+            .feature_states
+            .is_empty()
+    );
 
     let mut ambiguous = CadIr::empty();
     ambiguous.model.features = vec![producer("writer")];
@@ -764,11 +770,13 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     ];
     super::attach_active_configuration_feature_states(&mut ambiguous, &mut annotations);
     assert_eq!(ambiguous.model.features[0].suppressed, None);
-    assert!(ambiguous
-        .model
-        .configurations
-        .iter()
-        .all(|configuration| configuration.feature_states.is_empty()));
+    assert!(
+        ambiguous
+            .model
+            .configurations
+            .iter()
+            .all(|configuration| configuration.feature_states.is_empty())
+    );
 }
 
 #[test]
@@ -830,21 +838,23 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let mut rejected_ir = CadIr::empty();
     let mut rejected_annotations = AnnotationBuilder::new();
     let rejected_stream = rejected_annotations.stream("nx:container");
-    assert!(super::attach_sketch_graph(
-        &mut rejected_ir,
-        &label,
-        &super::SketchSources {
-            point_uses: &[&point_use, &point_use],
-            point_groups: &[group],
-            points: &[],
-            payload_scalars: &[],
-            fixed_points: &[],
-            coordinate_pairs: &[],
-        },
-        &mut rejected_annotations,
-        rejected_stream,
-    )
-    .is_none());
+    assert!(
+        super::attach_sketch_graph(
+            &mut rejected_ir,
+            &label,
+            &super::SketchSources {
+                point_uses: &[&point_use, &point_use],
+                point_groups: &[group],
+                points: &[],
+                payload_scalars: &[],
+                fixed_points: &[],
+                coordinate_pairs: &[],
+            },
+            &mut rejected_annotations,
+            rejected_stream,
+        )
+        .is_none()
+    );
     assert!(rejected_ir.model.sketches.is_empty());
     assert!(rejected_ir.model.sketch_entities.is_empty());
 }
@@ -1502,7 +1512,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             id: id.to_string(),
             stream_link: format!("stream-link#{stream_ordinal}"),
             stream_ordinal,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index,
             body_alias_object_index: alias,
             stream_role: 0,
@@ -1724,7 +1734,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         id: "nx:segment-body-bindings:binding#0".to_string(),
         stream_link: "nx:segment-stream-links:link#0".to_string(),
         stream_ordinal: 2,
-        stream_kind: "partition".to_string(),
+        stream_kind: crate::parasolid::StreamKind::Partition,
         body_object_index: 10,
         body_alias_object_index: 11,
         stream_role: 19,
@@ -1766,7 +1776,7 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
         id: "nx:segment-body-bindings:binding#0".to_string(),
         stream_link: "nx:segment-stream-links:link#0".to_string(),
         stream_ordinal: 2,
-        stream_kind: "plain".to_string(),
+        stream_kind: crate::parasolid::StreamKind::Plain,
         body_object_index: 10,
         body_alias_object_index: 11,
         stream_role: 5,

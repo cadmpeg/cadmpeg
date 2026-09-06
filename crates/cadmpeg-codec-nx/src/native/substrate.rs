@@ -31,7 +31,11 @@ struct TopologyPreparation<'a> {
 /// are merged against an empty partition; paired delta streams are merged into their
 /// partition and then cleared.
 pub(crate) fn topology_streams<'a>(scan: &'a Scan<'_>) -> Vec<Cow<'a, [u8]>> {
-    prepare_topology_streams(scan, false).streams.into_iter().map(|stream| stream.bytes).collect()
+    prepare_topology_streams(scan, false)
+        .streams
+        .into_iter()
+        .map(|stream| stream.bytes)
+        .collect()
 }
 
 fn prepare_topology_streams<'a>(
@@ -101,7 +105,7 @@ pub(crate) fn paired_delta_streams(scan: &Scan) -> BTreeMap<usize, Vec<usize>> {
     let links = super::segments::segment_stream_links(&scan.container, &scan.streams);
     let linked_deltas = links
         .iter()
-        .filter(|link| link.stream_kind == "deltas")
+        .filter(|link| link.stream_kind == crate::parasolid::StreamKind::Deltas)
         .map(|link| link.stream_ordinal as usize)
         .collect::<BTreeSet<_>>();
     pair_stream_indices(&scan.streams, (!links.is_empty()).then_some(&linked_deltas))
@@ -291,7 +295,10 @@ impl<'a> ParsedStreams<'a> {
                 let empty = Rc::new(StreamView::empty());
                 let empty_graph = Rc::clone(&empty.graph);
                 streams.push(StreamParse {
-                    views: StreamParses { raw: empty.clone(), semantic: empty },
+                    views: StreamParses {
+                        raw: empty.clone(),
+                        semantic: empty,
+                    },
                     semantic_bytes,
                     delta_census: topology_streams[si].delta_census.take(),
                     nurbs_graph: empty_graph,
@@ -360,7 +367,10 @@ impl<'a> ParsedStreams<'a> {
     /// Move the delta censuses into the native extractor after all semantic
     /// residuals have been built. Each delta walk is owned by one decode.
     pub(crate) fn take_delta_censuses(&mut self) -> Vec<Option<Census>> {
-        self.streams.iter_mut().map(|stream| stream.delta_census.take()).collect()
+        self.streams
+            .iter_mut()
+            .map(|stream| stream.delta_census.take())
+            .collect()
     }
 
     /// The cached parses of the stream at `ordinal`.
@@ -370,7 +380,10 @@ impl<'a> ParsedStreams<'a> {
 
     /// Iterate `(ordinal, parses)` over every stream.
     pub(crate) fn iter(&self) -> impl Iterator<Item = (usize, &StreamParses)> {
-        self.streams.iter().enumerate().map(|(ordinal, stream)| (ordinal, &stream.views))
+        self.streams
+            .iter()
+            .enumerate()
+            .map(|(ordinal, stream)| (ordinal, &stream.views))
     }
 
     /// The prepared delta-extended semantic bytes of the stream at `ordinal`.
@@ -460,8 +473,10 @@ mod tests {
 
         let parsed = ParsedStreams::parse(&scan);
 
-        let expected =
-            crate::nurbs::parse_with_graph(parsed.semantic_bytes(1), &parsed.streams[1].nurbs_graph);
+        let expected = crate::nurbs::parse_with_graph(
+            parsed.semantic_bytes(1),
+            &parsed.streams[1].nurbs_graph,
+        );
         let actual = parsed.parse_nurbs(1);
         assert_eq!(actual.surfaces.len(), expected.surfaces.len());
         assert_eq!(actual.curves.len(), expected.curves.len());

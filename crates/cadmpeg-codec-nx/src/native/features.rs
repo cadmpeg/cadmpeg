@@ -4,11 +4,11 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::native::om::{
-    data_blocks, DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow,
-    DataBlockReference, DataBlockRole, DataBlockTargetIndexRow, Expression, ExpressionDeclaration,
-    OmOperationStateJournalGroup, OmSchemaRole,
+    DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockReference,
+    DataBlockRole, DataBlockTargetIndexRow, Expression, ExpressionDeclaration,
+    OmOperationStateJournalGroup, OmSchemaRole, data_blocks,
 };
-use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
+use crate::native::segments::{SegmentBodyBinding, SegmentOmLink, segment_om_links};
 use std::borrow::Cow;
 
 pub(crate) mod datum_plane_header;
@@ -5752,7 +5752,7 @@ pub fn feature_operation_body_image_segment_uses(
         .filter_map(|write| {
             let body_image_data_block = write.body_image_data_block.as_ref()?;
             let mut matches = bindings.iter().filter(|binding| {
-                binding.stream_kind == "plain"
+                binding.stream_kind == crate::parasolid::StreamKind::Plain
                     && binding.body_alias_object_index == u32::from(write.body_identity)
             });
             let binding = matches.next()?;
@@ -5785,7 +5785,7 @@ pub fn feature_operation_body_identity_segment_uses(
         .iter()
         .filter_map(|write| {
             let mut matches = bindings.iter().filter(|binding| {
-                binding.stream_kind == "plain"
+                binding.stream_kind == crate::parasolid::StreamKind::Plain
                     && binding.body_alias_object_index == u32::from(write.body_identity)
             });
             let binding = matches.next()?;
@@ -5811,7 +5811,7 @@ fn body_history_partition_stream(
     bindings: &[SegmentBodyBinding],
     streams: &[crate::parasolid::Stream],
 ) -> Option<u32> {
-    (binding.stream_kind == "plain").then_some(())?;
+    (binding.stream_kind == crate::parasolid::StreamKind::Plain).then_some(())?;
     let stream_ordinal = usize::try_from(binding.stream_ordinal).ok()?;
     (streams.get(stream_ordinal)?.kind == crate::parasolid::StreamKind::Plain).then_some(())?;
     let partition_ordinal = streams
@@ -5833,7 +5833,7 @@ fn body_history_partition_stream(
     let mut run_bindings = Vec::with_capacity(run_streams.len());
     for ordinal in run_start..partition_ordinal {
         let mut matches = bindings.iter().filter(|candidate| {
-            candidate.stream_kind == "plain"
+            candidate.stream_kind == crate::parasolid::StreamKind::Plain
                 && usize::try_from(candidate.stream_ordinal).ok() == Some(ordinal)
         });
         let candidate = matches.next()?;

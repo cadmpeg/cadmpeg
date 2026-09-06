@@ -19,7 +19,7 @@ pub struct ParasolidGroupRecord {
     /// Stream containing the exact serialized GROUP record.
     pub stream_ordinal: u32,
     /// `partition` or `deltas` source classification.
-    pub stream_kind: String,
+    pub stream_kind: crate::parasolid::StreamKind,
     /// Partition whose local node-id namespace owns this GROUP.
     ///
     /// An unpaired deltas stream retains the record without assigning a
@@ -112,7 +112,7 @@ pub(crate) fn parasolid_group_records(
                     record.offset, record.xmt
                 ),
                 stream_ordinal: stream_ordinal_u32,
-                stream_kind: stream.kind.label().to_string(),
+                stream_kind: stream.kind,
                 partition_stream_ordinal: Some(stream_ordinal_u32),
                 xmt: record.xmt,
                 node_id,
@@ -139,7 +139,7 @@ pub(crate) fn parasolid_group_records(
         groups.push(ParasolidGroupRecord {
             id: record.id.replacen("deltas-record", "parasolid-group", 1),
             stream_ordinal: record.stream_ordinal,
-            stream_kind: "deltas".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Deltas,
             partition_stream_ordinal: usize::try_from(record.stream_ordinal)
                 .ok()
                 .and_then(|delta| paired_partition.get(&delta).copied()),
@@ -3594,7 +3594,7 @@ mod tests {
         assert_eq!(groups[0].partition_stream_ordinal, Some(0));
         assert_eq!(groups[1].partition_stream_ordinal, Some(0));
         assert_eq!(groups[2].partition_stream_ordinal, None);
-        assert_eq!(groups[1].stream_kind, "deltas");
+        assert_eq!(groups[1].stream_kind.label(), "deltas");
     }
 
     fn deltas_type_45(xmt: u16) -> Vec<u8> {

@@ -7,7 +7,7 @@
 
 use crate::container::Container;
 use crate::native::features::datum_plane_header::{
-    feature_datum_plane_headers, FeatureDatumPlaneHeader,
+    FeatureDatumPlaneHeader, feature_datum_plane_headers,
 };
 use crate::parasolid::Stream;
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -182,8 +182,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_datum_csys_block_uses: Vec<FeatureDatumCsysBlockUse>,
     pub(crate) feature_sketch_references: Vec<FeatureSketchReference>,
     pub(crate) feature_projected_curve_references: Vec<FeatureProjectedCurveReference>,
-    pub(crate) feature_projected_curve_construction_payloads:
-        Vec<FeatureConstructionPayload>,
+    pub(crate) feature_projected_curve_construction_payloads: Vec<FeatureConstructionPayload>,
     pub(crate) feature_projected_curve_construction_strings:
         Vec<FeatureProjectedCurveConstructionString>,
     pub(crate) feature_fset_reference_graphs: Vec<FeatureFsetReferenceGraph>,
@@ -463,7 +462,7 @@ impl NativeModel {
         let segment_stream_links = segment_stream_links(container, streams);
         let linked_deltas = segment_stream_links
             .iter()
-            .filter(|link| link.stream_kind == "deltas")
+            .filter(|link| link.stream_kind == crate::parasolid::StreamKind::Deltas)
             .map(|link| link.stream_ordinal as usize)
             .collect::<BTreeSet<_>>();
         let delta_pairs = pair_stream_indices(

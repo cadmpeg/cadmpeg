@@ -21,7 +21,8 @@ use crate::framing::read_and_advance as read_xmt;
 use crate::vec3_at::vec3_be_at;
 
 /// Classification of an inflated payload in the part stream.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum StreamKind {
     /// A Parasolid `(partition)` body snapshot.
     Partition,

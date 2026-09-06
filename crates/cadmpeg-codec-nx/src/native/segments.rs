@@ -103,7 +103,7 @@ pub struct SegmentStreamLink {
     /// Zero-based stream ordinal in first segment-wrapper order.
     pub stream_ordinal: u32,
     /// Decoded stream classification.
-    pub stream_kind: String,
+    pub stream_kind: crate::parasolid::StreamKind,
     /// Bytes from the wrapper start to its zlib header.
     pub wrapper_byte_len: u32,
     /// Absolute file offset of the wrapper.
@@ -120,7 +120,7 @@ pub struct SegmentBodyBinding {
     /// Zero-based stream ordinal in first segment-wrapper order.
     pub stream_ordinal: u32,
     /// Partition or plain cached-body stream classification.
-    pub stream_kind: String,
+    pub stream_kind: crate::parasolid::StreamKind,
     /// Object index used by feature-history body operands.
     pub body_object_index: u32,
     /// Second object index naming the same body image in feature history.
@@ -596,13 +596,7 @@ pub fn segment_stream_links(container: &Container, streams: &[Stream]) -> Vec<Se
             row: format!("nx:segment-index:row#{}", wrapper.row_ordinal),
             slot,
             stream_ordinal: stream_ordinal as u32,
-            stream_kind: match stream.kind {
-                StreamKind::Partition => "partition",
-                StreamKind::Deltas => "deltas",
-                StreamKind::Plain => "plain",
-                StreamKind::Preview => "preview",
-            }
-            .to_string(),
+            stream_kind: stream.kind,
             wrapper_byte_len: wrapper.wrapper_byte_len as u32,
             source_offset: wrapper.wrapper_offset as u64,
         });
@@ -623,7 +617,12 @@ pub fn segment_body_bindings(container: &Container, streams: &[Stream]) -> Vec<S
         .collect::<Vec<_>>();
     segment_stream_links(container, streams)
         .into_iter()
-        .filter(|link| matches!(link.stream_kind.as_str(), "partition" | "plain"))
+        .filter(|link| {
+            matches!(
+                link.stream_kind,
+                crate::parasolid::StreamKind::Partition | crate::parasolid::StreamKind::Plain
+            )
+        })
         .filter_map(|link| {
             let row = link.row.rsplit_once('#')?.1.parse::<usize>().ok()?;
             let slot = match link.slot {
@@ -661,8 +660,8 @@ mod tests {
 
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-    use crate::test_support::*;
     use crate::NxCodec;
+    use crate::test_support::*;
 
     use super::*;
 
@@ -701,7 +700,7 @@ mod tests {
         assert_eq!(links[0].row, "nx:segment-index:row#0");
         assert_eq!(links[0].slot, super::SegmentIndexSlot::TypeCode);
         assert_eq!(links[0].stream_ordinal, 0);
-        assert_eq!(links[0].stream_kind, "deltas");
+        assert_eq!(links[0].stream_kind.label(), "deltas");
         assert_eq!(links[0].wrapper_byte_len, 8);
     }
 
@@ -723,7 +722,7 @@ mod tests {
             .expect("required invariant");
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].stream_ordinal, 0);
-        assert_eq!(bindings[0].stream_kind, "partition");
+        assert_eq!(bindings[0].stream_kind.label(), "partition");
         assert_eq!(bindings[0].body_object_index, 94);
         assert_eq!(bindings[0].body_alias_object_index, 150);
         assert_eq!(bindings[0].stream_role, 19);
@@ -748,7 +747,7 @@ mod tests {
             .expect("required invariant");
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].stream_ordinal, 0);
-        assert_eq!(bindings[0].stream_kind, "plain");
+        assert_eq!(bindings[0].stream_kind.label(), "plain");
         assert_eq!(bindings[0].body_object_index, 94);
         assert_eq!(bindings[0].body_alias_object_index, 150);
         assert_eq!(bindings[0].stream_role, 19);
@@ -1015,7 +1014,7 @@ mod tests {
                 id: "binding#0".to_string(),
                 stream_link: "stream#0".to_string(),
                 stream_ordinal: 0,
-                stream_kind: "partition".to_string(),
+                stream_kind: crate::parasolid::StreamKind::Partition,
                 body_object_index: 10,
                 body_alias_object_index: 11,
                 stream_role: 19,
@@ -1025,7 +1024,7 @@ mod tests {
                 id: "binding#1".to_string(),
                 stream_link: "stream#1".to_string(),
                 stream_ordinal: 1,
-                stream_kind: "partition".to_string(),
+                stream_kind: crate::parasolid::StreamKind::Partition,
                 body_object_index: 20,
                 body_alias_object_index: 21,
                 stream_role: 19,
@@ -1100,7 +1099,7 @@ mod tests {
                 id: "binding#0".to_string(),
                 stream_link: "stream#0".to_string(),
                 stream_ordinal: 0,
-                stream_kind: "partition".to_string(),
+                stream_kind: crate::parasolid::StreamKind::Partition,
                 body_object_index: 10,
                 body_alias_object_index: 11,
                 stream_role: 19,
@@ -1110,7 +1109,7 @@ mod tests {
                 id: "binding#1".to_string(),
                 stream_link: "stream#1".to_string(),
                 stream_ordinal: 1,
-                stream_kind: "partition".to_string(),
+                stream_kind: crate::parasolid::StreamKind::Partition,
                 body_object_index: 20,
                 body_alias_object_index: 21,
                 stream_role: 19,
@@ -1160,7 +1159,7 @@ mod tests {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 10,
             body_alias_object_index: 11,
             stream_role: 19,
@@ -1220,7 +1219,7 @@ mod tests {
                 id: "binding#0".to_string(),
                 stream_link: "stream#0".to_string(),
                 stream_ordinal: 0,
-                stream_kind: "partition".to_string(),
+                stream_kind: crate::parasolid::StreamKind::Partition,
                 body_object_index: 10,
                 body_alias_object_index: 11,
                 stream_role: 19,
@@ -1230,7 +1229,7 @@ mod tests {
                 id: "binding#1".to_string(),
                 stream_link: "stream#1".to_string(),
                 stream_ordinal: 1,
-                stream_kind: "partition".to_string(),
+                stream_kind: crate::parasolid::StreamKind::Partition,
                 body_object_index: 20,
                 body_alias_object_index: 21,
                 stream_role: 19,
@@ -1280,7 +1279,7 @@ mod tests {
             id: format!("binding#{ordinal}"),
             stream_link: format!("stream#{ordinal}"),
             stream_ordinal: ordinal,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index,
             body_alias_object_index,
             stream_role: 19,
@@ -1338,7 +1337,7 @@ mod tests {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 10,
             body_alias_object_index: 11,
             stream_role: 19,
@@ -1411,7 +1410,7 @@ mod tests {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 10,
             body_alias_object_index: 11,
             stream_role: 19,
@@ -1485,7 +1484,7 @@ mod tests {
             id: format!("binding#{ordinal}"),
             stream_link: format!("stream#{ordinal}"),
             stream_ordinal: ordinal,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: body,
             body_alias_object_index: alias,
             stream_role: 19,
@@ -1559,7 +1558,7 @@ mod tests {
             id: format!("binding#{ordinal}"),
             stream_link: format!("stream#{ordinal}"),
             stream_ordinal: ordinal,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: body,
             body_alias_object_index: alias,
             stream_role: 19,
@@ -1613,7 +1612,7 @@ mod tests {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 10,
             body_alias_object_index: 11,
             stream_role: 19,
@@ -1666,7 +1665,7 @@ mod tests {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 10,
             body_alias_object_index: 11,
             stream_role: 19,
@@ -1796,7 +1795,7 @@ mod tests {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 94,
             body_alias_object_index: 150,
             stream_role: 19,
@@ -1836,7 +1835,7 @@ mod tests {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 20,
             body_alias_object_index: 30,
             stream_role: 0,
@@ -1887,7 +1886,7 @@ mod tests {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 20,
             body_alias_object_index: 30,
             stream_role: 0,
