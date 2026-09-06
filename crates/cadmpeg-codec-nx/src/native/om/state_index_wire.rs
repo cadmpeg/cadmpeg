@@ -2,8 +2,10 @@
 //! Native operation-state index projections at the JSON boundary.
 
 use serde::{Serialize, Deserialize};
+use serde::ser::SerializeSeq;
+use crate::om::state_slots::StateSlots;
 use crate::om::state_index::StateIndexToken;
-use super::{OmOperationStateMessageBody, OmAuditTrailRow, OmOperationStateJournalRow, OmOperationStateCounter, OmOperationStateStatus, OmOperationStateSlot, OmRollForwardStateRow, OmOperationStateStatusPayload};
+use super::{OmOperationStateMessageBody, OmAuditTrailRow, OmOperationStateJournalRow, OmOperationStateCounter, OmOperationStateStatus, OmRollForwardStateRow, OmOperationStateStatusPayload};
 
 #[derive(Serialize, Deserialize)]
 pub(super) struct OmAuditTrailRowWire {
@@ -208,23 +210,41 @@ pub(super) struct OmOperationStateSlotWire {
     raw_object_index: Vec<u8>,
 }
 
-impl From<OmOperationStateSlot> for OmOperationStateSlotWire {
-    fn from(value: OmOperationStateSlot) -> Self {
+impl OmOperationStateSlotWire {
+    fn from_slot(ordinal: u32, value: Option<StateIndexToken>) -> Self {
         Self {
-            ordinal: value.ordinal,
-            object_index: value.object_index.map(StateIndexToken::value),
-            raw_object_index: value.object_index.as_ref().map_or_else(|| vec![0xff], |index| index.raw().to_vec()),
+            ordinal,
+            object_index: value.map(StateIndexToken::value),
+            raw_object_index: value.as_ref().map_or_else(|| vec![0xff], |index| index.raw().to_vec()),
+        }
+    }
+
+    fn into_slot(self, ordinal: u32) -> Result<Option<StateIndexToken>, String> {
+        if self.ordinal != ordinal { return Err("slots.ordinal: disagrees with slot position".to_string()); }
+        match (self.object_index, self.raw_object_index.as_slice()) {
+            (None, [0xff]) => Ok(None),
+            (Some(value), raw) => StateIndexToken::from_wire(value, raw).map(Some)
+                .map_err(|error| format!("object_index/raw_object_index: {error}")),
+            _ => Err("object_index/raw_object_index: null requires the ff token".to_string()),
         }
     }
 }
 
-impl TryFrom<OmOperationStateSlotWire> for OmOperationStateSlot {
-    type Error = String;
-    fn try_from(wire: OmOperationStateSlotWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            ordinal: wire.ordinal,
-            object_index: match (wire.object_index, wire.raw_object_index.as_slice()) { (None, [0xff]) => None, (Some(value), raw) => Some(StateIndexToken::from_wire(value, raw).map_err(|error| format!("object_index/raw_object_index: {error}"))?), _ => return Err("object_index/raw_object_index: null requires the ff token".to_string()) },
-        })
+impl Serialize for StateSlots<Option<StateIndexToken>> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(Some(self.len()))?;
+        for (ordinal, slot) in self.iter() {
+            sequence.serialize_element(&OmOperationStateSlotWire::from_slot(ordinal, *slot))?;
+        }
+        sequence.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for StateSlots<Option<StateIndexToken>> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let slots = StateSlots::new(Vec::<OmOperationStateSlotWire>::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)?;
+        slots.try_map_slots(|ordinal, slot| slot.into_slot(ordinal)).map_err(serde::de::Error::custom)
     }
 }
 
@@ -357,6 +377,12 @@ mod tests {
         assert_eq!(serde_json::to_string(&OmRollForwardStateRowWire::from_row(0, row)).unwrap(), json);
     }
 
+    fn preserves_slot_wire(ordinal: u32, json: &str) {
+        let wire: OmOperationStateSlotWire = serde_json::from_str(json).unwrap();
+        let slot = wire.into_slot(ordinal).unwrap();
+        assert_eq!(serde_json::to_string(&OmOperationStateSlotWire::from_slot(ordinal, slot)).unwrap(), json);
+    }
+
     #[test]
     fn state_index_records_preserve_scalar_and_token_fields() {
         preserves_wire::<OmAuditTrailRow>(r#"{"id":"audit","section_link":"section","ordinal":2,"raw_ordinal":[2],"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"raw":[4,2,19,224,0,0,0,0,160,0,0],"source_entry":"om","source_offset":0,"end_offset":11}"#);
@@ -366,8 +392,8 @@ mod tests {
         preserves_wire::<OmOperationStateStatusPayload>(r#"{"Linked":{"link_code":75,"object_index":1,"raw_object_index":[1]}}"#);
         preserves_row_wire(r#"{"List":{"ordinal":0,"object_index":0,"raw_object_index":[144,0,0],"position":1,"raw_position":[1],"source_offset":0}}"#);
         preserves_row_wire(r#"{"Pair":{"ordinal":0,"tag":79,"first":0,"raw_first":[0],"second":1,"raw_second":[1],"source_offset":0}}"#);
-        preserves_wire::<OmOperationStateSlot>(r#"{"ordinal":0,"object_index":null,"raw_object_index":[255]}"#);
-        preserves_wire::<OmOperationStateSlot>(r#"{"ordinal":1,"object_index":255,"raw_object_index":[144,0,255]}"#);
+        preserves_slot_wire(0, r#"{"ordinal":0,"object_index":null,"raw_object_index":[255]}"#);
+        preserves_slot_wire(1, r#"{"ordinal":1,"object_index":255,"raw_object_index":[144,0,255]}"#);
     }
 
     #[test]
@@ -380,7 +406,7 @@ mod tests {
             r#"{"ordinal":0,"object_index":0,"raw_object_index":[144,0]}"#,
             r#"{"ordinal":0,"object_index":0,"raw_object_index":[0,0]}"#,
         ] {
-            assert!(serde_json::from_str::<OmOperationStateSlot>(json)
+            assert!(serde_json::from_str::<OmOperationStateSlotWire>(json).unwrap().into_slot(0)
                 .unwrap_err().to_string().contains("object_index/raw_object_index"));
         }
     }

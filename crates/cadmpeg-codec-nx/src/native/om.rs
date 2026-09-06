@@ -421,16 +421,6 @@ pub struct OmOperationStateStatus {
     pub end_offset: u64,
 }
 
-/// One serialized feature-record slot in an operation-state slot lane.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "state_index_wire::OmOperationStateSlotWire", into = "state_index_wire::OmOperationStateSlotWire")]
-pub struct OmOperationStateSlot {
-    /// Zero-based slot ordinal.
-    pub ordinal: u32,
-    /// Decoded object index; null slots remain null.
-    pub object_index: Option<StateIndexToken>,
-}
-
 /// One `02 01 11 ... 02 11` operation-state slot lane.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OmOperationStateSlotLane {
@@ -441,7 +431,7 @@ pub struct OmOperationStateSlotLane {
     /// Zero-based lane ordinal within the status table.
     pub ordinal: u32,
     /// Ordered null or object-index slots.
-    pub slots: Vec<OmOperationStateSlot>,
+    pub slots: crate::om::state_slots::StateSlots<Option<StateIndexToken>>,
     /// Directory entry containing the feature-history section.
     pub source_entry: String,
     /// Absolute file offset of the lane prefix.
@@ -854,15 +844,7 @@ pub fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationState
                 .enumerate()
                 .filter_map(move |(ordinal, lane)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let slots = lane
-                        .slots
-                        .into_iter()
-                        .enumerate()
-                        .map(|(slot_ordinal, slot)| OmOperationStateSlot {
-                            ordinal: u32::try_from(slot_ordinal).expect("slot ordinal fits u32"),
-                            object_index: slot.token(),
-                        })
-                        .collect();
+                    let slots = lane.slots.map_slots(|_, slot| slot.token());
                     Some(OmOperationStateSlotLane {
                         id: format!(
                             "nx:feature-history:operation-state-slot-lane#{section_key}-{ordinal:010}"

@@ -27,6 +27,8 @@ use fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 pub(crate) mod nonempty;
 pub(crate) mod state_tagged_value;
 pub(crate) mod state_index;
+pub(crate) mod state_slots;
+use state_slots::StateSlots;
 pub(crate) mod state_link;
 use state_link::StateLinkCode;
 pub(crate) mod state_group;
@@ -1588,7 +1590,7 @@ pub struct OperationStateSlotLane {
     /// Absolute byte offset of the `02 01 11` lane prefix.
     pub offset: usize,
     /// Null or object-index slots in serialized order.
-    pub slots: Vec<OperationStateIndex>,
+    pub slots: StateSlots<OperationStateIndex>,
     /// Exclusive absolute end offset after the `02 11` terminator.
     pub end_offset: usize,
 }
@@ -6786,7 +6788,7 @@ fn operation_state_slot_lane_at(
             let lane_end = cursor + 2;
             return Some(OperationStateSlotLane {
                 offset: base_offset.checked_add(at)?,
-                slots,
+                slots: StateSlots::new(slots).ok()?,
                 end_offset: base_offset.checked_add(lane_end)?,
             });
         }

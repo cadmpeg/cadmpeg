@@ -290,9 +290,9 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
     let lanes = operation_state_slot_lanes(&container);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].slots.len(), 3);
-    assert_eq!(lanes[0].slots[0].object_index.map(crate::om::state_index::StateIndexToken::value), None);
-    assert_eq!(lanes[0].slots[1].object_index.map(crate::om::state_index::StateIndexToken::value), Some(0x3ad));
-    assert_eq!(lanes[0].slots[2].object_index.map(crate::om::state_index::StateIndexToken::value), None);
+    assert_eq!(lanes[0].slots.as_slice()[0].map(crate::om::state_index::StateIndexToken::value), None);
+    assert_eq!(lanes[0].slots.as_slice()[1].map(crate::om::state_index::StateIndexToken::value), Some(0x3ad));
+    assert_eq!(lanes[0].slots.as_slice()[2].map(crate::om::state_index::StateIndexToken::value), None);
 
     let result = NxCodec
         .decode(
@@ -353,4 +353,15 @@ fn roll_forward_group_derives_row_ordinals() {
     wire["rows"][0]["List"]["ordinal"] = 1.into();
     assert!(serde_json::from_value::<OmRollForwardStateGroup>(wire)
         .unwrap_err().to_string().contains("rows.ordinal"));
+}
+
+#[test]
+fn state_slot_lane_derives_ordinals_and_preserves_null_tokens() {
+    let json = r#"{"id":"lane","section_link":"section","ordinal":0,"slots":[{"ordinal":0,"object_index":null,"raw_object_index":[255]},{"ordinal":1,"object_index":255,"raw_object_index":[144,0,255]}],"source_entry":"om","source_offset":0,"end_offset":9}"#;
+    let lane: OmOperationStateSlotLane = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+    let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+    wire["slots"][1]["ordinal"] = 0.into();
+    assert!(serde_json::from_value::<OmOperationStateSlotLane>(wire)
+        .unwrap_err().to_string().contains("slots.ordinal"));
 }
