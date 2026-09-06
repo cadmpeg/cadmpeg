@@ -5678,3 +5678,10 @@ crate = "cadmpeg-asm"
 kind = "field"
 item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::Direct::selector"
 reason = "IR-85: derive the direct scaled-compound-loft selector from its direction carrier; preserve the flat JSON through checked conversion."
+
+[[change]]
+commit = "cfdb2c942ba3ee77186ddbce9ec7acd44cf4404a"
+crate = "cadmpeg-ir"
+kind = "method"
+item = "cadmpeg_ir::products::PairedJointKind::with_scalars"
+reason = "IR-85: remove the untyped scalar setter that silently discarded fields unsupported by the family; producers construct the typed variant directly."

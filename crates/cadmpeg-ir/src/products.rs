@@ -550,6 +550,7 @@ pub struct AssemblyGraph<'a> {
 
 #[cfg(test)]
 mod tests {
+    mod joints;
     use super::*;
 
     #[test]
@@ -702,8 +703,12 @@ mod tests {
         );
         assert_eq!(serde_json::from_value::<Occurrence>(wire).unwrap(), linked);
 
-        let mut invalid =
-            serde_json::to_value(occurrence("test:model:occurrence#invalid-link", OccurrenceParent::Root, 1.0)).unwrap();
+        let mut invalid = serde_json::to_value(occurrence(
+            "test:model:occurrence#invalid-link",
+            OccurrenceParent::Root,
+            1.0,
+        ))
+        .unwrap();
         invalid["copy_on_change_source"] = serde_json::json!("test:model:product#source");
         assert!(serde_json::from_value::<Occurrence>(invalid).is_err());
     }
@@ -1232,45 +1237,130 @@ impl PairedJointKind {
             linear_limits,
         } = scalars;
         match kind {
-            JointKind::Fixed => Ok(Self::Fixed {
+            JointKind::Fixed if distance.is_none() && distance2.is_none() => Ok(Self::Fixed {
                 angle,
                 translation_offset,
                 angular_limits,
                 linear_limits,
             }),
-            JointKind::Revolute => Ok(Self::Revolute {
-                angle,
-                angular_limits,
-            }),
-            JointKind::Slider => Ok(Self::Slider {
-                distance,
-                translation_offset,
-                linear_limits,
-            }),
-            JointKind::Cylindrical => Ok(Self::Cylindrical {
-                angle,
-                distance,
-                angular_limits,
-                linear_limits,
-            }),
-            JointKind::Ball => Ok(Self::Ball),
-            JointKind::Distance => Ok(Self::Distance { distance }),
-            JointKind::Parallel => Ok(Self::Parallel),
-            JointKind::Perpendicular => Ok(Self::Perpendicular),
-            JointKind::Angle => Ok(Self::Angle { angle }),
-            JointKind::RackPinion => Ok(Self::RackPinion {
-                distance,
-                distance2,
-            }),
-            JointKind::Screw => Ok(Self::Screw { distance }),
-            JointKind::Gears => Ok(Self::Gears {
-                distance,
-                distance2,
-            }),
-            JointKind::Belt => Ok(Self::Belt {
-                distance,
-                distance2,
-            }),
+            JointKind::Revolute
+                if translation_offset.is_none()
+                    && distance.is_none()
+                    && distance2.is_none()
+                    && linear_limits.is_none() =>
+            {
+                Ok(Self::Revolute {
+                    angle,
+                    angular_limits,
+                })
+            }
+            JointKind::Slider
+                if angle.is_none() && distance2.is_none() && angular_limits.is_none() =>
+            {
+                Ok(Self::Slider {
+                    distance,
+                    translation_offset,
+                    linear_limits,
+                })
+            }
+            JointKind::Cylindrical if translation_offset.is_none() && distance2.is_none() => {
+                Ok(Self::Cylindrical {
+                    angle,
+                    distance,
+                    angular_limits,
+                    linear_limits,
+                })
+            }
+            JointKind::Ball
+                if angle.is_none()
+                    && translation_offset.is_none()
+                    && distance.is_none()
+                    && distance2.is_none()
+                    && angular_limits.is_none()
+                    && linear_limits.is_none() =>
+            {
+                Ok(Self::Ball)
+            }
+            JointKind::Distance
+                if angle.is_none()
+                    && translation_offset.is_none()
+                    && distance2.is_none()
+                    && angular_limits.is_none()
+                    && linear_limits.is_none() =>
+            {
+                Ok(Self::Distance { distance })
+            }
+            JointKind::Parallel
+                if angle.is_none()
+                    && translation_offset.is_none()
+                    && distance.is_none()
+                    && distance2.is_none()
+                    && angular_limits.is_none()
+                    && linear_limits.is_none() =>
+            {
+                Ok(Self::Parallel)
+            }
+            JointKind::Perpendicular
+                if angle.is_none()
+                    && translation_offset.is_none()
+                    && distance.is_none()
+                    && distance2.is_none()
+                    && angular_limits.is_none()
+                    && linear_limits.is_none() =>
+            {
+                Ok(Self::Perpendicular)
+            }
+            JointKind::Angle
+                if translation_offset.is_none()
+                    && distance.is_none()
+                    && distance2.is_none()
+                    && angular_limits.is_none()
+                    && linear_limits.is_none() =>
+            {
+                Ok(Self::Angle { angle })
+            }
+            JointKind::RackPinion
+                if angle.is_none()
+                    && translation_offset.is_none()
+                    && angular_limits.is_none()
+                    && linear_limits.is_none() =>
+            {
+                Ok(Self::RackPinion {
+                    distance,
+                    distance2,
+                })
+            }
+            JointKind::Screw
+                if angle.is_none()
+                    && translation_offset.is_none()
+                    && distance2.is_none()
+                    && angular_limits.is_none()
+                    && linear_limits.is_none() =>
+            {
+                Ok(Self::Screw { distance })
+            }
+            JointKind::Gears
+                if angle.is_none()
+                    && translation_offset.is_none()
+                    && angular_limits.is_none()
+                    && linear_limits.is_none() =>
+            {
+                Ok(Self::Gears {
+                    distance,
+                    distance2,
+                })
+            }
+            JointKind::Belt
+                if angle.is_none()
+                    && translation_offset.is_none()
+                    && angular_limits.is_none()
+                    && linear_limits.is_none() =>
+            {
+                Ok(Self::Belt {
+                    distance,
+                    distance2,
+                })
+            }
             JointKind::Native(name) => Ok(Self::Native {
                 name,
                 angle,
@@ -1281,32 +1371,8 @@ impl PairedJointKind {
                 linear_limits,
             }),
             JointKind::Grounded => Err("paired joint cannot use the grounded kind"),
+            _ => Err("joint scalar fields are not supported by the selected kind"),
         }
-    }
-
-    /// Replace this family's scalars while keeping the family identity.
-    #[must_use]
-    pub fn with_scalars(
-        self,
-        angle: Option<f64>,
-        translation_offset: Option<[f64; 3]>,
-        distance: Option<f64>,
-        distance2: Option<f64>,
-        angular_limits: Option<JointLimits>,
-        linear_limits: Option<JointLimits>,
-    ) -> Self {
-        Self::from_wire(
-            JointKind::from(self),
-            JointScalars {
-                angle,
-                translation_offset,
-                distance,
-                distance2,
-                angular_limits,
-                linear_limits,
-            },
-        )
-        .expect("a paired joint family is never grounded")
     }
 
     fn scalars(&self) -> JointScalars {
@@ -1547,7 +1613,10 @@ impl AssemblyJoint {
     /// Paired family when this joint is not grounded.
     #[must_use]
     pub fn paired_kind(&self) -> Option<&PairedJointKind> {
-        self.pair_kind()
+        match &self.operands {
+            JointOperands::Pair { kind, .. } => Some(kind),
+            JointOperands::Grounded { .. } => None,
+        }
     }
 
     /// Whether this joint grounds a single connector.
@@ -1597,13 +1666,6 @@ impl AssemblyJoint {
         }
     }
 
-    fn pair_kind(&self) -> Option<&PairedJointKind> {
-        match &self.operands {
-            JointOperands::Pair { kind, .. } => Some(kind),
-            JointOperands::Grounded { .. } => None,
-        }
-    }
-
     fn pair_kind_mut(&mut self) -> Option<&mut PairedJointKind> {
         match &mut self.operands {
             JointOperands::Pair { kind, .. } => Some(kind),
@@ -1612,7 +1674,7 @@ impl AssemblyJoint {
     }
 
     fn scalars(&self) -> JointScalars {
-        self.pair_kind()
+        self.paired_kind()
             .map(PairedJointKind::scalars)
             .unwrap_or(JointScalars {
                 angle: None,
@@ -1651,7 +1713,7 @@ impl AssemblyJoint {
     /// Enabled angular interval in radians.
     #[must_use]
     pub fn angular_limits(&self) -> Option<&JointLimits> {
-        match self.pair_kind() {
+        match self.paired_kind() {
             Some(PairedJointKind::Fixed { angular_limits, .. })
             | Some(PairedJointKind::Revolute { angular_limits, .. })
             | Some(PairedJointKind::Cylindrical { angular_limits, .. })
@@ -1663,7 +1725,7 @@ impl AssemblyJoint {
     /// Enabled linear interval in document length units.
     #[must_use]
     pub fn linear_limits(&self) -> Option<&JointLimits> {
-        match self.pair_kind() {
+        match self.paired_kind() {
             Some(PairedJointKind::Fixed { linear_limits, .. })
             | Some(PairedJointKind::Slider { linear_limits, .. })
             | Some(PairedJointKind::Cylindrical { linear_limits, .. })
@@ -1776,6 +1838,15 @@ impl TryFrom<AssemblyJointWire> for AssemblyJoint {
             native_ref,
         } = wire;
         let mut joint = if kind == JointKind::Grounded {
+            if angle.is_some()
+                || translation_offset.is_some()
+                || distance.is_some()
+                || distance2.is_some()
+                || angular_limits.is_some()
+                || linear_limits.is_some()
+            {
+                return Err("grounded joint cannot carry scalar fields");
+            }
             if detached[1] {
                 return Err("grounded joint cannot detach a second connector");
             }

@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::native::joint::{
-    JointBody, JointConnectorRecord, JointRecord, PairedJointFamily, empty_link_target,
+    empty_link_target, JointBody, JointConnectorRecord, JointRecord, PairedJointFamily,
 };
 use crate::native::{LinkTarget, ObjectRecord, PropertyRecord};
 use cadmpeg_core::CodecError;
@@ -244,9 +244,9 @@ pub(crate) fn transfer_neutral(
                     kind,
                     connectors: [first, second],
                 } => {
-                    let kind = joint_kind(kind).with_scalars(
+                    let kind = joint_kind(
+                        kind,
                         angle,
-                        None,
                         distance,
                         distance2,
                         angular_limits,
@@ -281,55 +281,62 @@ pub(crate) fn transfer_neutral(
         .collect()
 }
 
-fn joint_kind(kind: &PairedJointFamily) -> PairedJointKind {
+fn joint_kind(
+    kind: &PairedJointFamily,
+    angle: Option<f64>,
+    distance: Option<f64>,
+    distance2: Option<f64>,
+    angular_limits: Option<JointLimits>,
+    linear_limits: Option<JointLimits>,
+) -> PairedJointKind {
     match kind.as_str().to_ascii_lowercase().as_str() {
         "fixed" => PairedJointKind::Fixed {
-            angle: None,
+            angle,
             translation_offset: None,
-            angular_limits: None,
-            linear_limits: None,
+            angular_limits,
+            linear_limits,
         },
         "revolute" => PairedJointKind::Revolute {
-            angle: None,
-            angular_limits: None,
+            angle,
+            angular_limits,
         },
         "slider" | "prismatic" => PairedJointKind::Slider {
-            distance: None,
+            distance,
             translation_offset: None,
-            linear_limits: None,
+            linear_limits,
         },
         "cylindrical" => PairedJointKind::Cylindrical {
-            angle: None,
-            distance: None,
-            angular_limits: None,
-            linear_limits: None,
+            angle,
+            distance,
+            angular_limits,
+            linear_limits,
         },
         "ball" | "spherical" => PairedJointKind::Ball,
-        "distance" => PairedJointKind::Distance { distance: None },
+        "distance" => PairedJointKind::Distance { distance },
         "parallel" => PairedJointKind::Parallel,
         "perpendicular" => PairedJointKind::Perpendicular,
-        "angle" => PairedJointKind::Angle { angle: None },
+        "angle" => PairedJointKind::Angle { angle },
         "rackpinion" | "rack_pinion" => PairedJointKind::RackPinion {
-            distance: None,
-            distance2: None,
+            distance,
+            distance2,
         },
-        "screw" => PairedJointKind::Screw { distance: None },
+        "screw" => PairedJointKind::Screw { distance },
         "gears" => PairedJointKind::Gears {
-            distance: None,
-            distance2: None,
+            distance,
+            distance2,
         },
         "belt" => PairedJointKind::Belt {
-            distance: None,
-            distance2: None,
+            distance,
+            distance2,
         },
         other => PairedJointKind::Native {
             name: other.to_owned(),
-            angle: None,
+            angle,
             translation_offset: None,
-            distance: None,
-            distance2: None,
-            angular_limits: None,
-            linear_limits: None,
+            distance,
+            distance2,
+            angular_limits,
+            linear_limits,
         },
     }
 }
@@ -597,8 +604,8 @@ fn malformed(message: impl Into<String>) -> CodecError {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::joint_kind;
-    use crate::FcstdCodec;
     use crate::test_support::*;
+    use crate::FcstdCodec;
     use cadmpeg_ir::products::PairedJointKind;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
@@ -624,7 +631,14 @@ pub(crate) mod tests {
         ] {
             assert!(
                 !matches!(
-                    joint_kind(&super::PairedJointFamily::new(family.into()).unwrap()),
+                    joint_kind(
+                        &super::PairedJointFamily::new(family.into()).unwrap(),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None
+                    ),
                     PairedJointKind::Native { .. }
                 ),
                 "{family} must not fall through to a native joint family"
@@ -723,12 +737,10 @@ pub(crate) mod tests {
                 maximum: 1.0,
             },
         ));
-        assert!(
-            cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-                .findings
-                .iter()
-                .any(|finding| finding.message.contains("invalid assembly joint"))
-        );
+        assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
+            .findings
+            .iter()
+            .any(|finding| finding.message.contains("invalid assembly joint")));
         let mut wire = serde_json::to_value(&result.ir().model.assembly_joints[0])
             .expect("assembly joint wire");
         wire["operands"][0]["external_document"] = serde_json::json!({
