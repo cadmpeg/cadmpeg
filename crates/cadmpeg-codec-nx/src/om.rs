@@ -57,6 +57,8 @@ use discriminators::{
 };
 pub(crate) mod registry;
 pub(crate) mod cache;
+mod index_table;
+use index_table::{DescendingU32Edges, FixedIndex, OffsetIndex};
 use parameter_name::ParameterName;
 
 /// One NX object-model entity payload without a fixed object-id table.
@@ -7699,35 +7701,32 @@ struct ProductRecordRange {
     end: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct IndexedCandidateSpan {
-    start: usize,
-    end: usize,
+#[derive(Debug, Clone)]
+enum IndexedCandidateKind<'a> {
+    Fixed(FixedIndex<'a>),
+    OffsetOnly(OffsetIndex<'a>),
 }
 
-#[derive(Debug, Clone, Copy)]
-enum IndexedCandidateKind {
-    Fixed {
-        base: usize,
-        entity_index_offset: usize,
-        object_id_table_offset: usize,
-        count: usize,
-    },
-    OffsetOnly {
-        entity_index_offset: usize,
-        object_id_table_offset: usize,
-        first: usize,
-        first_record: usize,
-        last: usize,
-        record_count: usize,
-    },
-}
-
-#[derive(Debug, Clone, Copy)]
-struct IndexedCandidate {
-    span: IndexedCandidateSpan,
+#[derive(Debug, Clone)]
+struct IndexedCandidate<'a> {
     discovery_order: usize,
-    kind: IndexedCandidateKind,
+    kind: IndexedCandidateKind<'a>,
+}
+
+impl<'a> IndexedCandidate<'a> {
+    fn start(&self) -> usize {
+        match &self.kind {
+            IndexedCandidateKind::Fixed(index) => index.index_start(),
+            IndexedCandidateKind::OffsetOnly(index) => index.index_start(),
+        }
+    }
+
+    fn source(&self) -> &'a [u8] {
+        match &self.kind {
+            IndexedCandidateKind::Fixed(index) => index.source(),
+            IndexedCandidateKind::OffsetOnly(index) => index.source(),
+        }
+    }
 }
 
 fn product_record_range_at(bytes: &[u8], offset: usize) -> Option<ProductRecordRange> {
@@ -7770,130 +7769,50 @@ fn product_record_count_within(ranges: &[ProductRecordRange], lower: usize, uppe
 /// admitted candidates sufficient to recognize every nested candidate. This
 /// keeps the admission pass linear after sorting and, more importantly, keeps
 /// rejected candidates as layout metadata rather than allocated records.
-fn select_outer_indexed_candidates(mut candidates: Vec<IndexedCandidate>) -> Vec<IndexedCandidate> {
+fn select_outer_indexed_candidates(mut candidates: Vec<IndexedCandidate<'_>>) -> Vec<IndexedCandidate<'_>> {
     candidates.sort_by(|left, right| {
-        left.span
-            .start
-            .cmp(&right.span.start)
-            .then_with(|| right.span.end.cmp(&left.span.end))
+        left.start()
+            .cmp(&right.start())
+            .then_with(|| right.source().len().cmp(&left.source().len()))
     });
     let mut admitted = Vec::with_capacity(candidates.len());
     let mut furthest_end = 0;
     for candidate in candidates {
-        if candidate.span.end <= furthest_end {
+        if candidate.source().len() <= furthest_end {
             continue;
         }
-        furthest_end = candidate.span.end;
+        furthest_end = candidate.source().len();
         admitted.push(candidate);
     }
     admitted.sort_by_key(|candidate| candidate.discovery_order);
     admitted
 }
 
-fn materialize_indexed_candidate(bytes: &[u8], candidate: IndexedCandidate) -> IndexedSection<'_> {
-    match candidate.kind {
-        IndexedCandidateKind::Fixed {
-            base,
-            entity_index_offset: entity_index_start,
-            object_id_table_offset,
-            count,
-        } => {
-            let type_registry = registry::type_registry(bytes, base, entity_index_start);
-            let fields = registry::all_field_definitions(
-                bytes,
-                type_registry.field_start,
-                entity_index_start,
-            );
-            let records = (1..count)
-                .map(|index| {
-                    let start_offset = entity_index_offset(bytes, entity_index_start, index)
-                        .expect("validated entity index remains readable");
-                    let end_offset = entity_index_offset(bytes, entity_index_start, index + 1)
-                        .expect("validated entity index remains readable");
-                    let start = base
-                        .checked_add(start_offset)
-                        .expect("validated entity index remains bounded");
-                    let end = base
-                        .checked_add(end_offset)
-                        .expect("validated entity index remains bounded");
-                    let payload = bytes
-                        .get(start..end)
-                        .expect("validated entity index remains readable");
-                    let object_id_offset = object_id_table_offset
-                        .checked_add(4)
-                        .and_then(|offset| {
-                            offset
-                                .checked_add(index.checked_mul(4).expect("object-id index bounded"))
-                        })
-                        .expect("object-id table offset remains bounded");
-                    let object_id = View::u32_le_at(bytes, object_id_offset)
-                        .expect("validated object-id table remains readable");
-                    FixedEntityRecord {
-                        object_id: (object_id, object_id_offset as u64),
-                        offset: start,
-                        bytes: payload,
-                    }
-                })
-                .collect::<Vec<_>>();
-            IndexedSection {
-                base,
-                entity_index_offset: entity_index_start,
-                object_id_table_offset,
-                types: type_registry.definitions.into(),
-                fields: fields.into(),
-                store: IndexedStore::Fixed {
-                    records: records.into(),
-                },
-            }
+fn materialize_indexed_candidate(candidate: IndexedCandidate<'_>) -> IndexedSection<'_> {
+    let bytes = candidate.source();
+    let entity_index_offset = candidate.start();
+    let base = match &candidate.kind {
+        IndexedCandidateKind::Fixed(index) => index.base(),
+        IndexedCandidateKind::OffsetOnly(_) => 0,
+    };
+    let type_registry = registry::type_registry(bytes, base, entity_index_offset);
+    let fields = registry::all_field_definitions(bytes, type_registry.field_start, entity_index_offset);
+    let (object_id_table_offset, store) = match candidate.kind {
+        IndexedCandidateKind::Fixed(index) => (index.object_id_table_offset(), IndexedStore::Fixed {
+            records: index.records().collect::<Vec<_>>().into(),
+        }),
+        IndexedCandidateKind::OffsetOnly(index) => {
+            let control = index.control();
+            (control.offset, IndexedStore::OffsetOnly {
+                control,
+                column_storage: index.column_storage(),
+                records: index.records().collect::<Vec<_>>().into(),
+            })
         }
-        IndexedCandidateKind::OffsetOnly {
-            entity_index_offset: entity_index_start,
-            object_id_table_offset,
-            first,
-            first_record,
-            last,
-            record_count,
-        } => {
-            let type_registry = registry::type_registry(bytes, 0, entity_index_start);
-            let fields = registry::all_field_definitions(
-                bytes,
-                type_registry.field_start,
-                entity_index_start,
-            );
-            let records = (0..record_count)
-                .map(|index| {
-                    let start = entity_index_offset(bytes, entity_index_start, index + 1)
-                        .expect("validated offset-only index remains readable");
-                    let end = entity_index_offset(bytes, entity_index_start, index + 2)
-                        .expect("validated offset-only index remains readable");
-                    EntityRecord {
-                        offset: start,
-                        bytes: bytes
-                            .get(start..end)
-                            .expect("validated offset-only index remains readable"),
-                    }
-                })
-                .collect::<Vec<_>>();
-            IndexedSection {
-                base: 0,
-                entity_index_offset: entity_index_start,
-                object_id_table_offset,
-                types: type_registry.definitions.into(),
-                fields: fields.into(),
-                store: IndexedStore::OffsetOnly {
-                    control: EntityRecord {
-                        offset: first,
-                        bytes: bytes
-                            .get(first..first_record)
-                            .expect("validated offset-only control range remains readable"),
-                    },
-                    column_storage: bytes
-                        .get(first_record..last)
-                        .expect("validated offset-only storage range remains readable"),
-                    records: records.into(),
-                },
-            }
-        }
+    };
+    IndexedSection {
+        base, entity_index_offset, object_id_table_offset,
+        types: type_registry.definitions.into(), fields: fields.into(), store,
     }
 }
 
@@ -7942,27 +7861,13 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         let Some(base) = table_end.checked_sub(first) else {
             continue;
         };
-        if !entity_index_is_valid(bytes, &descending_u32_edges, index_start, count, base) {
+        let Some(index) = FixedIndex::new(&descending_u32_edges, index_start, count, base, table) else {
             continue;
-        }
-        let section_end = entity_index_offset(bytes, index_start, count)
-            .and_then(|end| base.checked_add(end))
-            .expect("validated entity index remains bounded");
-        if !seen_record_starts.insert(table_end) {
-            continue;
-        }
+        };
+        if !seen_record_starts.insert(table_end) { continue; }
         candidates.push(IndexedCandidate {
-            span: IndexedCandidateSpan {
-                start: index_start,
-                end: section_end,
-            },
             discovery_order: candidates.len(),
-            kind: IndexedCandidateKind::Fixed {
-                base,
-                entity_index_offset: index_start,
-                object_id_table_offset: table,
-                count,
-            },
+            kind: IndexedCandidateKind::Fixed(index),
         });
     }
     for count_offset in 8..bytes.len().saturating_sub(4) {
@@ -8014,152 +7919,19 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         if product_record_count != 1 {
             continue;
         }
-        if !offset_only_index_is_valid(
-            bytes,
-            &descending_u32_edges,
-            index_start,
-            offset_count,
-            count_offset,
-        ) {
+        let Some(index) = OffsetIndex::new(&descending_u32_edges, index_start, offset_count, count_offset) else {
             continue;
-        }
-        let first_record = second;
-        if !seen_record_starts.insert(first_record) {
-            continue;
-        }
+        };
+        if !seen_record_starts.insert(second) { continue; }
         candidates.push(IndexedCandidate {
-            span: IndexedCandidateSpan {
-                start: index_start,
-                end: last,
-            },
             discovery_order: candidates.len(),
-            kind: IndexedCandidateKind::OffsetOnly {
-                entity_index_offset: index_start,
-                object_id_table_offset: first,
-                first,
-                first_record,
-                last,
-                record_count,
-            },
+            kind: IndexedCandidateKind::OffsetOnly(index),
         });
     }
     select_outer_indexed_candidates(candidates)
         .into_iter()
-        .map(|candidate| materialize_indexed_candidate(bytes, candidate))
+        .map(materialize_indexed_candidate)
         .collect()
-}
-
-fn entity_index_offset(bytes: &[u8], index_start: usize, index: usize) -> Option<usize> {
-    let offset = index_start.checked_add(index.checked_mul(4)?)?;
-    usize::try_from(View::u32_le_at(bytes, offset)?).ok()
-}
-
-/// Positions where one little-endian u32 index word decreases at the next
-/// word boundary. Candidate index tables are allowed to start at any byte, so
-/// the scan records every byte position rather than assuming four-byte file
-/// alignment.
-#[derive(Debug, Default)]
-struct DescendingU32Edges {
-    offsets_by_alignment: [Vec<usize>; 4],
-}
-
-impl DescendingU32Edges {
-    fn new(bytes: &[u8]) -> Self {
-        let mut offsets_by_alignment = <[Vec<usize>; 4]>::default();
-        for offset in 0..bytes.len().saturating_sub(7) {
-            if View::u32_le_at(bytes, offset)
-                .zip(View::u32_le_at(bytes, offset + 4))
-                .is_some_and(|(current, next)| current > next)
-            {
-                offsets_by_alignment[offset % 4].push(offset);
-            }
-        }
-        Self {
-            offsets_by_alignment,
-        }
-    }
-
-    /// Check all adjacent words in `[start, end)` without walking the range.
-    fn is_nondecreasing(&self, start: usize, end: usize) -> bool {
-        if end < start {
-            return false;
-        }
-        if end - start < 8 {
-            return true;
-        }
-        let offsets = &self.offsets_by_alignment[start % 4];
-        let first = offsets.partition_point(|offset| *offset < start);
-        offsets
-            .get(first)
-            .is_none_or(|offset| *offset >= end.saturating_sub(4))
-    }
-}
-
-// Validate candidate offset tables through borrowed words. A count word is
-// only a framing hint; do not allocate an offset table until every word is
-// monotone and its terminal range is in bounds.
-fn entity_index_is_valid(
-    bytes: &[u8],
-    descending_u32_edges: &DescendingU32Edges,
-    index_start: usize,
-    count: usize,
-    base: usize,
-) -> bool {
-    let Some(first_index) = entity_index_offset(bytes, index_start, 0) else {
-        return false;
-    };
-    if first_index != 0 {
-        return false;
-    }
-    let Some(first) = entity_index_offset(bytes, index_start, 1) else {
-        return false;
-    };
-    if first == 0 {
-        return false;
-    }
-    let Some(index_end) = count
-        .checked_add(1)
-        .and_then(|count| count.checked_mul(4))
-        .and_then(|length| index_start.checked_add(length))
-    else {
-        return false;
-    };
-    if !descending_u32_edges.is_nondecreasing(index_start, index_end) {
-        return false;
-    }
-    let Some(last) = View::u32_le_at(bytes, index_end.saturating_sub(4)) else {
-        return false;
-    };
-    base.checked_add(last as usize)
-        .is_some_and(|end| end <= bytes.len())
-}
-
-fn offset_only_index_is_valid(
-    bytes: &[u8],
-    descending_u32_edges: &DescendingU32Edges,
-    index_start: usize,
-    offset_count: usize,
-    count_offset: usize,
-) -> bool {
-    let Some(first) = entity_index_offset(bytes, index_start, 0) else {
-        return false;
-    };
-    if first < count_offset.saturating_add(4) {
-        return false;
-    }
-    let Some(index_end) = offset_count
-        .checked_mul(4)
-        .and_then(|length| index_start.checked_add(length))
-    else {
-        return false;
-    };
-    if index_end != count_offset || !descending_u32_edges.is_nondecreasing(index_start, index_end) {
-        return false;
-    }
-    let Some(last) = View::u32_le_at(bytes, index_end.saturating_sub(4)) else {
-        return false;
-    };
-    usize::try_from(last).is_ok_and(|last| last <= bytes.len())
 }
 
 /// Decode the first self-framed NX product/version marker in `bytes`.

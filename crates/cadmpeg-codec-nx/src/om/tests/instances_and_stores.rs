@@ -1657,7 +1657,7 @@ fn om_index_monotone_cache_rejects_a_decrease_inside_a_candidate() {
         .into_iter()
         .flat_map(u32::to_le_bytes)
         .collect::<Vec<_>>();
-    let edges = super::DescendingU32Edges::new(&bytes);
+    let edges = crate::om::index_table::DescendingU32Edges::new(&bytes);
 
     assert!(edges.is_nondecreasing(0, 12));
     assert!(!edges.is_nondecreasing(0, 16));
