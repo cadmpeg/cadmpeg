@@ -11636,14 +11636,13 @@ pub fn feature_block_dimensions(
                 .collect::<Vec<_>>()
                 .try_into()
                 .ok()?;
-            let first = run[0].parameter_index;
+            let first = run[0].name.index();
             if run.iter().enumerate().any(|(ordinal, declaration)| {
                 declaration.record.split_once(":entry#").map(|pair| pair.0)
                     != run[0].record.split_once(":entry#").map(|pair| pair.0)
                     || declaration.source_entry != run[0].source_entry
-                    || Some(declaration.parameter_index) != first.checked_add(ordinal as u32)
-                    || declaration.name != format!("p{}", declaration.parameter_index)
-                    || declaration.qualifier.is_some()
+                    || Some(declaration.name.index()) != first.checked_add(ordinal as u32)
+                    || declaration.name.as_str() != format!("p{}", declaration.name.index())
             }) {
                 return None;
             }

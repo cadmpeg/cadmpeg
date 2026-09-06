@@ -6341,7 +6341,10 @@ fn native_feature_parameters(
             return BTreeMap::new();
         };
         if parameters
-            .insert(expression.name.clone(), expression.expression.clone())
+            .insert(
+                expression.name.as_str().to_string(),
+                expression.expression.clone(),
+            )
             .is_some()
         {
             return BTreeMap::new();
@@ -8832,7 +8835,7 @@ pub(crate) fn attach_expression_parameters(
                 id,
                 owner: Some(feature_id.clone()),
                 ordinal: ordinal as u32,
-                name: expression.name.clone(),
+                name: expression.name.as_str().to_string(),
                 expression: expression.expression.clone(),
                 display: None,
                 value,

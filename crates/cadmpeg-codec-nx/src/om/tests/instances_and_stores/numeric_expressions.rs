@@ -9,9 +9,9 @@ fn om_numeric_expression_types_only_canonical_parameter_names() {
 
         let expressions = super::super::numeric_expressions(&bytes);
         assert_eq!(expressions.len(), 1);
-        assert_eq!(expressions[0].name, name);
-        assert_eq!(expressions[0].parameter_index, None);
-        assert_eq!(expressions[0].qualifier, None);
+        assert_eq!(expressions[0].name.as_str(), name);
+        assert_eq!(expressions[0].name.index(), None);
+        assert_eq!(expressions[0].name.qualifier(), None);
     }
     assert!(super::super::expression_declaration_name(b"\x04\x08p12foo\0").is_none());
     assert!(super::super::expression_declaration_name(b"\x04\x06p12_\0").is_none());
@@ -171,12 +171,12 @@ fn om_numeric_expression_table_is_independent_of_entity_indexing() {
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, None);
     assert_eq!(
-        expressions[0].name,
+        expressions[0].name.as_str(),
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
     );
-    assert_eq!(expressions[0].parameter_index, Some(8));
+    assert_eq!(expressions[0].name.index(), Some(8));
     assert_eq!(
-        expressions[0].qualifier,
+        expressions[0].name.qualifier(),
         Some("CircularPattern_pattern_Circular_Dir_offset_angle")
     );
     assert_eq!(expressions[0].value, Some(120.0));

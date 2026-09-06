@@ -7,6 +7,7 @@ use super::*;
 use cadmpeg_core::decode::View;
 
 use crate::native::segments::segment_om_links;
+use crate::om::parameter_name::ParameterName;
 use crate::om::{IndexedStore, TypeDefinition as OmTypeDefinition};
 
 /// Semantic family declared by a linked OM section's class registry.
@@ -917,6 +918,10 @@ pub(crate) fn canonical_expression_value(unit: &str, value: f64) -> Option<f64> 
 
 /// Named parameter declaration in a bounded NX expression object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "ExpressionDeclarationWire",
+    into = "ExpressionDeclarationWire"
+)]
 pub struct ExpressionDeclaration {
     /// Globally unique declaration identity.
     pub id: String,
@@ -925,12 +930,7 @@ pub struct ExpressionDeclaration {
     /// Owning entry in the native OM record directory.
     pub record: String,
     /// Exact NX parameter name.
-    pub name: String,
-    /// Decimal source parameter identifier following `p`.
-    pub parameter_index: u32,
-    /// Qualified role following the parameter identifier.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub qualifier: Option<String>,
+    pub name: ParameterName<String, u32>,
     /// Independently framed constant numeric expression in the declaration record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub literal: Option<String>,
@@ -938,6 +938,66 @@ pub struct ExpressionDeclaration {
     pub source_entry: String,
     /// Absolute file offset of the declaration-name marker.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ExpressionDeclarationWire {
+    /// Globally unique declaration identity.
+    id: String,
+    /// Persistent OM object identifier.
+    object_id: u32,
+    /// Owning entry in the native OM record directory.
+    record: String,
+    /// Exact NX parameter name.
+    name: String,
+    /// Decimal source parameter identifier following `p`.
+    parameter_index: u32,
+    /// Qualified role following the parameter identifier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    qualifier: Option<String>,
+    /// Independently framed constant numeric expression in the declaration record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    literal: Option<String>,
+    /// Directory entry containing the declaration record.
+    source_entry: String,
+    /// Absolute file offset of the declaration-name marker.
+    source_offset: u64,
+}
+
+impl From<ExpressionDeclaration> for ExpressionDeclarationWire {
+    fn from(value: ExpressionDeclaration) -> Self {
+        Self {
+            parameter_index: value.name.index(),
+            qualifier: value.name.qualifier().map(str::to_string),
+            name: value.name.into_spelling(),
+            id: value.id,
+            object_id: value.object_id,
+            record: value.record,
+            literal: value.literal,
+            source_entry: value.source_entry,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<ExpressionDeclarationWire> for ExpressionDeclaration {
+    type Error = String;
+    fn try_from(wire: ExpressionDeclarationWire) -> Result<Self, Self::Error> {
+        let name = ParameterName::<_, u32>::parse(wire.name)
+            .ok_or("name must use canonical parameter syntax")?;
+        if name.index() != wire.parameter_index || name.qualifier() != wire.qualifier.as_deref() {
+            return Err("parameter_index and qualifier must match name".into());
+        }
+        Ok(Self {
+            name,
+            id: wire.id,
+            object_id: wire.object_id,
+            record: wire.record,
+            literal: wire.literal,
+            source_entry: wire.source_entry,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Explicit numeric expression serialized in one NX OM entity.
@@ -952,11 +1012,7 @@ pub struct Expression {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declaration: Option<String>,
     /// NX parameter name.
-    pub name: String,
-    /// Decimal source parameter identifier following the leading `p`.
-    pub parameter_index: Option<u32>,
-    /// Qualified role following the parameter identifier.
-    pub qualifier: Option<String>,
+    pub name: ParameterName<String>,
     /// Declared native unit.
     pub unit: ExpressionUnit,
     /// Exact serialized expression text.
@@ -1023,9 +1079,9 @@ impl From<Expression> for ExpressionWire {
             record,
             id: value.id,
             declaration: value.declaration,
-            name: value.name,
-            parameter_index: value.parameter_index,
-            qualifier: value.qualifier,
+            parameter_index: value.name.index(),
+            qualifier: value.name.qualifier().map(str::to_string),
+            name: value.name.into_spelling(),
             unit: value.unit,
             expression: value.expression,
             value: value.value,
@@ -1039,6 +1095,10 @@ impl From<Expression> for ExpressionWire {
 impl TryFrom<ExpressionWire> for Expression {
     type Error = String;
     fn try_from(wire: ExpressionWire) -> Result<Self, Self::Error> {
+        let name = ParameterName::new(wire.name);
+        if name.index() != wire.parameter_index || name.qualifier() != wire.qualifier.as_deref() {
+            return Err("parameter_index and qualifier must match name".into());
+        }
         let owner = match (wire.object_id, wire.record) {
             (None, None) => None,
             (object_id, Some(record)) => Some(ExpressionOwner { object_id, record }),
@@ -1048,9 +1108,7 @@ impl TryFrom<ExpressionWire> for Expression {
             owner,
             id: wire.id,
             declaration: wire.declaration,
-            name: wire.name,
-            parameter_index: wire.parameter_index,
-            qualifier: wire.qualifier,
+            name,
             unit: wire.unit,
             expression: wire.expression,
             value: wire.value,
@@ -1116,7 +1174,7 @@ fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> 
         end += 1;
     }
     let name = std::str::from_utf8(bytes.get(at..end)?).ok()?;
-    crate::om::parameter_name_parts(name).map(|_| end)
+    ParameterName::<_, u32>::parse(name).map(|_| end)
 }
 
 /// Length-framed class definition from an NX OM type registry.
@@ -5449,9 +5507,7 @@ pub fn expression_declarations(container: &Container) -> Vec<ExpressionDeclarati
                         ),
                         object_id,
                         record: record_id,
-                        name: declaration.value.to_string(),
-                        parameter_index: declaration.parameter_index,
-                        qualifier: declaration.qualifier.map(str::to_string),
+                        name: declaration.name.into_owned(),
                         literal: declaration.literal.map(str::to_string),
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset
@@ -5513,7 +5569,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                 .get(&(entry.name.clone(), expression.offset))
                 .cloned();
             let declaration = declarations_by_name
-                .get(&(entry.name.as_str(), expression.name))
+                .get(&(entry.name.as_str(), expression.name.as_str()))
                 .and_then(|candidates| {
                     let same_record_arena = |first: &str, second: &str| {
                         first.split_once(":entry#").map(|pair| pair.0)
@@ -5538,9 +5594,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                 owner: indexed_record
                     .map(|(object_id, record)| ExpressionOwner { object_id, record }),
                 declaration,
-                name: expression.name.to_string(),
-                parameter_index: expression.parameter_index,
-                qualifier: expression.qualifier.map(str::to_string),
+                name: expression.name.into_owned(),
                 unit: match expression.unit {
                     crate::om::ExpressionUnit::Millimeter => ExpressionUnit::Millimeter,
                     crate::om::ExpressionUnit::Inch => ExpressionUnit::Inch,
@@ -5573,7 +5627,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
         *name_counts
             .entry((
                 expression_scope(expression).to_string(),
-                expression.name.clone(),
+                expression.name.as_str().to_string(),
                 expression.unit.clone(),
             ))
             .or_default() += 1;
@@ -5582,7 +5636,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
     for expression in expressions.iter_mut() {
         let key = (
             expression_scope(expression).to_string(),
-            expression.name.clone(),
+            expression.name.as_str().to_string(),
             expression.unit.clone(),
         );
         if name_counts.get(&key) != Some(&1) {
@@ -5602,7 +5656,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
         {
             let expression_key = (
                 expression_scope(expression).to_string(),
-                expression.name.clone(),
+                expression.name.as_str().to_string(),
                 expression.unit.clone(),
             );
             if name_counts.get(&expression_key) != Some(&1) {
@@ -5634,6 +5688,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
 #[cfg(test)]
 mod tests {
     #![allow(unused_imports)]
+    mod expression_wire;
     mod native_units;
     mod state_counters;
     use std::io::{Cursor, Write};
@@ -5732,9 +5787,7 @@ mod tests {
             id: format!("nx:test:expression#{name}"),
             owner: None,
             declaration: None,
-            name: name.into(),
-            parameter_index: None,
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
             value,
@@ -5760,9 +5813,7 @@ mod tests {
             id: format!("nx:test:expression#{name}"),
             owner: None,
             declaration: None,
-            name: name.into(),
-            parameter_index: None,
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
             value,
@@ -5789,9 +5840,7 @@ mod tests {
             id: format!("nx:test:expression#{name}"),
             owner: None,
             declaration: None,
-            name: name.into(),
-            parameter_index: None,
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
             value,
@@ -5818,9 +5867,7 @@ mod tests {
                 id: id.into(),
                 owner: None,
                 declaration: None,
-                name: name.into(),
-                parameter_index: None,
-                qualifier: None,
+                name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit: super::ExpressionUnit::Millimeter,
                 expression: formula.into(),
                 value,
@@ -5848,9 +5895,7 @@ mod tests {
                 id: id.into(),
                 owner: None,
                 declaration: None,
-                name: name.into(),
-                parameter_index: None,
-                qualifier: None,
+                name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit: super::ExpressionUnit::Millimeter,
                 expression: formula.into(),
                 value,
@@ -5883,9 +5928,7 @@ mod tests {
                     id: id.into(),
                     owner: None,
                     declaration: None,
-                    name: name.into(),
-                    parameter_index: None,
-                    qualifier: None,
+                    name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                     unit,
                     expression: formula.into(),
                     value,
@@ -5935,18 +5978,11 @@ mod tests {
 
     #[test]
     fn nx_formula_dependencies_resolve_to_section_parameters() {
-        let expression = |key: u32,
-                          name: &str,
-                          index: u32,
-                          qualifier: Option<&str>,
-                          text: &str,
-                          value: Option<f64>| super::Expression {
+        let expression = |key: u32, name: &str, text: &str, value: Option<f64>| super::Expression {
             id: format!("nx:test:expression#{key}"),
             owner: None,
             declaration: None,
-            name: name.into(),
-            parameter_index: Some(index),
-            qualifier: qualifier.map(str::to_string),
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: text.into(),
             value,
@@ -5955,9 +5991,9 @@ mod tests {
             source_offset: u64::from(key),
         };
         let expressions = [
-            expression(20, "p2", 2, None, "5", Some(5.0)),
-            expression(21, "p2_radius", 2, Some("radius"), "7", Some(7.0)),
-            expression(90, "p9", 9, None, "p2_radius * 2 + p2_radius", None),
+            expression(20, "p2", "5", Some(5.0)),
+            expression(21, "p2_radius", "7", Some(7.0)),
+            expression(90, "p9", "p2_radius * 2 + p2_radius", None),
         ];
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
@@ -5982,9 +6018,7 @@ mod tests {
             id: format!("nx:test:expression#{key}"),
             owner: None,
             declaration: None,
-            name: name.into(),
-            parameter_index: Some(key),
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: text.into(),
             value: None,
@@ -6017,9 +6051,7 @@ mod tests {
                 id: format!("nx:test:expression#{key}"),
                 owner: None,
                 declaration: None,
-                name: name.into(),
-                parameter_index: Some(key),
-                qualifier: None,
+                name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit,
                 expression: text.into(),
                 value,
@@ -6101,9 +6133,7 @@ mod tests {
                 id: format!("nx:test:expression#{id}"),
                 owner: None,
                 declaration: None,
-                name: name.into(),
-                parameter_index: None,
-                qualifier: None,
+                name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit: super::ExpressionUnit::Millimeter,
                 expression: text.into(),
                 value: None,
@@ -6209,9 +6239,7 @@ mod tests {
             id: format!("nx:test:expression#{id}"),
             owner: None,
             declaration: None,
-            name: name.to_string(),
-            parameter_index: None,
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: text.to_string(),
             value: None,
@@ -6260,9 +6288,7 @@ mod tests {
             id: format!("nx:test:expression#{id}"),
             owner: None,
             declaration: None,
-            name: name.to_string(),
-            parameter_index: None,
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: text.to_string(),
             value: None,
@@ -6357,9 +6383,7 @@ mod tests {
             id: "nx:test:expression#20".to_string(),
             owner: None,
             declaration: None,
-            name: "p20".to_string(),
-            parameter_index: Some(20),
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
             value: Some(5.0),
@@ -6392,9 +6416,7 @@ mod tests {
             id: "nx:test:expression#20".to_string(),
             owner: None,
             declaration: None,
-            name: "p20".to_string(),
-            parameter_index: Some(20),
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
             value: Some(5.0),
@@ -6443,9 +6465,7 @@ mod tests {
             id: "nx:test:expression#20".to_string(),
             owner: None,
             declaration: None,
-            name: "p20".to_string(),
-            parameter_index: Some(20),
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
             value: Some(5.0),
@@ -6525,9 +6545,7 @@ mod tests {
             id: "nx:om-entry-9:expression#3".to_string(),
             owner: None,
             declaration: Some("nx:om-expression-declarations-0:declaration#3".to_string()),
-            name: "p3".to_string(),
-            parameter_index: Some(3),
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new("p3".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "12".to_string(),
             value: Some(12.0),
@@ -6777,7 +6795,7 @@ mod tests {
 
         let expressions = crate::om::numeric_expressions(&bytes);
         assert_eq!(expressions.len(), 1);
-        assert_eq!(expressions[0].name, "p9");
+        assert_eq!(expressions[0].name.as_str(), "p9");
         assert_eq!(expressions[0].expression, "p2 * 2 + p7_radius");
         assert_eq!(expressions[0].value, None);
         assert_eq!(
@@ -6816,13 +6834,13 @@ mod tests {
                 .and_then(|owner| owner.object_id),
             Some(0x102)
         );
-        assert_eq!(expressions[0].parameter_index, Some(8));
+        assert_eq!(expressions[0].name.index(), Some(8));
         assert_eq!(
-            expressions[0].qualifier.as_deref(),
+            expressions[0].name.qualifier(),
             Some("CircularPattern_pattern_Circular_Dir_offset_angle")
         );
         assert_eq!(
-            expressions[0].name,
+            expressions[0].name.as_str(),
             "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
         );
         assert_eq!(expressions[0].unit, super::ExpressionUnit::Degree);
@@ -6841,7 +6859,7 @@ mod tests {
             .expect("required invariant");
         assert_eq!(declarations.len(), 1);
         assert_eq!(declarations[0].object_id, 0x102);
-        assert_eq!(declarations[0].parameter_index, 8);
+        assert_eq!(declarations[0].name.index(), 8);
         assert_eq!(declarations[0].literal.as_deref(), Some("120"));
         assert_eq!(
             expressions[0].declaration.as_deref(),
@@ -6852,7 +6870,7 @@ mod tests {
             .model
             .parameters
             .iter()
-            .find(|parameter| parameter.name == expressions[0].name)
+            .find(|parameter| parameter.name == expressions[0].name.as_str())
             .expect("required invariant");
         assert_eq!(
             parameter.properties.get("declaration"),
@@ -6976,7 +6994,7 @@ mod tests {
         assert_eq!(result.ir().model.parameters.len(), 1);
         assert_eq!(result.ir().model.parameters[0].expression, "120");
         let parameter = &result.ir().model.parameters[0];
-        assert_eq!(parameter.name, expressions[0].name);
+        assert_eq!(parameter.name, expressions[0].name.as_str());
         assert!(matches!(
             parameter.value,
             Some(cadmpeg_ir::features::ParameterValue::Angle(

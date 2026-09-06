@@ -1587,7 +1587,7 @@ fn om_offset_only_index_bounds_storage_blocks() {
     assert!(records[1].bytes.ends_with(b"\0"));
     let expressions = sections[0].numeric_expressions();
     assert_eq!(expressions.len(), 1);
-    assert_eq!(expressions[0].name, "length");
+    assert_eq!(expressions[0].name.as_str(), "length");
     assert_eq!(expressions[0].value, Some(25.0));
 }
 
@@ -1616,7 +1616,7 @@ fn om_offset_only_index_accepts_one_root_record_inside_control_block() {
         .any(|window| window == b"NX 2027.3102"));
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].bytes, &[0; 32]);
-    assert_eq!(sections[0].numeric_expressions()[0].name, "length");
+    assert_eq!(sections[0].numeric_expressions()[0].name.as_str(), "length");
 }
 
 #[test]
@@ -1933,12 +1933,12 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(
-        expressions[0].name,
+        expressions[0].name.as_str(),
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
     );
-    assert_eq!(expressions[0].parameter_index, Some(8));
+    assert_eq!(expressions[0].name.index(), Some(8));
     assert_eq!(
-        expressions[0].qualifier,
+        expressions[0].name.qualifier(),
         Some("CircularPattern_pattern_Circular_Dir_offset_angle")
     );
     assert_eq!(expressions[0].unit, super::ExpressionUnit::Degree);
@@ -1948,18 +1948,18 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
         super::expression_declaration_name(section.as_fixed().expect("fixed store")[1].bytes)
             .unwrap();
     assert_eq!(
-        declaration.value,
+        declaration.name.as_str(),
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
     );
-    assert_eq!(declaration.parameter_index, 8);
+    assert_eq!(declaration.name.index(), 8);
     assert_eq!(
-        declaration.qualifier,
+        declaration.name.qualifier(),
         Some("CircularPattern_pattern_Circular_Dir_offset_angle")
     );
     assert_eq!(declaration.literal, Some("120"));
     let declaration =
         super::expression_declaration_name(b"\x04\x04p1\0\x04\x0a-5.1 * 2\0").unwrap();
-    assert_eq!(declaration.value, "p1");
+    assert_eq!(declaration.name.as_str(), "p1");
     assert_eq!(declaration.literal, Some("-5.1 * 2"));
     let declaration =
         super::expression_declaration_name(b"\x04\x04p1\0\x04\x055.1\0\x04\x05120\0").unwrap();

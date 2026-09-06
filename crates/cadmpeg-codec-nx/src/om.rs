@@ -6,7 +6,9 @@ use std::sync::Arc;
 
 use cadmpeg_core::decode::{alloc_filled, View};
 
+pub(crate) mod parameter_name;
 pub(crate) mod registry;
+use parameter_name::ParameterName;
 
 /// One NX object-model entity payload without a fixed object-id table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1216,11 +1218,7 @@ pub struct NumericExpression<'a> {
     /// Absolute byte offset of the expression text.
     pub offset: usize,
     /// NX parameter name.
-    pub name: &'a str,
-    /// Decimal identifier following the leading `p`, when present.
-    pub parameter_index: Option<u32>,
-    /// Name component following the parameter index and underscore.
-    pub qualifier: Option<&'a str>,
+    pub name: ParameterName<&'a str>,
     /// Declared native unit.
     pub unit: ExpressionUnit,
     /// Exact expression text following the serialized name separator.
@@ -2869,11 +2867,7 @@ pub struct ExpressionDeclarationName<'a> {
     /// Byte offset of the `04` marker within the containing byte range.
     pub offset: usize,
     /// Exact `p<decimal>[_qualifier]` name.
-    pub value: &'a str,
-    /// Decimal parameter identifier following `p`.
-    pub parameter_index: u32,
-    /// Qualified role following the parameter identifier.
-    pub qualifier: Option<&'a str>,
+    pub name: ParameterName<&'a str, u32>,
     /// Independently framed numeric literal in the declaration record.
     pub literal: Option<&'a str>,
 }
@@ -6946,7 +6940,7 @@ pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclaration
         let Ok(value) = std::str::from_utf8(raw) else {
             continue;
         };
-        let Some((parameter_index, qualifier)) = parameter_name_parts(value) else {
+        let Some(name) = ParameterName::<_, u32>::parse(value) else {
             if evaluate_constant_expression(value).is_some() && literal.replace(value).is_some() {
                 multiple_literals = true;
             }
@@ -6954,9 +6948,7 @@ pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclaration
         };
         let next = ExpressionDeclarationName {
             offset: at,
-            value,
-            parameter_index,
-            qualifier,
+            name,
             literal: None,
         };
         if declaration.replace(next).is_some() {
@@ -9679,15 +9671,11 @@ fn numeric_expression_at(
     if !comment.is_empty() && !numeric_expression_comment_is_valid(comment) {
         return None;
     }
-    let (parameter_index, qualifier) = parameter_name_parts(name)
-        .map_or((None, None), |(index, qualifier)| (Some(index), qualifier));
     let value = evaluate_constant_expression(value_text);
     Some(NumericExpression {
         object_id,
         offset: base_offset + relative,
-        name,
-        parameter_index,
-        qualifier,
+        name: ParameterName::new(name),
         unit,
         expression: value_text,
         value,
@@ -9896,28 +9884,6 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
         expect_operand: true,
     }
     .parse()
-}
-
-/// Parse one complete canonical `p<decimal>[_qualifier]` parameter name.
-pub(crate) fn parameter_name_parts(name: &str) -> Option<(u32, Option<&str>)> {
-    let tail = name.strip_prefix('p')?;
-    let digit_count = tail.bytes().take_while(u8::is_ascii_digit).count();
-    if digit_count == 0 {
-        return None;
-    }
-    let index = tail[..digit_count].parse().ok()?;
-    match &tail[digit_count..] {
-        "" => Some((index, None)),
-        suffix => {
-            let qualifier = suffix.strip_prefix('_').filter(|qualifier| {
-                !qualifier.is_empty()
-                    && qualifier
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-            });
-            qualifier.map(|qualifier| (index, Some(qualifier)))
-        }
-    }
 }
 
 #[cfg(test)]
