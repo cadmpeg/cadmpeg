@@ -569,8 +569,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         id: format!("nx:feature-history:input-block#0-7-{slot}"),
         operation_label: label.id.clone(),
         input_slot: slot,
-        object_index: index,
-        raw_object_index: vec![index as u8],
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(index, &[index as u8]).unwrap(),
         data_block: format!("nx:om-data-blocks-2:block#{index}"),
         source_offset: 710 + u64::from(slot),
     };
@@ -927,7 +926,7 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
         .expect("required invariant");
     assert_eq!(inputs.len(), 1);
     assert_eq!(inputs[0].input_slot, 0);
-    assert_eq!(inputs[0].object_index, 1);
+    assert_eq!(inputs[0].object.value(), 1);
     assert!(inputs[0].data_block.ends_with(":block#1"));
     assert_eq!(
         result.ir().model.features[0].source_properties["input_block.0"],
@@ -1172,8 +1171,7 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
         id: id.to_string(),
         operation_label: operation.to_string(),
         input_slot: slot,
-        object_index: 44,
-        raw_object_index: vec![44],
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(44, &[44]).unwrap(),
         data_block: block.to_string(),
         source_offset: 200,
     };
@@ -1313,8 +1311,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         id: format!("input-{operation}"),
         operation_label: operation.to_string(),
         input_slot: 0,
-        object_index: 1,
-        raw_object_index: vec![1],
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(1, &[1]).unwrap(),
         data_block: data_block.to_string(),
         source_offset: 0,
     };
@@ -1522,8 +1519,7 @@ fn feature_input_identity_groups_require_distinct_operations_and_preserve_order(
         id: id.to_string(),
         operation_label: operation.to_string(),
         input_slot: slot,
-        object_index: 7,
-        raw_object_index: vec![7],
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7]).unwrap(),
         data_block: block.to_string(),
         source_offset: offset,
     };
@@ -1579,8 +1575,7 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
         id: "input#0000000001".into(),
         operation_label: "operation#1".into(),
         input_slot: 2,
-        object_index: 7,
-        raw_object_index: vec![7],
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7]).unwrap(),
         data_block: "block#4".into(),
         source_offset: 10,
     };
@@ -1630,8 +1625,7 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
         id: "input#0000000001".into(),
         operation_label: "operation#1".into(),
         input_slot: 2,
-        object_index: 4,
-        raw_object_index: vec![4],
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(4, &[4]).unwrap(),
         data_block: "block#4".into(),
         source_offset: 10,
     };
@@ -1718,8 +1712,7 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
         id: "input#0000000001".into(),
         operation_label: "operation#1".into(),
         input_slot: 2,
-        object_index: 4,
-        raw_object_index: vec![4],
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(4, &[4]).unwrap(),
         data_block: "block#4".into(),
         source_offset: 10,
     };

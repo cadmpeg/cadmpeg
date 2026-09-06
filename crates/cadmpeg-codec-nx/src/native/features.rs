@@ -927,10 +927,9 @@ pub struct FeatureInputBlock {
     pub operation_label: String,
     /// Zero-based operation-header input slot.
     pub input_slot: u8,
-    /// Object index serialized in that slot.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    /// Required reference with its exact source encoding.
+    #[serde(flatten)]
+    pub object: crate::om::reference_index::FeatureReferenceToken,
     /// Target in the native `data_blocks` arena.
     pub data_block: String,
     /// Absolute file offset of the object-index token.
@@ -7796,8 +7795,10 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
                 let Some(end) = token_end.checked_sub(record_area_offset) else {
                     continue;
                 };
-                let Some(raw_object_index) = record_area.bytes.get(start..end).map(<[u8]>::to_vec)
-                else {
+                let Some(raw_object_index) = record_area.bytes.get(start..end) else {
+                    continue;
+                };
+                let Ok(object) = crate::om::reference_index::FeatureReferenceToken::from_wire(object_index, raw_object_index) else {
                     continue;
                 };
                 let operation_label = format!(
@@ -7809,8 +7810,7 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
                     ),
                     operation_label,
                     input_slot: input_slot as u8,
-                    object_index,
-                    raw_object_index,
+                    object,
                     data_block,
                     source_offset: entry_offset + label.object_index_offsets[input_slot] as u64,
                 });

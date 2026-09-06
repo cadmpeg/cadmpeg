@@ -1357,8 +1357,7 @@ mod tests {
             id: "input#3".to_string(),
             operation_label: "operation#delete".to_string(),
             input_slot: 0,
-            object_index: 3,
-            raw_object_index: vec![3],
+            object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
             data_block: "block#3".to_string(),
             source_offset: 0,
         }];

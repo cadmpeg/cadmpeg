@@ -64,7 +64,8 @@ impl ReferenceIndexToken {
 }
 
 /// Required index restricted to the direct/compact/word feature grammar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "ReferenceIndexWire", into = "ReferenceIndexWire")]
 pub(crate) struct FeatureReferenceToken(ReferenceIndexToken);
 
 impl FeatureReferenceToken {
@@ -73,15 +74,29 @@ impl FeatureReferenceToken {
     }
 
     pub(crate) fn from_wire(value: u32, raw: &[u8]) -> Result<Self, &'static str> {
-        let token = Self::read(raw).ok_or("invalid feature reference token")?;
+        let token = Self::read(raw).ok_or("raw_object_index: invalid feature reference token")?;
         if token.raw().len() != raw.len() || token.value() != value {
-            return Err("feature index/raw token: value or width mismatch");
+            return Err("object_index/raw_object_index: value or width mismatch");
         }
         Ok(token)
     }
 
     pub(crate) fn value(self) -> u32 { self.0.value() }
     pub(crate) fn raw(&self) -> &[u8] { self.0.raw() }
+}
+
+impl From<FeatureReferenceToken> for ReferenceIndexWire {
+    fn from(token: FeatureReferenceToken) -> Self {
+        Self { object_index: token.value(), raw_object_index: token.raw().to_vec() }
+    }
+}
+
+impl TryFrom<ReferenceIndexWire> for FeatureReferenceToken {
+    type Error = &'static str;
+
+    fn try_from(wire: ReferenceIndexWire) -> Result<Self, Self::Error> {
+        Self::from_wire(wire.object_index, &wire.raw_object_index)
+    }
 }
 
 /// Feature reference encoded with the shortest permitted token width.
@@ -98,7 +113,7 @@ impl CanonicalFeatureReferenceToken {
     pub(crate) fn from_wire(value: u32, raw: &[u8]) -> Result<Self, &'static str> {
         let token = Self::read(raw).ok_or("invalid canonical feature reference token")?;
         if token.raw().len() != raw.len() || token.value() != value {
-            return Err("feature index/raw token: value or width mismatch");
+            return Err("object_index/raw_object_index: value or width mismatch");
         }
         Ok(token)
     }

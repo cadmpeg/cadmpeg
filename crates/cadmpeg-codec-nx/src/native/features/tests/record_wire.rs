@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::native::features::FeatureInputBlock;
 use super::{FeatureBodyReference, FeatureOperationBodyWrite, FeatureOperationObjectReference};
 
 #[test]
@@ -461,5 +462,24 @@ fn direct_reference_wire_rejects_tag_and_position_drift() {
         let mut invalid = wire.clone();
         invalid[field] = value;
         assert!(serde_json::from_value::<FeatureOperationObjectReference>(invalid).unwrap_err().to_string().contains(field));
+    }
+}
+
+#[test]
+fn input_block_reference_preserves_header_encodings_and_rejects_invalid_pairs() {
+    for (value, raw) in [(0, "[0]"), (0, "[128,0]"), (0, "[144,0,0]"), (65535, "[144,255,255]")] {
+        let wire = format!(r#"{{"id":"input","operation_label":"operation","input_slot":0,"object_index":{value},"raw_object_index":{raw},"data_block":"block","source_offset":10}}"#);
+        let record: FeatureInputBlock = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        assert_eq!(record.object.value(), value);
+        for raw in [serde_json::json!([]), serde_json::json!([255]), serde_json::json!([144,0]),
+            serde_json::json!([240,0]), serde_json::json!([241,1,0]), serde_json::json!([0,0])] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+            invalid["raw_object_index"] = raw;
+            assert!(serde_json::from_value::<FeatureInputBlock>(invalid).unwrap_err().to_string().contains("raw_object_index"));
+        }
+        let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+        invalid["object_index"] = serde_json::json!(value + 1);
+        assert!(serde_json::from_value::<FeatureInputBlock>(invalid).unwrap_err().to_string().contains("object_index"));
     }
 }

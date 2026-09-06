@@ -198,8 +198,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         id: "input#0".into(),
         operation_label: reference.operation_label.clone(),
         input_slot: 0,
-        object_index: 3,
-        raw_object_index: vec![3],
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
         data_block: "block#3".into(),
         source_offset: 80,
     };
@@ -337,8 +336,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         id: "input#1".into(),
         operation_label: reference.operation_label.clone(),
         input_slot: 1,
-        object_index: 4,
-        raw_object_index: vec![4],
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(4, &[4]).unwrap(),
         data_block: "block#4".into(),
         source_offset: 81,
     };
@@ -448,8 +446,7 @@ fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
         id: "input#0".into(),
         operation_label: reference.operation_label.clone(),
         input_slot: 0,
-        object_index: 3,
-        raw_object_index: vec![3],
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
         data_block: "block#3".into(),
         source_offset: 80,
     };
@@ -499,8 +496,7 @@ fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
         id: format!("input#{slot}"),
         operation_label: reference.operation_label.clone(),
         input_slot: slot,
-        object_index,
-        raw_object_index: vec![object_index as u8],
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(object_index, &[object_index as u8]).unwrap(),
         data_block: data_block.into(),
         source_offset: 80 + u64::from(slot),
     };
@@ -556,8 +552,7 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
         id: "input#0".into(),
         operation_label: "operation#0".into(),
         input_slot: 0,
-        object_index: 3,
-        raw_object_index: vec![3],
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
         data_block: "nx:om-data-blocks-2:block#3".into(),
         source_offset: 80,
     };

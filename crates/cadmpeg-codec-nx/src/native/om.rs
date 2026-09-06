@@ -6506,8 +6506,7 @@ mod tests {
             id: "nx:feature-history:input-block#0-7-0".to_string(),
             operation_label: "nx:feature-history:operation-label#0-7".to_string(),
             input_slot: 0,
-            object_index: 45,
-            raw_object_index: vec![45],
+            object: crate::om::reference_index::FeatureReferenceToken::from_wire(45, &[45]).unwrap(),
             data_block: "nx:om-data-blocks-2:block#45".to_string(),
             source_offset: 700,
         };
