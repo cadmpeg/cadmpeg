@@ -131,14 +131,14 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].selector, [0x01, 0x02]);
     assert_eq!(groups[0].rows.len(), 1);
-    assert_eq!(groups[0].rows[0].value.marker(), 0xc0);
-    assert_eq!(groups[0].rows[0].value.value(), 0x0001_0203);
-    assert_eq!(groups[0].rows[0].schema_id.value(), 0x310);
-    assert_eq!(groups[0].rows[0].state_ordinal.value(), 2);
+    assert_eq!(groups[0].rows[0].value().marker(), 0xc0);
+    assert_eq!(groups[0].rows[0].value().value(), 0x0001_0203);
+    assert_eq!(groups[0].rows[0].schema().value(), 0x310);
+    assert_eq!(groups[0].rows[0].ordinal().value(), 2);
     assert_eq!(groups[1].selector, [0x05, 0x06]);
-    assert_eq!(groups[1].rows[0].value.marker(), 0xa0);
-    assert_eq!(groups[1].rows[0].value.value(), 0x0102);
-    assert_eq!(groups[1].rows[0].state_ordinal.value(), 3);
+    assert_eq!(groups[1].rows[0].value().marker(), 0xa0);
+    assert_eq!(groups[1].rows[0].value().value(), 0x0102);
+    assert_eq!(groups[1].rows[0].ordinal().value(), 3);
     assert!(groups[1].source_offset > groups[0].source_offset);
 
     let result = NxCodec

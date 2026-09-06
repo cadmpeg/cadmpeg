@@ -294,10 +294,10 @@ fn operation_state_journal_decodes_timestamp_value_schema_and_ordinal() {
     assert_eq!(groups[0].selector, [0x01, 0x02]);
     assert_eq!(groups[0].rows.len(), 1);
     let row = groups[0].rows[0];
-    assert_eq!(row.timestamp, 0x6553_4d20);
-    assert_eq!(row.value.value(), 0x0001_0203);
-    assert_eq!(Some(row.schema_id.value()), Some(0x310));
-    assert_eq!(Some(row.ordinal.value()), Some(0x2a));
+    assert_eq!(row.timestamp(), 0x6553_4d20);
+    assert_eq!(row.value().value(), 0x0001_0203);
+    assert_eq!(Some(row.schema().value()), Some(0x310));
+    assert_eq!(Some(row.ordinal().value()), Some(0x2a));
 }
 
 #[test]
@@ -316,7 +316,7 @@ fn operation_state_journal_start_accepts_count_token_runs() {
         super::operation_state_journal_groups_before_boundary(&bytes, start, bytes.len(), 0)
             .expect("journal groups");
     assert_eq!(groups.len(), 1);
-    assert_eq!(Some(groups[0].rows[0].ordinal.value()), Some(0x2a));
+    assert_eq!(Some(groups[0].rows[0].ordinal().value()), Some(0x2a));
 }
 
 #[test]

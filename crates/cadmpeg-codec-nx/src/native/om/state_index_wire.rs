@@ -5,7 +5,7 @@ use serde::{Serialize, Deserialize};
 use serde::ser::SerializeSeq;
 use crate::om::state_slots::StateSlots;
 use crate::om::state_index::StateIndexToken;
-use super::{OmOperationStateMessageBody, OmAuditTrailRow, OmOperationStateJournalRow, OmOperationStateCounter, OmOperationStateStatus, OmRollForwardStateRow, OmOperationStateStatusPayload};
+use super::{OmOperationStateMessageBody, OmAuditTrailRow, OmOperationStateCounter, OmOperationStateStatus, OmRollForwardStateRow, OmOperationStateStatusPayload};
 
 #[derive(Serialize, Deserialize)]
 pub(super) struct OmAuditTrailRowWire {
@@ -58,48 +58,6 @@ impl TryFrom<OmAuditTrailRowWire> for OmAuditTrailRow {
             .ok_or("source_offset: audit extent exceeds u64")?;
         if wire.end_offset != value.end_offset() { return Err("end_offset: disagrees with the audit frame extent".to_string()); }
         Ok(value)
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub(super) struct OmOperationStateJournalRowWire {
-    timestamp: u32,
-    #[serde(flatten)]
-    value: crate::om::state_tagged_value::StateTaggedValue,
-    schema_id: u32,
-    raw_schema_id: Vec<u8>,
-    state_ordinal: u32,
-    raw_state_ordinal: Vec<u8>,
-    source_offset: u64,
-    end_offset: u64,
-}
-
-impl From<OmOperationStateJournalRow> for OmOperationStateJournalRowWire {
-    fn from(value: OmOperationStateJournalRow) -> Self {
-        Self {
-            timestamp: value.timestamp,
-            value: value.value,
-            schema_id: value.schema_id.value(),
-            raw_schema_id: value.schema_id.raw().to_vec(),
-            state_ordinal: value.state_ordinal.value(),
-            raw_state_ordinal: value.state_ordinal.raw().to_vec(),
-            source_offset: value.source_offset,
-            end_offset: value.end_offset,
-        }
-    }
-}
-
-impl TryFrom<OmOperationStateJournalRowWire> for OmOperationStateJournalRow {
-    type Error = String;
-    fn try_from(wire: OmOperationStateJournalRowWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            timestamp: wire.timestamp,
-            value: wire.value,
-            schema_id: StateIndexToken::from_wire(wire.schema_id, &wire.raw_schema_id).map_err(|error| format!("schema_id/raw_schema_id: {error}"))?,
-            state_ordinal: StateIndexToken::from_wire(wire.state_ordinal, &wire.raw_state_ordinal).map_err(|error| format!("state_ordinal/raw_state_ordinal: {error}"))?,
-            source_offset: wire.source_offset,
-            end_offset: wire.end_offset,
-        })
     }
 }
 
@@ -430,7 +388,7 @@ mod tests {
     fn state_index_records_preserve_scalar_and_token_fields() {
         preserves_wire::<OmAuditTrailRow>(r#"{"id":"audit","section_link":"section","ordinal":2,"raw_ordinal":[2],"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"raw":[4,2,19,224,0,0,0,0,160,0,0],"source_entry":"om","source_offset":0,"end_offset":11}"#);
         preserves_wire::<OmAuditTrailRow>(r#"{"id":"audit","section_link":"section","ordinal":2,"raw_ordinal":[2],"frame_selector":7,"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"raw":[4,2,19,4,5,7,0,224,0,0,0,0,160,0,0],"source_entry":"om","source_offset":0,"end_offset":15}"#);
-        preserves_wire::<OmOperationStateJournalRow>(r#"{"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"schema_id":1,"raw_schema_id":[128,1],"state_ordinal":2,"raw_state_ordinal":[241,0,2],"source_offset":0,"end_offset":14}"#);
+        preserves_wire::<crate::om::state_journal::JournalRow>(r#"{"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"schema_id":1,"raw_schema_id":[128,1],"state_ordinal":2,"raw_state_ordinal":[241,0,2],"source_offset":0,"end_offset":14}"#);
         preserves_wire::<OmOperationStateCounter>(r#"{"id":"counter","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":[0],"introduced_state":0,"modified_state":0,"object_index_source_offset":2,"source_entry":"om","source_offset":0}"#);
         preserves_wire::<OmOperationStateStatus>(r#"{"id":"status","section_link":"section","ordinal":0,"status_code":65,"raw_status_code":[65],"object_index":1,"raw_object_index":[1],"payload":"Plain","source_entry":"om","source_offset":0,"end_offset":3}"#);
         preserves_wire::<OmOperationStateStatusPayload>(r#"{"Linked":{"link_code":75,"object_index":1,"raw_object_index":[1]}}"#);

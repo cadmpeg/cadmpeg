@@ -99,25 +99,6 @@ impl OmAuditTrailRow {
     pub fn end_offset(&self) -> u64 { self.source_offset + self.record.byte_len() as u64 }
 }
 
-/// One row from the feature-history state journal.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "state_index_wire::OmOperationStateJournalRowWire", into = "state_index_wire::OmOperationStateJournalRowWire")]
-pub struct OmOperationStateJournalRow {
-    /// Big-endian Unix timestamp stored by the journal.
-    pub timestamp: u32,
-    /// Complete tagged integer token.
-    #[serde(flatten)]
-    pub value: crate::om::state_tagged_value::StateTaggedValue,
-    /// Journal schema identifier.
-    pub schema_id: StateIndexToken,
-    /// Monotone state-counter ordinal.
-    pub state_ordinal: StateIndexToken,
-    /// Absolute file offset of the row's `e0` marker.
-    pub source_offset: u64,
-    /// Absolute exclusive end offset after the `13` terminator.
-    pub end_offset: u64,
-}
-
 /// One anchored state-journal group from a feature-history section.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OmOperationStateJournalGroup {
@@ -130,7 +111,7 @@ pub struct OmOperationStateJournalGroup {
     /// Exact two-byte group selector.
     pub selector: [u8; 2],
     /// Ordered journal rows.
-    pub rows: Vec<OmOperationStateJournalRow>,
+    pub rows: Vec<crate::om::state_journal::JournalRow>,
     /// Directory entry containing the feature-history section.
     pub source_entry: String,
     /// Absolute file offset of the `04` group opener.
@@ -582,20 +563,9 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
                 .enumerate()
                 .filter_map(move |(ordinal, group)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let rows = group
-                        .rows
-                        .into_iter()
-                        .map(|row| {
-                            OmOperationStateJournalRow {
-                                timestamp: row.timestamp,
-                                value: row.value,
-                                schema_id: row.schema_id,
-                                state_ordinal: row.ordinal,
-                                source_offset: entry_offset + row.span.offset() as u64,
-                                end_offset: entry_offset + row.span.end_offset() as u64,
-                            }
-                        })
-                        .collect();
+                    let rows = group.rows.into_iter()
+                        .map(|row| row.into_absolute(entry_offset))
+                        .collect::<Option<Vec<_>>>()?;
                     Some(OmOperationStateJournalGroup {
                         id: format!(
                             "nx:feature-history:operation-state-journal-group#{section_key}-{ordinal:010}"

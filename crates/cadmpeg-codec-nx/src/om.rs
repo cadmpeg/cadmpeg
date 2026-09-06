@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Frame NX object-model entities using external boundary and identity arrays.
 
+pub(crate) mod state_journal;
+use state_journal::JournalRow;
 pub(crate) mod state_counter;
 use state_counter::StateCounterMap;
 pub(crate) mod column_row;
@@ -747,21 +749,6 @@ pub struct OperationStateGroupTable<'a> {
     pub trailing_bytes: &'a [u8],
 }
 
-/// One state-journal row preceding feature operation records.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationStateJournalRow {
-    /// Checked source position within its record area.
-    pub span: SourceSpan,
-    /// Big-endian Unix timestamp.
-    pub timestamp: u32,
-    /// Tagged schema value stored by the journal.
-    pub value: StateTaggedValue,
-    /// Schema identifier varint.
-    pub schema_id: StateIndexToken,
-    /// Monotone state ordinal varint.
-    pub ordinal: StateIndexToken,
-}
-
 /// One state-journal group.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationStateJournalGroup {
@@ -770,7 +757,7 @@ pub struct OperationStateJournalGroup {
     /// Two opener selector bytes.
     pub selector: [u8; 2],
     /// Journal rows in serialized order.
-    pub rows: Vec<OperationStateJournalRow>,
+    pub rows: Vec<JournalRow<usize>>,
 }
 
 /// One length-framed UTF-8 string in a bounded operation payload.
@@ -4923,35 +4910,6 @@ pub fn operation_state_group_table(
     })
 }
 
-fn operation_state_journal_row_at(
-    bytes: &[u8],
-    at: usize,
-    end: usize,
-    base_offset: usize,
-) -> Option<OperationStateJournalRow> {
-    if bytes.get(at) != Some(&0xe0) {
-        return None;
-    }
-    let timestamp = View::u32_be_at(bytes, at + 1)?;
-    let value = StateTaggedValue::read_at(bytes, at + 5)?;
-    let schema_at = at.checked_add(5 + value.raw().len())?;
-    let schema_id = OperationStateIndex::read_at(bytes, schema_at, base_offset)?.token()?;
-    let ordinal_at = schema_at.checked_add(schema_id.raw().len())?;
-    let ordinal = OperationStateIndex::read_at(bytes, ordinal_at, base_offset)?.token()?;
-    let terminator_at = ordinal_at.checked_add(ordinal.raw().len())?;
-    if terminator_at >= end || bytes.get(terminator_at) != Some(&0x13) {
-        return None;
-    }
-    let row_end = terminator_at + 1;
-    Some(OperationStateJournalRow {
-        span: SourceSpan::new(base_offset, at, row_end)?,
-        timestamp,
-        value,
-        schema_id,
-        ordinal,
-    })
-}
-
 fn audit_trail_row_at(
     bytes: &[u8],
     at: usize,
@@ -5044,10 +5002,10 @@ fn operation_state_journal_group_at(
     }
     let mut rows = Vec::new();
     while cursor < end {
-        let Some(row) = operation_state_journal_row_at(bytes, cursor, end, base_offset) else {
+        let Some(row) = JournalRow::read(bytes, cursor, end, base_offset) else {
             break;
         };
-        cursor = row.span.local_end();
+        cursor = cursor.checked_add(row.byte_len())?;
         rows.push(row);
     }
     (!rows.is_empty()).then_some(OperationStateJournalGroup {
@@ -5116,7 +5074,7 @@ fn operation_state_journal_groups_before_boundary(
             continue;
         };
         for row in &group.rows {
-            let ordinal = row.ordinal.value();
+            let ordinal = row.ordinal().value();
             if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
                 return None;
             }
