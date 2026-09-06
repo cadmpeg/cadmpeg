@@ -21,7 +21,8 @@ use topology_attribute_kind::TopologyAttributeKind;
 mod entity51_wire;
 use entity51_wire::Entity51Wire;
 use crate::parasolid::entity_references::{EntityReferences, FieldPosition};
-use crate::parasolid::finite_values::FiniteValues;
+use crate::parasolid::counted_values::CountedValues;
+use crate::parasolid::unicode_value::UnicodeValue;
 use crate::parasolid::printable_string::PrintableString;
 pub(crate) mod named_fields;
 use named_fields::NamedField;
@@ -1885,7 +1886,7 @@ pub struct ParasolidEntity52IntegerRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered big-endian unsigned values.
-    pub values: Vec<u32>,
+    pub values: CountedValues<u32>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1902,7 +1903,7 @@ pub struct ParasolidEntity53DoubleRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered finite big-endian binary64 values.
-    pub values: FiniteValues<f64>,
+    pub values: CountedValues<f64>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1933,7 +1934,7 @@ pub struct ParasolidEntityVectorRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered finite xyz values.
-    pub values: FiniteValues<[f64; 3]>,
+    pub values: CountedValues<[f64; 3]>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1950,7 +1951,7 @@ pub struct ParasolidEntity57AxisRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered axes, each retaining its two serialized xyz vectors.
-    pub values: FiniteValues<[[f64; 3]; 2]>,
+    pub values: CountedValues<[[f64; 3]; 2]>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1967,7 +1968,7 @@ pub struct ParasolidEntity58TagRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Ordered exact tag values.
-    pub values: Vec<u32>,
+    pub values: CountedValues<u32>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1988,7 +1989,7 @@ pub struct ParasolidEntity62UnicodeRecord {
     /// Stream-local record identity.
     pub xmt: u32,
     /// Validated Unicode scalar string.
-    pub value: String,
+    pub value: UnicodeValue,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -2001,14 +2002,14 @@ struct ParasolidEntity62UnicodeRecordWire {
     stream_ordinal: u32,
     xmt: u32,
     code_units: Vec<u16>,
-    value: String,
+    value: UnicodeValue,
     byte_len: u64,
     inflated_offset: u64,
 }
 
 impl From<ParasolidEntity62UnicodeRecord> for ParasolidEntity62UnicodeRecordWire {
     fn from(value: ParasolidEntity62UnicodeRecord) -> Self {
-        let code_units = value.value.encode_utf16().collect();
+        let code_units = value.value.as_str().encode_utf16().collect();
         Self {
             id: value.id,
             stream_ordinal: value.stream_ordinal,
@@ -2026,6 +2027,7 @@ impl TryFrom<ParasolidEntity62UnicodeRecordWire> for ParasolidEntity62UnicodeRec
     fn try_from(wire: ParasolidEntity62UnicodeRecordWire) -> Result<Self, Self::Error> {
         if !wire
             .value
+            .as_str()
             .encode_utf16()
             .eq(wire.code_units.iter().copied())
         {
@@ -3233,7 +3235,7 @@ mod tests {
         let records = super::parasolid_entity_value_records(&streams, &events.records);
 
         assert_eq!(records.integers.len(), 1);
-        assert_eq!(records.integers[0].values.len(), 4);
+        assert_eq!(records.integers[0].values.as_slice().len(), 4);
         assert!(records.doubles.is_empty());
     }
 
@@ -4033,7 +4035,7 @@ mod tests {
             stream_ordinal: 2,
             kind: ParasolidVectorValueKind::Points,
             xmt: 12,
-            values: crate::parasolid::finite_values::FiniteValues::new(vec![[1.0, 2.0, 3.0]]).unwrap(),
+            values: crate::parasolid::counted_values::CountedValues::new(vec![[1.0, 2.0, 3.0]]).unwrap(),
             byte_len: 36,
             inflated_offset: 80,
         };
@@ -4053,7 +4055,7 @@ mod tests {
             id: "tag".into(),
             stream_ordinal: 2,
             xmt: 12,
-            values: vec![7],
+            values: crate::parasolid::counted_values::CountedValues::new(vec![7]).unwrap(),
             byte_len: 16,
             inflated_offset: 90,
         };
@@ -4315,7 +4317,7 @@ mod tests {
             id: "unicode-29".into(),
             stream_ordinal: 3,
             xmt: 29,
-            value: "μ".into(),
+            value: crate::parasolid::unicode_value::UnicodeValue::new("μ".into()).unwrap(),
             byte_len: 12,
             inflated_offset: 29,
         };
@@ -4692,7 +4694,7 @@ mod tests {
             id: "integers".into(),
             stream_ordinal: 3,
             xmt: 70,
-            values: vec![1],
+            values: crate::parasolid::counted_values::CountedValues::new(vec![1]).unwrap(),
             byte_len: 12,
             inflated_offset: 300,
         }];

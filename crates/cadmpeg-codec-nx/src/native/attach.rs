@@ -4677,6 +4677,7 @@ fn attach_parasolid_topology_numeric_attributes(
                     (
                         record
                             .values
+                            .as_slice()
                             .iter()
                             .map(|value| AttributeValue::Integer(i64::from(*value)))
                             .collect(),
@@ -4846,6 +4847,7 @@ fn attach_parasolid_topology_structured_attributes(
                     (
                         record
                             .values
+                            .as_slice()
                             .iter()
                             .map(|value| AttributeValue::Integer(i64::from(*value)))
                             .collect(),
@@ -4860,7 +4862,7 @@ fn attach_parasolid_topology_structured_attributes(
                         continue;
                     };
                     (
-                        vec![AttributeValue::String(record.value.clone())],
+                        vec![AttributeValue::String(record.value.as_str().to_owned())],
                         record.inflated_offset,
                         "ENTITY_62_UNICODE_ATTRIBUTE",
                         "98_unicode",

@@ -192,7 +192,7 @@ fn parasolid_entity_52_integers_require_complete_counted_values() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].offset, 1);
     assert_eq!(records[0].xmt, 17);
-    assert_eq!(records[0].values, [3, u32::MAX]);
+    assert_eq!(records[0].values.as_slice(), [3, u32::MAX]);
     assert_eq!(records[0].byte_len, 16);
     assert_eq!(
         crate::parasolid::entity_52_integer_record_at(&bytes, 1),
@@ -374,12 +374,12 @@ fn parasolid_entity_value_records_dispatches_all_value_families() {
     assert_eq!(records.tags.len(), 1);
     assert_eq!(records.directions.len(), 1);
     assert_eq!(records.unicode.len(), 1);
-    assert_eq!(records.integers[0].values, [3, u32::MAX]);
+    assert_eq!(records.integers[0].values.as_slice(), [3, u32::MAX]);
     assert_eq!(records.doubles[0].values.as_slice(), [0.25]);
     assert_eq!(records.strings[0].value.as_str(), "label");
     assert_eq!(records.axes[0].values.as_slice().len(), 1);
-    assert_eq!(records.tags[0].values, [17]);
-    assert_eq!(records.unicode[0].value, "NX");
+    assert_eq!(records.tags[0].values.as_slice(), [17]);
+    assert_eq!(records.unicode[0].value.as_str(), "NX");
 }
 
 #[test]
@@ -395,7 +395,7 @@ fn parasolid_value_scan_does_not_admit_nested_counted_candidates() {
     let records = crate::parasolid::entity_value_records(&outer);
     assert_eq!(records.integers.len(), 1);
     assert_eq!(records.integers[0].xmt, 10);
-    assert_eq!(records.integers[0].values.len(), 4);
+    assert_eq!(records.integers[0].values.as_slice().len(), 4);
     assert!(records.doubles.is_empty());
 }
 
@@ -422,7 +422,7 @@ fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
     let records = crate::parasolid::entity_value_records(&tags).tags;
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].xmt, 24);
-    assert_eq!(records[0].values, [7, u32::MAX]);
+    assert_eq!(records[0].values.as_slice(), [7, u32::MAX]);
     assert!(
         crate::parasolid::entity_value_records(&tags[..tags.len() - 1])
             .tags
@@ -440,10 +440,10 @@ fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].xmt, 32_768);
     assert_eq!(
-        records[0].value.encode_utf16().collect::<Vec<_>>(),
+        records[0].value.as_str().encode_utf16().collect::<Vec<_>>(),
         code_units
     );
-    assert_eq!(records[0].value, "NX🚀");
+    assert_eq!(records[0].value.as_str(), "NX🚀");
     assert!(
         crate::parasolid::entity_value_records(&unicode[..unicode.len() - 1])
             .unicode
@@ -767,4 +767,12 @@ fn legal_owner_flags_carry_binary_values_and_exact_layout_length() {
     assert_eq!(&flags.padded()[14..], &[0; 2]);
     assert!(LegalOwnerFlags::try_from(&[0; 15][..]).is_err());
     assert!(LegalOwnerFlags::try_from(&[2; 16][..]).is_err());
+}
+
+#[test]
+fn counted_value_identities_require_nonempty_payloads() {
+    for tag in [0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x62] {
+        let bytes = [0, tag, 0, 0, 0, 0, 0, 17, 0];
+        assert!(crate::parasolid::entity_value_record_identity_at(&bytes, 0).is_none());
+    }
 }
