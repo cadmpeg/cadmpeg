@@ -20,7 +20,8 @@ use column_index::ColumnIndexRows;
 
 use crate::native::segments::segment_om_links;
 use crate::om::parameter_name::ParameterName;
-use crate::om::{IndexedStore, OperationStateGroupCount, OperationStateGroupOpener};
+use crate::om::IndexedStore;
+use crate::om::state_group::{OperationStateGroupCount, OperationStateGroupOpener, StateGroupMembers};
 
 /// Semantic family declared by a linked OM section's class registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -200,10 +201,8 @@ pub struct OmRollForwardStateGroup {
     pub ordinal: u32,
     /// Exact two-byte group opener.
     pub opener: OperationStateGroupOpener,
-    /// Empty or explicitly counted header.
-    pub count: OperationStateGroupCount,
-    /// Ordered typed rows in the group.
-    pub rows: Vec<OmRollForwardStateRow>,
+    /// Ordered typed rows with their exact count-header form.
+    pub members: StateGroupMembers<OmRollForwardStateRow>,
     /// Exact bytes between the final group and the counter-map boundary.
     pub table_trailing_bytes: Vec<u8>,
     /// Directory entry containing the feature-history section.
@@ -244,12 +243,12 @@ impl From<OmRollForwardStateGroup> for OmRollForwardStateGroupWire {
     fn from(value: OmRollForwardStateGroup) -> Self {
         Self {
             opener: value.opener.bytes(),
-            count_prefix: value.count.prefix(),
-            declared_count: value.count.declared_count(),
+            count_prefix: value.members.count().prefix(),
+            declared_count: value.members.count().declared_count(),
             id: value.id,
             section_link: value.section_link,
             ordinal: value.ordinal,
-            rows: value.rows,
+            rows: value.members.into_rows(),
             table_trailing_bytes: value.table_trailing_bytes,
             source_entry: value.source_entry,
             source_offset: value.source_offset,
@@ -268,11 +267,10 @@ impl TryFrom<OmRollForwardStateGroupWire> for OmRollForwardStateGroup {
         };
         Ok(Self {
             opener: OperationStateGroupOpener::try_from(wire.opener)?,
-            count,
             id: wire.id,
             section_link: wire.section_link,
             ordinal: wire.ordinal,
-            rows: wire.rows,
+            members: StateGroupMembers::new(count, wire.rows)?,
             table_trailing_bytes: wire.table_trailing_bytes,
             source_entry: wire.source_entry,
             source_offset: wire.source_offset,
@@ -672,38 +670,33 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                 .enumerate()
                 .filter_map(move |(ordinal, group)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let rows = group
-                        .rows
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(row_ordinal, row)| {
-                            let ordinal = u32::try_from(row_ordinal).ok()?;
+                    let members = group.members.map_rows(|ordinal, row| {
+                            let ordinal = u32::from(ordinal);
                             match row {
                                 crate::om::OperationStateGroupRow::List {
                                     offset,
                                     object_index,
                                     position,
-                                } => Some(OmRollForwardStateRow::List {
+                                } => OmRollForwardStateRow::List {
                                     ordinal,
                                     object_index: object_index.token(),
                                     position: position.token(),
                                     source_offset: entry_offset + offset as u64,
-                                }),
+                                },
                                 crate::om::OperationStateGroupRow::Pair {
                                     offset,
                                     tag,
                                     first,
                                     second,
-                                } => Some(OmRollForwardStateRow::Pair {
+                                } => OmRollForwardStateRow::Pair {
                                     ordinal,
                                     tag,
                                     first: first.token(),
                                     second: second.token(),
                                     source_offset: entry_offset + offset as u64,
-                                }),
+                                },
                             }
-                        })
-                        .collect();
+                        });
                     Some(OmRollForwardStateGroup {
                         id: format!(
                             "nx:feature-history:roll-forward-state-group#{section_key}-{ordinal:010}"
@@ -711,8 +704,7 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                         section_link: link.id.clone(),
                         ordinal,
                         opener: group.opener,
-                        count: group.count,
-                        rows,
+                        members,
                         table_trailing_bytes: table.trailing_bytes.to_vec(),
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + group.offset as u64,

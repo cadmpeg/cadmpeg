@@ -27,6 +27,8 @@ use fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 pub(crate) mod nonempty;
 pub(crate) mod state_tagged_value;
 pub(crate) mod state_index;
+pub(crate) mod state_group;
+use state_group::{OperationStateGroupCount, OperationStateGroupOpener, StateGroupMembers};
 use state_index::{OperationStateIndex, NonNullStateIndex};
 pub(crate) mod state_message_text;
 use state_message_text::StateMessageText;
@@ -1624,60 +1626,6 @@ pub enum OperationStateGroupRow {
     },
 }
 
-/// Two admitted group opener encodings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStateGroupOpener {
-    /// `01 00` opener.
-    Form00,
-    /// `01 01` opener.
-    Form01,
-}
-
-impl OperationStateGroupOpener {
-    pub fn bytes(self) -> [u8; 2] {
-        match self {
-            Self::Form00 => [1, 0],
-            Self::Form01 => [1, 1],
-        }
-    }
-}
-
-impl TryFrom<[u8; 2]> for OperationStateGroupOpener {
-    type Error = &'static str;
-    fn try_from(bytes: [u8; 2]) -> Result<Self, Self::Error> {
-        match bytes {
-            [1, 0] => Ok(Self::Form00),
-            [1, 1] => Ok(Self::Form01),
-            _ => Err("invalid operation-state group opener"),
-        }
-    }
-}
-
-/// Empty or explicitly counted operation-state group header.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStateGroupCount {
-    /// Single zero byte, without an explicit count.
-    Empty,
-    /// `01 count`, including the implicit owner slot.
-    Counted(u8),
-}
-
-impl OperationStateGroupCount {
-    pub fn prefix(self) -> Option<u8> {
-        match self {
-            Self::Empty => None,
-            Self::Counted(_) => Some(1),
-        }
-    }
-
-    pub fn declared_count(self) -> u8 {
-        match self {
-            Self::Empty => 0,
-            Self::Counted(count) => count,
-        }
-    }
-}
-
 /// One counted `m_rollForwardStates` group.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationStateGroup {
@@ -1685,10 +1633,8 @@ pub struct OperationStateGroup {
     pub offset: usize,
     /// Admitted two-byte group opener.
     pub opener: OperationStateGroupOpener,
-    /// Empty or explicitly counted header.
-    pub count: OperationStateGroupCount,
-    /// Ordered list or pair rows.
-    pub rows: Vec<OperationStateGroupRow>,
+    /// Ordered rows with their exact count-header form.
+    pub members: StateGroupMembers<OperationStateGroupRow>,
     /// Exclusive absolute end offset after the final group row.
     pub end_offset: usize,
 }
@@ -7055,8 +7001,7 @@ fn operation_state_group_at(
     (cursor <= end).then_some(OperationStateGroup {
         offset: base_offset.checked_add(at)?,
         opener,
-        count,
-        rows,
+        members: StateGroupMembers::new(count, rows).ok()?,
         end_offset: base_offset.checked_add(cursor)?,
     })
 }

@@ -264,20 +264,20 @@ fn operation_state_group_table_decodes_list_pair_and_empty_groups() {
         super::operation_state_group_table(&bytes, 0, bytes.len(), 900).expect("group table");
     assert_eq!(table.groups.len(), 3);
     assert_eq!(table.groups[0].opener.bytes(), [0x01, 0x00]);
-    assert_eq!(table.groups[0].count.prefix(), Some(1));
-    assert_eq!(table.groups[0].rows.len(), 2);
-    assert_eq!(table.groups[1].rows.len(), 1);
+    assert_eq!(table.groups[0].members.count().prefix(), Some(1));
+    assert_eq!(table.groups[0].members.rows().len(), 2);
+    assert_eq!(table.groups[1].members.rows().len(), 1);
     let OperationStateGroupRow::Pair {
         tag, first, second, ..
-    } = table.groups[1].rows[0]
+    } = table.groups[1].members.rows()[0]
     else {
         panic!("pair group row was not typed");
     };
     assert_eq!(u8::from(tag), 0x4f);
     assert_eq!(Some(first.value()), Some(0x42d));
     assert_eq!(Some(second.value()), Some(0x3e1));
-    assert_eq!(table.groups[2].count.declared_count(), 0);
-    assert_eq!(table.groups[2].rows.len(), 0);
+    assert_eq!(table.groups[2].members.count().declared_count(), 0);
+    assert_eq!(table.groups[2].members.rows().len(), 0);
 }
 
 #[test]
@@ -299,9 +299,9 @@ fn operation_state_group_table_anchors_to_counter_map_boundary() {
     assert_eq!(table.offset, 3);
     assert_eq!(table.end_offset, map.offset);
     assert_eq!(table.groups.len(), 3);
-    assert_eq!(table.groups[0].rows.len(), 2);
-    assert_eq!(table.groups[1].rows.len(), 1);
-    assert_eq!(table.groups[2].count.declared_count(), 0);
+    assert_eq!(table.groups[0].members.rows().len(), 2);
+    assert_eq!(table.groups[1].members.rows().len(), 1);
+    assert_eq!(table.groups[2].members.count().declared_count(), 0);
     assert_eq!(table.trailing_bytes, &[0x01, 0x01]);
 }
 

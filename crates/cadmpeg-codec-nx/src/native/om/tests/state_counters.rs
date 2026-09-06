@@ -182,17 +182,17 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
 
     let groups = operation_state_groups(&container);
     assert_eq!(groups.len(), 3);
-    assert_eq!(groups[0].count.declared_count(), 3);
-    assert_eq!(groups[0].rows.len(), 2);
+    assert_eq!(groups[0].members.count().declared_count(), 3);
+    assert_eq!(groups[0].members.rows().len(), 2);
     assert!(matches!(
-        groups[0].rows[0],
+        groups[0].members.rows()[0],
         OmRollForwardStateRow::List {
             object_index,
             ..
         } if object_index.value() == 0x3ba
     ));
     assert!(matches!(
-        groups[1].rows[0],
+        groups[1].members.rows()[0],
         OmRollForwardStateRow::Pair {
             tag: crate::om::discriminators::OperationStatePairTag::Form4f,
             first,
@@ -200,7 +200,7 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
             ..
         } if first.value() == 0x42d && second.value() == 0x3e1
     ));
-    assert_eq!(groups[2].count.declared_count(), 0);
+    assert_eq!(groups[2].members.count().declared_count(), 0);
     assert_eq!(groups[0].table_trailing_bytes, [0x01, 0x01]);
     assert!(groups[0].table_end_offset > groups[0].source_offset);
 
@@ -330,4 +330,16 @@ fn message_body_rejects_text_length_mismatch() {
     let json = r#"{"declared_length":4,"text":"A","value_marker":160,"value":0,"raw_value":[160,0,0],"count_or_severity":0}"#;
     assert!(serde_json::from_str::<super::OmOperationStateMessageBody>(json)
         .unwrap_err().to_string().contains("declared_length"));
+}
+
+#[test]
+fn roll_forward_groups_preserve_zero_row_headers_and_reject_count_mismatch() {
+    for (prefix, count) in [("null", 0), ("1", 0), ("1", 1)] {
+        let json = format!(r#"{{"id":"group","section_link":"section","ordinal":0,"opener":[1,0],"count_prefix":{prefix},"declared_count":{count},"rows":[],"table_trailing_bytes":[],"source_entry":"om","source_offset":0,"table_end_offset":4}}"#);
+        let group: OmRollForwardStateGroup = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_string(&group).unwrap(), json);
+    }
+    let json = r#"{"id":"group","section_link":"section","ordinal":0,"opener":[1,0],"count_prefix":1,"declared_count":2,"rows":[],"table_trailing_bytes":[],"source_entry":"om","source_offset":0,"table_end_offset":4}"#;
+    assert!(serde_json::from_str::<OmRollForwardStateGroup>(json)
+        .unwrap_err().to_string().contains("declared_count/rows"));
 }
