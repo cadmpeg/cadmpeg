@@ -370,7 +370,7 @@ fn om_draft_feature_references_require_one_complete_graph() {
         [230, 235, 273, 280]
     );
     let lane = super::draft_feature_leading_index_lane(record).expect("complete index lane");
-    assert_eq!(lane.declared_count, 3);
+    assert_eq!(lane.indices.len() + 1, 3);
     assert_eq!(
         lane.indices
             .iter()

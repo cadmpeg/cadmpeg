@@ -2726,6 +2726,12 @@ pub struct FeaturePatternReference {
     pub source_offset: u64,
 }
 
+fn deserialize_reference_lane_count<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<usize, D::Error> {
+    u8::deserialize(deserializer).map(usize::from)
+}
+
 /// Exact counted reference lane carried by a bounded `Pattern Feature` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -2735,7 +2741,6 @@ pub struct FeaturePatternReference {
 pub struct FeaturePatternCountedReferenceLane {
     pub id: String,
     pub operation_label: String,
-    pub declared_count: u8,
     pub references: Vec<FeatureDataBlockToken<Vec<u8>>>,
     pub source_offset: u64,
 }
@@ -2747,7 +2752,8 @@ struct FeaturePatternCountedReferenceLaneWire {
     /// Owning `Pattern Feature` operation label.
     operation_label: String,
     /// Serialized count including the implicit owner slot.
-    declared_count: u8,
+    #[serde(deserialize_with = "deserialize_reference_lane_count")]
+    declared_count: usize,
     /// Ordered serialized object indices.
     object_indices: Vec<u32>,
     /// Exact variable-width object-index tokens in lane order.
@@ -2765,7 +2771,7 @@ impl From<FeaturePatternCountedReferenceLane> for FeaturePatternCountedReference
         Self {
             id: value.id,
             operation_label: value.operation_label,
-            declared_count: value.declared_count,
+            declared_count: value.references.len() + 1,
             source_offset: value.source_offset,
             object_indices: value
                 .references
@@ -2795,6 +2801,9 @@ impl TryFrom<FeaturePatternCountedReferenceLaneWire> for FeaturePatternCountedRe
     type Error = String;
     fn try_from(wire: FeaturePatternCountedReferenceLaneWire) -> Result<Self, Self::Error> {
         let count = wire.object_indices.len();
+        if wire.declared_count != count + 1 {
+            return Err("declared_count must equal the reference count plus the implicit owner".into());
+        }
         if wire.raw_object_indices.len() != count
             || wire.data_blocks.len() != count
             || wire.object_index_source_offsets.len() != count
@@ -2804,7 +2813,6 @@ impl TryFrom<FeaturePatternCountedReferenceLaneWire> for FeaturePatternCountedRe
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            declared_count: wire.declared_count,
             source_offset: wire.source_offset,
             references: wire
                 .object_indices
@@ -3594,7 +3602,6 @@ pub struct FeatureDraftConstructionReference {
 pub struct FeatureDraftConstructionIndexLane {
     pub id: String,
     pub operation_label: String,
-    pub declared_count: u8,
     pub indices: FeatureDraftConstructionIndices,
 }
 
@@ -3617,7 +3624,8 @@ struct FeatureDraftConstructionIndexLaneWire {
     /// Owning `DRAFT` operation label.
     operation_label: String,
     /// Serialized count including the omitted lane owner.
-    declared_count: u8,
+    #[serde(deserialize_with = "deserialize_reference_lane_count")]
+    declared_count: usize,
     /// Non-null compact indices in serialized order.
     indices: Vec<u32>,
     /// Exact compact-index tokens in serialized order.
@@ -3644,7 +3652,7 @@ impl From<FeatureDraftConstructionIndexLane> for FeatureDraftConstructionIndexLa
         Self {
             id: lane.id,
             operation_label: lane.operation_label,
-            declared_count: lane.declared_count,
+            declared_count: tokens.len() + 1,
             indices: tokens.iter().map(|token| token.value).collect(),
             raw_indices: tokens.iter().map(|token| token.raw.clone()).collect(),
             data_blocks,
@@ -3658,6 +3666,9 @@ impl TryFrom<FeatureDraftConstructionIndexLaneWire> for FeatureDraftConstruction
 
     fn try_from(wire: FeatureDraftConstructionIndexLaneWire) -> Result<Self, Self::Error> {
         let count = wire.indices.len();
+        if wire.declared_count != count + 1 {
+            return Err("declared_count must equal the reference count plus the implicit owner".into());
+        }
         if wire.raw_indices.len() != count
             || wire.source_offsets.len() != count
             || wire
@@ -3689,7 +3700,6 @@ impl TryFrom<FeatureDraftConstructionIndexLaneWire> for FeatureDraftConstruction
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            declared_count: wire.declared_count,
             indices,
         })
     }
@@ -9644,7 +9654,6 @@ pub fn feature_pattern_counted_reference_lanes(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                declared_count: lane.declared_count,
                 references: lane.references.into_iter().map(|reference| FeatureDataBlockToken {
                     value: reference.object_index,
                     raw: reference.raw_object_index,
@@ -10139,7 +10148,6 @@ pub fn feature_draft_construction_index_lanes(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                declared_count: lane.declared_count,
                 indices,
             });
         },

@@ -29,7 +29,7 @@ fn om_pattern_counted_reference_lane_requires_exact_terminator() {
     };
     let lane = pattern_payload_counted_reference_lane(record).expect("complete lane");
     assert_eq!(lane.offset, payload_offset + 1);
-    assert_eq!(lane.declared_count, 4);
+    assert_eq!(lane.references.len() + 1, 4);
     assert_eq!(
         lane.references
             .iter()

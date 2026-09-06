@@ -2089,8 +2089,6 @@ pub struct PatternPayloadReferenceField {
 pub struct PatternPayloadCountedReferenceLane {
     /// Absolute offset of the opening `01, count` field.
     pub offset: usize,
-    /// Serialized count including the implicit owner slot.
-    pub declared_count: u8,
     /// Ordered non-null object references after the count.
     pub references: Vec<PayloadObjectReference>,
 }
@@ -2246,8 +2244,6 @@ pub struct DraftFeaturePayloadReferenceField {
 /// Counted compact-index lane preceding a draft-feature construction graph.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DraftFeatureLeadingIndexLane {
-    /// Serialized count including the omitted lane owner.
-    pub declared_count: u8,
     /// Non-null compact indices in serialized order with absolute token offsets.
     pub indices: Vec<LaneToken<u32>>,
 }
@@ -4046,7 +4042,6 @@ pub fn pattern_payload_counted_reference_lane(
         }
         Some(PatternPayloadCountedReferenceLane {
             offset: record.payload_offset + start,
-            declared_count,
             references,
         })
     };
@@ -4776,7 +4771,6 @@ pub fn draft_feature_leading_index_lane(
     (record.payload.get(at..at + 2) == Some(&[0x01, 0x02])).then_some(())?;
 
     Some(DraftFeatureLeadingIndexLane {
-        declared_count,
         indices,
     })
 }
