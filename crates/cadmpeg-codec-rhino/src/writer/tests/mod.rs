@@ -74,12 +74,24 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
     use cadmpeg_ir::topology::*;
 
     let mut ir = CadIr::empty();
-    let body: BodyId = "cadir:model:body#polygon".into();
-    let region: RegionId = "cadir:model:region#polygon".into();
-    let shell: ShellId = "cadir:model:shell#polygon".into();
-    let face: FaceId = "cadir:model:face#polygon".into();
-    let loop_id: LoopId = "cadir:model:loop#polygon".into();
-    let surface: SurfaceId = "cadir:model:surface#polygon".into();
+    let body: BodyId = "cadir:model:body#polygon"
+        .try_into()
+        .expect("valid identity");
+    let region: RegionId = "cadir:model:region#polygon"
+        .try_into()
+        .expect("valid identity");
+    let shell: ShellId = "cadir:model:shell#polygon"
+        .try_into()
+        .expect("valid identity");
+    let face: FaceId = "cadir:model:face#polygon"
+        .try_into()
+        .expect("valid identity");
+    let loop_id: LoopId = "cadir:model:loop#polygon"
+        .try_into()
+        .expect("valid identity");
+    let surface: SurfaceId = "cadir:model:surface#polygon"
+        .try_into()
+        .expect("valid identity");
     let point_ids = (0..points.len())
         .map(|index| {
             PointId::mint(format!("cadir:model:point#polygon.{index}")).expect("identity grammar")
@@ -306,9 +318,15 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
     use cadmpeg_ir::topology::*;
 
     let mut ir = CadIr::empty();
-    let body: BodyId = "cadir:model:body#adjacent".into();
-    let region: RegionId = "cadir:model:region#adjacent".into();
-    let shell: ShellId = "cadir:model:shell#adjacent".into();
+    let body: BodyId = "cadir:model:body#adjacent"
+        .try_into()
+        .expect("valid identity");
+    let region: RegionId = "cadir:model:region#adjacent"
+        .try_into()
+        .expect("valid identity");
+    let shell: ShellId = "cadir:model:shell#adjacent"
+        .try_into()
+        .expect("valid identity");
     let face_ids = [
         FaceId::mint("cadir:model:face#adjacent.0").expect("identity grammar"),
         FaceId::mint("cadir:model:face#adjacent.1").expect("identity grammar"),
@@ -493,9 +511,15 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
     use cadmpeg_ir::topology::*;
 
     let mut ir = CadIr::empty();
-    let body: BodyId = "cadir:model:body#tetrahedron".into();
-    let region: RegionId = "cadir:model:region#tetrahedron".into();
-    let shell: ShellId = "cadir:model:shell#tetrahedron".into();
+    let body: BodyId = "cadir:model:body#tetrahedron"
+        .try_into()
+        .expect("valid identity");
+    let region: RegionId = "cadir:model:region#tetrahedron"
+        .try_into()
+        .expect("valid identity");
+    let shell: ShellId = "cadir:model:shell#tetrahedron"
+        .try_into()
+        .expect("valid identity");
     let positions = [
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(1.0, 0.0, 0.0),
@@ -773,7 +797,9 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
             )
             .expect("valid patch edge"),
         );
-        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#patch.{index}").into();
+        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#patch.{index}")
+            .try_into()
+            .expect("valid identity");
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Line { origin, direction },
@@ -865,7 +891,9 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
             )
             .expect("valid mixed edge"),
         );
-        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#mixed.{index}").into();
+        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#mixed.{index}")
+            .try_into()
+            .expect("valid identity");
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Line { origin, direction },
@@ -932,7 +960,9 @@ pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
             start.x - direction.u * domain[0],
             start.y - direction.v * domain[0],
         );
-        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#general.{index}").into();
+        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#general.{index}")
+            .try_into()
+            .expect("valid identity");
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Line { origin, direction },

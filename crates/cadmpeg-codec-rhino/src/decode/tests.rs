@@ -71,7 +71,7 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
 #[test]
 fn body_instance_transform_composes_before_existing_body_transform() {
     let mut body = Body {
-        id: "rhino:test:body#1".into(),
+        id: "rhino:test:body#1".try_into().expect("valid identity"),
         kind: BodyKind::General,
         regions: Vec::new(),
         transform: Some(
@@ -357,8 +357,12 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
 
 #[test]
 fn fallback_discards_topology_and_unknown_record_self_link() {
-    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0".into();
-    let surface_id: cadmpeg_ir::ids::SurfaceId = "rhino:object:surface#x.slot-0".into();
+    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0"
+        .try_into()
+        .expect("valid identity");
+    let surface_id: cadmpeg_ir::ids::SurfaceId = "rhino:object:surface#x.slot-0"
+        .try_into()
+        .expect("valid identity");
     let mut staged = BrepDraft {
         links: vec![
             curve_id.to_string(),
@@ -379,7 +383,7 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         source_object: None,
     });
     staged.draft.model_mut().bodies.push(Body {
-        id: "rhino:object:body#x".into(),
+        id: "rhino:object:body#x".try_into().expect("valid identity"),
         kind: BodyKind::Sheet,
         regions: Vec::new(),
         transform: None,
@@ -399,8 +403,10 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
 
 #[test]
 fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
-    let unknown: UnknownId = "rhino:object:record#x".into();
-    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0".into();
+    let unknown: UnknownId = "rhino:object:record#x".try_into().expect("valid identity");
+    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0"
+        .try_into()
+        .expect("valid identity");
     let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
@@ -439,7 +445,9 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
 
 #[test]
 fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
-    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0".into();
+    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0"
+        .try_into()
+        .expect("valid identity");
     let curve = Curve {
         id: curve_id,
         geometry: CurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false)),
@@ -470,7 +478,9 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         layer: None,
         instance_path: Vec::new(),
     };
-    let unknown: UnknownId = "rhino:object:record#plane".into();
+    let unknown: UnknownId = "rhino:object:record#plane"
+        .try_into()
+        .expect("valid identity");
     let staged = with_expand_bytes(&data, |expand| {
         stage_brep(BrepTransferInput {
             expand,
@@ -554,7 +564,9 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
         layer: None,
         instance_path: Vec::new(),
     };
-    let unknown: UnknownId = "rhino:object:record#free-vertex".into();
+    let unknown: UnknownId = "rhino:object:record#free-vertex"
+        .try_into()
+        .expect("valid identity");
     let staged = with_expand_bytes(&data, |expand| {
         stage_brep(BrepTransferInput {
             expand,
@@ -573,7 +585,9 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     assert_eq!(staged.kind, BrepTransferKind::FullTopology);
     assert_eq!(
         staged.draft.model().shells[0].free_vertices,
-        vec!["rhino:object:vertex#free-vertex.slot-3".into()]
+        vec!["rhino:object:vertex#free-vertex.slot-3"
+            .try_into()
+            .expect("valid identity")]
     );
 
     let mut candidate = CadIr::empty();
@@ -607,7 +621,9 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
         layer: None,
         instance_path: Vec::new(),
     };
-    let unknown: UnknownId = "rhino:object:record#plane".into();
+    let unknown: UnknownId = "rhino:object:record#plane"
+        .try_into()
+        .expect("valid identity");
     let staged = with_expand_bytes(&data, |expand| {
         stage_brep(BrepTransferInput {
             expand,
@@ -908,7 +924,9 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             .iter()
             .enumerate()
             .map(|(index, boundary)| {
-                let id: cadmpeg_ir::ids::CurveId = format!("rhino:object:curve#cap-{index}").into();
+                let id: cadmpeg_ir::ids::CurveId = format!("rhino:object:curve#cap-{index}")
+                    .try_into()
+                    .expect("valid identity");
                 ir.model.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(boundary.start_nurbs.clone()),
@@ -1074,7 +1092,7 @@ fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
             .model
             .points
             .iter()
-            .filter(|point| point.id.0 == "rhino:test:point#duplicate")
+            .filter(|point| point.id.as_str() == "rhino:test:point#duplicate")
             .collect::<Vec<_>>();
         assert_eq!(matching.len(), 1);
         assert_eq!(

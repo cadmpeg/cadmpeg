@@ -536,9 +536,14 @@ fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
 #[test]
 fn free_vertex_body_preserves_point_cloud_grouping() {
     let mut ir = CadIr::empty();
-    let body_id: cadmpeg_ir::ids::BodyId = "cadir:model:body#cloud".into();
-    let region_id: cadmpeg_ir::ids::RegionId = "cadir:model:region#cloud".into();
-    let shell_id: cadmpeg_ir::ids::ShellId = "cadir:model:shell#cloud".into();
+    let body_id: cadmpeg_ir::ids::BodyId =
+        "cadir:model:body#cloud".try_into().expect("valid identity");
+    let region_id: cadmpeg_ir::ids::RegionId = "cadir:model:region#cloud"
+        .try_into()
+        .expect("valid identity");
+    let shell_id: cadmpeg_ir::ids::ShellId = "cadir:model:shell#cloud"
+        .try_into()
+        .expect("valid identity");
     let vertex_ids = [
         cadmpeg_ir::ids::VertexId::mint("cadir:model:vertex#cloud.0").expect("identity grammar"),
         cadmpeg_ir::ids::VertexId::mint("cadir:model:vertex#cloud.1").expect("identity grammar"),

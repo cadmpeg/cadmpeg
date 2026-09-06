@@ -109,7 +109,9 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
         .expect("valid explicit edge"),
     );
     for (coedge, reversed) in [(1_usize, false), (7, true)] {
-        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#explicit.{coedge}").into();
+        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#explicit.{coedge}")
+            .try_into()
+            .expect("valid identity");
         let mut control_points = vec![
             cadmpeg_ir::math::Point2::new(1.0, 0.0),
             cadmpeg_ir::math::Point2::new(1.25, 0.5),
@@ -186,7 +188,9 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#mismatch".into();
+    let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#mismatch"
+        .try_into()
+        .expect("valid identity");
     ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
         id: id.clone(),
         geometry: cadmpeg_ir::geometry::PcurveGeometry::Line {
@@ -223,8 +227,12 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    let first: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#first".into();
-    let second: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#second".into();
+    let first: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#first"
+        .try_into()
+        .expect("valid identity");
+    let second: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#second"
+        .try_into()
+        .expect("valid identity");
     for (id, origin) in [
         (first.clone(), cadmpeg_ir::math::Point2::new(0.0, 0.0)),
         (second.clone(), cadmpeg_ir::math::Point2::new(0.0, 1.0)),
@@ -270,7 +278,9 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#line".into();
+    let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#line"
+        .try_into()
+        .expect("valid identity");
     ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
         id: id.clone(),
         geometry: cadmpeg_ir::geometry::PcurveGeometry::Line {

@@ -1962,7 +1962,7 @@ fn opennurbs_object_walk_and_transfer_floor() {
         };
         let mut point_ir = cadmpeg_ir::CadIr::empty();
         point_ir.model.points.push(cadmpeg_ir::topology::Point {
-            id: cadmpeg_ir::ids::PointId::mint("integration:writer-point#0")
+            id: cadmpeg_ir::ids::PointId::mint("integration:writer:point#0")
                 .expect("identity grammar"),
             position: cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75),
             source_object: None,

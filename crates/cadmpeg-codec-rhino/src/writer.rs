@@ -325,43 +325,43 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
         let regions = body
             .regions
             .iter()
-            .map(|id| id.0.clone())
+            .map(|id| id.as_str().to_owned())
             .collect::<BTreeSet<_>>();
         let shells = model
             .regions
             .iter()
             .filter(|region| regions.contains(region.id.as_str()))
-            .flat_map(|region| region.shells.iter().map(|id| id.0.clone()))
+            .flat_map(|region| region.shells.iter().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
         let faces = model
             .shells
             .iter()
             .filter(|shell| shells.contains(shell.id.as_str()))
-            .flat_map(|shell| shell.faces.iter().map(|id| id.0.clone()))
+            .flat_map(|shell| shell.faces.iter().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
         let surfaces = model
             .faces
             .iter()
             .filter(|face| faces.contains(face.id.as_str()))
-            .map(|face| face.surface.0.clone())
+            .map(|face| face.surface.as_str().to_owned())
             .collect::<BTreeSet<_>>();
         let loops = model
             .faces
             .iter()
             .filter(|face| faces.contains(face.id.as_str()))
-            .flat_map(|face| face.loops.iter().map(|id| id.0.clone()))
+            .flat_map(|face| face.loops.iter().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
         let coedges = model
             .loops
             .iter()
             .filter(|loop_| loops.contains(loop_.id.as_str()))
-            .flat_map(|loop_| loop_.coedges().iter().map(|id| id.0.clone()))
+            .flat_map(|loop_| loop_.coedges().iter().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
         let edges = model
             .coedges
             .iter()
             .filter(|coedge| coedges.contains(coedge.id.as_str()))
-            .map(|coedge| coedge.edge.0.clone())
+            .map(|coedge| coedge.edge.as_str().to_owned())
             .collect::<BTreeSet<_>>();
         let pcurves = model
             .coedges
@@ -372,26 +372,26 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
                     .pcurves
                     .first()
                     .map(|use_| &use_.pcurve)
-                    .map(|id| id.0.clone())
+                    .map(|id| id.as_str().to_owned())
             })
             .collect::<BTreeSet<_>>();
         let vertices = model
             .edges
             .iter()
             .filter(|edge| edges.contains(edge.id.as_str()))
-            .flat_map(|edge| [edge.start.0.clone(), edge.end.0.clone()])
+            .flat_map(|edge| [edge.start.as_str().to_owned(), edge.end.as_str().to_owned()])
             .collect::<BTreeSet<_>>();
         let curves = model
             .edges
             .iter()
             .filter(|edge| edges.contains(edge.id.as_str()))
-            .filter_map(|edge| edge.curve.as_ref().map(|id| id.0.clone()))
+            .filter_map(|edge| edge.curve.as_ref().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
         let points = model
             .vertices
             .iter()
             .filter(|vertex| vertices.contains(vertex.id.as_str()))
-            .map(|vertex| vertex.point.0.clone())
+            .map(|vertex| vertex.point.as_str().to_owned())
             .collect::<BTreeSet<_>>();
 
         for (owned, global, kind) in [
@@ -511,33 +511,33 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
         .model
         .bodies
         .iter()
-        .map(|body| body.id.0.clone())
+        .map(|body| body.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     scoped.model.regions = ir
         .model
         .regions
         .iter()
-        .filter(|region| bodies.contains(&region.body.0))
+        .filter(|region| bodies.contains(region.body.as_str()))
         .cloned()
         .collect();
     let regions = scoped
         .model
         .regions
         .iter()
-        .map(|region| region.id.0.clone())
+        .map(|region| region.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     scoped.model.shells = ir
         .model
         .shells
         .iter()
-        .filter(|shell| regions.contains(&shell.region.0))
+        .filter(|shell| regions.contains(shell.region.as_str()))
         .cloned()
         .collect();
     let vertices = scoped
         .model
         .shells
         .iter()
-        .flat_map(|shell| shell.free_vertices.iter().map(|id| id.0.clone()))
+        .flat_map(|shell| shell.free_vertices.iter().map(|id| id.as_str().to_owned()))
         .collect::<BTreeSet<_>>();
     scoped.model.vertices = ir
         .model
@@ -550,7 +550,7 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
         .model
         .vertices
         .iter()
-        .map(|vertex| vertex.point.0.as_str())
+        .map(|vertex| vertex.point.as_str())
         .collect::<BTreeSet<_>>();
     scoped.model.points = ir
         .model
@@ -1040,7 +1040,9 @@ fn planar_sheet_brep_payload(
                 .coedges
                 .iter()
                 .find(|coedge| coedge.id == *id)
-                .ok_or_else(|| CodecError::malformed(format_args!("coedge {} is missing", id.0)))?;
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!("coedge {} is missing", id.as_str()))
+                })?;
             if coedge.owner_loop != loop_.id {
                 return Err(CodecError::malformed(format_args!(
                     "coedge {} ownership is inconsistent",
@@ -1070,7 +1072,7 @@ fn planar_sheet_brep_payload(
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("edge {} is missing", coedge.edge.0))
+                CodecError::malformed(format_args!("edge {} is missing", coedge.edge.as_str()))
             })?;
         if ordered_edges
             .iter()
@@ -1112,7 +1114,9 @@ fn planar_sheet_brep_payload(
             .vertices
             .iter()
             .find(|vertex| vertex.id == *id)
-            .ok_or_else(|| CodecError::malformed(format_args!("vertex {} is missing", id.0)))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("vertex {} is missing", id.as_str()))
+            })?;
         if ordered_vertices
             .iter()
             .any(|existing: &&cadmpeg_ir::topology::Vertex| existing.id == vertex.id)
@@ -1126,7 +1130,7 @@ fn planar_sheet_brep_payload(
             .iter()
             .find(|point| point.id == vertex.point)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("point {} is missing", vertex.point.0))
+                CodecError::malformed(format_args!("point {} is missing", vertex.point.as_str()))
             })?;
         ordered_vertices.push(vertex);
         ordered_points.push(point.position);
@@ -1224,12 +1228,12 @@ fn planar_sheet_brep_payload(
     let edge_index = ordered_edges
         .iter()
         .enumerate()
-        .map(|(index, edge)| (edge.id.0.clone(), index as i32))
+        .map(|(index, edge)| (edge.id.as_str().to_owned(), index as i32))
         .collect::<std::collections::BTreeMap<_, _>>();
     let vertex_index = ordered_vertices
         .iter()
         .enumerate()
-        .map(|(index, vertex)| (vertex.id.0.clone(), index as i32))
+        .map(|(index, vertex)| (vertex.id.as_str().to_owned(), index as i32))
         .collect::<std::collections::BTreeMap<_, _>>();
     let vertex_records = ordered_vertices
         .iter()
@@ -1268,8 +1272,8 @@ fn planar_sheet_brep_payload(
                     .into_iter()
                     .flat_map(f64::to_le_bytes),
             );
-            record.extend(vertex_index[&edge.start.0].to_le_bytes());
-            record.extend(vertex_index[&edge.end.0].to_le_bytes());
+            record.extend(vertex_index[edge.start.as_str()].to_le_bytes());
+            record.extend(vertex_index[edge.end.as_str()].to_le_bytes());
             record.extend(indexes(&[index as i32]));
             record.extend(edge.tolerance.unwrap_or(0.0).to_le_bytes());
             record.extend(
@@ -1301,8 +1305,8 @@ fn planar_sheet_brep_payload(
             } else {
                 (&edge.end, &edge.start)
             };
-            record.extend(vertex_index[&from.0].to_le_bytes());
-            record.extend(vertex_index[&to.0].to_le_bytes());
+            record.extend(vertex_index[from.as_str()].to_le_bytes());
+            record.extend(vertex_index[to.as_str()].to_le_bytes());
             record.extend(i32::from(coedge.sense == Sense::Reversed).to_le_bytes());
             record.extend(1_i32.to_le_bytes());
             record.extend(0_i32.to_le_bytes());
@@ -1449,37 +1453,37 @@ fn multi_face_brep_payload(
         .vertices
         .iter()
         .enumerate()
-        .map(|(index, vertex)| (vertex.id.0.clone(), index as i32))
+        .map(|(index, vertex)| (vertex.id.as_str().to_owned(), index as i32))
         .collect::<BTreeMap<_, _>>();
     let edge_index = model
         .edges
         .iter()
         .enumerate()
-        .map(|(index, edge)| (edge.id.0.clone(), index as i32))
+        .map(|(index, edge)| (edge.id.as_str().to_owned(), index as i32))
         .collect::<BTreeMap<_, _>>();
     let coedge_index = model
         .coedges
         .iter()
         .enumerate()
-        .map(|(index, coedge)| (coedge.id.0.clone(), index as i32))
+        .map(|(index, coedge)| (coedge.id.as_str().to_owned(), index as i32))
         .collect::<BTreeMap<_, _>>();
     let loop_index = model
         .loops
         .iter()
         .enumerate()
-        .map(|(index, loop_)| (loop_.id.0.clone(), index as i32))
+        .map(|(index, loop_)| (loop_.id.as_str().to_owned(), index as i32))
         .collect::<BTreeMap<_, _>>();
     let face_index = model
         .faces
         .iter()
         .enumerate()
-        .map(|(index, face)| (face.id.0.clone(), index as i32))
+        .map(|(index, face)| (face.id.as_str().to_owned(), index as i32))
         .collect::<BTreeMap<_, _>>();
     let surface_index = model
         .surfaces
         .iter()
         .enumerate()
-        .map(|(index, surface)| (surface.id.0.clone(), index as i32))
+        .map(|(index, surface)| (surface.id.as_str().to_owned(), index as i32))
         .collect::<BTreeMap<_, _>>();
     if vertex_index.len() != model.vertices.len()
         || edge_index.len() != model.edges.len()
@@ -1501,9 +1505,9 @@ fn multi_face_brep_payload(
             .iter()
             .find(|point| point.id == vertex.point)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("point {} is missing", vertex.point.0))
+                CodecError::malformed(format_args!("point {} is missing", vertex.point.as_str()))
             })?;
-        if !used_points.insert(point.id.0.clone())
+        if !used_points.insert(point.id.as_str().to_owned())
             || !point.position.x.is_finite()
             || !point.position.y.is_finite()
             || !point.position.z.is_finite()
@@ -1516,7 +1520,9 @@ fn multi_face_brep_payload(
         points.push(point.position);
     }
     for edge in &model.edges {
-        if !vertex_index.contains_key(&edge.start.0) || !vertex_index.contains_key(&edge.end.0) {
+        if !vertex_index.contains_key(edge.start.as_str())
+            || !vertex_index.contains_key(edge.end.as_str())
+        {
             return Err(CodecError::malformed(format_args!(
                 "edge {} references a missing vertex",
                 edge.id.as_str()
@@ -1527,7 +1533,7 @@ fn multi_face_brep_payload(
     let used_curves = model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve.as_ref().map(|id| id.0.clone()))
+        .filter_map(|edge| edge.curve.as_ref().map(|id| id.as_str().to_owned()))
         .collect::<BTreeSet<_>>();
     if used_curves.len() != model.curves.len() {
         return Err(CodecError::NotImplemented(
@@ -1543,7 +1549,7 @@ fn multi_face_brep_payload(
             || face.loops.is_empty()
             || face.name.is_some()
             || face.color.is_some()
-            || !used_surfaces.insert(face.surface.0.clone())
+            || !used_surfaces.insert(face.surface.as_str().to_owned())
         {
             return Err(CodecError::NotImplemented(format!(
                 "face {} has unsupported ownership, attributes, or shared surface state",
@@ -1555,7 +1561,7 @@ fn multi_face_brep_payload(
             .iter()
             .find(|surface| surface.id == face.surface)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("surface {} is missing", face.surface.0))
+                CodecError::malformed(format_args!("surface {} is missing", face.surface.as_str()))
             })?;
         if surface.source_object.is_some() {
             return Err(CodecError::NotImplemented(format!(
@@ -1595,10 +1601,10 @@ fn multi_face_brep_payload(
             }
         }
         for loop_id in &face.loops {
-            if !owned_loops.insert(loop_id.0.clone()) {
+            if !owned_loops.insert(loop_id.as_str().to_owned()) {
                 return Err(CodecError::malformed(format_args!(
                     "loop {} has multiple face owners",
-                    loop_id.0
+                    loop_id.as_str()
                 )));
             }
         }
@@ -1616,7 +1622,7 @@ fn multi_face_brep_payload(
             .iter()
             .find(|face| face.id == loop_.face)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("face {} is missing", loop_.face.0))
+                CodecError::malformed(format_args!("face {} is missing", loop_.face.as_str()))
             })?;
         if !face.loops.contains(&loop_.id) || loop_.coedges().len() < 3 {
             return Err(CodecError::malformed(format_args!(
@@ -1629,8 +1635,10 @@ fn multi_face_brep_payload(
                 .coedges
                 .iter()
                 .find(|coedge| coedge.id == *id)
-                .ok_or_else(|| CodecError::malformed(format_args!("coedge {} is missing", id.0)))?;
-            if !owned_coedges.insert(id.0.clone()) || coedge.owner_loop != loop_.id {
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!("coedge {} is missing", id.as_str()))
+                })?;
+            if !owned_coedges.insert(id.as_str().to_owned()) || coedge.owner_loop != loop_.id {
                 return Err(CodecError::NotImplemented(format!(
                     "coedge {} ownership or ring is not writable",
                     coedge.id.as_str()
@@ -1641,7 +1649,7 @@ fn multi_face_brep_payload(
                 .iter()
                 .find(|edge| edge.id == coedge.edge)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("edge {} is missing", coedge.edge.0))
+                    CodecError::malformed(format_args!("edge {} is missing", coedge.edge.as_str()))
                 })?;
             let end = if coedge.sense == Sense::Forward {
                 &edge.end
@@ -1699,8 +1707,11 @@ fn multi_face_brep_payload(
         let mut ordered = vec![start];
         while ordered.len() < uses.len() {
             let next_id = &model.coedges[*ordered.last().expect("nonempty")].radial_next;
-            let next = *coedge_index.get(&next_id.0).ok_or_else(|| {
-                CodecError::malformed(format_args!("radial coedge {} is missing", next_id.0))
+            let next = *coedge_index.get(next_id.as_str()).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "radial coedge {} is missing",
+                    next_id.as_str()
+                ))
             })? as usize;
             if !uses.contains(&next) || ordered.contains(&next) {
                 return Err(CodecError::malformed(format_args!(
@@ -1728,8 +1739,9 @@ fn multi_face_brep_payload(
             .iter()
             .map(|coedge| {
                 let loop_id = &model.coedges[*coedge].owner_loop;
-                let loop_ = &model.loops[*loop_index.get(&loop_id.0).expect("owned loop") as usize];
-                *face_index.get(&loop_.face.0).expect("owned face") as usize
+                let loop_ =
+                    &model.loops[*loop_index.get(loop_id.as_str()).expect("owned loop") as usize];
+                *face_index.get(loop_.face.as_str()).expect("owned face") as usize
             })
             .collect::<Vec<_>>();
         edge_uses.push(ordered);
@@ -1754,17 +1766,20 @@ fn multi_face_brep_payload(
     }
 
     for (loop_position, loop_) in model.loops.iter().enumerate() {
-        let face_position = *face_index.get(&loop_.face.0).expect("owned face") as usize;
+        let face_position = *face_index.get(loop_.face.as_str()).expect("owned face") as usize;
         if let WritableFaceSurface::Nurbs(surface) = face_surfaces[face_position] {
             let coedges = loop_
                 .coedges()
                 .iter()
-                .map(|id| &model.coedges[*coedge_index.get(&id.0).expect("owned coedge") as usize])
+                .map(|id| {
+                    &model.coedges[*coedge_index.get(id.as_str()).expect("owned coedge") as usize]
+                })
                 .collect::<Vec<_>>();
             let edges = coedges
                 .iter()
                 .map(|coedge| {
-                    &model.edges[*edge_index.get(&coedge.edge.0).expect("owned edge") as usize]
+                    &model.edges
+                        [*edge_index.get(coedge.edge.as_str()).expect("owned edge") as usize]
                 })
                 .collect::<Vec<_>>();
             validate_nurbs_trim_loop(
@@ -1793,9 +1808,10 @@ fn multi_face_brep_payload(
             .max(EPS_WRITE_DEGENERATE);
         let mut boundary = Vec::with_capacity(loop_.coedges().len());
         for coedge_id in loop_.coedges() {
-            let coedge =
-                &model.coedges[*coedge_index.get(&coedge_id.0).expect("owned coedge") as usize];
-            let edge = &model.edges[*edge_index.get(&coedge.edge.0).expect("owned edge") as usize];
+            let coedge = &model.coedges
+                [*coedge_index.get(coedge_id.as_str()).expect("owned coedge") as usize];
+            let edge =
+                &model.edges[*edge_index.get(coedge.edge.as_str()).expect("owned edge") as usize];
             let curve = model
                 .curves
                 .iter()
@@ -1820,13 +1836,14 @@ fn multi_face_brep_payload(
                 &edge.end
             };
             boundary.push(plane_uv(
-                points[*vertex_index.get(&start.0).expect("owned vertex") as usize],
+                points[*vertex_index.get(start.as_str()).expect("owned vertex") as usize],
                 origin,
                 u_axis,
                 v_axis,
             ));
             for vertex_id in [&edge.start, &edge.end] {
-                let point = points[*vertex_index.get(&vertex_id.0).expect("owned vertex") as usize];
+                let point =
+                    points[*vertex_index.get(vertex_id.as_str()).expect("owned vertex") as usize];
                 let distance = (point.x - origin.x) * normal.x
                     + (point.y - origin.y) * normal.y
                     + (point.z - origin.z) * normal.z;
@@ -1863,10 +1880,12 @@ fn multi_face_brep_payload(
         .coedges
         .iter()
         .map(|coedge| {
-            let loop_ =
-                &model.loops[*loop_index.get(&coedge.owner_loop.0).expect("owned loop") as usize];
-            let face = *face_index.get(&loop_.face.0).expect("owned face") as usize;
-            let edge = &model.edges[*edge_index.get(&coedge.edge.0).expect("owned edge") as usize];
+            let loop_ = &model.loops[*loop_index
+                .get(coedge.owner_loop.as_str())
+                .expect("owned loop") as usize];
+            let face = *face_index.get(loop_.face.as_str()).expect("owned face") as usize;
+            let edge =
+                &model.edges[*edge_index.get(coedge.edge.as_str()).expect("owned edge") as usize];
             match face_surfaces[face] {
                 WritableFaceSurface::Plane {
                     origin,
@@ -1939,8 +1958,8 @@ fn multi_face_brep_payload(
             record.extend((index as i32).to_le_bytes());
             record.extend(0_i32.to_le_bytes());
             record.extend(domain.into_iter().flat_map(f64::to_le_bytes));
-            record.extend(vertex_index[&edge.start.0].to_le_bytes());
-            record.extend(vertex_index[&edge.end.0].to_le_bytes());
+            record.extend(vertex_index[edge.start.as_str()].to_le_bytes());
+            record.extend(vertex_index[edge.end.as_str()].to_le_bytes());
             record.extend(indexes(
                 &edge_uses[index]
                     .iter()
@@ -1958,7 +1977,7 @@ fn multi_face_brep_payload(
         .iter()
         .enumerate()
         .map(|(index, coedge)| {
-            let edge_position = edge_index[&coedge.edge.0] as usize;
+            let edge_position = edge_index[coedge.edge.as_str()] as usize;
             let edge = &model.edges[edge_position];
             let domain = edge.param_range.expect("validated edge domain");
             let (from, to) = if coedge.sense == Sense::Forward {
@@ -1970,15 +1989,15 @@ fn multi_face_brep_payload(
             record.extend((index as i32).to_le_bytes());
             record.extend(domain.into_iter().flat_map(f64::to_le_bytes));
             record.extend((edge_position as i32).to_le_bytes());
-            record.extend(vertex_index[&from.0].to_le_bytes());
-            record.extend(vertex_index[&to.0].to_le_bytes());
+            record.extend(vertex_index[from.as_str()].to_le_bytes());
+            record.extend(vertex_index[to.as_str()].to_le_bytes());
             record.extend(i32::from(coedge.sense == Sense::Reversed).to_le_bytes());
             let uses = &edge_uses[edge_position];
             let same_loop = uses.len() == 2
                 && model.coedges[uses[0]].owner_loop == model.coedges[uses[1]].owner_loop;
             record.extend(brep_trim_type(uses.len(), same_loop).to_le_bytes());
             record.extend(0_i32.to_le_bytes());
-            record.extend(loop_index[&coedge.owner_loop.0].to_le_bytes());
+            record.extend(loop_index[coedge.owner_loop.as_str()].to_le_bytes());
             record.extend(
                 [brep_pcurve_fit_tolerance(model, coedge), 0.0_f64]
                     .into_iter()
@@ -1997,13 +2016,13 @@ fn multi_face_brep_payload(
         .iter()
         .enumerate()
         .map(|(index, loop_)| {
-            let face = &model.faces[face_index[&loop_.face.0] as usize];
+            let face = &model.faces[face_index[loop_.face.as_str()] as usize];
             let mut record = (index as i32).to_le_bytes().to_vec();
             record.extend(indexes(
                 &loop_
                     .coedges()
                     .iter()
-                    .map(|coedge| coedge_index[&coedge.0])
+                    .map(|coedge| coedge_index[coedge.as_str()])
                     .collect::<Vec<_>>(),
             ));
             record.extend(
@@ -2013,7 +2032,7 @@ fn multi_face_brep_payload(
                 )
                 .to_le_bytes(),
             );
-            record.extend(face_index[&loop_.face.0].to_le_bytes());
+            record.extend(face_index[loop_.face.as_str()].to_le_bytes());
             record
         })
         .collect::<Vec<_>>();
@@ -2028,10 +2047,10 @@ fn multi_face_brep_payload(
                 &face
                     .loops
                     .iter()
-                    .map(|loop_| loop_index[&loop_.0])
+                    .map(|loop_| loop_index[loop_.as_str()])
                     .collect::<Vec<_>>(),
             ));
-            record.extend(surface_index[&face.surface.0].to_le_bytes());
+            record.extend(surface_index[face.surface.as_str()].to_le_bytes());
             record.extend(i32::from(face.sense == Sense::Reversed).to_le_bytes());
             record.extend(0_i32.to_le_bytes());
             record
@@ -2146,7 +2165,9 @@ fn validate_planar_edge(
         .curves
         .iter()
         .find(|curve| curve.id == *curve_id)
-        .ok_or_else(|| CodecError::malformed(format_args!("curve {} is missing", curve_id.0)))?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("curve {} is missing", curve_id.as_str()))
+        })?;
     if curve.source_object.is_some() {
         return Err(CodecError::NotImplemented(format!(
             "edge curve {} source-object state is not writable",
@@ -2363,7 +2384,7 @@ fn brep_c2_curve(
             .expect("explicit pcurve");
         return Err(CodecError::malformed(format_args!(
             "pcurve {} does not exactly match its directed planar C3 projection",
-            id.0
+            id.as_str()
         )));
     }
     Ok(explicit)
@@ -2388,7 +2409,9 @@ fn explicit_brep_c2_curve(
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id == *pcurve_id)
-        .ok_or_else(|| CodecError::malformed(format_args!("pcurve {} is missing", pcurve_id.0)))?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("pcurve {} is missing", pcurve_id.as_str()))
+        })?;
     if pcurve.wrapper_reversed() == Some(true)
         || pcurve.native_tail_flags().is_some()
         || pcurve
@@ -2478,16 +2501,16 @@ fn validate_brep_pcurve_ownership(
         }
         for pcurve_use in &coedge.pcurves {
             let id = &pcurve_use.pcurve;
-            if !owned.insert(id.0.clone()) {
+            if !owned.insert(id.as_str().to_owned()) {
                 return Err(CodecError::NotImplemented(format!(
                     "pcurve {} is shared by multiple coedges",
-                    id.0
+                    id.as_str()
                 )));
             }
             if !model.pcurves.iter().any(|pcurve| pcurve.id == *id) {
                 return Err(CodecError::malformed(format_args!(
                     "pcurve {} is missing",
-                    id.0
+                    id.as_str()
                 )));
             }
         }
@@ -2905,7 +2928,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
             })?;
         if region.body != body.id
             || region.shells.len() != 1
-            || !regions.insert(region.id.0.clone())
+            || !regions.insert(region.id.as_str().to_owned())
         {
             return Err(CodecError::malformed(format_args!(
                 "body {} region graph is invalid",
@@ -2923,7 +2946,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
             || !shell.faces.is_empty()
             || !shell.wire_edges.is_empty()
             || shell.free_vertices.is_empty()
-            || !shells.insert(shell.id.0.clone())
+            || !shells.insert(shell.id.as_str().to_owned())
         {
             return Err(CodecError::malformed(format_args!(
                 "body {} shell graph is invalid",
@@ -2937,9 +2960,9 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                 .iter()
                 .find(|vertex| vertex.id == *vertex_id)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("vertex {} is missing", vertex_id.0))
+                    CodecError::malformed(format_args!("vertex {} is missing", vertex_id.as_str()))
                 })?;
-            if vertex.tolerance.is_some() || !vertices.insert(vertex.id.0.clone()) {
+            if vertex.tolerance.is_some() || !vertices.insert(vertex.id.as_str().to_owned()) {
                 return Err(CodecError::NotImplemented(format!(
                     "vertex {} has tolerance or multiple ownership",
                     vertex.id.as_str()
@@ -2950,9 +2973,12 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                 .iter()
                 .find(|point| point.id == vertex.point)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("point {} is missing", vertex.point.0))
+                    CodecError::malformed(format_args!(
+                        "point {} is missing",
+                        vertex.point.as_str()
+                    ))
                 })?;
-            if !points.insert(point.id.0.clone()) {
+            if !points.insert(point.id.as_str().to_owned()) {
                 return Err(CodecError::NotImplemented(format!(
                     "point {} is shared by multiple free vertices",
                     point.id.as_str()
@@ -2962,7 +2988,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
         }
         groups.push(PointGroup {
             points: group,
-            identity: body.id.0.clone(),
+            identity: body.id.as_str().to_owned(),
             name: body.name.clone(),
             color: body.color,
             visible: body.visible,

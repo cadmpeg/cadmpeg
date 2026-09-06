@@ -244,7 +244,7 @@ impl ArenaLengths {
         ids.extend(
             ir.model.bodies[self.bodies..]
                 .iter()
-                .map(|entity| entity.id.0.clone()),
+                .map(|entity| entity.id.as_str().to_owned()),
         );
         ids.extend(
             ir.model.regions[self.regions..]
@@ -704,13 +704,17 @@ impl<'a> DecodeContext<'a> {
     #[cfg(test)]
     pub(crate) fn reject_duplicate_entity_candidate(&mut self) -> String {
         self.ir.model.points.push(Point {
-            id: "rhino:test:point#duplicate".into(),
+            id: "rhino:test:point#duplicate"
+                .try_into()
+                .expect("valid identity"),
             position: Point3::new(1.0, 2.0, 3.0),
             source_object: None,
         });
         let result = self.validate_candidate(|candidate, _annotations| {
             let point = Point {
-                id: "rhino:test:point#duplicate".into(),
+                id: "rhino:test:point#duplicate"
+                    .try_into()
+                    .expect("valid identity"),
                 position: Point3::new(0.0, 0.0, 0.0),
                 source_object: None,
             };
@@ -909,7 +913,9 @@ impl<'a> DecodeContext<'a> {
                         let mut proxy_transferred = false;
                         if let Some(extra) = proxy {
                             let subd_id: cadmpeg_ir::ids::SubdId =
-                                format!("rhino:object:subd#{key}").into();
+                                format!("rhino:object:subd#{key}")
+                                    .try_into()
+                                    .expect("valid identity");
                             match crate::subd::decode_mesh_proxy(
                                 self.scan.data,
                                 &extra,
@@ -1742,7 +1748,9 @@ impl<'a> DecodeContext<'a> {
             .as_ref()
             .map(|_| format!("rhino:object:curve#{key}.curve-on-surface-c3"));
         let surface_id: cadmpeg_ir::ids::SurfaceId =
-            format!("rhino:object:surface#{key}.curve-on-surface-support").into();
+            format!("rhino:object:surface#{key}.curve-on-surface-support")
+                .try_into()
+                .expect("valid identity");
         let feature_id = FeatureId(format!("rhino:curve-on-surface:feature#{key}"));
         let feature = Feature {
             id: feature_id.clone(),
@@ -2229,7 +2237,9 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let key = self.object_key(identity, source_order);
-        let id: cadmpeg_ir::ids::SubdId = format!("rhino:object:subd#{key}").into();
+        let id: cadmpeg_ir::ids::SubdId = format!("rhino:object:subd#{key}")
+            .try_into()
+            .expect("valid identity");
         match crate::subd::decode(
             self.scan.data,
             object.class_data_range.clone(),
@@ -2747,13 +2757,21 @@ impl<'a> DecodeContext<'a> {
                 if !self.charge_entities(source_order, 5) {
                     return false;
                 }
-                let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}").into();
-                let region_id: cadmpeg_ir::ids::RegionId =
-                    format!("rhino:object:region#{key}").into();
-                let shell_id: cadmpeg_ir::ids::ShellId = format!("rhino:object:shell#{key}").into();
-                let point_id: cadmpeg_ir::ids::PointId = format!("rhino:object:point#{key}").into();
-                let vertex_id: cadmpeg_ir::ids::VertexId =
-                    format!("rhino:object:vertex#{key}").into();
+                let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}")
+                    .try_into()
+                    .expect("valid identity");
+                let region_id: cadmpeg_ir::ids::RegionId = format!("rhino:object:region#{key}")
+                    .try_into()
+                    .expect("valid identity");
+                let shell_id: cadmpeg_ir::ids::ShellId = format!("rhino:object:shell#{key}")
+                    .try_into()
+                    .expect("valid identity");
+                let point_id: cadmpeg_ir::ids::PointId = format!("rhino:object:point#{key}")
+                    .try_into()
+                    .expect("valid identity");
+                let vertex_id: cadmpeg_ir::ids::VertexId = format!("rhino:object:vertex#{key}")
+                    .try_into()
+                    .expect("valid identity");
                 self.ir.model.points.push(Point {
                     id: point_id.clone(),
                     position,
@@ -2809,16 +2827,25 @@ impl<'a> DecodeContext<'a> {
                 if !self.charge_entities(source_order, entity_count) {
                     return false;
                 }
-                let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}").into();
-                let region_id: cadmpeg_ir::ids::RegionId =
-                    format!("rhino:object:region#{key}").into();
-                let shell_id: cadmpeg_ir::ids::ShellId = format!("rhino:object:shell#{key}").into();
+                let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}")
+                    .try_into()
+                    .expect("valid identity");
+                let region_id: cadmpeg_ir::ids::RegionId = format!("rhino:object:region#{key}")
+                    .try_into()
+                    .expect("valid identity");
+                let shell_id: cadmpeg_ir::ids::ShellId = format!("rhino:object:shell#{key}")
+                    .try_into()
+                    .expect("valid identity");
                 let mut vertices = Vec::with_capacity(points.len());
                 for (index, position) in points.into_iter().enumerate() {
                     let point_id: cadmpeg_ir::ids::PointId =
-                        format!("rhino:object:point#{key}.{index}").into();
+                        format!("rhino:object:point#{key}.{index}")
+                            .try_into()
+                            .expect("valid identity");
                     let vertex_id: cadmpeg_ir::ids::VertexId =
-                        format!("rhino:object:vertex#{key}.{index}").into();
+                        format!("rhino:object:vertex#{key}.{index}")
+                            .try_into()
+                            .expect("valid identity");
                     self.ir.model.points.push(Point {
                         id: point_id.clone(),
                         position,
@@ -2904,7 +2931,9 @@ impl<'a> DecodeContext<'a> {
                         return false;
                     }
                     let surface_id: cadmpeg_ir::ids::SurfaceId =
-                        format!("rhino:object:surface#{key}").into();
+                        format!("rhino:object:surface#{key}")
+                            .try_into()
+                            .expect("valid identity");
                     self.ir.model.surfaces.push(Surface {
                         id: surface_id.clone(),
                         geometry,
@@ -2983,15 +3012,18 @@ impl<'a> DecodeContext<'a> {
                     path,
                 ));
             }
-            let surface_id: cadmpeg_ir::ids::SurfaceId =
-                format!("rhino:object:surface#{key}").into();
+            let surface_id: cadmpeg_ir::ids::SurfaceId = format!("rhino:object:surface#{key}")
+                .try_into()
+                .expect("valid identity");
             candidate.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Nurbs(geometry),
                 source_object: Some(association),
             });
             let procedural_id: cadmpeg_ir::ids::ProceduralSurfaceId =
-                format!("rhino:object:procedural-surface#{key}").into();
+                format!("rhino:object:procedural-surface#{key}")
+                    .try_into()
+                    .expect("valid identity");
             let ir_definition = match definition {
                 crate::surfaces::DecodedProceduralSurface::Revolution {
                     axis_origin,
@@ -3086,9 +3118,13 @@ impl<'a> DecodeContext<'a> {
                 .enumerate()
             {
                 let surface_id: cadmpeg_ir::ids::SurfaceId =
-                    format!("rhino:object:surface#{key}.lateral-{index}").into();
+                    format!("rhino:object:surface#{key}.lateral-{index}")
+                        .try_into()
+                        .expect("valid identity");
                 let procedure_id: cadmpeg_ir::ids::ProceduralSurfaceId =
-                    format!("rhino:object:procedural-surface#{key}.lateral-{index}").into();
+                    format!("rhino:object:procedural-surface#{key}.lateral-{index}")
+                        .try_into()
+                        .expect("valid identity");
                 candidate.model.surfaces.push(Surface {
                     id: surface_id.clone(),
                     geometry: SurfaceGeometry::Nurbs(geometry),
@@ -3164,7 +3200,9 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let key = self.object_key(identity, source_order);
-        let id: cadmpeg_ir::ids::SurfaceId = format!("rhino:object:surface#{key}").into();
+        let id: cadmpeg_ir::ids::SurfaceId = format!("rhino:object:surface#{key}")
+            .try_into()
+            .expect("valid identity");
         let association = self.source_association(identity);
         let validation = self.validate_candidate(|candidate, candidate_annotations| {
             candidate.model.surfaces.push(Surface {
@@ -3594,19 +3632,27 @@ fn stage_extrusion_caps(
     if directrices.len() != extrusion.boundaries.len() {
         return false;
     }
-    let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}.caps").into();
+    let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}.caps")
+        .try_into()
+        .expect("valid identity");
     let mut region_ids = Vec::new();
     for cap in 0..2 {
         if !extrusion.caps[cap] {
             continue;
         }
-        let region_id: cadmpeg_ir::ids::RegionId =
-            format!("rhino:object:region#{key}.cap-{cap}").into();
-        let shell_id: cadmpeg_ir::ids::ShellId =
-            format!("rhino:object:shell#{key}.cap-{cap}").into();
+        let region_id: cadmpeg_ir::ids::RegionId = format!("rhino:object:region#{key}.cap-{cap}")
+            .try_into()
+            .expect("valid identity");
+        let shell_id: cadmpeg_ir::ids::ShellId = format!("rhino:object:shell#{key}.cap-{cap}")
+            .try_into()
+            .expect("valid identity");
         let surface_id: cadmpeg_ir::ids::SurfaceId =
-            format!("rhino:object:surface#{key}.cap-{cap}").into();
-        let face_id: cadmpeg_ir::ids::FaceId = format!("rhino:object:face#{key}.cap-{cap}").into();
+            format!("rhino:object:surface#{key}.cap-{cap}")
+                .try_into()
+                .expect("valid identity");
+        let face_id: cadmpeg_ir::ids::FaceId = format!("rhino:object:face#{key}.cap-{cap}")
+            .try_into()
+            .expect("valid identity");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Plane {
@@ -3622,8 +3668,9 @@ fn stage_extrusion_caps(
             let curve_id = if cap == 0 {
                 directrices[profile].clone()
             } else {
-                let id: cadmpeg_ir::ids::CurveId =
-                    format!("rhino:object:curve#{key}.{suffix}").into();
+                let id: cadmpeg_ir::ids::CurveId = format!("rhino:object:curve#{key}.{suffix}")
+                    .try_into()
+                    .expect("valid identity");
                 ir.model.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(boundary.end_nurbs.clone()),
@@ -3640,18 +3687,27 @@ fn stage_extrusion_caps(
             let Some(endpoint) = endpoint else {
                 return false;
             };
-            let point_id: cadmpeg_ir::ids::PointId =
-                format!("rhino:object:point#{key}.{suffix}").into();
+            let point_id: cadmpeg_ir::ids::PointId = format!("rhino:object:point#{key}.{suffix}")
+                .try_into()
+                .expect("valid identity");
             let vertex_id: cadmpeg_ir::ids::VertexId =
-                format!("rhino:object:vertex#{key}.{suffix}").into();
-            let edge_id: cadmpeg_ir::ids::EdgeId =
-                format!("rhino:object:edge#{key}.{suffix}").into();
-            let loop_id: cadmpeg_ir::ids::LoopId =
-                format!("rhino:object:loop#{key}.{suffix}").into();
+                format!("rhino:object:vertex#{key}.{suffix}")
+                    .try_into()
+                    .expect("valid identity");
+            let edge_id: cadmpeg_ir::ids::EdgeId = format!("rhino:object:edge#{key}.{suffix}")
+                .try_into()
+                .expect("valid identity");
+            let loop_id: cadmpeg_ir::ids::LoopId = format!("rhino:object:loop#{key}.{suffix}")
+                .try_into()
+                .expect("valid identity");
             let coedge_id: cadmpeg_ir::ids::CoedgeId =
-                format!("rhino:object:coedge#{key}.{suffix}").into();
+                format!("rhino:object:coedge#{key}.{suffix}")
+                    .try_into()
+                    .expect("valid identity");
             let pcurve_id: cadmpeg_ir::ids::PcurveId =
-                format!("rhino:object:pcurve#{key}.{suffix}").into();
+                format!("rhino:object:pcurve#{key}.{suffix}")
+                    .try_into()
+                    .expect("valid identity");
             let pcurve = if cap == 0 {
                 &boundary.start_pcurve
             } else {
@@ -4047,7 +4103,9 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
                     },
             }) => {
                 let id: cadmpeg_ir::ids::SurfaceId =
-                    format!("rhino:object:surface#{key}.slot-{index}").into();
+                    format!("rhino:object:surface#{key}.slot-{index}")
+                        .try_into()
+                        .expect("valid identity");
                 staged.draft.model_mut().surfaces.push(Surface {
                     id: id.clone(),
                     geometry,
@@ -4164,13 +4222,18 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         decode_pcurves(data, archive, raw, key, &plane_parameterizations);
     staged.warnings.extend(pcurve_warnings);
     staged.draft.model_mut().pcurves = pcurves;
-    let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}").into();
+    let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}")
+        .try_into()
+        .expect("valid identity");
     let mut vertex_ids = Vec::with_capacity(raw.vertices.len());
     for (index, vertex) in raw.vertices.iter().enumerate() {
-        let point_id: cadmpeg_ir::ids::PointId =
-            format!("rhino:object:point#{key}.vertex-{index}").into();
+        let point_id: cadmpeg_ir::ids::PointId = format!("rhino:object:point#{key}.vertex-{index}")
+            .try_into()
+            .expect("valid identity");
         let vertex_id: cadmpeg_ir::ids::VertexId =
-            format!("rhino:object:vertex#{key}.slot-{index}").into();
+            format!("rhino:object:vertex#{key}.slot-{index}")
+                .try_into()
+                .expect("valid identity");
         staged.draft.model_mut().points.push(Point {
             id: point_id.clone(),
             position: Point3::new(
@@ -4195,7 +4258,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     }
     let mut edge_ids = Vec::with_capacity(raw.edges.len());
     for (index, edge) in raw.edges.iter().enumerate() {
-        let id: cadmpeg_ir::ids::EdgeId = format!("rhino:object:edge#{key}.slot-{index}").into();
+        let id: cadmpeg_ir::ids::EdgeId = format!("rhino:object:edge#{key}.slot-{index}")
+            .try_into()
+            .expect("valid identity");
         let curve = c3.get(&edge.curve).cloned();
         let vertices = edge_vertices(edge);
         staged.draft.model_mut().edges.push(Edge {
@@ -4219,7 +4284,11 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     }
     let free_vertex_ids = free_vertex_indices
         .iter()
-        .map(|index| format!("rhino:object:vertex#{key}.slot-{index}").into())
+        .map(|index| {
+            format!("rhino:object:vertex#{key}.slot-{index}")
+                .try_into()
+                .expect("valid identity")
+        })
         .collect::<Vec<cadmpeg_ir::ids::VertexId>>();
     if grouping.fallback {
         staged.warnings.push(
@@ -4233,10 +4302,14 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             crate::curves::error(face.source_range.start, "surface child missing")
         })?;
         let component = grouping.face_groups[index];
-        let id: cadmpeg_ir::ids::FaceId = format!("rhino:object:face#{key}.slot-{index}").into();
+        let id: cadmpeg_ir::ids::FaceId = format!("rhino:object:face#{key}.slot-{index}")
+            .try_into()
+            .expect("valid identity");
         staged.draft.model_mut().faces.push(Face {
             id: id.clone(),
-            shell: format!("rhino:object:shell#{key}.component-{component}").into(),
+            shell: format!("rhino:object:shell#{key}.component-{component}")
+                .try_into()
+                .expect("valid identity"),
             surface,
             sense: face_sense(face.reversed_surface != 0),
             loops: Vec::new().into(),
@@ -4248,20 +4321,26 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     }
     let mut synthetic_edges = BTreeMap::new();
     for (index, loop_record) in raw.loops.iter().enumerate() {
-        let id: cadmpeg_ir::ids::LoopId = format!("rhino:object:loop#{key}.slot-{index}").into();
+        let id: cadmpeg_ir::ids::LoopId = format!("rhino:object:loop#{key}.slot-{index}")
+            .try_into()
+            .expect("valid identity");
         let face_id = face_ids[loop_record.face as usize].clone();
         let mut coedges = Vec::with_capacity(loop_record.trims.len());
         for trim_index in &loop_record.trims {
             let trim = &raw.trims[*trim_index as usize];
             let coedge_id: cadmpeg_ir::ids::CoedgeId =
-                format!("rhino:object:coedge#{key}.slot-{trim_index}").into();
+                format!("rhino:object:coedge#{key}.slot-{trim_index}")
+                    .try_into()
+                    .expect("valid identity");
             let edge_id = if trim.edge >= 0 {
                 edge_ids.get(trim.edge as usize).cloned().ok_or_else(|| {
                     crate::curves::error(trim.source_range.start, "trim edge missing")
                 })?
             } else {
                 let synthetic_id: cadmpeg_ir::ids::EdgeId =
-                    format!("rhino:object:edge#{key}.singular-{trim_index}").into();
+                    format!("rhino:object:edge#{key}.singular-{trim_index}")
+                        .try_into()
+                        .expect("valid identity");
                 if !synthetic_edges.contains_key(trim_index) {
                     staged.draft.model_mut().edges.push(Edge {
                         id: synthetic_id.clone(),
@@ -4325,7 +4404,11 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         let uses: Vec<_> = raw.edges[edge_index]
             .trims
             .iter()
-            .map(|trim| format!("rhino:object:coedge#{key}.slot-{trim}").into())
+            .map(|trim| {
+                format!("rhino:object:coedge#{key}.slot-{trim}")
+                    .try_into()
+                    .expect("valid identity")
+            })
             .collect::<Vec<cadmpeg_ir::ids::CoedgeId>>();
         if uses.is_empty() {
             continue;
@@ -4341,9 +4424,13 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     for (component, faces) in grouping.shell_faces.iter().enumerate() {
         let region_label = grouping.region_labels[component];
         let region_id: cadmpeg_ir::ids::RegionId =
-            format!("rhino:object:region#{key}.slot-{region_label}").into();
+            format!("rhino:object:region#{key}.slot-{region_label}")
+                .try_into()
+                .expect("valid identity");
         let shell_id: cadmpeg_ir::ids::ShellId =
-            format!("rhino:object:shell#{key}.component-{component}").into();
+            format!("rhino:object:shell#{key}.component-{component}")
+                .try_into()
+                .expect("valid identity");
         region_shell_ids
             .entry(region_label)
             .or_default()
@@ -4368,10 +4455,12 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         }
     }
     for (label, shell_ids) in region_shell_ids {
-        if let Some(region) = regions
-            .iter_mut()
-            .find(|region| region.id == format!("rhino:object:region#{key}.slot-{label}").into())
-        {
+        if let Some(region) = regions.iter_mut().find(|region| {
+            region.id
+                == format!("rhino:object:region#{key}.slot-{label}")
+                    .try_into()
+                    .expect("valid identity")
+        }) {
             region.shells = shell_ids;
         }
     }
@@ -4544,31 +4633,36 @@ fn scale_plane_pcurves(staged: &mut BrepDraft, scale: f64) {
         .surfaces
         .iter()
         .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Plane { .. }))
-        .map(|surface| surface.id.0.clone())
+        .map(|surface| surface.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     let plane_faces = staged
         .draft
         .model()
         .faces
         .iter()
-        .filter(|face| plane_surfaces.contains(&face.surface.0))
-        .map(|face| face.id.0.clone())
+        .filter(|face| plane_surfaces.contains(face.surface.as_str()))
+        .map(|face| face.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     let plane_loops = staged
         .draft
         .model()
         .loops
         .iter()
-        .filter(|value| plane_faces.contains(&value.face.0))
-        .map(|value| value.id.0.clone())
+        .filter(|value| plane_faces.contains(value.face.as_str()))
+        .map(|value| value.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     let plane_pcurves = staged
         .draft
         .model()
         .coedges
         .iter()
-        .filter(|coedge| plane_loops.contains(&coedge.owner_loop.0))
-        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.clone()))
+        .filter(|coedge| plane_loops.contains(coedge.owner_loop.as_str()))
+        .flat_map(|coedge| {
+            coedge
+                .pcurves
+                .iter()
+                .map(|use_| use_.pcurve.as_str().to_owned())
+        })
         .collect::<BTreeSet<_>>();
     for pcurve in &mut staged.draft.model_mut().pcurves {
         if !plane_pcurves.contains(pcurve.id.as_str()) {
@@ -4644,7 +4738,9 @@ fn stage_brep_procedural_surface(
         })
         .collect::<Vec<_>>();
     let surface_id: cadmpeg_ir::ids::SurfaceId =
-        format!("rhino:object:surface#{}.slot-{index}", context.key).into();
+        format!("rhino:object:surface#{}.slot-{index}", context.key)
+            .try_into()
+            .expect("valid identity");
     staged.draft.model_mut().surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Nurbs(geometry),
@@ -4680,7 +4776,8 @@ fn stage_brep_procedural_surface(
         "rhino:object:procedural-surface#{}.slot-{index}",
         context.key
     )
-    .into();
+    .try_into()
+    .expect("valid identity");
     staged
         .draft
         .model_mut()
@@ -4725,7 +4822,9 @@ fn stage_curve_tree(
             });
         }
     }
-    let id: cadmpeg_ir::ids::CurveId = format!("rhino:object:curve#{key}.{path}").into();
+    let id: cadmpeg_ir::ids::CurveId = format!("rhino:object:curve#{key}.{path}")
+        .try_into()
+        .expect("valid identity");
     let geometry = if curve.is_compound() {
         CurveGeometry::Unknown {
             record: Some(unknown.clone()),
@@ -4742,7 +4841,9 @@ fn stage_curve_tree(
     staged.links.push(id.to_string());
     if let Some(parameters) = parameters {
         let procedure_id: cadmpeg_ir::ids::ProceduralCurveId =
-            format!("rhino:object:procedural-curve#{key}.{path}").into();
+            format!("rhino:object:procedural-curve#{key}.{path}")
+                .try_into()
+                .expect("valid identity");
         staged
             .draft
             .exactness(procedure_id.to_string(), Exactness::Derived);
@@ -4851,8 +4952,9 @@ fn decode_pcurves(
                 plane_parameterization.map_or(point, |map| map.map_point(point))
             })
             .collect();
-        let id: cadmpeg_ir::ids::PcurveId =
-            format!("rhino:object:pcurve#{key}.trim-{index}").into();
+        let id: cadmpeg_ir::ids::PcurveId = format!("rhino:object:pcurve#{key}.trim-{index}")
+            .try_into()
+            .expect("valid identity");
         let Ok(nurbs) = PcurveNurbs::new(
             nurbs.degree(),
             nurbs.knots().to_vec(),
@@ -5166,9 +5268,13 @@ fn commit_curve_tree(
         }
     }
     let id: cadmpeg_ir::ids::CurveId = if path == "root" {
-        format!("rhino:object:curve#{key}").into()
+        format!("rhino:object:curve#{key}")
+            .try_into()
+            .expect("valid identity")
     } else {
-        format!("rhino:object:curve#{key}.{path}").into()
+        format!("rhino:object:curve#{key}.{path}")
+            .try_into()
+            .expect("valid identity")
     };
     let geometry = if curve.is_compound() {
         CurveGeometry::Unknown { record }
@@ -5183,9 +5289,13 @@ fn commit_curve_tree(
     set_exactness(annotations, &id, Exactness::Derived);
     if let Some(parameters) = parameters {
         let procedure_id: cadmpeg_ir::ids::ProceduralCurveId = if path == "root" {
-            format!("rhino:object:procedural-curve#{key}").into()
+            format!("rhino:object:procedural-curve#{key}")
+                .try_into()
+                .expect("valid identity")
         } else {
-            format!("rhino:object:procedural-curve#{key}.{path}").into()
+            format!("rhino:object:procedural-curve#{key}.{path}")
+                .try_into()
+                .expect("valid identity")
         };
         let _attached = ir.model.add_procedural_curve(
             id.clone(),
@@ -5249,7 +5359,9 @@ fn transform_decoded_curve(
         crate::curves::DecodedCurve::Leaf { geometry, warnings } => {
             let source = std::mem::replace(geometry, CurveGeometry::Unknown { record: None });
             let mut carrier = Curve {
-                id: "rhino:hatch:curve#placement".into(),
+                id: "rhino:hatch:curve#placement"
+                    .try_into()
+                    .expect("valid identity"),
                 geometry: source,
                 source_object: None,
             };

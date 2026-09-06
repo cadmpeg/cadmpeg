@@ -407,7 +407,7 @@ fn decode_fixture(fixture: Fixture, scale: f64) -> Result<DecodedSubd, SubdError
         0..bytes.len(),
         fixture.archive,
         scale,
-        "rhino:test:subd#0".into(),
+        "rhino:test:subd#0".try_into().expect("valid identity"),
     )
 }
 
@@ -484,7 +484,9 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
         &descriptor,
         ArchiveVersion::V5,
         1.0,
-        "rhino:test:proxy-subd#0".into(),
+        "rhino:test:proxy-subd#0"
+            .try_into()
+            .expect("valid identity"),
         fingerprint,
     )
     .expect("valid proxy framing")
@@ -499,7 +501,9 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
         &descriptor,
         ArchiveVersion::V5,
         1.0,
-        "rhino:test:proxy-subd#0".into(),
+        "rhino:test:proxy-subd#0"
+            .try_into()
+            .expect("valid identity"),
         wrong_hash,
     )
     .expect("wrong hash is an admission rejection")
@@ -517,7 +521,9 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
         &descriptor,
         ArchiveVersion::V5,
         1.0,
-        "rhino:test:proxy-subd#0".into(),
+        "rhino:test:proxy-subd#0"
+            .try_into()
+            .expect("valid identity"),
         empty_parent,
     )
     .expect("empty parent is an admission rejection")
@@ -529,7 +535,9 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
         &descriptor,
         ArchiveVersion::V5,
         1.0,
-        "rhino:test:proxy-subd#0".into(),
+        "rhino:test:proxy-subd#0"
+            .try_into()
+            .expect("valid identity"),
         fingerprint,
     )
     .expect("nonidentity userdata transform is an admission rejection")
@@ -544,7 +552,7 @@ fn decodes_empty_outer_subd_without_carrier() {
             0..1,
             ArchiveVersion::V5,
             1.0,
-            "rhino:test:subd#0".into()
+            "rhino:test:subd#0".try_into().expect("valid identity")
         )
         .expect("required invariant"),
         DecodedSubd::Empty
@@ -554,7 +562,7 @@ fn decodes_empty_outer_subd_without_carrier() {
         0..1,
         ArchiveVersion::V5,
         1.0,
-        "rhino:test:subd#0".into()
+        "rhino:test:subd#0".try_into().expect("valid identity")
     )
     .is_err());
 }
@@ -570,7 +578,7 @@ fn nested_crc_mismatch_warns_without_discarding_subd() {
         0..bytes.len(),
         fixture.archive,
         1.0,
-        "rhino:test:subd#0".into(),
+        "rhino:test:subd#0".try_into().expect("valid identity"),
     )
     .expect("recoverable checksum mismatch");
     let DecodedSubd::Surface { warnings, .. } = decoded else {
@@ -770,7 +778,7 @@ fn rejects_noncontiguous_partitions_and_future_versions() {
         0..bytes.len(),
         ArchiveVersion::V5,
         1.0,
-        "rhino:test:subd#0".into()
+        "rhino:test:subd#0".try_into().expect("valid identity")
     )
     .is_err());
 
@@ -782,7 +790,7 @@ fn rejects_noncontiguous_partitions_and_future_versions() {
             0..future.len(),
             ArchiveVersion::V5,
             1.0,
-            "rhino:test:subd#0".into()
+            "rhino:test:subd#0".try_into().expect("valid identity")
         ),
         Err(SubdError::UnsupportedVersion { .. })
     ));

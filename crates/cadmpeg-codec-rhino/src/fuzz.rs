@@ -140,7 +140,7 @@ pub fn subd(data: &[u8]) {
     if data.len() < 2 {
         return;
     }
-    let id = "rhino:fuzz:subd#0".into();
+    let id = "rhino:fuzz:subd#0".try_into().expect("valid identity");
     let _ = crate::subd::decode(data, 1..data.len(), selected_archive(data[0]), 1.0, id);
 }
 
