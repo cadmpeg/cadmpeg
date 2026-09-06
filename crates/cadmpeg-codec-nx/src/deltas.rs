@@ -5,6 +5,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod record_kind;
+pub(crate) mod group;
+use group::{GroupSelector, GroupReferenceStatus};
 use record_kind::RecordKind;
 
 use crate::framing::read_xmt_width as read_xmt;
@@ -96,8 +98,8 @@ pub enum RecordFamily {
     Entity62,
     Group {
         node_id: u32,
-        selector: u8,
-        linked_reference_status: u8,
+        selector: GroupSelector,
+        linked_reference_status: GroupReferenceStatus,
     },
     IntersectionData,
     Type91,
@@ -362,8 +364,8 @@ impl RecordFamily {
         kind: u16,
         node_id: Option<u32>,
         position: Option<[f64; 3]>,
-        group_selector: Option<u8>,
-        group_linked_reference_status: Option<u8>,
+        group_selector: Option<GroupSelector>,
+        group_linked_reference_status: Option<GroupReferenceStatus>,
     ) -> Option<Self> {
         let family = match name {
             "BODY" => Self::Body { node_id: node_id? },
@@ -484,11 +486,6 @@ impl Record {
     /// Numeric Parasolid node type.
     pub const fn kind(&self) -> u16 {
         self.family.kind()
-    }
-
-    /// Kernel node identifier when this family serializes one.
-    pub const fn node_id(&self) -> Option<u32> {
-        self.family.node_id()
     }
 
     /// Stable family name used by the deltas census and native records.
@@ -3260,29 +3257,6 @@ fn consume_group(stream: &[u8], offset: usize) -> Option<Record> {
     })
 }
 
-/// Exact control bytes in one already admitted GROUP record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct GroupControls {
-    /// Selector between the four leading references and the linked reference.
-    pub(crate) selector: u8,
-    /// Status byte following the linked reference.
-    pub(crate) linked_reference_status: u8,
-}
-
-pub(crate) fn group_controls(record: &Record) -> Option<GroupControls> {
-    match record.family {
-        RecordFamily::Group {
-            selector,
-            linked_reference_status,
-            ..
-        } => Some(GroupControls {
-            selector,
-            linked_reference_status,
-        }),
-        _ => None,
-    }
-}
-
 fn consume_attdef_list(stream: &[u8], offset: usize) -> Option<Record> {
     (View::u16_be_at(stream, offset) == Some(74)).then_some(())?;
     let direct = attdef_list_layout(stream, offset, 0);
@@ -3467,7 +3441,7 @@ fn group_layout(
     stream: &[u8],
     offset: usize,
     envelope_len: usize,
-) -> Option<(u32, u32, Vec<u32>, u8, u8, usize)> {
+) -> Option<(u32, u32, Vec<u32>, GroupSelector, GroupReferenceStatus, usize)> {
     group_layout_with_statuses(stream, offset, envelope_len)
         .or_else(|| group_layout_without_leading_statuses(stream, offset, envelope_len))
 }
@@ -3476,7 +3450,7 @@ fn group_layout_with_statuses(
     stream: &[u8],
     offset: usize,
     envelope_len: usize,
-) -> Option<(u32, u32, Vec<u32>, u8, u8, usize)> {
+) -> Option<(u32, u32, Vec<u32>, GroupSelector, GroupReferenceStatus, usize)> {
     let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
     (xmt > 1).then_some(())?;
     let mut at = offset.checked_add(2 + envelope_len + consumed)?;
@@ -3490,13 +3464,11 @@ fn group_layout_with_statuses(
         at += 1;
         references.push(reference);
     }
-    let selector = *stream.get(at)?;
-    matches!(selector, 2 | 4 | 9).then_some(())?;
+    let selector = GroupSelector::try_from(*stream.get(at)?).ok()?;
     at += 1;
     let (reference, consumed) = read_xmt(stream, at)?;
     at = at.checked_add(consumed)?;
-    let linked_reference_status = *stream.get(at)?;
-    matches!(linked_reference_status, 0 | 1).then_some(())?;
+    let linked_reference_status = GroupReferenceStatus::try_from(*stream.get(at)?).ok()?;
     at += 1;
     references.push(reference);
     Some((
@@ -3513,7 +3485,7 @@ fn group_layout_without_leading_statuses(
     stream: &[u8],
     offset: usize,
     envelope_len: usize,
-) -> Option<(u32, u32, Vec<u32>, u8, u8, usize)> {
+) -> Option<(u32, u32, Vec<u32>, GroupSelector, GroupReferenceStatus, usize)> {
     let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
     (xmt > 1).then_some(())?;
     let mut at = offset.checked_add(2 + envelope_len + consumed)?;
@@ -3525,13 +3497,11 @@ fn group_layout_without_leading_statuses(
         at = at.checked_add(consumed)?;
         references.push(reference);
     }
-    let selector = *stream.get(at)?;
-    matches!(selector, 2 | 4 | 9).then_some(())?;
+    let selector = GroupSelector::try_from(*stream.get(at)?).ok()?;
     at += 1;
     let (reference, consumed) = read_xmt(stream, at)?;
     at = at.checked_add(consumed)?;
-    let linked_reference_status = *stream.get(at)?;
-    matches!(linked_reference_status, 0 | 1).then_some(())?;
+    let linked_reference_status = GroupReferenceStatus::try_from(*stream.get(at)?).ok()?;
     at += 1;
     references.push(reference);
     Some((
@@ -3835,11 +3805,6 @@ fn is_next_kind(kind: u16) -> bool {
 
 pub(crate) fn family_name(kind: u16) -> Option<&'static str> {
     RecordKind::try_from(kind).ok().map(RecordKind::name)
-}
-
-/// Resolve the semantic family after the record-form discriminator is known.
-pub(crate) fn record_family_name(record: &Record) -> &'static str {
-    record.family_name()
 }
 
 fn fixed_signature(kind: u16) -> Option<&'static [Token]> {

@@ -550,7 +550,7 @@ impl StreamNoted for ParasolidDeltasRecord {
 }
 impl StreamNoted for ParasolidGroupRecord {
     fn stream_note(&self) -> (&str, u32, u64) {
-        (&self.id, self.stream_ordinal, self.inflated_offset)
+        (&self.id, self.origin.stream_ordinal(), self.inflated_offset)
     }
 }
 impl StreamNoted for ParasolidDeltasTombstone {

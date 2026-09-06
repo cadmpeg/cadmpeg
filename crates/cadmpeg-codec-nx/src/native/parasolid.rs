@@ -11,6 +11,9 @@ mod support_uv_wire;
 mod chart_wire;
 pub(crate) mod group_member;
 use group_member::GroupMemberTarget;
+pub(crate) mod group_record;
+use group_record::GroupOrigin;
+use crate::deltas::group::{GroupSelector, GroupReferenceStatus};
 
 use super::substrate::{ParsedStreams, StreamView};
 
@@ -18,29 +21,22 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// One complete Parasolid GROUP record with its source and owning-partition scope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "group_record::GroupWire", into = "group_record::GroupWire")]
 pub struct ParasolidGroupRecord {
     /// Globally unique source-record identity.
     pub id: String,
-    /// Stream containing the exact serialized GROUP record.
-    pub stream_ordinal: u32,
-    /// `partition` or `deltas` source classification.
-    pub stream_kind: crate::parasolid::StreamKind,
-    /// Partition whose local node-id namespace owns this GROUP.
-    ///
-    /// An unpaired deltas stream retains the record without assigning a
-    /// partition namespace.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub partition_stream_ordinal: Option<u32>,
+    /// Exact source stream and its partition namespace.
+    pub origin: GroupOrigin,
     /// Stream-local XMT identity.
     pub xmt: u32,
     /// Partition-local kernel node identity.
     pub node_id: u32,
     /// Ordered GROUP references without their framing status bytes.
-    pub references: Vec<u32>,
+    pub references: [u32; 5],
     /// Selector between the four leading references and the linked reference.
-    pub selector: u8,
+    pub selector: GroupSelector,
     /// Status byte following the linked reference.
-    pub linked_reference_status: u8,
+    pub linked_reference_status: GroupReferenceStatus,
     /// Exact serialized record length.
     pub byte_len: u64,
     /// GROUP tag offset in the inflated source stream.
@@ -95,39 +91,26 @@ pub(crate) fn parasolid_group_records(
         let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
             continue;
         };
-        for record in crate::deltas::walk(&stream.inflated)
-            .records
-            .into_iter()
-            .filter(|record| crate::deltas::record_family_name(record) == "GROUP")
-        {
-            let Some(node_id) = record.node_id() else {
-                continue;
-            };
-            let Some(controls) = crate::deltas::group_controls(&record) else {
-                continue;
-            };
+        for record in crate::deltas::walk(&stream.inflated).records {
+            let crate::deltas::RecordFamily::Group { node_id, selector, linked_reference_status } = record.family else { continue; };
+            let Ok(references) = record.references.try_into() else { continue; };
             groups.push(ParasolidGroupRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:parasolid-group#{}-{}",
                     record.offset, record.xmt
                 ),
-                stream_ordinal: stream_ordinal_u32,
-                stream_kind: stream.kind,
-                partition_stream_ordinal: Some(stream_ordinal_u32),
+                origin: GroupOrigin::Partition { stream_ordinal: stream_ordinal_u32 },
                 xmt: record.xmt,
                 node_id,
-                references: record.references,
-                selector: controls.selector,
-                linked_reference_status: controls.linked_reference_status,
+                references,
+                selector,
+                linked_reference_status,
                 byte_len: (record.end - record.offset) as u64,
                 inflated_offset: record.offset as u64,
             });
         }
     }
-    for record in deltas_records
-        .iter()
-        .filter(|record| record.family_name() == "GROUP")
-    {
+    for record in deltas_records {
         let crate::deltas::RecordFamily::Group {
             node_id,
             selector,
@@ -136,23 +119,20 @@ pub(crate) fn parasolid_group_records(
         else {
             continue;
         };
+        let Ok(references) = record.references.as_slice().try_into() else { continue; };
         groups.push(ParasolidGroupRecord {
             id: record.id.replacen("deltas-record", "parasolid-group", 1),
-            stream_ordinal: record.stream_ordinal,
-            stream_kind: crate::parasolid::StreamKind::Deltas,
-            partition_stream_ordinal: usize::try_from(record.stream_ordinal)
-                .ok()
-                .and_then(|delta| paired_partition.get(&delta).copied()),
+            origin: GroupOrigin::Deltas { stream_ordinal: record.stream_ordinal, partition_stream_ordinal: usize::try_from(record.stream_ordinal).ok().and_then(|delta| paired_partition.get(&delta).copied()) },
             xmt: record.xmt,
             node_id,
-            references: record.references.clone(),
+            references,
             selector,
             linked_reference_status,
             byte_len: record.byte_len,
             inflated_offset: record.inflated_offset,
         });
     }
-    groups.sort_by_key(|group| (group.stream_ordinal, group.inflated_offset));
+    groups.sort_by_key(|group| (group.origin.stream_ordinal(), group.inflated_offset));
     groups
 }
 
@@ -169,17 +149,13 @@ fn group_members_from_records(
         _ => None,
     };
     let mut groups_by_node = BTreeMap::<u32, Vec<&crate::deltas::Record>>::new();
-    for record in records
-        .iter()
-        .filter(|record| crate::deltas::record_family_name(record) == "GROUP")
-    {
-        let Some(node_id) = record.node_id() else {
-            continue;
-        };
-        groups_by_node.entry(node_id).or_default().push(record);
+    for record in records {
+        if let crate::deltas::RecordFamily::Group { node_id, .. } = record.family {
+            groups_by_node.entry(node_id).or_default().push(record);
+        }
     }
     let mut members = Vec::new();
-    for groups in groups_by_node.values() {
+    for (&group_node_id, groups) in &groups_by_node {
         let [group] = groups.as_slice() else {
             continue;
         };
@@ -200,7 +176,7 @@ fn group_members_from_records(
                 complete = false;
                 break;
             };
-            if crate::deltas::record_family_name(list_record) != "TYPE_91"
+            if !matches!(list_record.family, crate::deltas::RecordFamily::Type91)
                 || list_record.references.len() != 6
                 || list_record.references[0] != group.xmt
                 || list_record.references[5] != expected_next
@@ -225,9 +201,6 @@ fn group_members_from_records(
             continue;
         }
         reverse_chain.reverse();
-        let Some(group_node_id) = group.node_id() else {
-            continue;
-        };
         members.extend(reverse_chain.into_iter().enumerate().filter_map(
             |(ordinal, (list_record_xmt, member_xmt, target))| {
                 Some(ParasolidGroupMember {
@@ -361,9 +334,9 @@ struct ParasolidDeltasRecordWire {
     node_id: Option<u32>,
     references: Vec<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    group_selector: Option<u8>,
+    group_selector: Option<GroupSelector>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    group_linked_reference_status: Option<u8>,
+    group_linked_reference_status: Option<GroupReferenceStatus>,
     position: Option<[f64; 3]>,
     byte_len: u64,
     inflated_offset: u64,
@@ -3558,8 +3531,8 @@ mod tests {
             },
             90 => RecordFamily::Group {
                 node_id: node_id.expect("group node"),
-                selector: 4,
-                linked_reference_status: 0,
+                selector: GroupSelector::Form4,
+                linked_reference_status: GroupReferenceStatus::Form0,
             },
             91 => RecordFamily::Type91,
             other => panic!("unexpected test kind {other}"),
@@ -3652,10 +3625,10 @@ mod tests {
 
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].node_id, groups[1].node_id);
-        assert_eq!(groups[0].partition_stream_ordinal, Some(0));
-        assert_eq!(groups[1].partition_stream_ordinal, Some(1));
-        assert_eq!(groups[0].selector, 4);
-        assert_eq!(groups[0].linked_reference_status, 0);
+        assert_eq!(groups[0].origin.partition_stream_ordinal(), Some(0));
+        assert_eq!(groups[1].origin.partition_stream_ordinal(), Some(1));
+        assert_eq!(u8::from(groups[0].selector), 4);
+        assert_eq!(u8::from(groups[0].linked_reference_status), 0);
         assert_ne!(groups[0].id, groups[1].id);
     }
 
@@ -3672,10 +3645,10 @@ mod tests {
         let groups = super::parasolid_group_records(&streams, &pairs, &events.records);
 
         assert_eq!(groups.len(), 3);
-        assert_eq!(groups[0].partition_stream_ordinal, Some(0));
-        assert_eq!(groups[1].partition_stream_ordinal, Some(0));
-        assert_eq!(groups[2].partition_stream_ordinal, None);
-        assert_eq!(groups[1].stream_kind.label(), "deltas");
+        assert_eq!(groups[0].origin.partition_stream_ordinal(), Some(0));
+        assert_eq!(groups[1].origin.partition_stream_ordinal(), Some(0));
+        assert_eq!(groups[2].origin.partition_stream_ordinal(), None);
+        assert_eq!(groups[1].origin.stream_kind().label(), "deltas");
     }
 
     fn deltas_type_45(xmt: u16) -> Vec<u8> {

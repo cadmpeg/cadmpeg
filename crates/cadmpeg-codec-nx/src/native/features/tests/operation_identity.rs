@@ -369,14 +369,12 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     let group =
         |id: &str, partition_stream_ordinal| crate::native::parasolid::ParasolidGroupRecord {
             id: id.into(),
-            stream_ordinal: partition_stream_ordinal + 1,
-            stream_kind: crate::parasolid::StreamKind::Deltas,
-            partition_stream_ordinal: Some(partition_stream_ordinal),
+            origin: crate::native::parasolid::group_record::GroupOrigin::Deltas { stream_ordinal: partition_stream_ordinal + 1, partition_stream_ordinal: Some(partition_stream_ordinal) },
             xmt: 10,
             node_id: writes[0].group_node,
-            references: vec![3, 4, 5, 6, 7],
-            selector: 4,
-            linked_reference_status: 0,
+            references: [3, 4, 5, 6, 7],
+            selector: crate::deltas::group::GroupSelector::Form4,
+            linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
             byte_len: 20,
             inflated_offset: 0,
         };
@@ -454,14 +452,12 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
     let group =
         |id: &str, partition_stream_ordinal| crate::native::parasolid::ParasolidGroupRecord {
             id: id.into(),
-            stream_ordinal: partition_stream_ordinal + 1,
-            stream_kind: crate::parasolid::StreamKind::Deltas,
-            partition_stream_ordinal: Some(partition_stream_ordinal),
+            origin: crate::native::parasolid::group_record::GroupOrigin::Deltas { stream_ordinal: partition_stream_ordinal + 1, partition_stream_ordinal: Some(partition_stream_ordinal) },
             xmt: 10,
             node_id: 99,
-            references: vec![3, 4, 5, 6, 7],
-            selector: 4,
-            linked_reference_status: 0,
+            references: [3, 4, 5, 6, 7],
+            selector: crate::deltas::group::GroupSelector::Form4,
+            linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
             byte_len: 20,
             inflated_offset: 0,
         };

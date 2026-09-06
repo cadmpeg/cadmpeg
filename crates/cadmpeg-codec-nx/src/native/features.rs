@@ -6481,7 +6481,7 @@ pub fn feature_operation_body_partition_uses(
             let parasolid_group_records = groups
                 .iter()
                 .filter(|group| {
-                    group.partition_stream_ordinal == Some(partition_stream_ordinal)
+                    group.origin.partition_stream_ordinal() == Some(partition_stream_ordinal)
                         && group.node_id == write.group_node
                 })
                 .map(|group| group.id.clone())
@@ -6534,14 +6534,14 @@ pub fn feature_body_write_group_partition_uses(
             (!matching_groups.is_empty()).then_some(())?;
             let partitions = matching_groups
                 .iter()
-                .filter_map(|group| group.partition_stream_ordinal)
+                .filter_map(|group| group.origin.partition_stream_ordinal())
                 .collect::<BTreeSet<_>>();
             let mut partitions = partitions.into_iter();
             let partition_stream_ordinal = partitions.next()?;
             partitions.next().is_none().then_some(())?;
             matching_groups
                 .iter()
-                .all(|group| group.partition_stream_ordinal == Some(partition_stream_ordinal))
+                .all(|group| group.origin.partition_stream_ordinal() == Some(partition_stream_ordinal))
                 .then_some(())?;
             Some(FeatureBodyWriteGroupPartitionUse {
                 id: id.replacen("body-write", "body-write-group-partition-use", 1),
