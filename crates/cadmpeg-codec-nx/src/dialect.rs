@@ -116,7 +116,7 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> LayerClassifica
         &[],
     );
     let host = NxDialect::of_container(&scan.container);
-    let mut layers = DialectLayers::of(host.matched(scan.container.version));
+    let mut layers = DialectLayers::of(host.matched(scan.container.layout.version()));
     let losses = cadmpeg_parasolid::push_extras(&mut layers, extra)
         .into_iter()
         .map(|message| NxLossCode::DialectLayerCollision.note(message))
@@ -181,7 +181,7 @@ impl NxDialect {
     pub(crate) fn of_container(container: &Container<'_>) -> Self {
         match container.layout {
             crate::container::ContainerLayout::Modern { .. } => Self::Splmsstr,
-            crate::container::ContainerLayout::LegacyCfb => Self::LegacyCfb,
+            crate::container::ContainerLayout::LegacyCfb { .. } => Self::LegacyCfb,
         }
     }
 }

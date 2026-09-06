@@ -101,7 +101,7 @@ pub mod fuzz;
 
 #[doc(hidden)]
 pub use evaluation::{
-    BodyCensusEvaluation, FeatureBoundary, UnsupportedBodyCensusReason, saved_body_census_evidence,
+    saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, UnsupportedBodyCensusReason,
 };
 
 use cadmpeg_core::container::{ContainerRole, EntryCompression};
@@ -110,8 +110,8 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
+use cadmpeg_ir::ContainerSummary;
 
 /// Decoder and inspector for Siemens NX `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]
@@ -278,7 +278,9 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         }
         let (compression, compressed_size) = match scan.container.layout {
             container::ContainerLayout::Modern { .. } => (EntryCompression::Zlib, 0),
-            container::ContainerLayout::LegacyCfb => (EntryCompression::Stored, stream.consumed),
+            container::ContainerLayout::LegacyCfb { .. } => {
+                (EntryCompression::Stored, stream.consumed)
+            }
         };
         entries.push(ContainerEntry {
             name: format!("parasolid#{si}"),

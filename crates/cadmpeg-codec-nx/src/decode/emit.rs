@@ -1219,7 +1219,13 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
     );
     attributes.insert(
         "header_entry_count".to_string(),
-        scan.container.header_entry_count.to_string(),
+        match scan.container.layout {
+            crate::container::ContainerLayout::Modern {
+                header_entry_count, ..
+            } => header_entry_count,
+            crate::container::ContainerLayout::LegacyCfb { entry_count, .. } => entry_count,
+        }
+        .to_string(),
     );
     if let crate::container::ContainerLayout::Modern {
         footer_offset,

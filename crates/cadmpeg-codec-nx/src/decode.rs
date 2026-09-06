@@ -483,25 +483,27 @@ pub fn summarize(scan: &Scan) -> (crate::dialect::LayerClassification, Vec<Strin
     let c = &scan.container;
     let (control_count, classified_control_count) = offset_store_control_counts(c);
     let mut notes = match c.layout {
-        crate::container::ContainerLayout::LegacyCfb => vec![format!(
+        crate::container::ContainerLayout::LegacyCfb { entry_count, .. } => vec![format!(
             "legacy CFB container: {} directory entr{}",
-            c.header_entry_count,
-            if c.header_entry_count == 1 {
+            entry_count,
+            if entry_count == 1 {
                 "y"
             } else {
                 "ies"
             },
         )],
         crate::container::ContainerLayout::Modern {
+            header_entry_count,
             file_tag,
             footer_offset,
             footer_entry_count,
             footer_fingerprint,
+            ..
         } => vec![format!(
             "SPLMSSTR container: file tag {}, footer offset {}, {} HEADER and {} FOOTER directory entry/ies, fingerprint {:08x}",
             file_tag,
             footer_offset,
-            c.header_entry_count,
+            header_entry_count,
             footer_entry_count,
             assemble_u32_be(footer_fingerprint),
         )],

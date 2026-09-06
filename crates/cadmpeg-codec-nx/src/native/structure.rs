@@ -516,10 +516,8 @@ mod tests {
         let len = data.len() as u64;
         Container {
             data: Cow::Owned(data),
-            version: 0x06,
-            header_entry_count: 1,
             physical_size: len,
-            layout: crate::container::TEST_MODERN_LAYOUT,
+            layout: crate::container::test_modern_layout(0x06, 1),
             entries: vec![DirEntry {
                 name: ENTRY_NAME.into(),
                 region: Region::Header,

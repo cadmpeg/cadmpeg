@@ -22,13 +22,14 @@ fn enum_and_registry_rows_are_closed_bidirectionally() {
 fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
     Container {
         data: (&[] as &[u8]).into(),
-        version,
-        header_entry_count: 0,
         physical_size: 0,
         layout: if legacy_cfb {
-            crate::container::ContainerLayout::LegacyCfb
+            crate::container::ContainerLayout::LegacyCfb {
+                version,
+                entry_count: 0,
+            }
         } else {
-            crate::container::TEST_MODERN_LAYOUT
+            crate::container::test_modern_layout(version, 0)
         },
         entries: Vec::new(),
         indexed_section_layouts: OnceLock::new(),
@@ -38,7 +39,7 @@ fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
 }
 
 fn classify(container: &Container<'_>) -> DialectMatch {
-    NxDialect::of_container(container).matched(container.version)
+    NxDialect::of_container(container).matched(container.layout.version())
 }
 
 #[test]

@@ -16,9 +16,9 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
-use cadmpeg_core::CodecError;
 use cadmpeg_core::bytes::find;
-use cadmpeg_core::decode::{DecodeContext, View, bounded_len};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 use crate::layout::directory_entry as dir_entry;
 use crate::layout::directory_file_payload as file_payload;
@@ -797,6 +797,10 @@ pub(crate) fn parse_extref_reference_pairs(bytes: &[u8]) -> Vec<(usize, u32, u32
 pub enum ContainerLayout {
     /// Modern SPLMSSTR framing and its footer metadata.
     Modern {
+        /// Version byte at file offset 8.
+        version: u8,
+        /// Declared HEADER directory entry count.
+        header_entry_count: u32,
         /// File-specific 24-bit little-endian value at offset 9.
         file_tag: u32,
         /// `FOOTER` region offset.
@@ -807,28 +811,40 @@ pub enum ContainerLayout {
         footer_fingerprint: [u8; 4],
     },
     /// Legacy Compound File Binary envelope.
-    LegacyCfb,
+    LegacyCfb {
+        /// Version byte in the UGII payload.
+        version: u8,
+        /// Number of entries in the CFB directory.
+        entry_count: u32,
+    },
+}
+
+impl ContainerLayout {
+    /// Version byte selected by this container's grammar.
+    pub(crate) fn version(self) -> u8 {
+        match self {
+            Self::Modern { version, .. } | Self::LegacyCfb { version, .. } => version,
+        }
+    }
 }
 
 #[cfg(test)]
-pub(crate) const TEST_MODERN_LAYOUT: ContainerLayout = ContainerLayout::Modern {
-    file_tag: 0,
-    footer_offset: 0,
-    footer_entry_count: 0,
-    footer_fingerprint: [0; 4],
-};
+pub(crate) fn test_modern_layout(version: u8, header_entry_count: u32) -> ContainerLayout {
+    ContainerLayout::Modern {
+        version,
+        header_entry_count,
+        file_tag: 0,
+        footer_offset: 0,
+        footer_entry_count: 0,
+        footer_fingerprint: [0; 4],
+    }
+}
 
 /// A parsed NX container and its directory entries.
 #[derive(Debug, Clone)]
 pub struct Container<'a> {
     /// The source image, or the materialized logical stream image for legacy CFB.
     pub data: Cow<'a, [u8]>,
-    /// Modern version byte at file offset 8, or the legacy UGII payload
-    /// version when the source is a CFB wrapper.
-    pub version: u8,
-    /// Modern declared HEADER entry count, or the CFB entry count for legacy
-    /// input.
-    pub header_entry_count: u32,
     /// Physical source-image length before legacy CFB stream materialization.
     pub physical_size: u64,
     /// Facts owned by the container grammar that parsed the source.
@@ -1024,10 +1040,10 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
 
     Ok(Container {
         data,
-        version,
-        header_entry_count,
         physical_size,
         layout: ContainerLayout::Modern {
+            version,
+            header_entry_count,
             file_tag,
             footer_offset,
             footer_entry_count,
@@ -1112,10 +1128,11 @@ pub fn scan_legacy<'a>(
         .map_err(|_| CodecError::Malformed("legacy CFB entry count exceeds u32".into()))?;
     let container = Container {
         data: Cow::Borrowed(logical_data.window()),
-        version,
-        header_entry_count,
         physical_size: root.window().len() as u64,
-        layout: ContainerLayout::LegacyCfb,
+        layout: ContainerLayout::LegacyCfb {
+            version,
+            entry_count: header_entry_count,
+        },
         entries,
         indexed_section_layouts: OnceLock::new(),
         om_operation_label_layouts: OnceLock::new(),

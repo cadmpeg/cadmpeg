@@ -8,7 +8,7 @@ use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zlib_probe};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
-use cadmpeg_ir::{SourceObjectAssociation, topology::Color};
+use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
 
 use crate::layout::jt_document_header as jt_hdr;
 use crate::layout::jt_toc_entry as jt_toc;
@@ -3954,8 +3954,8 @@ pub(crate) fn display_jt_tessellations(
 mod tests {
     use std::io::Write;
 
-    use flate2::Compression;
     use flate2::write::ZlibEncoder;
+    use flate2::Compression;
 
     use super::*;
 
@@ -4009,10 +4009,8 @@ mod tests {
         let data_len = data.len() as u64;
         let container = Container {
             data: data.clone().into(),
-            version: 6,
-            header_entry_count: 0,
             physical_size,
-            layout: crate::container::TEST_MODERN_LAYOUT,
+            layout: crate::container::test_modern_layout(6, 0),
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Footer,
@@ -4118,10 +4116,8 @@ mod tests {
         let data_len = data.len() as u64;
         let container = Container {
             data: data.into(),
-            version: 6,
-            header_entry_count: 0,
             physical_size,
-            layout: crate::container::TEST_MODERN_LAYOUT,
+            layout: crate::container::test_modern_layout(6, 0),
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Header,
@@ -4216,10 +4212,8 @@ mod tests {
         let data_len = data.len() as u64;
         let container = Container {
             data: data.into(),
-            version: 6,
-            header_entry_count: 0,
             physical_size,
-            layout: crate::container::TEST_MODERN_LAYOUT,
+            layout: crate::container::test_modern_layout(6, 0),
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Header,
@@ -5097,7 +5091,7 @@ mod tests {
 
     #[test]
     fn jt9_topology_packets_retain_decoded_primal_values() {
-        use super::{DisplayJtShapeLodElement, display_jt_topology_packet_sequences};
+        use super::{display_jt_topology_packet_sequences, DisplayJtShapeLodElement};
 
         let mut representation = vec![0; 24 * 4];
         representation.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
@@ -5120,10 +5114,8 @@ mod tests {
         let data_len = data.len() as u64;
         let container = crate::container::Container {
             data: data.into(),
-            version: 1,
-            header_entry_count: 0,
             physical_size,
-            layout: crate::container::TEST_MODERN_LAYOUT,
+            layout: crate::container::test_modern_layout(1, 0),
             entries: vec![crate::container::DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: crate::container::Region::Header,
@@ -5151,11 +5143,9 @@ mod tests {
         let (sequences, _, _) = display_jt_topology_packet_sequences(&container, &elements);
         assert_eq!(sequences.len(), 1);
         assert_eq!(sequences[0].packets.len(), 24);
-        assert!(
-            sequences[0]
-                .packets
-                .iter()
-                .all(|packet| packet.values == Some(Vec::new()))
-        );
+        assert!(sequences[0]
+            .packets
+            .iter()
+            .all(|packet| packet.values == Some(Vec::new())));
     }
 }

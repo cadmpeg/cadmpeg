@@ -411,10 +411,8 @@ mod tests {
         let scan = crate::decode::Scan {
             container: crate::container::Container {
                 data: Vec::new().into(),
-                version: 0x06,
-                header_entry_count: 0,
                 physical_size: 0,
-                layout: crate::container::TEST_MODERN_LAYOUT,
+                layout: crate::container::test_modern_layout(0x06, 0),
                 entries: Vec::new(),
                 indexed_section_layouts: std::sync::OnceLock::new(),
                 om_operation_label_layouts: std::sync::OnceLock::new(),
@@ -459,10 +457,8 @@ mod tests {
         let scan = crate::decode::Scan {
             container: crate::container::Container {
                 data: Vec::new().into(),
-                version: 0x06,
-                header_entry_count: 0,
                 physical_size: 0,
-                layout: crate::container::TEST_MODERN_LAYOUT,
+                layout: crate::container::test_modern_layout(0x06, 0),
                 entries: Vec::new(),
                 indexed_section_layouts: std::sync::OnceLock::new(),
                 om_operation_label_layouts: std::sync::OnceLock::new(),
