@@ -7,8 +7,8 @@ use crate::om::control_leading_value::ControlLeadingValue;
 use crate::printable_string::PrintableString;
 use crate::om::state_index::StateIndexToken;
 mod state_index_wire;
-
-use cadmpeg_core::decode::View;
+pub(crate) mod material_texture;
+use material_texture::MaterialTextureAsset;
 
 use crate::om::compact::{CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex};
 mod row_wire;
@@ -3139,37 +3139,6 @@ pub struct ExternalReferenceRecordChild {
     pub directory_reference: String,
 }
 
-/// Byte order selected by a TIFF header.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TiffByteOrder {
-    LittleEndian,
-    BigEndian,
-}
-
-/// Embedded NX material texture stored as a TIFF stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MaterialTextureAsset {
-    /// Globally unique native-record identity.
-    pub id: String,
-    /// Texture stream leaf name carried by the directory path.
-    pub name: String,
-    /// TIFF byte order: `little_endian` or `big_endian`.
-    pub byte_order: TiffByteOrder,
-    /// TIFF format version. NX material textures use version 42.
-    pub version: u16,
-    /// Absolute byte offset of the first TIFF image-file directory, relative to the asset payload.
-    pub first_ifd_offset: u32,
-    /// Exact texture payload length.
-    pub byte_len: u64,
-    /// SHA-256 digest of the exact TIFF payload.
-    pub sha256: String,
-    /// Directory entry containing the texture.
-    pub source_entry: String,
-    /// Absolute file offset of the TIFF header.
-    pub source_offset: u64,
-}
-
 /// Exact QAF catalog mapping for one embedded material texture.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MaterialTextureCatalogEntry {
@@ -3189,50 +3158,6 @@ pub struct MaterialTextureCatalogEntry {
     pub source_entry: String,
     /// Absolute file offset of the `folderProperties` element.
     pub source_offset: u64,
-}
-
-/// Decode every strictly framed TIFF material-texture directory entry.
-pub fn material_texture_assets(container: &Container) -> Vec<MaterialTextureAsset> {
-    let mut assets = container
-        .entries
-        .iter()
-        .filter_map(|entry| {
-            let name = entry.name.strip_prefix("/Root/materialsTif/")?;
-            (!name.is_empty()).then_some(())?;
-            let (offset, size) = entry.file_span?;
-            let (start, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-            let payload = container.data.get(start..start.checked_add(size)?)?;
-            let (byte_order, version, first_ifd_offset) = match payload.get(..8)? {
-                [b'I', b'I', 42, 0, ..] => (
-                    TiffByteOrder::LittleEndian,
-                    42,
-                    View::u32_le_at(payload, 4)?,
-                ),
-                [b'M', b'M', 0, 42, ..] => {
-                    (TiffByteOrder::BigEndian, 42, View::u32_be_at(payload, 4)?)
-                }
-                _ => return None,
-            };
-            let first_ifd = usize::try_from(first_ifd_offset).ok()?;
-            (first_ifd >= 8 && first_ifd < payload.len()).then_some(())?;
-            Some(MaterialTextureAsset {
-                id: String::new(),
-                name: name.to_string(),
-                byte_order,
-                version,
-                first_ifd_offset,
-                byte_len: size as u64,
-                sha256: sha256_hex(payload),
-                source_entry: entry.name.clone(),
-                source_offset: offset,
-            })
-        })
-        .collect::<Vec<_>>();
-    assets.sort_by(|first, second| first.source_entry.cmp(&second.source_entry));
-    for (ordinal, asset) in assets.iter_mut().enumerate() {
-        asset.id = format!("nx:container:material-texture#{ordinal}");
-    }
-    assets
 }
 
 /// Join QAF material paths to embedded TIFF streams by exact stored path.
@@ -3283,8 +3208,8 @@ fn parse_material_texture_catalog(
     (root.tag_name().name() == "folderContents").then_some(())?;
     let assets_by_path = assets
         .iter()
-        .map(|asset| Some((asset.source_entry.strip_prefix("/Root/")?, asset)))
-        .collect::<Option<BTreeMap<_, _>>>()?;
+        .map(|asset| (asset.storage_path(), asset))
+        .collect::<BTreeMap<_, _>>();
     let mut catalog = Vec::new();
     let mut seen_assets = BTreeSet::new();
     for node in root.children().filter(roxmltree::Node::is_element) {

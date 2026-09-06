@@ -19,20 +19,20 @@ fn decode_retains_strict_tiff_material_texture_assets() {
         .native
         .namespace("nx")
         .expect("required invariant")
-        .arena_as::<super::super::MaterialTextureAsset>("material_texture_assets")
+        .arena_as::<crate::native::om::material_texture::MaterialTextureAsset>("material_texture_assets")
         .expect("required invariant");
 
     assert_eq!(assets.len(), 1);
-    assert_eq!(assets[0].name, "AISI Steel 4340");
+    assert_eq!(assets[0].name(), "AISI Steel 4340");
     assert_eq!(
         serde_json::to_value(assets[0].byte_order).unwrap(),
         "little_endian"
     );
-    assert_eq!(assets[0].version, 42);
-    assert_eq!(assets[0].first_ifd_offset, 8);
-    assert_eq!(assets[0].byte_len, texture.len() as u64);
+    assert_eq!(serde_json::to_value(&assets[0]).unwrap()["version"], 42);
+    assert_eq!(assets[0].first_ifd_offset(), 8);
+    assert_eq!(assets[0].byte_len(), texture.len() as u64);
     assert_eq!(assets[0].sha256, cadmpeg_ir::hash::sha256_hex(&texture));
-    assert_eq!(assets[0].source_entry, "/Root/materialsTif/AISI Steel 4340");
+    assert_eq!(assets[0].source_entry(), "/Root/materialsTif/AISI Steel 4340");
 }
 
 #[test]
@@ -58,7 +58,7 @@ fn decode_joins_qaf_material_names_to_texture_assets() {
         .namespace("nx")
         .expect("required invariant");
     let assets = namespace
-        .arena_as::<super::super::MaterialTextureAsset>("material_texture_assets")
+        .arena_as::<crate::native::om::material_texture::MaterialTextureAsset>("material_texture_assets")
         .expect("required invariant");
     let catalog = namespace
         .arena_as::<super::super::MaterialTextureCatalogEntry>("material_texture_catalog_entries")

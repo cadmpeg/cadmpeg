@@ -835,7 +835,7 @@ fn attach_material_texture_assets(
         let Some(start) = usize::try_from(texture.source_offset).ok() else {
             return Ok(());
         };
-        let Some(byte_len) = usize::try_from(texture.byte_len).ok() else {
+        let Some(byte_len) = usize::try_from(texture.byte_len()).ok() else {
             return Ok(());
         };
         let Some(end) = start.checked_add(byte_len) else {
@@ -854,7 +854,7 @@ fn attach_material_texture_assets(
     for (texture, bytes) in sources {
         assets.push(Asset {
             id: AssetId(format!("{}:asset", texture.id)),
-            name: Some(texture.name.clone()),
+            name: Some(texture.name().to_owned()),
             media_type: Some("image/tiff".to_string()),
             content: AssetContent::Embedded {
                 data: ctx.copy_retained(bytes, "retain NX TIFF material asset", None)?,
