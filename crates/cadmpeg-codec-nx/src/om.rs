@@ -6904,7 +6904,7 @@ fn operation_state_block_before_boundary(
 }
 
 /// Decode complete message records in one already bounded state region.
-#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused tests.
+#[cfg(test)]
 pub fn operation_state_messages(
     bytes: &[u8],
     base_offset: usize,
@@ -7067,7 +7067,7 @@ fn operation_state_status_row_at<'a>(
 }
 
 /// Decode a bounded sequence of per-object operation-state status rows.
-#[allow(dead_code)] // Direct bounded parser entry point retained for focused tests.
+#[cfg(test)]
 pub fn operation_state_status_table(
     bytes: &[u8],
     start: usize,
@@ -7296,7 +7296,7 @@ fn operation_state_group_table_before_counter_map(
 }
 
 /// Decode a complete bounded `m_rollForwardStates` group table.
-#[allow(dead_code)] // Direct bounded parser entry point retained for focused tests.
+#[cfg(test)]
 pub fn operation_state_group_table(
     bytes: &[u8],
     start: usize,
@@ -7556,7 +7556,7 @@ fn operation_state_journal_groups_before_boundary(
 }
 
 /// Decode a complete bounded state journal.
-#[allow(dead_code)] // Direct bounded parser entry point retained for focused tests.
+#[cfg(test)]
 pub fn operation_state_journal(
     bytes: &[u8],
     start: usize,

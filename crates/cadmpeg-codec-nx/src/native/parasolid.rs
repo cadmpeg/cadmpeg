@@ -2616,11 +2616,7 @@ pub(crate) fn parasolid_entity_value_records(
         tags: Vec::new(),
         unicode: Vec::new(),
     };
-    for (stream_ordinal, stream) in streams
-        .iter()
-        .enumerate()
-        .filter(|(_, stream)| stream.kind.is_parasolid())
-    {
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
         let owned_offsets = match stream.kind {
             StreamKind::Deltas => deltas_records
                 .iter()
@@ -2634,7 +2630,7 @@ pub(crate) fn parasolid_entity_value_records(
             StreamKind::Partition | StreamKind::Plain => {
                 crate::parasolid::referenced_value_record_offsets(&stream.inflated)
             }
-            StreamKind::Preview => unreachable!("preview streams were filtered out"),
+            StreamKind::Preview => continue,
         };
         let values = crate::parasolid::value_records::entity_value_records_at(&stream.inflated, owned_offsets);
         for record in values.integers {

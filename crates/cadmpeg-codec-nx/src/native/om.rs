@@ -4374,22 +4374,23 @@ pub fn data_block_control_references(container: &Container) -> Vec<DataBlockCont
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             crate::om::references(control.bytes, control.offset)
                 .into_iter()
-                .filter(|reference| reference.kind != crate::om::ReferenceKind::RecordOrdinal16)
+                .filter_map(|reference| {
+                    let kind = match reference.kind {
+                        crate::om::ReferenceKind::PersistentHandle => ObjectReferenceKind::PersistentHandle,
+                        crate::om::ReferenceKind::Tagged28 => ObjectReferenceKind::Tagged28,
+                        crate::om::ReferenceKind::RecordOrdinal16 => return None,
+                    };
+                    Some((kind, reference))
+                })
                 .enumerate()
-                .map(|(ordinal, reference)| DataBlockControlReference {
+                .map(|(ordinal, (kind, reference))| DataBlockControlReference {
                     id: format!(
                         "nx:om-data-block-control-references-{section_ordinal}:reference#{}",
                         reference.offset
                     ),
                     data_block: data_block.clone(),
                     ordinal: ordinal as u32,
-                    kind: match reference.kind {
-                        crate::om::ReferenceKind::PersistentHandle => {
-                            ObjectReferenceKind::PersistentHandle
-                        }
-                        crate::om::ReferenceKind::Tagged28 => ObjectReferenceKind::Tagged28,
-                        crate::om::ReferenceKind::RecordOrdinal16 => unreachable!("filtered"),
-                    },
+                    kind,
                     value: reference.value,
                     source_offset: entry_offset + reference.offset as u64,
                 })
