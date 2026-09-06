@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::native::features::operation_record::FeatureOperationRecord;
 use crate::native::om::{OmOperationStateJournalGroup, OmOperationStateJournalRow};
 use crate::test_support::{
     composed_feature_history_payload, composed_feature_history_section, prt_with_named_payloads,
@@ -504,13 +505,10 @@ fn operation_record(id: &str, operation_label: &str) -> FeatureOperationRecord {
         id: id.to_string(),
         operation_label: operation_label.to_string(),
         ordinal: 0,
-        byte_len: 32,
         sha256: "record-sha256".to_string(),
-        payload_byte_len: 8,
         payload_sha256: "payload-sha256".to_string(),
         stable_identity: None,
-        payload_source_offset: 404,
-        source_offset: 400,
+        span: crate::native::features::operation_record::OperationRecordSpan::new(400, 404, 8).unwrap(),
     }
 }
 

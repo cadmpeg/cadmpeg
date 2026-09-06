@@ -6,6 +6,7 @@
 //! data is omitted, never surfaced as an error.
 
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
+use super::features::operation_record::FeatureOperationRecord;
 use crate::container::Container;
 use crate::native::features::datum_plane_header::{
     FeatureDatumPlaneHeader, feature_datum_plane_headers,

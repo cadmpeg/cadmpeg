@@ -11,6 +11,7 @@ use crate::test_support::*;
 use crate::NxCodec;
 
 use super::*;
+use crate::native::features::operation_record::FeatureOperationRecord;
 
 #[test]
 fn unique_offset_data_store_rejects_a_second_matching_section() {
@@ -281,7 +282,7 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
 #[test]
 fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     use super::{
-        FeatureOperationLabel, FeatureOperationRecord, FeaturePayloadString,
+        FeatureOperationLabel, FeaturePayloadString,
         SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
     };
 
@@ -298,13 +299,10 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         id: "record#3".to_string(),
         operation_label: label.id.clone(),
         ordinal: 3,
-        byte_len: 80,
         sha256: "a".repeat(64),
-        payload_byte_len: 40,
         payload_sha256: "b".repeat(64),
         stable_identity: None,
-        payload_source_offset: 120,
-        source_offset: 90,
+        span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40).unwrap(),
     };
     let string = FeaturePayloadString {
         id: "payload-string#3-0".to_string(),
@@ -453,7 +451,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
 #[test]
 fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
     use super::{
-        FeatureOperationLabel, FeatureOperationRecord, FeaturePayloadString, SimpleHoleExtent,
+        FeatureOperationLabel, FeaturePayloadString, SimpleHoleExtent,
         ThreadedHoleFamily,
     };
 
@@ -470,13 +468,10 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
         id: "record#threaded".to_string(),
         operation_label: label.id.clone(),
         ordinal: 7,
-        byte_len: 80,
         sha256: "a".repeat(64),
-        payload_byte_len: 40,
         payload_sha256: "b".repeat(64),
         stable_identity: None,
-        payload_source_offset: 120,
-        source_offset: 90,
+        span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40).unwrap(),
     };
     let string = FeaturePayloadString {
         id: "payload-string#threaded-0".to_string(),
@@ -532,7 +527,7 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
 #[test]
 fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     use super::{
-        FeatureInputBlock, FeatureOperationLabel, FeatureOperationRecord, FeatureSketchReference,
+        FeatureInputBlock, FeatureOperationLabel, FeatureSketchReference,
     };
 
     let label = FeatureOperationLabel {
@@ -548,13 +543,10 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         id: "nx:feature-history:operation-record#0-7".to_string(),
         operation_label: label.id.clone(),
         ordinal: 7,
-        byte_len: 173,
         sha256: "00".repeat(32),
-        payload_byte_len: 140,
         payload_sha256: "11".repeat(32),
         stable_identity: None,
-        payload_source_offset: 733,
-        source_offset: 700,
+        span: crate::native::features::operation_record::OperationRecordSpan::new(700, 733, 140).unwrap(),
     };
     let input = |slot, index| FeatureInputBlock {
         id: format!("nx:feature-history:input-block#0-7-{slot}"),
@@ -735,7 +727,7 @@ fn decode_orders_and_deduplicates_linked_feature_history_sections() {
     );
     assert_eq!(labels[1].objects.0.map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())), labels[0].objects.0.map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())));
     let records = namespace
-        .arena_as::<super::FeatureOperationRecord>("feature_operation_records")
+        .arena_as::<FeatureOperationRecord>("feature_operation_records")
         .expect("required invariant");
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].operation_label, labels[0].id);
@@ -834,11 +826,11 @@ fn decode_retains_role_scoped_om_record_area_header() {
         .native
         .namespace("nx")
         .expect("required invariant")
-        .arena_as::<super::FeatureOperationRecord>("feature_operation_records")
+        .arena_as::<FeatureOperationRecord>("feature_operation_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].operation_label, labels[0].id);
-    assert!(records[0].byte_len > 40);
+    assert!(records[0].span.byte_len() > 40);
     assert_eq!(records[0].sha256.len(), 64);
     let booleans = result
         .ir()

@@ -9,6 +9,8 @@ use super::*;
 mod common_frame_wire;
 mod body_write_wire;
 pub(crate) mod unlabeled_record;
+pub(crate) mod operation_record;
+use operation_record::{FeatureOperationRecord, OperationRecordSpan};
 use unlabeled_record::FeatureUnlabeledOperationRecord;
 use crate::printable_string::PrintableString;
 use crate::native::om::{
@@ -102,33 +104,6 @@ pub(crate) fn feature_operation_chronological_labels(
             section
         })
         .collect()
-}
-
-/// Exactly bounded feature-history operation record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureOperationRecord {
-    /// Globally unique record identity.
-    pub id: String,
-    /// Owning operation-label identity.
-    pub operation_label: String,
-    /// Zero-based record order within the feature-history section.
-    pub ordinal: u32,
-    /// Exact record byte length.
-    pub byte_len: u64,
-    /// SHA-256 of the complete operation record.
-    pub sha256: String,
-    /// Exact serialized post-label payload length.
-    pub payload_byte_len: u64,
-    /// SHA-256 of the post-label serialized operation payload.
-    pub payload_sha256: String,
-    /// Record-order-independent header identity when the owning label has one
-    /// after content-backed offset-store resolution.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stable_identity: Option<String>,
-    /// Absolute file offset of the first post-label payload byte.
-    pub payload_source_offset: u64,
-    /// Absolute file offset of the fixed operation-header marker.
-    pub source_offset: u64,
 }
 
 /// Exact body-write frame retained from one feature operation.
@@ -6412,6 +6387,11 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let stable_identity =
                 operation_header_identity_key(record.label.header.objects().values(), &block_identities);
+            let Some(span) = entry_offset.checked_add(record.offset() as u64)
+                .zip(entry_offset.checked_add(record.payload_offset as u64))
+                .and_then(|(start, payload)| OperationRecordSpan::new(start, payload, record.payload.len() as u64)) else {
+                return;
+            };
             if let Some(key) = &stable_identity {
                 *identity_counts.entry(key.clone()).or_default() += 1;
             }
@@ -6422,13 +6402,10 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
                     ),
                     operation_label: operation_label.clone(),
                     ordinal: operation_ordinal as u32,
-                    byte_len: record.bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
-                    payload_byte_len: record.payload.len() as u64,
                     payload_sha256: cadmpeg_ir::hash::sha256_hex(record.payload),
                     stable_identity: None,
-                    payload_source_offset: entry_offset + record.payload_offset as u64,
-                    source_offset: entry_offset + record.offset() as u64,
+                    span,
                 },
                 stable_identity,
             ));

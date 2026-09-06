@@ -4214,7 +4214,7 @@ fn records_by_operation<'a, T>(
 
 fn operation_source_properties(
     operation_label: &str,
-    records: &[crate::native::features::FeatureOperationRecord],
+    records: &[crate::native::features::operation_record::FeatureOperationRecord],
     common_frames: &[crate::native::features::FeatureOperationCommonFrame],
     terminal_frames: &[crate::native::features::FeatureOperationTerminalFrame],
 ) -> BTreeMap<String, String> {
