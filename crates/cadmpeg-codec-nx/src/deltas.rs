@@ -8,6 +8,8 @@ use std::num::NonZeroU16;
 pub(crate) mod record_kind;
 pub(crate) mod reference_lanes;
 pub(crate) mod inline_schema_fields;
+pub(crate) mod precision_state;
+use precision_state::PrecisionState;
 use inline_schema_fields::{InlineBodyStateFields, InlineSchemaFields, TermUseValues};
 use reference_lanes::{MapEntries, TaggedReferences};
 pub(crate) mod packet_marker;
@@ -1772,7 +1774,6 @@ fn inline_schema_declaration(
     {
         let mut at = offset.checked_add(TYPE_100_SCHEMA_HEADER.len())?;
         let (xmt, consumed) = read_xmt(stream, at)?;
-        (xmt > 1).then_some(())?;
         at = at.checked_add(consumed)?;
         (View::u32_be_at(stream, at) == Some(0)).then_some(())?;
         at = at.checked_add(4)?;
@@ -1780,17 +1781,9 @@ fn inline_schema_declaration(
         for reference in &mut references {
             *reference = read_status_one_reference(stream, &mut at)?;
         }
-        (references == [2, xmt.checked_add(1)?, 1]).then_some(())?;
         let mut transform = [0.0; 13];
-        for (ordinal, transform_value) in transform.iter_mut().enumerate() {
-            let value = View::f64_be_at(stream, at)?;
-            let valid = match ordinal {
-                0 | 4 | 8 | 12 => value.to_bits() == 1.0f64.to_bits(),
-                9..=11 => value.is_finite(),
-                _ => value.to_bits() == 0.0f64.to_bits(),
-            };
-            valid.then_some(())?;
-            *transform_value = value;
+        for transform_value in &mut transform {
+            *transform_value = View::f64_be_at(stream, at)?;
             at = at.checked_add(8)?;
         }
         (View::u32_be_at(stream, at) == Some(1)).then_some(())?;
@@ -1803,9 +1796,7 @@ fn inline_schema_declaration(
         (at <= gap_end).then_some(())?;
         return Some(InlineSchemaDeclaration {
             fields: InlineSchemaFields::Type100 {
-                xmt,
-                references,
-                transform,
+                state: PrecisionState::new(xmt, references, transform).ok()?,
             },
             offset,
             end: at,
@@ -4254,11 +4245,9 @@ mod inline_schema_tests {
             census.inline_schema_declarations,
             [InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type100 {
-                    xmt: 48,
-                    references: [2, 49, 1],
-                    transform: [
+                    state: PrecisionState::new(48, [2, 49, 1], [
                         1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,
-                    ],
+                    ]).unwrap(),
                 },
                 offset: 0,
                 end: bytes.len(),
@@ -4277,10 +4266,7 @@ mod inline_schema_tests {
         let translated_census = walk(&translated);
         assert!(matches!(
             translated_census.inline_schema_declarations[0].fields,
-            InlineSchemaFields::Type100 {
-                xmt: 53,
-                references: [2, 54, 1],
-                transform: [
+            InlineSchemaFields::Type100 { state } if matches!((state.xmt(), state.references(), state.transform()), (53, [2, 54, 1], [
                     1.0,
                     0.0,
                     0.0,
@@ -4294,9 +4280,8 @@ mod inline_schema_tests {
                     value_y,
                     1.25,
                     1.0
-                ],
-            } if value_x.to_bits() == (-0.0f64).to_bits()
-                && value_y.to_bits() == (-0.0f64).to_bits()
+                ]) if value_x.to_bits() == (-0.0f64).to_bits()
+                && value_y.to_bits() == (-0.0f64).to_bits())
         ));
         assert_eq!(translated_census.bytes_decoded, translated.len());
     }

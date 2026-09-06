@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use super::xmt_reference::NonNullXmt;
+use super::precision_state::PrecisionState;
 
 /// Body of an inline schema declaration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -45,12 +46,8 @@ pub(crate) enum InlineSchemaFields {
     },
     /// Type 100 declaration and its precision state.
     Type100 {
-        /// Non-null stream-local declaration identity.
-        xmt: u32,
-        /// Ordered precision-state references.
-        references: [u32; 3],
-        /// Serialized affine state.
-        transform: [f64; 13],
+        #[serde(flatten)]
+        state: PrecisionState,
     },
     /// Type 101 declaration and its schema-bound instance state.
     Type101 {
