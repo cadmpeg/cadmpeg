@@ -683,7 +683,7 @@ fn persistent_surface_identity_binds_one_face_and_body() {
     model.shells[0].faces.push(face.clone());
     model.tessellations.push(persistent_mesh("mesh"));
 
-    let face_identities = vec![(face.as_str().to_owned(), persistent_identity(7, 3, &[]))];
+    let face_identities = vec![(face.clone(), persistent_identity(7, 3, &[]))];
     let bindings = vec![PersistentFaceBinding {
         tessellation: "mesh".into(),
         identity: persistent_identity(7, 3, &[]),
@@ -708,8 +708,8 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
     model.shells[0].faces = vec![first.clone(), second.clone()];
     model.tessellations.push(persistent_mesh("mesh"));
     let face_identities = vec![
-        (first.as_str().to_owned(), persistent_identity(7, 3, &[])),
-        (second.as_str().to_owned(), persistent_identity(7, 3, &[])),
+        (first.clone(), persistent_identity(7, 3, &[])),
+        (second.clone(), persistent_identity(7, 3, &[])),
     ];
     let binding = PersistentFaceBinding {
         tessellation: "mesh".into(),
@@ -724,8 +724,8 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
     model.shells[0].faces = vec![first.clone(), second.clone()];
     model.tessellations.push(persistent_mesh("mesh"));
     let face_identities = vec![
-        (first.as_str().to_owned(), persistent_identity(7, 3, &[])),
-        (second.as_str().to_owned(), persistent_identity(8, 4, &[])),
+        (first.clone(), persistent_identity(7, 3, &[])),
+        (second.clone(), persistent_identity(8, 4, &[])),
     ];
     let bindings = vec![
         PersistentFaceBinding {
@@ -749,11 +749,8 @@ fn persistent_surface_identity_distinguishes_trailing_path_fields() {
     model.shells[0].faces = vec![first.clone(), second.clone()];
     model.tessellations.push(persistent_mesh("mesh"));
     let face_identities = vec![
-        (first.as_str().to_owned(), persistent_identity(266, 2, &[0])),
-        (
-            second.as_str().to_owned(),
-            persistent_identity(266, 2, &[1]),
-        ),
+        (first.clone(), persistent_identity(266, 2, &[0])),
+        (second.clone(), persistent_identity(266, 2, &[1])),
     ];
     let binding = PersistentFaceBinding {
         tessellation: "mesh".into(),

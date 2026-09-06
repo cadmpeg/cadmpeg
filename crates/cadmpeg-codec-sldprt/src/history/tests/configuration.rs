@@ -1476,7 +1476,14 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         &mut ir,
         &[],
         &[lane],
-        &[("test:model:entity#face".into(), 7, 11)],
+        &[(
+            cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
+            crate::brep::PersistentFaceIdentity {
+                feature_source_id: 7,
+                local_id: 11,
+                trailing_fields: Vec::new(),
+            },
+        )],
     );
 
     assert!(matches!(

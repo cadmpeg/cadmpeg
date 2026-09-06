@@ -327,7 +327,7 @@ pub(crate) fn bind_configuration_topology_selections(
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
-    face_identities: &[(String, u32, u32)],
+    face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
 ) {
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)

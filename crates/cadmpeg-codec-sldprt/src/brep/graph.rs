@@ -337,9 +337,9 @@ impl Brep {
             }
         }
         for atom in &mut self.face_atoms {
-            if let Some(target) = &mut atom.target {
-                *target = qualify(target);
-            }
+            atom.face = qualify(atom.face.as_str())
+                .try_into()
+                .expect("qualified identity");
         }
         for modifier in &mut self.body_modifiers {
             if let Some(target) = &mut modifier.target {
@@ -1180,7 +1180,6 @@ fn decode_graph(
 
     let mut out = Brep {
         face_colors,
-        face_atoms: entity_facts.face_atoms,
         face_bridge_sequences,
         edge_use_sequences,
         vertex_use_sequences,
@@ -1914,8 +1913,8 @@ fn decode_graph(
     let emitted_faces = out
         .faces
         .iter()
-        .map(|face| face.id.as_str())
-        .collect::<HashSet<_>>();
+        .map(|face| (face.id.as_str(), &face.id))
+        .collect::<HashMap<_, _>>();
     for appearance in &mut out.face_colors {
         appearance.target = faces
             .iter()
@@ -1926,15 +1925,22 @@ fn decode_graph(
                     == Some(appearance.face_attr)
             })
             .map(|face| id_face(face.bridge_attr))
-            .filter(|face| emitted_faces.contains(face.as_str()));
-    }
-    for atom in &mut out.face_atoms {
-        atom.target =
-            Some(id_face(atom.face_attr)).filter(|face| emitted_faces.contains(face.as_str()));
+            .filter(|face| emitted_faces.contains_key(face.as_str()));
     }
     let mut bound_faces = HashSet::new();
-    out.face_atoms
-        .retain(|atom| atom.target.is_some() && bound_faces.insert(atom.face_attr));
+    out.face_atoms = entity_facts
+        .face_atoms
+        .into_iter()
+        .filter_map(|atom| {
+            let face = emitted_faces.get(id_face(atom.face_attr).as_str())?;
+            bound_faces
+                .insert(atom.face_attr)
+                .then(|| attrib::FaceAtom {
+                    face: (*face).clone(),
+                    identity: atom.identity,
+                })
+        })
+        .collect();
     solve_face_orientation(&mut out);
     synthesize_cylinder_seams(&mut out, &mut annotations, source_stream);
     synthesize_sphere_seams(&mut out, &mut annotations, source_stream);

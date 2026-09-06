@@ -888,12 +888,12 @@ fn contains_nurbs_surface(surface: &SurfaceGeometry) -> bool {
 /// repeated table IDs with different identities is rejected as ambiguous.
 pub(crate) fn assign_persistent_owners(
     model: &mut cadmpeg_ir::document::Model,
-    face_identities: &[(String, PersistentFaceIdentity)],
+    face_identities: &[(FaceId, PersistentFaceIdentity)],
     bindings: &[PersistentFaceBinding],
 ) -> Vec<String> {
     let mut faces_by_identity = HashMap::<PersistentFaceIdentity, Option<FaceId>>::new();
     for (target, identity) in face_identities {
-        let candidate = FaceId::mint(target.clone()).expect("identity grammar");
+        let candidate = target.clone();
         match faces_by_identity.entry(identity.clone()) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(candidate));

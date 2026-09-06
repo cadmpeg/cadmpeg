@@ -206,10 +206,38 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         })
         .collect::<Vec<_>>();
     let identities = [
-        (faces[0].id.as_str().to_owned(), 7, 2),
-        (faces[1].id.as_str().to_owned(), 7, 2),
-        (faces[2].id.as_str().to_owned(), 7, 3),
-        (faces[3].id.as_str().to_owned(), 7, 2),
+        (
+            faces[0].id.clone(),
+            crate::brep::PersistentFaceIdentity {
+                feature_source_id: 7,
+                local_id: 2,
+                trailing_fields: Vec::new(),
+            },
+        ),
+        (
+            faces[1].id.clone(),
+            crate::brep::PersistentFaceIdentity {
+                feature_source_id: 7,
+                local_id: 2,
+                trailing_fields: Vec::new(),
+            },
+        ),
+        (
+            faces[2].id.clone(),
+            crate::brep::PersistentFaceIdentity {
+                feature_source_id: 7,
+                local_id: 3,
+                trailing_fields: Vec::new(),
+            },
+        ),
+        (
+            faces[3].id.clone(),
+            crate::brep::PersistentFaceIdentity {
+                feature_source_id: 7,
+                local_id: 2,
+                trailing_fields: Vec::new(),
+            },
+        ),
     ];
     let mut hole = model_hole();
     project_generated_hole_axes(

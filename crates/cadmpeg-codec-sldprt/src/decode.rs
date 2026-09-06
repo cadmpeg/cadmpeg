@@ -2471,31 +2471,11 @@ fn build_geometry_ir(
     let face_identities = brep
         .face_atoms
         .iter()
-        .filter_map(|atom| {
-            atom.target
-                .clone()
-                .map(|target| (target, atom.feature_source_id, atom.local_face_id))
-        })
-        .collect::<Vec<_>>();
-    let persistent_face_identities = brep
-        .face_atoms
-        .iter()
-        .filter_map(|atom| {
-            atom.target.clone().map(|target| {
-                (
-                    target,
-                    crate::brep::PersistentFaceIdentity {
-                        feature_source_id: atom.feature_source_id,
-                        local_id: atom.local_face_id,
-                        trailing_fields: atom.persistent_tail.clone(),
-                    },
-                )
-            })
-        })
+        .map(|atom| (atom.face.clone(), atom.identity.clone()))
         .collect::<Vec<_>>();
     let face_producers = face_identities
         .iter()
-        .map(|(target, source, _)| (target.clone(), *source))
+        .map(|(target, identity)| (target.as_str().to_owned(), identity.feature_source_id))
         .collect::<Vec<_>>();
     let body_modifiers = brep
         .body_modifiers
@@ -2915,7 +2895,7 @@ fn build_geometry_ir(
     }
     let mut assigned_tessellations = crate::tessellation::assign_persistent_owners(
         &mut ir.model,
-        &persistent_face_identities,
+        &face_identities,
         &persistent_face_bindings,
     );
     assigned_tessellations.extend(crate::tessellation::assign_unique_surface_owners(

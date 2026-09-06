@@ -33,7 +33,8 @@ pub(crate) struct TopologySelectionInputs<'a> {
     pub(crate) edges: &'a [Edge],
     pub(crate) curves: &'a [Curve],
     pub(crate) lanes: &'a [crate::records::FeatureInputLane],
-    pub(crate) face_identities: &'a [(String, u32, u32)],
+    pub(crate) face_identities:
+        &'a [(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
 }
 
 const SURFACE_COMPONENT_SELECTION_PREFIX: &str = "sldprt:feature-input:surface-component-ids";
@@ -72,13 +73,13 @@ pub(crate) fn offset_plane_support_origin(
 fn surface_selection_face_bindings<'a>(
     selections: impl IntoIterator<Item = &'a FeatureInputSurfaceSelection>,
     feature_sources: &HashMap<String, Option<u32>>,
-    face_identities: &[(String, u32, u32)],
+    face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
 ) -> SurfaceSelectionFaceBindings {
     let mut faces_by_identity = HashMap::<(u32, u32), Option<cadmpeg_ir::ids::FaceId>>::new();
-    for (target, feature_source_id, local_face_id) in face_identities {
-        let candidate = cadmpeg_ir::ids::FaceId::mint(target.clone()).expect("identity grammar");
+    for (target, identity) in face_identities {
+        let candidate = target.clone();
         let entry = faces_by_identity
-            .entry((*feature_source_id, *local_face_id))
+            .entry((identity.feature_source_id, identity.local_id))
             .or_insert_with(|| Some(candidate.clone()));
         if entry
             .as_ref()
@@ -673,8 +674,24 @@ mod tests {
             std::iter::once(&selection),
             &feature_sources,
             &[
-                ("test:model:entity#intermediate-face".into(), 47, 8),
-                ("test:model:entity#terminal-face".into(), 50, 5),
+                (
+                    cadmpeg_ir::ids::FaceId::mint("test:model:entity#intermediate-face")
+                        .expect("identity grammar"),
+                    crate::brep::PersistentFaceIdentity {
+                        feature_source_id: 47,
+                        local_id: 8,
+                        trailing_fields: Vec::new(),
+                    },
+                ),
+                (
+                    cadmpeg_ir::ids::FaceId::mint("test:model:entity#terminal-face")
+                        .expect("identity grammar"),
+                    crate::brep::PersistentFaceIdentity {
+                        feature_source_id: 50,
+                        local_id: 5,
+                        trailing_fields: Vec::new(),
+                    },
+                ),
             ],
         );
         let key = (
@@ -698,8 +715,24 @@ mod tests {
             std::iter::once(&selection),
             &feature_sources,
             &[
-                ("test:model:entity#first-face".into(), 50, 5),
-                ("test:model:entity#second-face".into(), 50, 5),
+                (
+                    cadmpeg_ir::ids::FaceId::mint("test:model:entity#first-face")
+                        .expect("identity grammar"),
+                    crate::brep::PersistentFaceIdentity {
+                        feature_source_id: 50,
+                        local_id: 5,
+                        trailing_fields: Vec::new(),
+                    },
+                ),
+                (
+                    cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face")
+                        .expect("identity grammar"),
+                    crate::brep::PersistentFaceIdentity {
+                        feature_source_id: 50,
+                        local_id: 5,
+                        trailing_fields: Vec::new(),
+                    },
+                ),
             ],
         );
         let key = (
@@ -717,7 +750,15 @@ mod tests {
         let bindings = surface_selection_face_bindings(
             std::iter::once(&selection),
             &feature_sources,
-            &[("test:model:entity#terminal-face".into(), 50, 5)],
+            &[(
+                cadmpeg_ir::ids::FaceId::mint("test:model:entity#terminal-face")
+                    .expect("identity grammar"),
+                crate::brep::PersistentFaceIdentity {
+                    feature_source_id: 50,
+                    local_id: 5,
+                    trailing_fields: Vec::new(),
+                },
+            )],
         );
         let key = (
             "feature".to_string(),

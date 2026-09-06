@@ -650,7 +650,7 @@ pub(crate) fn bind_mirror_surface_planes(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    face_identities: &[(String, u32, u32)],
+    face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
 ) {
@@ -664,10 +664,12 @@ pub(crate) fn bind_mirror_surface_planes(
         .map(|feature| feature.id.as_str())
         .collect::<HashSet<_>>();
     let mut faces_by_identity = HashMap::<(u32, u32), Vec<&str>>::new();
-    for (face, source, local) in face_identities {
-        let candidates = faces_by_identity.entry((*source, *local)).or_default();
+    for (face, identity) in face_identities {
+        let candidates = faces_by_identity
+            .entry((identity.feature_source_id, identity.local_id))
+            .or_default();
         if !candidates.contains(&face.as_str()) {
-            candidates.push(face);
+            candidates.push(face.as_str());
         }
     }
     let faces_by_id = faces

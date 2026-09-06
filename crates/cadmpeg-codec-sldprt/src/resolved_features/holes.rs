@@ -1871,7 +1871,7 @@ pub(crate) fn project_generated_hole_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    face_identities: &[(String, u32, u32)],
+    face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
     faces: &[Face],
     surfaces: &[Surface],
 ) {
@@ -1926,8 +1926,10 @@ pub(crate) fn project_generated_hole_axes(
                 continue;
             }
             let mut axes = HashMap::<[i64; 6], HolePlacement>::new();
-            for (face, face_source, local_identity) in face_identities {
-                if *face_source != source || !local_identities.contains(local_identity) {
+            for (face, identity) in face_identities {
+                if identity.feature_source_id != source
+                    || !local_identities.contains(&identity.local_id)
+                {
                     continue;
                 }
                 let Some(surface) = faces_by_id

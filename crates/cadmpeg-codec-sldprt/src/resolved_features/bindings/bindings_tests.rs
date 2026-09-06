@@ -271,7 +271,14 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-        &[("test:model:entity#face".into(), 45, 7)],
+        &[(
+            cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
+            crate::brep::PersistentFaceIdentity {
+                feature_source_id: 45,
+                local_id: 7,
+                trailing_fields: Vec::new(),
+            },
+        )],
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
     );
@@ -304,7 +311,14 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&nonmirror_history),
         std::slice::from_ref(&lane),
-        &[("test:model:entity#face".into(), 45, 7)],
+        &[(
+            cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
+            crate::brep::PersistentFaceIdentity {
+                feature_source_id: 45,
+                local_id: 7,
+                trailing_fields: Vec::new(),
+            },
+        )],
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
     );
@@ -323,8 +337,23 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
         &[
-            ("test:model:entity#face".into(), 45, 7),
-            ("other-face".into(), 45, 7),
+            (
+                cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
+                crate::brep::PersistentFaceIdentity {
+                    feature_source_id: 45,
+                    local_id: 7,
+                    trailing_fields: Vec::new(),
+                },
+            ),
+            (
+                cadmpeg_ir::ids::FaceId::mint("test:model:entity#other-face")
+                    .expect("identity grammar"),
+                crate::brep::PersistentFaceIdentity {
+                    feature_source_id: 45,
+                    local_id: 7,
+                    trailing_fields: Vec::new(),
+                },
+            ),
         ],
         &[face, second_face],
         std::slice::from_ref(&surface),
