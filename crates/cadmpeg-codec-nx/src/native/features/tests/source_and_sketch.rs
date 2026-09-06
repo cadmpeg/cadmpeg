@@ -725,14 +725,18 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
     let construction = FeatureDatumCsysConstruction {
         id: "construction".to_string(),
         operation_label: "csys".to_string(),
-        control: 19,
-        references: blocks.map(|data_block| {
-            crate::native::features::reference::ConstructionReference {
-                token: crate::om::reference_index::ReferenceIndexToken::from_wire(0, &[0]).unwrap(),
-                data_block,
-                source_offset: 400,
-            }
-        }),
+        frame: crate::om::datum_csys::DatumCsysFrame::new(
+            19,
+            386,
+            blocks.map(|data_block| {
+                (
+                    crate::om::reference_index::PayloadIndexToken::from_wire(0, &[0xf0, 0])
+                        .unwrap(),
+                    data_block,
+                )
+            }),
+        )
+        .unwrap(),
     };
     let scalar = FeaturePayloadScalar {
         id: "csys-scalar".to_string(),
@@ -808,7 +812,10 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
     };
     let mut consecutive_construction = construction.clone();
     consecutive_construction.id = "consecutive-construction".to_string();
-    consecutive_construction.references[0].data_block = "nx:om:offset-store#7:block#12".to_string();
+    let mut members = consecutive_construction.frame.members().clone();
+    members[0].1 = "nx:om:offset-store#7:block#12".to_string();
+    consecutive_construction.frame =
+        crate::om::datum_csys::DatumCsysFrame::new(19, 386, members).unwrap();
     let consecutive_dependencies = super::feature_sketch_datum_csys_dependencies(
         &labels,
         &[consecutive_point],
@@ -904,18 +911,21 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
     let construction = super::FeatureDatumCsysConstruction {
         id: "construction".to_string(),
         operation_label: "operation#0".to_string(),
-        control: 0x13,
-        references: std::array::from_fn(|index| {
-            crate::native::features::reference::ConstructionReference {
-                token: crate::om::reference_index::ReferenceIndexToken::from_wire(
-                    index as u32 + 40,
-                    &[index as u8 + 40],
+        frame: crate::om::datum_csys::DatumCsysFrame::new(
+            0x13,
+            86,
+            std::array::from_fn(|index| {
+                (
+                    crate::om::reference_index::PayloadIndexToken::from_wire(
+                        index as u32 + 40,
+                        &[0xf0, index as u8 + 40],
+                    )
+                    .unwrap(),
+                    format!("block#{}", index + 40),
                 )
-                .unwrap(),
-                data_block: format!("block#{}", index + 40),
-                source_offset: index as u64 + 100,
-            }
-        }),
+            }),
+        )
+        .unwrap(),
     };
     let input = |id: &str, operation: &str, slot: u8, block: &str| super::FeatureInputBlock {
         id: id.to_string(),
@@ -1582,18 +1592,21 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
     let construction = FeatureDatumCsysConstruction {
         id: "construction#1".into(),
         operation_label: "operation#1".into(),
-        control: 0x16,
-        references: std::array::from_fn(|slot| {
-            crate::native::features::reference::ConstructionReference {
-                token: crate::om::reference_index::ReferenceIndexToken::from_wire(
-                    slot as u32,
-                    &[slot as u8],
+        frame: crate::om::datum_csys::DatumCsysFrame::new(
+            0x16,
+            181,
+            std::array::from_fn(|slot| {
+                (
+                    crate::om::reference_index::PayloadIndexToken::from_wire(
+                        slot as u32,
+                        &[0xf0, slot as u8],
+                    )
+                    .unwrap(),
+                    format!("block#{slot}"),
                 )
-                .unwrap(),
-                data_block: format!("block#{slot}"),
-                source_offset: 200 + slot as u64,
-            }
-        }),
+            }),
+        )
+        .unwrap(),
     };
     let row = DataBlockTargetIndexRow {
         id: "target-row#3".into(),

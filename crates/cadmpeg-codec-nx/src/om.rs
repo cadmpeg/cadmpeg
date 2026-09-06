@@ -12,6 +12,7 @@ pub(crate) mod reference_value;
 use reference_value::{DirectReference, LocatedReference, RecordReference, Tagged28};
 
 pub(crate) mod csys_descriptor;
+pub(crate) mod datum_csys;
 pub(crate) mod datum_index;
 pub(crate) mod datum_plane_header;
 pub(crate) mod draft_identity;
@@ -815,15 +816,6 @@ impl Swp104PayloadLeadingBranch {
             + self.terminal.raw().len()
             + 1
     }
-}
-
-/// Fixed ordered construction-reference lane in a datum coordinate-system payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DatumCsysReferenceField {
-    /// Payload control byte preceding the fixed header suffix.
-    pub control: u8,
-    /// Eight canonical payload object references in serialized order.
-    pub references: [PayloadObjectReference; 8],
 }
 
 /// Exact pair of scaled shifted-binary64 atoms in a reconstructed sketch payload.
@@ -2750,39 +2742,6 @@ pub fn block_construction_references(
     Some(BlockConstructionReferenceField {
         control: record.payload()[0],
         references: references.try_into().ok()?,
-    })
-}
-
-/// Decode the fixed eight-reference construction lane at the start of a
-/// `DATUM_CSYS` payload.
-// Names follow the ordered source slots in this fixed-width lane.
-#[allow(clippy::many_single_char_names)]
-pub fn datum_csys_references(record: OperationPayload<'_>) -> Option<DatumCsysReferenceField> {
-    const HEADER_SUFFIX: [u8; 13] = [
-        0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
-    ];
-    const TRAILER: [u8; 8] = [0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00];
-    if record.name() != "DATUM_CSYS"
-        || record.payload().get(1..1 + HEADER_SUFFIX.len()) != Some(&HEADER_SUFFIX)
-    {
-        return None;
-    }
-    let mut at = 1 + HEADER_SUFFIX.len();
-    let references = std::array::from_fn::<_, 8, _>(|_| {
-        let (object_index, width) = payload_object_index(record.payload().get(at..)?)?;
-        let offset = record.payload_offset() + at;
-        at += width;
-        Some(PayloadObjectReference {
-            offset,
-            token: object_index,
-        })
-    });
-    let [a, b, c, d, e, f, g, h] = references;
-    let references = [a?, b?, c?, d?, e?, f?, g?, h?];
-    (record.payload().get(at..at + TRAILER.len()) == Some(&TRAILER)).then_some(())?;
-    Some(DatumCsysReferenceField {
-        control: record.payload()[0],
-        references,
     })
 }
 

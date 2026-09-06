@@ -445,27 +445,18 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
     payload.extend_from_slice(&[0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
     let label = "DATUM_CSYS";
     let record = crate::om::operation_record::OperationPayload::new(&payload, 100, label).unwrap();
-    let field = super::datum_csys_references(record).unwrap();
-    assert_eq!(field.control, 0x13);
+    let field = crate::om::datum_csys::datum_csys_references(record).unwrap();
+    assert_eq!(field.control(), 0x13);
     assert_eq!(
-        field
-            .references
-            .each_ref()
-            .map(|reference| reference.token.value()),
+        field.members().each_ref().map(|(token, _)| token.value()),
         [42, 43, 44, 45, 46, 47, 48, 49]
     );
+    assert_eq!(field.offsets(), [114, 116, 118, 120, 122, 124, 126, 128]);
     assert_eq!(
         field
-            .references
-            .each_ref()
-            .map(|reference| reference.offset),
-        [114, 116, 118, 120, 122, 124, 126, 128]
-    );
-    assert_eq!(
-        field
-            .references
+            .members()
             .iter()
-            .map(|reference| reference.token.raw().to_vec())
+            .map(|(token, _)| token.raw().to_vec())
             .collect::<Vec<_>>(),
         (42..50).map(|value| vec![0xf0, value]).collect::<Vec<_>>()
     );
@@ -473,7 +464,7 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
     let mut alternate_control = payload.clone();
     alternate_control[0] = 0x1a;
     assert_eq!(
-        super::datum_csys_references(
+        crate::om::datum_csys::datum_csys_references(
             crate::om::operation_record::OperationPayload::new(
                 &alternate_control,
                 record.payload_offset(),
@@ -482,13 +473,13 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
             .unwrap()
         )
         .unwrap()
-        .control,
+        .control(),
         0x1a
     );
 
     let mut malformed = payload.clone();
     malformed[14] = 0x2a;
-    assert!(super::datum_csys_references(
+    assert!(crate::om::datum_csys::datum_csys_references(
         crate::om::operation_record::OperationPayload::new(
             &malformed,
             record.payload_offset(),

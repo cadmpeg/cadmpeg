@@ -464,7 +464,7 @@ fn fixed_reference_groups_preserve_wire_and_check_each_token() {
         }
     }
     check::<super::FeatureDatumCsysConstruction>(
-        r#"{"id":"c","operation_label":"o","control":19,"object_indices":[0,1,2,3,4,5,6,7],"raw_object_indices":[[0],[1],[2],[3],[4],[5],[6],[7]],"data_blocks":["a","b","c","d","e","f","g","h"],"source_offsets":[10,11,12,13,14,15,16,17]}"#,
+        r#"{"id":"c","operation_label":"o","control":19,"object_indices":[0,1,2,3,4,5,6,7],"raw_object_indices":[[240,0],[240,1],[240,2],[240,3],[240,4],[240,5],[240,6],[240,7]],"data_blocks":["a","b","c","d","e","f","g","h"],"source_offsets":[14,16,18,20,22,24,26,28]}"#,
         "raw_object_indices",
     );
     let hole = r#"{"id":"c","operation_label":"o","selector":70,"branch":17,"object_indices":[1,2,3,4],"raw_object_indices":[[240,1],[240,2],[240,3],[240,4]],"data_blocks":["a","b","c","d"],"payload_offset":20,"source_offset":120,"reference_source_offsets":[132,134,141,143]}"#;
@@ -925,4 +925,27 @@ fn binary64_pair_wire_requires_owner_form_and_complete_payload_extent() {
             );
         }
     }
+}
+
+#[test]
+fn datum_csys_wire_derives_offsets_from_the_complete_payload_frame() {
+    let wire = r#"{"id":"c","operation_label":"o","control":255,"object_indices":[0,256,1,512,2,768,3,1024],"raw_object_indices":[[240,0],[241,1,0],[240,1],[241,2,0],[240,2],[241,3,0],[240,3],[241,4,0]],"data_blocks":["","b","c","d","e","f","g","h"],"source_offsets":[114,116,119,121,124,126,129,131]}"#;
+    let parsed: super::FeatureDatumCsysConstruction = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&parsed).unwrap(), wire);
+    for slot in 0..8 {
+        let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
+        invalid["source_offsets"][slot] = serde_json::json!(1000);
+        let error =
+            serde_json::from_value::<super::FeatureDatumCsysConstruction>(invalid).unwrap_err();
+        assert!(error.to_string().contains("source_offsets"));
+    }
+    for origin in [0, u64::MAX - 20] {
+        let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
+        invalid["source_offsets"][0] = serde_json::json!(origin);
+        assert!(serde_json::from_value::<super::FeatureDatumCsysConstruction>(invalid).is_err());
+    }
+    let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
+    invalid["raw_object_indices"][0] = serde_json::json!([0]);
+    let error = serde_json::from_value::<super::FeatureDatumCsysConstruction>(invalid).unwrap_err();
+    assert!(error.to_string().contains("raw_object_indices[0]"));
 }

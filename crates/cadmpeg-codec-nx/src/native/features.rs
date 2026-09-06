@@ -921,14 +921,9 @@ pub struct FeatureSketchRecord {
     into = "FeatureDatumCsysConstructionWire"
 )]
 pub struct FeatureDatumCsysConstruction {
-    /// Globally unique construction identity.
     pub id: String,
-    /// Owning `DATUM_CSYS` operation label.
     pub operation_label: String,
-    /// Payload control byte preceding the fixed construction header suffix.
-    pub control: u8,
-    /// Eight checked references with their resolved targets and source offsets.
-    pub references: [ConstructionReference<String>; 8],
+    frame: crate::om::datum_csys::DatumCsysFrame<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -947,50 +942,56 @@ impl From<FeatureDatumCsysConstruction> for FeatureDatumCsysConstructionWire {
         Self {
             id: value.id,
             operation_label: value.operation_label,
-            control: value.control,
+            control: value.frame.control(),
             object_indices: value
-                .references
+                .frame
+                .members()
                 .each_ref()
-                .map(|reference| reference.token.value()),
+                .map(|(token, _)| token.value()),
             raw_object_indices: value
-                .references
+                .frame
+                .members()
                 .each_ref()
-                .map(|reference| reference.token.raw().to_vec()),
+                .map(|(token, _)| token.raw().to_vec()),
             data_blocks: value
-                .references
+                .frame
+                .members()
                 .each_ref()
-                .map(|reference| reference.data_block.clone()),
-            source_offsets: value
-                .references
-                .each_ref()
-                .map(|reference| reference.source_offset),
+                .map(|(_, binding)| binding.clone()),
+            source_offsets: value.frame.offsets(),
         }
     }
 }
 
 impl TryFrom<FeatureDatumCsysConstructionWire> for FeatureDatumCsysConstruction {
     type Error = String;
-
-    // Names follow the ordered source slots in this fixed-width lane.
-    #[allow(clippy::many_single_char_names)]
     fn try_from(wire: FeatureDatumCsysConstructionWire) -> Result<Self, Self::Error> {
-        let [a, b, c, d, e, f, g, h] = [0, 1, 2, 3, 4, 5, 6, 7].map(|slot| {
-            crate::om::reference_index::ReferenceIndexToken::from_wire(
-                wire.object_indices[slot],
-                &wire.raw_object_indices[slot],
-            )
-            .map_err(|error| format!("object_indices/raw_object_indices[{slot}]: {error}"))
-            .map(|token| ConstructionReference {
-                token,
-                data_block: wire.data_blocks[slot].clone(),
-                source_offset: wire.source_offsets[slot],
-            })
-        });
+        let origin = wire.source_offsets[0]
+            .checked_sub(14)
+            .ok_or("source_offsets[0]: datum-CSYS header precedes file")?;
+        let [slot0, slot1, slot2, slot3, slot4, slot5, slot6, slot7] =
+            std::array::from_fn::<_, 8, _>(|slot| {
+                crate::om::reference_index::PayloadIndexToken::from_wire(
+                    wire.object_indices[slot],
+                    &wire.raw_object_indices[slot],
+                )
+                .map(|token| (token, wire.data_blocks[slot].clone()))
+                .map_err(|error| format!("object_indices/raw_object_indices[{slot}]: {error}"))
+            });
+        let frame = crate::om::datum_csys::DatumCsysFrame::new(
+            wire.control,
+            origin,
+            [
+                slot0?, slot1?, slot2?, slot3?, slot4?, slot5?, slot6?, slot7?,
+            ],
+        )?;
+        if frame.offsets() != wire.source_offsets {
+            return Err("source_offsets: disagrees with datum-CSYS token widths".into());
+        }
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            control: wire.control,
-            references: [a?, b?, c?, d?, e?, f?, g?, h?],
+            frame,
         })
     }
 }
@@ -5374,11 +5375,10 @@ pub fn feature_datum_csys_column_row_uses(
         .iter()
         .flat_map(|construction| {
             construction
-                .references
-                .iter()
+                .frame
+                .references()
                 .enumerate()
-                .flat_map(|(construction_slot, reference)| {
-                    let data_block = &reference.data_block;
+                .flat_map(|(construction_slot, (_, data_block, source_offset))| {
                     slots_by_block
                         .get(data_block.as_str())
                         .into_iter()
@@ -5405,7 +5405,7 @@ pub fn feature_datum_csys_column_row_uses(
                                     .map(str::to_string),
                                 row_slot: *row_slot as u8,
                                 data_block: data_block.clone(),
-                                construction_source_offset: reference.source_offset,
+                                construction_source_offset: source_offset,
                                 row_source_offset: *row_source_offset,
                             }
                         })
@@ -5502,8 +5502,6 @@ pub fn feature_input_column_targets(
 
 /// Decode and atomically resolve datum coordinate-system construction lanes
 /// through the offset store selected by each operation header.
-// Names follow the ordered source slots in this fixed-width lane.
-#[allow(clippy::many_single_char_names)]
 pub fn feature_datum_csys_constructions(
     container: &Container,
 ) -> Vec<FeatureDatumCsysConstruction> {
@@ -5513,7 +5511,8 @@ pub fn feature_datum_csys_constructions(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(field) = crate::om::datum_csys_references(record.payload_view()) else {
+            let Some(field) = crate::om::datum_csys::datum_csys_references(record.payload_view())
+            else {
                 return;
             };
             let operation_label =
@@ -5532,35 +5531,20 @@ pub fn feature_datum_csys_constructions(
             let (Some(input_prefix), None) = (input_prefixes.next(), input_prefixes.next()) else {
                 return;
             };
-            let resolved = field.references.map(|reference| {
-                unique_offset_data_block(&indexed, reference.token.value()).map(|data_block| {
-                    ConstructionReference {
-                        token: reference.token,
-                        data_block,
-                        source_offset: entry_offset + reference.offset as u64,
-                    }
+            let Some(frame) = field.relocate(entry_offset).and_then(|field| {
+                field.resolve(|index| {
+                    let data_block = unique_offset_data_block(&indexed, index)?;
+                    (data_block.rsplit_once(":block#")?.0 == input_prefix).then_some(data_block)
                 })
-            });
-            let [Some(a), Some(b), Some(c), Some(d), Some(e), Some(f), Some(g), Some(h)] = resolved
-            else {
+            }) else {
                 return;
             };
-            let resolved = [a, b, c, d, e, f, g, h];
-            if resolved.iter().any(|reference| {
-                reference
-                    .data_block
-                    .rsplit_once(":block#")
-                    .is_none_or(|(prefix, _)| prefix != input_prefix)
-            }) {
-                return;
-            }
             constructions.push(FeatureDatumCsysConstruction {
                 id: format!(
                     "nx:feature-history:datum-csys-construction#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label,
-                control: field.control,
-                references: resolved,
+                frame,
             });
         },
     );
@@ -5611,8 +5595,8 @@ pub fn feature_datum_csys_payloads(
         .iter()
         .filter_map(|construction| {
             let data_blocks = [
-                construction.references[0].data_block.clone(),
-                construction.references[1].data_block.clone(),
+                construction.frame.members()[0].1.clone(),
+                construction.frame.members()[1].1.clone(),
             ];
             let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             Some(FeatureDatumCsysPayload {
@@ -5760,8 +5744,7 @@ pub fn feature_datum_csys_descriptors(
             .into_iter()
             .filter_map(|slot| {
                 let reference_ordinal = u8::from(slot);
-                let data_block =
-                    &construction.references[usize::from(reference_ordinal)].data_block;
+                let data_block = &construction.frame.members()[usize::from(reference_ordinal)].1;
                 let &(bytes, source_offset) = blocks.get(data_block)?;
                 let descriptor = crate::om::datum_csys_descriptor_block(bytes)?;
                 Some(FeatureDatumCsysDescriptor {
@@ -5922,8 +5905,8 @@ pub fn feature_datum_csys_block_uses(
 ) -> Vec<FeatureDatumCsysBlockUse> {
     let mut uses = Vec::new();
     for construction in constructions {
-        for (reference_ordinal, reference) in construction.references.iter().enumerate() {
-            let data_block = &reference.data_block;
+        for (reference_ordinal, reference) in construction.frame.members().iter().enumerate() {
+            let data_block = &reference.1;
             for input in inputs
                 .iter()
                 .filter(|input| input.data_block == *data_block)
@@ -6874,9 +6857,10 @@ pub fn feature_sketch_datum_csys_dependencies(
                 continue;
             };
             for shared_block in construction
-                .references
+                .frame
+                .members()
                 .iter()
-                .map(|reference| &reference.data_block)
+                .map(|(_, binding)| binding)
                 .filter(|block| point.data_blocks.contains(block))
             {
                 let relation = FeatureSketchDatumCsysBlockRelation::Shared {
@@ -6898,7 +6882,7 @@ pub fn feature_sketch_datum_csys_dependencies(
             let Some(point_last_block) = point.data_blocks.last() else {
                 continue;
             };
-            let construction_first_block = &construction.references[0].data_block;
+            let construction_first_block = &construction.frame.members()[0].1;
             if let (
                 Some((point_store, point_ordinal)),
                 Some((construction_store, construction_ordinal)),
