@@ -76,7 +76,6 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
             },
         ],
         indexed_section_layouts: std::sync::OnceLock::new(),
-        om_operation_label_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
     assert_eq!(container.bounded_entry_bytes(1, 2), Some(&payload[1..3]));
@@ -100,13 +99,11 @@ fn container_cached_operation_labels_preserve_section_materialization() {
             file_span: Some((0, payload.len() as u64)),
         }],
         indexed_section_layouts: std::sync::OnceLock::new(),
-        om_operation_label_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
     let direct = crate::om::sections(&payload);
     let cached = container.om_sections();
     assert_eq!(cached.len(), direct.len());
-    assert!(container.om_operation_label_layouts.get().is_some());
     assert!(container.om_section_cache.get().is_some());
     for ((entry, section), expected) in cached.iter().zip(direct.iter()) {
         assert_eq!(entry.name, "/Root/om");
@@ -142,7 +139,6 @@ fn container_caches_owned_section_layouts() {
             file_span: Some((17, payload_len)),
         }],
         indexed_section_layouts: std::sync::OnceLock::new(),
-        om_operation_label_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
     let first = container.om_sections();

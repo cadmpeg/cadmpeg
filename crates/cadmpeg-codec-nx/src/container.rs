@@ -347,16 +347,14 @@ impl<'a> Container<'a> {
         let framed_cache = self.om_section_cache.get_or_init(|| match &self.data {
             Cow::Borrowed(bytes) => {
                 let bytes: &'a [u8] = bytes;
-                let (sections, _, operation_label_layouts) =
+                let (sections, _) =
                     parse_framed_section_cache(bytes, &self.entries, false);
-                let _ = self.om_operation_label_layouts.set(operation_label_layouts);
                 FramedSectionCache::Borrowed { sections }
             }
             Cow::Owned(bytes) => {
-                let (sections, layouts, operation_label_layouts) =
+                let (sections, layouts) =
                     parse_framed_section_cache(bytes, &self.entries, true);
                 drop(sections);
-                let _ = self.om_operation_label_layouts.set(operation_label_layouts);
                 FramedSectionCache::Owned { layouts }
             }
         });
@@ -839,9 +837,6 @@ pub struct Container<'a> {
     pub entries: Vec<DirEntry>,
     /// Cached source ranges for indexed object-model sections.
     pub(crate) indexed_section_layouts: OnceLock<IndexedSectionCache<'a>>,
-    /// Cached operation-label layouts for size-framed object-model sections.
-    pub(crate) om_operation_label_layouts:
-        OnceLock<Vec<(usize, usize, Vec<crate::om::OperationLabelLayout>)>>,
     /// Cached size-framed object-model sections when the container borrows its input.
     pub(crate) om_section_cache: OnceLock<FramedSectionCache<'a>>,
 }
@@ -875,7 +870,6 @@ pub(crate) enum FramedSectionCache<'a> {
 
 type FramedSections<'a> = Vec<(usize, crate::om::Section<'a>)>;
 type FramedSectionLayouts = Vec<(usize, crate::om::SectionLayout)>;
-type FramedOperationLabelLayouts = Vec<(usize, usize, Vec<crate::om::OperationLabelLayout>)>;
 
 fn parse_framed_section_cache<'bytes>(
     bytes: &'bytes [u8],
@@ -884,11 +878,9 @@ fn parse_framed_section_cache<'bytes>(
 ) -> (
     FramedSections<'bytes>,
     FramedSectionLayouts,
-    FramedOperationLabelLayouts,
 ) {
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
-    let mut operation_label_layouts = Vec::new();
     for (entry_index, entry) in entries.iter().enumerate() {
         let Some((offset, size)) = entry.file_span else {
             continue;
@@ -900,13 +892,6 @@ fn parse_framed_section_cache<'bytes>(
             continue;
         };
         for section in crate::om::sections(payload) {
-            if let Some(record_area) = section.record_area {
-                operation_label_layouts.push((
-                    entry_index,
-                    record_area.offset,
-                    section.operation_label_layouts(),
-                ));
-            }
             if retain_layouts {
                 layouts.push((
                     entry_index,
@@ -916,7 +901,7 @@ fn parse_framed_section_cache<'bytes>(
             sections.push((entry_index, section));
         }
     }
-    (sections, layouts, operation_label_layouts)
+    (sections, layouts)
 }
 
 /// Return whether `prefix` starts with [`MAGIC`].
@@ -1036,7 +1021,6 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         },
         entries,
         indexed_section_layouts: OnceLock::new(),
-        om_operation_label_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
     })
 }
@@ -1120,7 +1104,6 @@ pub fn scan_legacy<'a>(
         },
         entries,
         indexed_section_layouts: OnceLock::new(),
-        om_operation_label_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
     };
     Ok((container, part_view))

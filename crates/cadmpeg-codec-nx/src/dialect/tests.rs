@@ -33,7 +33,6 @@ fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
         },
         entries: Vec::new(),
         indexed_section_layouts: OnceLock::new(),
-        om_operation_label_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
     }
 }
