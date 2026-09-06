@@ -662,14 +662,14 @@ fn nx_sketch_payload_join_preserves_order_and_cross_block_values() {
             (&[0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72][..], 900_u64),
         ),
     ]);
-    let joined = super::join_data_block_bytes(&ids, &blocks).expect("required invariant");
+    let joined = super::join_data_block_bytes(ids.iter(), &blocks).expect("required invariant");
     assert_eq!(joined.0, [0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72]);
     assert_eq!(joined.1, [0, 2]);
     assert_eq!(joined.2, [2, 6]);
     assert_eq!(joined.3, [120, 900]);
 
     let missing = vec!["block#2".to_string(), "missing".to_string()];
-    assert!(super::join_data_block_bytes(&missing, &blocks).is_none());
+    assert!(super::join_data_block_bytes(missing.iter(), &blocks).is_none());
 }
 
 #[test]

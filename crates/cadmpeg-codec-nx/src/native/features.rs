@@ -12,7 +12,9 @@ use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLin
 use std::borrow::Cow;
 
 pub(crate) mod datum_plane_header;
+mod payload_content;
 use datum_plane_header::FeatureDatumPlaneHeader;
+use payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
 
 /// Ordered feature operation label from a feature-history record area.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1322,18 +1324,9 @@ pub struct FeatureDatumCsysPayload {
     pub operation_label: String,
     /// Construction defining the ordered block lane.
     pub construction: String,
-    /// Two leading source blocks in serialized order.
-    pub data_blocks: [String; 2],
-    /// Exact concatenated payload length.
-    pub byte_len: u64,
-    /// SHA-256 of the concatenated bytes.
-    pub sha256: String,
-    /// Payload-relative block starts.
-    pub block_payload_offsets: [u64; 2],
-    /// Exact source-block lengths.
-    pub block_byte_lengths: [u64; 2],
-    /// Absolute source-block offsets.
-    pub block_source_offsets: [u64; 2],
+    /// Ordered source blocks and the hash of their concatenated bytes.
+    #[serde(flatten)]
+    pub content: FeaturePayloadContent<[FeaturePayloadBlock; 2]>,
 }
 
 /// One exactly framed scalar pair in a reconstructed feature payload.
@@ -1671,18 +1664,8 @@ pub struct FeatureDatumPlanePayload {
     pub operation_label: String,
     /// Header defining the ordered object-block lane.
     pub datum_plane_header: String,
-    /// Ordered source blocks.
-    pub data_blocks: Vec<String>,
-    /// Exact concatenated payload length.
-    pub byte_len: u64,
-    /// SHA-256 of the concatenated bytes.
-    pub sha256: String,
-    /// Starting payload offset of each source block.
-    pub block_payload_offsets: Vec<u64>,
-    /// Exact byte length of each source block.
-    pub block_byte_lengths: Vec<u64>,
-    /// Absolute file offset of each source block.
-    pub block_source_offsets: Vec<u64>,
+    /// Ordered source blocks and the hash of their concatenated bytes.
+    pub content: FeaturePayloadContent<Vec<FeaturePayloadBlock>>,
     /// Unique terminal index lane, when the payload has exactly one.
     pub index_lane: Option<FeatureDatumPlaneIndexLane>,
 }
@@ -1692,12 +1675,8 @@ struct FeatureDatumPlanePayloadWire {
     id: String,
     operation_label: String,
     datum_plane_header: String,
-    data_blocks: Vec<String>,
-    byte_len: u64,
-    sha256: String,
-    block_payload_offsets: Vec<u64>,
-    block_byte_lengths: Vec<u64>,
-    block_source_offsets: Vec<u64>,
+    #[serde(flatten)]
+    content: FeaturePayloadContent<Vec<FeaturePayloadBlock>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     index_lane_offset: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1736,12 +1715,7 @@ impl From<FeatureDatumPlanePayload> for FeatureDatumPlanePayloadWire {
             id: value.id,
             operation_label: value.operation_label,
             datum_plane_header: value.datum_plane_header,
-            data_blocks: value.data_blocks,
-            byte_len: value.byte_len,
-            sha256: value.sha256,
-            block_payload_offsets: value.block_payload_offsets,
-            block_byte_lengths: value.block_byte_lengths,
-            block_source_offsets: value.block_source_offsets,
+            content: value.content,
             index_lane_offset,
             index_lane_declared_count,
             index_lane_values,
@@ -1802,12 +1776,7 @@ impl TryFrom<FeatureDatumPlanePayloadWire> for FeatureDatumPlanePayload {
             id: wire.id,
             operation_label: wire.operation_label,
             datum_plane_header: wire.datum_plane_header,
-            data_blocks: wire.data_blocks,
-            byte_len: wire.byte_len,
-            sha256: wire.sha256,
-            block_payload_offsets: wire.block_payload_offsets,
-            block_byte_lengths: wire.block_byte_lengths,
-            block_source_offsets: wire.block_source_offsets,
+            content: wire.content,
             index_lane,
         })
     }
@@ -1921,18 +1890,9 @@ pub struct FeatureConstructionPayload {
     /// Construction records selecting the ordered source blocks.
     #[serde(flatten)]
     pub owner: FeatureConstructionOwner,
-    /// Ordered source blocks.
-    pub data_blocks: Vec<String>,
-    /// Exact concatenated payload length.
-    pub byte_len: u64,
-    /// SHA-256 of the exact concatenated payload bytes.
-    pub sha256: String,
-    /// Starting payload offset of each block in concatenation order.
-    pub block_payload_offsets: Vec<u64>,
-    /// Exact serialized length of each source block.
-    pub block_byte_lengths: Vec<u64>,
-    /// Absolute file offset of each source block.
-    pub block_source_offsets: Vec<u64>,
+    /// Ordered source blocks and the hash of their concatenated bytes.
+    #[serde(flatten)]
+    pub content: FeaturePayloadContent<Vec<FeaturePayloadBlock>>,
 }
 
 /// Construction-specific ownership fields of a reconstructed payload.
@@ -2732,18 +2692,9 @@ pub struct FeatureDeleteConstructionPayload {
     pub operation_label: String,
     /// Complete five-slot reference field selecting the source blocks.
     pub reference_field: String,
-    /// Ordered source blocks.
-    pub data_blocks: [String; 5],
-    /// Exact concatenated payload length.
-    pub byte_len: u64,
-    /// SHA-256 of the concatenated bytes.
-    pub sha256: String,
-    /// Payload-relative block starts.
-    pub block_payload_offsets: [u64; 5],
-    /// Exact source-block lengths.
-    pub block_byte_lengths: [u64; 5],
-    /// Absolute source-block offsets.
-    pub block_source_offsets: [u64; 5],
+    /// Ordered source blocks and the hash of their concatenated bytes.
+    #[serde(flatten)]
+    pub content: FeaturePayloadContent<[FeaturePayloadBlock; 5]>,
 }
 
 /// Ordered construction reference carried by a bounded pattern payload.
@@ -3764,18 +3715,9 @@ pub struct FeatureDraftConstructionGraphPayload {
     pub index_lane: String,
     /// Ordered construction-reference records.
     pub construction_references: [String; 4],
-    /// Ordered source blocks.
-    pub data_blocks: [String; 4],
-    /// Exact concatenated payload length.
-    pub byte_len: u64,
-    /// SHA-256 of the concatenated bytes.
-    pub sha256: String,
-    /// Payload-relative block starts.
-    pub block_payload_offsets: [u64; 4],
-    /// Exact source-block lengths.
-    pub block_byte_lengths: [u64; 4],
-    /// Absolute source-block offsets.
-    pub block_source_offsets: [u64; 4],
+    /// Ordered source blocks and the hash of their concatenated bytes.
+    #[serde(flatten)]
+    pub content: FeaturePayloadContent<[FeaturePayloadBlock; 4]>,
 }
 
 /// Complete signed Q1.55 lane in a reconstructed draft graph payload.
@@ -4352,18 +4294,9 @@ pub struct FeatureSurfaceConstructionPayload {
     pub operation_label: String,
     /// Ordered construction-reference records.
     pub construction_references: [String; 14],
-    /// Ordered source blocks.
-    pub data_blocks: [String; 14],
-    /// Exact concatenated payload length.
-    pub byte_len: u64,
-    /// SHA-256 of the concatenated bytes.
-    pub sha256: String,
-    /// Payload-relative block starts.
-    pub block_payload_offsets: [u64; 14],
-    /// Exact source-block lengths.
-    pub block_byte_lengths: [u64; 14],
-    /// Absolute source-block offsets.
-    pub block_source_offsets: [u64; 14],
+    /// Ordered source blocks and the hash of their concatenated bytes.
+    #[serde(flatten)]
+    pub content: FeaturePayloadContent<[FeaturePayloadBlock; 14]>,
 }
 
 /// One printable string frame in a reconstructed surface payload.
@@ -7747,8 +7680,7 @@ pub fn feature_datum_plane_payloads(
                 .iter()
                 .map(|reference| reference.data_block.clone())
                 .collect::<Vec<_>>();
-            let (payload, block_payload_offsets, block_byte_lengths, block_source_offsets) =
-                join_data_block_bytes(&data_blocks, &blocks)?;
+            let (payload, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             let lanes = crate::om::datum_plane_object_index_lanes(&payload);
             let lane = match lanes.as_slice() {
                 [lane] => Some(lane),
@@ -7759,12 +7691,7 @@ pub fn feature_datum_plane_payloads(
                 id: format!("nx:feature-history:datum-plane-payload#{key}"),
                 operation_label: header.operation_label.clone(),
                 datum_plane_header: header.id.clone(),
-                data_blocks,
-                byte_len: payload.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(&payload),
-                block_payload_offsets,
-                block_byte_lengths,
-                block_source_offsets,
+                content,
                 index_lane: lane.map(|lane| FeatureDatumPlaneIndexLane {
                     offset: lane.offset as u64,
                     trailer: lane.trailer,
@@ -7796,19 +7723,14 @@ pub fn feature_datum_csys_payloads(
                 construction.data_blocks[0].clone(),
                 construction.data_blocks[1].clone(),
             ];
-            let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
+            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             Some(FeatureDatumCsysPayload {
                 id: construction
                     .id
                     .replacen("datum-csys-construction", "datum-csys-payload", 1),
                 operation_label: construction.operation_label.clone(),
                 construction: construction.id.clone(),
-                data_blocks,
-                byte_len: bytes.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
-                block_payload_offsets: starts.try_into().ok()?,
-                block_byte_lengths: lengths.try_into().ok()?,
-                block_source_offsets: sources.try_into().ok()?,
+                content,
             })
         })
         .collect()
@@ -7822,7 +7744,7 @@ pub fn feature_datum_csys_payloads(
 fn construction_payload_frames<P, S, R>(
     container: &Container,
     payloads: &[P],
-    data_blocks: impl Fn(&P) -> &[String],
+    data_blocks: impl Fn(&P) -> &[FeaturePayloadBlock],
     scan: impl Fn(&[u8]) -> Vec<S>,
     build: impl Fn(&P, usize, S, &dyn Fn(usize) -> Option<u64>) -> Option<R>,
 ) -> Vec<R> {
@@ -7831,7 +7753,7 @@ fn construction_payload_frames<P, S, R>(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(data_blocks(payload), &blocks)
+                join_data_block_bytes(data_blocks(payload).iter().map(|block| &block.id), &blocks)
             else {
                 return Vec::new();
             };
@@ -7855,7 +7777,7 @@ pub fn feature_datum_csys_payload_scalar_pairs(
     construction_payload_frames(
         container,
         payloads,
-        |payload| &payload.data_blocks[..],
+        |payload| payload.content.blocks(),
         crate::om::object_payload_scalar_pairs,
         |payload, ordinal, pair, source_offset| {
             Some(FeaturePayloadScalarPair {
@@ -7888,7 +7810,7 @@ pub fn feature_datum_csys_payload_fixed_pairs(
     construction_payload_frames(
         container,
         payloads,
-        |payload| &payload.data_blocks[..],
+        |payload| payload.content.blocks(),
         crate::om::datum_csys_payload_fixed_pairs,
         |payload, ordinal, pair, source_offset| {
             Some(FeatureDatumCsysPayloadFixedPair {
@@ -7919,7 +7841,7 @@ pub fn feature_datum_csys_payload_scalars(
     construction_payload_frames(
         container,
         payloads,
-        |payload| &payload.data_blocks[..],
+        |payload| payload.content.blocks(),
         crate::om::construction_payload_scalar_fields,
         |payload, ordinal, scalar, source_offset| {
             Some(FeaturePayloadScalar {
@@ -8009,7 +7931,7 @@ pub fn feature_datum_plane_payload_scalar_pairs(
     construction_payload_frames(
         container,
         payloads,
-        |payload| payload.data_blocks.as_slice(),
+        |payload| payload.content.blocks(),
         crate::om::datum_plane_object_scalar_pairs,
         |payload, ordinal, pair, source_offset| {
             Some(FeaturePayloadScalarPair {
@@ -8272,8 +8194,7 @@ pub fn feature_sketch_construction_payloads(
         .filter_map(|construction| {
             let mut data_blocks = construction.member_data_blocks.clone();
             data_blocks.push(construction.terminal_data_block.clone());
-            let (payload, block_payload_offsets, block_byte_lengths, block_source_offsets) =
-                join_data_block_bytes(&data_blocks, &blocks)?;
+            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             Some(FeatureConstructionPayload {
                 id: construction.id.replacen(
                     "sketch-construction-inputs",
@@ -8284,12 +8205,7 @@ pub fn feature_sketch_construction_payloads(
                 owner: FeatureConstructionOwner::Sketch {
                     construction_inputs: construction.id.clone(),
                 },
-                data_blocks,
-                byte_len: payload.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(&payload),
-                block_payload_offsets,
-                block_byte_lengths,
-                block_source_offsets,
+                content,
             })
         })
         .collect()
@@ -8303,7 +8219,7 @@ pub fn feature_sketch_payload_coordinate_pairs(
     construction_payload_frames(
         container,
         payloads,
-        |payload| &payload.data_blocks,
+        |payload| payload.content.blocks(),
         crate::om::sketch_payload_scalar_pairs,
         |payload, ordinal, pair, source_offset| {
             Some(FeaturePayloadScalarPair {
@@ -8336,7 +8252,7 @@ pub fn feature_sketch_payload_fixed_pairs(
     construction_payload_frames(
         container,
         payloads,
-        |payload| &payload.data_blocks,
+        |payload| payload.content.blocks(),
         crate::om::sketch_payload_fixed_pairs,
         |payload, ordinal, pair, source_offset| {
             Some(FeatureSketchPayloadFixedPair {
@@ -8367,7 +8283,7 @@ pub fn feature_sketch_payload_mixed_pairs(
     construction_payload_frames(
         container,
         payloads,
-        |payload| &payload.data_blocks,
+        |payload| payload.content.blocks(),
         crate::om::sketch_payload_mixed_pairs,
         |payload, ordinal, pair, source_offset| {
             Some(FeatureSketchPayloadMixedPair {
@@ -8453,7 +8369,7 @@ pub fn feature_sketch_payload_scalars(
             let mut data_blocks = construction.member_data_blocks.clone();
             data_blocks.push(construction.terminal_data_block.clone());
             let (payload, block_payload_offsets, block_byte_lengths, block_source_offsets) =
-                join_data_block_bytes(&data_blocks, &blocks)?;
+                join_data_block_bytes(data_blocks.iter(), &blocks)?;
             let construction_payload = construction.id.replacen(
                 "sketch-construction-inputs",
                 "sketch-construction-payload",
@@ -8509,7 +8425,7 @@ pub fn feature_sketch_payload_scalar_lanes(
     construction_payload_frames(
         container,
         payloads,
-        |payload| &payload.data_blocks,
+        |payload| payload.content.blocks(),
         crate::om::sketch_payload_scalar_lanes,
         |payload, ordinal, lane, source_offset| {
             let values = lane
@@ -8551,7 +8467,7 @@ pub fn feature_sketch_payload_names(
             let mut data_blocks = construction.member_data_blocks.clone();
             data_blocks.push(construction.terminal_data_block.clone());
             let Some((payload, block_payload_offsets, block_byte_lengths, block_source_offsets)) =
-                join_data_block_bytes(&data_blocks, &blocks)
+                join_data_block_bytes(data_blocks.iter(), &blocks)
             else {
                 return Vec::new();
             };
@@ -8624,7 +8540,7 @@ pub fn feature_sketch_payload_named_records(
         for (ordinal, name) in payload_names.iter().enumerate() {
             let end = payload_names
                 .get(ordinal + 1)
-                .map_or(payload.byte_len, |next| next.payload_offset);
+                .map_or(payload.content.byte_len(), |next| next.payload_offset);
             let mut scalar_fields = scalars
                 .iter()
                 .filter(|scalar| {
@@ -9239,11 +9155,11 @@ pub(crate) fn parse_sketch_point_name(value: &str) -> Option<u32> {
 
 pub(crate) type JoinedDataBlockBytes = (Vec<u8>, Vec<u64>, Vec<u64>, Vec<u64>);
 
-pub(crate) fn join_data_block_bytes(
-    ids: &[String],
+pub(crate) fn join_data_block_bytes<'a>(
+    ids: impl ExactSizeIterator<Item = &'a String> + Clone,
     blocks: &BTreeMap<String, (&[u8], u64)>,
 ) -> Option<JoinedDataBlockBytes> {
-    let byte_len = ids.iter().try_fold(0usize, |total, id| {
+    let byte_len = ids.clone().try_fold(0usize, |total, id| {
         let (bytes, _) = blocks.get(id).copied()?;
         total.checked_add(bytes.len())
     })?;
@@ -9463,8 +9379,7 @@ pub fn feature_fset_construction_payloads(
                 }) {
                     return None;
                 }
-                let (bytes, starts, lengths, sources) =
-                    join_data_block_bytes(&data_blocks, blocks)?;
+                let (_, content) = FeaturePayloadContent::from_source(data_blocks, blocks)?;
                 let group_name = match group {
                     FeatureFsetReferenceGroup::First => "first",
                     FeatureFsetReferenceGroup::Second => "second",
@@ -9481,12 +9396,7 @@ pub fn feature_fset_construction_payloads(
                         reference_graph: graph.id.clone(),
                         group,
                     },
-                    data_blocks,
-                    byte_len: bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
-                    block_payload_offsets: starts,
-                    block_byte_lengths: lengths,
-                    block_source_offsets: sources,
+                    content,
                 })
             })
         })
@@ -9559,7 +9469,7 @@ pub fn feature_delete_construction_payloads(
             }) {
                 return None;
             }
-            let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
+            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             let operation_key = field
                 .operation_label
                 .strip_prefix("nx:feature-history:operation-label#")?;
@@ -9567,12 +9477,7 @@ pub fn feature_delete_construction_payloads(
                 id: format!("nx:feature-history:delete-construction-payload#{operation_key}"),
                 operation_label: field.operation_label.clone(),
                 reference_field: field.id.clone(),
-                data_blocks: data_blocks.try_into().ok()?,
-                byte_len: bytes.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
-                block_payload_offsets: starts.try_into().ok()?,
-                block_byte_lengths: lengths.try_into().ok()?,
-                block_source_offsets: sources.try_into().ok()?,
+                content,
             })
         })
         .collect()
@@ -9625,7 +9530,7 @@ pub fn feature_projected_curve_construction_payloads(
             }) {
                 return None;
             }
-            let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
+            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             let (_, operation_key) = operation_label.rsplit_once('#')?;
             Some(FeatureConstructionPayload {
                 id: format!(
@@ -9639,12 +9544,7 @@ pub fn feature_projected_curve_construction_payloads(
                         .map(|reference| reference.id.clone())
                         .collect(),
                 },
-                data_blocks,
-                byte_len: bytes.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
-                block_payload_offsets: starts,
-                block_byte_lengths: lengths,
-                block_source_offsets: sources,
+                content,
             })
         })
         .collect()
@@ -9660,7 +9560,7 @@ pub fn feature_projected_curve_construction_strings(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
+                join_data_block_bytes(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
@@ -9815,7 +9715,7 @@ pub fn feature_pattern_construction_payloads(
             }) {
                 return None;
             }
-            let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
+            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             let (_, operation_key) = operation_label.rsplit_once('#')?;
             Some(FeatureConstructionPayload {
                 id: format!("nx:feature-history:pattern-construction-payload#{operation_key}"),
@@ -9828,12 +9728,7 @@ pub fn feature_pattern_construction_payloads(
                         .map(|reference| reference.id.clone())
                         .collect(),
                 },
-                data_blocks,
-                byte_len: bytes.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
-                block_payload_offsets: starts,
-                block_byte_lengths: lengths,
-                block_source_offsets: sources,
+                content,
             })
         })
         .collect()
@@ -9849,7 +9744,7 @@ pub fn feature_pattern_construction_strings(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
+                join_data_block_bytes(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
@@ -9888,7 +9783,7 @@ pub fn feature_pattern_construction_fixed_lanes(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
+                join_data_block_bytes(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
@@ -10263,8 +10158,7 @@ pub fn feature_draft_construction_payloads(
                 .iter()
                 .map(|row| row.data_block.clone())
                 .collect::<Vec<_>>();
-            let (bytes, block_payload_offsets, block_byte_lengths, block_source_offsets) =
-                join_data_block_bytes(&data_blocks, &blocks)?;
+            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             Some(FeatureConstructionPayload {
                 id: lane.id.replacen(
                     "draft-construction-index-lane#",
@@ -10275,12 +10169,7 @@ pub fn feature_draft_construction_payloads(
                 owner: FeatureConstructionOwner::Draft {
                     index_lane: lane.id.clone(),
                 },
-                data_blocks,
-                byte_len: bytes.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
-                block_payload_offsets,
-                block_byte_lengths,
-                block_source_offsets,
+                content,
             })
         })
         .collect()
@@ -10325,19 +10214,14 @@ pub fn feature_draft_construction_graph_payloads(
             }) {
                 return None;
             }
-            let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
+            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             let (_, key) = lane.id.rsplit_once('#')?;
             Some(FeatureDraftConstructionGraphPayload {
                 id: format!("nx:feature-history:draft-construction-graph-payload#{key}"),
                 operation_label: lane.operation_label.clone(),
                 index_lane: lane.id.clone(),
                 construction_references: graph.each_ref().map(|reference| reference.id.clone()),
-                data_blocks: data_blocks.try_into().ok()?,
-                byte_len: bytes.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
-                block_payload_offsets: starts.try_into().ok()?,
-                block_byte_lengths: lengths.try_into().ok()?,
-                block_source_offsets: sources.try_into().ok()?,
+                content,
             })
         })
         .collect()
@@ -10353,7 +10237,7 @@ pub fn feature_draft_construction_fixed_lanes(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
+                join_data_block_bytes(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
@@ -10410,7 +10294,7 @@ pub fn feature_draft_construction_binary32_lanes(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
+                join_data_block_bytes(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
@@ -10467,7 +10351,7 @@ pub fn feature_draft_construction_graph_strings(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
+                join_data_block_bytes(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
@@ -10506,7 +10390,7 @@ pub fn feature_draft_construction_identity_frames(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
+                join_data_block_bytes(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
@@ -10796,18 +10680,13 @@ pub fn feature_surface_construction_payloads(
             }) {
                 return None;
             }
-            let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
+            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             let (_, operation_key) = operation_label.rsplit_once('#')?;
             Some(FeatureSurfaceConstructionPayload {
                 id: format!("nx:feature-history:surface-construction-payload#{operation_key}"),
                 operation_label: operation_label.to_string(),
                 construction_references: graph.each_ref().map(|reference| reference.id.clone()),
-                data_blocks: data_blocks.try_into().ok()?,
-                byte_len: bytes.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
-                block_payload_offsets: starts.try_into().ok()?,
-                block_byte_lengths: lengths.try_into().ok()?,
-                block_source_offsets: sources.try_into().ok()?,
+                content,
             })
         })
         .collect()
@@ -10823,7 +10702,7 @@ pub fn feature_surface_construction_scalar_pairs(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
+                join_data_block_bytes(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
@@ -10880,7 +10759,7 @@ pub fn feature_surface_construction_strings(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
+                join_data_block_bytes(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
@@ -11587,8 +11466,7 @@ pub fn feature_block_construction_payloads(
         .filter_map(|construction| {
             let mut data_blocks = construction.member_data_blocks.clone();
             data_blocks.push(construction.terminal_data_block.clone());
-            let (bytes, block_payload_offsets, block_byte_lengths, block_source_offsets) =
-                join_data_block_bytes(&data_blocks, &blocks)?;
+            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             Some(FeatureConstructionPayload {
                 id: construction
                     .id
@@ -11597,12 +11475,7 @@ pub fn feature_block_construction_payloads(
                 owner: FeatureConstructionOwner::Block {
                     construction: construction.id.clone(),
                 },
-                data_blocks,
-                byte_len: bytes.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
-                block_payload_offsets,
-                block_byte_lengths,
-                block_source_offsets,
+                content,
             })
         })
         .collect()
@@ -11618,7 +11491,7 @@ pub fn feature_block_payload_scalars(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
+                join_data_block_bytes(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
@@ -11661,7 +11534,7 @@ pub fn feature_block_payload_names(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
+                join_data_block_bytes(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
@@ -11717,7 +11590,7 @@ pub fn feature_block_payload_named_records(
         for (ordinal, name) in payload_names.iter().enumerate() {
             let end = payload_names
                 .get(ordinal + 1)
-                .map_or(payload.byte_len, |next| next.payload_offset);
+                .map_or(payload.content.byte_len(), |next| next.payload_offset);
             let mut scalar_fields = scalars
                 .iter()
                 .filter(|scalar| {

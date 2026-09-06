@@ -13,12 +13,12 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
         owner: crate::native::features::FeatureConstructionOwner::Sketch {
             construction_inputs: "inputs".to_string(),
         },
-        data_blocks: vec!["block".to_string()],
-        byte_len: 100,
-        sha256: "00".repeat(32),
-        block_payload_offsets: vec![0],
-        block_byte_lengths: vec![100],
-        block_source_offsets: vec![1000],
+        content: crate::native::features::payload_content::FeaturePayloadContent::new(
+            vec![crate::native::features::payload_content::FeaturePayloadBlock {
+                id: "block".to_string(), byte_len: 100, source_offset: 1000,
+            }],
+            "00".repeat(32),
+        ).unwrap(),
     };
     let name = |id: &str, ordinal, offset| FeatureSketchPayloadName {
         id: id.to_string(),
