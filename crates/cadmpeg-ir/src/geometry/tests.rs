@@ -650,3 +650,44 @@ fn procedural_carrier_serialization_preserves_checked_solved_cache() {
     assert!(serde_json::from_value::<SolvedCurveGeometry>(curve_wire).is_err());
     assert!(serde_json::from_value::<SolvedSurfaceGeometry>(surface_wire).is_err());
 }
+
+#[test]
+fn solved_caches_reject_procedural_carriers_below_transform_chains() {
+    use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
+    let mut curve = CurveGeometry::Procedural {
+        construction: "test:model:procedural_curve#0".into(),
+        cache: None,
+    };
+    let mut surface = SurfaceGeometry::Procedural {
+        construction: "test:model:procedural_surface#0".into(),
+        cache: None,
+    };
+    for _ in 0..3 {
+        curve = CurveGeometry::Transformed {
+            basis: Box::new(curve),
+            transform: Default::default(),
+        };
+        surface = SurfaceGeometry::Transformed {
+            basis: Box::new(surface),
+            transform: Default::default(),
+        };
+        assert_eq!(SolvedCurveGeometry::new(curve.clone()), Err(curve.clone()));
+        assert_eq!(SolvedSurfaceGeometry::new(surface.clone()), Err(surface.clone()));
+        assert!(serde_json::from_value::<SolvedCurveGeometry>(
+            serde_json::to_value(&curve).unwrap()
+        ).is_err());
+        assert!(serde_json::from_value::<SolvedSurfaceGeometry>(
+            serde_json::to_value(&surface).unwrap()
+        ).is_err());
+    }
+    let curve = CurveGeometry::Transformed {
+        basis: Box::new(CurveGeometry::Unknown { record: None }),
+        transform: Default::default(),
+    };
+    let surface = SurfaceGeometry::Transformed {
+        basis: Box::new(SurfaceGeometry::Unknown { record: None }),
+        transform: Default::default(),
+    };
+    assert_eq!(SolvedCurveGeometry::new(curve.clone()).unwrap().as_geometry(), &curve);
+    assert_eq!(SolvedSurfaceGeometry::new(surface.clone()).unwrap().as_geometry(), &surface);
+}

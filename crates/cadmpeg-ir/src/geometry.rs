@@ -948,7 +948,11 @@ impl SolvedSurfaceGeometry {
     /// Wrap a non-procedural solved surface geometry.
     #[must_use]
     pub fn new(geometry: SurfaceGeometry) -> Result<Self, SurfaceGeometry> {
-        if matches!(geometry, SurfaceGeometry::Procedural { .. }) {
+        let mut basis = &geometry;
+        while let SurfaceGeometry::Transformed { basis: inner, .. } = basis {
+            basis = inner;
+        }
+        if matches!(basis, SurfaceGeometry::Procedural { .. }) {
             Err(geometry)
         } else {
             Ok(Self(Box::new(geometry)))
@@ -1138,7 +1142,11 @@ impl SolvedCurveGeometry {
     /// Wrap a non-procedural solved curve geometry.
     #[must_use]
     pub fn new(geometry: CurveGeometry) -> Result<Self, CurveGeometry> {
-        if matches!(geometry, CurveGeometry::Procedural { .. }) {
+        let mut basis = &geometry;
+        while let CurveGeometry::Transformed { basis: inner, .. } = basis {
+            basis = inner;
+        }
+        if matches!(basis, CurveGeometry::Procedural { .. }) {
             Err(geometry)
         } else {
             Ok(Self(Box::new(geometry)))
