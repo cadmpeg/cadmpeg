@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+
 //! Feature-output lineage from operation body-write frames.
 
 use super::*;
+use crate::native::parasolid::group_member::{GroupMemberTarget, GroupNodeFamily};
 use crate::NxCodec;
 use crate::test_support::{composed_feature_history_payload, prt_with_named_payloads};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -270,7 +272,7 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
 
 fn group_member(
     id: &str,
-    family: crate::native::parasolid::GroupMemberFamily,
+    family: GroupNodeFamily,
     current_member_xmt: Option<u32>,
 ) -> crate::native::parasolid::ParasolidGroupMember {
     crate::native::parasolid::ParasolidGroupMember {
@@ -281,9 +283,7 @@ fn group_member(
         ordinal: 0,
         list_record_xmt: 20,
         member_xmt: 30,
-        member_family: family,
-        member_node_id: Some(50),
-        current_member_xmt,
+        target: GroupMemberTarget::Node { family, node_id: 50, current_xmt: current_member_xmt },
     }
 }
 
@@ -320,27 +320,27 @@ fn result_topology_uses_only_unique_current_group_members() {
     let members = [
         group_member(
             "face",
-            crate::native::parasolid::GroupMemberFamily::Face,
+            GroupNodeFamily::Face,
             Some(40),
         ),
         group_member(
             "edge",
-            crate::native::parasolid::GroupMemberFamily::Edge,
+            GroupNodeFamily::Edge,
             Some(41),
         ),
         group_member(
             "vertex",
-            crate::native::parasolid::GroupMemberFamily::Vertex,
+            GroupNodeFamily::Vertex,
             Some(42),
         ),
         group_member(
             "historical",
-            crate::native::parasolid::GroupMemberFamily::Face,
+            GroupNodeFamily::Face,
             None,
         ),
         group_member(
             "shell",
-            crate::native::parasolid::GroupMemberFamily::Shell,
+            GroupNodeFamily::Shell,
             Some(43),
         ),
     ];
@@ -357,12 +357,12 @@ fn result_topology_uses_only_unique_current_group_members() {
     let duplicate_members = [
         group_member(
             "face",
-            crate::native::parasolid::GroupMemberFamily::Face,
+            GroupNodeFamily::Face,
             Some(40),
         ),
         group_member(
             "face",
-            crate::native::parasolid::GroupMemberFamily::Face,
+            GroupNodeFamily::Face,
             Some(40),
         ),
     ];
@@ -378,12 +378,12 @@ fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
     let members = [
         group_member(
             "face",
-            crate::native::parasolid::GroupMemberFamily::Face,
+            GroupNodeFamily::Face,
             Some(40),
         ),
         group_member(
             "edge",
-            crate::native::parasolid::GroupMemberFamily::Edge,
+            GroupNodeFamily::Edge,
             Some(41),
         ),
     ];

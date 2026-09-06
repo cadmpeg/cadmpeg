@@ -9,6 +9,8 @@ use crate::deltas::Census;
 
 mod support_uv_wire;
 mod chart_wire;
+pub(crate) mod group_member;
+use group_member::GroupMemberTarget;
 
 use super::substrate::{ParsedStreams, StreamView};
 
@@ -45,52 +47,9 @@ pub struct ParasolidGroupRecord {
     pub inflated_offset: u64,
 }
 
-/// Topology families admitted as members of a closed GROUP chain.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "UPPERCASE")]
-pub enum GroupMemberFamily {
-    Body,
-    Shell,
-    Face,
-    Loop,
-    Fin,
-    Edge,
-    Vertex,
-    Region,
-}
-
-impl GroupMemberFamily {
-    fn from_record(family: crate::deltas::RecordFamily) -> Option<Self> {
-        use crate::deltas::RecordFamily;
-        Some(match family {
-            RecordFamily::Body { .. } => Self::Body,
-            RecordFamily::Shell { .. } => Self::Shell,
-            RecordFamily::Face { .. } => Self::Face,
-            RecordFamily::Loop { .. } => Self::Loop,
-            RecordFamily::Fin => Self::Fin,
-            RecordFamily::Edge { .. } => Self::Edge,
-            RecordFamily::Vertex { .. } => Self::Vertex,
-            RecordFamily::Region { .. } => Self::Region,
-            _ => return None,
-        })
-    }
-
-    fn kind(self) -> u8 {
-        match self {
-            Self::Body => 12,
-            Self::Shell => 13,
-            Self::Face => 14,
-            Self::Loop => 15,
-            Self::Fin => 17,
-            Self::Edge => 16,
-            Self::Vertex => 18,
-            Self::Region => 19,
-        }
-    }
-}
-
 /// One topology member in a fully closed current Parasolid GROUP chain.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "group_member::MemberWire", into = "group_member::MemberWire")]
 pub struct ParasolidGroupMember {
     /// Globally unique membership identity.
     pub id: String,
@@ -106,14 +65,8 @@ pub struct ParasolidGroupMember {
     pub list_record_xmt: u32,
     /// Member record XMT identity.
     pub member_xmt: u32,
-    /// Parasolid topology family of the member record.
-    pub member_family: GroupMemberFamily,
-    /// Kernel node identity when the member family carries one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub member_node_id: Option<u32>,
-    /// Current semantic XMT identity selected by unique family and kernel node identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current_member_xmt: Option<u32>,
+    /// Member family with its required node and optional current identity.
+    pub target: GroupMemberTarget,
 }
 
 /// Retain GROUP records from partition streams and raw deltas overlays.
@@ -260,11 +213,11 @@ fn group_members_from_records(
                 complete = false;
                 break;
             };
-            let Some(member_family) = GroupMemberFamily::from_record(member_record.family) else {
+            let Some(target) = GroupMemberTarget::from_record(member_record.family) else {
                 complete = false;
                 break;
             };
-            reverse_chain.push((current, member_xmt, member_family, member_record.node_id()));
+            reverse_chain.push((current, member_xmt, target));
             expected_next = current;
             current = list_record.references[4];
         }
@@ -276,7 +229,7 @@ fn group_members_from_records(
             continue;
         };
         members.extend(reverse_chain.into_iter().enumerate().filter_map(
-            |(ordinal, (list_record_xmt, member_xmt, member_family, member_node_id))| {
+            |(ordinal, (list_record_xmt, member_xmt, target))| {
                 Some(ParasolidGroupMember {
                     id: format!(
                         "nx:s{partition_stream_ordinal}:parasolid-group-member#{group_node_id}-{}-{ordinal}",
@@ -288,9 +241,7 @@ fn group_members_from_records(
                     ordinal: u32::try_from(ordinal).ok()?,
                     list_record_xmt,
                     member_xmt,
-                    member_family,
-                    member_node_id,
-                    current_member_xmt: None,
+                    target,
                 })
             },
         ));
@@ -353,37 +304,11 @@ pub(crate) fn parasolid_group_members(
         .flat_map(|(stream_ordinal, records)| group_members_from_records(stream_ordinal, &records))
         .collect::<Vec<_>>();
     for member in &mut members {
-        let (Some(node_id), Ok(partition)) = (
-            member.member_node_id,
-            usize::try_from(member.partition_stream_ordinal),
-        ) else {
-            continue;
-        };
+        let Ok(partition) = usize::try_from(member.partition_stream_ordinal) else { continue; };
         let graph = parsed.stream(partition).view_for_geometry().graph.as_ref();
-        member.current_member_xmt =
-            resolved_current_member_xmt(graph, member, member.member_family.kind(), node_id);
+        member.target = member.target.resolve(graph, member.member_xmt);
     }
     members
-}
-
-/// Resolve a GROUP member against the current merged topology graph.
-///
-/// The member XMT is the identity selected by the current GROUP chain, so it
-/// is the primary lookup key. A node-ID lookup is retained as a guarded
-/// compatibility path for a delta revision that changes the XMT while
-/// preserving the kernel node identity. Both paths require the expected
-/// topology family and the serialized node identity to agree.
-fn resolved_current_member_xmt(
-    graph: &crate::topology::Graph,
-    member: &ParasolidGroupMember,
-    kind: u8,
-    node_id: u32,
-) -> Option<u32> {
-    graph
-        .get(kind, member.member_xmt)
-        .filter(|node| node.node_id() == Some(node_id))
-        .map(|node| node.xmt)
-        .or_else(|| graph.unique_xmt_by_node_id(kind, node_id))
 }
 
 /// One completely bounded record in a Parasolid deltas stream.
@@ -3663,17 +3588,16 @@ mod tests {
         assert_eq!(members.len(), 2);
         assert_eq!(members[0].list_record_xmt, 20);
         assert_eq!(
-            serde_json::to_value(members[0].member_family).unwrap(),
+            serde_json::to_value(&members[0]).unwrap()["member_family"],
             "EDGE"
         );
-        assert_eq!(members[0].member_node_id, Some(51));
-        assert_eq!(members[0].current_member_xmt, None);
+        assert!(matches!(members[0].target, GroupMemberTarget::Node { node_id: 51, current_xmt: None, .. }));
         assert_eq!(members[1].list_record_xmt, 30);
         assert_eq!(
-            serde_json::to_value(members[1].member_family).unwrap(),
+            serde_json::to_value(&members[1]).unwrap()["member_family"],
             "FACE"
         );
-        assert_eq!(members[1].member_node_id, Some(50));
+        assert!(matches!(members[1].target, GroupMemberTarget::Node { node_id: 50, .. }));
 
         let mut broken = records;
         broken[2].references[5] = 99;
@@ -3683,6 +3607,10 @@ mod tests {
     #[test]
     fn group_member_xmt_is_checked_before_node_identity_fallback() {
         let graph = Graph::parse(&many_face_partition_stream(1_000));
+        let resolve = |member: &ParasolidGroupMember| match member.target.resolve(&graph, member.member_xmt) {
+            GroupMemberTarget::Fin => None,
+            GroupMemberTarget::Node { current_xmt, .. } => current_xmt,
+        };
         let member = ParasolidGroupMember {
             id: "member".into(),
             partition_stream_ordinal: 4,
@@ -3691,29 +3619,24 @@ mod tests {
             ordinal: 0,
             list_record_xmt: 20,
             member_xmt: 300,
-            member_family: GroupMemberFamily::Face,
-            member_node_id: Some(1_000),
-            current_member_xmt: None,
+            target: GroupMemberTarget::Node { family: group_member::GroupNodeFamily::Face, node_id: 1_000, current_xmt: None },
         };
 
         assert_eq!(
-            super::resolved_current_member_xmt(&graph, &member, 14, 1_000),
+            resolve(&member),
             Some(300)
         );
         assert_eq!(
-            super::resolved_current_member_xmt(
-                &graph,
+            resolve(
                 &ParasolidGroupMember {
                     member_xmt: 999,
                     ..member.clone()
                 },
-                14,
-                1_000,
             ),
             Some(300)
         );
         assert_eq!(
-            super::resolved_current_member_xmt(&graph, &member, 14, 2_000),
+            resolve(&ParasolidGroupMember { target: GroupMemberTarget::Node { family: group_member::GroupNodeFamily::Face, node_id: 2_000, current_xmt: None }, ..member.clone() }),
             None
         );
     }

@@ -3779,6 +3779,7 @@ fn feature_result_group_members(
     member_ids: &[String],
     members: &[crate::native::parasolid::ParasolidGroupMember],
 ) -> FeatureResultGroupMembers {
+    use crate::native::parasolid::group_member::{GroupMemberTarget, GroupNodeFamily};
     let mut result = FeatureResultGroupMembers::default();
     for member_id in member_ids {
         let mut matches = members.iter().filter(|member| member.id == *member_id);
@@ -3791,17 +3792,17 @@ fn feature_result_group_members(
         if member.partition_stream_ordinal != partition_stream_ordinal {
             continue;
         }
-        let Some(xmt) = member.current_member_xmt else {
+        let GroupMemberTarget::Node { family, current_xmt: Some(xmt), .. } = member.target else {
             continue;
         };
-        match member.member_family {
-            crate::native::parasolid::GroupMemberFamily::Face => result
+        match family {
+            GroupNodeFamily::Face => result
                 .faces
                 .push(format!("nx:s{partition_stream_ordinal}:face#{xmt}")),
-            crate::native::parasolid::GroupMemberFamily::Edge => result
+            GroupNodeFamily::Edge => result
                 .edges
                 .push(format!("nx:s{partition_stream_ordinal}:edge#{xmt}")),
-            crate::native::parasolid::GroupMemberFamily::Vertex => result
+            GroupNodeFamily::Vertex => result
                 .vertices
                 .push(format!("nx:s{partition_stream_ordinal}:vertex#{xmt}")),
             _ => {}
