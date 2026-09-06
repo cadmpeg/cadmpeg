@@ -8,7 +8,9 @@ use cadmpeg_core::decode::{alloc_filled, View};
 
 pub(crate) mod discriminators;
 pub(crate) mod parameter_name;
-use discriminators::{OperationStateCounterKind, OperationStatePairTag};
+use discriminators::{
+    DraftBinary32Branch, DraftIdentityBranch, OperationStateCounterKind, OperationStatePairTag,
+};
 pub(crate) mod registry;
 use parameter_name::ParameterName;
 
@@ -2599,7 +2601,7 @@ pub enum DraftConstructionIdentityFrameForm {
         /// Nullable second compact index.
         second_index: Option<u32>,
         /// Exact `02` or `03` branch byte.
-        branch: u8,
+        branch: DraftIdentityBranch,
     },
     /// One nullable compact index followed by `ff 02 01`.
     Tagged {
@@ -2631,10 +2633,8 @@ pub struct DraftConstructionFixedLane {
 pub struct DraftConstructionBinary32Lane {
     /// Payload-relative offset of the discriminator.
     pub offset: usize,
-    /// Exact discriminator selecting the lane form.
-    pub discriminator: [u8; 18],
-    /// Exact `03` or `04` branch byte.
-    pub branch: u8,
+    /// Branch selecting the complete lane discriminator.
+    pub branch: DraftBinary32Branch,
     /// Ordered scalar atoms with exact source encodings.
     pub values: Vec<LaneToken<f64, [u8; 4]>>,
 }
@@ -6568,17 +6568,10 @@ pub fn draft_construction_fixed_lanes(bytes: &[u8]) -> Vec<DraftConstructionFixe
 
 /// Decode every complete shifted-binary32 lane in a reconstructed draft graph payload.
 pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<DraftConstructionBinary32Lane> {
-    const BRANCH_04: [u8; 18] = [
-        0x90, 0x18, 0x45, 0x01, 0x04, 0x01, 0x04, 0x01, 0xc0, 0x45, 0x04, 0x04, 0x80, 0x86, 0x02,
-        0x00, 0x03, 0x00,
-    ];
-    const BRANCH_03: [u8; 18] = [
-        0x90, 0x18, 0x45, 0x01, 0x04, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
-        0x00, 0x03, 0x00,
-    ];
-    let mut lanes = [BRANCH_04, BRANCH_03]
+    let mut lanes = [DraftBinary32Branch::Form04, DraftBinary32Branch::Form03]
         .into_iter()
-        .flat_map(|discriminator| {
+        .flat_map(|branch| {
+            let discriminator = branch.discriminator();
             bytes
                 .windows(discriminator.len())
                 .enumerate()
@@ -6605,8 +6598,7 @@ pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<DraftConstructionB
                     }
                     Some(DraftConstructionBinary32Lane {
                         offset,
-                        discriminator,
-                        branch: discriminator[6],
+                        branch,
                         values,
                     })
                 })
@@ -6705,14 +6697,13 @@ fn draft_identity_prefix(bytes: &[u8]) -> Option<(usize, DraftConstructionIdenti
         let (second_index, second_width) = compact_index(bytes.get(second_at..)?)?;
         let branch_at = second_at + second_width;
         let end = branch_at + 2;
-        (matches!(bytes.get(branch_at), Some(0x02 | 0x03))
-            && bytes.get(branch_at + 1) == Some(&0x01))
-        .then_some((
+        let branch = DraftIdentityBranch::try_from(*bytes.get(branch_at)?).ok()?;
+        (bytes.get(branch_at + 1) == Some(&0x01)).then_some((
             end,
             DraftConstructionIdentityFrameForm::IndexedBranch {
                 first_index,
                 second_index: compact_index_value(second_index),
-                branch: bytes[branch_at],
+                branch,
             },
         ))
     }

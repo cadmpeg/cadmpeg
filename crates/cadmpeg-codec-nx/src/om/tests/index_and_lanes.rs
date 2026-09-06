@@ -922,7 +922,7 @@ fn om_draft_identity_frames_require_complete_typed_framing() {
         super::DraftConstructionIdentityFrameForm::IndexedBranch {
             first_index: 340,
             second_index: Some(56),
-            branch: 2,
+            branch: crate::om::discriminators::DraftIdentityBranch::Form02,
         }
     );
     assert_eq!(frames[0].identity, "abc123");
@@ -1004,8 +1004,8 @@ fn om_draft_binary32_lanes_require_complete_typed_atoms_and_terminator() {
     let lanes = super::draft_construction_binary32_lanes(&bytes);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].offset, 1);
-    assert_eq!(lanes[0].discriminator, discriminator);
-    assert_eq!(lanes[0].branch, 4);
+    assert_eq!(lanes[0].branch.discriminator(), discriminator);
+    assert_eq!(u8::from(lanes[0].branch), 4);
     assert_eq!(
         lanes[0]
             .values

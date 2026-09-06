@@ -93,7 +93,7 @@ fn draft_fixed_lane_preserves_parallel_wire_and_requires_complete_tokens() {
 #[test]
 fn draft_binary32_lane_preserves_parallel_wire_and_requires_complete_tokens() {
     check_lane_wire::<FeatureDraftConstructionBinary32Lane>(
-        r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"discriminator":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18],"branch":3,"values":[2.5,4.0],"raw_values":[[1,2,3,4],[5,6,7,8]],"payload_offset":0,"value_payload_offsets":[18,22],"source_offset":100,"value_source_offsets":[118,122]}"#,
+        r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"discriminator":[144,24,69,1,4,1,3,1,192,69,4,0,128,134,2,0,3,0],"branch":3,"values":[2.5,4.0],"raw_values":[[1,2,3,4],[5,6,7,8]],"payload_offset":0,"value_payload_offsets":[18,22],"source_offset":100,"value_source_offsets":[118,122]}"#,
         &[
             "values",
             "raw_values",

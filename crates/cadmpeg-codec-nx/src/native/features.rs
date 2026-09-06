@@ -4,11 +4,11 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::native::om::{
-    DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockReference,
-    DataBlockRole, DataBlockTargetIndexRow, Expression, ExpressionDeclaration,
-    OmOperationStateJournalGroup, OmSchemaRole, data_blocks,
+    data_blocks, DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow,
+    DataBlockReference, DataBlockRole, DataBlockTargetIndexRow, Expression, ExpressionDeclaration,
+    OmOperationStateJournalGroup, OmSchemaRole,
 };
-use crate::native::segments::{SegmentBodyBinding, SegmentOmLink, segment_om_links};
+use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
 use std::borrow::Cow;
 
 pub(crate) mod datum_plane_header;
@@ -3784,10 +3784,8 @@ pub struct FeatureDraftConstructionBinary32Lane {
     pub graph_payload: String,
     /// Zero-based lane order in the reconstructed payload.
     pub ordinal: u32,
-    /// Exact discriminator selecting the lane form.
-    pub discriminator: [u8; 18],
-    /// Exact `03` or `04` branch byte.
-    pub branch: u8,
+    /// Branch selecting the complete lane discriminator.
+    pub branch: crate::om::discriminators::DraftBinary32Branch,
     /// Ordered scalar tokens with their source locations.
     pub values: Vec<FeatureBinary32ScalarToken>,
     /// Payload-relative offset of the discriminator.
@@ -3831,8 +3829,8 @@ impl From<FeatureDraftConstructionBinary32Lane> for FeatureDraftConstructionBina
             operation_label: lane.operation_label,
             graph_payload: lane.graph_payload,
             ordinal: lane.ordinal,
-            discriminator: lane.discriminator,
-            branch: lane.branch,
+            discriminator: lane.branch.discriminator(),
+            branch: u8::from(lane.branch),
             payload_offset: lane.payload_offset,
             source_offset: lane.source_offset,
             values: lane.values.iter().map(|token| token.value).collect(),
@@ -3854,6 +3852,12 @@ impl From<FeatureDraftConstructionBinary32Lane> for FeatureDraftConstructionBina
 impl TryFrom<FeatureDraftConstructionBinary32LaneWire> for FeatureDraftConstructionBinary32Lane {
     type Error = String;
     fn try_from(wire: FeatureDraftConstructionBinary32LaneWire) -> Result<Self, Self::Error> {
+        let branch = crate::om::discriminators::DraftBinary32Branch::try_from(wire.branch)?;
+        if wire.discriminator != branch.discriminator() {
+            return Err(
+                "FeatureDraftConstructionBinary32Lane.discriminator disagrees with branch".into(),
+            );
+        }
         let count = wire.values.len();
         if wire.raw_values.len() != count
             || wire.value_payload_offsets.len() != count
@@ -3869,8 +3873,7 @@ impl TryFrom<FeatureDraftConstructionBinary32LaneWire> for FeatureDraftConstruct
             operation_label: wire.operation_label,
             graph_payload: wire.graph_payload,
             ordinal: wire.ordinal,
-            discriminator: wire.discriminator,
-            branch: wire.branch,
+            branch,
             payload_offset: wire.payload_offset,
             source_offset: wire.source_offset,
             values: wire
@@ -3949,7 +3952,7 @@ pub enum FeatureDraftConstructionIdentityFrameForm {
         /// Nullable second compact index.
         second_index: Option<u32>,
         /// Exact `02` or `03` branch byte.
-        branch: u8,
+        branch: crate::om::discriminators::DraftIdentityBranch,
     },
     /// One nullable compact index followed by `ff 02 01`.
     Tagged {
@@ -10197,7 +10200,6 @@ pub fn feature_draft_construction_binary32_lanes(
                         operation_label: payload.operation_label.clone(),
                         graph_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        discriminator: lane.discriminator,
                         branch: lane.branch,
                         values,
                         payload_offset,
