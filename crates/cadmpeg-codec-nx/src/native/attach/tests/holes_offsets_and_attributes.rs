@@ -1469,8 +1469,10 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         stream_ordinal: 3,
         attribute_definition: named_definition.id.clone(),
         field_names_record: "field-names-record".into(),
-        value_records: vec!["name-1".into(), "name-2".into()],
-        names: vec!["width".into(), "units".into()],
+        fields: vec![
+            crate::native::parasolid::named_fields::NamedField { value_record: "name-1".into(), name: "width".into() },
+            crate::native::parasolid::named_fields::NamedField { value_record: "name-2".into(), name: "units".into() },
+        ],
     };
     assert_eq!(
         attribute_field_name(

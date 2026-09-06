@@ -6,6 +6,8 @@ use super::*;
 
 use crate::deltas::Census;
 
+pub(crate) mod named_fields;
+use named_fields::NamedField;
 mod support_uv_wire;
 mod chart_wire;
 mod tail_wire;
@@ -1781,6 +1783,7 @@ pub struct ParasolidFieldNamesRecord {
 
 /// Complete type-80 declaration-to-field-name-list relation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "named_fields::FieldNamesWire", into = "named_fields::FieldNamesWire")]
 pub struct ParasolidAttributeFieldNames {
     /// Globally unique relation identity.
     pub id: String,
@@ -1790,10 +1793,8 @@ pub struct ParasolidAttributeFieldNames {
     pub attribute_definition: String,
     /// Uniquely resolved type-99 field-name record.
     pub field_names_record: String,
-    /// Ordered uniquely resolved type-84 or type-98 records.
-    pub value_records: Vec<String>,
-    /// Ordered exact field names.
-    pub names: Vec<String>,
+    /// Ordered exact names paired with their resolved value records.
+    pub fields: Vec<NamedField>,
 }
 
 /// Explicit topology-record ownership of one Parasolid attribute list.
@@ -2311,7 +2312,7 @@ pub fn parasolid_attribute_field_names(
                     else {
                         return None;
                     };
-                    Some(*name)
+                    Some(NamedField { value_record: name.0.to_string(), name: name.1.to_string() })
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(ParasolidAttributeFieldNames {
@@ -2322,11 +2323,7 @@ pub fn parasolid_attribute_field_names(
                 stream_ordinal: definition.stream_ordinal,
                 attribute_definition: definition.id.clone(),
                 field_names_record: list.id.clone(),
-                value_records: resolved.iter().map(|(id, _)| (*id).to_string()).collect(),
-                names: resolved
-                    .iter()
-                    .map(|(_, value)| (*value).to_string())
-                    .collect(),
+                fields: resolved,
             })
         })
         .collect::<Vec<_>>();
@@ -4324,7 +4321,7 @@ mod tests {
             std::slice::from_ref(&unicode),
         );
         assert_eq!(relations.len(), 1);
-        assert_eq!(relations[0].names, ["1", "μ", "3"]);
+        assert_eq!(relations[0].fields.iter().map(|field| field.name.as_str()).collect::<Vec<_>>(), ["1", "μ", "3"]);
 
         let mut incomplete = list.clone();
         incomplete.name_xmts.pop();

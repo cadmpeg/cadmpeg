@@ -4434,8 +4434,9 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
                 self.field_names_by_definition
                     .get(definition.id.as_str())
                     .and_then(Option::as_ref)?
-                    .names
+                    .fields
                     .get(field_use.field_ordinal as usize)?
+                    .name
                     .clone()
             }
             _ => format!(
