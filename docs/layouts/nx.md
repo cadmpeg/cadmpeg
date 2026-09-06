@@ -624,7 +624,7 @@ Offsets are relative to `pre`, the end of the `count` and `xmt` fields. The Hvec
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/intersection.rs` — The parser's sentinel matches the stated absent-parameter pair.
+- `crates/cadmpeg-codec-nx/src/intersection/chart_samples.rs` — The parser's sentinel matches the stated absent-parameter pair.
 
 ## `nurbs_surface_descriptor_prefix`
 

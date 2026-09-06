@@ -1954,7 +1954,7 @@ anchor = "parameter_error[2]:f64 (sentinel pair -31415800000000.0)"
 note = "Offset derived by laying the stated ordered field list out from `pre`; it closes the stated `pre+52` Hvec block start exactly."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/intersection.rs"
+path = "crates/cadmpeg-codec-nx/src/intersection/chart_samples.rs"
 contains = "const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;"
 note = "The parser's sentinel matches the stated absent-parameter pair."
 
