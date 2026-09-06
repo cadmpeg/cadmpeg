@@ -1655,10 +1655,10 @@ fn om_operation_labels_require_the_complete_frame() {
 #[test]
 fn om_operation_records_use_consecutive_validated_headers() {
     let bytes = b"prefix\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07UNITE\0payload\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x08SKETCH\0tail";
-    let records = super::operation_records(bytes, 10);
     let labels = super::operation_labels(bytes, 10);
     let records_with_ordinals =
         super::operation_records_with_labels_and_ordinals(bytes, 10, &labels);
+    let records = records_with_ordinals.iter().map(|(_, record)| record).collect::<Vec<_>>();
     assert_eq!(records_with_ordinals[0].0, 0);
     assert_eq!(records_with_ordinals[1].0, 1);
     assert_eq!(records.len(), 2);

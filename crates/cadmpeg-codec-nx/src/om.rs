@@ -429,20 +429,14 @@ fn color_component_layout(bytes: &[u8]) -> Option<(f32, usize)> {
         marker if is_shifted_ieee_f64_marker(marker) => {
             let raw: [u8; 8] = bytes.get(..8)?.try_into().ok()?;
             let value = shifted_ieee_f64(&raw)? / 4.0;
-            (value.is_finite() && (0.0..=1.0).contains(&value)).then(|| {
-                debug_assert_eq!(raw[0], marker);
-                (value as f32, 8)
-            })
+            (value.is_finite() && (0.0..=1.0).contains(&value)).then_some((value as f32, 8))
         }
-        marker @ (0x40..=0x5f | 0xc0..=0xdf) => {
+        0x40..=0x5f | 0xc0..=0xdf => {
             let raw: [u8; 4] = bytes.get(..4)?.try_into().ok()?;
             let mut decoded = raw;
             decoded[0] = decoded[0].checked_sub(0x10)?;
             let value = f32::from_be_bytes(decoded) / 4.0;
-            (value.is_finite() && (0.0..=1.0).contains(&value)).then(|| {
-                debug_assert_eq!(raw[0], marker);
-                (value, 4)
-            })
+            (value.is_finite() && (0.0..=1.0).contains(&value)).then_some((value, 4))
         }
         _ => None,
     }
@@ -3404,24 +3398,6 @@ fn operation_label_at(
         object_indices: header.object_indices,
         object_index_offsets: header.object_index_offsets,
     })
-}
-
-/// Bound every validated operation header through its successor or area end.
-#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused parser tests.
-pub fn operation_records(bytes: &[u8], base_offset: usize) -> Vec<OperationRecord<'_>> {
-    let labels = operation_labels(bytes, base_offset);
-    operation_records_with_labels(bytes, base_offset, &labels)
-}
-
-fn operation_records_with_labels<'a>(
-    bytes: &'a [u8],
-    base_offset: usize,
-    labels: &[OperationLabel<'a>],
-) -> Vec<OperationRecord<'a>> {
-    operation_records_with_labels_and_ordinals(bytes, base_offset, labels)
-        .into_iter()
-        .map(|(_, record)| record)
-        .collect()
 }
 
 fn operation_records_with_labels_and_ordinals<'a>(
@@ -8084,7 +8060,6 @@ fn audit_trail_row_at(
 /// in source order. This rejects a coincidental inner match instead of
 /// assigning a second interpretation to a row sequence. Bytes that do not
 /// complete the row grammar are left untyped.
-#[allow(dead_code)] // Direct bounded parser entry point retained for focused tests.
 pub fn audit_trail_rows(
     bytes: &[u8],
     start: usize,
@@ -8457,13 +8432,6 @@ pub fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReferenc
     references
 }
 
-/// Decode Boolean target and tool lists following complete operation labels.
-#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused parser tests.
-pub fn boolean_operations(bytes: &[u8], base_offset: usize) -> Vec<BooleanOperation> {
-    let labels = operation_labels(bytes, base_offset);
-    boolean_operations_with_labels(bytes, base_offset, &labels)
-}
-
 fn boolean_operations_with_labels(
     bytes: &[u8],
     base_offset: usize,
@@ -8604,10 +8572,7 @@ pub fn record_references(bytes: &[u8], base_offset: usize) -> Vec<ReferenceValue
         .copied()
         .filter(|reference| reference.kind == ReferenceKind::PersistentHandle)
         .collect::<Vec<_>>();
-    out.extend(parsed.windows(2).filter_map(|pair| {
-        let [persistent, tagged] = pair else {
-            unreachable!("a two-element window always has two references");
-        };
+    out.extend(parsed.iter().zip(parsed.iter().skip(1)).filter_map(|(persistent, tagged)| {
         let adjacent = persistent
             .offset
             .checked_add(5)
