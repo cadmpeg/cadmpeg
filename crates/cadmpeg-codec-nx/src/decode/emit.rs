@@ -1282,7 +1282,7 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
     if let Some((_, table)) = scan.container.rmfastload_object_id_table() {
         attributes.insert(
             "rmfastload_active_object_count".to_string(),
-            table.object_ids.len().to_string(),
+            table.object_ids.as_slice().len().to_string(),
         );
     }
     let mut preview_count = 0usize;

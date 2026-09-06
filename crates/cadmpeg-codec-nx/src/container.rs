@@ -11,6 +11,9 @@
 
 use cadmpeg_core::container::ContainerRole;
 
+pub(crate) mod membership;
+use membership::ObjectIdMembers;
+
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -175,8 +178,6 @@ pub struct RmFastLoadObjectId {
     pub value: u32,
     /// Payload-relative offset of the four-byte table word.
     pub offset: usize,
-    /// Exact serialized table word.
-    pub raw: [u8; 4],
 }
 
 /// Counted object-id table in `/Root/FastLoad/RMFastLoad`.
@@ -186,10 +187,8 @@ pub struct RmFastLoadObjectIdTable {
     pub registry_offset: usize,
     /// Payload-relative offset of the four-byte count word.
     pub count_offset: usize,
-    /// Exact serialized little-endian count word.
-    pub raw_count: [u8; 4],
     /// Ordered fixed-width object-id members.
-    pub object_ids: Vec<RmFastLoadObjectId>,
+    pub object_ids: ObjectIdMembers<RmFastLoadObjectId>,
 }
 
 impl Region {
@@ -577,7 +576,7 @@ impl<'a> Container<'a> {
         let search_start = registry_offset.checked_add(REGISTRY_MARKER.len())?;
         // A suffix of the table can form a smaller span ending at the same
         // product record. The first complete span is the table boundary.
-        let (count_offset, count, ids_start, ids_end) =
+        let (count_offset, count, ids_start) =
             (search_start..bytes.len().saturating_sub(3)).find_map(|count_offset| {
                 let count = usize::try_from(View::u32_le_at(bytes, count_offset)?).ok()?;
                 let id_bytes = count.checked_mul(4)?;
@@ -587,32 +586,18 @@ impl<'a> Container<'a> {
                     count_offset,
                     count,
                     ids_start,
-                    ids_end,
                 ))
             })?;
-        let raw_ids = bytes.get(ids_start..ids_end)?;
-        let object_ids: Vec<_> = raw_ids
-            .chunks_exact(4)
-            .enumerate()
-            .map(|(ordinal, word)| {
-                let raw = <[u8; 4]>::try_from(word)
-                    .expect("invariant: chunks_exact(4) yields four-byte slices");
-                RmFastLoadObjectId {
-                    value: View::u32_le_at(bytes, ids_start + ordinal * 4)
-                        .expect("invariant: chunks_exact(4) yields four-byte slices"),
-                    offset: ids_start + ordinal * 4,
-                    raw,
-                }
-            })
-            .collect();
-        let raw_count = bytes.get(count_offset..ids_start)?.try_into().ok()?;
-        debug_assert_eq!(object_ids.len(), count);
+        let object_ids = (0..count).map(|ordinal| {
+            let offset = ids_start + ordinal * 4;
+            Some(RmFastLoadObjectId { value: View::u32_le_at(bytes, offset)?, offset })
+        }).collect::<Option<Vec<_>>>()?;
+        let object_ids = ObjectIdMembers::new(object_ids).ok()?;
         Some((
             entry,
             RmFastLoadObjectIdTable {
                 registry_offset,
                 count_offset,
-                raw_count,
                 object_ids,
             },
         ))

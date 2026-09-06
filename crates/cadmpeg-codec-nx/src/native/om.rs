@@ -8,6 +8,8 @@ use cadmpeg_core::decode::View;
 
 use crate::om::compact::{CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex};
 mod row_wire;
+mod membership_wire;
+use crate::container::membership::ObjectIdMembers;
 use crate::om::color::{ColorComponent, PaletteIndex, PALETTE_SIZE, BACKGROUND_NAME};
 mod color_wire;
 pub(crate) mod column_index;
@@ -1792,13 +1794,12 @@ fn stable_object_record_graph_identity(
 
 /// Counted active-object membership table from `RMFastLoad`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "membership_wire::TableWire", into = "membership_wire::TableWire")]
 pub struct RmFastLoadObjectIdTable {
     /// Globally unique table identity.
     pub id: String,
     /// Ordered members in the native `rmfastload_object_ids` arena.
-    pub members: Vec<String>,
-    /// Exact serialized little-endian member-count word.
-    pub raw_count: [u8; 4],
+    pub members: ObjectIdMembers<String>,
     /// Directory entry containing the table.
     pub source_entry: String,
     /// Absolute file offset of the `UGS::Solid::Topol` registry marker.
@@ -1809,6 +1810,7 @@ pub struct RmFastLoadObjectIdTable {
 
 /// One fixed-width active-object membership word from `RMFastLoad`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "membership_wire::MemberWire", into = "membership_wire::MemberWire")]
 pub struct RmFastLoadObjectId {
     /// Globally unique member identity.
     pub id: String,
@@ -1821,10 +1823,15 @@ pub struct RmFastLoadObjectId {
     /// Record-order-independent identity when the value is unique in the table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable_identity: Option<String>,
-    /// Exact serialized little-endian object-id word.
-    pub raw: [u8; 4],
     /// Absolute file offset of the four-byte object-id word.
     pub source_offset: u64,
+}
+
+impl RmFastLoadObjectIdTable {
+    pub fn raw_count(&self) -> [u8; 4] { self.members.count().to_le_bytes() }
+}
+impl RmFastLoadObjectId {
+    pub fn raw(&self) -> [u8; 4] { self.value.to_le_bytes() }
 }
 
 /// One externally bounded block in an NX OM offset-only column store.
@@ -4000,6 +4007,7 @@ pub fn rmfastload_object_id_table(
     let table_id = "nx:rmfastload:object-id-table#0".to_string();
     let mut object_ids = table
         .object_ids
+        .into_vec()
         .into_iter()
         .enumerate()
         .map(|(ordinal, object_id)| RmFastLoadObjectId {
@@ -4008,18 +4016,13 @@ pub fn rmfastload_object_id_table(
             ordinal: ordinal as u32,
             value: object_id.value,
             stable_identity: None,
-            raw: object_id.raw,
             source_offset: entry_offset + object_id.offset as u64,
         })
         .collect::<Vec<_>>();
     assign_rmfastload_object_id_identities(&mut object_ids);
     let native_table = RmFastLoadObjectIdTable {
         id: table_id,
-        members: object_ids
-            .iter()
-            .map(|object_id| object_id.id.clone())
-            .collect(),
-        raw_count: table.raw_count,
+        members: ObjectIdMembers::new(object_ids.iter().map(|object_id| object_id.id.clone()).collect()).ok()?,
         source_entry: entry.name.clone(),
         registry_source_offset: entry_offset + table.registry_offset as u64,
         source_offset: entry_offset + table.count_offset as u64,

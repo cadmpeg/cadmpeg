@@ -286,19 +286,20 @@ fn container_reads_rmfastload_active_ids() {
     assert_eq!(entry.name, "/Root/FastLoad/RMFastLoad");
     assert_eq!(table.registry_offset, 0);
     assert_eq!(table.count_offset, b"UGS::Solid::Topol".len());
-    assert_eq!(table.raw_count, 50u32.to_le_bytes());
+    assert_eq!(table.object_ids.count().to_le_bytes(), 50u32.to_le_bytes());
     assert_eq!(
         table
             .object_ids
+            .as_slice()
             .iter()
             .map(|object_id| object_id.value)
             .collect::<Vec<_>>(),
         (1..=50).collect::<Vec<_>>()
     );
-    assert_eq!(table.object_ids[0].offset, table.count_offset + 4);
-    assert_eq!(table.object_ids[0].raw, 1u32.to_le_bytes());
-    assert_eq!(table.object_ids[49].offset, table.count_offset + 4 + 49 * 4);
-    assert_eq!(table.object_ids[49].raw, 50u32.to_le_bytes());
+    assert_eq!(table.object_ids.as_slice()[0].offset, table.count_offset + 4);
+    assert_eq!(table.object_ids.as_slice()[0].value.to_le_bytes(), 1u32.to_le_bytes());
+    assert_eq!(table.object_ids.as_slice()[49].offset, table.count_offset + 4 + 49 * 4);
+    assert_eq!(table.object_ids.as_slice()[49].value.to_le_bytes(), 50u32.to_le_bytes());
 }
 
 #[test]
@@ -310,10 +311,11 @@ fn container_reads_rmfastload_table_from_product_boundary_without_range_floor() 
     let (_, table) = container
         .rmfastload_object_id_table()
         .expect("product-bounded RMFastLoad table");
-    assert_eq!(table.object_ids.len(), 3);
+    assert_eq!(table.object_ids.as_slice().len(), 3);
     assert_eq!(
         table
             .object_ids
+            .as_slice()
             .iter()
             .map(|object_id| object_id.value)
             .collect::<Vec<_>>(),
@@ -350,6 +352,7 @@ fn container_bounds_rmfastload_table_at_its_first_product_record() {
     assert_eq!(
         table
             .object_ids
+            .as_slice()
             .iter()
             .map(|object_id| object_id.value)
             .collect::<Vec<_>>(),

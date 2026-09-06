@@ -149,6 +149,7 @@ pub(crate) fn try_decode_geometry(
         .map(|(_, table)| {
             table
                 .object_ids
+                .into_vec()
                 .into_iter()
                 .map(|object_id| object_id.value)
                 .collect::<Vec<_>>()

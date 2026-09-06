@@ -295,8 +295,8 @@ fn native_retains_rmfastload_table_and_member_words() {
         super::super::rmfastload_object_id_table(&container).expect("native RMFastLoad table");
 
     assert_eq!(table.id, "nx:rmfastload:object-id-table#0");
-    assert_eq!(table.members.len(), 50);
-    assert_eq!(table.raw_count, 50u32.to_le_bytes());
+    assert_eq!(table.members.as_slice().len(), 50);
+    assert_eq!(table.raw_count(), 50u32.to_le_bytes());
     assert_eq!(table.registry_source_offset, entry_offset);
     assert_eq!(
         table.source_offset,
@@ -308,12 +308,12 @@ fn native_retains_rmfastload_table_and_member_words() {
         object_ids[0].stable_identity.as_deref(),
         Some("nx:rmfastload:object-id-table#0:value#1")
     );
-    assert_eq!(object_ids[0].raw, 1u32.to_le_bytes());
+    assert_eq!(object_ids[0].raw(), 1u32.to_le_bytes());
     assert_eq!(object_ids[0].source_offset, table.source_offset + 4);
     assert_eq!(object_ids[49].ordinal, 49);
     assert_eq!(object_ids[49].value, 50);
-    assert_eq!(object_ids[49].raw, 50u32.to_le_bytes());
-    assert_eq!(table.members[49], object_ids[49].id);
+    assert_eq!(object_ids[49].raw(), 50u32.to_le_bytes());
+    assert_eq!(table.members.as_slice()[49], object_ids[49].id);
     assert_eq!(
         super::super::rmfastload_target_object_id(&object_ids, 0),
         Some(object_ids[0].id.clone())
@@ -344,7 +344,7 @@ fn decode_selects_dominant_rmfastload_body() {
 
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(tables.len(), 1);
-    assert_eq!(tables[0].members.len(), 50);
+    assert_eq!(tables[0].members.as_slice().len(), 50);
     assert_eq!(object_ids.len(), 50);
     assert_eq!(object_ids[0].value, 1_000);
     assert_eq!(object_ids[49].value, 1_049);
