@@ -38,43 +38,102 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
         .expect("application census");
     let namespace = result.ir().native.namespace("fcstd").expect("native");
     let records = namespace
-        .arena_as::<crate::native::ApplicationRecord>("applications")
+        .arena_as::<serde_json::Value>("applications")
         .expect("applications");
+    let bytes = |record: &serde_json::Value| {
+        serde_json::from_value::<Vec<u8>>(record["data"].clone()).expect("wire bytes")
+    };
     assert_eq!(records.len(), 5);
     let by_domain = records
         .iter()
-        .map(|record| (record.domain.as_str(), record))
+        .map(|record| (record["domain"].as_str().unwrap(), record))
         .collect::<std::collections::HashMap<_, _>>();
     assert_eq!(
-        by_domain["Mesh"].dependencies,
-        ["fcstd:native:object#Points"]
+        by_domain["Mesh"]["dependencies"],
+        serde_json::json!(["fcstd:native:object#Points"])
     );
-    assert_eq!(by_domain["Fem"].side_entries, ["analysis.dat"]);
-    assert!(by_domain["Path"].inert_payload);
-    assert!(!by_domain["Mesh"].inert_payload);
-    assert_eq!(by_domain["Unqualified"].type_name, "LocalType");
-    let report = &by_domain["Fem"].property_records[0];
-    assert_eq!(report.object, by_domain["Fem"].object);
-    assert!(report.byte_start < report.byte_end);
-    assert_eq!(report.byte_len(), report.data.len() as u64);
-    assert_eq!(report.sha256(), cadmpeg_ir::hash::sha256_hex(&report.data));
-    assert_eq!(report.payloads.len(), 1);
-    assert_eq!(report.payloads[0].name, "analysis.dat");
-    assert_eq!(report.payloads[0].data, b"finite-element-results");
     assert_eq!(
-        report.payloads[0].sha256(),
-        cadmpeg_ir::hash::sha256_hex(&report.payloads[0].data)
+        by_domain["Fem"]["side_entries"],
+        serde_json::json!(["analysis.dat"])
     );
-    let python = &by_domain["Path"].property_records[0];
-    assert!(python.inert);
-    assert!(String::from_utf8_lossy(&python.data).contains("serialized-but-inert"));
+    assert_eq!(by_domain["Path"]["inert_payload"], true);
+    assert_eq!(by_domain["Mesh"]["inert_payload"], false);
+    assert_eq!(by_domain["Unqualified"]["type_name"], "LocalType");
+    let report = &by_domain["Fem"]["property_records"][0];
+    assert_eq!(report["object"], by_domain["Fem"]["object"]);
+    assert!(report["byte_start"].as_u64().unwrap() < report["byte_end"].as_u64().unwrap());
+    assert_eq!(report["byte_len"], bytes(report).len() as u64);
+    assert_eq!(
+        report["sha256"],
+        cadmpeg_ir::hash::sha256_hex(&bytes(report))
+    );
+    assert_eq!(report["payloads"].as_array().unwrap().len(), 1);
+    let payload = &report["payloads"][0];
+    assert_eq!(payload["name"], "analysis.dat");
+    assert_eq!(bytes(payload), b"finite-element-results");
+    assert_eq!(
+        payload["sha256"],
+        cadmpeg_ir::hash::sha256_hex(&bytes(payload))
+    );
+    let python = &by_domain["Path"]["property_records"][0];
+    assert_eq!(python["inert"], true);
+    assert!(String::from_utf8_lossy(&bytes(python)).contains("serialized-but-inert"));
     assert!(records.iter().all(|record| {
-        record.byte_start < record.byte_end
-            && record.byte_len() == record.data.len() as u64
-            && record.sha256() == cadmpeg_ir::hash::sha256_hex(&record.data)
+        record["byte_start"].as_u64().unwrap() < record["byte_end"].as_u64().unwrap()
+            && record["byte_len"] == bytes(record).len() as u64
+            && record["sha256"] == cadmpeg_ir::hash::sha256_hex(&bytes(record))
     }));
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
+
+    let mut altered = records;
+    let payload = &mut altered
+        .iter_mut()
+        .find(|record| record["domain"] == "Fem")
+        .unwrap()["property_records"][0]["payloads"][0];
+    let replacement = b"different internally consistent bytes";
+    payload["data"] = serde_json::json!(replacement.as_slice());
+    payload["byte_len"] = serde_json::json!(replacement.len());
+    payload["sha256"] = serde_json::json!(cadmpeg_ir::hash::sha256_hex(replacement));
+    let mut edited = result.ir().clone();
+    edited
+        .native
+        .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
+        .set_arena("applications", &altered)
+        .unwrap();
+    assert!(crate::validate_native(&edited).iter().any(|finding| {
+        finding
+            .message
+            .contains("application preservation records do not match authoritative bytes")
+    }));
+}
+
+#[test]
+fn absent_object_data_keeps_the_legacy_empty_wire_without_a_domain_sentinel() {
+    let objects = [crate::native::ObjectRecord {
+        id: "fcstd:native:object#Absent".into(),
+        name: "Absent".into(),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    }];
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    super::install(&mut namespace, &objects, &[], &[]).unwrap();
+    assert!(objects[0].data.is_none());
+    let records = namespace
+        .arena_as::<serde_json::Value>("applications")
+        .unwrap();
+    assert_eq!(records[0]["data"], serde_json::json!([]));
+    assert_eq!(records[0]["byte_start"], 0);
+    assert_eq!(records[0]["byte_end"], 0);
+    assert_eq!(records[0]["byte_len"], 0);
+    assert_eq!(records[0]["sha256"], cadmpeg_ir::hash::sha256_hex(&[]));
+    assert!(super::matches_native(&namespace, &objects, &[], &[]).unwrap());
 }
 
 #[test]
