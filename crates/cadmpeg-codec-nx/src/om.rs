@@ -2004,9 +2004,7 @@ pub struct OperationBodyReference {
     /// Absolute offset of the object-index token.
     pub offset: usize,
     /// Referenced body object index.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    pub object_index: reference_index::FeatureReferenceToken,
 }
 
 /// One exact body-write frame in a bounded operation record.
@@ -4242,10 +4240,7 @@ pub fn operation_body_scalar_triples(
         .enumerate()
         .filter_map(|(ordinal, reference)| {
             let token = reference.offset.checked_sub(record.offset())?;
-            let (_, end) = feature_object_index(record.bytes, token)?;
-            if record.bytes.get(end) != Some(&0xff) {
-                return None;
-            }
+            let end = token + reference.object_index.raw().len();
             let branch = *record.bytes.get(end + 1)?;
             let mut at = end + 2;
             let mut scalars = Vec::with_capacity(3);
@@ -4260,7 +4255,7 @@ pub fn operation_body_scalar_triples(
             }
             Some(OperationBodyScalarTriple {
                 body_reference_ordinal: ordinal as u32,
-                body_object_index: reference.object_index,
+                body_object_index: reference.object_index.value(),
                 branch,
                 scalars: scalars.try_into().ok()?,
             })
@@ -4277,9 +4272,7 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
             let Some(token) = reference.offset.checked_sub(record.offset()) else {
                 return Vec::new();
             };
-            let Some((_, end)) = feature_object_index(record.bytes, token) else {
-                return Vec::new();
-            };
+            let end = token + reference.object_index.raw().len();
             if record.bytes.get(end..end + 2) != Some(&[0xff, 0x11]) {
                 return Vec::new();
             }
@@ -4338,7 +4331,7 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
                 at += 1;
                 members.push(OperationBodyMember {
                     body_reference_ordinal: body_ordinal as u32,
-                    body_object_index: reference.object_index,
+                    body_object_index: reference.object_index.value(),
                     ordinal: ordinal as u32,
                     member: LocatedCompactIndex { atom, offset: record.offset() + member_at },
                 });
@@ -4360,7 +4353,7 @@ pub fn operation_body_11_continuations(
         .enumerate()
         .filter_map(|(body_ordinal, reference)| {
             let token = reference.offset.checked_sub(record.offset())?;
-            let (_, end) = feature_object_index(record.bytes, token)?;
+            let end = token + reference.object_index.raw().len();
             if record.bytes.get(end..end + 2) != Some(&[0xff, 0x11]) {
                 return None;
             }
@@ -4411,7 +4404,7 @@ pub fn operation_body_11_continuations(
             }
             Some(OperationBody11Continuation {
                 body_reference_ordinal: body_ordinal as u32,
-                body_object_index: reference.object_index,
+                body_object_index: reference.object_index.value(),
                 continuation,
                 terminal: PayloadObjectReference {
                     token: terminal_token,
@@ -4431,10 +4424,7 @@ pub fn operation_body_reference_lanes(
         .enumerate()
         .filter_map(|(body_ordinal, reference)| {
             let token = reference.offset.checked_sub(record.offset())?;
-            let (_, end) = feature_object_index(record.bytes, token)?;
-            if record.bytes.get(end) != Some(&0xff) {
-                return None;
-            }
+            let end = token + reference.object_index.raw().len();
             let branch = discriminators::OperationBodyReferenceBranch::try_from(*record.bytes.get(end + 1)?).ok()?;
             let mut at = end + 2;
             for _ in 0..3 {
@@ -4466,7 +4456,7 @@ pub fn operation_body_reference_lanes(
             };
             Some(OperationBodyReferenceLane {
                 body_reference_ordinal: body_ordinal as u32,
-                body_object_index: reference.object_index,
+                body_object_index: reference.object_index.value(),
                 branch,
                 values,
             })
@@ -4496,7 +4486,7 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
     }
     let reference = operation_body_reference(record)?;
     let token = reference.offset.checked_sub(record.offset())?;
-    let (_, end) = feature_object_index(record.bytes, token)?;
+    let end = token + reference.object_index.raw().len();
     if record.bytes.get(end..end + 4) != Some(&[0xff, 0x32, 0x00, 0x00]) {
         return None;
     }
@@ -4517,7 +4507,7 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
     }
     let terminal_token = ReferenceIndexToken::read_feature(record.bytes.get(at + 2..)?)?;
     let next = at + 2 + terminal_token.raw().len();
-    if terminal_token.value() != reference.object_index
+    if terminal_token.value() != reference.object_index.value()
         || record.bytes.get(next..next + 2) != Some(&[0x00, 0x00])
     {
         return None;
@@ -5271,16 +5261,16 @@ fn operation_body_reference_candidates(
         }
         if window == [0x01, 0x02, 0x10] {
             let token = marker + 3;
-            let Some((Some(object_index), end)) = feature_object_index(record.bytes, token) else {
+            let Some(object_index) = reference_index::FeatureReferenceToken::read(&record.bytes[token..]) else {
                 continue;
             };
+            let end = token + object_index.raw().len();
             if record.bytes.get(end) != Some(&0xff) {
                 continue;
             }
             return Some(OperationBodyReference {
                 offset: record.offset() + token,
                 object_index,
-                raw_object_index: record.bytes[token..end].to_vec(),
             });
         }
     })

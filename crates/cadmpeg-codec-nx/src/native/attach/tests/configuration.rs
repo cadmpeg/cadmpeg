@@ -1080,8 +1080,7 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
         ordinal: None,
         id: "nx:test:primary#0".into(),
         operation_label: boolean.operation_label.clone(),
-        body_object_index: 7,
-        raw_body_object_index: vec![7],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7]).unwrap(),
         source_offset: 3,
     };
     assert_eq!(
@@ -1549,8 +1548,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
         ordinal: None,
         id: id.to_string(),
         operation_label: operation_label.to_string(),
-        body_object_index,
-        raw_body_object_index: vec![body_object_index as u8],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(body_object_index, &[body_object_index as u8]).unwrap(),
         source_offset: 0,
     };
     let references = [

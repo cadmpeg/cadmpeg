@@ -942,7 +942,22 @@ pub enum SimpleHoleEndTreatment {
 
 /// Primary selection or ordered body-reference field in one feature operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureBodyReferenceWire", into = "FeatureBodyReferenceWire")]
 pub struct FeatureBodyReference {
+    /// Globally unique reference identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Zero-based field order; absent for the primary body selection.
+    pub ordinal: Option<u32>,
+    /// Serialized reference index interpreted through its resolved namespace.
+    pub body: crate::om::reference_index::FeatureReferenceToken,
+    /// Absolute file offset of the object-index token.
+    pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureBodyReferenceWire {
     /// Globally unique reference identity.
     pub id: String,
     /// Owning operation-label identity.
@@ -956,6 +971,24 @@ pub struct FeatureBodyReference {
     pub raw_body_object_index: Vec<u8>,
     /// Absolute file offset of the object-index token.
     pub source_offset: u64,
+}
+
+impl From<FeatureBodyReference> for FeatureBodyReferenceWire {
+    fn from(value: FeatureBodyReference) -> Self {
+        Self { id: value.id, operation_label: value.operation_label, ordinal: value.ordinal,
+            body_object_index: value.body.value(), raw_body_object_index: value.body.raw().to_vec(),
+            source_offset: value.source_offset }
+    }
+}
+
+impl TryFrom<FeatureBodyReferenceWire> for FeatureBodyReference {
+    type Error = String;
+    fn try_from(value: FeatureBodyReferenceWire) -> Result<Self, Self::Error> {
+        Ok(Self { id: value.id, operation_label: value.operation_label, ordinal: value.ordinal,
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(value.body_object_index, &value.raw_body_object_index)
+                .map_err(|error| format!("body_object_index/raw_body_object_index: {error}"))?,
+            source_offset: value.source_offset })
+    }
 }
 
 /// Unambiguous reuse of one segment body image by a primary feature body field.
@@ -7709,8 +7742,7 @@ pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReferenc
                     "nx:feature-history:body-reference#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label,
-                body_object_index: reference.object_index,
-                raw_body_object_index: reference.raw_object_index,
+                body: reference.object_index,
                 source_offset: entry_offset + reference.offset as u64,
             });
         },
@@ -7759,8 +7791,7 @@ pub fn feature_body_reference_occurrences(container: &Container) -> Vec<FeatureB
                         ),
                         operation_label: operation_label.clone(),
                         ordinal: Some(ordinal as u32),
-                        body_object_index: reference.object_index,
-                        raw_body_object_index: reference.raw_object_index,
+                        body: reference.object_index,
                         source_offset: entry_offset + reference.offset as u64,
                     }),
             );
@@ -7784,7 +7815,7 @@ fn unique_offset_store_body_frame<'a>(
 ) -> Option<&'a DataBlockObjectFrame> {
     let mut matches = object_frames.iter().filter(|frame| {
         frame.data_block == data_block_use.data_block
-            && frame.object_id == reference.body_object_index
+            && frame.object_id == reference.body.value()
     });
     let frame = matches.next()?;
     matches.next().is_none().then_some(frame)
@@ -7842,12 +7873,12 @@ pub fn feature_body_segment_uses(
                     .find(|use_| use_.feature_body_reference == reference.id)?;
                 unique_offset_store_body_frame(reference, data_block_use, object_frames)?;
                 crate::native::segments::unique_segment_body_alias_binding(
-                    reference.body_object_index,
+                    reference.body.value(),
                     bindings,
                 )?
             } else {
                 crate::native::segments::unique_segment_body_binding(
-                    reference.body_object_index,
+                    reference.body.value(),
                     bindings,
                 )?
             };
@@ -7927,7 +7958,7 @@ pub fn feature_body_data_block_uses(
                 .iter()
                 .filter(|block| {
                     block.section_ordinal == *section_ordinal
-                        && block.block_ordinal == reference.body_object_index
+                        && block.block_ordinal == reference.body.value()
                 })
                 .collect::<Vec<_>>();
             let [block] = matches.as_slice() else {

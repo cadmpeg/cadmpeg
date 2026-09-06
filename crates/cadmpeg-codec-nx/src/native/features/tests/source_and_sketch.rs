@@ -877,7 +877,7 @@ fn decode_retains_role_scoped_om_record_area_header() {
         .expect("required invariant");
     assert_eq!(body_references.len(), 1);
     assert_eq!(body_references[0].operation_label, labels[0].id);
-    assert_eq!(body_references[0].body_object_index, 6466);
+    assert_eq!(body_references[0].body.value(), 6466);
     let body_reference_occurrences = result
         .ir()
         .native
@@ -888,7 +888,7 @@ fn decode_retains_role_scoped_om_record_area_header() {
     assert_eq!(body_reference_occurrences.len(), 1);
     assert_eq!(body_reference_occurrences[0].operation_label, labels[0].id);
     assert_eq!(body_reference_occurrences[0].ordinal, Some(0));
-    assert_eq!(body_reference_occurrences[0].body_object_index, 6466);
+    assert_eq!(body_reference_occurrences[0].body.value(), 6466);
     let feature = result.ir().model.features.first().expect("neutral feature");
     assert_eq!(feature.name.as_deref(), Some("UNITE"));
     assert_eq!(feature.suppressed, None);
@@ -1273,8 +1273,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         id: "reference".to_string(),
         operation_label: "earlier".to_string(),
         ordinal: Some(0),
-        body_object_index: 20,
-        raw_body_object_index: vec![20],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(20, &[20]).unwrap(),
         source_offset: 0,
     }];
     let bindings = [SegmentBodyBinding {

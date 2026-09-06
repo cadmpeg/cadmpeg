@@ -1048,8 +1048,7 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
         super::operation_body_reference(record),
         Some(super::OperationBodyReference {
             offset: 103,
-            object_index: 6466,
-            raw_object_index: vec![0x90, 0x19, 0x42],
+            object_index: crate::om::reference_index::FeatureReferenceToken::from_wire(6466, &[0x90, 0x19, 0x42]).unwrap(),
         })
     );
 
@@ -1064,13 +1063,11 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
         [
             super::OperationBodyReference {
                 offset: 103,
-                object_index: 6466,
-                raw_object_index: vec![0x90, 0x19, 0x42],
+                object_index: crate::om::reference_index::FeatureReferenceToken::from_wire(6466, &[0x90, 0x19, 0x42]).unwrap(),
             },
             super::OperationBodyReference {
                 offset: 110,
-                object_index: 6466,
-                raw_object_index: vec![0x90, 0x19, 0x42],
+                object_index: crate::om::reference_index::FeatureReferenceToken::from_wire(6466, &[0x90, 0x19, 0x42]).unwrap(),
             },
         ]
     );

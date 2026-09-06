@@ -1290,7 +1290,7 @@ fn attach_feature_operations(
         offset_store_bodies_by_operation
             .entry(reference.operation_label.as_str())
             .or_default()
-            .push((reference.body_object_index, body_use.data_block.clone()));
+            .push((reference.body.value(), body_use.data_block.clone()));
     }
     let body_references = admitted_body_references;
     let mut body_reference_occurrences_by_operation =
@@ -2308,7 +2308,7 @@ fn attach_feature_operations(
         {
             source_properties.insert(
                 format!("body_reference.{ordinal}"),
-                reference.body_object_index.to_string(),
+                reference.body.value().to_string(),
             );
             source_properties.insert(
                 format!("body_reference_occurrence.{ordinal}"),
@@ -3855,7 +3855,7 @@ fn native_primary_body_references<'a>(
                 || (!offset_store_references.contains(reference.id.as_str())
                     && !offset_store_operations.contains(reference.operation_label.as_str()))
         })
-        .map(|(operation, reference)| (operation, reference.body_object_index))
+        .map(|(operation, reference)| (operation, reference.body.value()))
         .collect()
 }
 

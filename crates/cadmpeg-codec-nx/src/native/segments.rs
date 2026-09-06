@@ -273,7 +273,7 @@ pub fn terminal_feature_body_indices(
             if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
                 continue;
             }
-            record_writer(canonical(reference.body_object_index), position);
+            record_writer(canonical(reference.body.value()), position);
         }
         for operation in booleans
             .iter()
@@ -302,7 +302,7 @@ pub fn terminal_feature_body_indices(
     for reference in &object_references {
         if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
             let position = *positions.get(reference.operation_label.as_str())?;
-            let body = canonical(reference.body_object_index);
+            let body = canonical(reference.body.value());
             if last_writers
                 .get(&body)
                 .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
@@ -339,7 +339,7 @@ pub fn terminal_feature_body_indices(
     Some(
         object_references
             .iter()
-            .map(|reference| reference.body_object_index)
+            .map(|reference| reference.body.value())
             .chain(
                 bindings.iter().flat_map(|binding| {
                     [binding.body_object_index, binding.body_alias_object_index]
@@ -934,8 +934,7 @@ mod tests {
             ordinal: None,
             id: format!("reference#{body_object_index}"),
             operation_label: operation.to_string(),
-            body_object_index,
-            raw_body_object_index: vec![body_object_index as u8],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(body_object_index, &[body_object_index as u8]).unwrap(),
             source_offset: 0,
         };
         let references = [reference("operation#0", 10), reference("operation#1", 20)];
@@ -1054,8 +1053,7 @@ mod tests {
             ordinal: None,
             id: "reference#10".to_string(),
             operation_label: "operation#2".to_string(),
-            body_object_index: 10,
-            raw_body_object_index: vec![10],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10]).unwrap(),
             source_offset: 2,
         }];
         let boolean = |ordinal: usize, target: u32, tools: Vec<u32>| FeatureBooleanOperation {
@@ -1127,8 +1125,7 @@ mod tests {
             ordinal: None,
             id: "reference#10".to_string(),
             operation_label: "operation#delete".to_string(),
-            body_object_index: 10,
-            raw_body_object_index: vec![10],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10]).unwrap(),
             source_offset: 0,
         }];
         let bindings = [SegmentBodyBinding {
@@ -1177,16 +1174,14 @@ mod tests {
                 ordinal: None,
                 id: "reference#10".to_string(),
                 operation_label: labels[0].id.clone(),
-                body_object_index: 10,
-                raw_body_object_index: vec![10],
+                body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10]).unwrap(),
                 source_offset: 0,
             },
             FeatureBodyReference {
                 ordinal: None,
                 id: "reference#20".to_string(),
                 operation_label: labels[0].id.clone(),
-                body_object_index: 20,
-                raw_body_object_index: vec![20],
+                body: crate::om::reference_index::FeatureReferenceToken::from_wire(20, &[20]).unwrap(),
                 source_offset: 1,
             },
         ];
@@ -1247,8 +1242,7 @@ mod tests {
             ordinal: None,
             id: "reference#10".to_string(),
             operation_label: labels[0].id.clone(),
-            body_object_index: 10,
-            raw_body_object_index: vec![10],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10]).unwrap(),
             source_offset: 0,
         }];
         let binding = |ordinal, body_object_index, body_alias_object_index| SegmentBodyBinding {
@@ -1300,8 +1294,7 @@ mod tests {
             ordinal: None,
             id: "reference#11".to_string(),
             operation_label: "operation#delete".to_string(),
-            body_object_index: 11,
-            raw_body_object_index: vec![11],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(11, &[11]).unwrap(),
             source_offset: 0,
         }];
         let data_block_uses = [FeatureBodyDataBlockUse {
@@ -1357,8 +1350,7 @@ mod tests {
             ordinal: None,
             id: "reference#11".to_string(),
             operation_label: "operation#delete".to_string(),
-            body_object_index: 11,
-            raw_body_object_index: vec![11],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(11, &[11]).unwrap(),
             source_offset: 0,
         }];
         let inputs = [FeatureInputBlock {
@@ -1563,8 +1555,7 @@ mod tests {
             ordinal: None,
             id: format!("reference#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
-            body_object_index: 10,
-            raw_body_object_index: vec![10],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10]).unwrap(),
             source_offset: u64::from(ordinal),
         };
         let references = [reference(0), reference(1)];
@@ -1613,8 +1604,7 @@ mod tests {
             ordinal: None,
             id: format!("reference#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
-            body_object_index: 10,
-            raw_body_object_index: vec![10],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10]).unwrap(),
             source_offset: u64::from(ordinal),
         };
         // The raw order is newest-first, so this encodes a writer followed by
@@ -1672,8 +1662,7 @@ mod tests {
             ordinal: None,
             id: "reference#20".to_string(),
             operation_label: "operation#early".to_string(),
-            body_object_index: 20,
-            raw_body_object_index: vec![20],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(20, &[20]).unwrap(),
             source_offset: 0,
         }];
         let booleans = [FeatureBooleanOperation {
@@ -1723,8 +1712,7 @@ mod tests {
             ordinal: None,
             id: "reference#150".to_string(),
             operation_label: "operation#0".to_string(),
-            body_object_index: 150,
-            raw_body_object_index: vec![0x80, 150],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(150, &[0x80, 150]).unwrap(),
             source_offset: 0,
         }];
         let booleans = [FeatureBooleanOperation {
