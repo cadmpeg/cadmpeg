@@ -19,6 +19,7 @@ use crate::om::swp104_state::Swp104StateLane;
 use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, RepeatedScalar, ShiftedBinary32, ShiftedBinary64, ShiftedScalar};
 use crate::om::branch_items::BranchItems;
 use crate::om::nonempty::NonEmpty;
+use crate::om::reference_index::ReferenceIndexToken;
 use crate::om::sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLaneForm};
 use crate::om::fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 use crate::om::scalar_run::FramedScalarRun;
@@ -5440,7 +5441,8 @@ pub struct FeatureExtrudePayload32Branch {
     pub atoms: Vec<FeatureDataBlockToken<u32>>,
     pub first_indices: Vec<FeatureDataBlockToken<Vec<u8>>>,
     pub second_indices: Vec<FeatureDataBlockToken<Vec<u8>>>,
-    pub terminal: FeatureIndexToken,
+    pub terminal: ReferenceIndexToken,
+    pub terminal_source_offset: u64,
     pub source_offset: u64,
 }
 
@@ -5503,7 +5505,7 @@ impl From<FeatureExtrudePayload32Branch> for FeatureExtrudePayload32BranchWire {
         Self {
             id: branch.id,
             operation_label: branch.operation_label,
-            body_object_index: branch.terminal.value,
+            body_object_index: branch.terminal.value(),
             scalar: branch.scalar.value(),
             raw_scalar: branch.scalar.raw(),
             atom_indices: branch.atoms.iter().map(|token| token.value).collect(),
@@ -5558,9 +5560,9 @@ impl From<FeatureExtrudePayload32Branch> for FeatureExtrudePayload32BranchWire {
                 .iter()
                 .map(|token| token.data_block.clone())
                 .collect(),
-            terminal_object_index: branch.terminal.value,
-            raw_terminal_object_index: branch.terminal.raw,
-            terminal_source_offset: branch.terminal.source_offset,
+            terminal_object_index: branch.terminal.value(),
+            raw_terminal_object_index: branch.terminal.raw().to_vec(),
+            terminal_source_offset: branch.terminal_source_offset,
             source_offset: branch.source_offset,
         }
     }
@@ -5641,11 +5643,10 @@ impl TryFrom<FeatureExtrudePayload32BranchWire> for FeatureExtrudePayload32Branc
                     },
                 )
                 .collect(),
-            terminal: FeatureIndexToken {
-                value: wire.terminal_object_index,
-                raw: wire.raw_terminal_object_index,
-                source_offset: wire.terminal_source_offset,
-            },
+            terminal: ReferenceIndexToken::from_wire(
+                wire.terminal_object_index, &wire.raw_terminal_object_index,
+            ).map_err(|error| format!("terminal_object_index/raw_terminal_object_index: {error}"))?,
+            terminal_source_offset: wire.terminal_source_offset,
             source_offset: wire.source_offset,
         })
     }
@@ -11453,11 +11454,8 @@ pub fn feature_extrude_payload_32_branches(
                     source_offset: entry_offset + token.offset as u64,
                     data_block: unique_offset_data_block(&indexed, token.value),
                 }).collect(),
-                terminal: FeatureIndexToken {
-                    value: branch.terminal.token.value(),
-                    raw: branch.terminal.token.raw().to_vec(),
-                    source_offset: entry_offset + branch.terminal.offset as u64,
-                },
+                terminal: branch.terminal.token,
+                terminal_source_offset: entry_offset + branch.terminal.offset as u64,
                 source_offset: entry_offset + branch.offset as u64,
             });
         },
@@ -11532,7 +11530,7 @@ pub fn feature_extrude_32_constructions(
                 .replacen("extrude-payload-32-branch", "extrude-32-construction", 1),
             operation_label: branch.operation_label.clone(),
             branch: branch.id.clone(),
-            body_object_index: branch.terminal.value,
+            body_object_index: branch.terminal.value(),
             profile_references: profile
                 .iter()
                 .map(|reference| reference.id.clone())

@@ -1444,11 +1444,8 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
             source_offset: 22,
             data_block: Some("block#3".to_string()),
         }],
-        terminal: super::FeatureIndexToken {
-            value: 42,
-            raw: vec![42],
-            source_offset: 23,
-        },
+        terminal: crate::om::reference_index::ReferenceIndexToken::from_wire(42, &[42]).unwrap(),
+        terminal_source_offset: 23,
         source_offset: 20,
     };
     let constructions = super::feature_extrude_32_constructions(
