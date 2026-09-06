@@ -10,6 +10,9 @@ use crate::container::Container;
 use crate::layout::fastload_structure_envelope as envelope;
 use crate::native::om::ObjectUuidValue;
 
+mod uuid_group_members;
+use uuid_group_members::UuidGroupMembers;
+
 const ENTRY_NAME: &str = "/Root/FastLoad/Structure";
 const ROSTER_ANCHOR: &[u8] = &[1, 2, 0x42, 0, 1, 2, 4];
 const MODEL_FRAME: &[u8] = &[4, 7, b'M', b'O', b'D', b'E', b'L', 0];
@@ -163,10 +166,9 @@ pub struct FastLoadComponentObjectGroup {
     pub component_uuid: String,
     /// Canonical lowercase UUID shared by every member.
     pub uuid: crate::canonical_uuid::CanonicalUuid<String>,
-    /// Ordered [`FastLoadComponentOccurrence::id`] values.
-    pub occurrences: Vec<String>,
-    /// Ordered [`ObjectUuidValue::id`] values.
-    pub object_uuid_values: Vec<String>,
+    /// Independent ordered occurrence and OM UUID-value lists of equal cardinality.
+    #[serde(flatten)]
+    pub members: UuidGroupMembers,
     /// Directory entry containing the component roster.
     pub source_entry: String,
     /// Absolute file offset of the roster UUID tag.
@@ -192,12 +194,12 @@ pub fn fast_load_component_object_groups(
                 .filter(|value| value.uuid == uuid.uuid)
                 .map(|value| value.id.clone())
                 .collect::<Vec<_>>();
-            (!uses.is_empty() && uses.len() == values.len()).then(|| FastLoadComponentObjectGroup {
+            let members = UuidGroupMembers::new(uses, values).ok()?;
+            Some(FastLoadComponentObjectGroup {
                 id: format!("nx:fast-load:object-group#{}", uuid.ordinal),
                 component_uuid: uuid.id.clone(),
                 uuid: uuid.uuid.clone(),
-                occurrences: uses,
-                object_uuid_values: values,
+                members,
                 source_entry: uuid.source_entry.clone(),
                 source_offset: uuid.source_offset,
             })
@@ -751,9 +753,9 @@ mod tests {
             .collect::<Vec<_>>();
         let groups = fast_load_component_object_groups(&uuids, &occurrences, &values);
         assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].occurrences.len(), 3);
-        assert_eq!(groups[0].object_uuid_values.len(), 3);
-        assert_eq!(groups[0].object_uuid_values[1], "nx:test:object-uuid#1");
+        assert_eq!(groups[0].members.occurrences().count(), 3);
+        assert_eq!(groups[0].members.object_uuid_values().count(), 3);
+        assert_eq!(groups[0].members.object_uuid_values().nth(1).unwrap(), "nx:test:object-uuid#1");
 
         assert!(fast_load_component_object_groups(&uuids, &occurrences, &values[..2]).is_empty());
     }
@@ -852,6 +854,17 @@ mod tests {
             assert!(serde_json::from_value::<FastLoadComponentOccurrence>(wire)
                 .unwrap_err().to_string().contains(field));
         }
+    }
+
+    #[test]
+    fn uuid_group_preserves_flat_wire_and_rejects_missing_members() {
+        let json = r#"{"id":"group","component_uuid":"component","uuid":"00000000-0000-0000-0000-000000000000","occurrences":["use"],"object_uuid_values":["value"],"source_entry":"om","source_offset":12}"#;
+        let group: FastLoadComponentObjectGroup = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&group).unwrap(), json);
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["object_uuid_values"] = serde_json::json!([]);
+        assert!(serde_json::from_value::<FastLoadComponentObjectGroup>(wire)
+            .unwrap_err().to_string().contains("occurrences/object_uuid_values"));
     }
 
 }
