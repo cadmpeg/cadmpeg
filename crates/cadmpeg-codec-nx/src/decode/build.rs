@@ -268,7 +268,7 @@ pub(crate) fn try_decode_geometry(
             surfaces: nurbs_surfaces,
             curves: nurbs_curves,
             pcurves: nurbs_pcurves,
-        } = parsed.take_nurbs(si);
+        } = parsed.parse_nurbs(si);
         let view = parsed.stream(si).view_for_geometry();
         let semantic = parsed.semantic_bytes(si);
         let stream_name = format!("parasolid#{si}:{}", stream.kind.label());
