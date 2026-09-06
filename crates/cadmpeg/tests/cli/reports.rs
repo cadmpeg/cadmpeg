@@ -390,7 +390,7 @@ fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
     let dir = tempdir().unwrap();
     let mut ir = unit_cube();
     let absent = format!("{}-absent", ir.model.faces[0].surface);
-    ir.model.faces[0].surface = absent.into();
+    ir.model.faces[0].surface = absent.try_into().expect("valid identity");
     let input = fixture(dir.path(), "broken.cadir.json", &ir);
     let report = dir.path().join("report.json");
 

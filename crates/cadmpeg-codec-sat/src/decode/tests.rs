@@ -61,7 +61,7 @@ fn ids_use_the_sat_format_scheme() {
     let result = decode_bytes(&text_sphere_stream(1.0));
     let body_id = &result.ir().model.bodies[0].id;
     assert!(
-        body_id.0.starts_with("sat:brep:entity#"),
+        body_id.as_str().starts_with("sat:brep:entity#"),
         "unexpected id scheme: {body_id:?}"
     );
 }

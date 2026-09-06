@@ -205,7 +205,8 @@ fn rhino_output_version_is_selected_explicitly() {
 fn check_blocks_conversion_unless_overridden() {
     let dir = tempdir().unwrap();
     let mut invalid = unit_cube();
-    invalid.model.faces[0].surface.0 = "test:model:surface#missing".into();
+    invalid.model.faces[0].surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
+        .expect("valid identity for an absent surface");
     let input = fixture(dir.path(), "invalid.json", &invalid);
     let output = dir.path().join("blocked.step");
     Command::cargo_bin("cadmpeg")

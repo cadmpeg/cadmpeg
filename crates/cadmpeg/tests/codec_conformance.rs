@@ -258,7 +258,7 @@ mod product_roundtrip {
             }
             let definition = match &occurrence.prototype {
                 PrototypeReference::Local { definition } => definitions
-                    .get(definition.0.as_str())
+                    .get(definition.as_str())
                     .expect("local prototype resolves"),
                 _ => panic!("round-trip fixture contains only local prototypes"),
             };
@@ -269,7 +269,7 @@ mod product_roundtrip {
                     "{}/{}",
                     path(
                         occurrences
-                            .get(parent.0.as_str())
+                            .get(parent.as_str())
                             .expect("parent occurrence resolves"),
                         occurrences,
                         definitions,
@@ -278,7 +278,7 @@ mod product_roundtrip {
                     segment
                 ),
             };
-            memo.insert(occurrence.id.0.clone(), resolved.clone());
+            memo.insert(occurrence.id.as_str().to_owned(), resolved.clone());
             resolved
         }
 
