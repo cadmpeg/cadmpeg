@@ -1797,17 +1797,13 @@ pub(super) fn validate_native_links(
                 block.id, block.catalog
             )));
         };
-        if block.byte_offset.checked_add(block.byte_len) != Some(catalog.byte_offset) {
+        if block.byte_offset.checked_add(block.byte_len()) != Some(catalog.byte_offset) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "value block `{}` is not adjacent to catalog `{}`",
                 block.id, block.catalog
             )));
         }
-        let payload_len = u64::try_from(block.payload.len()).ok();
-        if block.declared_len.checked_add(1) != Some(block.byte_len)
-            || payload_len.and_then(|len| len.checked_add(6)) != Some(block.declared_len)
-            || value_block::tokenize(&block.payload) != block.fields
-            || value_schema_selections(&block.id, block.byte_offset, &block.fields, catalog)
+        if value_schema_selections(&block.id, block.byte_offset, &block.fields(), catalog)
                 != block.schema_selections
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(

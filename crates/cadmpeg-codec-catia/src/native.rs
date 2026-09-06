@@ -1945,15 +1945,12 @@ pub struct CatiaAliasRow {
 /// One exact `7C0B` value block adjacent to its source-schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "CatiaValueBlockWire", into = "CatiaValueBlockWire")]
 pub struct CatiaValueBlock {
     /// Globally unique value-block identity.
     pub id: String,
     /// Byte offset of the `7C0B` marker.
     pub byte_offset: u64,
-    /// Complete framed extent including the trailing terminator.
-    pub byte_len: u64,
-    /// Stored length from the marker through the byte before the terminator.
-    pub declared_len: u64,
     /// Object graph ending exactly where this value block begins.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_graph: Option<String>,
@@ -1963,12 +1960,90 @@ pub struct CatiaValueBlock {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub payload: Vec<u8>,
-    /// Lossless typed fields in payload order.
-    #[serde(default)]
-    pub fields: Vec<value_block::ValueField>,
     /// Schema selectors in payload order, resolved against the adjacent catalog.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub schema_selections: Vec<CatiaValueSchemaSelection>,
+}
+
+impl CatiaValueBlock {
+    pub fn declared_len(&self) -> u64 {
+        self.payload.len() as u64 + crate::layout::value_block_7c0b::LEN as u64
+    }
+
+    pub fn byte_len(&self) -> u64 {
+        self.declared_len() + 1
+    }
+
+    pub fn fields(&self) -> Vec<value_block::ValueField> {
+        value_block::tokenize(&self.payload)
+    }
+}
+
+// Compatibility fields are derived on output and checked once on input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaValueBlockWire {
+    /// Globally unique value-block identity.
+    id: String,
+    /// Byte offset of the `7C0B` marker.
+    byte_offset: u64,
+    /// Complete framed extent including the trailing terminator.
+    byte_len: u64,
+    /// Stored length from the marker through the byte before the terminator.
+    declared_len: u64,
+    /// Object graph ending exactly where this value block begins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    object_graph: Option<String>,
+    /// Source-schema catalog that begins immediately after this block.
+    catalog: String,
+    /// Value payload in serialized order.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
+    payload: Vec<u8>,
+    /// Lossless typed fields in payload order.
+    #[serde(default)]
+    fields: Vec<value_block::ValueField>,
+    /// Schema selectors in payload order, resolved against the adjacent catalog.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    schema_selections: Vec<CatiaValueSchemaSelection>,
+}
+
+impl From<CatiaValueBlock> for CatiaValueBlockWire {
+    fn from(block: CatiaValueBlock) -> Self {
+        Self {
+            byte_len: block.byte_len(),
+            declared_len: block.declared_len(),
+            fields: block.fields(),
+            id: block.id,
+            byte_offset: block.byte_offset,
+            object_graph: block.object_graph,
+            catalog: block.catalog,
+            payload: block.payload,
+            schema_selections: block.schema_selections,
+        }
+    }
+}
+
+impl TryFrom<CatiaValueBlockWire> for CatiaValueBlock {
+    type Error = &'static str;
+
+    fn try_from(wire: CatiaValueBlockWire) -> Result<Self, Self::Error> {
+        let block = Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            object_graph: wire.object_graph,
+            catalog: wire.catalog,
+            payload: wire.payload,
+            schema_selections: wire.schema_selections,
+        };
+        if wire.byte_len != block.byte_len()
+            || wire.declared_len != block.declared_len()
+            || wire.fields != block.fields()
+        {
+            return Err("value block lengths or fields disagree with payload");
+        }
+        Ok(block)
+    }
 }
 
 /// Catalog class and encoded payload of a selected value-block schema selector.
@@ -9756,12 +9831,9 @@ impl CatiaValueBlock {
         Self {
             id,
             byte_offset: block.pos as u64,
-            byte_len: block.total_len() as u64,
-            declared_len: block.declared_len() as u64,
             object_graph: object_graph.map(|graph| graph.id.clone()),
             catalog: catalog.id.clone(),
             payload: block.payload,
-            fields,
             schema_selections,
         }
     }

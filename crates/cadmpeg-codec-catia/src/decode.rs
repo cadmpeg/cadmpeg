@@ -1748,7 +1748,7 @@ fn finish_decode(
     let value_field_count = native
         .value_blocks
         .iter()
-        .map(|block| block.fields.len())
+        .map(|block| block.fields().len())
         .sum();
     let value_selection_count = native
         .value_blocks

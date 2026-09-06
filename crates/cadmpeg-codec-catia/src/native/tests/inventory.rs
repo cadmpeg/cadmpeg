@@ -77,7 +77,7 @@ fn native_value_blocks_distinguish_the_terminal_schema_sentinel() {
     assert_eq!(block.schema_selections[0].entry(), None);
     assert_eq!(block.schema_selections[0].name(), None);
     assert!(block.schema_selections[0].encoded_value().is_empty());
-    assert!(block.fields.iter().any(|field| matches!(
+    assert!(block.fields().iter().any(|field| matches!(
         field,
         crate::value_block::ValueField::SchemaSelector { ordinal: 5, .. }
     )));
@@ -467,7 +467,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
         native.value_blocks[0].byte_offset,
         u64::try_from(16 + object_graph_stream().len()).unwrap()
     );
-    assert_eq!(native.value_blocks[0].byte_len, 16);
+    assert_eq!(native.value_blocks[0].byte_len(), 16);
     assert_eq!(native.value_blocks[0].catalog, native.catalogs[0].id);
     assert_eq!(
         native.value_blocks[0].object_graph.as_deref(),

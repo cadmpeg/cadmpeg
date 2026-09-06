@@ -245,17 +245,17 @@ fn native_load_rejects_noncanonical_value_block_views() {
         ));
     };
 
-    let mut invalid_length = native.clone();
-    invalid_length.value_blocks[0].declared_len += 1;
-    assert_rejected(invalid_length);
+    let mut invalid_wire = serde_json::to_value(&native.value_blocks[0]).unwrap();
+    invalid_wire["declared_len"] = serde_json::json!(native.value_blocks[0].declared_len() + 1);
+    assert!(serde_json::from_value::<crate::native::CatiaValueBlock>(invalid_wire).is_err());
 
     let mut invalid_payload = native.clone();
     invalid_payload.value_blocks[0].payload.push(0x80);
     assert_rejected(invalid_payload);
 
-    let mut invalid_fields = native.clone();
-    invalid_fields.value_blocks[0].fields.clear();
-    assert_rejected(invalid_fields);
+    let mut invalid_wire = serde_json::to_value(&native.value_blocks[0]).unwrap();
+    invalid_wire["fields"] = serde_json::json!([]);
+    assert!(serde_json::from_value::<crate::native::CatiaValueBlock>(invalid_wire).is_err());
 
     let mut invalid_selections = native;
     assert!(!invalid_selections.value_blocks[0]

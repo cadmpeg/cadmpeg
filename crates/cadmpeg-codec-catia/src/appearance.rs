@@ -75,11 +75,11 @@ pub(crate) fn transfer(
         })
         .flat_map(|block| {
             block
-                .fields
-                .iter()
+                .fields()
+                .into_iter()
                 .enumerate()
-                .filter_map(|(ordinal, field)| {
-                    let packet = packet(field)?;
+                .filter_map(move |(ordinal, field)| {
+                    let packet = packet(&field)?;
                     let ValueField::Inline { offset, .. } = field else {
                         return None;
                     };
@@ -352,16 +352,12 @@ mod tests {
             };
             [0x8e, *code, 0x84].into_iter().chain(bytes.iter().copied())
         }).collect::<Vec<_>>();
-        let fields = crate::value_block::tokenize(&payload);
         native.value_blocks.push(CatiaValueBlock {
             id: "values".into(),
             byte_offset: 0,
-            byte_len: payload.len() as u64 + 7,
-            declared_len: payload.len() as u64 + 6,
             object_graph: None,
             catalog: "catalog".into(),
             payload,
-            fields,
             schema_selections: vec![],
         });
         native
