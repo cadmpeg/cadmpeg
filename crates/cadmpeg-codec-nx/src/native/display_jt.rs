@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! JT display-model record extractors and their record types.
 
+pub(crate) mod packet_role;
+use packet_role::{TopologyContext, TopologyPacketRole};
+
 use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zlib_probe};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
-use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
+use cadmpeg_ir::{SourceObjectAssociation, topology::Color};
 
 use crate::layout::jt_document_header as jt_hdr;
 use crate::layout::jt_toc_entry as jt_toc;
@@ -240,7 +243,7 @@ pub struct DisplayJtInitialFaceDegreeSymbols {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DisplayJtTopologyPacket {
     /// Stable semantic lane name.
-    pub role: String,
+    pub role: TopologyPacketRole,
     /// Number of values represented by the packet.
     pub value_count: u32,
     /// Serialized compression codec identifier; zero denotes an empty vector.
@@ -1836,30 +1839,6 @@ pub fn display_jt_topology_packet_sequences(
         0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
     ];
-    const PREFIX_ROLES: [&str; 21] = [
-        "face_degrees_0",
-        "face_degrees_1",
-        "face_degrees_2",
-        "face_degrees_3",
-        "face_degrees_4",
-        "face_degrees_5",
-        "face_degrees_6",
-        "face_degrees_7",
-        "vertex_valences",
-        "vertex_groups",
-        "vertex_flags",
-        "face_attribute_masks_0",
-        "face_attribute_masks_1",
-        "face_attribute_masks_2",
-        "face_attribute_masks_3",
-        "face_attribute_masks_4",
-        "face_attribute_masks_5",
-        "face_attribute_masks_6",
-        "face_attribute_masks_7",
-        "face_attribute_masks_7_next_30",
-        "face_attribute_masks_7_upper_4",
-    ];
-    const SPLIT_ROLES: [&str; 2] = ["split_face_symbols", "split_face_positions"];
     let mut sequences = Vec::new();
     let mut headers = Vec::new();
     let mut coordinate_headers = Vec::new();
@@ -1889,16 +1868,26 @@ pub fn display_jt_topology_packet_sequences(
         let Some(role_count) = 23usize.checked_add(high_degree_lane_count) else {
             return (Vec::new(), Vec::new(), Vec::new());
         };
-        let mut roles = Vec::new();
-        if roles.try_reserve_exact(role_count).is_err() {
-            return (Vec::new(), Vec::new(), Vec::new());
-        }
-        roles.extend(PREFIX_ROLES.map(str::to_string));
-        roles.extend(
-            (0..high_degree_lane_count)
-                .map(|ordinal| format!("high_degree_face_attribute_masks_{ordinal}")),
-        );
-        roles.extend(SPLIT_ROLES.map(str::to_string));
+        let roles = TopologyContext::ALL
+            .map(TopologyPacketRole::FaceDegrees)
+            .into_iter()
+            .chain([
+                TopologyPacketRole::VertexValences,
+                TopologyPacketRole::VertexGroups,
+                TopologyPacketRole::VertexFlags,
+            ])
+            .chain(TopologyContext::ALL.map(TopologyPacketRole::FaceAttributeMasks))
+            .chain([
+                TopologyPacketRole::FaceAttributeMasks7Next30,
+                TopologyPacketRole::FaceAttributeMasks7Upper4,
+            ])
+            .chain(
+                (0..high_degree_lane_count).map(TopologyPacketRole::HighDegreeFaceAttributeMasks),
+            )
+            .chain([
+                TopologyPacketRole::SplitFaceSymbols,
+                TopologyPacketRole::SplitFacePositions,
+            ]);
         let mut packets = Vec::new();
         if packets.try_reserve_exact(role_count).is_err() {
             return (Vec::new(), Vec::new(), Vec::new());
@@ -1925,8 +1914,9 @@ pub fn display_jt_topology_packet_sequences(
             let values = crate::jt::decode_int32_cdp2(packet, 0).and_then(
                 |(residuals, decoded_byte_len)| {
                     (decoded_byte_len == packet.len()).then(|| {
-                        let predictor = match role.as_str() {
-                            "vertex_flags" | "split_face_symbols" => crate::jt::Predictor::Lag1,
+                        let predictor = match role {
+                            TopologyPacketRole::VertexFlags
+                            | TopologyPacketRole::SplitFaceSymbols => crate::jt::Predictor::Lag1,
                             _ => crate::jt::Predictor::Null,
                         };
                         crate::jt::unpack_predictor_residuals(&residuals, predictor)
@@ -2112,7 +2102,7 @@ pub fn display_jt_polygon_meshes(
 ) -> Vec<DisplayJtPolygonMesh> {
     let mut meshes = Vec::new();
     for sequence in sequences {
-        let values = |role: &str| {
+        let values = |role: TopologyPacketRole| {
             sequence
                 .packets
                 .iter()
@@ -2120,7 +2110,7 @@ pub fn display_jt_polygon_meshes(
                 .values
                 .as_deref()
         };
-        let Some(valences) = values("vertex_valences") else {
+        let Some(valences) = values(TopologyPacketRole::VertexValences) else {
             return Vec::new();
         };
         if valences.is_empty() {
@@ -2132,28 +2122,35 @@ pub fn display_jt_polygon_meshes(
         else {
             return Vec::new();
         };
-        let Some(degrees) = (0..8)
-            .map(|context| values(&format!("face_degrees_{context}")))
+        let Some(degrees) = TopologyContext::ALL
+            .into_iter()
+            .map(|context| values(TopologyPacketRole::FaceDegrees(context)))
             .collect::<Option<Vec<_>>>()
         else {
             return Vec::new();
         };
-        let Some(attribute_masks) = (0..8)
-            .map(|context| values(&format!("face_attribute_masks_{context}")))
+        let Some(attribute_masks) = TopologyContext::ALL
+            .into_iter()
+            .map(|context| values(TopologyPacketRole::FaceAttributeMasks(context)))
             .collect::<Option<Vec<_>>>()
         else {
             return Vec::new();
         };
-        let Some(context_7_next_30) = values("face_attribute_masks_7_next_30") else {
+        let Some(context_7_next_30) = values(TopologyPacketRole::FaceAttributeMasks7Next30) else {
             return Vec::new();
         };
-        let Some(context_7_upper_4) = values("face_attribute_masks_7_upper_4") else {
+        let Some(context_7_upper_4) = values(TopologyPacketRole::FaceAttributeMasks7Upper4) else {
             return Vec::new();
         };
         let Some(large_lanes) = sequence
             .packets
             .iter()
-            .filter(|packet| packet.role.starts_with("high_degree_face_attribute_masks_"))
+            .filter(|packet| {
+                matches!(
+                    packet.role,
+                    TopologyPacketRole::HighDegreeFaceAttributeMasks(_)
+                )
+            })
             .map(|packet| packet.values.as_deref())
             .collect::<Option<Vec<_>>>()
         else {
@@ -2167,10 +2164,10 @@ pub fn display_jt_polygon_meshes(
         let Some(polygons) = crate::jt_topology::decode(
             degrees.try_into().expect("eight degree contexts"),
             valences,
-            values("vertex_groups").unwrap_or_default(),
-            values("vertex_flags").unwrap_or_default(),
-            values("split_face_symbols").unwrap_or_default(),
-            values("split_face_positions").unwrap_or_default(),
+            values(TopologyPacketRole::VertexGroups).unwrap_or_default(),
+            values(TopologyPacketRole::VertexFlags).unwrap_or_default(),
+            values(TopologyPacketRole::SplitFaceSymbols).unwrap_or_default(),
+            values(TopologyPacketRole::SplitFacePositions).unwrap_or_default(),
             crate::jt_topology::AttributeMaskLanes {
                 small: attribute_masks
                     .try_into()
@@ -3957,8 +3954,8 @@ pub(crate) fn display_jt_tessellations(
 mod tests {
     use std::io::Write;
 
-    use flate2::write::ZlibEncoder;
     use flate2::Compression;
+    use flate2::write::ZlibEncoder;
 
     use super::*;
 
@@ -5100,7 +5097,7 @@ mod tests {
 
     #[test]
     fn jt9_topology_packets_retain_decoded_primal_values() {
-        use super::{display_jt_topology_packet_sequences, DisplayJtShapeLodElement};
+        use super::{DisplayJtShapeLodElement, display_jt_topology_packet_sequences};
 
         let mut representation = vec![0; 24 * 4];
         representation.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
@@ -5154,9 +5151,11 @@ mod tests {
         let (sequences, _, _) = display_jt_topology_packet_sequences(&container, &elements);
         assert_eq!(sequences.len(), 1);
         assert_eq!(sequences[0].packets.len(), 24);
-        assert!(sequences[0]
-            .packets
-            .iter()
-            .all(|packet| packet.values == Some(Vec::new())));
+        assert!(
+            sequences[0]
+                .packets
+                .iter()
+                .all(|packet| packet.values == Some(Vec::new()))
+        );
     }
 }
