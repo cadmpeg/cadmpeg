@@ -2,7 +2,9 @@
 //! JT display-model record extractors and their record types.
 
 pub(crate) mod packet_role;
+mod version;
 use packet_role::{TopologyContext, TopologyPacketRole};
+use version::JtVersionField;
 
 use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zlib_probe};
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -90,17 +92,14 @@ pub struct DisplayJtIndexRow {
 
 /// One bounded embedded JT document and its table of contents.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "DisplayJtDocumentWire", into = "DisplayJtDocumentWire")]
 pub struct DisplayJtDocument {
     /// Globally unique document identity.
     pub id: String,
     /// Owning outer-index row.
     pub index_row: String,
-    /// Exact 80-byte UTF-8 version field.
-    pub version_field: String,
-    /// JT format major version parsed from the version field.
-    pub format_major: u16,
-    /// JT format minor version parsed from the version field.
-    pub format_minor: u16,
+    /// Exact admitted 80-byte version field.
+    pub version: JtVersionField,
     /// Serialized JT byte-order flag.
     pub byte_order: u8,
     /// Payload-relative table-of-contents offset.
@@ -113,6 +112,62 @@ pub struct DisplayJtDocument {
     pub physical_byte_len: u64,
     /// Absolute source offset of the JT version field.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtDocumentWire {
+    id: String,
+    index_row: String,
+    version_field: String,
+    format_major: u16,
+    format_minor: u16,
+    byte_order: u8,
+    toc_offset: u32,
+    lsg_segment_id: Vec<u8>,
+    toc_entries: Vec<DisplayJtTocEntry>,
+    physical_byte_len: u64,
+    source_offset: u64,
+}
+
+impl From<DisplayJtDocument> for DisplayJtDocumentWire {
+    fn from(value: DisplayJtDocument) -> Self {
+        let format_major = value.version.major();
+        let format_minor = value.version.minor();
+        Self {
+            id: value.id,
+            index_row: value.index_row,
+            version_field: value.version.into_string(),
+            format_major,
+            format_minor,
+            byte_order: value.byte_order,
+            toc_offset: value.toc_offset,
+            lsg_segment_id: value.lsg_segment_id,
+            toc_entries: value.toc_entries,
+            physical_byte_len: value.physical_byte_len,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<DisplayJtDocumentWire> for DisplayJtDocument {
+    type Error = &'static str;
+    fn try_from(wire: DisplayJtDocumentWire) -> Result<Self, Self::Error> {
+        let version = JtVersionField::new(wire.version_field)?;
+        if wire.format_major != version.major() || wire.format_minor != version.minor() {
+            return Err("DisplayJtDocument.format_major/format_minor disagree with version_field");
+        }
+        Ok(Self {
+            id: wire.id,
+            index_row: wire.index_row,
+            version,
+            byte_order: wire.byte_order,
+            toc_offset: wire.toc_offset,
+            lsg_segment_id: wire.lsg_segment_id,
+            toc_entries: wire.toc_entries,
+            physical_byte_len: wire.physical_byte_len,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// One fixed-width entry in an embedded JT document table of contents.
@@ -1538,28 +1593,10 @@ pub fn display_jt_documents(
         let Some(version_bytes) = document.get(..jt_hdr::BYTE_ORDER) else {
             return Vec::new();
         };
-        if !version_bytes.starts_with(b"Version ")
-            || !version_bytes
-                .iter()
-                .all(|byte| byte.is_ascii_graphic() || byte.is_ascii_whitespace())
-        {
-            return Vec::new();
-        }
         let Some(version_field) = std::str::from_utf8(version_bytes).ok() else {
             return Vec::new();
         };
-        let Some(version_token) = version_field
-            .strip_prefix("Version ")
-            .and_then(|value| value.split_ascii_whitespace().next())
-        else {
-            return Vec::new();
-        };
-        let Some((format_major, format_minor)) = version_token.split_once('.') else {
-            return Vec::new();
-        };
-        let (Ok(format_major), Ok(format_minor)) =
-            (format_major.parse::<u16>(), format_minor.parse::<u16>())
-        else {
+        let Ok(version) = JtVersionField::new(version_field.to_owned()) else {
             return Vec::new();
         };
         let Some(&byte_order) = document.get(jt_hdr::BYTE_ORDER) else {
@@ -1634,9 +1671,7 @@ pub fn display_jt_documents(
         documents.push(DisplayJtDocument {
             id: format!("nx:display-jt:document#{document_key}"),
             index_row: row.id.clone(),
-            version_field: version_field.to_string(),
-            format_major,
-            format_minor,
+            version,
             byte_order,
             toc_offset,
             lsg_segment_id: lsg_segment_id.to_vec(),
@@ -2876,7 +2911,7 @@ pub fn display_jt_base_node_data(
                 continue;
             }
             let Some((version, flags, attribute_object_ids, family_data)) =
-                parse_jt_base_node_body(element.body, document.format_major)
+                parse_jt_base_node_body(element.body, document.version.major())
             else {
                 return Vec::new();
             };
@@ -2912,7 +2947,7 @@ pub fn display_jt_group_node_data(
         else {
             return Vec::new();
         };
-        if document.format_major != 9 || segment.compression.is_none() {
+        if document.version.major() != 9 || segment.compression.is_none() {
             continue;
         }
         let Some(bytes) = container
@@ -2975,7 +3010,7 @@ pub fn display_jt_instance_nodes(
         else {
             return Vec::new();
         };
-        if document.format_major != 9 || segment.compression.is_none() {
+        if document.version.major() != 9 || segment.compression.is_none() {
             continue;
         }
         let Some(bytes) = container
@@ -3035,7 +3070,7 @@ pub fn display_jt_geometric_transform_attributes(
         else {
             return Vec::new();
         };
-        if document.format_major != 9 || segment.compression.is_none() {
+        if document.version.major() != 9 || segment.compression.is_none() {
             continue;
         }
         let Some(bytes) = container
@@ -3098,7 +3133,7 @@ pub fn display_jt_material_attributes(
         else {
             return Vec::new();
         };
-        if document.format_major != 9 || segment.compression.is_none() {
+        if document.version.major() != 9 || segment.compression.is_none() {
             continue;
         }
         let Some(bytes) = container
@@ -3174,7 +3209,7 @@ pub fn display_jt_partition_nodes(
         else {
             return Vec::new();
         };
-        if document.format_major >= 10 {
+        if document.version.major() >= 10 {
             continue;
         }
         let Some(bytes) = container
@@ -3237,7 +3272,7 @@ pub fn display_jt_range_lod_nodes(
         else {
             return Vec::new();
         };
-        if document.format_major >= 10 {
+        if document.version.major() >= 10 {
             continue;
         }
         let Some(bytes) = container
@@ -3299,7 +3334,7 @@ pub fn display_jt_tri_strip_shape_nodes(
         else {
             return Vec::new();
         };
-        if document.format_major != 9 || segment.compression.is_none() {
+        if document.version.major() != 9 || segment.compression.is_none() {
             continue;
         }
         let Some(bytes) = container
@@ -4000,6 +4035,21 @@ pub(crate) fn display_jt_tessellations(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn document_wire_derives_version_numbers_and_rejects_disagreement() {
+        let mut wire = serde_json::json!({
+            "id": "document", "index_row": "row",
+            "version_field": format!("{:<80}", "Version +0009.005"),
+            "format_major": 9, "format_minor": 5, "byte_order": 0,
+            "toc_offset": 105, "lsg_segment_id": vec![0; 16], "toc_entries": [],
+            "physical_byte_len": 105, "source_offset": 0
+        });
+        let document: super::DisplayJtDocument = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(document).unwrap(), wire);
+        wire["format_minor"] = serde_json::json!(6);
+        assert!(serde_json::from_value::<super::DisplayJtDocument>(wire).is_err());
+    }
+
+    #[test]
     fn string_property_wire_derives_exact_utf16_and_rejects_disagreement() {
         let wire = r#"{"id":"atom","element":"element","object_id":1,"code_units":[78,88,55357,56960],"value":"NX🚀","source_offset":0}"#;
         let record: super::DisplayJtStringPropertyAtom = serde_json::from_str(wire).unwrap();
@@ -4083,7 +4133,7 @@ mod tests {
         assert_eq!(indices[0].rows[0].value, 100);
         let documents = super::display_jt_documents(&container, &indices);
         assert_eq!(
-            (documents[0].format_major, documents[0].format_minor),
+            (documents[0].version.major(), documents[0].version.minor()),
             (9, 4)
         );
         assert_eq!(documents[0].toc_offset, 105);
