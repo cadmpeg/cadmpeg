@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-structure transfer unit tests.
 
-use crate::native;
-use crate::product::{product_cycle_nodes, product_kind, product_record_index};
-use crate::test_support::*;
 use crate::FcstdCodec;
+use crate::native;
+use crate::product::{ProductKind, product_cycle_nodes, product_kind, product_record_index};
+use crate::test_support::*;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
@@ -182,10 +182,12 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         definition: cadmpeg_ir::ids::ProductDefinitionId::mint("fcstd:model:component#missing")
             .expect("identity grammar"),
     };
-    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("invalid occurrence reference")));
+    assert!(
+        cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
+            .findings
+            .iter()
+            .any(|finding| finding.message.contains("invalid occurrence reference"))
+    );
 }
 
 #[test]
@@ -691,13 +693,13 @@ fn rejects_overlapping_product_membership_for_neutral_projection() {
 #[test]
 fn product_runtime_dispatch_requires_exact_registered_types() {
     for (runtime_type, expected) in [
-        ("Assembly::AssemblyObject", Some("part")),
-        ("Assembly::AssemblyLink", Some("part")),
-        ("App::Part", Some("part")),
-        ("App::DocumentObjectGroup", Some("group")),
-        ("App::LinkGroup", Some("link_group")),
-        ("App::Link", Some("occurrence")),
-        ("App::LinkElement", Some("occurrence")),
+        ("Assembly::AssemblyObject", Some(ProductKind::Part)),
+        ("Assembly::AssemblyLink", Some(ProductKind::Part)),
+        ("App::Part", Some(ProductKind::Part)),
+        ("App::DocumentObjectGroup", Some(ProductKind::Group)),
+        ("App::LinkGroup", Some(ProductKind::LinkGroup)),
+        ("App::Link", Some(ProductKind::Occurrence)),
+        ("App::LinkElement", Some(ProductKind::Occurrence)),
     ] {
         assert_eq!(product_kind(runtime_type), expected, "{runtime_type}");
     }

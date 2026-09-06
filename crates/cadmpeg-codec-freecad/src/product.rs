@@ -100,7 +100,7 @@ pub(crate) fn transfer(
             .unwrap_or_default();
         let placement_property = placement.map(|property| property.id.clone());
         let node = match kind {
-            "occurrence" => ProductNode::Occurrence(LinkOccurrence {
+            ProductKind::Occurrence => ProductNode::Occurrence(LinkOccurrence {
                 members,
                 prototype: prototype_link.and_then(|link| link.object().map(str::to_owned)),
                 external_document: prototype_link.and_then(|link| link.document.clone()),
@@ -127,27 +127,24 @@ pub(crate) fn transfer(
                 scale,
                 element_objects,
             }),
-            "group" | "part" | "link_group" => {
-                let container = ContainerNode {
+            ProductKind::Group => ProductNode::Group(ContainerNode {
+                members,
+                local_transform,
+                placement_property,
+            }),
+            ProductKind::Part => ProductNode::Part(ContainerNode {
+                members,
+                local_transform,
+                placement_property,
+            }),
+            ProductKind::LinkGroup => ProductNode::LinkGroup {
+                container: ContainerNode {
                     members,
                     local_transform,
                     placement_property,
-                };
-                match kind {
-                    "group" => ProductNode::Group(container),
-                    "part" => ProductNode::Part(container),
-                    _ => ProductNode::LinkGroup {
-                        container,
-                        element_objects,
-                    },
-                }
-            }
-            _ => {
-                return Err(malformed(format!(
-                    "product object {} has unknown product kind {kind}",
-                    object.id
-                )));
-            }
+                },
+                element_objects,
+            },
         };
         output.push(ProductNodeRecord {
             id: crate::native::native_id("product", &object.name),
@@ -186,12 +183,12 @@ pub(crate) fn transfer_neutral(
     let record_by_object = product_record_index(records)?;
     let mut component_objects = records
         .iter()
-        .filter(|record| record.kind() != "occurrence")
+        .filter(|record| !matches!(record.node, ProductNode::Occurrence(_)))
         .map(|record| record.object.clone())
         .collect::<Vec<_>>();
     let occurrence_objects = records
         .iter()
-        .filter(|record| record.kind() == "occurrence")
+        .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
         .map(|record| record.object.as_str())
         .collect::<std::collections::HashSet<_>>();
     for record in records {
@@ -253,7 +250,7 @@ pub(crate) fn transfer_neutral(
     let mut parent_by_object = HashMap::<&str, &str>::new();
     for record in records
         .iter()
-        .filter(|record| record.kind() != "occurrence")
+        .filter(|record| !matches!(record.node, ProductNode::Occurrence(_)))
     {
         for member in record.members() {
             let member = member.as_str();
@@ -276,7 +273,7 @@ pub(crate) fn transfer_neutral(
     let mut occurrences = Vec::new();
     for record in records
         .iter()
-        .filter(|record| record.kind() == "occurrence")
+        .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
     {
         let count = occurrence_count(record)?;
         let parent = parent_by_object
@@ -400,10 +397,10 @@ pub(crate) fn transfer_neutral(
         .iter()
         .map(|object| {
             let record = record_by_object.get(object.as_str()).copied();
-            let kind = match record.map(ProductNodeRecord::kind) {
-                Some("part") => ProductDefinitionKind::Part,
-                Some("group") => ProductDefinitionKind::Group,
-                Some("link_group") => ProductDefinitionKind::LinkGroup,
+            let kind = match record.map(|record| &record.node) {
+                Some(ProductNode::Part(_)) => ProductDefinitionKind::Part,
+                Some(ProductNode::Group(_)) => ProductDefinitionKind::Group,
+                Some(ProductNode::LinkGroup { .. }) => ProductDefinitionKind::LinkGroup,
                 _ => ProductDefinitionKind::Object,
             };
             let source_object = object_by_id.get(object.as_str()).copied();
@@ -845,12 +842,22 @@ fn read_real(view: View<'_>, offset: usize, width: usize) -> f64 {
     }
 }
 
-fn product_kind(kind: &str) -> Option<&'static str> {
+#[derive(Debug, PartialEq, Eq)]
+enum ProductKind {
+    Group,
+    Part,
+    LinkGroup,
+    Occurrence,
+}
+
+fn product_kind(kind: &str) -> Option<ProductKind> {
     match kind {
-        "Assembly::AssemblyObject" | "Assembly::AssemblyLink" | "App::Part" => Some("part"),
-        "App::DocumentObjectGroup" => Some("group"),
-        "App::LinkGroup" => Some("link_group"),
-        "App::Link" | "App::LinkElement" => Some("occurrence"),
+        "Assembly::AssemblyObject" | "Assembly::AssemblyLink" | "App::Part" => {
+            Some(ProductKind::Part)
+        }
+        "App::DocumentObjectGroup" => Some(ProductKind::Group),
+        "App::LinkGroup" => Some(ProductKind::LinkGroup),
+        "App::Link" | "App::LinkElement" => Some(ProductKind::Occurrence),
         _ => None,
     }
 }
