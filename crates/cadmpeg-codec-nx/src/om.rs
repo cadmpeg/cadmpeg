@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use cadmpeg_core::decode::{alloc_filled, View};
+use cadmpeg_core::decode::{View, alloc_filled};
 
 pub(crate) mod parameter_name;
 pub(crate) mod registry;
@@ -69,21 +69,6 @@ pub struct FieldDefinition<'a> {
     pub name: &'a str,
     /// Complete registry bytes following the member name.
     pub registry_tail: &'a [u8],
-}
-
-impl TypeDefinition<'_> {
-    /// Decode the complete registry tail of this class declaration.
-    pub(crate) fn class_registry_layout(&self) -> Option<registry::ClassRegistryLayout> {
-        registry::class_registry_layout(self.registry_tail)
-    }
-}
-
-impl FieldDefinition<'_> {
-    /// Decode the storage and owner tokens at the head of this member
-    /// declaration.
-    pub(crate) fn field_registry_layout(&self) -> Option<registry::FieldRegistryLayout> {
-        registry::field_registry_layout(self.registry_tail)
-    }
 }
 
 /// One self-framed printable string value in an NX OM entity.
@@ -6933,35 +6918,42 @@ fn operation_body_reference_candidates(
 ) -> impl Iterator<Item = OperationBodyReference> + '_ {
     let payload_start = record.payload_offset.checked_sub(record.offset());
     let mut cursor = 0usize;
-    std::iter::from_fn(move || loop {
-        let window_end = cursor.checked_add(3)?;
-        let window = record.bytes.get(cursor..window_end)?;
-        let marker = cursor;
-        cursor += 1;
-        let body_write = payload_start
-            .and_then(|payload_start| marker.checked_sub(payload_start))
-            .and_then(|payload_marker| {
-                operation_body_write_frame_at(record.payload, record.payload_offset, payload_marker)
-            });
-        if let Some(body_write) = body_write {
-            if let Some(end) = body_write.end_offset.checked_sub(record.offset()) {
-                cursor = cursor.max(end);
-            }
-            continue;
-        }
-        if window == [0x01, 0x02, 0x10] {
-            let token = marker + 3;
-            let Some((Some(object_index), end)) = feature_object_index(record.bytes, token) else {
-                continue;
-            };
-            if record.bytes.get(end) != Some(&0xff) {
+    std::iter::from_fn(move || {
+        loop {
+            let window_end = cursor.checked_add(3)?;
+            let window = record.bytes.get(cursor..window_end)?;
+            let marker = cursor;
+            cursor += 1;
+            let body_write = payload_start
+                .and_then(|payload_start| marker.checked_sub(payload_start))
+                .and_then(|payload_marker| {
+                    operation_body_write_frame_at(
+                        record.payload,
+                        record.payload_offset,
+                        payload_marker,
+                    )
+                });
+            if let Some(body_write) = body_write {
+                if let Some(end) = body_write.end_offset.checked_sub(record.offset()) {
+                    cursor = cursor.max(end);
+                }
                 continue;
             }
-            return Some(OperationBodyReference {
-                offset: record.offset() + token,
-                object_index,
-                raw_object_index: record.bytes[token..end].to_vec(),
-            });
+            if window == [0x01, 0x02, 0x10] {
+                let token = marker + 3;
+                let Some((Some(object_index), end)) = feature_object_index(record.bytes, token)
+                else {
+                    continue;
+                };
+                if record.bytes.get(end) != Some(&0xff) {
+                    continue;
+                }
+                return Some(OperationBodyReference {
+                    offset: record.offset() + token,
+                    object_index,
+                    raw_object_index: record.bytes[token..end].to_vec(),
+                });
+            }
         }
     })
 }

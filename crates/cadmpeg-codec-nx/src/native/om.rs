@@ -7,8 +7,8 @@ use super::*;
 use cadmpeg_core::decode::View;
 
 use crate::native::segments::segment_om_links;
+use crate::om::IndexedStore;
 use crate::om::parameter_name::ParameterName;
-use crate::om::{IndexedStore, TypeDefinition as OmTypeDefinition};
 
 /// Semantic family declared by a linked OM section's class registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1179,6 +1179,7 @@ fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> 
 
 /// Length-framed class definition from an NX OM type registry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "ClassDefinitionWire", into = "ClassDefinitionWire")]
 pub struct ClassDefinition {
     /// Globally unique native-record identity.
     pub id: String,
@@ -1188,28 +1189,9 @@ pub struct ClassDefinition {
     pub ordinal: u32,
     /// First registry-token byte serialized after the class name (legacy field name).
     pub trailing_code: u8,
-    /// Decoded storage token from the complete class registry tail.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub registry_storage_code: Option<u32>,
-    /// One-based base-class ordinal from the complete class registry tail.
-    /// Zero denotes the registry root.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub registry_base_class: Option<u32>,
-    /// One-based reference-list ordinal from the complete class registry tail.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub registry_reference: Option<u32>,
     /// Exact bytes between this declaration core and the next class declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub registry_suffix: Vec<u8>,
-    /// Variable-width prefix of a framed indexed-store registry suffix.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub layout_prefix: Vec<u8>,
-    /// Stable eight-byte class fingerprint in a framed registry suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub schema_fingerprint: Option<[u8; 8]>,
-    /// Terminal byte of a framed indexed-store registry suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub layout_terminal: Option<u8>,
     /// Absolute file offset of the containing OM section base.
     pub section_offset: u64,
     /// Directory entry containing the OM section.
@@ -1218,8 +1200,117 @@ pub struct ClassDefinition {
     pub source_offset: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ClassDefinitionWire {
+    /// Globally unique native-record identity.
+    id: String,
+    /// Registered `UGS::` class name.
+    name: String,
+    /// Zero-based declaration ordinal used as class identity.
+    ordinal: u32,
+    /// First registry-token byte serialized after the class name (legacy field name).
+    trailing_code: u8,
+    /// Decoded storage token from the complete class registry tail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    registry_storage_code: Option<u32>,
+    /// One-based base-class ordinal from the complete class registry tail.
+    /// Zero denotes the registry root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    registry_base_class: Option<u32>,
+    /// One-based reference-list ordinal from the complete class registry tail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    registry_reference: Option<u32>,
+    /// Exact bytes between this declaration core and the next class declaration.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    registry_suffix: Vec<u8>,
+    /// Variable-width prefix of a framed indexed-store registry suffix.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    layout_prefix: Vec<u8>,
+    /// Stable eight-byte class fingerprint in a framed registry suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    schema_fingerprint: Option<[u8; 8]>,
+    /// Terminal byte of a framed indexed-store registry suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    layout_terminal: Option<u8>,
+    /// Absolute file offset of the containing OM section base.
+    section_offset: u64,
+    /// Directory entry containing the OM section.
+    source_entry: String,
+    /// Absolute file offset of the definition's length byte.
+    source_offset: u64,
+}
+
+impl From<ClassDefinition> for ClassDefinitionWire {
+    fn from(value: ClassDefinition) -> Self {
+        let tail: Vec<_> = std::iter::once(value.trailing_code)
+            .chain(value.registry_suffix.iter().copied())
+            .collect();
+        let registry = crate::om::registry::class_registry_layout(&tail);
+        let layout = registry_layout(&tail[1..]);
+        Self {
+            id: value.id,
+            name: value.name,
+            ordinal: value.ordinal,
+            trailing_code: value.trailing_code,
+            registry_storage_code: registry.map(|layout| layout.storage_code.value),
+            registry_base_class: registry.map(|layout| layout.base_class),
+            registry_reference: registry.map(|layout| layout.reference),
+            registry_suffix: value.registry_suffix,
+            layout_prefix: layout
+                .as_ref()
+                .map_or_else(Vec::new, |layout| layout.prefix.to_vec()),
+            schema_fingerprint: registry
+                .map(|layout| layout.schema_fingerprint)
+                .or_else(|| layout.as_ref().map(|layout| layout.fingerprint)),
+            layout_terminal: layout.as_ref().map(|layout| layout.terminal),
+            section_offset: value.section_offset,
+            source_entry: value.source_entry,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<ClassDefinitionWire> for ClassDefinition {
+    type Error = String;
+    fn try_from(wire: ClassDefinitionWire) -> Result<Self, Self::Error> {
+        let value = Self {
+            id: wire.id,
+            name: wire.name,
+            ordinal: wire.ordinal,
+            trailing_code: wire.trailing_code,
+            registry_suffix: wire.registry_suffix,
+            section_offset: wire.section_offset,
+            source_entry: wire.source_entry,
+            source_offset: wire.source_offset,
+        };
+        let expected = ClassDefinitionWire::from(value.clone());
+        if wire.registry_storage_code != expected.registry_storage_code {
+            return Err(
+                "ClassDefinition registry_storage_code disagrees with registry bytes".into(),
+            );
+        }
+        if wire.registry_base_class != expected.registry_base_class {
+            return Err("ClassDefinition registry_base_class disagrees with registry bytes".into());
+        }
+        if wire.registry_reference != expected.registry_reference {
+            return Err("ClassDefinition registry_reference disagrees with registry bytes".into());
+        }
+        if wire.layout_prefix != expected.layout_prefix {
+            return Err("ClassDefinition layout_prefix disagrees with registry bytes".into());
+        }
+        if wire.schema_fingerprint != expected.schema_fingerprint {
+            return Err("ClassDefinition schema_fingerprint disagrees with registry bytes".into());
+        }
+        if wire.layout_terminal != expected.layout_terminal {
+            return Err("ClassDefinition layout_terminal disagrees with registry bytes".into());
+        }
+        Ok(value)
+    }
+}
+
 /// Member declaration from an NX OM field registry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FieldDefinitionWire", into = "FieldDefinitionWire")]
 pub struct FieldDefinition {
     /// Globally unique declaration identity.
     pub id: String,
@@ -1229,30 +1320,115 @@ pub struct FieldDefinition {
     pub ordinal: u32,
     /// First registry-token byte serialized immediately after the name (legacy field name).
     pub trailing_code: u8,
-    /// Decoded storage token from the complete member registry head.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub registry_storage_code: Option<u32>,
-    /// One-based declaring-class ordinal from the complete member registry head.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub registry_owner_class: Option<u32>,
     /// Exact bytes between this declaration core and the next member declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub registry_suffix: Vec<u8>,
-    /// Variable-width prefix of a framed indexed-store registry suffix.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub layout_prefix: Vec<u8>,
-    /// Stable eight-byte field fingerprint in a framed registry suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub schema_fingerprint: Option<[u8; 8]>,
-    /// Terminal byte of a framed indexed-store registry suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub layout_terminal: Option<u8>,
     /// Absolute file offset of the containing OM section signature.
     pub section_offset: u64,
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Absolute file offset of the declaration length byte.
     pub source_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct FieldDefinitionWire {
+    /// Globally unique declaration identity.
+    id: String,
+    /// Registered `m_` member name.
+    name: String,
+    /// Zero-based declaration ordinal within its section.
+    ordinal: u32,
+    /// First registry-token byte serialized immediately after the name (legacy field name).
+    trailing_code: u8,
+    /// Decoded storage token from the complete member registry head.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    registry_storage_code: Option<u32>,
+    /// One-based declaring-class ordinal from the complete member registry head.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    registry_owner_class: Option<u32>,
+    /// Exact bytes between this declaration core and the next member declaration.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    registry_suffix: Vec<u8>,
+    /// Variable-width prefix of a framed indexed-store registry suffix.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    layout_prefix: Vec<u8>,
+    /// Stable eight-byte field fingerprint in a framed registry suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    schema_fingerprint: Option<[u8; 8]>,
+    /// Terminal byte of a framed indexed-store registry suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    layout_terminal: Option<u8>,
+    /// Absolute file offset of the containing OM section signature.
+    section_offset: u64,
+    /// Directory entry containing the OM section.
+    source_entry: String,
+    /// Absolute file offset of the declaration length byte.
+    source_offset: u64,
+}
+
+impl From<FieldDefinition> for FieldDefinitionWire {
+    fn from(value: FieldDefinition) -> Self {
+        let tail: Vec<_> = std::iter::once(value.trailing_code)
+            .chain(value.registry_suffix.iter().copied())
+            .collect();
+        let registry = crate::om::registry::field_registry_layout(&tail);
+        let layout = registry_layout(&tail[1..]);
+        Self {
+            id: value.id,
+            name: value.name,
+            ordinal: value.ordinal,
+            trailing_code: value.trailing_code,
+            registry_storage_code: registry.map(|layout| layout.storage_code.value),
+            registry_owner_class: registry.map(|layout| layout.owner_class),
+            registry_suffix: value.registry_suffix,
+            layout_prefix: layout
+                .as_ref()
+                .map_or_else(Vec::new, |layout| layout.prefix.to_vec()),
+            schema_fingerprint: layout.as_ref().map(|layout| layout.fingerprint),
+            layout_terminal: layout.as_ref().map(|layout| layout.terminal),
+            section_offset: value.section_offset,
+            source_entry: value.source_entry,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FieldDefinitionWire> for FieldDefinition {
+    type Error = String;
+    fn try_from(wire: FieldDefinitionWire) -> Result<Self, Self::Error> {
+        let value = Self {
+            id: wire.id,
+            name: wire.name,
+            ordinal: wire.ordinal,
+            trailing_code: wire.trailing_code,
+            registry_suffix: wire.registry_suffix,
+            section_offset: wire.section_offset,
+            source_entry: wire.source_entry,
+            source_offset: wire.source_offset,
+        };
+        let expected = FieldDefinitionWire::from(value.clone());
+        if wire.registry_storage_code != expected.registry_storage_code {
+            return Err(
+                "FieldDefinition registry_storage_code disagrees with registry bytes".into(),
+            );
+        }
+        if wire.registry_owner_class != expected.registry_owner_class {
+            return Err(
+                "FieldDefinition registry_owner_class disagrees with registry bytes".into(),
+            );
+        }
+        if wire.layout_prefix != expected.layout_prefix {
+            return Err("FieldDefinition layout_prefix disagrees with registry bytes".into());
+        }
+        if wire.schema_fingerprint != expected.schema_fingerprint {
+            return Err("FieldDefinition schema_fingerprint disagrees with registry bytes".into());
+        }
+        if wire.layout_terminal != expected.layout_terminal {
+            return Err("FieldDefinition layout_terminal disagrees with registry bytes".into());
+        }
+        Ok(value)
+    }
 }
 
 /// Directory entry for one externally bounded NX OM entity record.
@@ -2085,7 +2261,7 @@ impl TryFrom<DataBlockAbrReferenceLaneWire> for DataBlockAbrReferenceLane {
                 (None, None) => None,
                 (Some(index), Some(data_block)) => Some(DataBlockAbrTarget { index, data_block }),
                 _ => {
-                    return Err("ABR slot index and data block must be present together".to_owned())
+                    return Err("ABR slot index and data block must be present together".to_owned());
                 }
             };
             slot.source_offset = source_offset;
@@ -3656,7 +3832,6 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
             .expect("OM entry belongs to container");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.types.iter().cloned().enumerate() {
-            let registry_fields = class_registry_fields(&definition);
             definitions.insert(
                 (entry_index, definition.offset),
                 ClassDefinition {
@@ -3664,13 +3839,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
                     trailing_code: definition.registry_tail[0],
-                    registry_storage_code: registry_fields.storage_code,
-                    registry_base_class: registry_fields.base_class,
-                    registry_reference: registry_fields.reference,
                     registry_suffix: definition.registry_tail[1..].to_vec(),
-                    layout_prefix: registry_fields.layout_prefix,
-                    schema_fingerprint: registry_fields.schema_fingerprint,
-                    layout_terminal: registry_fields.layout_terminal,
                     section_offset: entry_offset + section.offset as u64,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -3687,7 +3856,6 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.types.iter().cloned().enumerate() {
-            let registry_fields = class_registry_fields(&definition);
             definitions
                 .entry((entry_index, definition.offset))
                 .or_insert_with(|| ClassDefinition {
@@ -3695,13 +3863,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
                     trailing_code: definition.registry_tail[0],
-                    registry_storage_code: registry_fields.storage_code,
-                    registry_base_class: registry_fields.base_class,
-                    registry_reference: registry_fields.reference,
                     registry_suffix: definition.registry_tail[1..].to_vec(),
-                    layout_prefix: registry_fields.layout_prefix,
-                    schema_fingerprint: registry_fields.schema_fingerprint,
-                    layout_terminal: registry_fields.layout_terminal,
                     section_offset,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -3711,43 +3873,24 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
     definitions.into_values().collect()
 }
 
-fn registry_layout_fields(suffix: &[u8]) -> (Vec<u8>, Option<[u8; 8]>, Option<u8>) {
+struct RegistryLayout<'a> {
+    prefix: &'a [u8],
+    fingerprint: [u8; 8],
+    terminal: u8,
+}
+
+fn registry_layout(suffix: &[u8]) -> Option<RegistryLayout<'_>> {
     if !(11..=14).contains(&suffix.len()) {
-        return (Vec::new(), None, None);
+        return None;
     }
     let fingerprint_start = suffix.len() - 9;
-    (
-        suffix[..fingerprint_start].to_vec(),
-        suffix[fingerprint_start..fingerprint_start + 8]
+    Some(RegistryLayout {
+        prefix: &suffix[..fingerprint_start],
+        fingerprint: suffix[fingerprint_start..fingerprint_start + 8]
             .try_into()
-            .ok(),
-        suffix.last().copied(),
-    )
-}
-
-struct ClassRegistryFields {
-    layout_prefix: Vec<u8>,
-    schema_fingerprint: Option<[u8; 8]>,
-    layout_terminal: Option<u8>,
-    storage_code: Option<u32>,
-    base_class: Option<u32>,
-    reference: Option<u32>,
-}
-
-fn class_registry_fields(definition: &OmTypeDefinition<'_>) -> ClassRegistryFields {
-    let (layout_prefix, legacy_fingerprint, layout_terminal) =
-        registry_layout_fields(&definition.registry_tail[1..]);
-    let registry = definition.class_registry_layout();
-    ClassRegistryFields {
-        layout_prefix,
-        schema_fingerprint: registry
-            .map(|layout| layout.schema_fingerprint)
-            .or(legacy_fingerprint),
-        layout_terminal,
-        storage_code: registry.map(|layout| layout.storage_code.value),
-        base_class: registry.map(|layout| layout.base_class),
-        reference: registry.map(|layout| layout.reference),
-    }
+            .ok()?,
+        terminal: suffix[fingerprint_start + 8],
+    })
 }
 
 /// Decode member definitions from every framed OM section.
@@ -3761,9 +3904,6 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
             .expect("OM entry belongs to container");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
-            let (layout_prefix, schema_fingerprint, layout_terminal) =
-                registry_layout_fields(&definition.registry_tail[1..]);
-            let registry = definition.field_registry_layout();
             definitions.insert(
                 (entry_index, definition.offset),
                 FieldDefinition {
@@ -3771,12 +3911,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
                     trailing_code: definition.registry_tail[0],
-                    registry_storage_code: registry.map(|layout| layout.storage_code.value),
-                    registry_owner_class: registry.map(|layout| layout.owner_class),
                     registry_suffix: definition.registry_tail[1..].to_vec(),
-                    layout_prefix,
-                    schema_fingerprint,
-                    layout_terminal,
                     section_offset: entry_offset + section.offset as u64,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -3793,9 +3928,6 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
-            let (layout_prefix, schema_fingerprint, layout_terminal) =
-                registry_layout_fields(&definition.registry_tail[1..]);
-            let registry = definition.field_registry_layout();
             definitions
                 .entry((entry_index, definition.offset))
                 .or_insert_with(|| FieldDefinition {
@@ -3803,12 +3935,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
                     trailing_code: definition.registry_tail[0],
-                    registry_storage_code: registry.map(|layout| layout.storage_code.value),
-                    registry_owner_class: registry.map(|layout| layout.owner_class),
                     registry_suffix: definition.registry_tail[1..].to_vec(),
-                    layout_prefix,
-                    schema_fingerprint,
-                    layout_terminal,
                     section_offset,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -5694,22 +5821,22 @@ mod tests {
     use std::io::{Cursor, Write};
 
     use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-    use flate2::write::ZlibEncoder;
     use flate2::Compression;
+    use flate2::write::ZlibEncoder;
 
+    use cadmpeg_ir::Exactness;
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
     };
     use cadmpeg_ir::math::{Point2, Vector3};
     use cadmpeg_ir::report::LossCategory;
-    use cadmpeg_ir::Exactness;
 
     use super::*;
     use crate::container;
 
-    use crate::test_support::*;
     use crate::NxCodec;
+    use crate::test_support::*;
 
     #[test]
     fn counted_lane_wire_preserves_member_columns() {
@@ -6263,11 +6390,12 @@ mod tests {
 
         assert_eq!(ir.model.parameters[0].expression, "p3 + 1");
         assert_eq!(ir.model.parameters[1].expression, "p2 + 1");
-        assert!(ir
-            .model
-            .parameters
-            .iter()
-            .all(|parameter| parameter.dependencies.is_empty()));
+        assert!(
+            ir.model
+                .parameters
+                .iter()
+                .all(|parameter| parameter.dependencies.is_empty())
+        );
         assert_eq!(
             crate::decode::incomplete_expression_parameters(&ir),
             ir.model
@@ -6343,7 +6471,7 @@ mod tests {
 
     #[test]
     fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
-        use crate::native::features::{feature_parameter_uses, FeatureParameterBinding};
+        use crate::native::features::{FeatureParameterBinding, feature_parameter_uses};
 
         let binding = |id: &str, operation: &str, slot: u8, offset: u64| FeatureParameterBinding {
             id: id.to_string(),
@@ -6847,9 +6975,11 @@ mod tests {
         assert_eq!(expressions[0].expression, "120");
         assert_eq!(expressions[0].value, Some(120.0));
         assert_eq!(expressions[0].source_entry, "/Root/UG_PART/UG_PART");
-        assert!(expressions[0]
-            .source_table
-            .starts_with("nx:om-entry-0:expression-table#"));
+        assert!(
+            expressions[0]
+                .source_table
+                .starts_with("nx:om-entry-0:expression-table#")
+        );
         let declarations = result
             .ir()
             .native
@@ -7079,6 +7209,11 @@ mod tests {
             .expect("NX namespace")
             .arena_as::<super::FieldDefinition>("field_definitions")
             .expect("required invariant");
+        let fields: Vec<_> = fields
+            .iter()
+            .cloned()
+            .map(super::FieldDefinitionWire::from)
+            .collect();
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].name, "m_target");
         assert_eq!(fields[0].ordinal, 0);
@@ -7092,9 +7227,14 @@ mod tests {
         assert_eq!(fields[1].trailing_code, 0x81);
         assert!(fields[1].registry_suffix.is_empty());
         assert_eq!(fields[1].source_entry, "/Root/UG_PART/UG_PART");
-        let (prefix, fingerprint, terminal) = super::registry_layout_fields(&[
+        let layout = super::registry_layout(&[
             0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06,
         ]);
+        let prefix = layout
+            .as_ref()
+            .map_or_else(Vec::new, |layout| layout.prefix.to_vec());
+        let fingerprint = layout.as_ref().map(|layout| layout.fingerprint);
+        let terminal = layout.as_ref().map(|layout| layout.terminal);
         assert_eq!(prefix, [0x81, 0x21]);
         assert_eq!(
             fingerprint,
@@ -7108,6 +7248,11 @@ mod tests {
             .expect("NX namespace")
             .arena_as::<super::ClassDefinition>("class_definitions")
             .expect("required invariant");
+        let classes: Vec<_> = classes
+            .iter()
+            .cloned()
+            .map(super::ClassDefinitionWire::from)
+            .collect();
         assert_eq!(classes[0].layout_prefix, &[0x81, 0x21]);
         assert_eq!(
             classes[0].schema_fingerprint,
@@ -7126,10 +7271,19 @@ mod tests {
             ],
         };
 
-        let legacy = super::class_registry_fields(&legacy_definition);
-        assert_eq!(legacy.storage_code, None);
-        assert_eq!(legacy.base_class, None);
-        assert_eq!(legacy.reference, None);
+        let legacy = super::ClassDefinitionWire::from(super::ClassDefinition {
+            id: String::new(),
+            name: legacy_definition.name.into(),
+            ordinal: 0,
+            trailing_code: legacy_definition.registry_tail[0],
+            registry_suffix: legacy_definition.registry_tail[1..].to_vec(),
+            section_offset: 0,
+            source_entry: String::new(),
+            source_offset: 0,
+        });
+        assert_eq!(legacy.registry_storage_code, None);
+        assert_eq!(legacy.registry_base_class, None);
+        assert_eq!(legacy.registry_reference, None);
         assert_eq!(
             legacy.schema_fingerprint,
             Some([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef])
@@ -7143,10 +7297,19 @@ mod tests {
                 0x38, 0x05, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x02,
             ],
         };
-        let complete = super::class_registry_fields(&complete_definition);
-        assert_eq!(complete.storage_code, Some(0x38));
-        assert_eq!(complete.base_class, Some(0x05));
-        assert_eq!(complete.reference, Some(0x02));
+        let complete = super::ClassDefinitionWire::from(super::ClassDefinition {
+            id: String::new(),
+            name: complete_definition.name.into(),
+            ordinal: 0,
+            trailing_code: complete_definition.registry_tail[0],
+            registry_suffix: complete_definition.registry_tail[1..].to_vec(),
+            section_offset: 0,
+            source_entry: String::new(),
+            source_offset: 0,
+        });
+        assert_eq!(complete.registry_storage_code, Some(0x38));
+        assert_eq!(complete.registry_base_class, Some(0x05));
+        assert_eq!(complete.registry_reference, Some(0x02));
         assert_eq!(
             complete.schema_fingerprint,
             Some([0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80])
@@ -7286,9 +7449,11 @@ mod object_record_identity_tests {
             .expect("required invariant");
         let records = super::object_records(&container);
         assert_eq!(records.len(), 2);
-        assert!(records
-            .iter()
-            .all(|record| record.stable_identity.is_some()));
+        assert!(
+            records
+                .iter()
+                .all(|record| record.stable_identity.is_some())
+        );
         assert_ne!(records[0].stable_identity, records[1].stable_identity);
     }
 

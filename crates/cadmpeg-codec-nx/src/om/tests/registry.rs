@@ -18,7 +18,7 @@ fn decodes_direct_class_registry_tail() {
         ],
     };
 
-    let layout = definition.class_registry_layout().unwrap();
+    let layout = crate::om::registry::class_registry_layout(definition.registry_tail).unwrap();
 
     assert_eq!(layout.storage_code.value, 0x38);
     assert_eq!(layout.storage_code.form, RegistryTokenForm::Direct);
@@ -39,7 +39,7 @@ fn decodes_compact_and_wide_class_registry_tokens() {
         ],
     };
 
-    let compact_layout = compact.class_registry_layout().unwrap();
+    let compact_layout = crate::om::registry::class_registry_layout(compact.registry_tail).unwrap();
     assert_eq!(compact_layout.storage_code.value, 0xc9 + 1);
     assert_eq!(compact_layout.storage_code.form, RegistryTokenForm::Compact);
     assert_eq!(compact_layout.storage_code.width, 2);
@@ -56,7 +56,7 @@ fn decodes_compact_and_wide_class_registry_tokens() {
         ],
     };
 
-    let wide_layout = wide.class_registry_layout().unwrap();
+    let wide_layout = crate::om::registry::class_registry_layout(wide.registry_tail).unwrap();
     assert_eq!(wide_layout.storage_code.value, 0x27_10 + 1);
     assert_eq!(wide_layout.storage_code.form, RegistryTokenForm::Wide);
     assert_eq!(wide_layout.storage_code.width, 3);
@@ -96,7 +96,7 @@ fn decodes_direct_and_compact_field_registry_heads() {
         name: "m_objectStateCollection",
         registry_tail: &[0x78, 0x28, 0x12, 0x34],
     };
-    let direct_layout = direct.field_registry_layout().unwrap();
+    let direct_layout = crate::om::registry::field_registry_layout(direct.registry_tail).unwrap();
     assert_eq!(direct_layout.storage_code.value, 0x78);
     assert_eq!(direct_layout.storage_code.form, RegistryTokenForm::Direct);
     assert_eq!(direct_layout.owner_class, 0x28);
@@ -106,7 +106,7 @@ fn decodes_direct_and_compact_field_registry_heads() {
         name: "first_record_area",
         registry_tail: &[0x80, 0xcf, 0x28],
     };
-    let compact_layout = compact.field_registry_layout().unwrap();
+    let compact_layout = crate::om::registry::field_registry_layout(compact.registry_tail).unwrap();
     assert_eq!(compact_layout.storage_code.value, 0xcf + 1);
     assert_eq!(compact_layout.storage_code.form, RegistryTokenForm::Compact);
     assert_eq!(compact_layout.owner_class, 0x28);
@@ -119,21 +119,21 @@ fn rejects_incomplete_or_null_registry_tails() {
         name: "UGS::OM::Truncated",
         registry_tail: &[0x38, 0x05, 0x00, 0x01],
     };
-    assert!(truncated.class_registry_layout().is_none());
+    assert!(crate::om::registry::class_registry_layout(truncated.registry_tail).is_none());
 
     let null_storage = FieldDefinition {
         offset: 0,
         name: "m_null",
         registry_tail: &[0xff],
     };
-    assert!(null_storage.field_registry_layout().is_none());
+    assert!(crate::om::registry::field_registry_layout(null_storage.registry_tail).is_none());
 
     let null_owner = FieldDefinition {
         offset: 0,
         name: "m_null_owner",
         registry_tail: &[0x78, 0x00],
     };
-    assert!(null_owner.field_registry_layout().is_none());
+    assert!(crate::om::registry::field_registry_layout(null_owner.registry_tail).is_none());
 }
 
 #[test]
@@ -171,15 +171,13 @@ fn separates_complete_reference_class_and_member_regions() {
     assert_eq!(registry.definitions[0].name, "UGS::OM::RootObject");
     assert_eq!(registry.definitions[1].name, "UGS::OM::ChildObject");
     assert_eq!(
-        registry.definitions[0]
-            .class_registry_layout()
+        crate::om::registry::class_registry_layout(registry.definitions[0].registry_tail)
             .unwrap()
             .base_class,
         0
     );
     assert_eq!(
-        registry.definitions[1]
-            .class_registry_layout()
+        crate::om::registry::class_registry_layout(registry.definitions[1].registry_tail)
             .unwrap()
             .storage_code
             .value,
@@ -191,9 +189,19 @@ fn separates_complete_reference_class_and_member_regions() {
         crate::om::registry::all_field_definitions(&bytes, registry.field_start, bytes.len());
     assert_eq!(fields.len(), 3);
     assert_eq!(fields[0].name, "m_first");
-    assert_eq!(fields[0].field_registry_layout().unwrap().owner_class, 1);
+    assert_eq!(
+        crate::om::registry::field_registry_layout(fields[0].registry_tail)
+            .unwrap()
+            .owner_class,
+        1
+    );
     assert_eq!(fields[1].name, "m_second");
-    assert_eq!(fields[1].field_registry_layout().unwrap().owner_class, 2);
+    assert_eq!(
+        crate::om::registry::field_registry_layout(fields[1].registry_tail)
+            .unwrap()
+            .owner_class,
+        2
+    );
     assert_eq!(fields[2].name, "m_tail");
 
     let mut one_byte_gap = bytes;
