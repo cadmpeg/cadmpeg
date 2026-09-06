@@ -117,23 +117,23 @@ fn om_sketch_scalar_pairs_accept_the_repeated_type_frame() {
     let second_offset = bytes.len();
     bytes.extend_from_slice(&shifted_f64_bytes(-20.0));
 
-    let pairs = sketch_payload_scalar_pairs(&bytes);
+    let pairs = crate::om::binary64_pair::sketch_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].offset, discriminator_offset);
-    assert_eq!(pairs[0].values.map(|value| value.offset), [first_offset, second_offset]);
-    assert!((pairs[0].values[0].scalar.value() - 10.0).abs() < EPS_SKETCH_SCALAR);
-    assert!((pairs[0].values[1].scalar.value() + 20.0).abs() < EPS_SKETCH_SCALAR);
+    assert_eq!(pairs[0].offset(), discriminator_offset);
+    assert_eq!(pairs[0].values().map(|value| value.offset), [first_offset, second_offset]);
+    assert!((pairs[0].values()[0].scalar.value() - 10.0).abs() < EPS_SKETCH_SCALAR);
+    assert!((pairs[0].values()[1].scalar.value() + 20.0).abs() < EPS_SKETCH_SCALAR);
     assert_eq!(
-        pairs[0].discriminator,
+        pairs[0].discriminator(),
         bytes[discriminator_offset..first_offset].to_vec()
     );
-    assert!(object_payload_scalar_pairs(&bytes).is_empty());
+    assert!(crate::om::binary64_pair::object_pairs(&bytes).is_empty());
 
     bytes[discriminator_offset + 1] = 0x15;
-    assert!(sketch_payload_scalar_pairs(&bytes).is_empty());
+    assert!(crate::om::binary64_pair::sketch_pairs(&bytes).is_empty());
     bytes[discriminator_offset + 1] = 0x14;
     bytes.truncate(second_offset + 7);
-    assert!(sketch_payload_scalar_pairs(&bytes).is_empty());
+    assert!(crate::om::binary64_pair::sketch_pairs(&bytes).is_empty());
 }
 
 #[test]
@@ -145,7 +145,7 @@ fn om_sketch_scalar_pairs_reject_non_binary64_atoms() {
     bytes.extend_from_slice(&[0x30, 0x42, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]);
     bytes.extend_from_slice(&[0xd0, 0x29, 0x33, 0x32, 0x50, 0x20, 0x00, 0x00]);
 
-    assert!(sketch_payload_scalar_pairs(&bytes).is_empty());
+    assert!(crate::om::binary64_pair::sketch_pairs(&bytes).is_empty());
 }
 
 #[test]

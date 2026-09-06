@@ -13,15 +13,6 @@ pub(crate) struct LocatedBinary64 {
     pub(crate) offset: usize,
 }
 
-impl LocatedBinary64 {
-    pub(crate) fn read(bytes: &[u8], offset: usize) -> Option<Self> {
-        Some(Self {
-            scalar: ShiftedBinary64::read(bytes.get(offset..offset.checked_add(8)?)?)?,
-            offset,
-        })
-    }
-}
-
 impl ShiftedBinary64 {
     pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
         Self::try_from(<[u8; 8]>::try_from(bytes).ok()?).ok()

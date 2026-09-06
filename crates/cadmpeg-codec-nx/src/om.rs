@@ -45,6 +45,7 @@ pub(crate) mod discriminators;
 use branch_items::BranchItems;
 pub(crate) mod parameter_name;
 pub(crate) mod scalar_pair;
+pub(crate) mod binary64_pair;
 use scalar_pair::{SketchPairForm, DatumPairForm};
 pub(crate) mod scalar_run;
 use scalar_run::FramedScalarRun;
@@ -1219,26 +1220,6 @@ pub struct DatumPlaneSingleReferenceBranch {
 pub struct DatumPlaneDoubleReferenceBranch {
     /// Canonical payload object indices in branch order.
     pub references: [PayloadObjectReference<reference_index::PayloadIndexToken>; 2],
-}
-
-/// Exact scalar pair following a datum-plane object-record discriminator.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DatumPlaneObjectScalarPair {
-    /// Payload-relative offset of the discriminator.
-    pub offset: usize,
-    /// Checked scalar atoms with their payload-relative offsets.
-    pub values: [LocatedBinary64; 2],
-}
-
-/// Exact scalar pair following an object or sketch discriminator.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ObjectPayloadScalarPair {
-    /// Payload-relative offset of the discriminator.
-    pub offset: usize,
-    /// Checked scalar atoms with their payload-relative offsets.
-    pub values: [LocatedBinary64; 2],
-    /// Exact discriminator selecting the scalar-pair branch.
-    pub discriminator: Vec<u8>,
 }
 
 /// Exact pair of scaled shifted-binary64 atoms in a reconstructed sketch payload.
@@ -3927,101 +3908,9 @@ pub fn datum_plane_double_reference_branch(
     })
 }
 
-/// Decode every exactly framed scalar pair in a reconstructed datum-plane payload.
-pub fn datum_plane_object_scalar_pairs(bytes: &[u8]) -> Vec<DatumPlaneObjectScalarPair> {
-    const DISCRIMINATOR: [u8; 18] = [
-        0x6d, 0x00, 0xf0, 0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86,
-        0x02, 0x00, 0x03,
-    ];
-    bytes
-        .windows(DISCRIMINATOR.len())
-        .enumerate()
-        .filter_map(|(offset, window)| {
-            (window == DISCRIMINATOR).then_some(())?;
-            let first = offset + DISCRIMINATOR.len();
-            let second = first + 9;
-            (bytes.get(first + 8) == Some(&0x00)).then_some(())?;
-            let [first, second] = [first, second].map(|offset| LocatedBinary64::read(bytes, offset));
-            Some(DatumPlaneObjectScalarPair {
-                offset,
-                values: [first?, second?],
-            })
-        })
-        .collect()
-}
-
 /// Decode one complete datum-plane descriptor block.
 pub fn datum_plane_descriptor_block(bytes: &[u8]) -> Option<plane_descriptor::PlaneDescriptor> {
     plane_descriptor::PlaneDescriptor::read(bytes)
-}
-
-/// Decode every exactly framed scalar pair in a reconstructed object payload.
-pub fn object_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair> {
-    const SHORT: [u8; 15] = [
-        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
-    ];
-    const EXTENDED: [u8; 16] = [
-        0x08, 0x02, 0x03, 0x01, 0x81, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00,
-        0x03,
-    ];
-    let mut pairs = Vec::new();
-    for discriminator in [SHORT.as_slice(), EXTENDED.as_slice()] {
-        for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
-            if window != discriminator {
-                continue;
-            }
-            let first = offset + discriminator.len();
-            let second = first + 9;
-            if bytes.get(first + 8) != Some(&0x00) {
-                continue;
-            }
-            let [Some(first), Some(second)] = [first, second].map(|offset| LocatedBinary64::read(bytes, offset)) else {
-                continue;
-            };
-            pairs.push(ObjectPayloadScalarPair {
-                offset,
-                values: [first, second],
-                discriminator: discriminator.to_vec(),
-            });
-        }
-    }
-    pairs.sort_by_key(|pair| pair.offset);
-    pairs
-}
-
-/// Decode the repeated-type scalar-pair lane in a reconstructed sketch payload.
-pub fn sketch_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair> {
-    const FRAME_SUFFIX: [u8; 14] = [
-        0x00, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
-    ];
-    let mut pairs = object_payload_scalar_pairs(bytes);
-    for (offset, window) in bytes.windows(3).enumerate() {
-        let [type_code, repeated_type_code, 0x41] = window else {
-            continue;
-        };
-        if *type_code == 0 || type_code != repeated_type_code {
-            continue;
-        }
-        if offset == 0 || bytes.get(offset - 1) != Some(&0x00) {
-            continue;
-        }
-        let discriminator_len = 3 + FRAME_SUFFIX.len();
-        if bytes.get(offset + 3..offset + discriminator_len) != Some(&FRAME_SUFFIX) {
-            continue;
-        }
-        let first = offset + discriminator_len;
-        let second = first + 8;
-        let [Some(first), Some(second)] = [first, second].map(|offset| LocatedBinary64::read(bytes, offset)) else {
-            continue;
-        };
-        pairs.push(ObjectPayloadScalarPair {
-            offset,
-            values: [first, second],
-            discriminator: bytes[offset..offset + discriminator_len].to_vec(),
-        });
-    }
-    pairs.sort_by_key(|pair| pair.offset);
-    pairs
 }
 
 /// Decode every complete scalar-vector frame in a reconstructed sketch

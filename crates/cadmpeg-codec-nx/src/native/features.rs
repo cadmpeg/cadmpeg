@@ -8021,19 +8021,19 @@ pub fn feature_datum_csys_payload_scalar_pairs(
         container,
         payloads,
         |payload| payload.content.blocks(),
-        crate::om::object_payload_scalar_pairs,
+        crate::om::binary64_pair::object_pairs,
         |payload, ordinal, pair, source_offset| {
             Some(FeaturePayloadScalarPair {
                 id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
                 operation_label: payload.operation_label.clone(),
                 payload: FeatureScalarPairPayload::DatumCsys {
                     datum_csys_payload: payload.id.clone(),
-                    discriminator: pair.discriminator,
+                    discriminator: pair.discriminator().into_owned(),
                 },
                 ordinal: ordinal as u32,
-                values: resolved_payload_scalar_pair(pair.values, source_offset)?,
-                payload_offset: pair.offset as u64,
-                source_offset: source_offset(pair.offset)?,
+                values: resolved_payload_scalar_pair(pair.values(), source_offset)?,
+                payload_offset: pair.offset() as u64,
+                source_offset: source_offset(pair.offset())?,
             })
         },
     )
@@ -8164,7 +8164,7 @@ pub fn feature_datum_plane_payload_scalar_pairs(
         container,
         payloads,
         |payload| payload.content.blocks(),
-        crate::om::datum_plane_object_scalar_pairs,
+        crate::om::binary64_pair::datum_plane_pairs,
         |payload, ordinal, pair, source_offset| {
             Some(FeaturePayloadScalarPair {
                 id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
@@ -8173,9 +8173,9 @@ pub fn feature_datum_plane_payload_scalar_pairs(
                     datum_plane_payload: payload.id.clone(),
                 },
                 ordinal: ordinal as u32,
-                values: resolved_payload_scalar_pair(pair.values, source_offset)?,
-                payload_offset: pair.offset as u64,
-                source_offset: source_offset(pair.offset)?,
+                values: resolved_payload_scalar_pair(pair.values(), source_offset)?,
+                payload_offset: pair.offset() as u64,
+                source_offset: source_offset(pair.offset())?,
             })
         },
     )
@@ -8435,19 +8435,19 @@ pub fn feature_sketch_payload_coordinate_pairs(
         container,
         payloads,
         |payload| payload.content.blocks(),
-        crate::om::sketch_payload_scalar_pairs,
+        crate::om::binary64_pair::sketch_pairs,
         |payload, ordinal, pair, source_offset| {
             Some(FeaturePayloadScalarPair {
                 id: format!("{}-coordinate-pair-{ordinal:010}", payload.id),
                 operation_label: payload.operation_label.clone(),
                 payload: FeatureScalarPairPayload::Construction {
                     construction_payload: payload.id.clone(),
-                    discriminator: pair.discriminator,
+                    discriminator: pair.discriminator().into_owned(),
                 },
                 ordinal: ordinal as u32,
-                values: resolved_payload_scalar_pair(pair.values, source_offset)?,
-                payload_offset: pair.offset as u64,
-                source_offset: source_offset(pair.offset)?,
+                values: resolved_payload_scalar_pair(pair.values(), source_offset)?,
+                payload_offset: pair.offset() as u64,
+                source_offset: source_offset(pair.offset())?,
             })
         },
     )
@@ -10586,7 +10586,7 @@ pub fn feature_surface_construction_scalar_pairs(
             else {
                 return Vec::new();
             };
-            crate::om::object_payload_scalar_pairs(joined.bytes())
+            crate::om::binary64_pair::object_pairs(joined.bytes())
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, pair)| {
@@ -10595,12 +10595,12 @@ pub fn feature_surface_construction_scalar_pairs(
                         operation_label: payload.operation_label.clone(),
                         payload: FeatureScalarPairPayload::SurfaceConstruction {
                             surface_construction_payload: payload.id.clone(),
-                            discriminator: pair.discriminator,
+                            discriminator: pair.discriminator().into_owned(),
                         },
                         ordinal: ordinal as u32,
-                        values: resolved_payload_scalar_pair(pair.values, |offset| joined.source_offset(offset as u64))?,
-                        payload_offset: pair.offset as u64,
-                        source_offset: joined.source_offset(pair.offset as u64)?,
+                        values: resolved_payload_scalar_pair(pair.values(), |offset| joined.source_offset(offset as u64))?,
+                        payload_offset: pair.offset() as u64,
+                        source_offset: joined.source_offset(pair.offset() as u64)?,
                     })
                 })
                 .collect()
