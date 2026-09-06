@@ -949,3 +949,13 @@ fn datum_csys_wire_derives_offsets_from_the_complete_payload_frame() {
     let error = serde_json::from_value::<super::FeatureDatumCsysConstruction>(invalid).unwrap_err();
     assert!(error.to_string().contains("raw_object_indices[0]"));
 }
+
+#[test]
+fn surface_reference_requires_the_payload_token_grammar() {
+    let wire = r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":0,"raw_object_index":[240,0],"data_block":"","source_offset":10}"#;
+    let reference: super::FeatureSurfaceConstructionReference = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&reference).unwrap(), wire);
+    let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
+    invalid["raw_object_index"] = serde_json::json!([0]);
+    assert!(serde_json::from_value::<super::FeatureSurfaceConstructionReference>(invalid).is_err());
+}

@@ -53,6 +53,7 @@ pub(crate) mod discriminators;
 pub(crate) mod extrude_32;
 pub(crate) mod extrude_profile;
 pub(crate) mod surface_branches;
+pub(crate) mod surface_envelope;
 use branch_items::BranchItems;
 pub(crate) mod binary64_pair;
 pub(crate) mod name_field;
@@ -100,10 +101,9 @@ use scalar::{
     shifted_ieee_f64, LocatedBinary64, PayloadScalarAtom, RepeatedScalar, ShiftedBinary32,
     ShiftedBinary64, ShiftedScalar,
 };
+pub(crate) mod thru_curve_branches;
 pub(crate) mod thru_curve_controls;
 pub(crate) mod thru_curve_endings;
-use thru_curve_controls::ThruCurveControls;
-pub(crate) mod thru_curve_branches;
 pub(crate) mod thru_curve_state;
 use discriminators::DraftBinary32Branch;
 use swp104_state::Swp104StateLane;
@@ -759,30 +759,6 @@ impl PointFeatureScalarLane {
 pub struct DraftFeaturePayloadReferenceField {
     /// Four construction references in serialized order.
     pub references: [PayloadObjectReference; 4],
-}
-
-/// Exact common construction references in a surface-feature payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SurfaceFeaturePayloadReferenceField {
-    /// Eleven header references followed by the trailing three references.
-    pub references: [PayloadObjectReference; 14],
-}
-
-/// Exact leading construction references in a `THRU_CURVE` payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ThruCurvePayloadReferenceField {
-    /// Nonzero construction discriminator at the payload start.
-    pub discriminator: NonZeroU8,
-    /// Exact opaque controls between the two reference groups.
-    pub controls: ThruCurveControls,
-    /// Three header references followed by six construction references.
-    pub references: [PayloadObjectReference; 9],
-    /// Nonzero control byte following the reference groups.
-    pub trailing_control: NonZeroU8,
-    /// Exact two-byte value selected by the `a0` marker.
-    pub trailing_value: [u8; 2],
-    /// Absolute offset immediately after the envelope.
-    pub end_offset: usize,
 }
 
 /// Exact leading construction branch in a `SWP104` payload.
@@ -2123,114 +2099,6 @@ pub fn draft_feature_payload_references(
             })
             .filter_map(decode),
     )
-}
-
-/// Decode the exact common construction-reference envelope in a bounded
-/// `SKIN` or `Studio Surface` payload.
-pub fn surface_feature_payload_references(
-    record: OperationPayload<'_>,
-) -> Option<SurfaceFeaturePayloadReferenceField> {
-    const HEADER_PREFIX: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
-    const TRAILING_PREFIX: [u8; 10] = [0x03, 0x03, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b];
-    const TRAILING_SUFFIX: [u8; 17] = [
-        0x01, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
-        0x01, 0x02,
-    ];
-    let discriminator = *record.payload().first()?;
-    match record.name() {
-        "SKIN" if matches!(discriminator, 0x3e | 0x3f) => {}
-        "Studio Surface" if discriminator == 0x14 => {}
-        _ => return None,
-    }
-    (record.payload().get(1..5) == Some(&HEADER_PREFIX)).then_some(())?;
-    let decode_reference = |at: &mut usize| {
-        let offset = *at;
-        let (object_index, width) = payload_object_index(record.payload().get(offset..)?)?;
-        *at += width;
-        Some(PayloadObjectReference {
-            offset: record.payload_offset() + offset,
-            token: object_index,
-        })
-    };
-    let mut at = 5;
-    let mut references = Vec::with_capacity(14);
-    for _ in 0..3 {
-        references.push(decode_reference(&mut at)?);
-    }
-    (record.payload().get(at..at + 2) == Some(&[0x01, 0x09])).then_some(())?;
-    at += 2;
-    record.payload().get(at..at + 8)?;
-    at += 8;
-    (record.payload().get(at..at + 2) == Some(&[0x01, 0x09])).then_some(())?;
-    at += 2;
-    for _ in 0..8 {
-        references.push(decode_reference(&mut at)?);
-    }
-
-    let trailing_start = unique_candidate(
-        record
-            .payload()
-            .windows(TRAILING_PREFIX.len())
-            .enumerate()
-            .filter_map(|(start, bytes)| (bytes == TRAILING_PREFIX).then_some(start)),
-    )?;
-    at = trailing_start + TRAILING_PREFIX.len();
-    for _ in 0..3 {
-        references.push(decode_reference(&mut at)?);
-    }
-    (record.payload().get(at..at + TRAILING_SUFFIX.len()) == Some(&TRAILING_SUFFIX))
-        .then_some(())?;
-    Some(SurfaceFeaturePayloadReferenceField {
-        references: references.try_into().ok()?,
-    })
-}
-
-/// Decode the exact leading construction-reference envelope in a bounded
-/// `THRU_CURVE` payload.
-pub fn thru_curve_payload_references(
-    record: OperationPayload<'_>,
-) -> Option<ThruCurvePayloadReferenceField> {
-    const HEADER: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
-    (record.name() == "THRU_CURVE").then_some(())?;
-    let discriminator = NonZeroU8::new(*record.payload().first()?)?;
-    (record.payload().get(1..1 + HEADER.len()) == Some(&HEADER)).then_some(())?;
-
-    let mut at = 1 + HEADER.len();
-    let mut references = Vec::with_capacity(9);
-    let decode_reference = |at: &mut usize| {
-        let offset = *at;
-        let (object_index, width) = payload_object_index(record.payload().get(offset..)?)?;
-        *at += width;
-        Some(PayloadObjectReference {
-            offset: record.payload_offset() + offset,
-            token: object_index,
-        })
-    };
-    for _ in 0..3 {
-        references.push(decode_reference(&mut at)?);
-    }
-    (record.payload().get(at..at + 2) == Some(&[0x01, 0x08])).then_some(())?;
-    at += 2;
-    let controls: [u8; 9] = record.payload().get(at..at + 9)?.try_into().ok()?;
-    let controls = ThruCurveControls::try_from(controls).ok()?;
-    at += 9;
-    for _ in 0..6 {
-        references.push(decode_reference(&mut at)?);
-    }
-    (*record.payload().get(at)? == 0x04).then_some(())?;
-    let trailing_control = NonZeroU8::new(*record.payload().get(at + 1)?)?;
-    (*record.payload().get(at + 2)? == 0xa0).then_some(())?;
-    let trailing_value = record.payload().get(at + 3..at + 5)?.try_into().ok()?;
-    (record.payload().get(at + 5..at + 7) == Some(&[0x13, 0x01])).then_some(())?;
-
-    Some(ThruCurvePayloadReferenceField {
-        discriminator,
-        controls,
-        references: references.try_into().ok()?,
-        trailing_control,
-        trailing_value,
-        end_offset: record.payload_offset() + at + 7,
-    })
 }
 
 /// Decode the exact leading construction branch in a bounded `SWP104`

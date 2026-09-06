@@ -44,7 +44,7 @@ use crate::om::compact::CountedIndexMembers;
 use crate::om::compact::LocatedCompactIndex;
 use crate::om::fixed::Q155;
 use crate::om::nonempty::NonEmpty;
-use crate::om::reference_index::{PayloadIndexToken, ReferenceIndexToken};
+use crate::om::reference_index::PayloadIndexToken;
 use crate::om::scalar::PayloadScalarAtom;
 use crate::om::scalar::PayloadScalarEncoding;
 
@@ -2644,7 +2644,7 @@ pub struct FeatureSurfaceConstructionReference {
     pub ordinal: u32,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: crate::om::reference_index::ReferenceIndexToken,
+    pub token: crate::om::reference_index::PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -6767,9 +6767,7 @@ struct ResolvedFeaturePayloadReference<T> {
 
 fn resolved_feature_payload_references<T: Copy>(
     container: &Container,
-    decode: impl Fn(
-        crate::om::operation_record::OperationPayload<'_>,
-    ) -> Option<Vec<crate::om::PayloadObjectReference<T>>>,
+    decode: impl Fn(crate::om::operation_record::OperationPayload<'_>, u64) -> Option<Vec<(T, u64)>>,
     value: impl Fn(T) -> u32,
 ) -> Vec<ResolvedFeaturePayloadReference<T>> {
     let indexed = container.indexed_om_sections();
@@ -6777,19 +6775,19 @@ fn resolved_feature_payload_references<T: Copy>(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(decoded) = decode(record.payload_view()) else {
+            let Some(decoded) = decode(record.payload_view(), entry_offset) else {
                 return;
             };
-            references.extend(decoded.into_iter().enumerate().map(|(ordinal, reference)| {
-                ResolvedFeaturePayloadReference {
+            references.extend(decoded.into_iter().enumerate().map(
+                |(ordinal, (token, source_offset))| ResolvedFeaturePayloadReference {
                     section_key: section_key.to_string(),
                     operation_ordinal,
                     ordinal,
-                    token: reference.token,
-                    data_block: unique_offset_data_block(&indexed, value(reference.token)),
-                    source_offset: entry_offset + reference.offset as u64,
-                }
-            }));
+                    token,
+                    data_block: unique_offset_data_block(&indexed, value(token)),
+                    source_offset,
+                },
+            ));
         },
     );
     references
@@ -6802,9 +6800,18 @@ pub fn feature_projected_curve_references(
 ) -> Vec<FeatureProjectedCurveReference> {
     resolved_feature_payload_references(
         container,
-        |record| {
-            crate::om::projected_references::ProjectedCurveReferences::read(record)
-                .map(crate::om::projected_references::ProjectedCurveReferences::into_references)
+        |record, base| {
+            crate::om::projected_references::ProjectedCurveReferences::read(record).and_then(
+                |field| {
+                    field
+                        .into_references()
+                        .into_iter()
+                        .map(|reference| {
+                            Some((reference.token, base.checked_add(reference.offset as u64)?))
+                        })
+                        .collect()
+                },
+            )
         },
         PayloadIndexToken::value,
     )
@@ -7034,15 +7041,17 @@ pub fn feature_surface_construction_references(
 ) -> Vec<FeatureSurfaceConstructionReference> {
     resolved_feature_payload_references(
         container,
-        |record| {
-            crate::om::surface_feature_payload_references(record)
-                .map(|field| field.references.into_iter().collect())
+        |record, base| {
+            crate::om::surface_envelope::surface_feature_payload_references(record)
+                .and_then(|field| field.relocate(base))
+                .map(|field| field.references().into_iter().collect())
                 .or_else(|| {
-                    crate::om::thru_curve_payload_references(record)
-                        .map(|field| field.references.into_iter().collect())
+                    crate::om::surface_envelope::thru_curve_payload_references(record)
+                        .and_then(|field| field.relocate(base))
+                        .map(|field| field.references().into_iter().collect())
                 })
         },
-        ReferenceIndexToken::value,
+        PayloadIndexToken::value,
     )
     .into_iter()
     .map(|reference| {
@@ -7073,7 +7082,9 @@ pub fn feature_thru_curve_construction_envelopes(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(field) = crate::om::thru_curve_payload_references(record.payload_view())
+            let Some(field) =
+                crate::om::surface_envelope::thru_curve_payload_references(record.payload_view())
+                    .and_then(|field| field.relocate(entry_offset))
             else {
                 return;
             };
@@ -7085,7 +7096,7 @@ pub fn feature_thru_curve_construction_envelopes(
                 controls: field.controls,
                 trailing_control: field.trailing_control,
                 trailing_value: field.trailing_value,
-                source_offset: entry_offset + record.payload_offset() as u64,
+                source_offset: field.origin(),
             });
         },
     );

@@ -430,12 +430,13 @@ fn om_surface_feature_references_require_the_complete_common_envelope() {
     let label = "SKIN";
     let payload = b"\x3f\x00\x00\x01\x00\xf1\x02\x46\xf1\x02\x47\xf1\x02\x48\x01\x09\x03\x03\x04\x05\x02\x01\x01\x01\x01\x09\xf1\x02\x49\xf1\x02\x4a\xf1\x02\x4b\xf1\x02\x4c\xf1\x02\x4d\xf1\x02\x4e\xf1\x02\x4f\xf1\x02\x50\x00\x03\x03\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xf1\x02\x56\xf1\x02\x57\xf1\x02\x58\x01\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x01\x02";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let field = super::surface_feature_payload_references(record).expect("complete envelope");
+    let field = crate::om::surface_envelope::surface_feature_payload_references(record)
+        .expect("complete envelope");
     assert_eq!(
         field
-            .references
+            .references()
             .iter()
-            .map(|reference| reference.token.value())
+            .map(|(token, _)| token.value())
             .collect::<Vec<_>>(),
         [582, 583, 584, 585, 586, 587, 588, 589, 590, 591, 592, 598, 599, 600,]
     );
@@ -447,31 +448,35 @@ fn om_surface_feature_references_require_the_complete_common_envelope() {
         "Studio Surface",
     )
     .unwrap();
-    assert!(super::surface_feature_payload_references(studio).is_some());
+    assert!(crate::om::surface_envelope::surface_feature_payload_references(studio).is_some());
 
     let mut malformed = payload.to_vec();
     let last = malformed.len() - 1;
     malformed[last] = 0x00;
-    assert!(super::surface_feature_payload_references(
-        crate::om::operation_record::OperationPayload::new(
-            &malformed,
-            record.payload_offset(),
-            record.name()
+    assert!(
+        crate::om::surface_envelope::surface_feature_payload_references(
+            crate::om::operation_record::OperationPayload::new(
+                &malformed,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
         )
-        .unwrap()
-    )
-    .is_none());
+        .is_none()
+    );
 
     let ambiguous = [payload.as_slice(), &payload[51..]].concat();
-    assert!(super::surface_feature_payload_references(
-        crate::om::operation_record::OperationPayload::new(
-            &ambiguous,
-            record.payload_offset(),
-            record.name()
+    assert!(
+        crate::om::surface_envelope::surface_feature_payload_references(
+            crate::om::operation_record::OperationPayload::new(
+                &ambiguous,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
         )
-        .unwrap()
-    )
-    .is_none());
+        .is_none()
+    );
 }
 
 #[test]
@@ -479,19 +484,20 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     let label = "THRU_CURVE";
     let payload = b"\x13\x00\x00\x01\x00\xf1\x01\x21\xf1\x01\x22\xf1\x01\x23\x01\x08\x02\x03\x03\x04\x01\x01\x01\x01\x07\xf1\x01\x24\xf1\x01\x25\xf1\x01\x26\xf1\x01\x27\xf1\x01\x28\xf1\x01\x29\x04\x01\xa0\x5e\x38\x13\x01\x03";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let field = super::thru_curve_payload_references(record).expect("complete envelope");
+    let field = crate::om::surface_envelope::thru_curve_payload_references(record)
+        .expect("complete envelope");
     assert_eq!(field.discriminator.get(), 0x13);
     assert_eq!(<[u8; 9]>::from(field.controls), [2, 3, 3, 4, 1, 1, 1, 1, 7]);
     assert_eq!(
         field
-            .references
+            .references()
             .iter()
-            .map(|reference| reference.token.value())
+            .map(|(token, _)| token.value())
             .collect::<Vec<_>>(),
         [289, 290, 291, 292, 293, 294, 295, 296, 297]
     );
-    assert_eq!(field.references[0].offset, 205);
-    assert_eq!(field.references[8].token.raw().to_vec(), [0xf1, 0x01, 0x29]);
+    assert_eq!(field.references()[0].1, 205);
+    assert_eq!(field.references()[8].0.raw().to_vec(), [0xf1, 0x01, 0x29]);
     assert_eq!(field.trailing_control.get(), 1);
     assert_eq!(field.trailing_value, [0x5e, 0x38]);
 
@@ -500,7 +506,7 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     alternate[16..24].copy_from_slice(&[7, 3, 3, 4, 1, 2, 4, 1]);
     alternate[44] = 6;
     alternate[46..48].copy_from_slice(&[0x5d, 0xfc]);
-    let alternate = super::thru_curve_payload_references(
+    let alternate = crate::om::surface_envelope::thru_curve_payload_references(
         crate::om::operation_record::OperationPayload::new(
             &alternate,
             record.payload_offset(),
@@ -519,7 +525,7 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
 
     let mut malformed = payload.to_vec();
     malformed[24] = 0x09;
-    assert!(super::thru_curve_payload_references(
+    assert!(crate::om::surface_envelope::thru_curve_payload_references(
         crate::om::operation_record::OperationPayload::new(
             &malformed,
             record.payload_offset(),
@@ -529,7 +535,7 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     )
     .is_none());
 
-    assert!(super::thru_curve_payload_references(
+    assert!(crate::om::surface_envelope::thru_curve_payload_references(
         crate::om::operation_record::OperationPayload::new(
             &payload[..payload.len() - 2],
             record.payload_offset(),

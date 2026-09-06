@@ -4,8 +4,8 @@
 use super::branch_items::BranchItems;
 use super::operation_record::OperationPayload;
 use super::reference_index::PayloadIndexToken;
+use super::surface_envelope::thru_curve_payload_references;
 use super::thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
-use super::thru_curve_payload_references;
 use super::thru_curve_state::ThruCurveBranchItems;
 use std::num::NonZeroU8;
 
@@ -170,7 +170,7 @@ fn thru_curve_payload_branch(
 /// reference envelope.
 pub fn thru_curve_payload_branch_group(record: OperationPayload<'_>) -> Option<ThruCurveGroup<()>> {
     let envelope = thru_curve_payload_references(record)?;
-    let mut at = envelope.end_offset.checked_sub(record.payload_offset())?;
+    let mut at = envelope.byte_len();
     let group_offset = at;
     let declared_count @ 2.. = *record.payload().get(at)? else {
         return None;

@@ -664,9 +664,16 @@ pub fn feature_draft_construction_references(
 ) -> Vec<FeatureDraftConstructionReference> {
     resolved_feature_payload_references(
         container,
-        |record| {
-            crate::om::draft_feature_payload_references(record)
-                .map(|field| field.references.into_iter().collect())
+        |record, base| {
+            crate::om::draft_feature_payload_references(record).and_then(|field| {
+                field
+                    .references
+                    .into_iter()
+                    .map(|reference| {
+                        Some((reference.token, base.checked_add(reference.offset as u64)?))
+                    })
+                    .collect()
+            })
         },
         crate::om::reference_index::ReferenceIndexToken::value,
     )
