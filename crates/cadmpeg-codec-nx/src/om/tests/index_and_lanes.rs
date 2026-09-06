@@ -833,10 +833,10 @@ fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {
     let pairs = super::datum_plane_object_scalar_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].offset, 4);
-    assert_eq!(pairs[0].value_offsets, [22, 31]);
-    assert_eq!(pairs[0].values, [10.0, -20.0]);
-    assert_eq!(pairs[0].raw_values[0], [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(pairs[0].raw_values[1], [0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(pairs[0].values.map(|value| value.offset), [22, 31]);
+    assert_eq!(pairs[0].values.map(|value| value.scalar.value()), [10.0, -20.0]);
+    assert_eq!(pairs[0].values[0].scalar.raw(), [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(pairs[0].values[1].scalar.raw(), [0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
     bytes[10] ^= 1;
     assert!(super::datum_plane_object_scalar_pairs(&bytes).is_empty());
 }
@@ -873,10 +873,10 @@ fn om_datum_csys_scalar_pairs_require_discriminator_and_separator() {
     let pairs = super::object_payload_scalar_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].offset, 6);
-    assert_eq!(pairs[0].value_offsets, [21, 30]);
-    assert_eq!(pairs[0].values, [10.0, -20.0]);
-    assert_eq!(pairs[0].raw_values[0], [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(pairs[0].raw_values[1], [0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(pairs[0].values.map(|value| value.offset), [21, 30]);
+    assert_eq!(pairs[0].values.map(|value| value.scalar.value()), [10.0, -20.0]);
+    assert_eq!(pairs[0].values[0].scalar.raw(), [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(pairs[0].values[1].scalar.raw(), [0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
     assert_eq!(pairs[0].discriminator.len(), 15);
 
     let mut extended = vec![
@@ -889,9 +889,9 @@ fn om_datum_csys_scalar_pairs_require_discriminator_and_separator() {
     let extended_pairs = super::object_payload_scalar_pairs(&extended);
     assert_eq!(extended_pairs.len(), 1);
     assert_eq!(extended_pairs[0].discriminator.len(), 16);
-    assert_eq!(extended_pairs[0].value_offsets, [16, 25]);
+    assert_eq!(extended_pairs[0].values.map(|value| value.offset), [16, 25]);
     assert_eq!(
-        extended_pairs[0].raw_values[0],
+        extended_pairs[0].values[0].scalar.raw(),
         [0x30, 0x24, 0, 0, 0, 0, 0, 0]
     );
 

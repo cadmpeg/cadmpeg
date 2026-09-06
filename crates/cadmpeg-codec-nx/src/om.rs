@@ -2457,12 +2457,8 @@ pub struct DatumPlaneObjectIndexLane {
 pub struct DatumPlaneObjectScalarPair {
     /// Payload-relative offset of the discriminator.
     pub offset: usize,
-    /// Ordered finite shifted-IEEE binary64 values.
-    pub values: [f64; 2],
-    /// Exact shifted-binary64 encodings in value order.
-    pub raw_values: [[u8; 8]; 2],
-    /// Payload-relative offsets of the two scalar encodings.
-    pub value_offsets: [usize; 2],
+    /// Checked scalar atoms with their payload-relative offsets.
+    pub values: [LocatedBinary64; 2],
 }
 
 /// Exact 40-byte datum-plane descriptor block.
@@ -2483,12 +2479,8 @@ pub struct DatumPlaneDescriptorBlock {
 pub struct ObjectPayloadScalarPair {
     /// Payload-relative offset of the discriminator.
     pub offset: usize,
-    /// Ordered finite shifted-IEEE values.
-    pub values: [f64; 2],
-    /// Exact shifted-binary64 encodings in value order.
-    pub raw_values: [[u8; 8]; 2],
-    /// Payload-relative offsets of the two scalar encodings.
-    pub value_offsets: [usize; 2],
+    /// Checked scalar atoms with their payload-relative offsets.
+    pub values: [LocatedBinary64; 2],
     /// Exact discriminator selecting the scalar-pair branch.
     pub discriminator: Vec<u8>,
 }
@@ -2650,9 +2642,7 @@ pub struct ExtrudePayloadHeader {
     /// Absolute offset of the first shifted-IEEE scalar.
     pub offset: usize,
     /// Ordered finite scalar values.
-    pub scalars: [f64; 2],
-    /// Exact shifted-binary64 encodings in scalar order.
-    pub raw_scalars: [[u8; 8]; 2],
+    pub scalars: [ShiftedBinary64; 2],
 }
 
 /// Exact terminal discriminator lane at the end of a bounded operation payload.
@@ -5317,17 +5307,12 @@ pub fn extrude_payload_header(record: OperationRecord<'_>) -> Option<ExtrudePayl
     {
         return None;
     }
-    let raw_scalars = [
-        <[u8; 8]>::try_from(record.payload.get(5..13)?).ok()?,
-        <[u8; 8]>::try_from(record.payload.get(13..21)?).ok()?,
-    ];
     Some(ExtrudePayloadHeader {
         offset: record.payload_offset + 5,
         scalars: [
-            shifted_ieee_f64(&raw_scalars[0])?,
-            shifted_ieee_f64(&raw_scalars[1])?,
+            ShiftedBinary64::read(record.payload.get(5..13)?)?,
+            ShiftedBinary64::read(record.payload.get(13..21)?)?,
         ],
-        raw_scalars,
     })
 }
 
@@ -6072,17 +6057,10 @@ pub fn datum_plane_object_scalar_pairs(bytes: &[u8]) -> Vec<DatumPlaneObjectScal
             let first = offset + DISCRIMINATOR.len();
             let second = first + 9;
             (bytes.get(first + 8) == Some(&0x00)).then_some(())?;
+            let [first, second] = [first, second].map(|offset| LocatedBinary64::read(bytes, offset));
             Some(DatumPlaneObjectScalarPair {
                 offset,
-                values: [
-                    shifted_ieee_f64(bytes.get(first..first + 8)?)?,
-                    shifted_ieee_f64(bytes.get(second..second + 8)?)?,
-                ],
-                raw_values: [
-                    bytes.get(first..first + 8)?.try_into().ok()?,
-                    bytes.get(second..second + 8)?.try_into().ok()?,
-                ],
-                value_offsets: [first, second],
+                values: [first?, second?],
             })
         })
         .collect()
@@ -6145,29 +6123,12 @@ pub fn object_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
             if bytes.get(first + 8) != Some(&0x00) {
                 continue;
             }
-            let Some(raw_values) = bytes
-                .get(first..first + 8)
-                .and_then(|value| <[u8; 8]>::try_from(value).ok())
-                .zip(
-                    bytes
-                        .get(second..second + 8)
-                        .and_then(|value| <[u8; 8]>::try_from(value).ok()),
-                )
-                .map(|(first, second)| [first, second])
-            else {
-                continue;
-            };
-            let Some(values) = shifted_ieee_f64(&raw_values[0])
-                .zip(shifted_ieee_f64(&raw_values[1]))
-                .map(|(first, second)| [first, second])
-            else {
+            let [Some(first), Some(second)] = [first, second].map(|offset| LocatedBinary64::read(bytes, offset)) else {
                 continue;
             };
             pairs.push(ObjectPayloadScalarPair {
                 offset,
-                values,
-                raw_values,
-                value_offsets: [first, second],
+                values: [first, second],
                 discriminator: discriminator.to_vec(),
             });
         }
@@ -6198,29 +6159,12 @@ pub fn sketch_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
         }
         let first = offset + discriminator_len;
         let second = first + 8;
-        let Some(raw_values) = bytes
-            .get(first..first + 8)
-            .and_then(|value| <[u8; 8]>::try_from(value).ok())
-            .zip(
-                bytes
-                    .get(second..second + 8)
-                    .and_then(|value| <[u8; 8]>::try_from(value).ok()),
-            )
-            .map(|(first, second)| [first, second])
-        else {
-            continue;
-        };
-        let Some(values) = shifted_ieee_f64(&raw_values[0])
-            .zip(shifted_ieee_f64(&raw_values[1]))
-            .map(|(first, second)| [first, second])
-        else {
+        let [Some(first), Some(second)] = [first, second].map(|offset| LocatedBinary64::read(bytes, offset)) else {
             continue;
         };
         pairs.push(ObjectPayloadScalarPair {
             offset,
-            values,
-            raw_values,
-            value_offsets: [first, second],
+            values: [first, second],
             discriminator: bytes[offset..offset + discriminator_len].to_vec(),
         });
     }

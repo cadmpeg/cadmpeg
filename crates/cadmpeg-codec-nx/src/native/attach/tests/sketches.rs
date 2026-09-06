@@ -23,12 +23,17 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
             discriminator: vec![8, 2, 3, 1, 3, 1],
         },
         ordinal: 0,
-        values: [12.5, -3.0],
-        raw_values: [[0; 8]; 2],
+        values: [(12.5_f64, 20, 59), (-3.0_f64, 28, 67)].map(|(value, payload_offset, source_offset)| {
+            let mut raw = value.to_be_bytes();
+            raw[0] -= 0x10;
+            crate::native::features::FeaturePayloadBinary64Token {
+                scalar: crate::om::scalar::ShiftedBinary64::try_from(raw).unwrap(),
+                payload_offset,
+                source_offset,
+            }
+        }),
         payload_offset: 12,
-        value_payload_offsets: [20, 28],
         source_offset: 51,
-        value_source_offsets: [59, 67],
     };
     let coordinate_pairs = [&pair];
     let mut ir = CadIr::empty();

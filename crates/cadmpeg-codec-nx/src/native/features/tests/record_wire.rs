@@ -206,3 +206,24 @@ fn named_point_wire_preserves_scalar_atoms_and_frame_offsets() {
     let invalid = json.replace("1.0", "3.0");
     assert!(serde_json::from_str::<super::OffsetStoreNamedPoint>(&invalid).unwrap_err().to_string().contains("values/raw_values"));
 }
+
+#[test]
+fn binary64_pair_wire_preserves_all_payload_owner_forms() {
+    for payload in ["datum_csys_payload", "datum_plane_payload", "construction_payload", "surface_construction_payload"] {
+        let discriminator = if payload == "datum_plane_payload" {
+            ""
+        } else {
+            r#","discriminator":[8,2,3,1,3,1,192,69,4,0,128,134,2,0,3]"#
+        };
+        let json = format!(r#"{{"id":"pair","operation_label":"operation","{payload}":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"payload_offset":5,"value_payload_offsets":[20,29],"source_offset":105,"value_source_offsets":[120,129]{discriminator}}}"#);
+        let pair: super::FeaturePayloadScalarPair = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_string(&pair).unwrap(), json);
+        let invalid = json.replace("1.0", "3.0");
+        assert!(serde_json::from_str::<super::FeaturePayloadScalarPair>(&invalid).unwrap_err().to_string().contains("values/raw_values"));
+    }
+    let json = r#"{"id":"header","operation_label":"operation","scalars":[1.0,2.0],"raw_scalars":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"source_offset":100}"#;
+    let header: super::FeatureExtrudePayloadHeader = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&header).unwrap(), json);
+    let invalid = json.replace("1.0", "3.0");
+    assert!(serde_json::from_str::<super::FeatureExtrudePayloadHeader>(&invalid).unwrap_err().to_string().contains("scalars"));
+}

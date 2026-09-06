@@ -120,9 +120,9 @@ fn om_sketch_scalar_pairs_accept_the_repeated_type_frame() {
     let pairs = sketch_payload_scalar_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].offset, discriminator_offset);
-    assert_eq!(pairs[0].value_offsets, [first_offset, second_offset]);
-    assert!((pairs[0].values[0] - 10.0).abs() < EPS_SKETCH_SCALAR);
-    assert!((pairs[0].values[1] + 20.0).abs() < EPS_SKETCH_SCALAR);
+    assert_eq!(pairs[0].values.map(|value| value.offset), [first_offset, second_offset]);
+    assert!((pairs[0].values[0].scalar.value() - 10.0).abs() < EPS_SKETCH_SCALAR);
+    assert!((pairs[0].values[1].scalar.value() + 20.0).abs() < EPS_SKETCH_SCALAR);
     assert_eq!(
         pairs[0].discriminator,
         bytes[discriminator_offset..first_offset].to_vec()

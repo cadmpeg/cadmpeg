@@ -3897,8 +3897,7 @@ fn attach_sketch_graph(
         let mut pair_entity_keys = BTreeSet::new();
         let mut pair_ordinals = BTreeSet::new();
         for pair in coordinate_pairs {
-            if !pair.values.iter().all(|value| value.is_finite())
-                || !pair_ids.insert(pair.id.as_str())
+            if !pair_ids.insert(pair.id.as_str())
                 || !pair_ordinals.insert((pair.payload.id(), pair.ordinal))
             {
                 return None;

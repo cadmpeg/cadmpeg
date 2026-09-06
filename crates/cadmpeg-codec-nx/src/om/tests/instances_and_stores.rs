@@ -848,8 +848,8 @@ fn om_extrude_header_decodes_shifted_ieee_scalars() {
     };
     let header = super::extrude_payload_header(record).unwrap();
     assert_eq!(header.offset, 205);
-    assert_eq!(header.scalars, [0.04, 0.038]);
-    assert_eq!(header.raw_scalars.concat(), payload[5..21]);
+    assert_eq!(header.scalars.map(crate::om::scalar::ShiftedBinary64::value), [0.04, 0.038]);
+    assert_eq!(header.scalars.map(crate::om::scalar::ShiftedBinary64::raw).concat(), payload[5..21]);
 
     let mut invalid = payload.to_vec();
     invalid[5] = 0xf0;

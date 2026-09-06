@@ -12,7 +12,7 @@ use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLin
 use std::borrow::Cow;
 use std::num::NonZeroU8;
 use crate::om::swp104_state::Swp104StateLane;
-use crate::om::scalar::ShiftedBinary64;
+use crate::om::scalar::{LocatedBinary64, ShiftedBinary64};
 use crate::om::branch_items::BranchItems;
 use crate::om::thru_curve_state::ThruCurveBranchItems;
 use crate::om::thru_curve_controls::ThruCurveControls;
@@ -1338,6 +1338,7 @@ pub struct FeatureDatumCsysPayload {
 
 /// One exactly framed scalar pair in a reconstructed feature payload.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeaturePayloadScalarPairWire")]
 pub struct FeaturePayloadScalarPair {
     /// Globally unique scalar-pair identity.
     pub id: String,
@@ -1348,18 +1349,83 @@ pub struct FeaturePayloadScalarPair {
     pub payload: FeatureScalarPairPayload,
     /// Zero-based frame order within the payload.
     pub ordinal: u32,
-    /// Ordered finite shifted-IEEE values.
-    pub values: [f64; 2],
-    /// Exact shifted-binary64 encodings in value order.
-    pub raw_values: [[u8; 8]; 2],
+    /// Checked scalar atoms with payload and source offsets.
+    pub values: [FeaturePayloadBinary64Token; 2],
     /// Payload-relative offset of the discriminator.
     pub payload_offset: u64,
-    /// Payload-relative scalar offsets.
-    pub value_payload_offsets: [u64; 2],
     /// Absolute source offset of the discriminator.
     pub source_offset: u64,
+}
+
+#[derive(Deserialize)]
+struct FeaturePayloadScalarPairWire {
+    /// Globally unique scalar-pair identity.
+    id: String,
+    /// Owning operation label.
+    operation_label: String,
+    /// Reconstructed payload carrying the frame.
+    #[serde(flatten)]
+    payload: FeatureScalarPairPayload,
+    /// Zero-based frame order within the payload.
+    ordinal: u32,
+    /// Ordered finite shifted-IEEE values.
+    values: [f64; 2],
+    /// Exact shifted-binary64 encodings in value order.
+    raw_values: [[u8; 8]; 2],
+    /// Payload-relative offset of the discriminator.
+    payload_offset: u64,
+    /// Payload-relative scalar offsets.
+    value_payload_offsets: [u64; 2],
+    /// Absolute source offset of the discriminator.
+    source_offset: u64,
     /// Absolute source offsets of the scalar encodings.
-    pub value_source_offsets: [u64; 2],
+    value_source_offsets: [u64; 2],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FeaturePayloadBinary64Token {
+    pub scalar: ShiftedBinary64,
+    pub payload_offset: u64,
+    pub source_offset: u64,
+}
+
+fn resolved_payload_scalar_pair(
+    values: [LocatedBinary64; 2],
+    source_offset: impl Fn(usize) -> Option<u64>,
+) -> Option<[FeaturePayloadBinary64Token; 2]> {
+    let [first, second] = values.map(|value| {
+        Some(FeaturePayloadBinary64Token {
+            scalar: value.scalar,
+            payload_offset: value.offset as u64,
+            source_offset: source_offset(value.offset)?,
+        })
+    });
+    Some([first?, second?])
+}
+
+impl TryFrom<FeaturePayloadScalarPairWire> for FeaturePayloadScalarPair {
+    type Error = String;
+
+    fn try_from(wire: FeaturePayloadScalarPairWire) -> Result<Self, Self::Error> {
+        let [first, second] = std::array::from_fn::<_, 2, _>(|i| {
+            ShiftedBinary64::from_wire(wire.values[i], wire.raw_values[i])
+                .map(|scalar| FeaturePayloadBinary64Token {
+                    scalar,
+                    payload_offset: wire.value_payload_offsets[i],
+                    source_offset: wire.value_source_offsets[i],
+                })
+                .map_err(|error| format!("values/raw_values[{i}]: {error}"))
+        });
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            payload: wire.payload,
+            ordinal: wire.ordinal,
+            values: [first?, second?],
+            payload_offset: wire.payload_offset,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Payload identity and its scalar-pair branch discriminator.
@@ -1445,12 +1511,12 @@ impl Serialize for FeaturePayloadScalarPair {
         record.serialize_field("operation_label", &self.operation_label)?;
         record.serialize_field(payload_key, payload_id)?;
         record.serialize_field("ordinal", &self.ordinal)?;
-        record.serialize_field("values", &self.values)?;
-        record.serialize_field("raw_values", &self.raw_values)?;
+        record.serialize_field("values", &self.values.map(|token| token.scalar.value()))?;
+        record.serialize_field("raw_values", &self.values.map(|token| token.scalar.raw()))?;
         record.serialize_field("payload_offset", &self.payload_offset)?;
-        record.serialize_field("value_payload_offsets", &self.value_payload_offsets)?;
+        record.serialize_field("value_payload_offsets", &self.values.map(|token| token.payload_offset))?;
         record.serialize_field("source_offset", &self.source_offset)?;
-        record.serialize_field("value_source_offsets", &self.value_source_offsets)?;
+        record.serialize_field("value_source_offsets", &self.values.map(|token| token.source_offset))?;
         if let Some(discriminator) = discriminator {
             record.serialize_field("discriminator", discriminator)?;
         }
@@ -4746,17 +4812,56 @@ pub struct FeatureExtrudeProfileReference {
 
 /// Fixed shifted-IEEE scalar header from a bounded extrusion payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureExtrudePayloadHeaderWire", into = "FeatureExtrudePayloadHeaderWire")]
 pub struct FeatureExtrudePayloadHeader {
     /// Globally unique header identity.
     pub id: String,
     /// Owning `EXTRUDE` operation label.
     pub operation_label: String,
     /// Ordered finite scalar values.
-    pub scalars: [f64; 2],
-    /// Exact shifted-binary64 encodings in scalar order.
-    pub raw_scalars: [[u8; 8]; 2],
+    pub scalars: [ShiftedBinary64; 2],
     /// Absolute file offset of the first shifted-IEEE scalar.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureExtrudePayloadHeaderWire {
+    /// Globally unique header identity.
+    id: String,
+    /// Owning `EXTRUDE` operation label.
+    operation_label: String,
+    /// Ordered finite scalar values.
+    scalars: [f64; 2],
+    /// Exact shifted-binary64 encodings in scalar order.
+    raw_scalars: [[u8; 8]; 2],
+    /// Absolute file offset of the first shifted-IEEE scalar.
+    source_offset: u64,
+}
+
+impl From<FeatureExtrudePayloadHeader> for FeatureExtrudePayloadHeaderWire {
+    fn from(value: FeatureExtrudePayloadHeader) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            scalars: value.scalars.map(ShiftedBinary64::value),
+            raw_scalars: value.scalars.map(ShiftedBinary64::raw),
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureExtrudePayloadHeaderWire> for FeatureExtrudePayloadHeader {
+    type Error = &'static str;
+
+    fn try_from(wire: FeatureExtrudePayloadHeaderWire) -> Result<Self, Self::Error> {
+        let [first, second] = std::array::from_fn::<_, 2, _>(|i| ShiftedBinary64::from_wire(wire.scalars[i], wire.raw_scalars[i]));
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            scalars: [first?, second?],
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Exact terminal discriminator lane from a bounded operation payload.
@@ -8180,15 +8285,9 @@ pub fn feature_datum_csys_payload_scalar_pairs(
                     discriminator: pair.discriminator,
                 },
                 ordinal: ordinal as u32,
-                values: pair.values,
-                raw_values: pair.raw_values,
+                values: resolved_payload_scalar_pair(pair.values, source_offset)?,
                 payload_offset: pair.offset as u64,
-                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
                 source_offset: source_offset(pair.offset)?,
-                value_source_offsets: [
-                    source_offset(pair.value_offsets[0])?,
-                    source_offset(pair.value_offsets[1])?,
-                ],
             })
         },
     )
@@ -8332,15 +8431,9 @@ pub fn feature_datum_plane_payload_scalar_pairs(
                     datum_plane_payload: payload.id.clone(),
                 },
                 ordinal: ordinal as u32,
-                values: pair.values,
-                raw_values: pair.raw_values,
+                values: resolved_payload_scalar_pair(pair.values, source_offset)?,
                 payload_offset: pair.offset as u64,
-                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
                 source_offset: source_offset(pair.offset)?,
-                value_source_offsets: [
-                    source_offset(pair.value_offsets[0])?,
-                    source_offset(pair.value_offsets[1])?,
-                ],
             })
         },
     )
@@ -8619,15 +8712,9 @@ pub fn feature_sketch_payload_coordinate_pairs(
                     discriminator: pair.discriminator,
                 },
                 ordinal: ordinal as u32,
-                values: pair.values,
-                raw_values: pair.raw_values,
+                values: resolved_payload_scalar_pair(pair.values, source_offset)?,
                 payload_offset: pair.offset as u64,
-                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
                 source_offset: source_offset(pair.offset)?,
-                value_source_offsets: [
-                    source_offset(pair.value_offsets[0])?,
-                    source_offset(pair.value_offsets[1])?,
-                ],
             })
         },
     )
@@ -11087,30 +11174,14 @@ pub fn feature_surface_construction_scalar_pairs(
                             discriminator: pair.discriminator,
                         },
                         ordinal: ordinal as u32,
-                        values: pair.values,
-                        raw_values: pair.raw_values,
+                        values: resolved_payload_scalar_pair(pair.values, |offset| joined_payload_source_offset(offset as u64, &starts, &lengths, &sources))?,
                         payload_offset: pair.offset as u64,
-                        value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
                         source_offset: joined_payload_source_offset(
                             pair.offset as u64,
                             &starts,
                             &lengths,
                             &sources,
                         )?,
-                        value_source_offsets: [
-                            joined_payload_source_offset(
-                                pair.value_offsets[0] as u64,
-                                &starts,
-                                &lengths,
-                                &sources,
-                            )?,
-                            joined_payload_source_offset(
-                                pair.value_offsets[1] as u64,
-                                &starts,
-                                &lengths,
-                                &sources,
-                            )?,
-                        ],
                     })
                 })
                 .collect()
@@ -11257,7 +11328,6 @@ pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtr
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 scalars: header.scalars,
-                raw_scalars: header.raw_scalars,
                 source_offset: entry_offset + header.offset as u64,
             });
         },
