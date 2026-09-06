@@ -1067,7 +1067,6 @@ fn a8_curve_parser_accepts_frame_bounded_site_count() {
         &a8_freeform_curve_stream_with_count(8193),
     );
     assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].knots().len(), 8193);
     assert_eq!(curves[0].sites.len(), 8193);
 }
 

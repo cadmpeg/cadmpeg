@@ -852,10 +852,6 @@ pub struct A8FreeformCurve {
 impl A8FreeformCurve {
     pub const DEGREE: u32 = 5;
 
-    pub fn knots(&self) -> Vec<f64> {
-        self.sites.iter().map(|site| site.knot).collect()
-    }
-
     pub fn multiplicities(&self) -> Vec<u32> {
         self.sites.iter().map(|site| site.multiplicity).collect()
     }
