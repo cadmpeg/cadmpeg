@@ -2781,7 +2781,12 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
-            let group = match payload.group {
+            let crate::native::features::FeatureConstructionOwner::Fset { group, .. } =
+                &payload.owner
+            else {
+                continue;
+            };
+            let group = match group {
                 crate::native::features::FeatureFsetReferenceGroup::First => "first",
                 crate::native::features::FeatureFsetReferenceGroup::Second => "second",
             };
@@ -3245,7 +3250,11 @@ fn attach_feature_operations(
                     block_construction_payloads_by_operation
                         .get(label.id.as_str())
                         .is_some_and(|payloads| {
-                            payloads.len() == 1 && payloads[0].construction == construction.id
+                            matches!(payloads.as_slice(), [payload]
+                                if matches!(&payload.owner,
+                                    crate::native::features::FeatureConstructionOwner::Block {
+                                        construction: owner,
+                                    } if owner == &construction.id))
                         })
                 }),
             outputs: &outputs,

@@ -58,3 +58,29 @@ fn scalar_pair_preserves_payload_key_and_discriminator_presence() {
         assert_eq!(serde_json::to_string(&pair).unwrap(), json);
     }
 }
+
+#[test]
+fn construction_payload_preserves_each_ownership_form() {
+    for owner in [
+        r#""construction_inputs":"inputs""#,
+        r#""operation_kind":"CPROJ","construction_references":["reference"]"#,
+        r#""operation_kind":"CPROJ_CMB","construction_references":["reference"]"#,
+        r#""reference_graph":"graph","group":"first""#,
+        r#""reference_graph":"graph","group":"second""#,
+        r#""operation_kind":"Pattern Feature","reference_layout":"canonical_graph","construction_references":["reference"]"#,
+        r#""operation_kind":"Pattern Geometry","reference_layout":"compact_graph","construction_references":["reference"]"#,
+        r#""index_lane":"lane""#,
+        r#""construction":"construction""#,
+    ] {
+        let json = format!(r#"{{"id":"payload","operation_label":"operation",{owner},"data_blocks":["block"],"byte_len":8,"sha256":"hash","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10]}}"#);
+        let payload: super::FeatureConstructionPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_string(&payload).unwrap(), json);
+    }
+}
+
+#[test]
+fn construction_payload_rejects_untyped_operation_kinds() {
+    let json = r#"{"id":"payload","operation_label":"operation","operation_kind":"other","construction_references":[],"data_blocks":[],"byte_len":0,"sha256":"hash","block_payload_offsets":[],"block_byte_lengths":[],"block_source_offsets":[]}"#;
+    let error = serde_json::from_str::<super::FeatureConstructionPayload>(json).unwrap_err();
+    assert!(error.to_string().contains("operation_kind"));
+}

@@ -1744,16 +1744,17 @@ pub struct FeatureSketchConstructionInputs {
     pub terminal_data_block: String,
 }
 
-/// Exact logical sketch payload reconstructed from its ordered store blocks.
+/// Exact logical payload reconstructed from ordered feature-construction blocks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSketchConstructionPayload {
+pub struct FeatureConstructionPayload {
     /// Globally unique reconstructed-payload identity.
     pub id: String,
-    /// Owning `SKETCH` operation label.
+    /// Owning operation label.
     pub operation_label: String,
-    /// Complete construction-input record defining block order.
-    pub construction_inputs: String,
-    /// Ordered leading member blocks followed by the separated terminal block.
+    /// Construction records selecting the ordered source blocks.
+    #[serde(flatten)]
+    pub owner: FeatureConstructionOwner,
+    /// Ordered source blocks.
     pub data_blocks: Vec<String>,
     /// Exact concatenated payload length.
     pub byte_len: u64,
@@ -1765,6 +1766,53 @@ pub struct FeatureSketchConstructionPayload {
     pub block_byte_lengths: Vec<u64>,
     /// Absolute file offset of each source block.
     pub block_source_offsets: Vec<u64>,
+}
+
+/// Construction-specific ownership fields of a reconstructed payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    untagged,
+    expecting = "construction ownership fields with a valid operation_kind for the selected grammar"
+)]
+pub enum FeatureConstructionOwner {
+    Sketch {
+        construction_inputs: String,
+    },
+    ProjectedCurve {
+        operation_kind: FeatureProjectedCurveKind,
+        construction_references: Vec<String>,
+    },
+    Fset {
+        reference_graph: String,
+        group: FeatureFsetReferenceGroup,
+    },
+    Pattern {
+        operation_kind: FeaturePatternKind,
+        reference_layout: FeaturePatternReferenceLayout,
+        construction_references: Vec<String>,
+    },
+    Draft {
+        index_lane: String,
+    },
+    Block {
+        construction: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FeatureProjectedCurveKind {
+    #[serde(rename = "CPROJ")]
+    Projected,
+    #[serde(rename = "CPROJ_CMB")]
+    Combined,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FeaturePatternKind {
+    #[serde(rename = "Pattern Feature")]
+    Feature,
+    #[serde(rename = "Pattern Geometry")]
+    Geometry,
 }
 
 /// One exactly framed scaled shifted-binary64 pair in a reconstructed sketch payload.
@@ -2351,31 +2399,6 @@ pub struct FeatureProjectedCurveReference {
     pub source_offset: u64,
 }
 
-/// Exact logical payload reconstructed from a projected-curve reference field.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureProjectedCurveConstructionPayload {
-    /// Globally unique reconstructed-payload identity.
-    pub id: String,
-    /// Owning `CPROJ` or `CPROJ_CMB` operation label.
-    pub operation_label: String,
-    /// Exact operation family selecting the reference grammar.
-    pub operation_kind: String,
-    /// Ordered non-repeated construction-reference records.
-    pub construction_references: Vec<String>,
-    /// Ordered source blocks.
-    pub data_blocks: Vec<String>,
-    /// Exact concatenated payload length.
-    pub byte_len: u64,
-    /// SHA-256 of the concatenated bytes.
-    pub sha256: String,
-    /// Payload-relative block starts.
-    pub block_payload_offsets: Vec<u64>,
-    /// Exact source-block lengths.
-    pub block_byte_lengths: Vec<u64>,
-    /// Absolute source-block offsets.
-    pub block_source_offsets: Vec<u64>,
-}
-
 /// Canonical printable string in a reconstructed projected-curve payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureProjectedCurveConstructionString {
@@ -2432,31 +2455,6 @@ pub enum FeatureFsetReferenceGroup {
     First,
     /// Three-reference group following the angle-bracket frame.
     Second,
-}
-
-/// Exact logical payload reconstructed from one `FSET` reference group.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureFsetConstructionPayload {
-    /// Globally unique reconstructed-payload identity.
-    pub id: String,
-    /// Owning `FSET` operation label.
-    pub operation_label: String,
-    /// Complete reference graph selecting the source blocks.
-    pub reference_graph: String,
-    /// Serialized group selecting these blocks.
-    pub group: FeatureFsetReferenceGroup,
-    /// Ordered source blocks.
-    pub data_blocks: Vec<String>,
-    /// Exact concatenated payload length.
-    pub byte_len: u64,
-    /// SHA-256 of the concatenated bytes.
-    pub sha256: String,
-    /// Payload-relative block starts.
-    pub block_payload_offsets: Vec<u64>,
-    /// Exact source-block lengths.
-    pub block_byte_lengths: Vec<u64>,
-    /// Absolute source-block offsets.
-    pub block_source_offsets: Vec<u64>,
 }
 
 /// Exact counted nullable reference field carried by a `DELETE` payload.
@@ -2544,33 +2542,6 @@ pub struct FeaturePatternCountedReferenceLane {
     pub source_offset: u64,
     /// Absolute source offsets of the object-index tokens.
     pub object_index_source_offsets: Vec<u64>,
-}
-
-/// Exact logical payload reconstructed from an ordered pattern-reference graph.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeaturePatternConstructionPayload {
-    /// Globally unique reconstructed-payload identity.
-    pub id: String,
-    /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
-    pub operation_label: String,
-    /// Exact operation family selecting the graph grammar.
-    pub operation_kind: String,
-    /// Exact byte layout shared by the construction-reference graph.
-    pub reference_layout: FeaturePatternReferenceLayout,
-    /// Ordered non-null construction-reference records.
-    pub construction_references: Vec<String>,
-    /// Ordered source blocks.
-    pub data_blocks: Vec<String>,
-    /// Exact concatenated payload length.
-    pub byte_len: u64,
-    /// SHA-256 of the concatenated bytes.
-    pub sha256: String,
-    /// Payload-relative block starts.
-    pub block_payload_offsets: Vec<u64>,
-    /// Exact source-block lengths.
-    pub block_byte_lengths: Vec<u64>,
-    /// Absolute source-block offsets.
-    pub block_source_offsets: Vec<u64>,
 }
 
 /// Byte layout selected by a pattern construction-reference field.
@@ -3441,29 +3412,6 @@ impl TryFrom<FeatureDraftConstructionIndexLaneWire> for FeatureDraftConstruction
             indices,
         })
     }
-}
-
-/// Exact logical payload reconstructed from a resolved draft index lane.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureDraftConstructionPayload {
-    /// Globally unique reconstructed-payload identity.
-    pub id: String,
-    /// Owning `DRAFT` operation label.
-    pub operation_label: String,
-    /// Counted index lane defining the ordered block sequence.
-    pub index_lane: String,
-    /// Ordered source blocks.
-    pub data_blocks: Vec<String>,
-    /// Exact concatenated payload length.
-    pub byte_len: u64,
-    /// SHA-256 of the concatenated bytes.
-    pub sha256: String,
-    /// Payload-relative block starts.
-    pub block_payload_offsets: Vec<u64>,
-    /// Exact source-block lengths.
-    pub block_byte_lengths: Vec<u64>,
-    /// Absolute source-block offsets.
-    pub block_source_offsets: Vec<u64>,
 }
 
 /// Exact logical payload reconstructed from the ordered draft construction graph.
@@ -4625,29 +4573,6 @@ pub struct FeatureBlockConstruction {
     pub terminal_reference: String,
     /// Uniquely resolved terminal block.
     pub terminal_data_block: String,
-}
-
-/// Exact logical payload reconstructed from one complete `BLOCK` construction.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureBlockConstructionPayload {
-    /// Globally unique reconstructed-payload identity.
-    pub id: String,
-    /// Owning `BLOCK` operation label.
-    pub operation_label: String,
-    /// Construction defining serialized block order.
-    pub construction: String,
-    /// Ordered member blocks followed by the terminal block.
-    pub data_blocks: Vec<String>,
-    /// Exact concatenated payload length.
-    pub byte_len: u64,
-    /// SHA-256 of the concatenated bytes.
-    pub sha256: String,
-    /// Payload-relative source-block starts.
-    pub block_payload_offsets: Vec<u64>,
-    /// Exact source-block lengths.
-    pub block_byte_lengths: Vec<u64>,
-    /// Absolute source-block offsets.
-    pub block_source_offsets: Vec<u64>,
 }
 
 /// One complete compact-code name field in a reconstructed `BLOCK` payload.
@@ -7710,7 +7635,7 @@ pub fn feature_sketch_construction_inputs(
 pub fn feature_sketch_construction_payloads(
     container: &Container,
     constructions: &[FeatureSketchConstructionInputs],
-) -> Vec<FeatureSketchConstructionPayload> {
+) -> Vec<FeatureConstructionPayload> {
     let blocks = offset_data_block_bytes(container);
 
     constructions
@@ -7720,14 +7645,16 @@ pub fn feature_sketch_construction_payloads(
             data_blocks.push(construction.terminal_data_block.clone());
             let (payload, block_payload_offsets, block_byte_lengths, block_source_offsets) =
                 join_data_block_bytes(&data_blocks, &blocks)?;
-            Some(FeatureSketchConstructionPayload {
+            Some(FeatureConstructionPayload {
                 id: construction.id.replacen(
                     "sketch-construction-inputs",
                     "sketch-construction-payload",
                     1,
                 ),
                 operation_label: construction.operation_label.clone(),
-                construction_inputs: construction.id.clone(),
+                owner: FeatureConstructionOwner::Sketch {
+                    construction_inputs: construction.id.clone(),
+                },
                 data_blocks,
                 byte_len: payload.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(&payload),
@@ -7742,7 +7669,7 @@ pub fn feature_sketch_construction_payloads(
 /// Decode exact coordinate-pair frames from reconstructed sketch payloads.
 pub fn feature_sketch_payload_coordinate_pairs(
     container: &Container,
-    payloads: &[FeatureSketchConstructionPayload],
+    payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeaturePayloadScalarPair> {
     construction_payload_frames(
         container,
@@ -7775,7 +7702,7 @@ pub fn feature_sketch_payload_coordinate_pairs(
 /// Decode exact scaled shifted-binary64 pair frames from reconstructed sketch payloads.
 pub fn feature_sketch_payload_fixed_pairs(
     container: &Container,
-    payloads: &[FeatureSketchConstructionPayload],
+    payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeatureSketchPayloadFixedPair> {
     construction_payload_frames(
         container,
@@ -7806,7 +7733,7 @@ pub fn feature_sketch_payload_fixed_pairs(
 /// Decode exact mixed scaled shifted-binary64/binary32 pair frames from reconstructed sketch payloads.
 pub fn feature_sketch_payload_mixed_pairs(
     container: &Container,
-    payloads: &[FeatureSketchConstructionPayload],
+    payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeatureSketchPayloadMixedPair> {
     construction_payload_frames(
         container,
@@ -7948,7 +7875,7 @@ pub fn feature_sketch_payload_scalars(
 /// Decode exact scalar-vector frames across reconstructed sketch payloads.
 pub fn feature_sketch_payload_scalar_lanes(
     container: &Container,
-    payloads: &[FeatureSketchConstructionPayload],
+    payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeatureSketchPayloadScalarLane> {
     construction_payload_frames(
         container,
@@ -8052,7 +7979,7 @@ pub fn feature_sketch_payload_names(
 
 /// Join complete name-delimited intervals to their framed scalar fields.
 pub fn feature_sketch_payload_named_records(
-    payloads: &[FeatureSketchConstructionPayload],
+    payloads: &[FeatureConstructionPayload],
     names: &[FeatureSketchPayloadName],
     scalars: &[FeaturePayloadScalar],
     fixed_pairs: &[FeatureSketchPayloadFixedPair],
@@ -8884,7 +8811,7 @@ pub fn feature_fset_reference_graphs(container: &Container) -> Vec<FeatureFsetRe
 pub fn feature_fset_construction_payloads(
     container: &Container,
     graphs: &[FeatureFsetReferenceGraph],
-) -> Vec<FeatureFsetConstructionPayload> {
+) -> Vec<FeatureConstructionPayload> {
     let blocks = offset_data_block_bytes(container);
     graphs
         .iter()
@@ -8920,13 +8847,15 @@ pub fn feature_fset_construction_payloads(
                 let operation_key = graph
                     .operation_label
                     .strip_prefix("nx:feature-history:operation-label#")?;
-                Some(FeatureFsetConstructionPayload {
+                Some(FeatureConstructionPayload {
                     id: format!(
                         "nx:feature-history:fset-construction-payload#{operation_key}-{group_name}"
                     ),
                     operation_label: graph.operation_label.clone(),
-                    reference_graph: graph.id.clone(),
-                    group,
+                    owner: FeatureConstructionOwner::Fset {
+                        reference_graph: graph.id.clone(),
+                        group,
+                    },
                     data_blocks,
                     byte_len: bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
@@ -9029,7 +8958,7 @@ pub fn feature_projected_curve_construction_payloads(
     container: &Container,
     labels: &[FeatureOperationLabel],
     references: &[FeatureProjectedCurveReference],
-) -> Vec<FeatureProjectedCurveConstructionPayload> {
+) -> Vec<FeatureConstructionPayload> {
     let blocks = offset_data_block_bytes(container);
     let kinds = labels
         .iter()
@@ -9041,10 +8970,9 @@ pub fn feature_projected_curve_construction_payloads(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter_map(|operation_label| {
-            let operation_kind = *kinds.get(operation_label)?;
-            let expected_len = match operation_kind {
-                "CPROJ" => 3,
-                "CPROJ_CMB" => 8,
+            let (operation_kind, expected_len) = match *kinds.get(operation_label)? {
+                "CPROJ" => (FeatureProjectedCurveKind::Projected, 3),
+                "CPROJ_CMB" => (FeatureProjectedCurveKind::Combined, 8),
                 _ => return None,
             };
             let mut field = references
@@ -9074,16 +9002,18 @@ pub fn feature_projected_curve_construction_payloads(
             }
             let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
             let (_, operation_key) = operation_label.rsplit_once('#')?;
-            Some(FeatureProjectedCurveConstructionPayload {
+            Some(FeatureConstructionPayload {
                 id: format!(
                     "nx:feature-history:projected-curve-construction-payload#{operation_key}"
                 ),
                 operation_label: operation_label.to_string(),
-                operation_kind: operation_kind.to_string(),
-                construction_references: field
-                    .iter()
-                    .map(|reference| reference.id.clone())
-                    .collect(),
+                owner: FeatureConstructionOwner::ProjectedCurve {
+                    operation_kind,
+                    construction_references: field
+                        .iter()
+                        .map(|reference| reference.id.clone())
+                        .collect(),
+                },
                 data_blocks,
                 byte_len: bytes.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
@@ -9098,7 +9028,7 @@ pub fn feature_projected_curve_construction_payloads(
 /// Decode canonical printable strings from reconstructed projected-curve payloads.
 pub fn feature_projected_curve_construction_strings(
     container: &Container,
-    payloads: &[FeatureProjectedCurveConstructionPayload],
+    payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeatureProjectedCurveConstructionString> {
     let blocks = offset_data_block_bytes(container);
     payloads
@@ -9230,7 +9160,7 @@ pub fn feature_pattern_construction_payloads(
     container: &Container,
     labels: &[FeatureOperationLabel],
     references: &[FeaturePatternReference],
-) -> Vec<FeaturePatternConstructionPayload> {
+) -> Vec<FeatureConstructionPayload> {
     let blocks = offset_data_block_bytes(container);
     let kinds = labels
         .iter()
@@ -9242,10 +9172,11 @@ pub fn feature_pattern_construction_payloads(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter_map(|operation_label| {
-            let operation_kind = *kinds.get(operation_label)?;
-            if !matches!(operation_kind, "Pattern Feature" | "Pattern Geometry") {
-                return None;
-            }
+            let operation_kind = match *kinds.get(operation_label)? {
+                "Pattern Feature" => FeaturePatternKind::Feature,
+                "Pattern Geometry" => FeaturePatternKind::Geometry,
+                _ => return None,
+            };
             let mut graph = references
                 .iter()
                 .filter(|reference| reference.operation_label == operation_label)
@@ -9276,15 +9207,17 @@ pub fn feature_pattern_construction_payloads(
             }
             let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
             let (_, operation_key) = operation_label.rsplit_once('#')?;
-            Some(FeaturePatternConstructionPayload {
+            Some(FeatureConstructionPayload {
                 id: format!("nx:feature-history:pattern-construction-payload#{operation_key}"),
                 operation_label: operation_label.to_string(),
-                operation_kind: operation_kind.to_string(),
-                reference_layout: graph[0].layout,
-                construction_references: graph
-                    .iter()
-                    .map(|reference| reference.id.clone())
-                    .collect(),
+                owner: FeatureConstructionOwner::Pattern {
+                    operation_kind,
+                    reference_layout: graph[0].layout,
+                    construction_references: graph
+                        .iter()
+                        .map(|reference| reference.id.clone())
+                        .collect(),
+                },
                 data_blocks,
                 byte_len: bytes.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
@@ -9299,7 +9232,7 @@ pub fn feature_pattern_construction_payloads(
 /// Decode canonical printable strings from reconstructed pattern payloads.
 pub fn feature_pattern_construction_strings(
     container: &Container,
-    payloads: &[FeaturePatternConstructionPayload],
+    payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeaturePatternConstructionString> {
     let blocks = offset_data_block_bytes(container);
     payloads
@@ -9338,7 +9271,7 @@ pub fn feature_pattern_construction_strings(
 /// Decode complete signed Q1.55 lanes from reconstructed pattern payloads.
 pub fn feature_pattern_construction_fixed_lanes(
     container: &Container,
-    payloads: &[FeaturePatternConstructionPayload],
+    payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeaturePatternConstructionFixedLane> {
     let blocks = offset_data_block_bytes(container);
     payloads
@@ -9715,7 +9648,7 @@ pub fn feature_draft_construction_index_lanes(
 pub fn feature_draft_construction_payloads(
     container: &Container,
     lanes: &[FeatureDraftConstructionIndexLane],
-) -> Vec<FeatureDraftConstructionPayload> {
+) -> Vec<FeatureConstructionPayload> {
     let blocks = offset_data_block_bytes(container);
     lanes
         .iter()
@@ -9729,14 +9662,16 @@ pub fn feature_draft_construction_payloads(
                 .collect::<Vec<_>>();
             let (bytes, block_payload_offsets, block_byte_lengths, block_source_offsets) =
                 join_data_block_bytes(&data_blocks, &blocks)?;
-            Some(FeatureDraftConstructionPayload {
+            Some(FeatureConstructionPayload {
                 id: lane.id.replacen(
                     "draft-construction-index-lane#",
                     "draft-construction-payload#",
                     1,
                 ),
                 operation_label: lane.operation_label.clone(),
-                index_lane: lane.id.clone(),
+                owner: FeatureConstructionOwner::Draft {
+                    index_lane: lane.id.clone(),
+                },
                 data_blocks,
                 byte_len: bytes.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
@@ -9962,7 +9897,7 @@ pub fn feature_draft_construction_graph_strings(
 /// Decode complete identity frames from reconstructed draft construction payloads.
 pub fn feature_draft_construction_identity_frames(
     container: &Container,
-    payloads: &[FeatureDraftConstructionPayload],
+    payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeatureDraftConstructionIdentityFrame> {
     let blocks = offset_data_block_bytes(container);
     payloads
@@ -11079,7 +11014,7 @@ pub fn feature_block_constructions(
 pub fn feature_block_construction_payloads(
     container: &Container,
     constructions: &[FeatureBlockConstruction],
-) -> Vec<FeatureBlockConstructionPayload> {
+) -> Vec<FeatureConstructionPayload> {
     let blocks = offset_data_block_bytes(container);
     constructions
         .iter()
@@ -11088,12 +11023,14 @@ pub fn feature_block_construction_payloads(
             data_blocks.push(construction.terminal_data_block.clone());
             let (bytes, block_payload_offsets, block_byte_lengths, block_source_offsets) =
                 join_data_block_bytes(&data_blocks, &blocks)?;
-            Some(FeatureBlockConstructionPayload {
+            Some(FeatureConstructionPayload {
                 id: construction
                     .id
                     .replacen("block-construction", "block-construction-payload", 1),
                 operation_label: construction.operation_label.clone(),
-                construction: construction.id.clone(),
+                owner: FeatureConstructionOwner::Block {
+                    construction: construction.id.clone(),
+                },
                 data_blocks,
                 byte_len: bytes.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
@@ -11108,7 +11045,7 @@ pub fn feature_block_construction_payloads(
 /// Decode exact framed scalar fields across reconstructed `BLOCK` payloads.
 pub fn feature_block_payload_scalars(
     container: &Container,
-    payloads: &[FeatureBlockConstructionPayload],
+    payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeaturePayloadScalar> {
     let blocks = offset_data_block_bytes(container);
     payloads
@@ -11151,7 +11088,7 @@ pub fn feature_block_payload_scalars(
 /// Decode exact compact-code name fields across reconstructed `BLOCK` payloads.
 pub fn feature_block_payload_names(
     container: &Container,
-    payloads: &[FeatureBlockConstructionPayload],
+    payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeatureBlockPayloadName> {
     let blocks = offset_data_block_bytes(container);
     payloads
@@ -11200,7 +11137,7 @@ pub fn feature_block_payload_names(
 
 /// Join complete `BLOCK` payload names to scalar fields in their intervals.
 pub fn feature_block_payload_named_records(
-    payloads: &[FeatureBlockConstructionPayload],
+    payloads: &[FeatureConstructionPayload],
     names: &[FeatureBlockPayloadName],
     scalars: &[FeaturePayloadScalar],
 ) -> Vec<FeatureBlockPayloadNamedRecord> {

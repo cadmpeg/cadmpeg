@@ -4,12 +4,14 @@ use super::*;
 fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     use super::super::{
         feature_sketch_fixed_points, feature_sketch_payload_named_records, FeaturePayloadTypeCode,
-        FeatureSketchConstructionPayload, FeatureSketchPayloadFixedPair, FeatureSketchPayloadName,
+        FeatureConstructionPayload, FeatureSketchPayloadFixedPair, FeatureSketchPayloadName,
     };
-    let payload = FeatureSketchConstructionPayload {
+    let payload = FeatureConstructionPayload {
         id: "payload".to_string(),
         operation_label: "sketch".to_string(),
-        construction_inputs: "inputs".to_string(),
+        owner: crate::native::features::FeatureConstructionOwner::Sketch {
+            construction_inputs: "inputs".to_string(),
+        },
         data_blocks: vec!["block".to_string()],
         byte_len: 100,
         sha256: "00".repeat(32),
