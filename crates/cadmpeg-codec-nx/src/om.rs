@@ -525,8 +525,13 @@ pub struct NumericExpression<'a> {
     pub unit: ExpressionUnit,
     /// Exact expression text following the serialized name separator.
     pub expression: &'a str,
+}
+
+impl NumericExpression<'_> {
     /// Finite value when the expression is context-free arithmetic.
-    pub value: Option<f64>,
+    pub(crate) fn constant_value(&self) -> Option<f64> {
+        evaluate_constant_expression(self.expression)
+    }
 }
 
 /// One validated external entity-index/object-id-table pair.
@@ -6135,14 +6140,12 @@ fn numeric_expression_at(
     if !comment.is_empty() && !numeric_expression_comment_is_valid(comment) {
         return None;
     }
-    let value = evaluate_constant_expression(value_text);
     Some(NumericExpression {
         object_id,
         offset: base_offset + relative,
         name: ParameterName::new(name),
         unit,
         expression: value_text,
-        value,
     })
 }
 

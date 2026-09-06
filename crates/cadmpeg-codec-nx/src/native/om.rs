@@ -4236,6 +4236,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                     };
                     Some(declaration.id.clone())
                 });
+            let value = expression.constant_value();
             expressions.push(Expression {
                 id: format!("nx:om-entry-{entry_index}:expression#{}", expression.offset),
                 owner: indexed_record
@@ -4249,7 +4250,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                     crate::om::ExpressionUnit::Native(unit) => ExpressionUnit::Native(unit),
                 },
                 expression: expression.expression.to_string(),
-                value: expression.value,
+                value,
                 source_entry: entry.name.clone(),
                 source_table: format!("nx:om-entry-{entry_index}:expression-table#{table_offset}"),
                 source_offset: entry_offset + expression.offset as u64,
@@ -5399,7 +5400,7 @@ mod tests {
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].name.as_str(), "p9");
         assert_eq!(expressions[0].expression, "p2 * 2 + p7_radius");
-        assert_eq!(expressions[0].value, None);
+        assert_eq!(expressions[0].constant_value(), None);
         assert_eq!(
             super::expression_parameter_names(expressions[0].expression),
             vec!["p2", "p7_radius"]
