@@ -4,12 +4,15 @@ use super::super::*;
 fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
     use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
     use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane;
-    use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockReferences;
     use crate::native::features::holes::FeatureSimpleHoleTemplate;
     use crate::native::features::holes::SimpleHoleEndTreatment;
     use crate::native::features::holes::SimpleHoleExtent;
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
+    use crate::native::features::holes::{
+        FeatureSimpleHoleRepeatedScalarLaneBlockReferences, SimpleHoleBlockReference,
+        SimpleHoleReferencePair,
+    };
     let operation = "nx:feature-history:operation-label#1-4";
     let template = FeatureSimpleHoleTemplate {
         id: "template".to_string(),
@@ -39,17 +42,45 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
     let blocks = FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
         id: "blocks".to_string(),
         operation_label: operation.to_string(),
-        first_data_blocks: ["block#231".to_string(), "block#232".to_string()],
-        second_data_blocks: ["block#233".to_string(), "block#234".to_string()],
-        first_reference_prefix: None,
-        second_reference_prefix: None,
-        first_reference_offsets: [20, 22],
-        second_reference_offsets: [40, 42],
+        first: SimpleHoleReferencePair {
+            references: [
+                SimpleHoleBlockReference {
+                    data_block: "block#231".into(),
+                    source_offset: 20,
+                },
+                SimpleHoleBlockReference {
+                    data_block: "block#232".into(),
+                    source_offset: 22,
+                },
+            ],
+            wrapped: false,
+        },
+        second: SimpleHoleReferencePair {
+            references: [
+                SimpleHoleBlockReference {
+                    data_block: "block#233".into(),
+                    source_offset: 40,
+                },
+                SimpleHoleBlockReference {
+                    data_block: "block#234".into(),
+                    source_offset: 42,
+                },
+            ],
+            wrapped: false,
+        },
     };
     let group = FeatureSimpleHoleConstructionGroup {
         id: "group".into(),
-        first_data_blocks: blocks.first_data_blocks.clone(),
-        second_data_blocks: blocks.second_data_blocks.clone(),
+        first_data_blocks: blocks
+            .first
+            .references
+            .each_ref()
+            .map(|reference| reference.data_block.clone()),
+        second_data_blocks: blocks
+            .second
+            .references
+            .each_ref()
+            .map(|reference| reference.data_block.clone()),
         members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
             crate::native::features::holes::FeatureSimpleHoleConstructionMember {
                 operation_label: operation.into(),

@@ -220,25 +220,142 @@ impl TryFrom<FeatureSimpleHoleRepeatedScalarLaneWire> for FeatureSimpleHoleRepea
 
 /// Offset-store blocks linked after both repeated scalar-lane witnesses.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire",
+    into = "FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire"
+)]
 pub struct FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
-    /// Globally unique reference-lane identity.
     pub id: String,
-    /// Owning `SIMPLE HOLE` operation label.
     pub operation_label: String,
+    pub first: SimpleHoleReferencePair,
+    pub second: SimpleHoleReferencePair,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SimpleHoleReferencePair {
+    pub references: [SimpleHoleBlockReference; 2],
+    pub wrapped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SimpleHoleBlockReference {
+    pub data_block: String,
+    pub source_offset: u64,
+}
+
+/// Offset-store blocks linked after both repeated scalar-lane witnesses.
+#[derive(Serialize, Deserialize)]
+struct FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire {
+    /// Globally unique reference-lane identity.
+    id: String,
+    /// Owning `SIMPLE HOLE` operation label.
+    operation_label: String,
     /// Ordered blocks following the first scalar pair.
-    pub first_data_blocks: [String; 2],
+    first_data_blocks: [String; 2],
     /// Ordered blocks following the repeated scalar lane.
-    pub second_data_blocks: [String; 2],
+    second_data_blocks: [String; 2],
     /// Exact optional wrapper before the first reference pair.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub first_reference_prefix: Option<[u8; 8]>,
+    first_reference_prefix: Option<[u8; 8]>,
     /// Exact optional wrapper before the repeated reference pair.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub second_reference_prefix: Option<[u8; 8]>,
+    second_reference_prefix: Option<[u8; 8]>,
     /// Absolute offsets of the first pair of tagged-index tokens.
-    pub first_reference_offsets: [u64; 2],
+    first_reference_offsets: [u64; 2],
     /// Absolute offsets of the repeated pair of tagged-index tokens.
-    pub second_reference_offsets: [u64; 2],
+    second_reference_offsets: [u64; 2],
+}
+
+impl From<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>
+    for FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire
+{
+    fn from(record: FeatureSimpleHoleRepeatedScalarLaneBlockReferences) -> Self {
+        Self {
+            id: record.id,
+            operation_label: record.operation_label,
+            first_reference_offsets: record
+                .first
+                .references
+                .each_ref()
+                .map(|reference| reference.source_offset),
+            second_reference_offsets: record
+                .second
+                .references
+                .each_ref()
+                .map(|reference| reference.source_offset),
+            first_data_blocks: record
+                .first
+                .references
+                .map(|reference| reference.data_block),
+            second_data_blocks: record
+                .second
+                .references
+                .map(|reference| reference.data_block),
+            first_reference_prefix: record
+                .first
+                .wrapped
+                .then_some(crate::om::simple_hole_references::FIRST_PREFIX),
+            second_reference_prefix: record
+                .second
+                .wrapped
+                .then_some(crate::om::simple_hole_references::SECOND_PREFIX),
+        }
+    }
+}
+
+impl TryFrom<FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire>
+    for FeatureSimpleHoleRepeatedScalarLaneBlockReferences
+{
+    type Error = String;
+
+    fn try_from(
+        wire: FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire,
+    ) -> Result<Self, Self::Error> {
+        if wire
+            .first_reference_prefix
+            .is_some_and(|prefix| prefix != crate::om::simple_hole_references::FIRST_PREFIX)
+        {
+            return Err("first_reference_prefix: invalid first-witness wrapper".into());
+        }
+        if wire
+            .second_reference_prefix
+            .is_some_and(|prefix| prefix != crate::om::simple_hole_references::SECOND_PREFIX)
+        {
+            return Err("second_reference_prefix: invalid second-witness wrapper".into());
+        }
+        let [first_a, first_b] = wire.first_data_blocks;
+        let [second_a, second_b] = wire.second_data_blocks;
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            first: SimpleHoleReferencePair {
+                references: [
+                    SimpleHoleBlockReference {
+                        data_block: first_a,
+                        source_offset: wire.first_reference_offsets[0],
+                    },
+                    SimpleHoleBlockReference {
+                        data_block: first_b,
+                        source_offset: wire.first_reference_offsets[1],
+                    },
+                ],
+                wrapped: wire.first_reference_prefix.is_some(),
+            },
+            second: SimpleHoleReferencePair {
+                references: [
+                    SimpleHoleBlockReference {
+                        data_block: second_a,
+                        source_offset: wire.second_reference_offsets[0],
+                    },
+                    SimpleHoleBlockReference {
+                        data_block: second_b,
+                        source_offset: wire.second_reference_offsets[1],
+                    },
+                ],
+                wrapped: wire.second_reference_prefix.is_some(),
+            },
+        })
+    }
 }
 
 /// Distinct simple-hole operations sharing one four-block construction identity.
@@ -755,20 +872,25 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
                 return;
             };
             let Some(decoded) =
-                crate::om::simple_hole_repeated_scalar_lane_block_references(record.payload_view())
+                crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(record.payload_view())
             else {
                 return;
             };
-            let resolve = |indices: [u32; 2]| {
-                let targets = indices.map(|index| format!("{prefix}:block#{index}"));
-                targets
-                    .iter()
-                    .all(|target| blocks.contains(target))
-                    .then_some(targets)
+            let resolve = |pair: crate::om::simple_hole_references::ReferencePair| {
+                let [first, second] = pair.references().map(|(token, offset)| {
+                    let data_block = format!("{prefix}:block#{}", token.value());
+                    blocks.contains(&data_block).then_some(())?;
+                    Some(SimpleHoleBlockReference {
+                        data_block,
+                        source_offset: entry_offset.checked_add(offset as u64)?,
+                    })
+                });
+                Some(SimpleHoleReferencePair {
+                    references: [first?, second?],
+                    wrapped: pair.wrapped(),
+                })
             };
-            let (Some(first_data_blocks), Some(second_data_blocks)) =
-                (resolve(decoded.first), resolve(decoded.second))
-            else {
+            let (Some(first), Some(second)) = (resolve(decoded[0]), resolve(decoded[1])) else {
                 return;
             };
             references.push(FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
@@ -776,12 +898,8 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
                     "nx:feature-history:simple-hole-repeated-scalar-lane-block-references#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label,
-                first_data_blocks,
-                second_data_blocks,
-                first_reference_prefix: decoded.prefixes[0],
-                second_reference_prefix: decoded.prefixes[1],
-                first_reference_offsets: decoded.offsets[0].map(|offset| entry_offset + offset as u64),
-                second_reference_offsets: decoded.offsets[1].map(|offset| entry_offset + offset as u64),
+                first,
+                second,
             });
         },
     );
@@ -810,8 +928,16 @@ pub fn feature_simple_hole_construction_groups(
     let mut ambiguous_groups = BTreeSet::new();
     for reference in references {
         let key = (
-            reference.first_data_blocks.clone(),
-            reference.second_data_blocks.clone(),
+            reference
+                .first
+                .references
+                .each_ref()
+                .map(|reference| reference.data_block.clone()),
+            reference
+                .second
+                .references
+                .each_ref()
+                .map(|reference| reference.data_block.clone()),
         );
         let lane = match lanes_by_operation
             .get(reference.operation_label.as_str())

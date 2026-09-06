@@ -24,7 +24,9 @@ impl<T> NonEmpty<T> {
         1 + self.rest.len()
     }
 
-    pub(crate) fn first(&self) -> &T { &self.first }
+    pub(crate) fn first(&self) -> &T {
+        &self.first
+    }
 
     pub(crate) fn last(&self) -> &T {
         self.rest.last().unwrap_or(&self.first)

@@ -334,11 +334,24 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     payload.push(0x00);
     let label = "SIMPLE HOLE";
     let record = crate::om::operation_record::OperationPayload::new(&payload, 200, label).unwrap();
-    let references = super::simple_hole_repeated_scalar_lane_block_references(record).unwrap();
-    assert_eq!(references.first, [231, 232]);
-    assert_eq!(references.second, [233, 234]);
-    assert_eq!(references.offsets, [[216, 218], [236, 238]]);
-    assert_eq!(references.prefixes, [None, None]);
+    let references =
+        crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(
+            record,
+        )
+        .unwrap();
+    assert_eq!(
+        references[0].references().map(|(token, _)| token.value()),
+        [231, 232]
+    );
+    assert_eq!(
+        references[1].references().map(|(token, _)| token.value()),
+        [233, 234]
+    );
+    assert_eq!(
+        references.map(|pair| pair.references().map(|(_, offset)| offset)),
+        [[216, 218], [236, 238]]
+    );
+    assert_eq!(references.map(|pair| pair.wrapped()), [false, false]);
 
     let first_prefix = [0x50, 0x10, 0x00, 0x04, 0x50, 0x49, 0x66, 0x2e];
     let second_prefix = [0x50, 0x21, 0x66, 0x62, 0x50, 0x49, 0x66, 0x2e];
@@ -353,45 +366,60 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     wrapped.extend_from_slice(&[0xf0, 0xe9, 0xf0, 0xea]);
     wrapped.extend_from_slice(&[0x04, 0x08]);
     wrapped.extend_from_slice(b"Hole_X\0");
-    let wrapped_references = super::simple_hole_repeated_scalar_lane_block_references(
-        crate::om::operation_record::OperationPayload::new(
-            &wrapped,
-            record.payload_offset(),
-            record.name(),
+    let wrapped_references =
+        crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(
+            crate::om::operation_record::OperationPayload::new(
+                &wrapped,
+                record.payload_offset(),
+                record.name(),
+            )
+            .unwrap(),
         )
-        .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(wrapped_references.first, [231, 232]);
-    assert_eq!(wrapped_references.second, [233, 234]);
-    assert_eq!(wrapped_references.offsets, [[224, 226], [252, 254]]);
+        .unwrap();
     assert_eq!(
-        wrapped_references.prefixes,
-        [Some(first_prefix), Some(second_prefix)]
+        wrapped_references[0]
+            .references()
+            .map(|(token, _)| token.value()),
+        [231, 232]
     );
+    assert_eq!(
+        wrapped_references[1]
+            .references()
+            .map(|(token, _)| token.value()),
+        [233, 234]
+    );
+    assert_eq!(
+        wrapped_references.map(|pair| pair.references().map(|(_, offset)| offset)),
+        [[224, 226], [252, 254]]
+    );
+    assert_eq!(wrapped_references.map(|pair| pair.wrapped()), [true, true]);
     let mut malformed_wrapper = wrapped.clone();
     malformed_wrapper[16] ^= 1;
-    assert!(super::simple_hole_repeated_scalar_lane_block_references(
-        crate::om::operation_record::OperationPayload::new(
-            &malformed_wrapper,
-            record.payload_offset(),
-            record.name()
+    assert!(
+        crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(
+            crate::om::operation_record::OperationPayload::new(
+                &malformed_wrapper,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap(),
         )
-        .unwrap(),
-    )
-    .is_none());
+        .is_none()
+    );
 
     let mut null = payload.clone();
     null[16] = 0xff;
-    assert!(super::simple_hole_repeated_scalar_lane_block_references(
-        crate::om::operation_record::OperationPayload::new(
-            &null,
-            record.payload_offset(),
-            record.name()
+    assert!(
+        crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(
+            crate::om::operation_record::OperationPayload::new(
+                &null,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
         )
-        .unwrap()
-    )
-    .is_none());
+        .is_none()
+    );
 }
 
 #[test]

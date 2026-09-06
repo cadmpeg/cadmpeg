@@ -416,7 +416,10 @@ fn repeated_scalar_lane_rejects_empty_and_inconsistent_atoms() {
 fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
     use crate::native::features::holes::feature_simple_hole_construction_groups;
     use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane;
-    use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockReferences;
+    use crate::native::features::holes::{
+        FeatureSimpleHoleRepeatedScalarLaneBlockReferences, SimpleHoleBlockReference,
+        SimpleHoleReferencePair,
+    };
     use crate::native::features::FeatureOperationLabel;
     let label = |id: &str, ordinal: u32| FeatureOperationLabel {
         id: id.into(),
@@ -444,12 +447,32 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         |operation: &str, last: &str| FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
             id: format!("reference-{operation}"),
             operation_label: operation.into(),
-            first_data_blocks: ["block-1".into(), "block-2".into()],
-            second_data_blocks: ["block-3".into(), last.into()],
-            first_reference_prefix: None,
-            second_reference_prefix: None,
-            first_reference_offsets: [3, 4],
-            second_reference_offsets: [5, 6],
+            first: SimpleHoleReferencePair {
+                references: [
+                    SimpleHoleBlockReference {
+                        data_block: "block-1".into(),
+                        source_offset: 3,
+                    },
+                    SimpleHoleBlockReference {
+                        data_block: "block-2".into(),
+                        source_offset: 4,
+                    },
+                ],
+                wrapped: false,
+            },
+            second: SimpleHoleReferencePair {
+                references: [
+                    SimpleHoleBlockReference {
+                        data_block: "block-3".into(),
+                        source_offset: 5,
+                    },
+                    SimpleHoleBlockReference {
+                        data_block: last.into(),
+                        source_offset: 6,
+                    },
+                ],
+                wrapped: false,
+            },
         };
     let lanes = [
         lane("operation#1-2"),
@@ -598,4 +621,39 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
         &[group.clone(), group],
     )
     .is_empty());
+}
+
+#[test]
+fn simple_hole_reference_pairs_preserve_wire_and_reject_wrong_witness_wrappers() {
+    use crate::om::simple_hole_references::{FIRST_PREFIX, SECOND_PREFIX};
+    let json = r#"{"id":"references","operation_label":"operation","first_data_blocks":["a","b"],"second_data_blocks":["c","d"],"first_reference_offsets":[10,13],"second_reference_offsets":[30,32]}"#;
+    let base: serde_json::Value = serde_json::from_str(json).unwrap();
+    let record: FeatureSimpleHoleRepeatedScalarLaneBlockReferences =
+        serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&record).unwrap(), json);
+    for first in [false, true] {
+        for second in [false, true] {
+            let mut wire = base.clone();
+            if first {
+                wire["first_reference_prefix"] = serde_json::json!(FIRST_PREFIX);
+            }
+            if second {
+                wire["second_reference_prefix"] = serde_json::json!(SECOND_PREFIX);
+            }
+            let record: FeatureSimpleHoleRepeatedScalarLaneBlockReferences =
+                serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        }
+    }
+    for (field, prefix) in [
+        ("first_reference_prefix", SECOND_PREFIX),
+        ("second_reference_prefix", FIRST_PREFIX),
+    ] {
+        let mut wire = base.clone();
+        wire[field] = serde_json::json!(prefix);
+        let error =
+            serde_json::from_value::<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>(wire)
+                .unwrap_err();
+        assert!(error.to_string().contains(field));
+    }
 }

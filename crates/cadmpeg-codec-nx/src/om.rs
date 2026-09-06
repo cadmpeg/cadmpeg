@@ -53,6 +53,7 @@ pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 pub(crate) mod extrude_32;
 pub(crate) mod extrude_profile;
+pub(crate) mod simple_hole_references;
 pub(crate) mod surface_branches;
 pub(crate) mod surface_envelope;
 pub(crate) mod terminal_discriminator;
@@ -858,19 +859,6 @@ pub struct ExtrudePayloadHeader {
     pub scalars: [ShiftedBinary64; 2],
 }
 
-/// Two tagged offset-store indices following each repeated scalar-lane witness.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SimpleHoleRepeatedScalarLaneBlockReferences {
-    /// Ordered block indices following the first coordinate pair.
-    pub first: [u32; 2],
-    /// Ordered block indices following the repeated coordinate pair.
-    pub second: [u32; 2],
-    /// Absolute offsets of the four tagged-index tokens.
-    pub offsets: [[usize; 2]; 2],
-    /// Exact optional eight-byte wrappers before the two reference pairs.
-    pub prefixes: [Option<[u8; 8]>; 2],
-}
-
 /// Four construction-block references carried by a `HOLE PACKAGE` payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HolePackageConstructionGroupLane {
@@ -1566,52 +1554,6 @@ pub fn simple_hole_repeated_scalar_lane(
                 witness_offsets: [left.1, right.1],
             }),
     )
-}
-
-/// Decode the two tagged block indices immediately following each witnessed
-/// simple-hole scalar lane.
-pub fn simple_hole_repeated_scalar_lane_block_references(
-    record: OperationPayload<'_>,
-) -> Option<SimpleHoleRepeatedScalarLaneBlockReferences> {
-    const FIRST_PREFIX: [u8; 8] = [0x50, 0x10, 0x00, 0x04, 0x50, 0x49, 0x66, 0x2e];
-    const SECOND_PREFIX: [u8; 8] = [0x50, 0x21, 0x66, 0x62, 0x50, 0x49, 0x66, 0x2e];
-    let pair = simple_hole_repeated_scalar_lane(record)?;
-    let decode_pair = |coordinate_offset: usize, admitted_prefix: [u8; 8]| {
-        let relative = coordinate_offset.checked_sub(record.payload_offset())?;
-        let mut at = relative.checked_add(8)?;
-        let prefix = if payload_object_index(record.payload().get(at..)?).is_some() {
-            None
-        } else {
-            let candidate =
-                <[u8; 8]>::try_from(record.payload().get(at..at.checked_add(8)?)?).ok()?;
-            (candidate == admitted_prefix).then_some(())?;
-            at += 8;
-            Some(candidate)
-        };
-        let first_offset = at;
-        let (first, width) = payload_object_index(record.payload().get(at..)?)?;
-        at += width;
-        let second_offset = at;
-        let (second, _) = payload_object_index(record.payload().get(at..)?)?;
-        Some((
-            [first.value(), second.value()],
-            [
-                record.payload_offset() + first_offset,
-                record.payload_offset() + second_offset,
-            ],
-            prefix,
-        ))
-    };
-    let (first, first_offsets, first_prefix) =
-        decode_pair(pair.last().witness_offsets[0], FIRST_PREFIX)?;
-    let (second, second_offsets, second_prefix) =
-        decode_pair(pair.last().witness_offsets[1], SECOND_PREFIX)?;
-    Some(SimpleHoleRepeatedScalarLaneBlockReferences {
-        first,
-        second,
-        offsets: [first_offsets, second_offsets],
-        prefixes: [first_prefix, second_prefix],
-    })
 }
 
 /// Decode the unique four-block construction-group lane in a `HOLE PACKAGE` payload.
