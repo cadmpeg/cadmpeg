@@ -502,27 +502,30 @@ fn delete_reference_fields_preserve_wire_and_reject_invalid_null_slots() {
         "source_offset": 100,
         "object_index_source_offsets": [107, 109, 110, 113, 116]
     });
-    let field: super::super::FeatureDeleteReferenceField =
+    let field: crate::native::features::delete::FeatureDeleteReferenceField =
         serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(field).unwrap(), wire);
     for slot in [1, 4] {
         let mut invalid = wire.clone();
         invalid["raw_object_indices"][slot] = serde_json::json!([]);
-        assert!(
-            serde_json::from_value::<super::super::FeatureDeleteReferenceField>(invalid).is_err()
-        );
+        assert!(serde_json::from_value::<
+            crate::native::features::delete::FeatureDeleteReferenceField,
+        >(invalid)
+        .is_err());
         let mut invalid = wire.clone();
         invalid["data_blocks"][slot] = serde_json::json!("block");
-        assert!(
-            serde_json::from_value::<super::super::FeatureDeleteReferenceField>(invalid).is_err()
-        );
+        assert!(serde_json::from_value::<
+            crate::native::features::delete::FeatureDeleteReferenceField,
+        >(invalid)
+        .is_err());
     }
     for slot in [0, 2, 3] {
         let mut invalid = wire.clone();
         invalid["object_indices"][slot] = serde_json::json!(999);
-        assert!(
-            serde_json::from_value::<super::super::FeatureDeleteReferenceField>(invalid).is_err()
-        );
+        assert!(serde_json::from_value::<
+            crate::native::features::delete::FeatureDeleteReferenceField,
+        >(invalid)
+        .is_err());
     }
 }
 

@@ -83,6 +83,7 @@ pub(crate) mod projected_references;
 pub(crate) mod pattern_references;
 pub(crate) mod counted_pattern_references;
 pub(crate) mod fset_references;
+pub(crate) mod delete_references;
 pub(crate) mod pattern;
 use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWideValues};
 pub(crate) mod scalar;
@@ -670,26 +671,6 @@ pub struct PayloadObjectReference<T = ReferenceIndexToken, O = usize> {
     pub offset: O,
     /// Checked token retaining the exact marker and width.
     pub token: T,
-}
-
-/// One nullable object-index slot in a counted `DELETE` payload field.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeletePayloadReferenceSlot {
-    /// Decoded object index, or `None` for the exact `ff` null token.
-    pub token: Option<reference_index::ReferenceIndexToken>,
-    /// Absolute offset of the token.
-    pub offset: usize,
-}
-
-/// Exact five-slot nullable reference field in a `DELETE` payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeletePayloadReferenceField {
-    /// Leading operation-local control byte.
-    pub control: u8,
-    /// Five slots in serialized order.
-    pub references: [DeletePayloadReferenceSlot; 5],
-    /// Absolute offset of the leading control byte.
-    pub offset: usize,
 }
 
 /// One exact counted transform lane in a pattern operation payload.
@@ -1882,42 +1863,6 @@ pub fn sketch_payload_references(record: OperationPayload<'_>) -> Option<SketchR
 fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {
     let token = ReferenceIndexToken::read_payload(bytes)?;
     Some((token, token.raw().len()))
-}
-
-/// Decode the exactly counted nullable construction-reference field at the
-/// start of a bounded `DELETE` payload.
-// Names follow the ordered source slots in this fixed-width lane.
-#[allow(clippy::many_single_char_names)]
-pub fn delete_payload_references(
-    record: OperationPayload<'_>,
-) -> Option<DeletePayloadReferenceField> {
-    const PREFIX: [u8; 6] = [0x00, 0x00, 0x01, 0x00, 0x01, 0x06];
-    if record.name() != "DELETE" || record.payload().get(1..1 + PREFIX.len()) != Some(&PREFIX) {
-        return None;
-    }
-    let control = *record.payload().first()?;
-    let mut at = 1 + PREFIX.len();
-    let references = std::array::from_fn::<_, 5, _>(|_| {
-        let offset = at;
-        let (object_index, width) = if record.payload().get(at) == Some(&0xff) {
-            (None, 1)
-        } else {
-            let (object_index, width) = payload_object_index(&record.payload()[at..])?;
-            (Some(object_index), width)
-        };
-        at += width;
-        Some(DeletePayloadReferenceSlot {
-            token: object_index,
-            offset: record.payload_offset() + offset,
-        })
-    });
-    let [a, b, c, d, e] = references;
-    let references = [a?, b?, c?, d?, e?];
-    (record.payload().get(at) == Some(&0x00)).then_some(DeletePayloadReferenceField {
-        control,
-        references,
-        offset: record.payload_offset(),
-    })
 }
 
 /// Decode the unique exactly counted transform lane in a bounded pattern payload.

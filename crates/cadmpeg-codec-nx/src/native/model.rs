@@ -12,6 +12,10 @@ use crate::native::features::block_reference::FeatureBlockConstructionReference;
 use crate::native::features::datum_plane_header::{
     feature_datum_plane_headers, FeatureDatumPlaneHeader,
 };
+use crate::native::features::delete::{
+    feature_delete_construction_payloads, feature_delete_reference_fields,
+    FeatureDeleteConstructionPayload, FeatureDeleteReferenceField,
+};
 use crate::native::features::fset::{
     feature_fset_construction_payloads, feature_fset_reference_graphs, FeatureFsetReferenceGraph,
 };

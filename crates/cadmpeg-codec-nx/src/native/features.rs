@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-history record extractors and their record types.
 
+pub(crate) mod delete;
 pub(crate) mod draft;
 pub(crate) mod fset;
 use self::fset::FeatureFsetReferenceGroup;
@@ -11,7 +12,7 @@ use payload_name::FeaturePayloadName;
 
 mod reference;
 use crate::om::header_references::HeaderSlot;
-use reference::{ConstructionReference, NullableConstructionReference};
+use reference::ConstructionReference;
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -2534,39 +2535,6 @@ pub struct FeatureProjectedCurveConstructionString {
     pub payload_offset: u64,
     /// Absolute source offset of the marker.
     pub source_offset: u64,
-}
-
-/// Exact counted nullable reference field carried by a `DELETE` payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "reference::DeleteReferenceFieldWire",
-    into = "reference::DeleteReferenceFieldWire"
-)]
-pub struct FeatureDeleteReferenceField {
-    /// Globally unique field identity.
-    pub id: String,
-    /// Owning `DELETE` operation label.
-    pub operation_label: String,
-    /// Leading operation-local control byte.
-    pub control: u8,
-    /// Five nullable references with their resolved targets and source positions.
-    pub references: [NullableConstructionReference; 5],
-    /// Absolute source offset of the leading control byte.
-    pub source_offset: u64,
-}
-
-/// Exact logical payload reconstructed from a complete non-null `DELETE` field.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureDeleteConstructionPayload {
-    /// Globally unique reconstructed-payload identity.
-    pub id: String,
-    /// Owning `DELETE` operation label.
-    pub operation_label: String,
-    /// Complete five-slot reference field selecting the source blocks.
-    pub reference_field: String,
-    /// Ordered source blocks and the hash of their concatenated bytes.
-    #[serde(flatten)]
-    pub content: FeaturePayloadContent<[FeaturePayloadBlock; 5]>,
 }
 
 /// Exact leading construction header carried by a bounded point-feature payload.
@@ -7349,76 +7317,6 @@ pub fn feature_projected_curve_references(
         }
     })
     .collect()
-}
-
-/// Decode exact `DELETE` payload reference fields and independently resolve
-/// their non-null slots without assigning a target object family.
-pub fn feature_delete_reference_fields(container: &Container) -> Vec<FeatureDeleteReferenceField> {
-    let indexed = container.indexed_om_sections();
-    let mut fields = Vec::new();
-    visit_feature_history_operation_records(
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(field) = crate::om::delete_payload_references(record.payload_view()) else {
-                return;
-            };
-            fields.push(FeatureDeleteReferenceField {
-                id: format!(
-                    "nx:feature-history:delete-reference-field#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
-                control: field.control,
-                references: field.references.map(|reference| NullableConstructionReference {
-                    target: reference.token.map(|token| {
-                        let data_block = unique_offset_data_block(&indexed, token.value());
-                        (token, data_block)
-                    }),
-                    source_offset: entry_offset + reference.offset as u64,
-                }),
-                source_offset: entry_offset + field.offset as u64,
-            });
-        },
-    );
-    fields
-}
-
-/// Reconstruct one ordered logical payload from each complete same-store
-/// non-null `DELETE` reference field.
-pub fn feature_delete_construction_payloads(
-    container: &Container,
-    fields: &[FeatureDeleteReferenceField],
-) -> Vec<FeatureDeleteConstructionPayload> {
-    let blocks = offset_data_block_bytes(container);
-    fields
-        .iter()
-        .filter_map(|field| {
-            let data_blocks = field
-                .references
-                .iter()
-                .map(|reference| reference.target.as_ref()?.1.clone())
-                .collect::<Option<Vec<_>>>()?;
-            let store = data_blocks.first()?.rsplit_once(":block#")?.0;
-            if data_blocks.iter().any(|block| {
-                block
-                    .rsplit_once(":block#")
-                    .is_none_or(|(prefix, _)| prefix != store)
-            }) {
-                return None;
-            }
-            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
-            let operation_key = field
-                .operation_label
-                .strip_prefix("nx:feature-history:operation-label#")?;
-            Some(FeatureDeleteConstructionPayload {
-                id: format!("nx:feature-history:delete-construction-payload#{operation_key}"),
-                operation_label: field.operation_label.clone(),
-                reference_field: field.id.clone(),
-                content,
-            })
-        })
-        .collect()
 }
 
 /// Reconstruct ordered logical payloads from projected-curve reference fields.

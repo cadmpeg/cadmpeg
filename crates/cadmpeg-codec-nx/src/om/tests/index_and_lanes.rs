@@ -1111,33 +1111,27 @@ fn om_delete_reference_field_requires_five_canonical_nullable_slots() {
         0x0c, 0x00, 0x00, 0x01, 0x00, 0x01, 0x06, 0xf0, 0x20, 0xff, 0xf1, 0x02, 0x08, 0xf1, 0x02,
         0x09, 0xff, 0x00,
     ];
-    let field = super::delete_payload_references(record(&payload)).unwrap();
-    assert_eq!(field.control, 0x0c);
-    assert_eq!(field.offset, 100);
+    let field = crate::om::delete_references::DeleteReferences::read(record(&payload)).unwrap();
+    assert_eq!(field.control(), 0x0c);
+    assert_eq!(field.offset(), 100);
     assert_eq!(
         field
-            .references
+            .slots()
             .each_ref()
-            .map(|reference| reference.token.as_ref().map(|token| token.value())),
+            .map(|reference| reference.as_ref().map(|(token, ())| token.value())),
         [Some(0x20), None, Some(0x208), Some(0x209), None]
     );
-    assert_eq!(
-        field
-            .references
-            .each_ref()
-            .map(|reference| reference.offset),
-        [107, 109, 110, 113, 116]
-    );
+    assert_eq!(field.reference_offsets(), [107, 109, 110, 113, 116]);
 
     let mut noncanonical = payload;
     noncanonical[11] = 0x00;
     noncanonical[12] = 0x20;
-    assert!(super::delete_payload_references(record(&noncanonical)).is_none());
+    assert!(crate::om::delete_references::DeleteReferences::read(record(&noncanonical)).is_none());
     let truncated = &payload[..payload.len() - 1];
-    assert!(super::delete_payload_references(record(truncated)).is_none());
+    assert!(crate::om::delete_references::DeleteReferences::read(record(truncated)).is_none());
     let mut wrong_count = payload;
     wrong_count[6] = 0x05;
-    assert!(super::delete_payload_references(record(&wrong_count)).is_none());
+    assert!(crate::om::delete_references::DeleteReferences::read(record(&wrong_count)).is_none());
 }
 
 #[test]
