@@ -807,7 +807,12 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     coincident_point.id = "f3d:Design/BulkStream.dat:point#107".into();
     coincident_point.record_index = 107;
     coincident_point.byte_offset = 107;
-    coincident_point.set_persistent_id(Some(6));
+    let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } =
+        &mut coincident_point.record_form
+    else {
+        panic!("point fixture has a version-11 record form");
+    };
+    *persistent_id = 6;
     let mut coincident_relation = relation.clone();
     coincident_relation.id = "f3d:Design/BulkStream.dat:relation#107".into();
     coincident_relation.record_index = 107;

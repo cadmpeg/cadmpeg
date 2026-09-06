@@ -16800,17 +16800,6 @@ impl SketchPointRecordForm {
         }
     }
 
-    pub(crate) fn set_persistent_id(&mut self, id: u64) {
-        match self {
-            Self::Version0 { .. } => {}
-            Self::Version8 { persistent_id, .. }
-            | Self::Version10 { persistent_id, .. }
-            | Self::Version10InlineTyped { persistent_id, .. }
-            | Self::Version11 { persistent_id, .. }
-            | Self::Version11InlineTyped { persistent_id, .. } => *persistent_id = id,
-        }
-    }
-
     pub(crate) fn flags(&self) -> [u8; 8] {
         let mut flags = [0; 8];
         match self {
@@ -16949,12 +16938,6 @@ impl SketchPoint {
 
     pub(crate) fn persistent_id(&self) -> Option<u64> {
         self.record_form.persistent_id()
-    }
-
-    pub(crate) fn set_persistent_id(&mut self, id: Option<u64>) {
-        if let Some(id) = id {
-            self.record_form.set_persistent_id(id);
-        }
     }
 
     pub(crate) fn flags(&self) -> [u8; 8] {
