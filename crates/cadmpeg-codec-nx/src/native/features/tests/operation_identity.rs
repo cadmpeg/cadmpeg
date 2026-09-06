@@ -487,13 +487,9 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
 fn journal_row(state_ordinal: u32, source_offset: u64) -> OmOperationStateJournalRow {
     OmOperationStateJournalRow {
         timestamp: 1_700_000_000,
-        value_marker: 0xe0,
-        value: state_ordinal,
-        raw_value: vec![0xe0, 0, 0, 0, state_ordinal as u8],
-        schema_id: 12,
-        raw_schema_id: vec![12],
-        state_ordinal,
-        raw_state_ordinal: vec![state_ordinal as u8],
+        value: crate::om::state_tagged_value::StateTaggedValue::read_at(&[0xe0, 0, 0, 0, state_ordinal as u8], 0).unwrap(),
+        schema_id: crate::om::state_index::StateIndexToken::read_at(&[12], 0).unwrap(),
+        state_ordinal: crate::om::state_index::StateIndexToken::read_at(&[state_ordinal as u8], 0).unwrap(),
         source_offset,
         end_offset: source_offset + 16,
     }

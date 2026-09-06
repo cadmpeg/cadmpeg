@@ -10,6 +10,9 @@ use crate::container::Container;
 use crate::layout::fastload_structure_envelope as envelope;
 use crate::native::om::ObjectUuidValue;
 
+mod uuid_group_members;
+use uuid_group_members::UuidGroupMembers;
+
 const ENTRY_NAME: &str = "/Root/FastLoad/Structure";
 const ROSTER_ANCHOR: &[u8] = &[1, 2, 0x42, 0, 1, 2, 4];
 const MODEL_FRAME: &[u8] = &[4, 7, b'M', b'O', b'D', b'E', b'L', 0];
@@ -44,6 +47,87 @@ pub struct FastLoadComponentUuid {
     pub source_offset: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub(crate) enum OccurrenceLaneForm {
+    Base,
+    Extended,
+}
+
+impl TryFrom<u8> for OccurrenceLaneForm {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Base),
+            1 => Ok(Self::Extended),
+            _ => Err("occurrence_lane_form: expected 0 or 1"),
+        }
+    }
+}
+
+impl From<OccurrenceLaneForm> for u8 {
+    fn from(value: OccurrenceLaneForm) -> Self {
+        match value {
+            OccurrenceLaneForm::Base => 0,
+            OccurrenceLaneForm::Extended => 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub(crate) enum OccurrenceMarker {
+    One,
+    Nine,
+}
+
+impl TryFrom<u8> for OccurrenceMarker {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            49 => Ok(Self::One),
+            57 => Ok(Self::Nine),
+            _ => Err("marker: expected 49 or 57"),
+        }
+    }
+}
+
+impl From<OccurrenceMarker> for u8 {
+    fn from(value: OccurrenceMarker) -> Self {
+        match value {
+            OccurrenceMarker::One => 49,
+            OccurrenceMarker::Nine => 57,
+        }
+    }
+}
+
+/// One-based slot in a count-minus-one roster table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub(crate) struct RosterIndex(u8);
+
+impl TryFrom<u8> for RosterIndex {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        if (1..=254).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err("prototype_index/uuid_index: expected 1 through 254")
+        }
+    }
+}
+
+impl From<RosterIndex> for u8 {
+    fn from(value: RosterIndex) -> Self { value.0 }
+}
+
+impl RosterIndex {
+    fn ordinal(self) -> usize { usize::from(self.0 - 1) }
+}
+
 /// One ordered component use referencing a reusable fast-load prototype.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FastLoadComponentOccurrence {
@@ -52,15 +136,15 @@ pub struct FastLoadComponentOccurrence {
     /// Zero-based position in the serialized occurrence table.
     pub ordinal: u32,
     /// Byte discriminator for the serialized occurrence lane form.
-    pub occurrence_lane_form: u8,
+    pub occurrence_lane_form: OccurrenceLaneForm,
     /// Exact marker byte in the serialized occurrence marker lane.
-    pub marker: u8,
+    pub marker: OccurrenceMarker,
     /// Absolute file offset of the occurrence marker.
     pub marker_source_offset: u64,
     /// Referenced [`FastLoadComponentPrototype::id`].
     pub prototype: String,
     /// One-based serialized prototype-table index.
-    pub prototype_index: u8,
+    pub prototype_index: RosterIndex,
     /// Referenced [`FastLoadComponentUuid::id`].
     pub component_uuid: String,
     /// Absolute file offset of the UUID-table index.
@@ -82,10 +166,9 @@ pub struct FastLoadComponentObjectGroup {
     pub component_uuid: String,
     /// Canonical lowercase UUID shared by every member.
     pub uuid: crate::canonical_uuid::CanonicalUuid<String>,
-    /// Ordered [`FastLoadComponentOccurrence::id`] values.
-    pub occurrences: Vec<String>,
-    /// Ordered [`ObjectUuidValue::id`] values.
-    pub object_uuid_values: Vec<String>,
+    /// Independent ordered occurrence and OM UUID-value lists of equal cardinality.
+    #[serde(flatten)]
+    pub members: UuidGroupMembers,
     /// Directory entry containing the component roster.
     pub source_entry: String,
     /// Absolute file offset of the roster UUID tag.
@@ -111,12 +194,12 @@ pub fn fast_load_component_object_groups(
                 .filter(|value| value.uuid == uuid.uuid)
                 .map(|value| value.id.clone())
                 .collect::<Vec<_>>();
-            (!uses.is_empty() && uses.len() == values.len()).then(|| FastLoadComponentObjectGroup {
+            let members = UuidGroupMembers::new(uses, values).ok()?;
+            Some(FastLoadComponentObjectGroup {
                 id: format!("nx:fast-load:object-group#{}", uuid.ordinal),
                 component_uuid: uuid.id.clone(),
                 uuid: uuid.uuid.clone(),
-                occurrences: uses,
-                object_uuid_values: values,
+                members,
                 source_entry: uuid.source_entry.clone(),
                 source_offset: uuid.source_offset,
             })
@@ -124,18 +207,22 @@ pub fn fast_load_component_object_groups(
         .collect()
 }
 
+struct SourceOccurrence {
+    marker: OccurrenceMarker,
+    prototype_index: RosterIndex,
+    uuid_index: RosterIndex,
+}
+
 struct Candidate {
     start: usize,
     end: usize,
     prototypes: Vec<(usize, String)>,
-    occurrence_lane_form: u8,
+    occurrence_lane_form: OccurrenceLaneForm,
     occurrence_markers_offset: usize,
-    occurrence_markers: Vec<u8>,
     occurrences_offset: usize,
-    prototype_indices: Vec<u8>,
+    occurrences: Vec<SourceOccurrence>,
     uuids: Vec<(usize, crate::canonical_uuid::CanonicalUuid<String>)>,
     uuid_indices_offset: usize,
-    uuid_indices: Vec<u8>,
 }
 
 /// Resolve candidate parses by physical span before applying the one-roster
@@ -257,21 +344,21 @@ pub fn fast_load_component_roster(
         })
         .collect();
     let occurrences = candidate
-        .prototype_indices
+        .occurrences
         .into_iter()
         .enumerate()
-        .map(|(ordinal, prototype_index)| FastLoadComponentOccurrence {
+        .map(|(ordinal, occurrence)| FastLoadComponentOccurrence {
             id: format!("nx:fast-load:occurrence#{ordinal}"),
             ordinal: ordinal as u32,
             occurrence_lane_form: candidate.occurrence_lane_form,
-            marker: candidate.occurrence_markers[ordinal],
+            marker: occurrence.marker,
             marker_source_offset: entry_offset
                 + envelope::LEN as u64
                 + candidate.occurrence_markers_offset as u64
                 + ordinal as u64,
-            prototype: prototypes[usize::from(prototype_index - 1)].id.clone(),
-            prototype_index,
-            component_uuid: uuids[usize::from(candidate.uuid_indices[ordinal] - 1)]
+            prototype: prototypes[occurrence.prototype_index.ordinal()].id.clone(),
+            prototype_index: occurrence.prototype_index,
+            component_uuid: uuids[occurrence.uuid_index.ordinal()]
                 .id
                 .clone(),
             uuid_source_offset: entry_offset
@@ -312,18 +399,15 @@ fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
         .is_some_and(|value| !value.is_empty())
         .then_some(())?;
     take(bytes, &mut at, 2)?.eq(&[1, 3]).then_some(())?;
-    let occurrence_lane_form = *take(bytes, &mut at, 1)?.first()?;
-    (occurrence_lane_form <= 1).then_some(())?;
+    let occurrence_lane_form = OccurrenceLaneForm::try_from(*take(bytes, &mut at, 1)?.first()?).ok()?;
     take(bytes, &mut at, 1)?.eq(&[0]).then_some(())?;
 
     take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
     let occurrence_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
     let occurrence_markers_offset = at;
-    let occurrence_markers = take(bytes, &mut at, occurrence_count)?.to_vec();
-    occurrence_markers
-        .iter()
-        .all(|byte| matches!(*byte, b'1' | b'9'))
-        .then_some(())?;
+    let occurrence_markers = take(bytes, &mut at, occurrence_count)?
+        .iter().copied().map(OccurrenceMarker::try_from)
+        .collect::<Result<Vec<_>, _>>().ok()?;
     take(bytes, &mut at, 6)?
         .eq(&[1, 2, 0xff, 0xff, 0xff, 0xff])
         .then_some(())?;
@@ -338,12 +422,11 @@ fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
     take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
     (decoded_count(*take(bytes, &mut at, 1)?.first()?)? == occurrence_count).then_some(())?;
     let occurrences_offset = at;
-    let prototype_indices = take(bytes, &mut at, occurrence_count)?.to_vec();
-    let prototype_count = u8::try_from(prototype_count).ok()?;
-    prototype_indices
-        .iter()
-        .all(|index| (1..=prototype_count).contains(index))
-        .then_some(())?;
+    let prototype_indices = take(bytes, &mut at, occurrence_count)?
+        .iter().copied()
+        .map(|index| RosterIndex::try_from(index).ok()
+            .filter(|index| index.ordinal() < prototype_count))
+        .collect::<Option<Vec<_>>>()?;
 
     take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
     let uuid_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
@@ -356,12 +439,11 @@ fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
     take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
     (decoded_count(*take(bytes, &mut at, 1)?.first()?)? == occurrence_count).then_some(())?;
     let uuid_indices_offset = at;
-    let uuid_indices = take(bytes, &mut at, occurrence_count)?.to_vec();
-    let uuid_count = u8::try_from(uuid_count).ok()?;
-    uuid_indices
-        .iter()
-        .all(|index| (1..=uuid_count).contains(index))
-        .then_some(())?;
+    let uuid_indices = take(bytes, &mut at, occurrence_count)?
+        .iter().copied()
+        .map(|index| RosterIndex::try_from(index).ok()
+            .filter(|index| index.ordinal() < uuid_count))
+        .collect::<Option<Vec<_>>>()?;
 
     Some(Candidate {
         start,
@@ -369,12 +451,12 @@ fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
         prototypes,
         occurrence_lane_form,
         occurrence_markers_offset,
-        occurrence_markers,
         occurrences_offset,
-        prototype_indices,
+        occurrences: occurrence_markers.into_iter().zip(prototype_indices).zip(uuid_indices)
+            .map(|((marker, prototype_index), uuid_index)| SourceOccurrence { marker, prototype_index, uuid_index })
+            .collect(),
         uuids,
         uuid_indices_offset,
-        uuid_indices,
     })
 }
 
@@ -524,7 +606,6 @@ mod tests {
                 file_span: Some((0, len)),
             }],
             indexed_section_layouts: std::sync::OnceLock::new(),
-            om_operation_label_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         }
     }
@@ -534,14 +615,12 @@ mod tests {
             start,
             end,
             prototypes: Vec::new(),
-            occurrence_lane_form: 0,
+            occurrence_lane_form: OccurrenceLaneForm::Base,
             occurrence_markers_offset: 0,
-            occurrence_markers: Vec::new(),
             occurrences_offset: 0,
-            prototype_indices: Vec::new(),
+            occurrences: Vec::new(),
             uuids: Vec::new(),
             uuid_indices_offset: 0,
-            uuid_indices: Vec::new(),
         }
     }
 
@@ -550,8 +629,8 @@ mod tests {
         let container = container(payload(&["plate", "bolt", "nut"], &[1, 2, 2, 3]));
         let (prototypes, uuids, occurrences) = fast_load_component_roster(&container);
         assert_eq!(uuids.len(), 1);
-        assert_eq!(occurrences[0].occurrence_lane_form, 0);
-        assert_eq!(occurrences[0].marker, b'9');
+        assert_eq!(u8::from(occurrences[0].occurrence_lane_form), 0);
+        assert_eq!(u8::from(occurrences[0].marker), b'9');
         assert_eq!(
             prototypes
                 .iter()
@@ -562,7 +641,7 @@ mod tests {
         assert_eq!(
             occurrences
                 .iter()
-                .map(|o| o.prototype_index)
+                .map(|o| u8::from(o.prototype_index))
                 .collect::<Vec<_>>(),
             [1, 2, 2, 3]
         );
@@ -583,8 +662,8 @@ mod tests {
         );
         assert_eq!(uuids.len(), 1);
         assert_eq!(occurrences.len(), 2);
-        assert_eq!(occurrences[0].prototype_index, 1);
-        assert_eq!(occurrences[1].prototype_index, 2);
+        assert_eq!(u8::from(occurrences[0].prototype_index), 1);
+        assert_eq!(u8::from(occurrences[1].prototype_index), 2);
     }
 
     #[test]
@@ -607,7 +686,7 @@ mod tests {
         );
         assert_eq!(uuids.len(), 1);
         assert_eq!(occurrences.len(), 2);
-        assert_eq!(occurrences[1].prototype_index, 2);
+        assert_eq!(u8::from(occurrences[1].prototype_index), 2);
     }
 
     #[test]
@@ -622,14 +701,14 @@ mod tests {
         assert_eq!(
             occurrences
                 .iter()
-                .map(|occurrence| occurrence.occurrence_lane_form)
+                .map(|occurrence| u8::from(occurrence.occurrence_lane_form))
                 .collect::<Vec<_>>(),
             [1, 1, 1]
         );
         assert_eq!(
             occurrences
                 .iter()
-                .map(|occurrence| occurrence.marker)
+                .map(|occurrence| u8::from(occurrence.marker))
                 .collect::<Vec<_>>(),
             [b'9', b'1', b'9']
         );
@@ -673,9 +752,9 @@ mod tests {
             .collect::<Vec<_>>();
         let groups = fast_load_component_object_groups(&uuids, &occurrences, &values);
         assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].occurrences.len(), 3);
-        assert_eq!(groups[0].object_uuid_values.len(), 3);
-        assert_eq!(groups[0].object_uuid_values[1], "nx:test:object-uuid#1");
+        assert_eq!(groups[0].members.occurrences().count(), 3);
+        assert_eq!(groups[0].members.object_uuid_values().count(), 3);
+        assert_eq!(groups[0].members.object_uuid_values().nth(1).unwrap(), "nx:test:object-uuid#1");
 
         assert!(fast_load_component_object_groups(&uuids, &occurrences, &values[..2]).is_empty());
     }
@@ -762,4 +841,29 @@ mod tests {
             select_roster_candidate(vec![candidate_span(10, 50), candidate_span(30, 70)]).is_none()
         );
     }
+
+    #[test]
+    fn occurrence_wire_preserves_closed_source_bytes() {
+        let json = r#"{"id":"occurrence","ordinal":0,"occurrence_lane_form":1,"marker":49,"marker_source_offset":12,"prototype":"prototype","prototype_index":254,"component_uuid":"uuid","uuid_source_offset":20,"source_entry":"om","source_offset":16}"#;
+        let occurrence: FastLoadComponentOccurrence = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&occurrence).unwrap(), json);
+        for (field, invalid) in [("occurrence_lane_form", 2), ("occurrence_lane_form", 255), ("marker", 0), ("marker", 50), ("prototype_index", 0), ("prototype_index", 255)] {
+            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            wire[field] = invalid.into();
+            assert!(serde_json::from_value::<FastLoadComponentOccurrence>(wire)
+                .unwrap_err().to_string().contains(field));
+        }
+    }
+
+    #[test]
+    fn uuid_group_preserves_flat_wire_and_rejects_missing_members() {
+        let json = r#"{"id":"group","component_uuid":"component","uuid":"00000000-0000-0000-0000-000000000000","occurrences":["use"],"object_uuid_values":["value"],"source_entry":"om","source_offset":12}"#;
+        let group: FastLoadComponentObjectGroup = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&group).unwrap(), json);
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["object_uuid_values"] = serde_json::json!([]);
+        assert!(serde_json::from_value::<FastLoadComponentObjectGroup>(wire)
+            .unwrap_err().to_string().contains("occurrences/object_uuid_values"));
+    }
+
 }

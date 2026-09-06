@@ -19,6 +19,8 @@ fn unique_offset_data_store_rejects_a_second_matching_section() {
         region: Region::Header,
         file_span: None,
     };
+    let entries = [entry];
+    let entry = crate::container::entry_ref::EntryRef::new(&entries, 0).unwrap();
     let section = || IndexedSection {
         base: 0,
         entity_index_offset: 0,
@@ -41,10 +43,10 @@ fn unique_offset_data_store_rejects_a_second_matching_section() {
     let second = section();
     let single = section();
     assert_eq!(
-        super::unique_offset_data_store(&[(&entry, single)], &[1]),
+        super::unique_offset_data_store(&[(entry, single)], &[1]),
         Some(0)
     );
-    let indexed = [(&entry, first), (&entry, second)];
+    let indexed = [(entry, first), (entry, second)];
 
     assert_eq!(super::unique_offset_data_store(&indexed, &[1]), None);
 }
@@ -55,14 +57,14 @@ fn nx_feature_source_content_orders_payload_text() {
         id: "text".into(),
         operation_record: "record".into(),
         ordinal: 0,
-        value: "Through".into(),
+        value: crate::payload_text::PayloadText::new("Through".to_owned()).unwrap(),
         source_offset: 30,
     };
     let later = super::FeaturePayloadString {
         id: "later".into(),
         operation_record: "record".into(),
         ordinal: 1,
-        value: "Later".into(),
+        value: crate::payload_text::PayloadText::new("Later".to_owned()).unwrap(),
         source_offset: 40,
     };
     let content = crate::native::attach::feature_source_content(&[&later, &text]);
@@ -97,11 +99,11 @@ fn nx_symbolic_thread_retains_all_complete_type_three_text_frames() {
     assert_eq!(frames.len(), 3);
     assert_eq!(frames[0].marker, crate::om::OperationTextMarker::Text);
     assert_eq!(frames[0].offset, 500);
-    assert_eq!(frames[0].value, "M Profile");
+    assert_eq!(frames[0].value.as_str(), "M Profile");
     assert_eq!(frames[1].offset, 512);
-    assert_eq!(frames[1].value, "M3_x_0.5");
+    assert_eq!(frames[1].value.as_str(), "M3_x_0.5");
     assert_eq!(frames[2].offset, 523);
-    assert_eq!(frames[2].value, "CUT");
+    assert_eq!(frames[2].value.as_str(), "CUT");
 }
 
 #[test]
@@ -323,7 +325,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         id: "payload-string#3-0".to_string(),
         operation_record: record.id.clone(),
         ordinal: 0,
-        value: "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer".to_string(),
+        value: crate::payload_text::PayloadText::new("Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer".to_string()).unwrap(),
         source_offset: 130,
     };
     let templates = super::feature_simple_hole_templates(
@@ -395,7 +397,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         id: "payload-string#4-0".to_string(),
         operation_record: counterbored_record.id.clone(),
         ordinal: 0,
-        value: "Hole_GeneralHole_Counterbored_Through".to_string(),
+        value: crate::payload_text::PayloadText::new("Hole_GeneralHole_Counterbored_Through".to_string()).unwrap(),
         source_offset: 130,
     };
     let counterbored_templates = super::feature_simple_hole_templates(
@@ -419,7 +421,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         id: "payload-string#5-0".to_string(),
         operation_record: countersunk_record.id.clone(),
         ordinal: 0,
-        value: "Hole_GeneralHole_Countersunk_Blind".to_string(),
+        value: crate::payload_text::PayloadText::new("Hole_GeneralHole_Countersunk_Blind".to_string()).unwrap(),
         source_offset: 130,
     };
     let countersunk_templates = super::feature_simple_hole_templates(
@@ -448,7 +450,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         id: "payload-string#3-1".to_string(),
         operation_record: record.id.clone(),
         ordinal: 1,
-        value: "Hole_Unknown".to_string(),
+        value: crate::payload_text::PayloadText::new("Hole_Unknown".to_string()).unwrap(),
         source_offset: 194,
     };
     assert!(super::feature_simple_hole_templates(
@@ -459,7 +461,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     .is_empty());
 
     let mut malformed = string;
-    malformed.value = "Hole_GeneralHole_Simple_Through_EndChamfer_StartChamfer".to_string();
+    malformed.value = crate::payload_text::PayloadText::new("Hole_GeneralHole_Simple_Through_EndChamfer_StartChamfer".to_string()).unwrap();
     assert!(super::feature_simple_hole_templates(&[label], &[record], &[malformed]).is_empty());
 }
 
@@ -496,7 +498,7 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
         id: "payload-string#threaded-0".to_string(),
         operation_record: record.id.clone(),
         ordinal: 0,
-        value: "Hole_ThreadedHole_M Profile_Blind".to_string(),
+        value: crate::payload_text::PayloadText::new("Hole_ThreadedHole_M Profile_Blind".to_string()).unwrap(),
         source_offset: 130,
     };
     let templates = super::feature_threaded_hole_templates(
@@ -539,7 +541,7 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
     .is_empty());
 
     let mut unknown = string;
-    unknown.value = "Hole_ThreadedHole_M Profile_Blind_Extra".to_string();
+    unknown.value = crate::payload_text::PayloadText::new("Hole_ThreadedHole_M Profile_Blind_Extra".to_string()).unwrap();
     assert!(super::feature_threaded_hole_templates(&[label], &[record], &[unknown]).is_empty());
 }
 
@@ -828,7 +830,7 @@ fn decode_retains_role_scoped_om_record_area_header() {
         crate::native::om::OmSchemaRole::FeatureHistory
     );
     assert_eq!(areas[0].control_words, [13, 14, 44]);
-    assert_eq!(areas[0].product_version, "NX 2027.3102");
+    assert_eq!(areas[0].product_version.as_str(), "NX 2027.3102");
     assert!(areas[0].byte_len > 12);
     assert_eq!(areas[0].sha256.len(), 64);
     let labels = result
@@ -1139,29 +1141,27 @@ fn nx_datum_plane_csys_identity_uses_join_only_equal_typed_identities() {
         datum_plane_header: "plane-header".into(),
         ordinal: 0,
         data_block: "plane-block".into(),
-        identity: "012345678901234567890123456789".into(),
-        suffix: vec![b'?', b'A'],
-        schema_index: 1,
-        label: "p".into(),
+        descriptor: crate::om::plane_descriptor::PlaneDescriptor::read(b"012345678901234567890123456789?A\x01\xff\x02\x01abcd").unwrap(),
         source_offset: 10,
     };
     let csys = super::FeatureDatumCsysDescriptor {
         id: "csys-descriptor".into(),
         operation_label: "operation#2".into(),
         construction: "csys-construction".into(),
-        reference_ordinal: 7,
+        reference_ordinal: crate::om::csys_descriptor::CsysDescriptorSlot::Seven,
         data_block: "csys-block".into(),
-        prefix: vec![2, 1],
-        identity: plane.identity.clone(),
-        suffix: vec![b'?', b'A'],
-        source_offset: 20,
+        descriptor: crate::om::csys_descriptor::LocatedCsysDescriptor::new(
+            crate::om::csys_descriptor::CsysDescriptor::from_wire(
+                vec![2, 1], plane.descriptor.identity().to_owned().try_into().unwrap(), vec![b'?', b'A'],
+            ).unwrap(), 20,
+        ).unwrap(),
     };
     let uses = super::feature_datum_plane_csys_identity_uses(&[plane], &[csys]);
     assert_eq!(uses.len(), 1);
-    assert_eq!(uses[0].identity, "012345678901234567890123456789");
+    assert_eq!(uses[0].identity.as_str(), "012345678901234567890123456789");
     assert_eq!(uses[0].datum_plane_operation_label, "operation#4");
     assert_eq!(uses[0].datum_csys_operation_label, "operation#2");
-    assert_eq!(uses[0].datum_csys_reference_ordinal, 7);
+    assert_eq!(u8::from(uses[0].datum_csys_reference_ordinal), 7);
 }
 
 #[test]

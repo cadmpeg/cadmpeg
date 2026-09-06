@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Frame NX object-model entities using external boundary and identity arrays.
 
+pub(crate) mod draft_identity;
+pub(crate) mod plane_descriptor;
+pub(crate) mod csys_descriptor;
+pub(crate) mod control_word;
+use control_word::ControlWord24;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::num::NonZeroU8;
@@ -25,6 +31,20 @@ use sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLaneForm};
 pub(crate) mod fixed;
 use fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 pub(crate) mod nonempty;
+pub(crate) mod state_tagged_value;
+pub(crate) mod state_index;
+pub(crate) mod state_slots;
+pub(crate) mod source_span;
+use source_span::SourceSpan;
+use state_slots::StateSlots;
+pub(crate) mod state_link;
+use state_link::StateLinkCode;
+pub(crate) mod state_group;
+use state_group::{OperationStateGroupCount, OperationStateGroupOpener, StateGroupMembers};
+use state_index::{OperationStateIndex, NonNullStateIndex};
+pub(crate) mod state_message_text;
+use state_message_text::StateMessageText;
+use state_tagged_value::StateTaggedValue;
 use nonempty::NonEmpty;
 pub(crate) mod pattern;
 use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWideValues};
@@ -39,9 +59,18 @@ use thru_curve_state::ThruCurveBranchItems;
 use thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
 use swp104_state::Swp104StateLane;
 use discriminators::{
-    DraftBinary32Branch, DraftIdentityBranch, OperationStateCounterKind, OperationStatePairTag,
+    DraftBinary32Branch, OperationStateCounterKind, OperationStatePairTag,
 };
 pub(crate) mod registry;
+pub(crate) mod cache;
+pub(crate) mod product;
+pub(crate) mod audit;
+use audit::{AuditRecord, AuditTrailRow};
+pub(crate) mod control_leading_value;
+use control_leading_value::ControlLeadingValue;
+use product::{ProductRecord, ProductRecordForm, ProductText};
+mod index_table;
+use index_table::{DescendingU32Edges, FixedIndex, OffsetIndex};
 use parameter_name::ParameterName;
 
 /// One NX object-model entity payload without a fixed object-id table.
@@ -129,7 +158,7 @@ pub struct SurfacePayloadString<'a> {
     /// Payload-relative offset of the `66 1b 03` marker.
     pub offset: usize,
     /// Exact non-empty string value.
-    pub value: &'a str,
+    pub value: crate::payload_text::PayloadText<&'a str>,
 }
 
 /// Self-framed NX product/version marker in an OM store root.
@@ -138,7 +167,7 @@ pub struct StoreVersion<'a> {
     /// Absolute offset of the `04 01` marker.
     pub offset: usize,
     /// Exact printable product/version text, including the `NX ` prefix.
-    pub value: &'a str,
+    pub value: ProductText<&'a str>,
 }
 
 /// Header of an internally pointed size-framed OM record area.
@@ -1055,172 +1084,6 @@ pub struct IndexedSection<'a> {
     pub store: IndexedStore<'a>,
 }
 
-/// Byte ranges needed to materialize one indexed section without rescanning
-/// the containing payload.
-#[derive(Debug, Clone, Copy)]
-struct IndexedByteRange {
-    start: usize,
-    end: usize,
-}
-
-/// One cached declaration range in an indexed section.
-#[derive(Debug, Clone, Copy)]
-struct IndexedDefinitionLayout {
-    offset: usize,
-    name_len: usize,
-    registry_tail: IndexedByteRange,
-}
-
-/// One cached entity-record range with a required fixed-table identity.
-#[derive(Debug, Clone, Copy)]
-struct FixedIndexedRecordLayout {
-    object_id: (u32, u64),
-    bytes: IndexedByteRange,
-}
-
-#[derive(Debug, Clone)]
-enum IndexedStoreLayout {
-    Fixed {
-        records: Vec<FixedIndexedRecordLayout>,
-    },
-    OffsetOnly {
-        control: IndexedByteRange,
-        column_storage: IndexedByteRange,
-        records: Vec<IndexedByteRange>,
-    },
-}
-
-/// Cached indexed-section layout owned by a parsed container.
-#[derive(Debug, Clone)]
-pub(crate) struct IndexedSectionLayout {
-    base: usize,
-    entity_index_offset: usize,
-    pub(crate) object_id_table_offset: usize,
-    types: Vec<IndexedDefinitionLayout>,
-    fields: Vec<IndexedDefinitionLayout>,
-    store: IndexedStoreLayout,
-}
-
-impl IndexedSectionLayout {
-    fn from_section(section: &IndexedSection<'_>) -> Self {
-        let types = registry::type_definition_layouts(&section.types);
-        let fields = registry::field_definition_layouts(&section.fields);
-        let record_range = |offset: usize, bytes: &[u8]| IndexedByteRange {
-            start: offset,
-            end: offset + bytes.len(),
-        };
-        let store = match &section.store {
-            IndexedStore::Fixed { records } => IndexedStoreLayout::Fixed {
-                records: records
-                    .iter()
-                    .map(|record| FixedIndexedRecordLayout {
-                        object_id: record.object_id,
-                        bytes: record_range(record.offset, record.bytes),
-                    })
-                    .collect(),
-            },
-            IndexedStore::OffsetOnly {
-                control,
-                column_storage,
-                records,
-            } => {
-                let start = control.offset + control.bytes.len();
-                IndexedStoreLayout::OffsetOnly {
-                    control: record_range(control.offset, control.bytes),
-                    column_storage: IndexedByteRange {
-                        start,
-                        end: start + column_storage.len(),
-                    },
-                    records: records
-                        .iter()
-                        .map(|record| record_range(record.offset, record.bytes))
-                        .collect(),
-                }
-            }
-        };
-        Self {
-            base: section.base,
-            entity_index_offset: section.entity_index_offset,
-            object_id_table_offset: section.object_id_table_offset,
-            types,
-            fields,
-            store,
-        }
-    }
-
-    pub(crate) fn materialize<'a>(&self, bytes: &'a [u8]) -> IndexedSection<'a> {
-        let materialize_payload = |range: &IndexedByteRange| {
-            (
-                range.start,
-                bytes
-                    .get(range.start..range.end)
-                    .expect("cached indexed record remains in source"),
-            )
-        };
-        let store = match &self.store {
-            IndexedStoreLayout::Fixed { records } => IndexedStore::Fixed {
-                records: records
-                    .iter()
-                    .map(|layout| {
-                        let (offset, payload) = materialize_payload(&layout.bytes);
-                        FixedEntityRecord {
-                            object_id: layout.object_id,
-                            offset,
-                            bytes: payload,
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .into(),
-            },
-            IndexedStoreLayout::OffsetOnly {
-                control,
-                column_storage,
-                records,
-            } => {
-                let (offset, payload) = materialize_payload(control);
-                IndexedStore::OffsetOnly {
-                    control: EntityRecord {
-                        offset,
-                        bytes: payload,
-                    },
-                    column_storage: bytes
-                        .get(column_storage.start..column_storage.end)
-                        .expect("cached indexed column storage remains in source"),
-                    records: records
-                        .iter()
-                        .map(|layout| {
-                            let (offset, payload) = materialize_payload(layout);
-                            EntityRecord {
-                                offset,
-                                bytes: payload,
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .into(),
-                }
-            }
-        };
-        IndexedSection {
-            base: self.base,
-            entity_index_offset: self.entity_index_offset,
-            object_id_table_offset: self.object_id_table_offset,
-            types: self
-                .types
-                .iter()
-                .map(|layout| registry::materialize_type_definition(bytes, layout))
-                .collect::<Vec<_>>()
-                .into(),
-            fields: self
-                .fields
-                .iter()
-                .map(|layout| registry::materialize_field_definition(bytes, layout))
-                .collect::<Vec<_>>()
-                .into(),
-            store,
-        }
-    }
-}
-
 /// Internally pointed record-area bytes with their absolute offset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordArea<'a> {
@@ -1247,71 +1110,6 @@ pub struct Section<'a> {
     cached_operation_labels: Arc<[OperationLabel<'a>]>,
 }
 
-/// Cached byte layout for one size-framed object-model section.
-///
-/// The layout contains offsets and validated declaration metadata only. It
-/// does not borrow the container image, so a container that owns its input can
-/// reuse the layout without reparsing the section on every extractor call.
-#[derive(Debug, Clone)]
-pub(crate) struct SectionLayout {
-    offset: usize,
-    byte_len: usize,
-    types: Vec<IndexedDefinitionLayout>,
-    fields: Vec<IndexedDefinitionLayout>,
-    record_area: Option<IndexedByteRange>,
-    operation_labels: Vec<OperationLabelLayout>,
-}
-
-impl SectionLayout {
-    pub(crate) fn from_section(section: &Section<'_>) -> Self {
-        let record_area = section.record_area.map(|area| IndexedByteRange {
-            start: area.offset,
-            end: area.offset + area.bytes.len(),
-        });
-        Self {
-            offset: section.offset,
-            byte_len: section.byte_len,
-            types: registry::type_definition_layouts(&section.types),
-            fields: registry::field_definition_layouts(&section.fields),
-            record_area,
-            operation_labels: operation_label_layouts(&section.cached_operation_labels),
-        }
-    }
-
-    pub(crate) fn materialize<'a>(&self, bytes: &'a [u8]) -> Section<'a> {
-        let record_area = self.record_area.map(|range| RecordArea {
-            offset: range.start,
-            bytes: bytes
-                .get(range.start..range.end)
-                .expect("cached section record area remains in source"),
-        });
-        let cached_operation_labels = match record_area {
-            Some(area) => {
-                materialize_operation_labels(area.bytes, area.offset, &self.operation_labels).into()
-            }
-            None => Arc::from([]),
-        };
-        Section {
-            offset: self.offset,
-            byte_len: self.byte_len,
-            types: self
-                .types
-                .iter()
-                .map(|layout| registry::materialize_type_definition(bytes, layout))
-                .collect::<Vec<_>>()
-                .into(),
-            fields: self
-                .fields
-                .iter()
-                .map(|layout| registry::materialize_field_definition(bytes, layout))
-                .collect::<Vec<_>>()
-                .into(),
-            record_area,
-            cached_operation_labels,
-        }
-    }
-}
-
 /// A feature operation name in a size-framed feature-history record area.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationLabel<'a> {
@@ -1325,63 +1123,6 @@ pub struct OperationLabel<'a> {
     pub object_indices: [Option<u32>; 4],
     /// Absolute byte offset of each object-index token in header order.
     pub object_index_offsets: [usize; 4],
-}
-
-/// Cached byte layout for one validated operation label.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct OperationLabelLayout {
-    header_offset: usize,
-    offset: usize,
-    value_len: usize,
-    object_indices: [Option<u32>; 4],
-    object_index_offsets: [usize; 4],
-}
-
-/// Convert borrowed operation labels into cached byte layouts.
-pub(crate) fn operation_label_layouts(labels: &[OperationLabel<'_>]) -> Vec<OperationLabelLayout> {
-    labels
-        .iter()
-        .map(|label| OperationLabelLayout {
-            header_offset: label.header_offset,
-            offset: label.offset,
-            value_len: label.value.len(),
-            object_indices: label.object_indices,
-            object_index_offsets: label.object_index_offsets,
-        })
-        .collect()
-}
-
-fn materialize_operation_labels<'a>(
-    bytes: &'a [u8],
-    base_offset: usize,
-    layouts: &[OperationLabelLayout],
-) -> Vec<OperationLabel<'a>> {
-    layouts
-        .iter()
-        .map(|layout| {
-            let value_start = layout
-                .offset
-                .checked_sub(base_offset)
-                .and_then(|offset| offset.checked_add(2))
-                .expect("cached operation label offset remains in record area");
-            let value_end = value_start
-                .checked_add(layout.value_len)
-                .expect("cached operation label length remains in record area");
-            let value = std::str::from_utf8(
-                bytes
-                    .get(value_start..value_end)
-                    .expect("cached operation label value remains in record area"),
-            )
-            .expect("cached operation label remains UTF-8");
-            OperationLabel {
-                header_offset: layout.header_offset,
-                offset: layout.offset,
-                value,
-                object_indices: layout.object_indices,
-                object_index_offsets: layout.object_index_offsets,
-            }
-        })
-        .collect()
 }
 
 /// One operation record bounded by consecutive validated operation headers.
@@ -1473,103 +1214,19 @@ pub struct OperationTerminalFrame {
     pub object_index_offset: usize,
 }
 
-/// One operation-state object-index token with its exact serialized form.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStateIndex<'a> {
-    /// The `ff` null token.
-    Null {
-        /// Absolute byte offset of the token.
-        offset: usize,
-    },
-    /// A decoded non-null object index.
-    Value {
-        /// Decoded value.
-        value: u32,
-        /// Exact serialized token.
-        raw: &'a [u8],
-        /// Absolute byte offset of the token.
-        offset: usize,
-    },
-}
-
-impl<'a> OperationStateIndex<'a> {
-    /// Decoded value, or `None` for the `ff` null token.
-    pub const fn value(self) -> Option<u32> {
-        match self {
-            Self::Null { .. } => None,
-            Self::Value { value, .. } => Some(value),
-        }
-    }
-
-    /// Exact serialized token.
-    pub const fn raw(self) -> &'a [u8] {
-        match self {
-            Self::Null { .. } => &[0xff],
-            Self::Value { raw, .. } => raw,
-        }
-    }
-
-    /// Absolute byte offset of the token.
-    pub const fn offset(self) -> usize {
-        match self {
-            Self::Null { offset, .. } | Self::Value { offset, .. } => offset,
-        }
-    }
-}
-
-/// A non-null operation-state index token.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NonNullStateIndex<'a> {
-    /// Decoded value.
-    pub value: u32,
-    /// Exact serialized token.
-    pub raw: &'a [u8],
-    /// Absolute byte offset of the token.
-    pub offset: usize,
-}
-
-impl<'a> NonNullStateIndex<'a> {
-    fn from_index(index: OperationStateIndex<'a>) -> Option<Self> {
-        match index {
-            OperationStateIndex::Value { value, raw, offset } => Some(Self { value, raw, offset }),
-            OperationStateIndex::Null { .. } => None,
-        }
-    }
-}
-
-/// One operation-state tagged integer with its exact serialized form.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationStateTaggedValue<'a> {
-    /// Decoded unsigned value.
-    pub value: u32,
-    /// Exact marker and payload bytes.
-    pub raw: &'a [u8],
-    /// Absolute byte offset of the marker.
-    pub offset: usize,
-}
-
-impl OperationStateTaggedValue<'_> {
-    /// First serialized marker byte.
-    pub fn marker(self) -> u8 {
-        self.raw[0]
-    }
-}
-
 /// One row in the operation-state object counter map.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationStateCounter<'a> {
-    /// Absolute byte offset of the row's `05` marker.
-    pub offset: usize,
+pub struct OperationStateCounter {
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
     /// Row-kind byte following `05`; modern files use `01` and `02`.
     pub row_kind: OperationStateCounterKind,
     /// Object whose state-counter pair is recorded.
-    pub object_index: OperationStateIndex<'a>,
+    pub object_index: NonNullStateIndex,
     /// Journal state at which the object was introduced.
     pub introduced_state: u8,
     /// Journal state at which the object was last modified.
     pub modified_state: u8,
-    /// Exclusive absolute end offset after the `4e` terminator.
-    pub end_offset: usize,
 }
 
 /// Contiguous object state-counter map at the end of a feature-history area.
@@ -1580,7 +1237,7 @@ pub struct OperationStateCounterMap<'a> {
     /// Absolute byte offset after the final counter row.
     pub end_offset: usize,
     /// Rows in serialized order.
-    pub rows: Vec<OperationStateCounter<'a>>,
+    pub rows: Vec<OperationStateCounter>,
     /// Exact bytes after the counter rows within the bounded record area.
     pub trailing_bytes: &'a [u8],
 }
@@ -1588,18 +1245,14 @@ pub struct OperationStateCounterMap<'a> {
 /// One diagnostic/message record in the operation-state block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationStateMessage<'a> {
-    /// Absolute byte offset of the opening `03` marker.
-    pub offset: usize,
-    /// Declared length from the `03` length byte through the text terminator.
-    pub declared_length: u8,
-    /// Exact ASCII Part Navigator text.
-    pub text: &'a str,
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
+    /// Exact byte-length-framed ASCII Part Navigator text.
+    pub text: StateMessageText<&'a str>,
     /// Tagged value following the four zero bytes.
-    pub value: OperationStateTaggedValue<'a>,
+    pub value: StateTaggedValue,
     /// Big-endian count or severity word following the tagged value.
     pub count_or_severity: u16,
-    /// Exclusive absolute end offset after the count/severity word.
-    pub end_offset: usize,
 }
 
 /// Payload form of one per-object operation-state status row.
@@ -1610,9 +1263,9 @@ pub enum OperationStateStatusPayload<'a> {
     /// Status with a link-code and one linked object index.
     Linked {
         /// Serialized link discriminator.
-        link_code: u8,
+        link_code: StateLinkCode,
         /// Linked object index between the two `ff` sentinels.
-        object_index: OperationStateIndex<'a>,
+        object_index: NonNullStateIndex,
     },
     /// Status carrying the exact inline diagnostic record.
     Diagnostic {
@@ -1629,16 +1282,14 @@ pub enum OperationStateStatusPayload<'a> {
 /// One per-object status row in the operation-state block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationStateStatus<'a> {
-    /// Absolute byte offset of the status-code token.
-    pub offset: usize,
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
     /// Exact non-null status-code token and decoded value.
-    pub status_code: NonNullStateIndex<'a>,
+    pub status_code: NonNullStateIndex,
     /// Object carrying this status.
-    pub object_index: OperationStateIndex<'a>,
+    pub object_index: NonNullStateIndex,
     /// Status payload, retained without naming suppression codes.
     pub payload: OperationStateStatusPayload<'a>,
-    /// Exclusive absolute end offset after the payload.
-    pub end_offset: usize,
 }
 
 /// A bounded sequence of operation-state status rows.
@@ -1651,33 +1302,31 @@ pub struct OperationStateStatusTable<'a> {
     /// Rows in serialized order.
     pub rows: Vec<OperationStateStatus<'a>>,
     /// Standalone feature-record slot lanes following the status rows.
-    pub slot_lanes: Vec<OperationStateSlotLane<'a>>,
+    pub slot_lanes: Vec<OperationStateSlotLane>,
     /// Exact bounded bytes after the last complete status row.
     pub trailing_bytes: &'a [u8],
 }
 
 /// One standalone feature-record slot lane in the operation-state block.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationStateSlotLane<'a> {
-    /// Absolute byte offset of the `02 01 11` lane prefix.
-    pub offset: usize,
+pub struct OperationStateSlotLane {
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
     /// Null or object-index slots in serialized order.
-    pub slots: Vec<OperationStateIndex<'a>>,
-    /// Exclusive absolute end offset after the `02 11` terminator.
-    pub end_offset: usize,
+    pub slots: StateSlots<OperationStateIndex>,
 }
 
 struct OperationStateBlock<'a> {
     offset: usize,
     status_end_offset: usize,
     rows: Vec<OperationStateStatus<'a>>,
-    slot_lanes: Vec<OperationStateSlotLane<'a>>,
+    slot_lanes: Vec<OperationStateSlotLane>,
     messages: Vec<OperationStateMessage<'a>>,
 }
 
 /// One row in an `m_rollForwardStates` group table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStateGroupRow<'a> {
+pub enum OperationStateGroupRow {
     /// `4a object_index position ff` list member. The common position is a
     /// direct byte; one generation uses the same compact token family as an
     /// object index for positions above the direct range.
@@ -1685,9 +1334,9 @@ pub enum OperationStateGroupRow<'a> {
         /// Absolute byte offset of the row's `4a` marker.
         offset: usize,
         /// Ordered feature-record member.
-        object_index: OperationStateIndex<'a>,
+        object_index: NonNullStateIndex,
         /// Serialized list-position token.
-        position: OperationStateIndex<'a>,
+        position: NonNullStateIndex,
     },
     /// `tag object_index object_index ff ff` relation member.
     Pair {
@@ -1696,79 +1345,21 @@ pub enum OperationStateGroupRow<'a> {
         /// Schema-generation relation tag (`4f` or `48`).
         tag: OperationStatePairTag,
         /// First relation endpoint.
-        first: OperationStateIndex<'a>,
+        first: NonNullStateIndex,
         /// Second relation endpoint.
-        second: OperationStateIndex<'a>,
+        second: NonNullStateIndex,
     },
-}
-
-/// Two admitted group opener encodings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStateGroupOpener {
-    /// `01 00` opener.
-    Form00,
-    /// `01 01` opener.
-    Form01,
-}
-
-impl OperationStateGroupOpener {
-    pub fn bytes(self) -> [u8; 2] {
-        match self {
-            Self::Form00 => [1, 0],
-            Self::Form01 => [1, 1],
-        }
-    }
-}
-
-impl TryFrom<[u8; 2]> for OperationStateGroupOpener {
-    type Error = &'static str;
-    fn try_from(bytes: [u8; 2]) -> Result<Self, Self::Error> {
-        match bytes {
-            [1, 0] => Ok(Self::Form00),
-            [1, 1] => Ok(Self::Form01),
-            _ => Err("invalid operation-state group opener"),
-        }
-    }
-}
-
-/// Empty or explicitly counted operation-state group header.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStateGroupCount {
-    /// Single zero byte, without an explicit count.
-    Empty,
-    /// `01 count`, including the implicit owner slot.
-    Counted(u8),
-}
-
-impl OperationStateGroupCount {
-    pub fn prefix(self) -> Option<u8> {
-        match self {
-            Self::Empty => None,
-            Self::Counted(_) => Some(1),
-        }
-    }
-
-    pub fn declared_count(self) -> u8 {
-        match self {
-            Self::Empty => 0,
-            Self::Counted(count) => count,
-        }
-    }
 }
 
 /// One counted `m_rollForwardStates` group.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationStateGroup<'a> {
-    /// Absolute byte offset of the two-byte group opener.
-    pub offset: usize,
+pub struct OperationStateGroup {
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
     /// Admitted two-byte group opener.
     pub opener: OperationStateGroupOpener,
-    /// Empty or explicitly counted header.
-    pub count: OperationStateGroupCount,
-    /// Ordered list or pair rows.
-    pub rows: Vec<OperationStateGroupRow<'a>>,
-    /// Exclusive absolute end offset after the final group row.
-    pub end_offset: usize,
+    /// Ordered rows with their exact count-header form.
+    pub members: StateGroupMembers<OperationStateGroupRow>,
 }
 
 /// A bounded sequence of `m_rollForwardStates` groups.
@@ -1779,63 +1370,35 @@ pub struct OperationStateGroupTable<'a> {
     /// Absolute byte offset after the final group.
     pub end_offset: usize,
     /// Groups in serialized order.
-    pub groups: Vec<OperationStateGroup<'a>>,
+    pub groups: Vec<OperationStateGroup>,
     /// Exact table-boundary bytes after the final complete group.
     pub trailing_bytes: &'a [u8],
 }
 
 /// One state-journal row preceding feature operation records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationStateJournalRow<'a> {
-    /// Absolute byte offset of the row's `e0` timestamp marker.
-    pub offset: usize,
+pub struct OperationStateJournalRow {
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
     /// Big-endian Unix timestamp.
     pub timestamp: u32,
     /// Tagged schema value stored by the journal.
-    pub value: OperationStateTaggedValue<'a>,
+    pub value: StateTaggedValue,
     /// Schema identifier varint.
-    pub schema_id: OperationStateIndex<'a>,
+    pub schema_id: NonNullStateIndex,
     /// Monotone state ordinal varint.
-    pub ordinal: OperationStateIndex<'a>,
-    /// Exclusive absolute end offset after the `13` terminator.
-    pub end_offset: usize,
+    pub ordinal: NonNullStateIndex,
 }
 
 /// One state-journal group.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationStateJournalGroup<'a> {
-    /// Absolute byte offset of the `04` group opener.
-    pub offset: usize,
+pub struct OperationStateJournalGroup {
+    /// Checked source position within its record area.
+    pub span: SourceSpan,
     /// Two opener selector bytes.
     pub selector: [u8; 2],
     /// Journal rows in serialized order.
-    pub rows: Vec<OperationStateJournalRow<'a>>,
-    /// Exclusive absolute end offset after the final row.
-    pub end_offset: usize,
-}
-
-/// One complete row in an audit-trail record area.
-///
-/// Audit rows share the tagged-value width family with feature-history state,
-/// but they are a separate record-area grammar. Their optional four-byte
-/// selector envelope is retained without assigning an event or suppression
-/// meaning.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AuditTrailRow<'a> {
-    /// Absolute byte offset of the opening `04` marker.
-    pub offset: usize,
-    /// Monotone audit-row ordinal and its exact token.
-    pub ordinal: OperationStateIndex<'a>,
-    /// Optional selector byte in the exact `04 05 selector 00` envelope.
-    pub frame_selector: Option<u8>,
-    /// Big-endian timestamp following the `e0` marker.
-    pub timestamp: u32,
-    /// Tagged value following the timestamp.
-    pub value: OperationStateTaggedValue<'a>,
-    /// Exact complete row bytes.
-    pub raw: &'a [u8],
-    /// Exclusive absolute end offset after the tagged value.
-    pub end_offset: usize,
+    pub rows: Vec<OperationStateJournalRow>,
 }
 
 /// One length-framed UTF-8 string in a bounded operation payload.
@@ -1844,7 +1407,7 @@ pub struct OperationPayloadString<'a> {
     /// Absolute offset of the `04` marker.
     pub offset: usize,
     /// Exact non-empty string value.
-    pub value: &'a str,
+    pub value: crate::payload_text::PayloadText<&'a str>,
 }
 
 /// Marker selecting a bounded operation text frame.
@@ -1862,7 +1425,7 @@ pub struct OperationPayloadTextFrame<'a> {
     /// Absolute offset of the marker.
     pub offset: usize,
     /// Exact non-empty text value.
-    pub value: &'a str,
+    pub value: crate::payload_text::PayloadText<&'a str>,
 }
 
 /// One canonical variable-width object index in an operation payload.
@@ -2247,19 +1810,6 @@ pub struct DatumPlaneObjectScalarPair {
     pub values: [LocatedBinary64; 2],
 }
 
-/// Exact 40-byte datum-plane descriptor block.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DatumPlaneDescriptorBlock {
-    /// Lowercase hexadecimal identity preceding the delimiter.
-    pub identity: String,
-    /// Exact descriptor suffix beginning with `?`.
-    pub suffix: Vec<u8>,
-    /// Non-null compact schema index following `?A`.
-    pub schema_index: u32,
-    /// Nonempty printable terminal label.
-    pub label: String,
-}
-
 /// Exact scalar pair following an object or sketch discriminator.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjectPayloadScalarPair {
@@ -2324,55 +1874,6 @@ impl DatumCsysPayloadFixedPair {
         let first = self.offset + self.discriminator().len();
         [first, first + 8 + 1]
     }
-}
-
-/// One bounded datum-CSYS descriptor block with a unique hexadecimal identity.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DatumCsysDescriptorBlock {
-    /// Exact bytes preceding the identity.
-    pub prefix: Vec<u8>,
-    /// Lowercase 30–32 digit hexadecimal identity.
-    pub identity: String,
-    /// Exact bytes following the identity.
-    pub suffix: Vec<u8>,
-}
-
-/// Complete identity frame in a reconstructed draft construction payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DraftConstructionIdentityFrame {
-    /// Payload-relative offset of the opening `41` marker.
-    pub offset: usize,
-    /// Exact bytes from the opening marker through the identity introducer.
-    pub prefix: Vec<u8>,
-    /// Typed frame form selected by the exact prefix.
-    pub form: DraftConstructionIdentityFrameForm,
-    /// Nonempty lowercase hexadecimal identity.
-    pub identity: String,
-}
-
-impl DraftConstructionIdentityFrame {
-    pub fn identity_offset(&self) -> usize {
-        self.offset + self.prefix.len()
-    }
-}
-
-/// Typed prefix form of a draft construction identity frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DraftConstructionIdentityFrameForm {
-    /// Two compact indices and a `02` or `03` branch.
-    IndexedBranch {
-        /// Non-null first compact index.
-        first_index: u32,
-        /// Nullable second compact index.
-        second_index: Option<u32>,
-        /// Exact `02` or `03` branch byte.
-        branch: DraftIdentityBranch,
-    },
-    /// One nullable compact index followed by `ff 02 01`.
-    Tagged {
-        /// Nullable compact index.
-        index: Option<u32>,
-    },
 }
 
 /// Compact object frame in a bounded offset-store block.
@@ -2797,14 +2298,14 @@ impl<'a> Section<'a> {
             View::u32_le_at(bytes, 8)?,
         ];
         let suffix = bytes.get(12..)?;
-        let layout = product_record_layout(suffix, ProductRecordForm::Modern)
-            .or_else(|| product_record_layout(suffix, ProductRecordForm::LegacyFeature))?;
+        let layout = ProductRecord::read(suffix, ProductRecordForm::Modern)
+            .or_else(|| ProductRecord::read(suffix, ProductRecordForm::LegacyFeature))?;
         Some(RecordAreaHeader {
             offset,
             control_words,
             product: StoreVersion {
                 offset: offset + 12,
-                value: std::str::from_utf8(&suffix[layout.text_start..layout.text_end]).ok()?,
+                value: layout.text(),
             },
         })
     }
@@ -2813,11 +2314,6 @@ impl<'a> Section<'a> {
     #[cfg(test)]
     pub fn operation_labels(&self) -> Vec<OperationLabel<'a>> {
         self.cached_operation_labels.to_vec()
-    }
-
-    /// Return the validated operation-label layouts for container caching.
-    pub(crate) fn operation_label_layouts(&self) -> Vec<OperationLabelLayout> {
-        operation_label_layouts(&self.cached_operation_labels)
     }
 
     /// Decode fully framed Boolean operations from the pointed record area.
@@ -2893,7 +2389,7 @@ impl<'a> Section<'a> {
     /// separator form may be skipped when it leads to another complete group.
     /// Any other byte stops the journal so later record-region data cannot
     /// become state.
-    pub fn operation_state_journal_groups(&self) -> Option<Vec<OperationStateJournalGroup<'a>>> {
+    pub fn operation_state_journal_groups(&self) -> Option<Vec<OperationStateJournalGroup>> {
         let is_feature_history = self
             .types
             .iter()
@@ -2944,7 +2440,7 @@ impl<'a> Section<'a> {
         let block = self.operation_state_block()?;
         let status_after = block.status_end_offset.checked_sub(base_offset)?;
         let message_start = match block.messages.first() {
-            Some(message) => message.offset.checked_sub(base_offset)?,
+            Some(message) => message.span.local_start(),
             None => status_after,
         };
         (!block.rows.is_empty() || !block.slot_lanes.is_empty()).then_some(
@@ -2970,7 +2466,7 @@ impl<'a> Section<'a> {
     /// feature-history and model areas from being interpreted as audit data.
     /// Unknown bytes before, between, and after complete rows remain outside
     /// this typed view.
-    pub fn audit_trail_rows(&self) -> Option<Vec<AuditTrailRow<'a>>> {
+    pub fn audit_trail_rows(&self) -> Option<Vec<AuditTrailRow>> {
         let has_audit_marker = self
             .types
             .iter()
@@ -3199,9 +2695,7 @@ pub fn operation_payload_text_frames(
             at += 1;
             continue;
         };
-        let Some(value) = std::str::from_utf8(raw).ok().filter(|value| {
-            !value.is_empty() && value.chars().all(|character| !character.is_control())
-        }) else {
+        let Some(value) = std::str::from_utf8(raw).ok().and_then(|value| crate::payload_text::PayloadText::new(value).ok()) else {
             at += 1;
             continue;
         };
@@ -3240,7 +2734,7 @@ pub fn simple_hole_repeated_scalar_lane(
     }
     let templates = operation_payload_strings(record)
         .into_iter()
-        .filter(|value| value.value.starts_with("Hole_"))
+        .filter(|value| value.value.as_str().starts_with("Hole_"))
         .collect::<Vec<_>>();
     let [template] = templates.as_slice() else {
         return None;
@@ -5675,40 +5169,8 @@ pub fn datum_plane_object_scalar_pairs(bytes: &[u8]) -> Vec<DatumPlaneObjectScal
 }
 
 /// Decode one complete datum-plane descriptor block.
-pub fn datum_plane_descriptor_block(bytes: &[u8]) -> Option<DatumPlaneDescriptorBlock> {
-    if bytes.len() != 40 {
-        return None;
-    }
-    let delimiter = bytes.iter().position(|byte| *byte == b'?')?;
-    let identity = bytes.get(..delimiter)?;
-    if identity.is_empty()
-        || !identity
-            .iter()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
-    {
-        return None;
-    }
-    let suffix = bytes.get(delimiter..)?;
-    if suffix.get(..2) != Some(b"?A") {
-        return None;
-    }
-    let (CompactIndex::Value(schema_index), width) = compact_index(suffix.get(2..)?)? else {
-        return None;
-    };
-    let label_start = 2 + width + 3;
-    if suffix.get(2 + width..label_start) != Some(&[0xff, 0x02, 0x01]) {
-        return None;
-    }
-    let label = suffix.get(label_start..)?;
-    if label.is_empty() || !label.iter().all(u8::is_ascii_graphic) {
-        return None;
-    }
-    Some(DatumPlaneDescriptorBlock {
-        identity: std::str::from_utf8(identity).ok()?.to_string(),
-        suffix: suffix.to_vec(),
-        schema_index,
-        label: std::str::from_utf8(label).ok()?.to_string(),
-    })
+pub fn datum_plane_descriptor_block(bytes: &[u8]) -> Option<plane_descriptor::PlaneDescriptor> {
+    plane_descriptor::PlaneDescriptor::read(bytes)
 }
 
 /// Decode every exactly framed scalar pair in a reconstructed object payload.
@@ -5974,109 +5436,15 @@ pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<FramedScalarRun<Dr
 }
 
 /// Decode a bounded datum-CSYS descriptor containing one unique maximal identity run.
-pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<DatumCsysDescriptorBlock> {
-    let mut candidate = None;
-    let mut at = 0;
-    while at < bytes.len() {
-        if !(bytes[at].is_ascii_digit() || (b'a'..=b'f').contains(&bytes[at])) {
-            at += 1;
-            continue;
-        }
-        let start = at;
-        while at < bytes.len() && (bytes[at].is_ascii_digit() || (b'a'..=b'f').contains(&bytes[at]))
-        {
-            at += 1;
-        }
-        if (30..=32).contains(&(at - start)) {
-            if candidate.is_some() {
-                return None;
-            }
-            candidate = Some((start, at));
-        }
-    }
-    let (start, end) = candidate?;
-    Some(DatumCsysDescriptorBlock {
-        prefix: bytes[..start].to_vec(),
-        identity: std::str::from_utf8(&bytes[start..end]).ok()?.to_string(),
-        suffix: bytes[end..].to_vec(),
-    })
+pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<csys_descriptor::CsysDescriptor> {
+    csys_descriptor::CsysDescriptor::read(bytes)
 }
 
 /// Decode every complete identity frame in a reconstructed draft construction payload.
-pub fn draft_construction_identity_frames(bytes: &[u8]) -> Vec<DraftConstructionIdentityFrame> {
-    let mut frames = Vec::new();
-    for offset in 0..bytes.len() {
-        if bytes[offset] != 0x41 {
-            continue;
-        }
-        let Some((prefix_len, form)) = draft_identity_prefix(&bytes[offset..]) else {
-            continue;
-        };
-        let identity_start = offset + prefix_len;
-        let mut identity_end = identity_start;
-        while bytes
-            .get(identity_end)
-            .is_some_and(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
-        {
-            identity_end += 1;
-        }
-        if identity_end == identity_start || bytes.get(identity_end) != Some(&b'?') {
-            continue;
-        }
-        frames.push(DraftConstructionIdentityFrame {
-            offset,
-            prefix: bytes[offset..offset + prefix_len].to_vec(),
-            form,
-            identity: String::from_utf8(bytes[identity_start..identity_end].to_vec())
-                .expect("lowercase hexadecimal bytes are UTF-8"),
-        });
-    }
-    frames
+pub fn draft_construction_identity_frames(bytes: &[u8]) -> Vec<draft_identity::DraftIdentityFrame> {
+    (0..bytes.len()).filter_map(|offset| draft_identity::DraftIdentityFrame::read(bytes, offset)).collect()
 }
 
-fn draft_identity_prefix(bytes: &[u8]) -> Option<(usize, DraftConstructionIdentityFrameForm)> {
-    if bytes.first() != Some(&0x41) {
-        return None;
-    }
-    if bytes.get(1) == Some(&0xf0) {
-        let (index, index_width) = compact_index(bytes.get(2..)?)?;
-        let end = 2 + index_width + 3;
-        (bytes.get(2 + index_width..end) == Some(&[0xff, 0x02, 0x01])).then_some((
-            end,
-            DraftConstructionIdentityFrameForm::Tagged {
-                index: compact_index_value(index),
-            },
-        ))
-    } else {
-        let (CompactIndex::Value(first_index), first_width) = compact_index(bytes.get(1..)?)?
-        else {
-            return None;
-        };
-        let second_at = 1 + first_width + 1;
-        if bytes.get(1 + first_width) != Some(&0xf0) {
-            return None;
-        }
-        let (second_index, second_width) = compact_index(bytes.get(second_at..)?)?;
-        let branch_at = second_at + second_width;
-        let end = branch_at + 2;
-        let branch = DraftIdentityBranch::try_from(*bytes.get(branch_at)?).ok()?;
-        (bytes.get(branch_at + 1) == Some(&0x01)).then_some((
-            end,
-            DraftConstructionIdentityFrameForm::IndexedBranch {
-                first_index,
-                second_index: compact_index_value(second_index),
-                branch,
-            },
-        ))
-    }
-}
-
-fn compact_index_value(index: CompactIndex) -> Option<u32> {
-    match index {
-        CompactIndex::Null => None,
-        CompactIndex::Value(value) => Some(value),
-    }
-}
 
 /// Decode compact object IDs followed by their complete frame discriminator.
 pub fn data_block_object_frames(bytes: &[u8]) -> Vec<DataBlockObjectFrame> {
@@ -6501,90 +5869,31 @@ fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)>
 }
 
 fn operation_relation_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {
-    let token = operation_state_index_at(bytes, at, 0)?;
+    let token = OperationStateIndex::read_at(bytes, at, 0)?;
     Some((token.value(), at + token.raw().len()))
-}
-
-fn operation_state_index_at(
-    bytes: &[u8],
-    at: usize,
-    base_offset: usize,
-) -> Option<OperationStateIndex<'_>> {
-    let prefix = *bytes.get(at)?;
-    let (value, width) = match prefix {
-        0x00..=0x7f => (Some(u32::from(prefix)), 1),
-        0x80..=0x8f => (
-            Some(u32::from(prefix - 0x80) * 256 + u32::from(*bytes.get(at + 1)?)),
-            2,
-        ),
-        0x90 => (Some(u32::from(View::u16_be_at(bytes, at + 1)?)), 3),
-        0xa0..=0xaf => (
-            Some(u32::from(prefix - 0xa0) * 0x1_0000 + u32::from(View::u16_be_at(bytes, at + 1)?)),
-            3,
-        ),
-        0xf1 => (Some(u32::from(View::u16_be_at(bytes, at + 1)?)), 3),
-        0xff => (None, 1),
-        _ => return None,
-    };
-    let raw = bytes.get(at..at + width)?;
-    let offset = base_offset.checked_add(at)?;
-    Some(match value {
-        None => OperationStateIndex::Null { offset },
-        Some(value) => OperationStateIndex::Value { value, raw, offset },
-    })
-}
-
-fn operation_state_tagged_value_at(
-    bytes: &[u8],
-    at: usize,
-    base_offset: usize,
-) -> Option<OperationStateTaggedValue<'_>> {
-    let marker = *bytes.get(at)?;
-    let (width, value) = match marker {
-        0xa0..=0xbf => (
-            3,
-            u32::from(marker - 0xa0) * 0x1_0000 + u32::from(View::u16_be_at(bytes, at + 1)?),
-        ),
-        0xc0..=0xdf => (
-            4,
-            u32::from(marker - 0xc0) * 0x1_000_000
-                + (u32::from(*bytes.get(at + 1)?) << 16)
-                + (u32::from(*bytes.get(at + 2)?) << 8)
-                + u32::from(*bytes.get(at + 3)?),
-        ),
-        0xe0 | 0xff => (5, View::u32_be_at(bytes, at + 1)?),
-        _ => return None,
-    };
-    Some(OperationStateTaggedValue {
-        value,
-        raw: bytes.get(at..at + width)?,
-        offset: base_offset.checked_add(at)?,
-    })
 }
 
 fn operation_state_counter_row(
     bytes: &[u8],
     at: usize,
     base_offset: usize,
-) -> Option<OperationStateCounter<'_>> {
+) -> Option<OperationStateCounter> {
     if bytes.get(at) != Some(&0x05) {
         return None;
     }
     let row_kind = OperationStateCounterKind::try_from(*bytes.get(at + 1)?).ok()?;
     let object_at = at.checked_add(2)?;
-    let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
-    object_index.value()?;
+    let object_index = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, object_at, base_offset)?)?;
     let state_at = object_at.checked_add(object_index.raw().len())?;
     let introduced_state = *bytes.get(state_at)?;
     let modified_state = *bytes.get(state_at + 1)?;
     let end = state_at.checked_add(3)?;
     (bytes.get(end - 1) == Some(&0x4e)).then_some(OperationStateCounter {
-        offset: base_offset.checked_add(at)?,
+        span: SourceSpan::new(base_offset, at, end)?,
         row_kind,
         object_index,
         introduced_state,
         modified_state,
-        end_offset: base_offset.checked_add(end)?,
     })
 }
 
@@ -6610,10 +5919,7 @@ pub fn operation_state_counter_map(
         let Some(row) = operation_state_counter_row(bytes, at, base_offset) else {
             continue;
         };
-        let row_end = row
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("counter row offset is based on the same record area");
+        let row_end = row.span.local_end();
         if at == run_end {
             run_end = row_end;
             run_len += 1;
@@ -6634,10 +5940,7 @@ pub fn operation_state_counter_map(
     let mut cursor = start;
     while cursor < end {
         let row = operation_state_counter_row(bytes, cursor, base_offset)?;
-        cursor = row
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("counter row offset is based on the same record area");
+        cursor = row.span.local_end();
         rows.push(row);
     }
     (cursor == end).then_some(OperationStateCounterMap {
@@ -6657,34 +5960,23 @@ fn operation_state_message_at(
         return None;
     }
     let declared_length = *bytes.get(at + 1)?;
-    if declared_length < 3 {
-        return None;
-    }
     let text_end = at.checked_add(usize::from(declared_length))?;
     let text = bytes.get(at + 2..text_end)?;
-    if !text
-        .iter()
-        .all(|byte| *byte == b' ' || byte.is_ascii_graphic())
-    {
-        return None;
-    }
-    let text = std::str::from_utf8(text).ok()?;
+    let text = StateMessageText::new(std::str::from_utf8(text).ok()?).ok()?;
     let terminator = text_end;
     (bytes.get(terminator) == Some(&0)).then_some(())?;
     let zeros_start = terminator.checked_add(1)?;
     let zeros_end = zeros_start.checked_add(4)?;
     (bytes.get(zeros_start..zeros_end) == Some(&[0, 0, 0, 0])).then_some(())?;
-    let value = operation_state_tagged_value_at(bytes, zeros_end, base_offset)?;
-    let count_at = zeros_end.checked_add(value.raw.len())?;
+    let value = StateTaggedValue::read_at(bytes, zeros_end)?;
+    let count_at = zeros_end.checked_add(value.raw().len())?;
     let count_or_severity = View::u16_be_at(bytes, count_at)?;
     let end = count_at.checked_add(2)?;
     Some(OperationStateMessage {
-        offset: base_offset.checked_add(at)?,
-        declared_length,
+        span: SourceSpan::new(base_offset, at, end)?,
         text,
         value,
         count_or_severity,
-        end_offset: base_offset.checked_add(end)?,
     })
 }
 
@@ -6701,7 +5993,7 @@ fn operation_state_status_end_at(
         precomputed_end.or_else(|| operation_state_slot_lane_end_at(bytes, at, end))
     } else {
         operation_state_status_row_at(bytes, at, end, base_offset, opaque_lane_starts)
-            .and_then(|row| row.end_offset.checked_sub(base_offset))
+            .map(|row| row.span.local_end())
     }
 }
 
@@ -6756,7 +6048,7 @@ fn operation_state_block_before_boundary(
     let mut message_paths = Vec::new();
     for at in (start..end).rev() {
         if let Some(message) = operation_state_message_at(bytes, at, base_offset) {
-            let next = message.end_offset.checked_sub(base_offset)?;
+            let next = message.span.local_end();
             if next > at && next <= end {
                 let continuation = (next < end)
                     .then(|| operation_state_path_at(&message_paths, next))
@@ -6827,7 +6119,7 @@ fn operation_state_block_before_boundary(
     while at < path_end {
         if in_messages {
             let message = operation_state_message_at(bytes, at, base_offset)?;
-            let next = message.end_offset.checked_sub(base_offset)?;
+            let next = message.span.local_end();
             (next > at && next <= path_end).then_some(())?;
             messages.push(message);
             at = next;
@@ -6857,7 +6149,7 @@ fn operation_state_block_before_boundary(
         let message = operation_state_message_at(bytes, at, base_offset);
         let message_next = message
             .as_ref()
-            .and_then(|message| message.end_offset.checked_sub(base_offset));
+            .map(|message| message.span.local_end());
         let message_length = operation_state_path_at(&message_paths, at)
             .filter(|path| path.end == path_end)
             .map_or(0, |path| path.length);
@@ -6866,9 +6158,9 @@ fn operation_state_block_before_boundary(
             let next = status_next?;
             if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
                 let lane = operation_state_slot_lane_at(bytes, at, end, base_offset)?;
-                let lane_end = lane.end_offset.checked_sub(base_offset)?;
+                let lane_end = lane.span.local_end();
                 (lane_end == next).then_some(())?;
-                let lane_end_offset = lane.end_offset;
+                let lane_end_offset = lane.span.end_offset();
                 slot_lanes.push(lane);
                 at = next;
                 status_end_offset = lane_end_offset;
@@ -6880,11 +6172,11 @@ fn operation_state_block_before_boundary(
                     base_offset,
                     Some(&opaque_lane_starts),
                 )?;
-                let row_end = row.end_offset.checked_sub(base_offset)?;
+                let row_end = row.span.local_end();
                 (row_end == next).then_some(())?;
                 rows.push(row);
                 at = next;
-                status_end_offset = row.end_offset;
+                status_end_offset = row.span.end_offset();
             }
         } else {
             let message = message?;
@@ -6917,10 +6209,7 @@ pub fn operation_state_messages(
             at += 1;
             continue;
         };
-        at = message
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("message offset is based on the same bounded region");
+        at = message.span.local_end();
         messages.push(message);
     }
     messages
@@ -6950,15 +6239,12 @@ fn operation_state_link_payload(
     end: usize,
     base_offset: usize,
 ) -> Option<(OperationStateStatusPayload<'_>, usize)> {
-    let link_code = *bytes.get(payload_at)?;
-    if matches!(link_code, 0x02 | 0x03 | 0x1e | 0x3f | 0xff)
-        || bytes.get(payload_at + 1) != Some(&0xff)
-    {
+    let link_code = StateLinkCode::try_from(*bytes.get(payload_at)?).ok()?;
+    if bytes.get(payload_at + 1) != Some(&0xff) {
         return None;
     }
     let linked_at = payload_at.checked_add(2)?;
-    let linked = operation_state_index_at(bytes, linked_at, base_offset)?;
-    linked.value()?;
+    let linked = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, linked_at, base_offset)?)?;
     let sentinel_at = linked_at.checked_add(linked.raw().len())?;
     if bytes.get(sentinel_at) != Some(&0xff) {
         return None;
@@ -6978,7 +6264,7 @@ fn operation_state_slot_lane_at(
     at: usize,
     end: usize,
     base_offset: usize,
-) -> Option<OperationStateSlotLane<'_>> {
+) -> Option<OperationStateSlotLane> {
     if bytes.get(at..at + 3) != Some(&[0x02, 0x01, 0x11]) {
         return None;
     }
@@ -6988,12 +6274,11 @@ fn operation_state_slot_lane_at(
         if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
             let lane_end = cursor + 2;
             return Some(OperationStateSlotLane {
-                offset: base_offset.checked_add(at)?,
-                slots,
-                end_offset: base_offset.checked_add(lane_end)?,
+                span: SourceSpan::new(base_offset, at, lane_end)?,
+                slots: StateSlots::new(slots).ok()?,
             });
         }
-        let slot = operation_state_index_at(bytes, cursor, base_offset)?;
+        let slot = OperationStateIndex::read_at(bytes, cursor, base_offset)?;
         cursor = cursor.checked_add(slot.raw().len())?;
         slots.push(slot);
     }
@@ -7009,7 +6294,7 @@ fn operation_state_slot_lane_end_at(bytes: &[u8], at: usize, end: usize) -> Opti
         if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
             return cursor.checked_add(2);
         }
-        let slot = operation_state_index_at(bytes, cursor, 0)?;
+        let slot = OperationStateIndex::read_at(bytes, cursor, 0)?;
         cursor = cursor.checked_add(slot.raw().len())?;
     }
     None
@@ -7023,10 +6308,9 @@ fn operation_state_status_row_at<'a>(
     opaque_lane_starts: Option<&[usize]>,
 ) -> Option<OperationStateStatus<'a>> {
     let status_code =
-        NonNullStateIndex::from_index(operation_state_index_at(bytes, at, base_offset)?)?;
-    let object_at = at.checked_add(status_code.raw.len())?;
-    let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
-    object_index.value()?;
+        NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, at, base_offset)?)?;
+    let object_at = at.checked_add(status_code.raw().len())?;
+    let object_index = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, object_at, base_offset)?)?;
     let payload_at = object_at.checked_add(object_index.raw().len())?;
     if payload_at >= end {
         return None;
@@ -7035,10 +6319,7 @@ fn operation_state_status_row_at<'a>(
         0x3f => (OperationStateStatusPayload::Plain, payload_at + 1),
         0x03 => {
             let message = operation_state_message_at(bytes, payload_at, base_offset)?;
-            let payload_end = message
-                .end_offset
-                .checked_sub(base_offset)
-                .expect("message offset is based on the same bounded region");
+            let payload_end = message.span.local_end();
             (
                 OperationStateStatusPayload::Diagnostic { message },
                 payload_end,
@@ -7059,11 +6340,10 @@ fn operation_state_status_row_at<'a>(
         _ => operation_state_link_payload(bytes, payload_at, end, base_offset)?,
     };
     (payload_end <= end).then_some(OperationStateStatus {
-        offset: base_offset.checked_add(at)?,
+        span: SourceSpan::new(base_offset, at, payload_end)?,
         status_code,
         object_index,
         payload,
-        end_offset: base_offset.checked_add(payload_end)?,
     })
 }
 
@@ -7087,20 +6367,14 @@ pub fn operation_state_status_table(
         }
         if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
             let lane = operation_state_slot_lane_at(bytes, at, end, base_offset)?;
-            at = lane
-                .end_offset
-                .checked_sub(base_offset)
-                .expect("slot-lane offset is based on the same bounded region");
+            at = lane.span.local_end();
             slot_lanes.push(lane);
             continue;
         }
         let Some(row) = operation_state_status_row_at(bytes, at, end, base_offset, None) else {
             break;
         };
-        at = row
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("status offset is based on the same bounded region");
+        at = row.span.local_end();
         rows.push(row);
     }
     (!rows.is_empty()).then_some(OperationStateStatusTable {
@@ -7134,16 +6408,14 @@ fn operation_state_group_row_at(
     bytes: &[u8],
     cursor: usize,
     base_offset: usize,
-) -> Option<(OperationStateGroupRow<'_>, usize)> {
+) -> Option<(OperationStateGroupRow, usize)> {
     let tag = *bytes.get(cursor)?;
     match tag {
         0x4a => {
             let object_at = cursor.checked_add(1)?;
-            let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
-            object_index.value()?;
+            let object_index = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, object_at, base_offset)?)?;
             let position_at = object_at.checked_add(object_index.raw().len())?;
-            let position = operation_state_index_at(bytes, position_at, base_offset)?;
-            position.value()?;
+            let position = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, position_at, base_offset)?)?;
             let sentinel_at = position_at.checked_add(position.raw().len())?;
             let row_end = sentinel_at.checked_add(1)?;
             (bytes.get(sentinel_at) == Some(&0xff)).then_some((
@@ -7158,11 +6430,9 @@ fn operation_state_group_row_at(
         tag => {
             let tag = OperationStatePairTag::try_from(tag).ok()?;
             let first_at = cursor.checked_add(1)?;
-            let first = operation_state_index_at(bytes, first_at, base_offset)?;
-            first.value()?;
+            let first = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, first_at, base_offset)?)?;
             let second_at = first_at.checked_add(first.raw().len())?;
-            let second = operation_state_index_at(bytes, second_at, base_offset)?;
-            second.value()?;
+            let second = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, second_at, base_offset)?)?;
             let sentinels_at = second_at.checked_add(second.raw().len())?;
             let row_end = sentinels_at.checked_add(2)?;
             (bytes.get(sentinels_at..row_end) == Some(&[0xff, 0xff])).then_some((
@@ -7197,7 +6467,7 @@ fn operation_state_group_at(
     at: usize,
     end: usize,
     base_offset: usize,
-) -> Option<OperationStateGroup<'_>> {
+) -> Option<OperationStateGroup> {
     let (opener, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
     let member_count = usize::from(count.declared_count().saturating_sub(1));
     let mut rows = Vec::with_capacity(member_count);
@@ -7207,11 +6477,9 @@ fn operation_state_group_at(
         cursor = row_end;
     }
     (cursor <= end).then_some(OperationStateGroup {
-        offset: base_offset.checked_add(at)?,
+        span: SourceSpan::new(base_offset, at, cursor)?,
         opener,
-        count,
-        rows,
-        end_offset: base_offset.checked_add(cursor)?,
+        members: StateGroupMembers::new(count, rows).ok()?,
     })
 }
 
@@ -7319,10 +6587,7 @@ pub fn operation_state_group_table(
             }
             return None;
         };
-        at = group
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("group offset is based on the same bounded region");
+        at = group.span.local_end();
         groups.push(group);
     }
     (!groups.is_empty() && at == end).then_some(OperationStateGroupTable {
@@ -7338,30 +6603,27 @@ fn operation_state_journal_row_at(
     at: usize,
     end: usize,
     base_offset: usize,
-) -> Option<OperationStateJournalRow<'_>> {
+) -> Option<OperationStateJournalRow> {
     if bytes.get(at) != Some(&0xe0) {
         return None;
     }
     let timestamp = View::u32_be_at(bytes, at + 1)?;
-    let value = operation_state_tagged_value_at(bytes, at + 5, base_offset)?;
-    let schema_at = at.checked_add(5 + value.raw.len())?;
-    let schema_id = operation_state_index_at(bytes, schema_at, base_offset)?;
-    schema_id.value()?;
+    let value = StateTaggedValue::read_at(bytes, at + 5)?;
+    let schema_at = at.checked_add(5 + value.raw().len())?;
+    let schema_id = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, schema_at, base_offset)?)?;
     let ordinal_at = schema_at.checked_add(schema_id.raw().len())?;
-    let ordinal = operation_state_index_at(bytes, ordinal_at, base_offset)?;
-    ordinal.value()?;
+    let ordinal = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, ordinal_at, base_offset)?)?;
     let terminator_at = ordinal_at.checked_add(ordinal.raw().len())?;
     if terminator_at >= end || bytes.get(terminator_at) != Some(&0x13) {
         return None;
     }
     let row_end = terminator_at + 1;
     Some(OperationStateJournalRow {
-        offset: base_offset.checked_add(at)?,
+        span: SourceSpan::new(base_offset, at, row_end)?,
         timestamp,
         value,
         schema_id,
         ordinal,
-        end_offset: base_offset.checked_add(row_end)?,
     })
 }
 
@@ -7370,13 +6632,12 @@ fn audit_trail_row_at(
     at: usize,
     end: usize,
     base_offset: usize,
-) -> Option<AuditTrailRow<'_>> {
+) -> Option<AuditTrailRow> {
     let bytes = bytes.get(..end)?;
     if bytes.get(at) != Some(&0x04) {
         return None;
     }
-    let ordinal = operation_state_index_at(bytes, at.checked_add(1)?, base_offset)?;
-    ordinal.value()?;
+    let ordinal = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, at.checked_add(1)?, base_offset)?)?;
     let mut cursor = at.checked_add(1 + ordinal.raw().len())?;
     if bytes.get(cursor) != Some(&0x13) {
         return None;
@@ -7399,16 +6660,9 @@ fn audit_trail_row_at(
     }
     let timestamp = View::u32_be_at(bytes, cursor + 1)?;
     cursor = cursor.checked_add(5)?;
-    let value = operation_state_tagged_value_at(bytes, cursor, base_offset)?;
-    let row_end = cursor.checked_add(value.raw.len())?;
-    Some(AuditTrailRow {
-        offset: base_offset.checked_add(at)?,
-        ordinal,
-        frame_selector,
-        timestamp,
-        value,
-        raw: bytes.get(at..row_end)?,
-        end_offset: base_offset.checked_add(row_end)?,
+    let value = StateTaggedValue::read_at(bytes, cursor)?;
+    AuditTrailRow::new(base_offset, at, AuditRecord {
+        ordinal: ordinal.token(), frame_selector, timestamp, value,
     })
 }
 
@@ -7423,7 +6677,7 @@ pub fn audit_trail_rows(
     start: usize,
     end: usize,
     base_offset: usize,
-) -> Option<Vec<AuditTrailRow<'_>>> {
+) -> Option<Vec<AuditTrailRow>> {
     if start >= end || end > bytes.len() {
         return None;
     }
@@ -7435,12 +6689,12 @@ pub fn audit_trail_rows(
             at += 1;
             continue;
         };
-        let ordinal = row.ordinal.value()?;
+        let ordinal = row.record().ordinal.value();
         if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
             return None;
         }
         previous_ordinal = Some(ordinal);
-        at = row.end_offset.checked_sub(base_offset)?;
+        at = row.local_end();
         rows.push(row);
     }
     Some(rows)
@@ -7451,7 +6705,7 @@ fn operation_state_journal_group_at(
     at: usize,
     end: usize,
     base_offset: usize,
-) -> Option<OperationStateJournalGroup<'_>> {
+) -> Option<OperationStateJournalGroup> {
     if bytes.get(at) != Some(&0x04) {
         return None;
     }
@@ -7468,17 +6722,13 @@ fn operation_state_journal_group_at(
         let Some(row) = operation_state_journal_row_at(bytes, cursor, end, base_offset) else {
             break;
         };
-        cursor = row
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("journal offset is based on the same bounded region");
+        cursor = row.span.local_end();
         rows.push(row);
     }
     (!rows.is_empty()).then_some(OperationStateJournalGroup {
-        offset: base_offset.checked_add(at)?,
+        span: SourceSpan::new(base_offset, at, cursor)?,
         selector,
         rows,
-        end_offset: base_offset.checked_add(cursor)?,
     })
 }
 
@@ -7519,7 +6769,7 @@ fn operation_state_journal_groups_before_boundary(
     start: usize,
     end: usize,
     base_offset: usize,
-) -> Option<Vec<OperationStateJournalGroup<'_>>> {
+) -> Option<Vec<OperationStateJournalGroup>> {
     if start >= end || end > bytes.len() {
         return None;
     }
@@ -7541,16 +6791,13 @@ fn operation_state_journal_groups_before_boundary(
             continue;
         };
         for row in &group.rows {
-            let ordinal = row.ordinal.value()?;
+            let ordinal = row.ordinal.value();
             if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
                 return None;
             }
             previous_ordinal = Some(ordinal);
         }
-        at = group
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("journal offset is based on the same bounded region");
+        at = group.span.local_end();
         groups.push(group);
     }
     (!groups.is_empty()).then_some(groups)
@@ -7563,7 +6810,7 @@ pub fn operation_state_journal(
     start: usize,
     end: usize,
     base_offset: usize,
-) -> Option<Vec<OperationStateJournalGroup<'_>>> {
+) -> Option<Vec<OperationStateJournalGroup>> {
     if start >= end || end > bytes.len() {
         return None;
     }
@@ -7571,10 +6818,7 @@ pub fn operation_state_journal(
     let mut at = start;
     while at < end {
         let group = operation_state_journal_group_at(bytes, at, end, base_offset)?;
-        at = group
-            .end_offset
-            .checked_sub(base_offset)
-            .expect("journal offset is based on the same bounded region");
+        at = group.span.local_end();
         groups.push(group);
     }
     (!groups.is_empty() && at == end).then_some(groups)
@@ -8057,10 +7301,8 @@ pub fn surface_payload_strings(bytes: &[u8]) -> Vec<SurfacePayloadString<'_>> {
             let start = offset.checked_add(MARKER.len() + 1)?;
             let end = start.checked_add(text_len)?;
             let raw = bytes.get(start..end)?;
-            let value = std::str::from_utf8(raw).ok()?;
-            (!value.is_empty()
-                && value.chars().all(|character| !character.is_control())
-                && bytes.get(end) == Some(&0))
+            let value = crate::payload_text::PayloadText::new(std::str::from_utf8(raw).ok()?).ok()?;
+            (bytes.get(end) == Some(&0))
             .then_some(SurfacePayloadString { offset, value })
         })
         .collect()
@@ -8095,15 +7337,6 @@ pub fn numeric_expressions(bytes: &[u8]) -> Vec<NumericExpression<'_>> {
 
 /// Locate independently size-framed OM sections and their type registries.
 pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
-    sections_with_operation_label_layouts(bytes, None, &[])
-}
-
-/// Locate sections while reusing cached operation-label layouts when present.
-pub(crate) fn sections_with_operation_label_layouts<'a>(
-    bytes: &'a [u8],
-    entry_index: Option<usize>,
-    cached_operation_label_layouts: &[(usize, usize, Vec<OperationLabelLayout>)],
-) -> Vec<Section<'a>> {
     let mut out = Vec::new();
     let mut at = 0usize;
     while at + 16 <= bytes.len() {
@@ -8156,20 +7389,8 @@ pub(crate) fn sections_with_operation_label_layouts<'a>(
             offset: start,
             bytes: &bytes[start..end],
         });
-        let cached_operation_labels = match record_area {
-            Some(area) => cached_operation_label_layouts
-                .iter()
-                .find(|(cached_entry, offset, _)| {
-                    Some(*cached_entry) == entry_index && *offset == area.offset
-                })
-                .map_or_else(
-                    || operation_labels(area.bytes, area.offset),
-                    |(_, _, layouts)| {
-                        materialize_operation_labels(area.bytes, area.offset, layouts)
-                    },
-                ),
-            None => Vec::new(),
-        };
+        let cached_operation_labels = record_area
+            .map_or_else(Vec::new, |area| operation_labels(area.bytes, area.offset));
         out.push(Section {
             offset,
             byte_len: end - offset,
@@ -8193,7 +7414,7 @@ fn section_record_area_pointer(
         let relative = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
         let target = section_offset.checked_add(relative)?;
         (target >= at.checked_add(4)? && target.checked_add(15)? <= section_end).then_some(())?;
-        is_product_record(bytes.get(target.checked_add(12)?..section_end)?).then_some((target, at))
+        ProductRecord::read(bytes.get(target.checked_add(12)?..section_end)?, ProductRecordForm::Modern).is_some().then_some((target, at))
     });
     let first = matches.next()?;
     matches.next().is_none().then_some(first)
@@ -8224,7 +7445,7 @@ fn legacy_feature_record_area_pointer(
             View::u32_le_at(bytes, target)?;
             View::u32_le_at(bytes, target + 4)?;
             View::u32_le_at(bytes, target + 8)?;
-            product_record_layout(
+            ProductRecord::read(
                 bytes.get(target + 12..section_end)?,
                 ProductRecordForm::LegacyFeature,
             )?;
@@ -8234,93 +7455,53 @@ fn legacy_feature_record_area_pointer(
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ProductRecordLayout {
-    text_start: usize,
-    text_end: usize,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ProductRecordForm {
-    Modern,
-    LegacyFeature,
-}
-
-fn product_record_layout(bytes: &[u8], form: ProductRecordForm) -> Option<ProductRecordLayout> {
-    let (length_offset, text_start): (usize, usize) = match form {
-        ProductRecordForm::Modern if matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) => (2, 3),
-        ProductRecordForm::LegacyFeature if bytes.first() == Some(&0x01) => (1, 2),
-        _ => return None,
-    };
-    let text_length = usize::from(*bytes.get(length_offset)?).checked_sub(2)?;
-    let text_end = text_start.checked_add(text_length)?;
-    let text = bytes.get(text_start..text_end)?;
-    (text.starts_with(b"NX ")
-        && text
-            .iter()
-            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-        && bytes.get(text_end) == Some(&0))
-    .then_some(ProductRecordLayout {
-        text_start,
-        text_end,
-    })
-}
-
-/// Validate one self-framed NX product record.
-pub(crate) fn is_product_record(bytes: &[u8]) -> bool {
-    product_record_layout(bytes, ProductRecordForm::Modern).is_some()
-}
-
-#[derive(Debug, Clone, Copy)]
 struct ProductRecordRange {
     start: usize,
     end: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct IndexedCandidateSpan {
-    start: usize,
-    end: usize,
+#[derive(Debug, Clone)]
+enum IndexedCandidateKind<'a> {
+    Fixed(FixedIndex<'a>),
+    OffsetOnly(OffsetIndex<'a>),
 }
 
-#[derive(Debug, Clone, Copy)]
-enum IndexedCandidateKind {
-    Fixed {
-        base: usize,
-        entity_index_offset: usize,
-        object_id_table_offset: usize,
-        count: usize,
-    },
-    OffsetOnly {
-        entity_index_offset: usize,
-        object_id_table_offset: usize,
-        first: usize,
-        first_record: usize,
-        last: usize,
-        record_count: usize,
-    },
-}
-
-#[derive(Debug, Clone, Copy)]
-struct IndexedCandidate {
-    span: IndexedCandidateSpan,
+#[derive(Debug, Clone)]
+struct IndexedCandidate<'a> {
     discovery_order: usize,
-    kind: IndexedCandidateKind,
+    kind: IndexedCandidateKind<'a>,
+}
+
+impl<'a> IndexedCandidate<'a> {
+    fn start(&self) -> usize {
+        match &self.kind {
+            IndexedCandidateKind::Fixed(index) => index.index_start(),
+            IndexedCandidateKind::OffsetOnly(index) => index.index_start(),
+        }
+    }
+
+    fn source(&self) -> &'a [u8] {
+        match &self.kind {
+            IndexedCandidateKind::Fixed(index) => index.source(),
+            IndexedCandidateKind::OffsetOnly(index) => index.source(),
+        }
+    }
 }
 
 fn product_record_range_at(bytes: &[u8], offset: usize) -> Option<ProductRecordRange> {
     let suffix = bytes.get(offset..)?;
-    let layout = product_record_layout(suffix, ProductRecordForm::Modern)?;
+    let layout = ProductRecord::read(suffix, ProductRecordForm::Modern)?;
     Some(ProductRecordRange {
         start: offset,
-        end: offset.checked_add(layout.text_end)?.checked_add(1)?,
+        end: offset.checked_add(layout.byte_len())?,
     })
 }
 
 fn record_area_product_end(bytes: &[u8], offset: usize) -> Option<usize> {
     let suffix = bytes.get(offset..)?;
-    let layout = product_record_layout(suffix, ProductRecordForm::Modern)
-        .or_else(|| product_record_layout(suffix, ProductRecordForm::LegacyFeature))?;
-    offset.checked_add(layout.text_end)?.checked_add(1)
+    let layout = ProductRecord::read(suffix, ProductRecordForm::Modern)
+        .or_else(|| ProductRecord::read(suffix, ProductRecordForm::LegacyFeature))?;
+    offset.checked_add(layout.byte_len())
 }
 
 /// Count validated product records fully contained in `[lower, upper]`.
@@ -8347,130 +7528,50 @@ fn product_record_count_within(ranges: &[ProductRecordRange], lower: usize, uppe
 /// admitted candidates sufficient to recognize every nested candidate. This
 /// keeps the admission pass linear after sorting and, more importantly, keeps
 /// rejected candidates as layout metadata rather than allocated records.
-fn select_outer_indexed_candidates(mut candidates: Vec<IndexedCandidate>) -> Vec<IndexedCandidate> {
+fn select_outer_indexed_candidates(mut candidates: Vec<IndexedCandidate<'_>>) -> Vec<IndexedCandidate<'_>> {
     candidates.sort_by(|left, right| {
-        left.span
-            .start
-            .cmp(&right.span.start)
-            .then_with(|| right.span.end.cmp(&left.span.end))
+        left.start()
+            .cmp(&right.start())
+            .then_with(|| right.source().len().cmp(&left.source().len()))
     });
     let mut admitted = Vec::with_capacity(candidates.len());
     let mut furthest_end = 0;
     for candidate in candidates {
-        if candidate.span.end <= furthest_end {
+        if candidate.source().len() <= furthest_end {
             continue;
         }
-        furthest_end = candidate.span.end;
+        furthest_end = candidate.source().len();
         admitted.push(candidate);
     }
     admitted.sort_by_key(|candidate| candidate.discovery_order);
     admitted
 }
 
-fn materialize_indexed_candidate(bytes: &[u8], candidate: IndexedCandidate) -> IndexedSection<'_> {
-    match candidate.kind {
-        IndexedCandidateKind::Fixed {
-            base,
-            entity_index_offset: entity_index_start,
-            object_id_table_offset,
-            count,
-        } => {
-            let type_registry = registry::type_registry(bytes, base, entity_index_start);
-            let fields = registry::all_field_definitions(
-                bytes,
-                type_registry.field_start,
-                entity_index_start,
-            );
-            let records = (1..count)
-                .map(|index| {
-                    let start_offset = entity_index_offset(bytes, entity_index_start, index)
-                        .expect("validated entity index remains readable");
-                    let end_offset = entity_index_offset(bytes, entity_index_start, index + 1)
-                        .expect("validated entity index remains readable");
-                    let start = base
-                        .checked_add(start_offset)
-                        .expect("validated entity index remains bounded");
-                    let end = base
-                        .checked_add(end_offset)
-                        .expect("validated entity index remains bounded");
-                    let payload = bytes
-                        .get(start..end)
-                        .expect("validated entity index remains readable");
-                    let object_id_offset = object_id_table_offset
-                        .checked_add(4)
-                        .and_then(|offset| {
-                            offset
-                                .checked_add(index.checked_mul(4).expect("object-id index bounded"))
-                        })
-                        .expect("object-id table offset remains bounded");
-                    let object_id = View::u32_le_at(bytes, object_id_offset)
-                        .expect("validated object-id table remains readable");
-                    FixedEntityRecord {
-                        object_id: (object_id, object_id_offset as u64),
-                        offset: start,
-                        bytes: payload,
-                    }
-                })
-                .collect::<Vec<_>>();
-            IndexedSection {
-                base,
-                entity_index_offset: entity_index_start,
-                object_id_table_offset,
-                types: type_registry.definitions.into(),
-                fields: fields.into(),
-                store: IndexedStore::Fixed {
-                    records: records.into(),
-                },
-            }
+fn materialize_indexed_candidate(candidate: IndexedCandidate<'_>) -> IndexedSection<'_> {
+    let bytes = candidate.source();
+    let entity_index_offset = candidate.start();
+    let base = match &candidate.kind {
+        IndexedCandidateKind::Fixed(index) => index.base(),
+        IndexedCandidateKind::OffsetOnly(_) => 0,
+    };
+    let type_registry = registry::type_registry(bytes, base, entity_index_offset);
+    let fields = registry::all_field_definitions(bytes, type_registry.field_start, entity_index_offset);
+    let (object_id_table_offset, store) = match candidate.kind {
+        IndexedCandidateKind::Fixed(index) => (index.object_id_table_offset(), IndexedStore::Fixed {
+            records: index.records().collect::<Vec<_>>().into(),
+        }),
+        IndexedCandidateKind::OffsetOnly(index) => {
+            let control = index.control();
+            (control.offset, IndexedStore::OffsetOnly {
+                control,
+                column_storage: index.column_storage(),
+                records: index.records().collect::<Vec<_>>().into(),
+            })
         }
-        IndexedCandidateKind::OffsetOnly {
-            entity_index_offset: entity_index_start,
-            object_id_table_offset,
-            first,
-            first_record,
-            last,
-            record_count,
-        } => {
-            let type_registry = registry::type_registry(bytes, 0, entity_index_start);
-            let fields = registry::all_field_definitions(
-                bytes,
-                type_registry.field_start,
-                entity_index_start,
-            );
-            let records = (0..record_count)
-                .map(|index| {
-                    let start = entity_index_offset(bytes, entity_index_start, index + 1)
-                        .expect("validated offset-only index remains readable");
-                    let end = entity_index_offset(bytes, entity_index_start, index + 2)
-                        .expect("validated offset-only index remains readable");
-                    EntityRecord {
-                        offset: start,
-                        bytes: bytes
-                            .get(start..end)
-                            .expect("validated offset-only index remains readable"),
-                    }
-                })
-                .collect::<Vec<_>>();
-            IndexedSection {
-                base: 0,
-                entity_index_offset: entity_index_start,
-                object_id_table_offset,
-                types: type_registry.definitions.into(),
-                fields: fields.into(),
-                store: IndexedStore::OffsetOnly {
-                    control: EntityRecord {
-                        offset: first,
-                        bytes: bytes
-                            .get(first..first_record)
-                            .expect("validated offset-only control range remains readable"),
-                    },
-                    column_storage: bytes
-                        .get(first_record..last)
-                        .expect("validated offset-only storage range remains readable"),
-                    records: records.into(),
-                },
-            }
-        }
+    };
+    IndexedSection {
+        base, entity_index_offset, object_id_table_offset,
+        types: type_registry.definitions.into(), fields: fields.into(), store,
     }
 }
 
@@ -8519,27 +7620,13 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         let Some(base) = table_end.checked_sub(first) else {
             continue;
         };
-        if !entity_index_is_valid(bytes, &descending_u32_edges, index_start, count, base) {
+        let Some(index) = FixedIndex::new(&descending_u32_edges, index_start, count, base, table) else {
             continue;
-        }
-        let section_end = entity_index_offset(bytes, index_start, count)
-            .and_then(|end| base.checked_add(end))
-            .expect("validated entity index remains bounded");
-        if !seen_record_starts.insert(table_end) {
-            continue;
-        }
+        };
+        if !seen_record_starts.insert(table_end) { continue; }
         candidates.push(IndexedCandidate {
-            span: IndexedCandidateSpan {
-                start: index_start,
-                end: section_end,
-            },
             discovery_order: candidates.len(),
-            kind: IndexedCandidateKind::Fixed {
-                base,
-                entity_index_offset: index_start,
-                object_id_table_offset: table,
-                count,
-            },
+            kind: IndexedCandidateKind::Fixed(index),
         });
     }
     for count_offset in 8..bytes.len().saturating_sub(4) {
@@ -8591,190 +7678,37 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         if product_record_count != 1 {
             continue;
         }
-        if !offset_only_index_is_valid(
-            bytes,
-            &descending_u32_edges,
-            index_start,
-            offset_count,
-            count_offset,
-        ) {
+        let Some(index) = OffsetIndex::new(&descending_u32_edges, index_start, offset_count, count_offset) else {
             continue;
-        }
-        let first_record = second;
-        if !seen_record_starts.insert(first_record) {
-            continue;
-        }
+        };
+        if !seen_record_starts.insert(second) { continue; }
         candidates.push(IndexedCandidate {
-            span: IndexedCandidateSpan {
-                start: index_start,
-                end: last,
-            },
             discovery_order: candidates.len(),
-            kind: IndexedCandidateKind::OffsetOnly {
-                entity_index_offset: index_start,
-                object_id_table_offset: first,
-                first,
-                first_record,
-                last,
-                record_count,
-            },
+            kind: IndexedCandidateKind::OffsetOnly(index),
         });
     }
     select_outer_indexed_candidates(candidates)
         .into_iter()
-        .map(|candidate| materialize_indexed_candidate(bytes, candidate))
-        .collect()
-}
-
-fn entity_index_offset(bytes: &[u8], index_start: usize, index: usize) -> Option<usize> {
-    let offset = index_start.checked_add(index.checked_mul(4)?)?;
-    usize::try_from(View::u32_le_at(bytes, offset)?).ok()
-}
-
-/// Positions where one little-endian u32 index word decreases at the next
-/// word boundary. Candidate index tables are allowed to start at any byte, so
-/// the scan records every byte position rather than assuming four-byte file
-/// alignment.
-#[derive(Debug, Default)]
-struct DescendingU32Edges {
-    offsets_by_alignment: [Vec<usize>; 4],
-}
-
-impl DescendingU32Edges {
-    fn new(bytes: &[u8]) -> Self {
-        let mut offsets_by_alignment = <[Vec<usize>; 4]>::default();
-        for offset in 0..bytes.len().saturating_sub(7) {
-            if View::u32_le_at(bytes, offset)
-                .zip(View::u32_le_at(bytes, offset + 4))
-                .is_some_and(|(current, next)| current > next)
-            {
-                offsets_by_alignment[offset % 4].push(offset);
-            }
-        }
-        Self {
-            offsets_by_alignment,
-        }
-    }
-
-    /// Check all adjacent words in `[start, end)` without walking the range.
-    fn is_nondecreasing(&self, start: usize, end: usize) -> bool {
-        if end < start {
-            return false;
-        }
-        if end - start < 8 {
-            return true;
-        }
-        let offsets = &self.offsets_by_alignment[start % 4];
-        let first = offsets.partition_point(|offset| *offset < start);
-        offsets
-            .get(first)
-            .is_none_or(|offset| *offset >= end.saturating_sub(4))
-    }
-}
-
-// Validate candidate offset tables through borrowed words. A count word is
-// only a framing hint; do not allocate an offset table until every word is
-// monotone and its terminal range is in bounds.
-fn entity_index_is_valid(
-    bytes: &[u8],
-    descending_u32_edges: &DescendingU32Edges,
-    index_start: usize,
-    count: usize,
-    base: usize,
-) -> bool {
-    let Some(first_index) = entity_index_offset(bytes, index_start, 0) else {
-        return false;
-    };
-    if first_index != 0 {
-        return false;
-    }
-    let Some(first) = entity_index_offset(bytes, index_start, 1) else {
-        return false;
-    };
-    if first == 0 {
-        return false;
-    }
-    let Some(index_end) = count
-        .checked_add(1)
-        .and_then(|count| count.checked_mul(4))
-        .and_then(|length| index_start.checked_add(length))
-    else {
-        return false;
-    };
-    if !descending_u32_edges.is_nondecreasing(index_start, index_end) {
-        return false;
-    }
-    let Some(last) = View::u32_le_at(bytes, index_end.saturating_sub(4)) else {
-        return false;
-    };
-    base.checked_add(last as usize)
-        .is_some_and(|end| end <= bytes.len())
-}
-
-fn offset_only_index_is_valid(
-    bytes: &[u8],
-    descending_u32_edges: &DescendingU32Edges,
-    index_start: usize,
-    offset_count: usize,
-    count_offset: usize,
-) -> bool {
-    let Some(first) = entity_index_offset(bytes, index_start, 0) else {
-        return false;
-    };
-    if first < count_offset.saturating_add(4) {
-        return false;
-    }
-    let Some(index_end) = offset_count
-        .checked_mul(4)
-        .and_then(|length| index_start.checked_add(length))
-    else {
-        return false;
-    };
-    if index_end != count_offset || !descending_u32_edges.is_nondecreasing(index_start, index_end) {
-        return false;
-    }
-    let Some(last) = View::u32_le_at(bytes, index_end.saturating_sub(4)) else {
-        return false;
-    };
-    usize::try_from(last).is_ok_and(|last| last <= bytes.len())
-}
-
-/// Parse indexed sections once and retain only their source ranges.
-pub(crate) fn indexed_section_layouts(bytes: &[u8]) -> Vec<IndexedSectionLayout> {
-    indexed_sections(bytes)
-        .iter()
-        .map(IndexedSectionLayout::from_section)
+        .map(materialize_indexed_candidate)
         .collect()
 }
 
 /// Decode the first self-framed NX product/version marker in `bytes`.
 pub fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVersion<'_>> {
     (0..bytes.len().saturating_sub(3)).find_map(|at| {
-        let suffix = &bytes[at..];
-        is_product_record(suffix).then(|| {
-            let length = usize::from(suffix[2]) - 2;
-            StoreVersion {
-                offset: base_offset + at,
-                value: std::str::from_utf8(&suffix[3..3 + length])
-                    .expect("validated printable NX version is UTF-8"),
-            }
-        })
+        let product = ProductRecord::read(&bytes[at..], ProductRecordForm::Modern)?;
+        Some(StoreVersion { offset: base_offset.checked_add(at)?, value: product.text() })
     })
 }
 
 /// Decode the zero-prefixed offset-store control form as ordered 24-bit values.
 ///
 /// Each word is serialized `00, value:u24 LE`. The complete form is atomic.
-pub fn offset_store_control_values(bytes: &[u8]) -> Option<Vec<u32>> {
-    (!bytes.is_empty() && bytes.len().is_multiple_of(4)).then_some(())?;
-    bytes
-        .chunks_exact(4)
-        .map(|word| {
-            (word[0] == 0).then(|| {
-                u32::from(word[1]) | (u32::from(word[2]) << 8) | (u32::from(word[3]) << 16)
-            })
-        })
-        .collect()
+pub fn offset_store_control_values(bytes: &[u8]) -> Option<NonEmpty<ControlWord24>> {
+    bytes.len().is_multiple_of(4).then_some(())?;
+    NonEmpty::new(bytes.chunks_exact(4).map(|word| {
+        (word[0] == 0).then(|| ControlWord24::new([word[1], word[2], word[3]]))
+    }))?.transpose()
 }
 
 /// Decode the distinct leading class-registry identities in an offset-store
@@ -8785,7 +7719,7 @@ pub fn offset_store_control_values(bytes: &[u8]) -> Option<Vec<u32>> {
 /// instead the unique nonempty prefix whose identities are distinct and all
 /// smaller than every following metadata value.
 pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
-    let values = offset_store_control_values(bytes)?;
+    let values = offset_store_control_values(bytes)?.into_iter().map(ControlWord24::value).collect::<Vec<_>>();
     let mut suffix_minima =
         alloc_filled(values.len(), u32::MAX, "nx offset-store suffix minima").ok()?;
     for index in (0..values.len().saturating_sub(1)).rev() {
@@ -8805,9 +7739,6 @@ pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
         }
     }
     let boundary = boundary?;
-    if boundary == values.len() {
-        return None;
-    }
     Some(values[..boundary].to_vec())
 }
 
@@ -8834,33 +7765,27 @@ fn offset_store_product_anchored_form(
 ) -> Option<OffsetStoreControlForm> {
     let product_offset = unique_candidate(
         (0..control.len())
-            .filter(|offset| is_product_record(&control[*offset..]))
+            .filter(|offset| ProductRecord::read(&control[*offset..], ProductRecordForm::Modern).is_some())
             .chain(
                 (0..first_record.len())
-                    .filter(|offset| is_product_record(&first_record[*offset..]))
+                    .filter(|offset| ProductRecord::read(&first_record[*offset..], ProductRecordForm::Modern).is_some())
                     .map(|offset| control.len() + offset),
             ),
     )?;
     let leading_width = product_offset % 4;
-    (product_offset > leading_width).then_some(())?;
     if product_offset >= control.len() {
         let control_array_bytes = control.len().checked_sub(leading_width)?;
         (!control_array_bytes.is_multiple_of(4)).then_some(())?;
     }
-    let leading_value = (leading_width != 0).then(|| {
-        (0..leading_width).fold(0u32, |value, shift| {
-            value
-                | (u32::from(
-                    joined_control_byte(control, first_record, shift)
-                        .expect("leading byte precedes the validated product offset"),
-                ) << (shift * 8))
-        })
-    });
-    let values = (0..(product_offset - leading_width) / 4)
-        .map(|index| joined_control_u32_le(control, first_record, leading_width + index * 4))
-        .collect::<Option<Vec<_>>>()?;
+    let leading_value = if leading_width == 0 {
+        None
+    } else {
+        Some(ControlLeadingValue::read(leading_width, control.iter().chain(first_record).copied())?)
+    };
+    let values = NonEmpty::new((0..(product_offset - leading_width) / 4)
+        .map(|index| joined_control_u32_le(control, first_record, leading_width + index * 4)))?.transpose()?;
     Some(OffsetStoreControlForm::ProductAnchored {
-        leading_value: leading_value.map(|value| (leading_width, value)),
+        leading_value,
         values,
     })
 }
@@ -8871,15 +7796,15 @@ pub enum OffsetStoreControlForm {
     /// Complete `00 + value:u24 LE` word array.
     ZeroPrefixed {
         /// Ordered values decoded from the complete control block.
-        values: Vec<u32>,
+        values: NonEmpty<ControlWord24>,
     },
     /// Compact leading value and aligned `u32 LE` array preceding one
     /// self-framed product record.
     ProductAnchored {
         /// Width and value of the compact leading little-endian integer.
-        leading_value: Option<(usize, u32)>,
+        leading_value: Option<ControlLeadingValue>,
         /// Ordered values preceding the product record.
-        values: Vec<u32>,
+        values: NonEmpty<u32>,
     },
 }
 

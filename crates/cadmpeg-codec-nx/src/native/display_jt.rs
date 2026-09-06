@@ -4123,7 +4123,6 @@ mod tests {
                 file_span: Some((0, data_len)),
             }],
             indexed_section_layouts: std::sync::OnceLock::new(),
-            om_operation_label_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         };
         let indices = super::display_jt_indices(&container);
@@ -4230,7 +4229,6 @@ mod tests {
                 file_span: Some((0, data_len)),
             }],
             indexed_section_layouts: std::sync::OnceLock::new(),
-            om_operation_label_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         };
         let segment = DisplayJtSegment {
@@ -4326,7 +4324,6 @@ mod tests {
                 file_span: Some((0, data_len)),
             }],
             indexed_section_layouts: std::sync::OnceLock::new(),
-            om_operation_label_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         };
         let scene = DisplayJtSegment {
@@ -5230,7 +5227,6 @@ mod tests {
                 file_span: Some((0, data_len)),
             }],
             indexed_section_layouts: std::sync::OnceLock::new(),
-            om_operation_label_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         };
         let elements = [DisplayJtShapeLodElement {

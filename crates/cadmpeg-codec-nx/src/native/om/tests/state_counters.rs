@@ -47,13 +47,13 @@ fn native_catalog_emits_feature_history_state_counter_rows() {
     let rows = operation_state_counters(&container);
     assert_eq!(rows.len(), 2);
     assert_eq!(u8::from(rows[0].row_kind), 1);
-    assert_eq!(rows[0].object_index, 0x320);
-    assert_eq!(rows[0].raw_object_index, [0x83, 0x20]);
+    assert_eq!(rows[0].object_index.value(), 0x320);
+    assert_eq!(rows[0].object_index.raw(), [0x83, 0x20]);
     assert_eq!(rows[0].introduced_state, 1);
     assert_eq!(rows[0].modified_state, 2);
     assert!(rows[0].object_index_source_offset > rows[0].source_offset);
     assert_eq!(u8::from(rows[1].row_kind), 2);
-    assert_eq!(rows[1].object_index, 0x1234);
+    assert_eq!(rows[1].object_index.value(), 0x1234);
     assert_eq!(rows[1].ordinal, 1);
     assert_eq!(rows[0].section_link, rows[1].section_link);
 
@@ -84,13 +84,13 @@ fn native_catalog_emits_role_gated_audit_trail_rows() {
 
     let rows = audit_trail_rows(&container);
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].ordinal, 2);
-    assert_eq!(rows[0].frame_selector, None);
-    assert_eq!(rows[0].value_marker, 0xe0);
-    assert_eq!(rows[1].ordinal, 3);
-    assert_eq!(rows[1].frame_selector, Some(7));
-    assert_eq!(rows[1].value_marker, 0xc0);
-    assert!(rows[1].source_offset > rows[0].source_offset);
+    assert_eq!(rows[0].record().ordinal.value(), 2);
+    assert_eq!(rows[0].record().frame_selector, None);
+    assert_eq!(rows[0].record().value.marker(), 0xe0);
+    assert_eq!(rows[1].record().ordinal.value(), 3);
+    assert_eq!(rows[1].record().frame_selector, Some(7));
+    assert_eq!(rows[1].record().value.marker(), 0xc0);
+    assert!(rows[1].source_offset() > rows[0].source_offset());
 
     let result = NxCodec
         .decode(
@@ -131,14 +131,14 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].selector, [0x01, 0x02]);
     assert_eq!(groups[0].rows.len(), 1);
-    assert_eq!(groups[0].rows[0].value_marker, 0xc0);
-    assert_eq!(groups[0].rows[0].value, 0x0001_0203);
-    assert_eq!(groups[0].rows[0].schema_id, 0x310);
-    assert_eq!(groups[0].rows[0].state_ordinal, 2);
+    assert_eq!(groups[0].rows[0].value.marker(), 0xc0);
+    assert_eq!(groups[0].rows[0].value.value(), 0x0001_0203);
+    assert_eq!(groups[0].rows[0].schema_id.value(), 0x310);
+    assert_eq!(groups[0].rows[0].state_ordinal.value(), 2);
     assert_eq!(groups[1].selector, [0x05, 0x06]);
-    assert_eq!(groups[1].rows[0].value_marker, 0xa0);
-    assert_eq!(groups[1].rows[0].value, 0x0102);
-    assert_eq!(groups[1].rows[0].state_ordinal, 3);
+    assert_eq!(groups[1].rows[0].value.marker(), 0xa0);
+    assert_eq!(groups[1].rows[0].value.value(), 0x0102);
+    assert_eq!(groups[1].rows[0].state_ordinal.value(), 3);
     assert!(groups[1].source_offset > groups[0].source_offset);
 
     let result = NxCodec
@@ -182,25 +182,25 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
 
     let groups = operation_state_groups(&container);
     assert_eq!(groups.len(), 3);
-    assert_eq!(groups[0].count.declared_count(), 3);
-    assert_eq!(groups[0].rows.len(), 2);
+    assert_eq!(groups[0].members.count().declared_count(), 3);
+    assert_eq!(groups[0].members.rows().len(), 2);
     assert!(matches!(
-        groups[0].rows[0],
+        groups[0].members.rows()[0],
         OmRollForwardStateRow::List {
-            object_index: 0x3ba,
+            object_index,
             ..
-        }
+        } if object_index.value() == 0x3ba
     ));
     assert!(matches!(
-        groups[1].rows[0],
+        groups[1].members.rows()[0],
         OmRollForwardStateRow::Pair {
             tag: crate::om::discriminators::OperationStatePairTag::Form4f,
-            first: 0x42d,
-            second: 0x3e1,
+            first,
+            second,
             ..
-        }
+        } if first.value() == 0x42d && second.value() == 0x3e1
     ));
-    assert_eq!(groups[2].count.declared_count(), 0);
+    assert_eq!(groups[2].members.count().declared_count(), 0);
     assert_eq!(groups[0].table_trailing_bytes, [0x01, 0x01]);
     assert!(groups[0].table_end_offset > groups[0].source_offset);
 
@@ -233,9 +233,9 @@ fn native_catalog_emits_bounded_operation_state_messages() {
 
     let messages = operation_state_messages(&container);
     assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].body.text, "state warning");
-    assert_eq!(messages[0].body.value_marker, 0xaa);
-    assert_eq!(messages[0].body.value, 0x000a_606b);
+    assert_eq!(messages[0].body.text.as_str(), "state warning");
+    assert_eq!(messages[0].body.value.marker(), 0xaa);
+    assert_eq!(messages[0].body.value.value(), 0x000a_606b);
     assert_eq!(messages[0].body.count_or_severity, 0x0100);
     assert_eq!(
         messages[0].body.severity(),
@@ -269,30 +269,30 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
 
     let statuses = operation_state_statuses(&container);
     assert_eq!(statuses.len(), 2);
-    assert_eq!(statuses[0].status_code, 0x41);
-    assert_eq!(statuses[0].object_index, 0x20);
-    assert_eq!(statuses[0].raw_status_code, [0x41]);
+    assert_eq!(statuses[0].status_code.value(), 0x41);
+    assert_eq!(statuses[0].object_index.value(), 0x20);
+    assert_eq!(statuses[0].status_code.raw(), [0x41]);
     assert!(matches!(
         statuses[0].payload,
         crate::native::om::OmOperationStateStatusPayload::Plain
     ));
-    assert_eq!(statuses[1].status_code, 0x44);
-    assert_eq!(statuses[1].object_index, 0x21);
+    assert_eq!(statuses[1].status_code.value(), 0x44);
+    assert_eq!(statuses[1].object_index.value(), 0x21);
     assert!(matches!(
         statuses[1].payload,
         crate::native::om::OmOperationStateStatusPayload::Linked {
-            link_code: 0x4b,
-            object_index: 0x22,
+            link_code,
+            object_index,
             ..
-        }
+        } if u8::from(link_code) == 0x4b && object_index.value() == 0x22
     ));
 
     let lanes = operation_state_slot_lanes(&container);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].slots.len(), 3);
-    assert_eq!(lanes[0].slots[0].object_index, None);
-    assert_eq!(lanes[0].slots[1].object_index, Some(0x3ad));
-    assert_eq!(lanes[0].slots[2].object_index, None);
+    assert_eq!(lanes[0].slots.as_slice()[0].map(crate::om::state_index::StateIndexToken::value), None);
+    assert_eq!(lanes[0].slots.as_slice()[1].map(crate::om::state_index::StateIndexToken::value), Some(0x3ad));
+    assert_eq!(lanes[0].slots.as_slice()[2].map(crate::om::state_index::StateIndexToken::value), None);
 
     let result = NxCodec
         .decode(
@@ -312,4 +312,56 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
         .expect("state-slot-lane arena");
     assert_eq!(emitted_statuses, statuses.as_slice());
     assert_eq!(emitted_lanes, lanes.as_slice());
+}
+
+#[test]
+fn message_body_preserves_flat_tagged_value_wire() {
+    let json = r#"{"declared_length":3,"text":"A","value_marker":160,"value":0,"raw_value":[160,0,0],"count_or_severity":0}"#;
+    let body: super::OmOperationStateMessageBody = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&body).unwrap(), json);
+    let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+    wire["value"] = 1.into();
+    assert!(serde_json::from_value::<super::OmOperationStateMessageBody>(wire)
+        .unwrap_err().to_string().contains("value"));
+}
+
+#[test]
+fn message_body_rejects_text_length_mismatch() {
+    let json = r#"{"declared_length":4,"text":"A","value_marker":160,"value":0,"raw_value":[160,0,0],"count_or_severity":0}"#;
+    assert!(serde_json::from_str::<super::OmOperationStateMessageBody>(json)
+        .unwrap_err().to_string().contains("declared_length"));
+}
+
+#[test]
+fn roll_forward_groups_preserve_zero_row_headers_and_reject_count_mismatch() {
+    for (prefix, count) in [("null", 0), ("1", 0), ("1", 1)] {
+        let json = format!(r#"{{"id":"group","section_link":"section","ordinal":0,"opener":[1,0],"count_prefix":{prefix},"declared_count":{count},"rows":[],"table_trailing_bytes":[],"source_entry":"om","source_offset":0,"table_end_offset":4}}"#);
+        let group: OmRollForwardStateGroup = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_string(&group).unwrap(), json);
+    }
+    let json = r#"{"id":"group","section_link":"section","ordinal":0,"opener":[1,0],"count_prefix":1,"declared_count":2,"rows":[],"table_trailing_bytes":[],"source_entry":"om","source_offset":0,"table_end_offset":4}"#;
+    assert!(serde_json::from_str::<OmRollForwardStateGroup>(json)
+        .unwrap_err().to_string().contains("declared_count/rows"));
+}
+
+#[test]
+fn roll_forward_group_derives_row_ordinals() {
+    let json = r#"{"id":"group","section_link":"section","ordinal":0,"opener":[1,0],"count_prefix":1,"declared_count":2,"rows":[{"List":{"ordinal":0,"object_index":1,"raw_object_index":[1],"position":1,"raw_position":[1],"source_offset":4}}],"table_trailing_bytes":[],"source_entry":"om","source_offset":0,"table_end_offset":8}"#;
+    let group: OmRollForwardStateGroup = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&group).unwrap(), json);
+    let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+    wire["rows"][0]["List"]["ordinal"] = 1.into();
+    assert!(serde_json::from_value::<OmRollForwardStateGroup>(wire)
+        .unwrap_err().to_string().contains("rows.ordinal"));
+}
+
+#[test]
+fn state_slot_lane_derives_ordinals_and_preserves_null_tokens() {
+    let json = r#"{"id":"lane","section_link":"section","ordinal":0,"slots":[{"ordinal":0,"object_index":null,"raw_object_index":[255]},{"ordinal":1,"object_index":255,"raw_object_index":[144,0,255]}],"source_entry":"om","source_offset":0,"end_offset":9}"#;
+    let lane: OmOperationStateSlotLane = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+    let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+    wire["slots"][1]["ordinal"] = 0.into();
+    assert!(serde_json::from_value::<OmOperationStateSlotLane>(wire)
+        .unwrap_err().to_string().contains("slots.ordinal"));
 }

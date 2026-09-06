@@ -21,6 +21,9 @@ use crate::om::fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 use crate::om::scalar_run::FramedScalarRun;
 use crate::om::scalar_pair::{PairPosition, SketchPairForm, DatumPairForm, MixedPairForm};
 mod pair_wire;
+use crate::om::draft_identity::{DraftIdentityFrame, DraftIdentityForm};
+use crate::om::plane_descriptor::PlaneDescriptor;
+use crate::om::csys_descriptor::{CsysDescriptor, CsysDescriptorSlot, CsysIdentity, LocatedCsysDescriptor};
 use crate::om::discriminators::DraftBinary32Branch;
 use crate::om::pattern::{PatternRow, PatternRows, PatternScalarEncoding, PatternTerminal, PatternValue, PatternWideValues};
 use crate::om::thru_curve_state::ThruCurveBranchItems;
@@ -406,7 +409,7 @@ pub struct FeaturePayloadString {
     /// Zero-based string order within the post-label payload.
     pub ordinal: u32,
     /// Exact UTF-8 string value.
-    pub value: String,
+    pub value: crate::payload_text::PayloadText<String>,
     /// Absolute file offset of the `04` marker.
     pub source_offset: u64,
 }
@@ -422,7 +425,7 @@ pub struct FeatureSymbolicThreadTextFrame {
     /// Zero-based order among the operation's type-`03` text frames.
     pub ordinal: u32,
     /// Exact UTF-8 text value.
-    pub value: String,
+    pub value: crate::payload_text::PayloadText<String>,
     /// Absolute file offset of the text-frame marker.
     pub source_offset: u64,
 }
@@ -433,7 +436,7 @@ struct FeatureSymbolicThreadTextFrameWire {
     symbolic_thread: String,
     ordinal: u32,
     marker: u8,
-    value: String,
+    value: crate::payload_text::PayloadText<String>,
     source_offset: u64,
 }
 
@@ -629,7 +632,7 @@ pub struct FeatureSimpleHoleConstructionGroup {
     /// Shared repeated-witness block pair.
     pub second_data_blocks: [String; 2],
     /// Operations and their construction lanes in feature-history order.
-    pub members: Vec<FeatureSimpleHoleConstructionMember>,
+    pub members: SimpleHoleConstructionMembers,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -637,6 +640,31 @@ pub struct FeatureSimpleHoleConstructionMember {
     pub operation_label: String,
     pub scalar_lane: String,
     pub block_reference: String,
+}
+
+/// At least two distinct operations in retained feature-history order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SimpleHoleConstructionMembers(Vec<FeatureSimpleHoleConstructionMember>);
+
+impl SimpleHoleConstructionMembers {
+    pub fn new(members: Vec<FeatureSimpleHoleConstructionMember>) -> Result<Self, &'static str> {
+        if members.len() < 2 {
+            return Err("operation_labels must contain at least two members");
+        }
+        let mut labels = BTreeSet::new();
+        if members.iter().any(|member| !labels.insert(member.operation_label.as_str())) {
+            return Err("operation_labels must contain distinct members");
+        }
+        Ok(Self(members))
+    }
+}
+
+impl std::ops::Deref for SimpleHoleConstructionMembers {
+    type Target = [FeatureSimpleHoleConstructionMember];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -686,7 +714,7 @@ impl TryFrom<FeatureSimpleHoleConstructionGroupWire> for FeatureSimpleHoleConstr
             id: wire.id,
             first_data_blocks: wire.first_data_blocks,
             second_data_blocks: wire.second_data_blocks,
-            members: wire
+            members: SimpleHoleConstructionMembers::new(wire
                 .operation_labels
                 .into_iter()
                 .zip(wire.scalar_lanes)
@@ -698,7 +726,7 @@ impl TryFrom<FeatureSimpleHoleConstructionGroupWire> for FeatureSimpleHoleConstr
                         block_reference,
                     }
                 })
-                .collect(),
+                .collect()).map_err(str::to_owned)?,
         })
     }
 }
@@ -1656,23 +1684,11 @@ pub struct FeatureDatumCsysDescriptor {
     /// Construction carrying the descriptor lane.
     pub construction: String,
     /// Construction reference ordinal in the range 5–7.
-    pub reference_ordinal: u8,
+    pub reference_ordinal: CsysDescriptorSlot,
     /// Resolved source block.
     pub data_block: String,
-    /// Exact bytes preceding the hexadecimal identity.
-    pub prefix: Vec<u8>,
-    /// Lowercase 30–32 digit hexadecimal identity.
-    pub identity: String,
-    /// Exact bytes following the hexadecimal identity.
-    pub suffix: Vec<u8>,
-    /// Absolute source offset of the block.
-    pub source_offset: u64,
-}
-
-impl FeatureDatumCsysDescriptor {
-    pub fn identity_source_offset(&self) -> u64 {
-        self.source_offset + self.prefix.len() as u64
-    }
+    /// Checked descriptor bytes and source position.
+    pub descriptor: LocatedCsysDescriptor,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1701,17 +1717,17 @@ struct FeatureDatumCsysDescriptorWire {
 
 impl From<FeatureDatumCsysDescriptor> for FeatureDatumCsysDescriptorWire {
     fn from(value: FeatureDatumCsysDescriptor) -> Self {
-        let identity_source_offset = value.identity_source_offset();
+        let identity_source_offset = value.descriptor.identity_source_offset();
         Self {
             id: value.id,
             operation_label: value.operation_label,
             construction: value.construction,
-            reference_ordinal: value.reference_ordinal,
+            reference_ordinal: value.reference_ordinal.into(),
             data_block: value.data_block,
-            prefix: value.prefix,
-            identity: value.identity,
-            suffix: value.suffix,
-            source_offset: value.source_offset,
+            prefix: value.descriptor.descriptor().prefix().to_vec(),
+            identity: value.descriptor.descriptor().identity().as_str().to_owned(),
+            suffix: value.descriptor.descriptor().suffix().to_vec(),
+            source_offset: value.descriptor.source_offset(),
             identity_source_offset,
         }
     }
@@ -1721,19 +1737,19 @@ impl TryFrom<FeatureDatumCsysDescriptorWire> for FeatureDatumCsysDescriptor {
     type Error = String;
 
     fn try_from(wire: FeatureDatumCsysDescriptorWire) -> Result<Self, Self::Error> {
-        if wire.source_offset.checked_add(wire.prefix.len() as u64) != Some(wire.identity_source_offset) {
+        let identity = CsysIdentity::try_from(wire.identity).map_err(str::to_owned)?;
+        let descriptor = CsysDescriptor::from_wire(wire.prefix, identity, wire.suffix).map_err(str::to_owned)?;
+        let descriptor = LocatedCsysDescriptor::new(descriptor, wire.source_offset).map_err(str::to_owned)?;
+        if descriptor.identity_source_offset() != wire.identity_source_offset {
             return Err("identity_source_offset must equal source_offset plus prefix length".into());
         }
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
             construction: wire.construction,
-            reference_ordinal: wire.reference_ordinal,
+            reference_ordinal: CsysDescriptorSlot::try_from(wire.reference_ordinal).map_err(str::to_owned)?,
             data_block: wire.data_block,
-            prefix: wire.prefix,
-            identity: wire.identity,
-            suffix: wire.suffix,
-            source_offset: wire.source_offset,
+            descriptor,
         })
     }
 }
@@ -1745,7 +1761,7 @@ pub struct FeatureDatumPlaneCsysIdentityUse {
     /// Globally unique relation identity.
     pub id: String,
     /// Shared lowercase hexadecimal identity.
-    pub identity: String,
+    pub identity: CsysIdentity,
     /// Typed datum-plane descriptor.
     pub datum_plane_descriptor: String,
     /// Datum-plane operation carrying the descriptor.
@@ -1755,7 +1771,7 @@ pub struct FeatureDatumPlaneCsysIdentityUse {
     /// Datum-CSYS operation carrying the descriptor.
     pub datum_csys_operation_label: String,
     /// Datum-CSYS construction reference ordinal.
-    pub datum_csys_reference_ordinal: u8,
+    pub datum_csys_reference_ordinal: CsysDescriptorSlot,
 }
 
 /// One compact index in a datum-plane terminal index lane.
@@ -1907,6 +1923,7 @@ impl TryFrom<FeatureDatumPlanePayloadWire> for FeatureDatumPlanePayload {
 
 /// Resolved typed descriptor of one datum-plane construction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureDatumPlaneDescriptorWire", into = "FeatureDatumPlaneDescriptorWire")]
 pub struct FeatureDatumPlaneDescriptor {
     /// Globally unique descriptor identity.
     pub id: String,
@@ -1918,16 +1935,68 @@ pub struct FeatureDatumPlaneDescriptor {
     pub ordinal: u32,
     /// Resolved source block.
     pub data_block: String,
-    /// Lowercase hexadecimal identity preceding the delimiter.
-    pub identity: String,
-    /// Exact descriptor suffix beginning with `?`.
-    pub suffix: Vec<u8>,
-    /// Non-null compact schema index following `?A`.
-    pub schema_index: u32,
-    /// Nonempty printable terminal label.
-    pub label: String,
+    /// Exact identity, schema token, and terminal label.
+    pub descriptor: PlaneDescriptor,
     /// Absolute source offset of the descriptor block.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureDatumPlaneDescriptorWire {
+    /// Globally unique descriptor identity.
+    id: String,
+    /// Owning `DATUM_PLANE` operation label.
+    operation_label: String,
+    /// Header carrying the descriptor reference.
+    datum_plane_header: String,
+    /// Zero-based descriptor-lane order.
+    ordinal: u32,
+    /// Resolved source block.
+    data_block: String,
+    /// Lowercase hexadecimal identity preceding the delimiter.
+    identity: String,
+    /// Exact descriptor suffix beginning with `?`.
+    suffix: Vec<u8>,
+    /// Non-null compact schema index following `?A`.
+    schema_index: u32,
+    /// Nonempty printable terminal label.
+    label: String,
+    /// Absolute source offset of the descriptor block.
+    source_offset: u64,
+}
+
+impl From<FeatureDatumPlaneDescriptor> for FeatureDatumPlaneDescriptorWire {
+    fn from(value: FeatureDatumPlaneDescriptor) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            datum_plane_header: value.datum_plane_header,
+            ordinal: value.ordinal,
+            data_block: value.data_block,
+            identity: value.descriptor.identity().to_owned(),
+            suffix: value.descriptor.suffix(),
+            schema_index: value.descriptor.schema_index(),
+            label: value.descriptor.label().to_owned(),
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureDatumPlaneDescriptorWire> for FeatureDatumPlaneDescriptor {
+    type Error = String;
+    fn try_from(wire: FeatureDatumPlaneDescriptorWire) -> Result<Self, Self::Error> {
+        let descriptor = PlaneDescriptor::from_wire(wire.identity, &wire.suffix, wire.schema_index, &wire.label)
+            .map_err(str::to_owned)?;
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            datum_plane_header: wire.datum_plane_header,
+            ordinal: wire.ordinal,
+            data_block: wire.data_block,
+            descriptor,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Datum-plane construction lane containing a reused block.
@@ -4088,24 +4157,12 @@ pub struct FeatureDraftConstructionIdentityFrame {
     pub draft_construction_payload: String,
     /// Zero-based frame order in the reconstructed payload.
     pub ordinal: u32,
-    /// Exact bytes from the opening marker through the identity introducer.
-    pub prefix: Vec<u8>,
-    /// Typed frame form selected by the exact prefix.
-    pub form: FeatureDraftConstructionIdentityFrameForm,
-    /// Nonempty lowercase hexadecimal identity.
-    pub identity: String,
-    /// Payload-relative offset of the opening marker.
-    pub payload_offset: u64,
+    /// Exact prefix tokens, identity, and bounded payload position.
+    pub frame: DraftIdentityFrame,
     /// Absolute source offset of the opening marker.
     pub source_offset: u64,
     /// Absolute source offset of the identity.
     pub identity_source_offset: u64,
-}
-
-impl FeatureDraftConstructionIdentityFrame {
-    pub fn identity_payload_offset(&self) -> u64 {
-        self.payload_offset + self.prefix.len() as u64
-    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -4121,7 +4178,7 @@ struct FeatureDraftConstructionIdentityFrameWire {
     /// Exact bytes from the opening marker through the identity introducer.
     prefix: Vec<u8>,
     /// Typed frame form selected by the exact prefix.
-    form: FeatureDraftConstructionIdentityFrameForm,
+    form: DraftIdentityForm,
     /// Nonempty lowercase hexadecimal identity.
     identity: String,
     /// Payload-relative offset of the opening marker.
@@ -4136,16 +4193,16 @@ struct FeatureDraftConstructionIdentityFrameWire {
 
 impl From<FeatureDraftConstructionIdentityFrame> for FeatureDraftConstructionIdentityFrameWire {
     fn from(value: FeatureDraftConstructionIdentityFrame) -> Self {
-        let identity_payload_offset = value.identity_payload_offset();
+        let identity_payload_offset = value.frame.identity_offset();
         Self {
             id: value.id,
             operation_label: value.operation_label,
             draft_construction_payload: value.draft_construction_payload,
             ordinal: value.ordinal,
-            prefix: value.prefix,
-            form: value.form,
-            identity: value.identity,
-            payload_offset: value.payload_offset,
+            prefix: value.frame.prefix(),
+            form: value.frame.form(),
+            identity: value.frame.identity().to_owned(),
+            payload_offset: value.frame.offset(),
             identity_payload_offset,
             source_offset: value.source_offset,
             identity_source_offset: value.identity_source_offset,
@@ -4157,7 +4214,9 @@ impl TryFrom<FeatureDraftConstructionIdentityFrameWire> for FeatureDraftConstruc
     type Error = String;
 
     fn try_from(wire: FeatureDraftConstructionIdentityFrameWire) -> Result<Self, Self::Error> {
-        if wire.payload_offset.checked_add(wire.prefix.len() as u64) != Some(wire.identity_payload_offset) {
+        let frame = DraftIdentityFrame::from_wire(&wire.prefix, wire.form, wire.identity, wire.payload_offset)
+            .map_err(str::to_owned)?;
+        if frame.identity_offset() != wire.identity_payload_offset {
             return Err("identity_payload_offset must equal payload_offset plus prefix length".into());
         }
         Ok(Self {
@@ -4165,36 +4224,13 @@ impl TryFrom<FeatureDraftConstructionIdentityFrameWire> for FeatureDraftConstruc
             operation_label: wire.operation_label,
             draft_construction_payload: wire.draft_construction_payload,
             ordinal: wire.ordinal,
-            prefix: wire.prefix,
-            form: wire.form,
-            identity: wire.identity,
-            payload_offset: wire.payload_offset,
+            frame,
             source_offset: wire.source_offset,
             identity_source_offset: wire.identity_source_offset,
         })
     }
 }
 
-
-/// Typed prefix form of a draft construction identity frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum FeatureDraftConstructionIdentityFrameForm {
-    /// Two compact indices and a `02` or `03` branch.
-    IndexedBranch {
-        /// Non-null first compact index.
-        first_index: u32,
-        /// Nullable second compact index.
-        second_index: Option<u32>,
-        /// Exact `02` or `03` branch byte.
-        branch: crate::om::discriminators::DraftIdentityBranch,
-    },
-    /// One nullable compact index followed by `ff 02 01`.
-    Tagged {
-        /// Nullable compact index.
-        index: Option<u32>,
-    },
-}
 
 /// End-anchored compact-index lane in a bounded draft construction payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4544,7 +4580,7 @@ pub struct FeatureSurfaceConstructionString {
     /// Zero-based string order within the payload.
     pub ordinal: u32,
     /// Exact printable value.
-    pub value: String,
+    pub value: crate::payload_text::PayloadText<String>,
     /// Payload-relative offset of the `66 1b 03` marker.
     pub payload_offset: u64,
     /// Absolute source offset of the marker.
@@ -6793,7 +6829,7 @@ pub fn feature_operation_state_journal_uses(
             let Some(row_ordinal) = u32::try_from(row_ordinal).ok() else {
                 continue;
             };
-            let key = (group.section_link.as_str(), row.state_ordinal);
+            let key = (group.section_link.as_str(), row.state_ordinal.value());
             match journal_rows.entry(key) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(Some((group, row_ordinal, row)));
@@ -6833,7 +6869,7 @@ pub fn feature_operation_state_journal_uses(
             journal_group: group.id.clone(),
             journal_row_ordinal: *journal_row_ordinal,
             operation_local_ordinal: frame.local_ordinal,
-            journal_state_ordinal: row.state_ordinal,
+            journal_state_ordinal: row.state_ordinal.value(),
             operation_source_offset: frame.source_offset,
             journal_source_offset: row.source_offset,
         });
@@ -6860,7 +6896,7 @@ pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadStrin
                         ),
                         operation_record: operation_record.clone(),
                         ordinal: ordinal as u32,
-                        value: value.value.to_string(),
+                        value: value.value.into_owned(),
                         source_offset: entry_offset + value.offset as u64,
                     }),
             );
@@ -6907,7 +6943,7 @@ pub fn feature_symbolic_threads(container: &Container) -> Vec<FeatureSymbolicThr
                     ),
                     symbolic_thread: id.clone(),
                     ordinal: ordinal as u32,
-                    value: frame.value.to_string(),
+                    value: frame.value.into_owned(),
                     source_offset: entry_offset + frame.offset as u64,
                 })
                 .collect();
@@ -6948,7 +6984,7 @@ pub fn feature_simple_hole_templates(
         if !matches!(
             label.value.as_str(),
             "SIMPLE HOLE" | "CBORE_HOLE" | "CSUNK_HOLE"
-        ) || !string.value.starts_with("Hole_")
+        ) || !string.value.as_str().starts_with("Hole_")
         {
             continue;
         }
@@ -6964,7 +7000,7 @@ pub fn feature_simple_hole_templates(
                 return None;
             };
             let (family, form, extent, start_treatment, end_treatment) =
-                parse_simple_hole_template(&string.value)?;
+                parse_simple_hole_template(string.value.as_str())?;
             Some(FeatureSimpleHoleTemplate {
                 id: string
                     .id
@@ -7003,7 +7039,7 @@ pub fn feature_threaded_hole_templates(
         let Some(label) = labels_by_id.get(record.operation_label.as_str()) else {
             continue;
         };
-        if label.value != "SIMPLE HOLE" || !string.value.starts_with("Hole_") {
+        if label.value != "SIMPLE HOLE" || !string.value.as_str().starts_with("Hole_") {
             continue;
         }
         templates_by_operation
@@ -7017,7 +7053,7 @@ pub fn feature_threaded_hole_templates(
             let [(string, label)] = candidates.as_slice() else {
                 return None;
             };
-            let (family, extent) = parse_threaded_hole_template(&string.value)?;
+            let (family, extent) = parse_threaded_hole_template(string.value.as_str())?;
             Some(FeatureThreadedHoleTemplate {
                 id: string
                     .id
@@ -7086,10 +7122,10 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
                         .map(|(prefix, _)| prefix)
                 })
                 .collect::<BTreeSet<_>>();
-            if prefixes.len() != 1 {
+            let mut prefixes = prefixes.into_iter();
+            let (Some(prefix), None) = (prefixes.next(), prefixes.next()) else {
                 return;
-            }
-            let prefix = prefixes.into_iter().next().expect("one checked prefix");
+            };
             let Some(decoded) =
                 crate::om::simple_hole_repeated_scalar_lane_block_references(record)
             else {
@@ -7185,35 +7221,26 @@ pub fn feature_simple_hole_construction_groups(
                     .cmp(&operation_position(second))
                     .then_with(|| first.operation_label.cmp(&second.operation_label))
             });
-            if members.len() < 2
-                || members
-                    .windows(2)
-                    .any(|pair| pair[0].0.operation_label == pair[1].0.operation_label)
-            {
-                return None;
-            }
-            let first = members[0].0;
-            let id_anchor = members
-                .iter()
-                .map(|(reference, _)| *reference)
-                .min_by(|first, second| first.operation_label.cmp(&second.operation_label))
-                .expect("a group has at least two members");
+            let members = SimpleHoleConstructionMembers::new(members
+                .into_iter()
+                .map(|(reference, lane)| FeatureSimpleHoleConstructionMember {
+                    operation_label: reference.operation_label.clone(),
+                    scalar_lane: lane.id.clone(),
+                    block_reference: reference.id.clone(),
+                })
+                .collect()).ok()?;
+            let id_anchor = members.iter().fold(&members[0], |first, second| {
+                if first.operation_label <= second.operation_label { first } else { second }
+            });
             let id_key = id_anchor
                 .operation_label
                 .rsplit_once('#')
                 .map_or("unknown", |(_, key)| key);
             Some(FeatureSimpleHoleConstructionGroup {
                 id: format!("nx:feature-history:simple-hole-construction-group#{id_key}"),
-                first_data_blocks: first.first_data_blocks.clone(),
-                second_data_blocks: first.second_data_blocks.clone(),
-                members: members
-                    .into_iter()
-                    .map(|(reference, lane)| FeatureSimpleHoleConstructionMember {
-                        operation_label: reference.operation_label.clone(),
-                        scalar_lane: lane.id.clone(),
-                        block_reference: reference.id.clone(),
-                    })
-                    .collect(),
+                first_data_blocks: key.0,
+                second_data_blocks: key.1,
+                members,
             })
         })
         .collect()
@@ -7887,11 +7914,11 @@ pub fn feature_input_column_targets(
                 .filter(|use_| {
                     use_.input_block == input.id
                         && use_.row_slot == 0
-                        && use_.column_table.is_some()
                         && use_.row_kind != ColumnIndexRowKind::Index
                 })
+                .filter_map(|use_| Some((use_, use_.column_table.as_ref()?)))
                 .collect::<Vec<_>>();
-            let [target] = targets.as_slice() else {
+            let [(target, column_table)] = targets.as_slice() else {
                 return None;
             };
             let (row, field_indices, field_data_blocks, field_source_offsets, mode) =
@@ -7949,10 +7976,7 @@ pub fn feature_input_column_targets(
                 field_data_blocks,
                 field_source_offsets,
                 mode,
-                column_table: target
-                    .column_table
-                    .clone()
-                    .expect("complete target use has a table"),
+                column_table: (*column_table).clone(),
                 data_block: input.data_block.clone(),
                 source_offset: target.source_offset,
             })
@@ -7986,13 +8010,10 @@ pub fn feature_datum_csys_constructions(
                         .map(|(prefix, _)| prefix)
                 })
                 .collect::<BTreeSet<_>>();
-            if input_prefixes.len() != 1 {
+            let mut input_prefixes = input_prefixes.into_iter();
+            let (Some(input_prefix), None) = (input_prefixes.next(), input_prefixes.next()) else {
                 return;
-            }
-            let input_prefix = input_prefixes
-                .into_iter()
-                .next()
-                .expect("one checked input store");
+            };
             let resolved = field.references.map(|reference| {
                 unique_offset_data_block(&indexed, reference.object_index).map(|data_block| {
                     (
@@ -8003,9 +8024,10 @@ pub fn feature_datum_csys_constructions(
                     )
                 })
             });
-            let Some(resolved) = resolved.into_iter().collect::<Option<Vec<_>>>() else {
+            let [Some(a), Some(b), Some(c), Some(d), Some(e), Some(f), Some(g), Some(h)] = resolved else {
                 return;
             };
+            let resolved = [a, b, c, d, e, f, g, h];
             if resolved.iter().any(|(_, _, data_block, _)| {
                 data_block
                     .rsplit_once(":block#")
@@ -8019,30 +8041,10 @@ pub fn feature_datum_csys_constructions(
                 ),
                 operation_label,
                 control: field.control,
-                object_indices: resolved
-                    .iter()
-                    .map(|(object_index, _, _, _)| *object_index)
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .expect("eight decoded references"),
-                raw_object_indices: resolved
-                    .iter()
-                    .map(|(_, raw_object_index, _, _)| raw_object_index.clone())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .expect("eight decoded references"),
-                data_blocks: resolved
-                    .iter()
-                    .map(|(_, _, data_block, _)| data_block.clone())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .expect("eight decoded references"),
-                source_offsets: resolved
-                    .iter()
-                    .map(|(_, _, _, source_offset)| *source_offset)
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .expect("eight decoded references"),
+                object_indices: resolved.each_ref().map(|(object_index, _, _, _)| *object_index),
+                raw_object_indices: resolved.each_ref().map(|(_, raw_object_index, _, _)| raw_object_index.clone()),
+                data_blocks: resolved.each_ref().map(|(_, _, data_block, _)| data_block.clone()),
+                source_offsets: resolved.each_ref().map(|(_, _, _, source_offset)| *source_offset),
             });
         },
     );
@@ -8248,21 +8250,20 @@ pub fn feature_datum_csys_descriptors(
     constructions
         .iter()
         .flat_map(|construction| {
-            (5..8)
-                .filter_map(|reference_ordinal| {
-                    let data_block = &construction.data_blocks[reference_ordinal];
+            [CsysDescriptorSlot::Five, CsysDescriptorSlot::Six, CsysDescriptorSlot::Seven]
+                .into_iter()
+                .filter_map(|slot| {
+                    let reference_ordinal = u8::from(slot);
+                    let data_block = &construction.data_blocks[usize::from(reference_ordinal)];
                     let &(bytes, source_offset) = blocks.get(data_block)?;
                     let descriptor = crate::om::datum_csys_descriptor_block(bytes)?;
                     Some(FeatureDatumCsysDescriptor {
                         id: format!("{}-descriptor-{reference_ordinal}", construction.id),
                         operation_label: construction.operation_label.clone(),
                         construction: construction.id.clone(),
-                        reference_ordinal: reference_ordinal as u8,
+                        reference_ordinal: slot,
                         data_block: data_block.clone(),
-                        prefix: descriptor.prefix,
-                        identity: descriptor.identity,
-                        suffix: descriptor.suffix,
-                        source_offset,
+                        descriptor: LocatedCsysDescriptor::new(descriptor, source_offset).ok()?,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -8280,7 +8281,7 @@ pub fn feature_datum_plane_csys_identity_uses(
         .flat_map(|plane| {
             csys_descriptors
                 .iter()
-                .filter(|csys| csys.identity == plane.identity)
+                .filter(|csys| csys.descriptor.descriptor().identity().as_str() == plane.descriptor.identity())
                 .map(|csys| {
                     let plane_key = plane.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
                     let csys_key = csys.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
@@ -8288,7 +8289,7 @@ pub fn feature_datum_plane_csys_identity_uses(
                         id: format!(
                             "nx:feature-history:datum-plane-csys-identity-use#{plane_key}-{csys_key}"
                         ),
-                        identity: plane.identity.clone(),
+                        identity: csys.descriptor.descriptor().identity().clone(),
                         datum_plane_descriptor: plane.id.clone(),
                         datum_plane_operation_label: plane.operation_label.clone(),
                         datum_csys_descriptor: csys.id.clone(),
@@ -8350,10 +8351,7 @@ pub fn feature_datum_plane_descriptors(
                         datum_plane_header: header.id.clone(),
                         ordinal: ordinal as u32,
                         data_block: data_block.clone(),
-                        identity: descriptor.identity,
-                        suffix: descriptor.suffix,
-                        schema_index: descriptor.schema_index,
-                        label: descriptor.label,
+                        descriptor,
                         source_offset,
                     })
                 })
@@ -9186,8 +9184,11 @@ pub fn feature_sketch_preceding_named_point_uses(
     let mut uses = Vec::new();
     for (operation_label, mut operation_references) in references_by_operation {
         operation_references.sort_by_key(|reference| reference.ordinal);
-        let complete_lane = !operation_references.is_empty()
-            && operation_references
+        let Some((first_reference, first_block)) = operation_references.first()
+            .and_then(|reference| Some((*reference, reference.data_block.as_deref()?))) else {
+            continue;
+        };
+        let complete_lane = operation_references
                 .iter()
                 .enumerate()
                 .all(|(ordinal, reference)| {
@@ -9199,11 +9200,6 @@ pub fn feature_sketch_preceding_named_point_uses(
         if !complete_lane {
             continue;
         }
-        let first_reference = operation_references[0];
-        let first_block = first_reference
-            .data_block
-            .as_deref()
-            .expect("complete lane has resolved references");
         let Some((first_store, first_ordinal)) = block_key(first_block) else {
             continue;
         };
@@ -10573,31 +10569,14 @@ pub fn feature_draft_construction_identity_frames(
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, frame)| {
-                    let payload_offset = frame.offset as u64;
-                    let identity_payload_offset = frame.identity_offset() as u64;
-                    let form = match frame.form {
-                        crate::om::DraftConstructionIdentityFrameForm::IndexedBranch {
-                            first_index,
-                            second_index,
-                            branch,
-                        } => FeatureDraftConstructionIdentityFrameForm::IndexedBranch {
-                            first_index,
-                            second_index,
-                            branch,
-                        },
-                        crate::om::DraftConstructionIdentityFrameForm::Tagged { index } => {
-                            FeatureDraftConstructionIdentityFrameForm::Tagged { index }
-                        }
-                    };
+                    let payload_offset = frame.offset();
+                    let identity_payload_offset = frame.identity_offset();
                     Some(FeatureDraftConstructionIdentityFrame {
                         id: format!("{}-identity-frame-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         draft_construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        prefix: frame.prefix,
-                        form,
-                        identity: frame.identity,
-                        payload_offset,
+                        frame,
                         source_offset: joined.source_offset(payload_offset)?,
                         identity_source_offset: joined.source_offset(identity_payload_offset)?,
                     })
@@ -10896,7 +10875,7 @@ pub fn feature_surface_construction_strings(
                         operation_label: payload.operation_label.clone(),
                         surface_construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        value: value.value.to_string(),
+                        value: value.value.into_owned(),
                         payload_offset,
                         source_offset: joined.source_offset(payload_offset)?,
                     })
@@ -11895,7 +11874,7 @@ pub(crate) fn data_block_object_frame_id(data_block: &str, ordinal: usize) -> St
 }
 
 fn unique_offset_data_block(
-    indexed: &[(&crate::container::DirEntry, crate::om::IndexedSection<'_>)],
+    indexed: &[(crate::container::entry_ref::EntryRef<'_>, crate::om::IndexedSection<'_>)],
     object_index: u32,
 ) -> Option<String> {
     let section_ordinal = unique_offset_data_store(indexed, &[object_index])?;
@@ -11905,7 +11884,7 @@ fn unique_offset_data_block(
 }
 
 fn unique_offset_data_store(
-    indexed: &[(&crate::container::DirEntry, crate::om::IndexedSection<'_>)],
+    indexed: &[(crate::container::entry_ref::EntryRef<'_>, crate::om::IndexedSection<'_>)],
     object_indices: &[u32],
 ) -> Option<usize> {
     if object_indices.is_empty() || object_indices.contains(&0) {

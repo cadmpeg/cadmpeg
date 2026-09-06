@@ -37,6 +37,23 @@ fn hole_group_preserves_parallel_wire_and_requires_complete_members() {
 }
 
 #[test]
+fn hole_group_rejects_short_and_duplicate_members_at_deserialization() {
+    for labels in [vec![], vec!["first"], vec!["first", "first"]] {
+        let count = labels.len();
+        let wire = serde_json::json!({
+            "id": "group",
+            "first_data_blocks": ["a", "b"],
+            "second_data_blocks": ["c", "d"],
+            "operation_labels": labels,
+            "scalar_lanes": (0..count).map(|index| format!("scalar-{index}")).collect::<Vec<_>>(),
+            "block_references": (0..count).map(|index| format!("refs-{index}")).collect::<Vec<_>>(),
+        });
+        let error = serde_json::from_value::<FeatureSimpleHoleConstructionGroup>(wire).unwrap_err();
+        assert!(error.to_string().contains("operation_labels"));
+    }
+}
+
+#[test]
 fn input_identity_group_preserves_parallel_wire_and_requires_complete_members() {
     check_lane_wire::<FeatureInputBlockIdentityGroup>(
         r#"{"id":"group","data_block":"block","input_blocks":["input-a","input-b"],"operation_labels":["first","second"],"input_slots":[2,1],"source_offsets":[10,40]}"#,
@@ -388,6 +405,67 @@ fn extrude_32_branch_rejects_disagreeing_scalar_and_body_copies() {
         let mut invalid = original.clone();
         invalid[field] = value;
         let error = serde_json::from_value::<FeatureExtrudePayload32Branch>(invalid).unwrap_err();
+        assert!(error.to_string().contains(field), "{error}");
+    }
+}
+
+#[test]
+fn draft_identity_frame_derives_prefix_form_and_preserves_wire() {
+    let json = r#"{"id":"frame","operation_label":"operation","draft_construction_payload":"payload","ordinal":0,"prefix":[65,129,84,240,56,2,1],"form":{"kind":"indexed_branch","first_index":340,"second_index":56,"branch":2},"identity":"abc123","payload_offset":1,"identity_payload_offset":8,"source_offset":100,"identity_source_offset":500}"#;
+    let frame: FeatureDraftConstructionIdentityFrame = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&frame).unwrap(), json);
+    for (field, value, expected) in [
+        ("identity", serde_json::json!(""), "identity"),
+        ("identity", serde_json::json!("ABC123"), "identity"),
+        ("prefix", serde_json::json!([65, 129, 84, 240, 56, 3, 1]), "form"),
+        ("prefix", serde_json::json!([65, 129, 84, 240, 56, 2, 1, 0]), "prefix"),
+        ("identity_payload_offset", serde_json::json!(9), "identity_payload_offset"),
+        ("payload_offset", serde_json::json!(u64::MAX), "payload_offset"),
+    ] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire[field] = value;
+        let error = serde_json::from_value::<FeatureDraftConstructionIdentityFrame>(wire).unwrap_err();
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+}
+
+#[test]
+fn datum_plane_descriptor_derives_suffix_and_preserves_native_wire() {
+    let json = r#"{"id":"descriptor","operation_label":"operation","datum_plane_header":"header","ordinal":0,"data_block":"block","identity":"012345678901234567890123456789","suffix":[63,65,1,255,2,1,97,98,99,100],"schema_index":1,"label":"abcd","source_offset":10}"#;
+    let descriptor: FeatureDatumPlaneDescriptor = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&descriptor).unwrap(), json);
+    for (field, value) in [
+        ("schema_index", serde_json::json!(2)),
+        ("label", serde_json::json!("other")),
+        ("identity", serde_json::json!("")),
+        ("suffix", serde_json::json!([63, 65])),
+    ] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire[field] = value;
+        let error = serde_json::from_value::<FeatureDatumPlaneDescriptor>(wire).unwrap_err();
+        assert!(error.to_string().contains(field), "{error}");
+    }
+    let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+    wire["identity"] = serde_json::json!("012345678901234567890123456789?");
+    wire["suffix"].as_array_mut().unwrap().remove(0);
+    assert!(serde_json::from_value::<FeatureDatumPlaneDescriptor>(wire).unwrap_err().to_string().contains("identity"));
+}
+
+#[test]
+fn datum_csys_descriptor_preserves_wire_and_rejects_invalid_identity_or_position() {
+    let json = r#"{"id":"descriptor","operation_label":"operation","construction":"construction","reference_ordinal":7,"data_block":"block","prefix":[2,1],"identity":"012345678901234567890123456789","suffix":[63,65],"source_offset":10,"identity_source_offset":12}"#;
+    let descriptor: FeatureDatumCsysDescriptor = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&descriptor).unwrap(), json);
+    for (field, value) in [
+        ("reference_ordinal", serde_json::json!(4)),
+        ("identity", serde_json::json!("abcd")),
+        ("prefix", serde_json::json!([2, 1, 97])),
+        ("source_offset", serde_json::json!(u64::MAX)),
+        ("identity_source_offset", serde_json::json!(13)),
+    ] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire[field] = value;
+        let error = serde_json::from_value::<FeatureDatumCsysDescriptor>(wire).unwrap_err();
         assert!(error.to_string().contains(field), "{error}");
     }
 }

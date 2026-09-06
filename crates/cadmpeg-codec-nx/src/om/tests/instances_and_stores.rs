@@ -1561,7 +1561,7 @@ fn om_store_version_can_follow_control_prefix() {
     let bytes = b"\xff\x00prefix\x04\x01\x0eNX 2027.3102\0tail";
     let version = super::store_version(bytes, 100).expect("store version");
     assert_eq!(version.offset, 108);
-    assert_eq!(version.value, "NX 2027.3102");
+    assert_eq!(version.value.as_str(), "NX 2027.3102");
 }
 
 #[test]
@@ -1593,8 +1593,9 @@ fn om_indexed_layout_materializes_both_store_forms_without_semantic_drift() {
             .into_iter()
             .next()
             .expect("indexed fixture has one section");
-        let layout = super::IndexedSectionLayout::from_section(&section);
-        assert_eq!(layout.materialize(&bytes), section);
+        let source = std::sync::Arc::<[u8]>::from(bytes.as_slice());
+        let layout = crate::om::cache::IndexedSectionLayout::from_section(&section, &source).unwrap();
+        assert_eq!(layout.materialize(), section);
     }
 }
 
@@ -1656,7 +1657,7 @@ fn om_index_monotone_cache_rejects_a_decrease_inside_a_candidate() {
         .into_iter()
         .flat_map(u32::to_le_bytes)
         .collect::<Vec<_>>();
-    let edges = super::DescendingU32Edges::new(&bytes);
+    let edges = crate::om::index_table::DescendingU32Edges::new(&bytes);
 
     assert!(edges.is_nondecreasing(0, 12));
     assert!(!edges.is_nondecreasing(0, 16));
@@ -1688,7 +1689,7 @@ fn om_offset_only_index_requires_one_supported_product_record() {
 #[test]
 fn om_offset_store_control_values_require_complete_zero_prefixed_words() {
     assert_eq!(
-        super::offset_store_control_values(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff]),
+        super::offset_store_control_values(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff]).map(|values| values.into_iter().map(crate::om::control_word::ControlWord24::value).collect::<Vec<_>>()),
         Some(vec![0x1234, 0x00ff_ffff])
     );
     assert!(super::offset_store_control_values(&[]).is_none());
@@ -1701,7 +1702,7 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
     assert_eq!(
         super::offset_store_control_form(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff], None),
         Some(super::OffsetStoreControlForm::ZeroPrefixed {
-            values: vec![0x1234, 0x00ff_ffff],
+            values: crate::om::nonempty::NonEmpty::new([0x1234, 0x00ff_ffff].map(|value| crate::om::control_word::ControlWord24::try_from(value).unwrap())).unwrap(),
         })
     );
 
@@ -1712,8 +1713,8 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
     assert_eq!(
         super::offset_store_control_form(&product, None),
         Some(super::OffsetStoreControlForm::ProductAnchored {
-            leading_value: Some((2, 0)),
-            values: vec![7, 0x1020],
+            leading_value: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()),
+            values: crate::om::nonempty::NonEmpty::new([7, 0x1020]).unwrap(),
         })
     );
 

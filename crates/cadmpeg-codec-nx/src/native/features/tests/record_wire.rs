@@ -241,3 +241,16 @@ fn body_scalar_triple_wire_checks_the_atom_value_and_width() {
         assert!(serde_json::from_str::<super::FeatureOperationBodyScalarTriple>(&invalid).is_err());
     }
 }
+
+#[test]
+fn payload_text_records_preserve_unicode_and_reject_control_text() {
+    let json = r#"{"id":"text","operation_record":"record","ordinal":0,"value":" × ","source_offset":10}"#;
+    let record: super::FeaturePayloadString = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&record).unwrap(), json);
+    for value in ["", "\0", "\n", "\u{85}"] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["value"] = value.into();
+        assert!(serde_json::from_value::<super::FeaturePayloadString>(wire)
+            .unwrap_err().to_string().contains("value"));
+    }
+}

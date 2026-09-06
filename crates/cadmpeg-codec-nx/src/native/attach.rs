@@ -5539,7 +5539,7 @@ pub(crate) fn feature_source_content(
         .map(|value| {
             (
                 value.source_offset,
-                FeatureSourceContent::Text(value.value.clone()),
+                FeatureSourceContent::Text(value.value.as_str().to_owned()),
             )
         })
         .collect::<Vec<_>>();
@@ -6419,23 +6419,13 @@ fn simple_hole_operations(
             group_operations == template_operations
         })
         .collect::<Vec<_>>();
-    if matching_groups.len() > 1 {
-        return None;
-    }
     Some(match matching_groups.as_slice() {
         [] => ordered_templates
             .iter()
             .map(|template| template.operation_label.clone())
             .collect::<Vec<_>>(),
         [group] => {
-            let group_operations = group
-                .members
-                .iter()
-                .map(|member| member.operation_label.as_str())
-                .collect::<BTreeSet<_>>();
-            if group_operations.len() != group.members.len()
-                || template_operations != group_operations
-                || group
+            if group
                     .members
                     .iter()
                     .map(|member| &member.operation_label)
@@ -6453,7 +6443,7 @@ fn simple_hole_operations(
                 .map(|member| member.operation_label.clone())
                 .collect()
         }
-        _ => unreachable!(),
+        _ => return None,
     })
 }
 
@@ -6586,15 +6576,7 @@ fn hole_package_projection(
         else {
             continue;
         };
-        if group.members.is_empty()
-            || group
-                .members
-                .iter()
-                .map(|member| &member.operation_label)
-                .collect::<BTreeSet<_>>()
-                .len()
-                != group.members.len()
-            || group
+        if group
                 .members
                 .iter()
                 .map(|member| &member.operation_label)

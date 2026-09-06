@@ -3,7 +3,10 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::om::control_leading_value::ControlLeadingValue;
 use crate::printable_string::PrintableString;
+use crate::om::state_index::StateIndexToken;
+mod state_index_wire;
 
 use cadmpeg_core::decode::View;
 
@@ -18,7 +21,8 @@ use column_index::ColumnIndexRows;
 
 use crate::native::segments::segment_om_links;
 use crate::om::parameter_name::ParameterName;
-use crate::om::{IndexedStore, OperationStateGroupCount, OperationStateGroupOpener};
+use crate::om::IndexedStore;
+use crate::om::state_group::{OperationStateGroupCount, OperationStateGroupOpener, StateGroupMembers};
 
 /// Semantic family declared by a linked OM section's class registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,7 +54,7 @@ pub struct OmRecordArea {
     /// Three exact little-endian control words.
     pub control_words: [u32; 3],
     /// Exact printable product/version string.
-    pub product_version: String,
+    pub product_version: crate::om::product::ProductText<String>,
     /// Exact record-area byte length.
     pub byte_len: u64,
     /// SHA-256 of the complete pointed record area.
@@ -61,55 +65,45 @@ pub struct OmRecordArea {
 
 /// One complete row retained from an audit-trail record area.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "state_index_wire::OmAuditTrailRowWire", into = "state_index_wire::OmAuditTrailRowWire")]
 pub struct OmAuditTrailRow {
     /// Globally unique audit-row identity.
     pub id: String,
     /// Owning audit-trail section link.
     pub section_link: String,
-    /// Monotone row ordinal.
-    pub ordinal: u32,
-    /// Exact serialized ordinal token.
-    pub raw_ordinal: Vec<u8>,
-    /// Optional selector in the `04 05 selector 00` envelope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub frame_selector: Option<u8>,
-    /// Big-endian row timestamp.
-    pub timestamp: u32,
-    /// Tagged row-value marker.
-    pub value_marker: u8,
-    /// Decoded tagged row value.
-    pub value: u32,
-    /// Exact serialized tagged row value.
-    pub raw_value: Vec<u8>,
-    /// Exact complete row bytes.
-    pub raw: Vec<u8>,
+    /// Exact framed audit content.
+    record: crate::om::audit::AuditRecord,
     /// Directory entry containing the audit-trail section.
     pub source_entry: String,
     /// Absolute file offset of the row's opening `04` marker.
-    pub source_offset: u64,
-    /// Absolute exclusive end offset after the tagged value.
-    pub end_offset: u64,
+    source_offset: u64,
+}
+
+impl OmAuditTrailRow {
+    fn new(id: String, section_link: String, record: crate::om::audit::AuditRecord,
+        source_entry: String, source_offset: u64) -> Option<Self> {
+        source_offset.checked_add(record.byte_len() as u64)?;
+        Some(Self { id, section_link, record, source_entry, source_offset })
+    }
+
+    pub fn record(&self) -> crate::om::audit::AuditRecord { self.record }
+    pub fn source_offset(&self) -> u64 { self.source_offset }
+    pub fn end_offset(&self) -> u64 { self.source_offset + self.record.byte_len() as u64 }
 }
 
 /// One row from the feature-history state journal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "state_index_wire::OmOperationStateJournalRowWire", into = "state_index_wire::OmOperationStateJournalRowWire")]
 pub struct OmOperationStateJournalRow {
     /// Big-endian Unix timestamp stored by the journal.
     pub timestamp: u32,
-    /// Tagged schema-value marker.
-    pub value_marker: u8,
-    /// Decoded tagged schema value.
-    pub value: u32,
-    /// Exact tagged schema-value token.
-    pub raw_value: Vec<u8>,
+    /// Complete tagged integer token.
+    #[serde(flatten)]
+    pub value: crate::om::state_tagged_value::StateTaggedValue,
     /// Journal schema identifier.
-    pub schema_id: u32,
-    /// Exact schema-identifier token.
-    pub raw_schema_id: Vec<u8>,
+    pub schema_id: StateIndexToken,
     /// Monotone state-counter ordinal.
-    pub state_ordinal: u32,
-    /// Exact state-ordinal token.
-    pub raw_state_ordinal: Vec<u8>,
+    pub state_ordinal: StateIndexToken,
     /// Absolute file offset of the row's `e0` marker.
     pub source_offset: u64,
     /// Absolute exclusive end offset after the `13` terminator.
@@ -139,6 +133,7 @@ pub struct OmOperationStateJournalGroup {
 
 /// One row from the feature-history operation-state counter map.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "state_index_wire::OmOperationStateCounterWire", into = "state_index_wire::OmOperationStateCounterWire")]
 pub struct OmOperationStateCounter {
     /// Globally unique counter-row identity.
     pub id: String,
@@ -149,9 +144,7 @@ pub struct OmOperationStateCounter {
     /// Serialized counter-row kind (`01` or `02`).
     pub row_kind: crate::om::discriminators::OperationStateCounterKind,
     /// Object carrying the introduced/last-modified state pair.
-    pub object_index: u32,
-    /// Exact serialized object-index token.
-    pub raw_object_index: Vec<u8>,
+    pub object_index: StateIndexToken,
     /// State-journal ordinal at object introduction.
     pub introduced_state: u8,
     /// State-journal ordinal at the object's last modification.
@@ -165,37 +158,25 @@ pub struct OmOperationStateCounter {
 }
 
 /// One typed member in an `m_rollForwardStates` group.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OmRollForwardStateRow {
     /// Ordered feature-record member from a `4a` list row.
     List {
-        /// Zero-based position within the group list.
-        ordinal: u32,
         /// Ordered feature-history object index.
-        object_index: u32,
-        /// Exact serialized object-index token.
-        raw_object_index: Vec<u8>,
+        object_index: StateIndexToken,
         /// Serialized list position.
-        position: u32,
-        /// Exact serialized position token.
-        raw_position: Vec<u8>,
+        position: StateIndexToken,
         /// Absolute file offset of the `4a` row marker.
         source_offset: u64,
     },
     /// Relation member from a `4f` or `48` pair row.
     Pair {
-        /// Zero-based position within the group row list.
-        ordinal: u32,
         /// Schema-generation relation tag.
         tag: crate::om::discriminators::OperationStatePairTag,
         /// First relation endpoint.
-        first: u32,
-        /// Exact serialized first endpoint token.
-        raw_first: Vec<u8>,
+        first: StateIndexToken,
         /// Second relation endpoint.
-        second: u32,
-        /// Exact serialized second endpoint token.
-        raw_second: Vec<u8>,
+        second: StateIndexToken,
         /// Absolute file offset of the relation tag.
         source_offset: u64,
     },
@@ -216,10 +197,8 @@ pub struct OmRollForwardStateGroup {
     pub ordinal: u32,
     /// Exact two-byte group opener.
     pub opener: OperationStateGroupOpener,
-    /// Empty or explicitly counted header.
-    pub count: OperationStateGroupCount,
-    /// Ordered typed rows in the group.
-    pub rows: Vec<OmRollForwardStateRow>,
+    /// Ordered typed rows with their exact count-header form.
+    pub members: StateGroupMembers<OmRollForwardStateRow>,
     /// Exact bytes between the final group and the counter-map boundary.
     pub table_trailing_bytes: Vec<u8>,
     /// Directory entry containing the feature-history section.
@@ -230,7 +209,7 @@ pub struct OmRollForwardStateGroup {
     pub table_end_offset: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct OmRollForwardStateGroupWire {
     /// Globally unique group identity.
     id: String,
@@ -245,7 +224,7 @@ struct OmRollForwardStateGroupWire {
     /// Serialized member count including the implicit owner slot.
     declared_count: u8,
     /// Ordered typed rows in the group.
-    rows: Vec<OmRollForwardStateRow>,
+    rows: Vec<state_index_wire::OmRollForwardStateRowWire>,
     /// Exact bytes between the final group and the counter-map boundary.
     table_trailing_bytes: Vec<u8>,
     /// Directory entry containing the feature-history section.
@@ -260,12 +239,12 @@ impl From<OmRollForwardStateGroup> for OmRollForwardStateGroupWire {
     fn from(value: OmRollForwardStateGroup) -> Self {
         Self {
             opener: value.opener.bytes(),
-            count_prefix: value.count.prefix(),
-            declared_count: value.count.declared_count(),
+            count_prefix: value.members.count().prefix(),
+            declared_count: value.members.count().declared_count(),
             id: value.id,
             section_link: value.section_link,
             ordinal: value.ordinal,
-            rows: value.rows,
+            rows: value.members.map_rows(state_index_wire::OmRollForwardStateRowWire::from_row).into_rows(),
             table_trailing_bytes: value.table_trailing_bytes,
             source_entry: value.source_entry,
             source_offset: value.source_offset,
@@ -275,20 +254,19 @@ impl From<OmRollForwardStateGroup> for OmRollForwardStateGroupWire {
 }
 
 impl TryFrom<OmRollForwardStateGroupWire> for OmRollForwardStateGroup {
-    type Error = &'static str;
+    type Error = String;
     fn try_from(wire: OmRollForwardStateGroupWire) -> Result<Self, Self::Error> {
         let count = match (wire.count_prefix, wire.declared_count) {
             (None, 0) => OperationStateGroupCount::Empty,
             (Some(1), count) => OperationStateGroupCount::Counted(count),
-            _ => return Err("invalid operation-state group count encoding"),
+            _ => return Err("invalid operation-state group count encoding".to_string()),
         };
         Ok(Self {
             opener: OperationStateGroupOpener::try_from(wire.opener)?,
-            count,
             id: wire.id,
             section_link: wire.section_link,
             ordinal: wire.ordinal,
-            rows: wire.rows,
+            members: StateGroupMembers::new(count, wire.rows)?.try_map_rows(|ordinal, row| row.into_row(ordinal))?,
             table_trailing_bytes: wire.table_trailing_bytes,
             source_entry: wire.source_entry,
             source_offset: wire.source_offset,
@@ -322,16 +300,12 @@ fn operation_state_message_severity(word: u16) -> Option<OmOperationStateMessage
     into = "OmOperationStateMessageBodyWire"
 )]
 pub struct OmOperationStateMessageBody {
-    /// Serialized length byte.
-    pub declared_length: u8,
-    /// Exact Part Navigator diagnostic text.
-    pub text: String,
-    /// Tagged value marker following the four zero bytes.
-    pub value_marker: u8,
-    /// Decoded tagged value.
-    pub value: u32,
-    /// Exact serialized tagged value.
-    pub raw_value: Vec<u8>,
+    /// Exact Part Navigator diagnostic text with its derived frame length.
+    #[serde(flatten)]
+    pub text: crate::om::state_message_text::StateMessageText<String>,
+    /// Complete tagged integer token.
+    #[serde(flatten)]
+    pub value: crate::om::state_tagged_value::StateTaggedValue,
     /// Big-endian count or severity word.
     pub count_or_severity: u16,
 }
@@ -345,11 +319,10 @@ impl OmOperationStateMessageBody {
 
 #[derive(Serialize, Deserialize)]
 struct OmOperationStateMessageBodyWire {
-    declared_length: u8,
-    text: String,
-    value_marker: u8,
-    value: u32,
-    raw_value: Vec<u8>,
+    #[serde(flatten)]
+    text: crate::om::state_message_text::StateMessageText<String>,
+    #[serde(flatten)]
+    value: crate::om::state_tagged_value::StateTaggedValue,
     count_or_severity: u16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     severity: Option<OmOperationStateMessageSeverity>,
@@ -359,11 +332,8 @@ impl From<OmOperationStateMessageBody> for OmOperationStateMessageBodyWire {
     fn from(value: OmOperationStateMessageBody) -> Self {
         let severity = value.severity();
         Self {
-            declared_length: value.declared_length,
             text: value.text,
-            value_marker: value.value_marker,
             value: value.value,
-            raw_value: value.raw_value,
             count_or_severity: value.count_or_severity,
             severity,
         }
@@ -375,11 +345,8 @@ impl TryFrom<OmOperationStateMessageBodyWire> for OmOperationStateMessageBody {
 
     fn try_from(wire: OmOperationStateMessageBodyWire) -> Result<Self, Self::Error> {
         let body = Self {
-            declared_length: wire.declared_length,
             text: wire.text,
-            value_marker: wire.value_marker,
             value: wire.value,
-            raw_value: wire.raw_value,
             count_or_severity: wire.count_or_severity,
         };
         if wire.severity != body.severity() {
@@ -411,17 +378,16 @@ pub struct OmOperationStateMessage {
 
 /// Native payload retained by one operation-state status row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "state_index_wire::OmOperationStateStatusPayloadWire", into = "state_index_wire::OmOperationStateStatusPayloadWire")]
 pub enum OmOperationStateStatusPayload {
     /// Normal built/healthy state marker.
     Plain,
     /// Status carrying one linked object index.
     Linked {
         /// Serialized link discriminator.
-        link_code: u8,
+        link_code: crate::om::state_link::StateLinkCode,
         /// Linked object index.
-        object_index: u32,
-        /// Exact linked object-index token.
-        raw_object_index: Vec<u8>,
+        object_index: StateIndexToken,
     },
     /// Status carrying an inline diagnostic message.
     Diagnostic(OmOperationStateMessageBody),
@@ -434,6 +400,7 @@ pub enum OmOperationStateStatusPayload {
 
 /// One per-object operation-state status row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "state_index_wire::OmOperationStateStatusWire", into = "state_index_wire::OmOperationStateStatusWire")]
 pub struct OmOperationStateStatus {
     /// Globally unique status-row identity.
     pub id: String,
@@ -442,13 +409,9 @@ pub struct OmOperationStateStatus {
     /// Zero-based row ordinal within the status table.
     pub ordinal: u32,
     /// Decoded non-null status-code value.
-    pub status_code: u32,
-    /// Exact serialized status-code token.
-    pub raw_status_code: Vec<u8>,
+    pub status_code: StateIndexToken,
     /// Decoded non-null object carrying the status.
-    pub object_index: u32,
-    /// Exact serialized object-index token.
-    pub raw_object_index: Vec<u8>,
+    pub object_index: StateIndexToken,
     /// Exact typed status payload.
     pub payload: OmOperationStateStatusPayload,
     /// Directory entry containing the feature-history section.
@@ -457,17 +420,6 @@ pub struct OmOperationStateStatus {
     pub source_offset: u64,
     /// Absolute exclusive end offset of the row.
     pub end_offset: u64,
-}
-
-/// One serialized feature-record slot in an operation-state slot lane.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OmOperationStateSlot {
-    /// Zero-based slot ordinal.
-    pub ordinal: u32,
-    /// Decoded object index; null slots remain null.
-    pub object_index: Option<u32>,
-    /// Exact serialized object-index token.
-    pub raw_object_index: Vec<u8>,
 }
 
 /// One `02 01 11 ... 02 11` operation-state slot lane.
@@ -480,7 +432,7 @@ pub struct OmOperationStateSlotLane {
     /// Zero-based lane ordinal within the status table.
     pub ordinal: u32,
     /// Ordered null or object-index slots.
-    pub slots: Vec<OmOperationStateSlot>,
+    pub slots: crate::om::state_slots::StateSlots<Option<StateIndexToken>>,
     /// Directory entry containing the feature-history section.
     pub source_entry: String,
     /// Absolute file offset of the lane prefix.
@@ -517,7 +469,7 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
                 section_link: link.id,
                 schema_role: link.schema_role,
                 control_words: header.control_words,
-                product_version: header.product.value.to_string(),
+                product_version: header.product.value.into_owned(),
                 byte_len: bytes.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                 source_offset: entry_offset + header.offset as u64,
@@ -551,22 +503,13 @@ pub fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
             let section_key = format!("{section_ordinal:010}");
             rows.into_iter()
                 .filter_map(move |row| {
-                    let ordinal = row.ordinal.value()?;
-                    Some(OmAuditTrailRow {
-                        id: format!("nx:audit-trail:row#{section_key}-{ordinal:010}"),
-                        section_link: link.id.clone(),
-                        ordinal,
-                        raw_ordinal: row.ordinal.raw().to_vec(),
-                        frame_selector: row.frame_selector,
-                        timestamp: row.timestamp,
-                        value_marker: row.value.marker(),
-                        value: row.value.value,
-                        raw_value: row.value.raw.to_vec(),
-                        raw: row.raw.to_vec(),
-                        source_entry: entry.name.clone(),
-                        source_offset: entry_offset + row.offset as u64,
-                        end_offset: entry_offset + row.end_offset as u64,
-                    })
+                    let record = row.record();
+                    let ordinal = record.ordinal.value();
+                    OmAuditTrailRow::new(
+                        format!("nx:audit-trail:row#{section_key}-{ordinal:010}"),
+                        link.id.clone(), record, entry.name.clone(),
+                        entry_offset.checked_add(row.offset() as u64)?,
+                    )
                 })
                 .collect()
         })
@@ -607,13 +550,12 @@ pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCo
                         section_link: link.id.clone(),
                         ordinal,
                         row_kind: row.row_kind,
-                        object_index: row.object_index.value()?,
-                        raw_object_index: row.object_index.raw().to_vec(),
+                        object_index: row.object_index.token(),
                         introduced_state: row.introduced_state,
                         modified_state: row.modified_state,
                         object_index_source_offset: entry_offset + row.object_index.offset() as u64,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + row.offset as u64,
+                        source_offset: entry_offset + row.span.offset() as u64,
                     })
                 })
                 .collect()
@@ -652,20 +594,16 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
                         .rows
                         .into_iter()
                         .map(|row| {
-                            Some(OmOperationStateJournalRow {
+                            OmOperationStateJournalRow {
                                 timestamp: row.timestamp,
-                                value_marker: row.value.marker(),
-                                value: row.value.value,
-                                raw_value: row.value.raw.to_vec(),
-                                schema_id: row.schema_id.value()?,
-                                raw_schema_id: row.schema_id.raw().to_vec(),
-                                state_ordinal: row.ordinal.value()?,
-                                raw_state_ordinal: row.ordinal.raw().to_vec(),
-                                source_offset: entry_offset + row.offset as u64,
-                                end_offset: entry_offset + row.end_offset as u64,
-                            })
+                                value: row.value,
+                                schema_id: row.schema_id.token(),
+                                state_ordinal: row.ordinal.token(),
+                                source_offset: entry_offset + row.span.offset() as u64,
+                                end_offset: entry_offset + row.span.end_offset() as u64,
+                            }
                         })
-                        .collect::<Option<Vec<_>>>()?;
+                        .collect();
                     Some(OmOperationStateJournalGroup {
                         id: format!(
                             "nx:feature-history:operation-state-journal-group#{section_key}-{ordinal:010}"
@@ -675,8 +613,8 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
                         selector: group.selector,
                         rows,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + group.offset as u64,
-                        end_offset: entry_offset + group.end_offset as u64,
+                        source_offset: entry_offset + group.span.offset() as u64,
+                        end_offset: entry_offset + group.span.end_offset() as u64,
                     })
                 })
                 .collect()
@@ -712,42 +650,30 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                 .enumerate()
                 .filter_map(move |(ordinal, group)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let rows = group
-                        .rows
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(row_ordinal, row)| {
-                            let ordinal = u32::try_from(row_ordinal).ok()?;
+                    let members = group.members.map_rows(|_, row| {
                             match row {
                                 crate::om::OperationStateGroupRow::List {
                                     offset,
                                     object_index,
                                     position,
-                                } => Some(OmRollForwardStateRow::List {
-                                    ordinal,
-                                    object_index: object_index.value()?,
-                                    raw_object_index: object_index.raw().to_vec(),
-                                    position: position.value()?,
-                                    raw_position: position.raw().to_vec(),
+                                } => OmRollForwardStateRow::List {
+                                    object_index: object_index.token(),
+                                    position: position.token(),
                                     source_offset: entry_offset + offset as u64,
-                                }),
+                                },
                                 crate::om::OperationStateGroupRow::Pair {
                                     offset,
                                     tag,
                                     first,
                                     second,
-                                } => Some(OmRollForwardStateRow::Pair {
-                                    ordinal,
+                                } => OmRollForwardStateRow::Pair {
                                     tag,
-                                    first: first.value()?,
-                                    raw_first: first.raw().to_vec(),
-                                    second: second.value()?,
-                                    raw_second: second.raw().to_vec(),
+                                    first: first.token(),
+                                    second: second.token(),
                                     source_offset: entry_offset + offset as u64,
-                                }),
+                                },
                             }
-                        })
-                        .collect();
+                        });
                     Some(OmRollForwardStateGroup {
                         id: format!(
                             "nx:feature-history:roll-forward-state-group#{section_key}-{ordinal:010}"
@@ -755,11 +681,10 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                         section_link: link.id.clone(),
                         ordinal,
                         opener: group.opener,
-                        count: group.count,
-                        rows,
+                        members,
                         table_trailing_bytes: table.trailing_bytes.to_vec(),
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + group.offset as u64,
+                        source_offset: entry_offset + group.span.offset() as u64,
                         table_end_offset: entry_offset + table.end_offset as u64,
                     })
                 })
@@ -802,15 +727,12 @@ pub fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMe
                         section_link: link.id.clone(),
                         ordinal,
                         body: OmOperationStateMessageBody {
-                            declared_length: message.declared_length,
-                            text: message.text.to_string(),
-                            value_marker: message.value.marker(),
-                            value: message.value.value,
-                            raw_value: message.value.raw.to_vec(),
+                            text: message.text.into_owned(),
+                            value: message.value,
                             count_or_severity: message.count_or_severity,
                         },
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + message.offset as u64,
+                        source_offset: entry_offset + message.span.offset() as u64,
                     })
                 })
                 .collect()
@@ -846,8 +768,8 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                 .enumerate()
                 .filter_map(move |(ordinal, row)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let status_code = row.status_code.value;
-                    let object_index = row.object_index.value()?;
+                    let status_code = row.status_code.token();
+                    let object_index = row.object_index.token();
                     let payload = match row.payload {
                         crate::om::OperationStateStatusPayload::Plain => {
                             OmOperationStateStatusPayload::Plain
@@ -857,16 +779,12 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                             object_index,
                         } => OmOperationStateStatusPayload::Linked {
                             link_code,
-                            object_index: object_index.value()?,
-                            raw_object_index: object_index.raw().to_vec(),
+                            object_index: object_index.token(),
                         },
                         crate::om::OperationStateStatusPayload::Diagnostic { message } => {
                             OmOperationStateStatusPayload::Diagnostic(OmOperationStateMessageBody {
-                                declared_length: message.declared_length,
-                                text: message.text.to_string(),
-                                value_marker: message.value.marker(),
-                                value: message.value.value,
-                                raw_value: message.value.raw.to_vec(),
+                                text: message.text.into_owned(),
+                                value: message.value,
                                 count_or_severity: message.count_or_severity,
                             })
                         }
@@ -881,13 +799,11 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                         section_link: link.id.clone(),
                         ordinal,
                         status_code,
-                        raw_status_code: row.status_code.raw.to_vec(),
                         object_index,
-                        raw_object_index: row.object_index.raw().to_vec(),
                         payload,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + row.offset as u64,
-                        end_offset: entry_offset + row.end_offset as u64,
+                        source_offset: entry_offset + row.span.offset() as u64,
+                        end_offset: entry_offset + row.span.end_offset() as u64,
                     })
                 })
                 .collect()
@@ -923,16 +839,7 @@ pub fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationState
                 .enumerate()
                 .filter_map(move |(ordinal, lane)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let slots = lane
-                        .slots
-                        .into_iter()
-                        .enumerate()
-                        .map(|(slot_ordinal, slot)| OmOperationStateSlot {
-                            ordinal: u32::try_from(slot_ordinal).expect("slot ordinal fits u32"),
-                            object_index: slot.value(),
-                            raw_object_index: slot.raw().to_vec(),
-                        })
-                        .collect();
+                    let slots = lane.slots.map_slots(|_, slot| slot.token());
                     Some(OmOperationStateSlotLane {
                         id: format!(
                             "nx:feature-history:operation-state-slot-lane#{section_key}-{ordinal:010}"
@@ -941,8 +848,8 @@ pub fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationState
                         ordinal,
                         slots,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + lane.offset as u64,
-                        end_offset: entry_offset + lane.end_offset as u64,
+                        source_offset: entry_offset + lane.span.offset() as u64,
+                        end_offset: entry_offset + lane.span.end_offset() as u64,
                     })
                 })
                 .collect()
@@ -1330,9 +1237,9 @@ impl From<ClassDefinition> for ClassDefinitionWire {
             name: value.name,
             ordinal: value.ordinal,
             trailing_code: value.trailing_code,
-            registry_storage_code: registry.map(|layout| layout.storage_code.value),
-            registry_base_class: registry.map(|layout| layout.base_class),
-            registry_reference: registry.map(|layout| layout.reference),
+            registry_storage_code: registry.map(|layout| layout.storage_code.value()),
+            registry_base_class: registry.map(|layout| layout.base_class.map_or(0, std::num::NonZeroU32::get)),
+            registry_reference: registry.map(|layout| layout.reference.get()),
             registry_suffix: value.registry_suffix,
             layout_prefix: layout
                 .as_ref()
@@ -1457,8 +1364,8 @@ impl From<FieldDefinition> for FieldDefinitionWire {
             name: value.name,
             ordinal: value.ordinal,
             trailing_code: value.trailing_code,
-            registry_storage_code: registry.map(|layout| layout.storage_code.value),
-            registry_owner_class: registry.map(|layout| layout.owner_class),
+            registry_storage_code: registry.map(|layout| layout.storage_code.value()),
+            registry_owner_class: registry.map(|layout| layout.owner_class.get()),
             registry_suffix: value.registry_suffix,
             layout_prefix: layout
                 .as_ref()
@@ -1864,8 +1771,12 @@ pub struct DataBlock {
 /// Admitted complete grammar selected for one offset-store control block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataBlockControlFormKind {
-    ZeroPrefixed,
-    ProductAnchored { leading: Option<(u8, u32)> },
+    ZeroPrefixed { value_count: std::num::NonZeroU32 },
+    ProductAnchored {
+        leading: Option<ControlLeadingValue>,
+        value_count: std::num::NonZeroU32,
+        byte_len: std::num::NonZeroU64,
+    },
 }
 
 /// Atomic classification of one complete offset-store control lane.
@@ -1881,12 +1792,23 @@ pub struct DataBlockControlForm {
     pub data_block: String,
     /// Selected complete control grammar.
     pub kind: DataBlockControlFormKind,
-    /// Number of values in the admitted control array.
-    pub value_count: u32,
-    /// Exact serialized opening control-block length.
-    pub byte_len: u64,
     /// Absolute file offset of the control block.
     pub source_offset: u64,
+}
+
+impl DataBlockControlFormKind {
+    pub fn value_count(self) -> u32 {
+        match self {
+            Self::ZeroPrefixed { value_count } | Self::ProductAnchored { value_count, .. } => value_count.get(),
+        }
+    }
+
+    pub fn byte_len(self) -> u64 {
+        match self {
+            Self::ZeroPrefixed { value_count } => u64::from(value_count.get()) * 4,
+            Self::ProductAnchored { byte_len, .. } => byte_len.get(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1913,23 +1835,23 @@ enum DataBlockControlFormKindWire {
 impl From<DataBlockControlForm> for DataBlockControlFormWire {
     fn from(value: DataBlockControlForm) -> Self {
         let (kind, leading_value_width, leading_value) = match value.kind {
-            DataBlockControlFormKind::ZeroPrefixed => {
+            DataBlockControlFormKind::ZeroPrefixed { .. } => {
                 (DataBlockControlFormKindWire::ZeroPrefixed, None, None)
             }
-            DataBlockControlFormKind::ProductAnchored { leading } => (
+            DataBlockControlFormKind::ProductAnchored { leading, .. } => (
                 DataBlockControlFormKindWire::ProductAnchored,
-                leading.map(|(width, _)| width),
-                leading.map(|(_, value)| value),
+                leading.map(ControlLeadingValue::width),
+                leading.map(ControlLeadingValue::value),
             ),
         };
         Self {
             id: value.id,
             data_block: value.data_block,
             kind,
-            value_count: value.value_count,
+            value_count: value.kind.value_count(),
             leading_value_width,
             leading_value,
-            byte_len: value.byte_len,
+            byte_len: value.kind.byte_len(),
             source_offset: value.source_offset,
         }
     }
@@ -1939,16 +1861,26 @@ impl TryFrom<DataBlockControlFormWire> for DataBlockControlForm {
     type Error = String;
 
     fn try_from(wire: DataBlockControlFormWire) -> Result<Self, Self::Error> {
+        let value_count = std::num::NonZeroU32::new(wire.value_count)
+            .ok_or("control-form value_count must be nonzero")?;
+        let byte_len = std::num::NonZeroU64::new(wire.byte_len)
+            .ok_or("control-form byte_len must be nonzero")?;
         let kind = match (wire.kind, wire.leading_value_width, wire.leading_value) {
             (DataBlockControlFormKindWire::ZeroPrefixed, None, None) => {
-                DataBlockControlFormKind::ZeroPrefixed
+                let kind = DataBlockControlFormKind::ZeroPrefixed { value_count };
+                if kind.byte_len() != byte_len.get() {
+                    return Err("control-form byte_len must equal four times value_count".to_owned());
+                }
+                kind
             }
             (DataBlockControlFormKindWire::ProductAnchored, None, None) => {
-                DataBlockControlFormKind::ProductAnchored { leading: None }
+                DataBlockControlFormKind::ProductAnchored { leading: None, value_count, byte_len }
             }
             (DataBlockControlFormKindWire::ProductAnchored, Some(width), Some(value)) => {
                 DataBlockControlFormKind::ProductAnchored {
-                    leading: Some((width, value)),
+                    leading: Some(ControlLeadingValue::from_wire(width, value)?),
+                    value_count,
+                    byte_len,
                 }
             }
             _ => {
@@ -1962,8 +1894,6 @@ impl TryFrom<DataBlockControlFormWire> for DataBlockControlForm {
             id: wire.id,
             data_block: wire.data_block,
             kind,
-            value_count: wire.value_count,
-            byte_len: wire.byte_len,
             source_offset: wire.source_offset,
         })
     }
@@ -1979,7 +1909,7 @@ pub struct DataBlockControlValue {
     /// Zero-based word order in the complete control block.
     pub ordinal: u32,
     /// Unsigned 24-bit value serialized after the zero byte.
-    pub value: u32,
+    pub value: crate::om::control_word::ControlWord24,
     /// Absolute file offset of the four-byte word.
     pub source_offset: u64,
 }
@@ -2789,7 +2719,7 @@ pub struct StoreHeader {
     /// Persistent object identity when the header belongs to an ID-bounded record.
     pub object_id: Option<u32>,
     /// Exact printable product/version text.
-    pub version: String,
+    pub version: crate::om::product::ProductText<String>,
     /// Directory entry containing the OM store.
     pub source_entry: String,
     /// Absolute file offset of the `04 01` marker.
@@ -3792,11 +3722,7 @@ fn xml_stream_text(payload: &[u8]) -> Option<&str> {
 pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
     let mut definitions = BTreeMap::new();
     for (entry, section) in container.om_sections() {
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("OM entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.types.iter().cloned().enumerate() {
             definitions.insert(
@@ -3815,11 +3741,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
         }
     }
     for (entry, section) in container.indexed_om_sections() {
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("indexed entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.types.iter().cloned().enumerate() {
@@ -3864,11 +3786,7 @@ fn registry_layout(suffix: &[u8]) -> Option<RegistryLayout<'_>> {
 pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
     let mut definitions = BTreeMap::new();
     for (entry, section) in container.om_sections() {
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("OM entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
             definitions.insert(
@@ -3887,11 +3805,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
         }
     }
     for (entry, section) in container.indexed_om_sections() {
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("indexed entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
@@ -4148,33 +4062,30 @@ pub fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlFo
         .enumerate()
         .filter_map(|(section_ordinal, (entry, section))| {
             let (control, _, records) = section.as_offset_only()?;
-            let (kind, value_count) = match crate::om::offset_store_control_form(
+            let kind = match crate::om::offset_store_control_form(
                 control.bytes,
                 records.first().map(|record| record.bytes),
             )? {
                 crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => {
-                    (DataBlockControlFormKind::ZeroPrefixed, values.len())
+                    DataBlockControlFormKind::ZeroPrefixed {
+                        value_count: std::num::NonZeroU32::new(u32::try_from(values.len()).ok()?)?,
+                    }
                 }
                 crate::om::OffsetStoreControlForm::ProductAnchored {
                     leading_value,
                     values,
                 } => {
-                    let leading = match leading_value {
-                        Some((width, value)) => Some((u8::try_from(width).ok()?, value)),
-                        None => None,
-                    };
-                    (
-                        DataBlockControlFormKind::ProductAnchored { leading },
-                        values.len(),
-                    )
+                    DataBlockControlFormKind::ProductAnchored {
+                        leading: leading_value,
+                        value_count: std::num::NonZeroU32::new(u32::try_from(values.len()).ok()?)?,
+                        byte_len: std::num::NonZeroU64::new(control.bytes.len() as u64)?,
+                    }
                 }
             };
             Some(DataBlockControlForm {
                 id: format!("nx:om-data-block-control-forms:form#{section_ordinal}"),
                 data_block: format!("nx:om-data-blocks-{section_ordinal}:block#0"),
                 kind,
-                value_count: u32::try_from(value_count).ok()?,
-                byte_len: control.bytes.len() as u64,
                 source_offset: entry.file_span.map_or(0, |(offset, _)| offset)
                     + control.offset as u64,
             })
@@ -4244,13 +4155,13 @@ pub fn data_block_control_class_references(
             for definition in container
                 .om_sections()
                 .into_iter()
-                .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
+                .filter(|(candidate, _)| candidate.index() == entry.index())
                 .flat_map(|(_, section)| section.types.iter().cloned().collect::<Vec<_>>())
                 .chain(
                     container
                         .indexed_om_sections()
                         .into_iter()
-                        .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
+                        .filter(|(candidate, _)| candidate.index() == entry.index())
                         .flat_map(|(_, section)| {
                             std::sync::Arc::as_ref(&section.types).to_owned()
                         }),
@@ -4263,11 +4174,7 @@ pub fn data_block_control_class_references(
             else {
                 return Vec::new();
             };
-            let entry_index = container
-                .entries
-                .iter()
-                .position(|candidate| std::ptr::eq(candidate, entry))
-                .expect("indexed entry belongs to container");
+            let entry_index = entry.index();
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             ordinals
@@ -4319,7 +4226,7 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
             else {
                 return Vec::new();
             };
-            let leading_value_width = leading_value.map_or(0, |(width, _)| width);
+            let leading_value_width = leading_value.map_or(0, ControlLeadingValue::width);
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             let block_count = records.len() + 1;
@@ -4846,11 +4753,7 @@ pub fn rm_creation_display_data_relations(
         let Ok(class_ordinal) = u32::try_from(class_ordinal) else {
             continue;
         };
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("OM entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let source_base = entry_offset + record_area_offset as u64;
         let class_definition = format!("nx:om-entry-{entry_index}:class#{}", definition.offset);
@@ -4951,11 +4854,7 @@ pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<Par
         let [table] = parsed_tables.as_slice() else {
             continue;
         };
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("indexed entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let source_base = entry_offset + storage_offset as u64;
         let table_id = format!("nx:part-color-tables:table#{section_ordinal}");
@@ -5172,7 +5071,7 @@ pub fn store_headers(container: &Container) -> Vec<StoreHeader> {
                             id: format!("nx:om-store-headers:store#{section_ordinal}"),
                             section_ordinal: section_ordinal as u32,
                             object_id: Some(record.object_id.0),
-                            version: version.value.to_string(),
+                            version: version.value.into_owned(),
                             source_entry: entry.name.clone(),
                             source_offset: entry_offset + version.offset as u64,
                         }
@@ -5188,7 +5087,7 @@ pub fn store_headers(container: &Container) -> Vec<StoreHeader> {
                                 id: format!("nx:om-store-headers:store#{section_ordinal}"),
                                 section_ordinal: section_ordinal as u32,
                                 object_id: None,
-                                version: version.value.to_string(),
+                                version: version.value.into_owned(),
                                 source_entry: entry.name.clone(),
                                 source_offset: entry_offset + version.offset as u64,
                             }
@@ -6621,8 +6520,8 @@ mod tests {
         assert_eq!(
             crate::om::offset_store_control_form(&bytes, None),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
-                leading_value: Some((2, 0)),
-                values: vec![7, 0x1020],
+                leading_value: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()),
+                values: crate::om::nonempty::NonEmpty::new([7, 0x1020]).unwrap(),
             })
         );
 
@@ -6632,8 +6531,8 @@ mod tests {
         assert_eq!(
             crate::om::offset_store_control_form(&nonzero_leading, None),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
-                leading_value: Some((3, 0x1234)),
-                values: vec![7],
+                leading_value: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(3, 0x1234).unwrap()),
+                values: crate::om::nonempty::NonEmpty::new([7]).unwrap(),
             })
         );
 
@@ -6664,15 +6563,15 @@ mod tests {
         let forms = super::data_block_control_forms(&container);
         assert_eq!(forms.len(), 1);
         assert_eq!(forms[0].data_block, blocks[0].id);
-        assert_eq!(forms[0].kind, super::DataBlockControlFormKind::ZeroPrefixed);
-        assert_eq!(forms[0].value_count, 2);
-        assert_eq!(forms[0].byte_len, blocks[0].byte_len);
+        assert_eq!(forms[0].kind, super::DataBlockControlFormKind::ZeroPrefixed { value_count: std::num::NonZeroU32::new(2).unwrap() });
+        assert_eq!(forms[0].kind.value_count(), 2);
+        assert_eq!(forms[0].kind.byte_len(), blocks[0].byte_len);
         let control_values = super::data_block_control_values(&container);
         assert_eq!(control_values.len(), 2);
         assert_eq!(control_values[0].data_block, blocks[0].id);
         assert_eq!(control_values[0].ordinal, 0);
-        assert_eq!(control_values[0].value, 0);
-        assert_eq!(control_values[1].value, 1);
+        assert_eq!(control_values[0].value.value(), 0);
+        assert_eq!(control_values[1].value.value(), 1);
         let classes = super::data_block_control_class_references(&container);
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].data_block, blocks[0].id);
@@ -6737,6 +6636,41 @@ mod tests {
     }
 
     #[test]
+    fn control_form_wire_checks_nonempty_counts_and_derived_length() {
+        let json = r#"{"id":"c","data_block":"b","kind":"zero_prefixed","value_count":2,"byte_len":8,"source_offset":0}"#;
+        let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        for (field, invalid) in [("value_count", 0), ("byte_len", 0), ("byte_len", 7)] {
+            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            wire[field] = invalid.into();
+            assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
+                .unwrap_err().to_string().contains(field));
+        }
+        let json = r#"{"id":"c","data_block":"b","kind":"product_anchored","value_count":2,"byte_len":1,"source_offset":0}"#;
+        let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        for field in ["value_count", "byte_len"] {
+            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            wire[field] = 0.into();
+            assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
+                .unwrap_err().to_string().contains(field));
+        }
+    }
+
+    #[test]
+    fn control_leading_value_preserves_wire_and_rejects_width_mismatch() {
+        let json = r#"{"id":"c","data_block":"b","kind":"product_anchored","value_count":2,"leading_value_width":2,"leading_value":0,"byte_len":26,"source_offset":0}"#;
+        let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["leading_value_width"] = 4.into();
+        assert!(serde_json::from_value::<super::DataBlockControlForm>(wire.clone()).unwrap_err().to_string().contains("leading_value_width"));
+        wire["leading_value_width"] = 2.into();
+        wire["leading_value"] = 65536.into();
+        assert!(serde_json::from_value::<super::DataBlockControlForm>(wire).unwrap_err().to_string().contains("leading_value"));
+    }
+
+    #[test]
     fn native_catalog_classifies_product_anchored_control_atomically() {
         let file = prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
@@ -6749,10 +6683,12 @@ mod tests {
         assert_eq!(
             forms[0].kind,
             super::DataBlockControlFormKind::ProductAnchored {
-                leading: Some((2, 0)),
+                leading: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()),
+                value_count: std::num::NonZeroU32::new(2).unwrap(),
+                byte_len: std::num::NonZeroU64::new(26).unwrap(),
             }
         );
-        assert_eq!(forms[0].value_count, 2);
+        assert_eq!(forms[0].kind.value_count(), 2);
         assert!(super::data_block_control_values(&container).is_empty());
         assert_eq!(super::data_block_control_index_values(&container).len(), 2);
     }
@@ -6935,7 +6871,7 @@ mod tests {
             .arena_as::<super::StoreHeader>("store_headers")
             .expect("required invariant");
         assert_eq!(headers.len(), 1);
-        assert_eq!(headers[0].version, "NX 2027.3102");
+        assert_eq!(headers[0].version.as_str(), "NX 2027.3102");
         assert_eq!(headers[0].object_id, Some(0x101));
         assert_eq!(object_records[1].object_id.map(|(id, _)| id), Some(0x102));
         assert_eq!(

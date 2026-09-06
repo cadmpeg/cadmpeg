@@ -843,16 +843,16 @@ fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {
 fn om_datum_plane_descriptor_requires_complete_lowercase_hex_identity() {
     let mut bytes = *b"793487222121a5474a9125451b8e31f5?A\xf0\x1e\xff\x02\x01\x33";
     let descriptor = super::datum_plane_descriptor_block(&bytes).unwrap();
-    assert_eq!(descriptor.identity, "793487222121a5474a9125451b8e31f5");
-    assert_eq!(descriptor.suffix, b"?A\xf0\x1e\xff\x02\x01\x33");
-    assert_eq!(descriptor.schema_index, 28_702);
-    assert_eq!(descriptor.label, "3");
+    assert_eq!(descriptor.identity(), "793487222121a5474a9125451b8e31f5");
+    assert_eq!(descriptor.suffix(), b"?A\xf0\x1e\xff\x02\x01\x33");
+    assert_eq!(descriptor.schema_index(), 28_702);
+    assert_eq!(descriptor.label(), "3");
 
     let short_bytes = *b"a75c5f0ed880dd1443b3c5c57908aae?A\xf0\x1f\xff\x02\x01\x66\x33";
     let short = super::datum_plane_descriptor_block(&short_bytes).unwrap();
-    assert_eq!(short.identity.len(), 31);
-    assert_eq!(short.schema_index, 28_703);
-    assert_eq!(short.label, "f3");
+    assert_eq!(short.identity().len(), 31);
+    assert_eq!(short.schema_index(), 28_703);
+    assert_eq!(short.label(), "f3");
 
     bytes[0] = b'G';
     assert!(super::datum_plane_descriptor_block(&bytes).is_none());
@@ -901,10 +901,10 @@ fn om_datum_csys_scalar_pairs_require_discriminator_and_separator() {
 fn om_datum_csys_descriptor_requires_one_maximal_hex_identity() {
     let bytes = b"\x02\x01ae166162820ea2d993e1fdf49091850e?A\x80\xa0\xf0\x26";
     let descriptor = super::datum_csys_descriptor_block(bytes).unwrap();
-    assert_eq!(descriptor.prefix, [0x02, 0x01]);
-    assert_eq!(descriptor.identity, "ae166162820ea2d993e1fdf49091850e");
-    assert_eq!(descriptor.prefix.len(), 2);
-    assert_eq!(descriptor.suffix, b"?A\x80\xa0\xf0\x26");
+    assert_eq!(descriptor.prefix(), [0x02, 0x01]);
+    assert_eq!(descriptor.identity().as_str(), "ae166162820ea2d993e1fdf49091850e");
+    assert_eq!(descriptor.prefix().len(), 2);
+    assert_eq!(descriptor.suffix(), b"?A\x80\xa0\xf0\x26");
 
     let mut ambiguous = bytes.to_vec();
     ambiguous.extend_from_slice(b"012345678901234567890123456789");
@@ -916,25 +916,25 @@ fn om_draft_identity_frames_require_complete_typed_framing() {
     let bytes = b"\x00A\x81\x54\xf0\x38\x02\x01abc123?A\xf0\x27\xff\x02\x01def456?\x00";
     let frames = super::draft_construction_identity_frames(bytes);
     assert_eq!(frames.len(), 2);
-    assert_eq!(frames[0].offset, 1);
-    assert_eq!(frames[0].prefix, b"A\x81\x54\xf0\x38\x02\x01");
+    assert_eq!(frames[0].offset(), 1);
+    assert_eq!(frames[0].prefix(), b"A\x81\x54\xf0\x38\x02\x01");
     assert_eq!(
-        frames[0].form,
-        super::DraftConstructionIdentityFrameForm::IndexedBranch {
+        frames[0].form(),
+        crate::om::draft_identity::DraftIdentityForm::IndexedBranch {
             first_index: 340,
             second_index: Some(56),
             branch: crate::om::discriminators::DraftIdentityBranch::Form02,
         }
     );
-    assert_eq!(frames[0].identity, "abc123");
+    assert_eq!(frames[0].identity(), "abc123");
     assert_eq!(frames[0].identity_offset(), 8);
-    assert_eq!(frames[1].offset, 15);
-    assert_eq!(frames[1].prefix, b"A\xf0\x27\xff\x02\x01");
+    assert_eq!(frames[1].offset(), 15);
+    assert_eq!(frames[1].prefix(), b"A\xf0\x27\xff\x02\x01");
     assert_eq!(
-        frames[1].form,
-        super::DraftConstructionIdentityFrameForm::Tagged { index: Some(39) }
+        frames[1].form(),
+        crate::om::draft_identity::DraftIdentityForm::Tagged { index: Some(39) }
     );
-    assert_eq!(frames[1].identity, "def456");
+    assert_eq!(frames[1].identity(), "def456");
 
     assert!(
         super::draft_construction_identity_frames(b"A\x81\x54\xf0\x38\x02\x01abc123").is_empty()
@@ -1577,7 +1577,7 @@ fn om_feature_section_accepts_the_legacy_record_area_pointer_and_product_frame()
             .record_area_header()
             .expect("record header")
             .product
-            .value,
+            .value.as_str(),
         "NX 1980.1700"
     );
     assert_eq!(section.operation_labels().len(), 1);
@@ -1687,8 +1687,8 @@ fn om_operation_payload_strings_require_complete_utf8_frames() {
     let strings = super::operation_payload_strings(record);
     assert_eq!(strings.len(), 2);
     assert_eq!(strings[0].offset, 201);
-    assert_eq!(strings[0].value, "BLOCK");
-    assert_eq!(strings[1].value, "×");
+    assert_eq!(strings[0].value.as_str(), "BLOCK");
+    assert_eq!(strings[1].value.as_str(), "×");
 }
 
 #[test]
@@ -1714,17 +1714,17 @@ fn om_operation_payload_text_frames_retain_marker_and_order() {
             super::OperationPayloadTextFrame {
                 marker: super::OperationTextMarker::Text,
                 offset: 200,
-                value: "CUT",
+                value: crate::payload_text::PayloadText::new("CUT").unwrap(),
             },
             super::OperationPayloadTextFrame {
                 marker: super::OperationTextMarker::String,
                 offset: 206,
-                value: "DONE",
+                value: crate::payload_text::PayloadText::new("DONE").unwrap(),
             },
             super::OperationPayloadTextFrame {
                 marker: super::OperationTextMarker::Text,
                 offset: 213,
-                value: "M Profile",
+                value: crate::payload_text::PayloadText::new("M Profile").unwrap(),
             },
         ]
     );
