@@ -2590,7 +2590,7 @@ pub struct DraftConstructionBinary32Lane {
     /// Branch selecting the complete lane discriminator.
     pub branch: DraftBinary32Branch,
     /// Ordered scalar atoms with exact source encodings.
-    pub values: Vec<LaneToken<f64, [u8; 4]>>,
+    pub values: Vec<scalar::LocatedBinary32>,
 }
 
 /// Compact object frame in a bounded offset-store block.
@@ -6289,16 +6289,8 @@ pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<DraftConstructionB
                     let mut at = offset + discriminator.len();
                     let mut values = Vec::new();
                     while matches!(bytes.get(at), Some(0x40..=0x5f | 0xc0..=0xdf)) {
-                        let raw: [u8; 4] = bytes.get(at..at + 4)?.try_into().ok()?;
-                        let Some(atom) = ShiftedBinary32::read(&raw)
-                        else {
-                            return None;
-                        };
-                        values.push(LaneToken {
-                            value: atom.value(),
-                            raw: atom.raw(),
-                            offset: at,
-                        });
+                        let scalar = ShiftedBinary32::read(bytes.get(at..at + 4)?)?;
+                        values.push(scalar::LocatedBinary32 { scalar, offset: at });
                         at += 4;
                     }
                     if values.is_empty() || bytes.get(at) != Some(&0x00) {

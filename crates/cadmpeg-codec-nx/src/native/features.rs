@@ -12,7 +12,7 @@ use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLin
 use std::borrow::Cow;
 use std::num::NonZeroU8;
 use crate::om::swp104_state::Swp104StateLane;
-use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, ShiftedBinary64, ShiftedScalar};
+use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, ShiftedBinary32, ShiftedBinary64, ShiftedScalar};
 use crate::om::branch_items::BranchItems;
 use crate::om::pattern::{PatternRow, PatternRows, PatternScalarEncoding, PatternTerminal, PatternValue, PatternWideValues};
 use crate::om::thru_curve_state::ThruCurveBranchItems;
@@ -3087,8 +3087,7 @@ pub struct FeatureFixedScalarToken {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureBinary32ScalarToken {
-    pub value: f64,
-    pub raw: [u8; 4],
+    pub scalar: ShiftedBinary32,
     pub payload_offset: u64,
     pub source_offset: u64,
 }
@@ -4115,8 +4114,8 @@ impl From<FeatureDraftConstructionBinary32Lane> for FeatureDraftConstructionBina
             branch: u8::from(lane.branch),
             payload_offset: lane.payload_offset,
             source_offset: lane.source_offset,
-            values: lane.values.iter().map(|token| token.value).collect(),
-            raw_values: lane.values.iter().map(|token| token.raw).collect(),
+            values: lane.values.iter().map(|token| token.scalar.value()).collect(),
+            raw_values: lane.values.iter().map(|token| token.scalar.raw()).collect(),
             value_payload_offsets: lane
                 .values
                 .iter()
@@ -4165,14 +4164,13 @@ impl TryFrom<FeatureDraftConstructionBinary32LaneWire> for FeatureDraftConstruct
                 .zip(wire.value_payload_offsets)
                 .zip(wire.value_source_offsets)
                 .map(
-                    |(((value, raw), payload_offset), source_offset)| FeatureBinary32ScalarToken {
-                        value,
-                        raw,
+                    |(((value, raw), payload_offset), source_offset)| Ok(FeatureBinary32ScalarToken {
+                        scalar: ShiftedBinary32::from_wire(value, &raw)?,
                         payload_offset,
                         source_offset,
-                    },
+                    }),
                 )
-                .collect(),
+                .collect::<Result<Vec<_>, String>>()?,
         })
     }
 }
@@ -10792,8 +10790,7 @@ pub fn feature_draft_construction_binary32_lanes(
                         .into_iter()
                         .map(|token| {
                             Some(FeatureBinary32ScalarToken {
-                                value: token.value,
-                                raw: token.raw,
+                                scalar: token.scalar,
                                 payload_offset: token.offset as u64,
                                 source_offset: joined_payload_source_offset(
                                     token.offset as u64,

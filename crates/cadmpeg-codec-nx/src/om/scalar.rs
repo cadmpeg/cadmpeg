@@ -69,7 +69,21 @@ pub(super) fn is_shifted_ieee_f64_marker(marker: u8) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ShiftedBinary32([u8; 4]);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LocatedBinary32 {
+    pub(crate) scalar: ShiftedBinary32,
+    pub(crate) offset: usize,
+}
+
 impl ShiftedBinary32 {
+    pub(crate) fn from_wire(value: f64, raw: &[u8; 4]) -> Result<Self, &'static str> {
+        let scalar = Self::read(raw).ok_or("raw_values must contain shifted binary32 atoms")?;
+        if scalar.value().to_bits() != value.to_bits() {
+            return Err("values must match raw_values atoms");
+        }
+        Ok(scalar)
+    }
+
     pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
         let raw = <[u8; 4]>::try_from(bytes).ok()?;
         matches!(raw[0], 0x40..=0x5f | 0xc0..=0xdf).then_some(Self(raw))

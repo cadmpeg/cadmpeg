@@ -1013,7 +1013,7 @@ fn om_draft_binary32_lanes_require_complete_typed_atoms_and_terminator() {
         lanes[0]
             .values
             .iter()
-            .map(|token| token.value)
+            .map(|token| token.scalar.value())
             .collect::<Vec<_>>(),
         [1.0, -1.0]
     );
