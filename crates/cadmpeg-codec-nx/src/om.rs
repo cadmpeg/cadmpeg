@@ -26,6 +26,8 @@ pub(crate) mod fixed;
 use fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 pub(crate) mod nonempty;
 pub(crate) mod state_tagged_value;
+pub(crate) mod state_index;
+use state_index::{OperationStateIndex, NonNullStateIndex};
 pub(crate) mod state_message_text;
 use state_message_text::StateMessageText;
 use state_tagged_value::StateTaggedValue;
@@ -1477,79 +1479,15 @@ pub struct OperationTerminalFrame {
     pub object_index_offset: usize,
 }
 
-/// One operation-state object-index token with its exact serialized form.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStateIndex<'a> {
-    /// The `ff` null token.
-    Null {
-        /// Absolute byte offset of the token.
-        offset: usize,
-    },
-    /// A decoded non-null object index.
-    Value {
-        /// Decoded value.
-        value: u32,
-        /// Exact serialized token.
-        raw: &'a [u8],
-        /// Absolute byte offset of the token.
-        offset: usize,
-    },
-}
-
-impl<'a> OperationStateIndex<'a> {
-    /// Decoded value, or `None` for the `ff` null token.
-    pub const fn value(self) -> Option<u32> {
-        match self {
-            Self::Null { .. } => None,
-            Self::Value { value, .. } => Some(value),
-        }
-    }
-
-    /// Exact serialized token.
-    pub const fn raw(self) -> &'a [u8] {
-        match self {
-            Self::Null { .. } => &[0xff],
-            Self::Value { raw, .. } => raw,
-        }
-    }
-
-    /// Absolute byte offset of the token.
-    pub const fn offset(self) -> usize {
-        match self {
-            Self::Null { offset, .. } | Self::Value { offset, .. } => offset,
-        }
-    }
-}
-
-/// A non-null operation-state index token.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NonNullStateIndex<'a> {
-    /// Decoded value.
-    pub value: u32,
-    /// Exact serialized token.
-    pub raw: &'a [u8],
-    /// Absolute byte offset of the token.
-    pub offset: usize,
-}
-
-impl<'a> NonNullStateIndex<'a> {
-    fn from_index(index: OperationStateIndex<'a>) -> Option<Self> {
-        match index {
-            OperationStateIndex::Value { value, raw, offset } => Some(Self { value, raw, offset }),
-            OperationStateIndex::Null { .. } => None,
-        }
-    }
-}
-
 /// One row in the operation-state object counter map.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationStateCounter<'a> {
+pub struct OperationStateCounter {
     /// Absolute byte offset of the row's `05` marker.
     pub offset: usize,
     /// Row-kind byte following `05`; modern files use `01` and `02`.
     pub row_kind: OperationStateCounterKind,
     /// Object whose state-counter pair is recorded.
-    pub object_index: OperationStateIndex<'a>,
+    pub object_index: NonNullStateIndex,
     /// Journal state at which the object was introduced.
     pub introduced_state: u8,
     /// Journal state at which the object was last modified.
@@ -1566,7 +1504,7 @@ pub struct OperationStateCounterMap<'a> {
     /// Absolute byte offset after the final counter row.
     pub end_offset: usize,
     /// Rows in serialized order.
-    pub rows: Vec<OperationStateCounter<'a>>,
+    pub rows: Vec<OperationStateCounter>,
     /// Exact bytes after the counter rows within the bounded record area.
     pub trailing_bytes: &'a [u8],
 }
@@ -1596,7 +1534,7 @@ pub enum OperationStateStatusPayload<'a> {
         /// Serialized link discriminator.
         link_code: u8,
         /// Linked object index between the two `ff` sentinels.
-        object_index: OperationStateIndex<'a>,
+        object_index: NonNullStateIndex,
     },
     /// Status carrying the exact inline diagnostic record.
     Diagnostic {
@@ -1616,9 +1554,9 @@ pub struct OperationStateStatus<'a> {
     /// Absolute byte offset of the status-code token.
     pub offset: usize,
     /// Exact non-null status-code token and decoded value.
-    pub status_code: NonNullStateIndex<'a>,
+    pub status_code: NonNullStateIndex,
     /// Object carrying this status.
-    pub object_index: OperationStateIndex<'a>,
+    pub object_index: NonNullStateIndex,
     /// Status payload, retained without naming suppression codes.
     pub payload: OperationStateStatusPayload<'a>,
     /// Exclusive absolute end offset after the payload.
@@ -1635,18 +1573,18 @@ pub struct OperationStateStatusTable<'a> {
     /// Rows in serialized order.
     pub rows: Vec<OperationStateStatus<'a>>,
     /// Standalone feature-record slot lanes following the status rows.
-    pub slot_lanes: Vec<OperationStateSlotLane<'a>>,
+    pub slot_lanes: Vec<OperationStateSlotLane>,
     /// Exact bounded bytes after the last complete status row.
     pub trailing_bytes: &'a [u8],
 }
 
 /// One standalone feature-record slot lane in the operation-state block.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationStateSlotLane<'a> {
+pub struct OperationStateSlotLane {
     /// Absolute byte offset of the `02 01 11` lane prefix.
     pub offset: usize,
     /// Null or object-index slots in serialized order.
-    pub slots: Vec<OperationStateIndex<'a>>,
+    pub slots: Vec<OperationStateIndex>,
     /// Exclusive absolute end offset after the `02 11` terminator.
     pub end_offset: usize,
 }
@@ -1655,13 +1593,13 @@ struct OperationStateBlock<'a> {
     offset: usize,
     status_end_offset: usize,
     rows: Vec<OperationStateStatus<'a>>,
-    slot_lanes: Vec<OperationStateSlotLane<'a>>,
+    slot_lanes: Vec<OperationStateSlotLane>,
     messages: Vec<OperationStateMessage<'a>>,
 }
 
 /// One row in an `m_rollForwardStates` group table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStateGroupRow<'a> {
+pub enum OperationStateGroupRow {
     /// `4a object_index position ff` list member. The common position is a
     /// direct byte; one generation uses the same compact token family as an
     /// object index for positions above the direct range.
@@ -1669,9 +1607,9 @@ pub enum OperationStateGroupRow<'a> {
         /// Absolute byte offset of the row's `4a` marker.
         offset: usize,
         /// Ordered feature-record member.
-        object_index: OperationStateIndex<'a>,
+        object_index: NonNullStateIndex,
         /// Serialized list-position token.
-        position: OperationStateIndex<'a>,
+        position: NonNullStateIndex,
     },
     /// `tag object_index object_index ff ff` relation member.
     Pair {
@@ -1680,9 +1618,9 @@ pub enum OperationStateGroupRow<'a> {
         /// Schema-generation relation tag (`4f` or `48`).
         tag: OperationStatePairTag,
         /// First relation endpoint.
-        first: OperationStateIndex<'a>,
+        first: NonNullStateIndex,
         /// Second relation endpoint.
-        second: OperationStateIndex<'a>,
+        second: NonNullStateIndex,
     },
 }
 
@@ -1742,7 +1680,7 @@ impl OperationStateGroupCount {
 
 /// One counted `m_rollForwardStates` group.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationStateGroup<'a> {
+pub struct OperationStateGroup {
     /// Absolute byte offset of the two-byte group opener.
     pub offset: usize,
     /// Admitted two-byte group opener.
@@ -1750,7 +1688,7 @@ pub struct OperationStateGroup<'a> {
     /// Empty or explicitly counted header.
     pub count: OperationStateGroupCount,
     /// Ordered list or pair rows.
-    pub rows: Vec<OperationStateGroupRow<'a>>,
+    pub rows: Vec<OperationStateGroupRow>,
     /// Exclusive absolute end offset after the final group row.
     pub end_offset: usize,
 }
@@ -1763,14 +1701,14 @@ pub struct OperationStateGroupTable<'a> {
     /// Absolute byte offset after the final group.
     pub end_offset: usize,
     /// Groups in serialized order.
-    pub groups: Vec<OperationStateGroup<'a>>,
+    pub groups: Vec<OperationStateGroup>,
     /// Exact table-boundary bytes after the final complete group.
     pub trailing_bytes: &'a [u8],
 }
 
 /// One state-journal row preceding feature operation records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationStateJournalRow<'a> {
+pub struct OperationStateJournalRow {
     /// Absolute byte offset of the row's `e0` timestamp marker.
     pub offset: usize,
     /// Big-endian Unix timestamp.
@@ -1778,22 +1716,22 @@ pub struct OperationStateJournalRow<'a> {
     /// Tagged schema value stored by the journal.
     pub value: StateTaggedValue,
     /// Schema identifier varint.
-    pub schema_id: OperationStateIndex<'a>,
+    pub schema_id: NonNullStateIndex,
     /// Monotone state ordinal varint.
-    pub ordinal: OperationStateIndex<'a>,
+    pub ordinal: NonNullStateIndex,
     /// Exclusive absolute end offset after the `13` terminator.
     pub end_offset: usize,
 }
 
 /// One state-journal group.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationStateJournalGroup<'a> {
+pub struct OperationStateJournalGroup {
     /// Absolute byte offset of the `04` group opener.
     pub offset: usize,
     /// Two opener selector bytes.
     pub selector: [u8; 2],
     /// Journal rows in serialized order.
-    pub rows: Vec<OperationStateJournalRow<'a>>,
+    pub rows: Vec<OperationStateJournalRow>,
     /// Exclusive absolute end offset after the final row.
     pub end_offset: usize,
 }
@@ -1809,7 +1747,7 @@ pub struct AuditTrailRow<'a> {
     /// Absolute byte offset of the opening `04` marker.
     pub offset: usize,
     /// Monotone audit-row ordinal and its exact token.
-    pub ordinal: OperationStateIndex<'a>,
+    pub ordinal: NonNullStateIndex,
     /// Optional selector byte in the exact `04 05 selector 00` envelope.
     pub frame_selector: Option<u8>,
     /// Big-endian timestamp following the `e0` marker.
@@ -2877,7 +2815,7 @@ impl<'a> Section<'a> {
     /// separator form may be skipped when it leads to another complete group.
     /// Any other byte stops the journal so later record-region data cannot
     /// become state.
-    pub fn operation_state_journal_groups(&self) -> Option<Vec<OperationStateJournalGroup<'a>>> {
+    pub fn operation_state_journal_groups(&self) -> Option<Vec<OperationStateJournalGroup>> {
         let is_feature_history = self
             .types
             .iter()
@@ -6483,51 +6421,21 @@ fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)>
 }
 
 fn operation_relation_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {
-    let token = operation_state_index_at(bytes, at, 0)?;
+    let token = OperationStateIndex::read_at(bytes, at, 0)?;
     Some((token.value(), at + token.raw().len()))
-}
-
-fn operation_state_index_at(
-    bytes: &[u8],
-    at: usize,
-    base_offset: usize,
-) -> Option<OperationStateIndex<'_>> {
-    let prefix = *bytes.get(at)?;
-    let (value, width) = match prefix {
-        0x00..=0x7f => (Some(u32::from(prefix)), 1),
-        0x80..=0x8f => (
-            Some(u32::from(prefix - 0x80) * 256 + u32::from(*bytes.get(at + 1)?)),
-            2,
-        ),
-        0x90 => (Some(u32::from(View::u16_be_at(bytes, at + 1)?)), 3),
-        0xa0..=0xaf => (
-            Some(u32::from(prefix - 0xa0) * 0x1_0000 + u32::from(View::u16_be_at(bytes, at + 1)?)),
-            3,
-        ),
-        0xf1 => (Some(u32::from(View::u16_be_at(bytes, at + 1)?)), 3),
-        0xff => (None, 1),
-        _ => return None,
-    };
-    let raw = bytes.get(at..at + width)?;
-    let offset = base_offset.checked_add(at)?;
-    Some(match value {
-        None => OperationStateIndex::Null { offset },
-        Some(value) => OperationStateIndex::Value { value, raw, offset },
-    })
 }
 
 fn operation_state_counter_row(
     bytes: &[u8],
     at: usize,
     base_offset: usize,
-) -> Option<OperationStateCounter<'_>> {
+) -> Option<OperationStateCounter> {
     if bytes.get(at) != Some(&0x05) {
         return None;
     }
     let row_kind = OperationStateCounterKind::try_from(*bytes.get(at + 1)?).ok()?;
     let object_at = at.checked_add(2)?;
-    let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
-    object_index.value()?;
+    let object_index = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, object_at, base_offset)?)?;
     let state_at = object_at.checked_add(object_index.raw().len())?;
     let introduced_state = *bytes.get(state_at)?;
     let modified_state = *bytes.get(state_at + 1)?;
@@ -6901,8 +6809,7 @@ fn operation_state_link_payload(
         return None;
     }
     let linked_at = payload_at.checked_add(2)?;
-    let linked = operation_state_index_at(bytes, linked_at, base_offset)?;
-    linked.value()?;
+    let linked = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, linked_at, base_offset)?)?;
     let sentinel_at = linked_at.checked_add(linked.raw().len())?;
     if bytes.get(sentinel_at) != Some(&0xff) {
         return None;
@@ -6922,7 +6829,7 @@ fn operation_state_slot_lane_at(
     at: usize,
     end: usize,
     base_offset: usize,
-) -> Option<OperationStateSlotLane<'_>> {
+) -> Option<OperationStateSlotLane> {
     if bytes.get(at..at + 3) != Some(&[0x02, 0x01, 0x11]) {
         return None;
     }
@@ -6937,7 +6844,7 @@ fn operation_state_slot_lane_at(
                 end_offset: base_offset.checked_add(lane_end)?,
             });
         }
-        let slot = operation_state_index_at(bytes, cursor, base_offset)?;
+        let slot = OperationStateIndex::read_at(bytes, cursor, base_offset)?;
         cursor = cursor.checked_add(slot.raw().len())?;
         slots.push(slot);
     }
@@ -6953,7 +6860,7 @@ fn operation_state_slot_lane_end_at(bytes: &[u8], at: usize, end: usize) -> Opti
         if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
             return cursor.checked_add(2);
         }
-        let slot = operation_state_index_at(bytes, cursor, 0)?;
+        let slot = OperationStateIndex::read_at(bytes, cursor, 0)?;
         cursor = cursor.checked_add(slot.raw().len())?;
     }
     None
@@ -6967,10 +6874,9 @@ fn operation_state_status_row_at<'a>(
     opaque_lane_starts: Option<&[usize]>,
 ) -> Option<OperationStateStatus<'a>> {
     let status_code =
-        NonNullStateIndex::from_index(operation_state_index_at(bytes, at, base_offset)?)?;
-    let object_at = at.checked_add(status_code.raw.len())?;
-    let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
-    object_index.value()?;
+        NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, at, base_offset)?)?;
+    let object_at = at.checked_add(status_code.raw().len())?;
+    let object_index = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, object_at, base_offset)?)?;
     let payload_at = object_at.checked_add(object_index.raw().len())?;
     if payload_at >= end {
         return None;
@@ -7078,16 +6984,14 @@ fn operation_state_group_row_at(
     bytes: &[u8],
     cursor: usize,
     base_offset: usize,
-) -> Option<(OperationStateGroupRow<'_>, usize)> {
+) -> Option<(OperationStateGroupRow, usize)> {
     let tag = *bytes.get(cursor)?;
     match tag {
         0x4a => {
             let object_at = cursor.checked_add(1)?;
-            let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
-            object_index.value()?;
+            let object_index = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, object_at, base_offset)?)?;
             let position_at = object_at.checked_add(object_index.raw().len())?;
-            let position = operation_state_index_at(bytes, position_at, base_offset)?;
-            position.value()?;
+            let position = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, position_at, base_offset)?)?;
             let sentinel_at = position_at.checked_add(position.raw().len())?;
             let row_end = sentinel_at.checked_add(1)?;
             (bytes.get(sentinel_at) == Some(&0xff)).then_some((
@@ -7102,11 +7006,9 @@ fn operation_state_group_row_at(
         tag => {
             let tag = OperationStatePairTag::try_from(tag).ok()?;
             let first_at = cursor.checked_add(1)?;
-            let first = operation_state_index_at(bytes, first_at, base_offset)?;
-            first.value()?;
+            let first = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, first_at, base_offset)?)?;
             let second_at = first_at.checked_add(first.raw().len())?;
-            let second = operation_state_index_at(bytes, second_at, base_offset)?;
-            second.value()?;
+            let second = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, second_at, base_offset)?)?;
             let sentinels_at = second_at.checked_add(second.raw().len())?;
             let row_end = sentinels_at.checked_add(2)?;
             (bytes.get(sentinels_at..row_end) == Some(&[0xff, 0xff])).then_some((
@@ -7141,7 +7043,7 @@ fn operation_state_group_at(
     at: usize,
     end: usize,
     base_offset: usize,
-) -> Option<OperationStateGroup<'_>> {
+) -> Option<OperationStateGroup> {
     let (opener, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
     let member_count = usize::from(count.declared_count().saturating_sub(1));
     let mut rows = Vec::with_capacity(member_count);
@@ -7282,18 +7184,16 @@ fn operation_state_journal_row_at(
     at: usize,
     end: usize,
     base_offset: usize,
-) -> Option<OperationStateJournalRow<'_>> {
+) -> Option<OperationStateJournalRow> {
     if bytes.get(at) != Some(&0xe0) {
         return None;
     }
     let timestamp = View::u32_be_at(bytes, at + 1)?;
     let value = StateTaggedValue::read_at(bytes, at + 5)?;
     let schema_at = at.checked_add(5 + value.raw().len())?;
-    let schema_id = operation_state_index_at(bytes, schema_at, base_offset)?;
-    schema_id.value()?;
+    let schema_id = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, schema_at, base_offset)?)?;
     let ordinal_at = schema_at.checked_add(schema_id.raw().len())?;
-    let ordinal = operation_state_index_at(bytes, ordinal_at, base_offset)?;
-    ordinal.value()?;
+    let ordinal = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, ordinal_at, base_offset)?)?;
     let terminator_at = ordinal_at.checked_add(ordinal.raw().len())?;
     if terminator_at >= end || bytes.get(terminator_at) != Some(&0x13) {
         return None;
@@ -7319,8 +7219,7 @@ fn audit_trail_row_at(
     if bytes.get(at) != Some(&0x04) {
         return None;
     }
-    let ordinal = operation_state_index_at(bytes, at.checked_add(1)?, base_offset)?;
-    ordinal.value()?;
+    let ordinal = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, at.checked_add(1)?, base_offset)?)?;
     let mut cursor = at.checked_add(1 + ordinal.raw().len())?;
     if bytes.get(cursor) != Some(&0x13) {
         return None;
@@ -7379,7 +7278,7 @@ pub fn audit_trail_rows(
             at += 1;
             continue;
         };
-        let ordinal = row.ordinal.value()?;
+        let ordinal = row.ordinal.value();
         if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
             return None;
         }
@@ -7395,7 +7294,7 @@ fn operation_state_journal_group_at(
     at: usize,
     end: usize,
     base_offset: usize,
-) -> Option<OperationStateJournalGroup<'_>> {
+) -> Option<OperationStateJournalGroup> {
     if bytes.get(at) != Some(&0x04) {
         return None;
     }
@@ -7463,7 +7362,7 @@ fn operation_state_journal_groups_before_boundary(
     start: usize,
     end: usize,
     base_offset: usize,
-) -> Option<Vec<OperationStateJournalGroup<'_>>> {
+) -> Option<Vec<OperationStateJournalGroup>> {
     if start >= end || end > bytes.len() {
         return None;
     }
@@ -7485,7 +7384,7 @@ fn operation_state_journal_groups_before_boundary(
             continue;
         };
         for row in &group.rows {
-            let ordinal = row.ordinal.value()?;
+            let ordinal = row.ordinal.value();
             if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
                 return None;
             }
@@ -7507,7 +7406,7 @@ pub fn operation_state_journal(
     start: usize,
     end: usize,
     base_offset: usize,
-) -> Option<Vec<OperationStateJournalGroup<'_>>> {
+) -> Option<Vec<OperationStateJournalGroup>> {
     if start >= end || end > bytes.len() {
         return None;
     }

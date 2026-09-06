@@ -533,9 +533,9 @@ pub fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
             rows.into_iter()
-                .filter_map(move |row| {
-                    let ordinal = row.ordinal.value()?;
-                    Some(OmAuditTrailRow {
+                .map(move |row| {
+                    let ordinal = row.ordinal.value();
+                    OmAuditTrailRow {
                         id: format!("nx:audit-trail:row#{section_key}-{ordinal:010}"),
                         section_link: link.id.clone(),
                         ordinal,
@@ -547,7 +547,7 @@ pub fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + row.offset as u64,
                         end_offset: entry_offset + row.end_offset as u64,
-                    })
+                    }
                 })
                 .collect()
         })
@@ -588,7 +588,7 @@ pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCo
                         section_link: link.id.clone(),
                         ordinal,
                         row_kind: row.row_kind,
-                        object_index: row.object_index.value()?,
+                        object_index: row.object_index.value(),
                         raw_object_index: row.object_index.raw().to_vec(),
                         introduced_state: row.introduced_state,
                         modified_state: row.modified_state,
@@ -633,18 +633,18 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
                         .rows
                         .into_iter()
                         .map(|row| {
-                            Some(OmOperationStateJournalRow {
+                            OmOperationStateJournalRow {
                                 timestamp: row.timestamp,
                                 value: row.value,
-                                schema_id: row.schema_id.value()?,
+                                schema_id: row.schema_id.value(),
                                 raw_schema_id: row.schema_id.raw().to_vec(),
-                                state_ordinal: row.ordinal.value()?,
+                                state_ordinal: row.ordinal.value(),
                                 raw_state_ordinal: row.ordinal.raw().to_vec(),
                                 source_offset: entry_offset + row.offset as u64,
                                 end_offset: entry_offset + row.end_offset as u64,
-                            })
+                            }
                         })
-                        .collect::<Option<Vec<_>>>()?;
+                        .collect();
                     Some(OmOperationStateJournalGroup {
                         id: format!(
                             "nx:feature-history:operation-state-journal-group#{section_key}-{ordinal:010}"
@@ -704,9 +704,9 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                                     position,
                                 } => Some(OmRollForwardStateRow::List {
                                     ordinal,
-                                    object_index: object_index.value()?,
+                                    object_index: object_index.value(),
                                     raw_object_index: object_index.raw().to_vec(),
-                                    position: position.value()?,
+                                    position: position.value(),
                                     raw_position: position.raw().to_vec(),
                                     source_offset: entry_offset + offset as u64,
                                 }),
@@ -718,9 +718,9 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                                 } => Some(OmRollForwardStateRow::Pair {
                                     ordinal,
                                     tag,
-                                    first: first.value()?,
+                                    first: first.value(),
                                     raw_first: first.raw().to_vec(),
-                                    second: second.value()?,
+                                    second: second.value(),
                                     raw_second: second.raw().to_vec(),
                                     source_offset: entry_offset + offset as u64,
                                 }),
@@ -822,8 +822,8 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                 .enumerate()
                 .filter_map(move |(ordinal, row)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let status_code = row.status_code.value;
-                    let object_index = row.object_index.value()?;
+                    let status_code = row.status_code.value();
+                    let object_index = row.object_index.value();
                     let payload = match row.payload {
                         crate::om::OperationStateStatusPayload::Plain => {
                             OmOperationStateStatusPayload::Plain
@@ -833,7 +833,7 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                             object_index,
                         } => OmOperationStateStatusPayload::Linked {
                             link_code,
-                            object_index: object_index.value()?,
+                            object_index: object_index.value(),
                             raw_object_index: object_index.raw().to_vec(),
                         },
                         crate::om::OperationStateStatusPayload::Diagnostic { message } => {
@@ -854,7 +854,7 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                         section_link: link.id.clone(),
                         ordinal,
                         status_code,
-                        raw_status_code: row.status_code.raw.to_vec(),
+                        raw_status_code: row.status_code.raw().to_vec(),
                         object_index,
                         raw_object_index: row.object_index.raw().to_vec(),
                         payload,

@@ -16,7 +16,7 @@ fn operation_state_indices_retain_each_admitted_form() {
 
     let mut at = 0;
     for (value, width) in expected {
-        let token = super::operation_state_index_at(&bytes, at, 0).expect("complete state index");
+        let token = crate::om::state_index::OperationStateIndex::read_at(&bytes, at, 0).expect("complete state index");
         assert_eq!(token.value(), value);
         assert_eq!(token.raw(), &bytes[at..at + width]);
         assert_eq!(token.offset(), at);
@@ -61,11 +61,11 @@ fn operation_state_counter_map_anchors_to_the_longest_bounded_suffix() {
     assert_eq!(map.end_offset, 1004 + 8 + 8 + 6);
     assert_eq!(map.trailing_bytes.len(), 16);
     assert_eq!(u8::from(map.rows[0].row_kind), 1);
-    assert_eq!(map.rows[0].object_index.value(), Some(0x1234));
+    assert_eq!(Some(map.rows[0].object_index.value()), Some(0x1234));
     assert_eq!(map.rows[0].introduced_state, 0x56);
     assert_eq!(map.rows[0].modified_state, 0x57);
     assert_eq!(u8::from(map.rows[1].row_kind), 2);
-    assert_eq!(map.rows[1].object_index.value(), Some(0x31f85));
+    assert_eq!(Some(map.rows[1].object_index.value()), Some(0x31f85));
     assert_eq!(map.rows[1].introduced_state, 0x2a);
     assert_eq!(map.rows[1].modified_state, 0x2b);
     assert_eq!(map.rows[2].object_index.raw().len(), 1);
@@ -138,7 +138,7 @@ fn operation_state_status_table_retains_plain_link_diagnostic_and_opaque_rows() 
     let table =
         super::operation_state_status_table(&bytes, 0, bytes.len(), 700).expect("status table");
     assert_eq!(table.rows.len(), 4);
-    assert_eq!(table.rows[0].status_code.value, 0x41);
+    assert_eq!(table.rows[0].status_code.value(), 0x41);
     assert!(matches!(
         table.rows[0].payload,
         OperationStateStatusPayload::Plain
@@ -197,8 +197,8 @@ fn operation_state_status_table_ignores_incomplete_preceding_operation_lane() {
         .expect("complete status chain");
     assert_eq!(block.offset, 500 + 13);
     assert_eq!(block.rows.len(), 2);
-    assert_eq!(block.rows[0].object_index.value(), Some(0x20));
-    assert_eq!(block.rows[1].status_code.value, 0x44);
+    assert_eq!(Some(block.rows[0].object_index.value()), Some(0x20));
+    assert_eq!(block.rows[1].status_code.value(), 0x44);
     assert_eq!(block.status_end_offset, 500 + boundary);
 }
 
@@ -274,8 +274,8 @@ fn operation_state_group_table_decodes_list_pair_and_empty_groups() {
         panic!("pair group row was not typed");
     };
     assert_eq!(u8::from(tag), 0x4f);
-    assert_eq!(first.value(), Some(0x42d));
-    assert_eq!(second.value(), Some(0x3e1));
+    assert_eq!(Some(first.value()), Some(0x42d));
+    assert_eq!(Some(second.value()), Some(0x3e1));
     assert_eq!(table.groups[2].count.declared_count(), 0);
     assert_eq!(table.groups[2].rows.len(), 0);
 }
@@ -337,8 +337,8 @@ fn operation_state_journal_decodes_timestamp_value_schema_and_ordinal() {
     let row = groups[0].rows[0];
     assert_eq!(row.timestamp, 0x6553_4d20);
     assert_eq!(row.value.value(), 0x0001_0203);
-    assert_eq!(row.schema_id.value(), Some(0x310));
-    assert_eq!(row.ordinal.value(), Some(0x2a));
+    assert_eq!(Some(row.schema_id.value()), Some(0x310));
+    assert_eq!(Some(row.ordinal.value()), Some(0x2a));
 }
 
 #[test]
@@ -357,7 +357,7 @@ fn operation_state_journal_start_accepts_count_token_runs() {
         super::operation_state_journal_groups_before_boundary(&bytes, start, bytes.len(), 0)
             .expect("journal groups");
     assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].rows[0].ordinal.value(), Some(0x2a));
+    assert_eq!(Some(groups[0].rows[0].ordinal.value()), Some(0x2a));
 }
 
 #[test]
@@ -369,14 +369,14 @@ fn audit_trail_rows_retain_optional_selector_variable_value_width_and_raw_bytes(
     ];
     let rows = super::audit_trail_rows(&bytes, 2, bytes.len(), 900).expect("audit rows");
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].ordinal.value(), Some(2));
+    assert_eq!(Some(rows[0].ordinal.value()), Some(2));
     assert_eq!(rows[0].frame_selector, None);
     assert_eq!(rows[0].timestamp, 0x6553_4d20);
     assert_eq!(rows[0].value.raw().len(), 5);
     assert_eq!(rows[0].value.value(), 0x0102_0304);
     assert_eq!(rows[0].offset, 900 + 7);
     assert_eq!(rows[0].raw, &bytes[7..20]);
-    assert_eq!(rows[1].ordinal.value(), Some(3));
+    assert_eq!(Some(rows[1].ordinal.value()), Some(3));
     assert_eq!(rows[1].frame_selector, Some(7));
     assert_eq!(rows[1].value.raw().len(), 4);
     assert_eq!(rows[1].value.value(), 0x0001_0203);
