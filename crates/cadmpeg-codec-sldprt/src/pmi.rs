@@ -69,7 +69,7 @@ pub(crate) fn equivalent_dimensions(left: &PmiDimension, right: &PmiDimension) -
         && left.subtype == right.subtype
         && left.value.to_bits() == right.value.to_bits()
         && left.precision == right.precision
-        && left.display_text == right.display_text
+        && left.display_text() == right.display_text()
         && left.basic == right.basic
         && left.inspection == right.inspection
         && left.reference_only == right.reference_only
@@ -287,11 +287,10 @@ pub(crate) fn patch_payload(
                 &record.id,
             )?;
         }
-        if semantic.display_text != record.display_text {
-            let (Some(offset), Some(text), Some(previous)) = (
-                record.display_text_offset,
+        if semantic.display_text.as_deref() != record.display_text() {
+            let (Some((previous, offset)), Some(text)) = (
+                record.display_text.as_ref(),
                 semantic.display_text.as_deref(),
-                record.display_text.as_deref(),
             ) else {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT PMI record {} changes optional display text",
@@ -304,7 +303,7 @@ pub(crate) fn patch_payload(
                     record.id
                 )));
             }
-            patch_bytes(payload, offset, text.as_bytes(), &record.id)?;
+            patch_bytes(payload, *offset, text.as_bytes(), &record.id)?;
         }
     }
     Ok(())
@@ -413,7 +412,7 @@ pub(crate) fn apply_to_parameters(
         let semantic = ParameterPmi {
             subtype,
             precision: record.precision,
-            display_text: record.display_text.clone(),
+            display_text: record.display_text().map(str::to_owned),
             basic: record.basic,
             inspection: record.inspection,
             reference_only: record.reference_only,
@@ -539,38 +538,17 @@ fn collect_dimensions(
         if !seen.insert(guid.clone()) {
             continue;
         }
-        match extract_dimension(payload, offset, &guid) {
-            Ok(Some(partial)) => {
-                let id = format!("sldprt:pmi:dimension#{guid}");
+        match extract_dimension(payload, offset, &guid, parent) {
+            Ok(Some(record)) => {
                 crate::annotations::note(
                     annotations,
-                    id.clone(),
+                    record.id.clone(),
                     section,
                     offset as u64,
                     "messagepack_dim_sem_data",
                     Exactness::ByteExact,
                 );
-                records.push(PmiDimension {
-                    id,
-                    parent: parent.to_string(),
-                    offset: offset as u64,
-                    guid,
-                    cad_text: partial.cad_text,
-                    item_count: partial.item_count,
-                    subtype: partial.subtype,
-                    value: partial.value,
-                    value_offset: partial.value_offset,
-                    precision: partial.precision,
-                    precision_offset: partial.precision_offset,
-                    display_text: partial.display_text,
-                    display_text_offset: partial.display_text_offset,
-                    basic: partial.basic,
-                    basic_offset: partial.basic_offset,
-                    inspection: partial.inspection,
-                    inspection_offset: partial.inspection_offset,
-                    reference_only: partial.reference_only,
-                    reference_only_offset: partial.reference_only_offset,
-                });
+                records.push(record);
             }
             Ok(None) => {}
             Err(message) => {
@@ -582,31 +560,13 @@ fn collect_dimensions(
     }
 }
 
-struct PartialDimension {
-    cad_text: String,
-    item_count: u32,
-    subtype: String,
-    value: f64,
-    value_offset: u64,
-    precision: i64,
-    precision_offset: u64,
-    display_text: Option<String>,
-    display_text_offset: Option<u64>,
-    basic: bool,
-    basic_offset: u64,
-    inspection: bool,
-    inspection_offset: u64,
-    reference_only: bool,
-    reference_only_offset: u64,
-}
-
 /// `Ok(None)` — not a PMI dimension map. `Err` — PMI candidate that failed.
 fn extract_dimension(
     payload: &[u8],
     offset: usize,
     guid: &str,
-) -> Result<Option<PartialDimension>, String> {
-    let _ = guid;
+    parent: &str,
+) -> Result<Option<PmiDimension>, String> {
     let mut cursor = offset;
     let Some(outer_value) = parse_value(payload, &mut cursor, 0) else {
         // Only attribute a loss when the window still names the PMI keys; a
@@ -668,7 +628,11 @@ fn extract_dimension(
     let reference_field = item
         .get("isReferenceOnly")
         .ok_or_else(|| "DimSemData lacks isReferenceOnly".to_string())?;
-    Ok(Some(PartialDimension {
+    Ok(Some(PmiDimension {
+        id: format!("sldprt:pmi:dimension#{guid}"),
+        parent: parent.to_owned(),
+        offset: offset as u64,
+        guid: guid.to_owned(),
         cad_text: cad_text.to_string(),
         item_count,
         subtype: string_field(item, "dimSubType")
@@ -678,8 +642,10 @@ fn extract_dimension(
         value_offset: value_field.data_offset as u64,
         precision: int_from(precision_field).unwrap_or_default(),
         precision_offset: precision_field.data_offset as u64,
-        display_text: string_field(&outer, "dimText").map(str::to_string),
-        display_text_offset: outer.get("dimText").map(|field| field.data_offset as u64),
+        display_text: outer.get("dimText").and_then(|field| match &field.kind {
+            ValueKind::String(text) => Some((text.clone(), field.data_offset as u64)),
+            _ => None,
+        }),
         basic: bool_from(basic_field).unwrap_or(false),
         basic_offset: basic_field.data_offset as u64,
         inspection: bool_from(inspection_field).unwrap_or(false),

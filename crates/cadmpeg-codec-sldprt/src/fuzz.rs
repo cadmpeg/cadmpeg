@@ -68,7 +68,7 @@ pub fn pmi(data: &[u8]) {
             assert_eq!(parsed.basic_offset, record.basic_offset);
             assert_eq!(parsed.inspection_offset, record.inspection_offset);
             assert_eq!(parsed.reference_only_offset, record.reference_only_offset);
-            assert_eq!(parsed.display_text_offset, record.display_text_offset);
+            assert_eq!(parsed.display_text_offset(), record.display_text_offset());
         }
     }
 }

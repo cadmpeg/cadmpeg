@@ -36,12 +36,10 @@ pub struct PmiDimension {
     pub precision: i64,
     /// Byte offset of the `MessagePack` precision value.
     pub precision_offset: u64,
-    /// Native formatted dimension text.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_text: Option<String>,
-    /// Byte offset of the formatted-text bytes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_text_offset: Option<u64>,
+    /// Native formatted dimension text and its byte offset.
+    #[serde(flatten, with = "pmi_display_text_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "pmi_display_text_wire::Wire"))]
+    pub display_text: Option<(String, u64)>,
     /// Basic-dimension flag.
     pub basic: bool,
     /// Byte offset of the basic flag.
@@ -54,6 +52,54 @@ pub struct PmiDimension {
     pub reference_only: bool,
     /// Byte offset of the reference-only flag.
     pub reference_only_offset: u64,
+}
+
+impl PmiDimension {
+    pub fn display_text(&self) -> Option<&str> {
+        self.display_text.as_ref().map(|(text, _)| text.as_str())
+    }
+
+    pub fn display_text_offset(&self) -> Option<u64> {
+        self.display_text.as_ref().map(|(_, offset)| *offset)
+    }
+}
+
+mod pmi_display_text_wire {
+    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    pub(super) struct Wire {
+        #[serde(default)]
+        display_text: Option<String>,
+        #[serde(default)]
+        display_text_offset: Option<u64>,
+    }
+
+    pub(super) fn serialize<S: Serializer>(
+        display: &Option<(String, u64)>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        if let Some((text, offset)) = display {
+            map.serialize_entry("display_text", text)?;
+            map.serialize_entry("display_text_offset", offset)?;
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<(String, u64)>, D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        match (wire.display_text, wire.display_text_offset) {
+            (Some(text), Some(offset)) => Ok(Some((text, offset))),
+            (None, None) => Ok(None),
+            _ => Err(serde::de::Error::custom(
+                "display_text and display_text_offset must be present together",
+            )),
+        }
+    }
 }
 
 fn default_pmi_item_count() -> u32 {
@@ -1370,6 +1416,25 @@ impl SketchRelationKind {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn pmi_display_text_wire_keeps_text_and_offset_together() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Display {
+            #[serde(flatten, with = "super::pmi_display_text_wire")]
+            value: Option<(String, u64)>,
+        }
+        let wire = serde_json::json!({"display_text": "25 mm", "display_text_offset": 17});
+        let display: Display = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(display).unwrap(), wire);
+        for field in ["display_text", "display_text_offset"] {
+            let mut split = wire.clone();
+            split.as_object_mut().unwrap().remove(field);
+            assert!(serde_json::from_value::<Display>(split).is_err());
+        }
+        let absent: Display = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(serde_json::to_value(absent).unwrap(), serde_json::json!({}));
+    }
+
     #[test]
     fn class_role_wire_is_derived_from_name() {
         let wire = serde_json::json!({

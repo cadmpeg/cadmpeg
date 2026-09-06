@@ -29,7 +29,6 @@ fn dimension(subtype: &str, value: f64) -> PmiDimension {
         precision: 0,
         precision_offset: 0,
         display_text: None,
-        display_text_offset: None,
         basic: false,
         basic_offset: 0,
         inspection: false,
@@ -359,9 +358,9 @@ fn key_like_string_inside_value_does_not_steal_field_spans() {
     let [record] = records.as_slice() else {
         panic!("one record");
     };
-    assert_eq!(record.display_text.as_deref(), Some("cadText"));
+    assert_eq!(record.display_text(), Some("cadText"));
     assert_eq!(record.cad_text, "D1@Sketch1");
-    let text_off = record.display_text_offset.expect("display text offset") as usize;
+    let text_off = record.display_text_offset().expect("display text offset") as usize;
     assert_eq!(&payload[text_off..text_off + 7], b"cadText");
 }
 
@@ -446,7 +445,7 @@ fn patch_payload_offsets_round_trip_through_reparse() {
     patched[record.basic_offset as usize] = 0xc2;
     patched[record.inspection_offset as usize] = 0xc3;
     patched[record.reference_only_offset as usize] = 0xc2;
-    let text_off = record.display_text_offset.expect("display text") as usize;
+    let text_off = record.display_text_offset().expect("display text") as usize;
     patched[text_off..text_off + 9].copy_from_slice(b"50.000 mm");
     let mut again_losses = Vec::new();
     let again = parse_payload(&patched, &mut again_losses);
@@ -459,7 +458,7 @@ fn patch_payload_offsets_round_trip_through_reparse() {
     assert!(!edited_record.basic);
     assert!(edited_record.inspection);
     assert!(!edited_record.reference_only);
-    assert_eq!(edited_record.display_text.as_deref(), Some("50.000 mm"));
+    assert_eq!(edited_record.display_text(), Some("50.000 mm"));
     assert_eq!(edited_record.value_offset, record.value_offset);
     assert_eq!(edited_record.precision_offset, record.precision_offset);
 }
@@ -491,7 +490,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert_eq!(dimension.subtype, "Linear");
     assert_eq!(dimension.value, 0.025);
     assert_eq!(dimension.precision, 3);
-    assert_eq!(dimension.display_text.as_deref(), Some("25.000 mm"));
+    assert_eq!(dimension.display_text(), Some("25.000 mm"));
     assert!(dimension.basic);
     assert!(!dimension.inspection);
     assert!(dimension.reference_only);
@@ -562,7 +561,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     };
     assert_eq!(dimension.value, 0.05);
     assert_eq!(dimension.precision, 4);
-    assert_eq!(dimension.display_text.as_deref(), Some("50.000 mm"));
+    assert_eq!(dimension.display_text(), Some("50.000 mm"));
     assert!(!dimension.basic);
     assert!(dimension.inspection);
     assert!(!dimension.reference_only);
