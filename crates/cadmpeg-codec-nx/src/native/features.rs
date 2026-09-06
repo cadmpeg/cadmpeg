@@ -6031,8 +6031,8 @@ pub struct FeatureBooleanOperation {
     pub id: String,
     pub operation_label: String,
     pub kind: FeatureBooleanKind,
-    pub target: FeatureIndexToken,
-    pub tools: Vec<FeatureIndexToken>,
+    pub target: crate::om::PayloadObjectReference<crate::om::reference_index::ReferenceIndexToken, u64>,
+    pub tools: Vec<crate::om::PayloadObjectReference<crate::om::reference_index::ReferenceIndexToken, u64>>,
     pub source_offset: u64,
 }
 
@@ -6066,19 +6066,19 @@ impl From<FeatureBooleanOperation> for FeatureBooleanOperationWire {
             id: operation.id,
             operation_label: operation.operation_label,
             kind: operation.kind,
-            target_object_index: operation.target.value,
-            raw_target_object_index: operation.target.raw,
-            target_source_offset: operation.target.source_offset,
-            tool_object_indices: operation.tools.iter().map(|token| token.value).collect(),
+            target_object_index: operation.target.token.value(),
+            raw_target_object_index: operation.target.token.raw().to_vec(),
+            target_source_offset: operation.target.offset,
+            tool_object_indices: operation.tools.iter().map(|token| token.token.value()).collect(),
             raw_tool_object_indices: operation
                 .tools
                 .iter()
-                .map(|token| token.raw.clone())
+                .map(|token| token.token.raw().to_vec())
                 .collect(),
             tool_source_offsets: operation
                 .tools
                 .iter()
-                .map(|token| token.source_offset)
+                .map(|token| token.offset)
                 .collect(),
             source_offset: operation.source_offset,
         }
@@ -6098,22 +6098,24 @@ impl TryFrom<FeatureBooleanOperationWire> for FeatureBooleanOperation {
             id: wire.id,
             operation_label: wire.operation_label,
             kind: wire.kind,
-            target: FeatureIndexToken {
-                value: wire.target_object_index,
-                raw: wire.raw_target_object_index,
-                source_offset: wire.target_source_offset,
+            target: crate::om::PayloadObjectReference {
+                token: crate::om::reference_index::ReferenceIndexToken::from_wire(wire.target_object_index, &wire.raw_target_object_index)
+                    .map_err(|error| format!("target_object_index: {error}"))?,
+                offset: wire.target_source_offset,
             },
             tools: wire
                 .tool_object_indices
                 .into_iter()
                 .zip(wire.raw_tool_object_indices)
                 .zip(wire.tool_source_offsets)
-                .map(|((value, raw), source_offset)| FeatureIndexToken {
-                    value,
-                    raw,
-                    source_offset,
+                .map(|((value, raw), offset)| {
+                    Ok(crate::om::PayloadObjectReference {
+                        token: crate::om::reference_index::ReferenceIndexToken::from_wire(value, &raw)
+                            .map_err(|error| format!("tool_object_indices: {error}"))?,
+                        offset,
+                    })
                 })
-                .collect(),
+                .collect::<Result<_, String>>()?,
             source_offset: wire.source_offset,
         })
     }
@@ -6368,18 +6370,16 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
                 id: format!("nx:feature-history:boolean#{section_key}-{operation_ordinal:010}"),
                 operation_label,
                 kind,
-                target: FeatureIndexToken {
-                    value: operation.target.token.value(),
-                    raw: operation.target.token.raw().to_vec(),
-                    source_offset: entry_offset + operation.target.offset as u64,
+                target: crate::om::PayloadObjectReference {
+                    token: operation.target.token,
+                    offset: entry_offset + operation.target.offset as u64,
                 },
                 tools: operation
                     .tools
                     .into_iter()
-                    .map(|tool| FeatureIndexToken {
-                        value: tool.token.value(),
-                        raw: tool.token.raw().to_vec(),
-                        source_offset: entry_offset + tool.offset as u64,
+                    .map(|tool| crate::om::PayloadObjectReference {
+                        token: tool.token,
+                        offset: entry_offset + tool.offset as u64,
                     })
                     .collect(),
                 source_offset: entry_offset + operation.offset as u64,

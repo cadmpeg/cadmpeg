@@ -280,7 +280,7 @@ pub fn terminal_feature_body_indices(
             .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
         {
             let position = *positions.get(operation.operation_label.as_str())?;
-            record_writer(canonical(operation.target.value), position);
+            record_writer(canonical(operation.target.token.value()), position);
         }
     }
     let mut consumed = BTreeSet::new();
@@ -290,7 +290,7 @@ pub fn terminal_feature_body_indices(
     {
         let position = *positions.get(operation.operation_label.as_str())?;
         for tool in &operation.tools {
-            let tool = canonical(tool.value);
+            let tool = canonical(tool.token.value());
             if last_writers
                 .get(&tool)
                 .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
@@ -415,8 +415,8 @@ pub(crate) fn boolean_offset_store_resolution(
     operation: &FeatureBooleanOperation,
     data_blocks: &[DataBlock],
 ) -> BooleanOffsetStoreResolution {
-    let participants = std::iter::once(operation.target.value)
-        .chain(operation.tools.iter().map(|token| token.value))
+    let participants = std::iter::once(operation.target.token.value())
+        .chain(operation.tools.iter().map(|token| token.token.value()))
         .collect::<Vec<_>>();
     let mut blocks_by_ordinal = BTreeMap::<u32, Vec<&DataBlock>>::new();
     for block in data_blocks {
@@ -943,16 +943,8 @@ mod tests {
             id: "boolean#0".to_string(),
             operation_label: "operation#2".to_string(),
             kind: FeatureBooleanKind::Unite,
-            target: crate::native::features::FeatureIndexToken {
-                value: 10,
-                raw: vec![10],
-                source_offset: 0,
-            },
-            tools: vec![crate::native::features::FeatureIndexToken {
-                value: 20,
-                raw: vec![20],
-                source_offset: 0,
-            }],
+            target: crate::test_support::native_references::boolean_reference(10, 0),
+            tools: vec![crate::test_support::native_references::boolean_reference(20, 0)],
             source_offset: 0,
         }];
 
@@ -993,18 +985,10 @@ mod tests {
             id: format!("boolean#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
             kind: FeatureBooleanKind::Unite,
-            target: crate::native::features::FeatureIndexToken {
-                value: target,
-                raw: vec![target as u8],
-                source_offset: ordinal as u64,
-            },
+            target: crate::test_support::native_references::boolean_reference(target, ordinal as u64),
             tools: tools
                 .into_iter()
-                .map(|value| crate::native::features::FeatureIndexToken {
-                    value,
-                    raw: Vec::new(),
-                    source_offset: 0,
-                })
+                .map(|value| crate::test_support::native_references::boolean_reference(value, 0))
                 .collect(),
             source_offset: ordinal as u64,
         };
@@ -1078,18 +1062,10 @@ mod tests {
             id: format!("boolean#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
             kind: FeatureBooleanKind::Unite,
-            target: crate::native::features::FeatureIndexToken {
-                value: target,
-                raw: vec![target as u8],
-                source_offset: ordinal as u64,
-            },
+            target: crate::test_support::native_references::boolean_reference(target, ordinal as u64),
             tools: tools
                 .into_iter()
-                .map(|value| crate::native::features::FeatureIndexToken {
-                    value,
-                    raw: Vec::new(),
-                    source_offset: 0,
-                })
+                .map(|value| crate::test_support::native_references::boolean_reference(value, 0))
                 .collect(),
             source_offset: ordinal as u64,
         };
@@ -1455,16 +1431,8 @@ mod tests {
             id: "boolean#offset-store".to_string(),
             operation_label,
             kind: FeatureBooleanKind::Unite,
-            target: crate::native::features::FeatureIndexToken {
-                value: 11,
-                raw: vec![11],
-                source_offset: 0,
-            },
-            tools: vec![crate::native::features::FeatureIndexToken {
-                value: 21,
-                raw: vec![21],
-                source_offset: 0,
-            }],
+            target: crate::test_support::native_references::boolean_reference(11, 0),
+            tools: vec![crate::test_support::native_references::boolean_reference(21, 0)],
             source_offset: 0,
         }];
         let block = |ordinal| DataBlock {
@@ -1530,16 +1498,8 @@ mod tests {
             id: "boolean#unresolved-offset-store".to_string(),
             operation_label,
             kind: FeatureBooleanKind::Unite,
-            target: crate::native::features::FeatureIndexToken {
-                value: 11,
-                raw: vec![11],
-                source_offset: 0,
-            },
-            tools: vec![crate::native::features::FeatureIndexToken {
-                value: 21,
-                raw: vec![21],
-                source_offset: 0,
-            }],
+            target: crate::test_support::native_references::boolean_reference(11, 0),
+            tools: vec![crate::test_support::native_references::boolean_reference(21, 0)],
             source_offset: 0,
         }];
         let blocks = [DataBlock {
@@ -1720,16 +1680,8 @@ mod tests {
             id: "boolean#0".to_string(),
             operation_label: "operation#late".to_string(),
             kind: FeatureBooleanKind::Unite,
-            target: crate::native::features::FeatureIndexToken {
-                value: 10,
-                raw: vec![10],
-                source_offset: 1,
-            },
-            tools: vec![crate::native::features::FeatureIndexToken {
-                value: 20,
-                raw: vec![20],
-                source_offset: 1,
-            }],
+            target: crate::test_support::native_references::boolean_reference(10, 1),
+            tools: vec![crate::test_support::native_references::boolean_reference(20, 1)],
             source_offset: 1,
         }];
 
@@ -1779,16 +1731,8 @@ mod tests {
             id: "boolean#0".to_string(),
             operation_label: "operation#1".to_string(),
             kind: FeatureBooleanKind::Unite,
-            target: crate::native::features::FeatureIndexToken {
-                value: 10,
-                raw: vec![10],
-                source_offset: 0,
-            },
-            tools: vec![crate::native::features::FeatureIndexToken {
-                value: 94,
-                raw: vec![94],
-                source_offset: 0,
-            }],
+            target: crate::test_support::native_references::boolean_reference(10, 0),
+            tools: vec![crate::test_support::native_references::boolean_reference(94, 0)],
             source_offset: 0,
         }];
         let bindings = [SegmentBodyBinding {

@@ -1432,9 +1432,9 @@ pub struct OperationPayloadTextFrame<'a> {
 
 /// One canonical variable-width object index in an operation payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PayloadObjectReference<T = ReferenceIndexToken> {
+pub struct PayloadObjectReference<T = ReferenceIndexToken, O = usize> {
     /// Absolute offset of the width marker.
-    pub offset: usize,
+    pub offset: O,
     /// Checked token retaining the exact marker and width.
     pub token: T,
 }

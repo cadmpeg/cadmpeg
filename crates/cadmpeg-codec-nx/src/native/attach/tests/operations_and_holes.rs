@@ -15,16 +15,8 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         id: "boolean#mixed-namespaces".to_string(),
         operation_label: "operation#mixed-namespaces".to_string(),
         kind: crate::native::features::FeatureBooleanKind::Subtract,
-        target: crate::native::features::FeatureIndexToken {
-            value: 94,
-            raw: vec![94],
-            source_offset: 0,
-        },
-        tools: vec![crate::native::features::FeatureIndexToken {
-            value: 122,
-            raw: vec![122],
-            source_offset: 1,
-        }],
+        target: crate::test_support::native_references::boolean_reference(94, 0),
+        tools: vec![crate::test_support::native_references::boolean_reference(122, 1)],
         source_offset: 0,
     };
     let body = BodyId::mint("nx:s18:body#3".to_string()).expect("identity grammar");
@@ -99,22 +91,10 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         id: "boolean#mixed-stores".to_string(),
         operation_label: "operation#mixed-stores".to_string(),
         kind: crate::native::features::FeatureBooleanKind::Unite,
-        target: crate::native::features::FeatureIndexToken {
-            value: 401,
-            raw: Vec::new(),
-            source_offset: 0,
-        },
+        target: crate::test_support::native_references::boolean_reference(401, 0),
         tools: vec![
-            crate::native::features::FeatureIndexToken {
-                value: 402,
-                raw: Vec::new(),
-                source_offset: 1,
-            },
-            crate::native::features::FeatureIndexToken {
-                value: 403,
-                raw: Vec::new(),
-                source_offset: 2,
-            },
+            crate::test_support::native_references::boolean_reference(402, 1),
+            crate::test_support::native_references::boolean_reference(403, 2),
         ],
         source_offset: 0,
     };

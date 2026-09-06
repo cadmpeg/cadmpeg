@@ -247,16 +247,8 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
         id: "boolean#0".to_string(),
         operation_label: "operation#0".to_string(),
         kind: super::FeatureBooleanKind::Subtract,
-        target: crate::native::features::FeatureIndexToken {
-            value: 10,
-            raw: vec![10],
-            source_offset: 0,
-        },
-        tools: vec![crate::native::features::FeatureIndexToken {
-            value: 20,
-            raw: vec![20],
-            source_offset: 1,
-        }],
+        target: crate::test_support::native_references::boolean_reference(10, 0),
+        tools: vec![crate::test_support::native_references::boolean_reference(20, 1)],
         source_offset: 0,
     };
     let roots = BTreeMap::from([(10, 10), (20, 10)]);
@@ -867,12 +859,12 @@ fn decode_retains_role_scoped_om_record_area_header() {
         .expect("required invariant");
     assert_eq!(booleans.len(), 1);
     assert_eq!(booleans[0].kind, super::FeatureBooleanKind::Unite);
-    assert_eq!(booleans[0].target.value, 6466);
+    assert_eq!(booleans[0].target.token.value(), 6466);
     assert_eq!(
         booleans[0]
             .tools
             .iter()
-            .map(|token| token.value)
+            .map(|token| token.token.value())
             .collect::<Vec<_>>(),
         [6476, 127]
     );

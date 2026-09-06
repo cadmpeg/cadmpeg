@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared synthetic byte-fixture builders for the crate's `#[cfg(test)]` suites.
 //!
-//! Helpers hand-build `.prt` byte images and embedded-stream payloads. They
-//! construct raw bytes only; no native record type crosses in here.
+//! Helpers hand-build `.prt` byte images and embedded-stream payloads.
+//! Native projection fixtures use checked source tokens.
 #![allow(clippy::unwrap_used)]
 
+pub(crate) mod native_references;
 mod test_bytes;
 mod test_cfb;
 mod test_deltas;

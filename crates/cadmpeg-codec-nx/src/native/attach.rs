@@ -1968,7 +1968,7 @@ fn attach_feature_operations(
                 };
                 if let Some(writer) = boolean_participant_writer(
                     target,
-                    operation.target.value,
+                    operation.target.token.value(),
                     offset_store_body_blocks,
                     &body_alias_roots,
                     &body_writer_history,
@@ -1980,7 +1980,7 @@ fn attach_feature_operations(
                 for body in &operation.tools {
                     if let Some(writer) = boolean_participant_writer(
                         tools,
-                        body.value,
+                        body.token.value(),
                         offset_store_body_blocks,
                         &body_alias_roots,
                         &body_writer_history,
@@ -3614,7 +3614,7 @@ fn attach_feature_operations(
                 Some(BooleanOffsetStoreResolution::Unresolved)
             ) {
                 let (native_target, offset_store_target) =
-                    boolean_target_writer(&definition, canonical_body(operation.target.value));
+                    boolean_target_writer(&definition, canonical_body(operation.target.token.value()));
                 body_writer_history.record_writer(native_target, offset_store_target, &[], &id);
             }
         }
@@ -8096,13 +8096,13 @@ pub(crate) fn boolean_feature_definition(
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> FeatureDefinition {
     let empty_offset_store_body_blocks = BTreeMap::new();
-    let native_target = format!("nx:om-object-index#{}", operation.target.value);
+    let native_target = format!("nx:om-object-index#{}", operation.target.token.value());
     let native_tools = format!(
         "nx:om-object-indices#{}",
         operation
             .tools
             .iter()
-            .map(|token| token.value.to_string())
+            .map(|token| token.token.value().to_string())
             .collect::<Vec<_>>()
             .join(",")
     );
@@ -8119,7 +8119,7 @@ pub(crate) fn boolean_feature_definition(
             };
             atomic_disjoint_body_selections(
                 feature_body_selection_with_offset_blocks(
-                    &[operation.target.value],
+                    &[operation.target.token.value()],
                     body_alias_roots,
                     offset_store_body_blocks,
                     bodies_by_object_index,
@@ -8129,7 +8129,7 @@ pub(crate) fn boolean_feature_definition(
                     &operation
                         .tools
                         .iter()
-                        .map(|token| token.value)
+                        .map(|token| token.token.value())
                         .collect::<Vec<_>>(),
                     body_alias_roots,
                     offset_store_body_blocks,
@@ -8604,11 +8604,11 @@ fn body_writes_match_boolean_target(
     let [write] = writes else {
         return false;
     };
-    write.body_image_object_index == boolean.target.value
+    write.body_image_object_index == boolean.target.token.value()
         && !boolean
             .tools
             .iter()
-            .any(|token| token.value == write.body_image_object_index)
+            .any(|token| token.token.value() == write.body_image_object_index)
 }
 
 pub(crate) fn attach_expression_parameters(
