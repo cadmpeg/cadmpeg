@@ -5,8 +5,8 @@ use super::{FeatureBodyReference, FeatureOperationBodyWrite, FeatureOperationObj
 #[test]
 fn object_reference_retains_tagged_and_untagged_wire() {
     for json in [
-        r#"{"id":"reference","operation_label":"operation","operation_record":"record","ordinal":0,"tag":2,"object_index":3,"raw_object_index":[3],"object_index_source_offset":10,"byte_len":4,"source_offset":7}"#,
-        r#"{"id":"reference","operation_label":"operation","operation_record":"record","ordinal":0,"object_index":3,"raw_object_index":[3],"object_index_source_offset":10,"byte_len":4,"source_offset":7}"#,
+        r#"{"id":"reference","operation_label":"operation","operation_record":"record","ordinal":0,"tag":23,"object_index":3,"raw_object_index":[3],"object_index_source_offset":10,"byte_len":9,"source_offset":7}"#,
+        r#"{"id":"reference","operation_label":"operation","operation_record":"record","ordinal":0,"object_index":3,"raw_object_index":[3],"object_index_source_offset":10,"byte_len":10,"source_offset":7}"#,
     ] {
         let reference: FeatureOperationObjectReference = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&reference).unwrap(), json);
@@ -416,8 +416,8 @@ fn operation_body_operand_preserves_exact_token_and_optional_relations() {
 
 #[test]
 fn operation_object_reference_requires_canonical_feature_token() {
-    for (value, raw) in [(0, "[0]"), (128, "[128,128]"), (4096, "[144,16,0]")] {
-        let wire = format!(r#"{{"id":"reference","operation_label":"operation","operation_record":"record","ordinal":0,"object_index":{value},"raw_object_index":{raw},"object_index_source_offset":10,"byte_len":4,"source_offset":7}}"#);
+    for (value, raw, byte_len) in [(0, "[0]", 10), (128, "[128,128]", 11), (4096, "[144,16,0]", 12)] {
+        let wire = format!(r#"{{"id":"reference","operation_label":"operation","operation_record":"record","ordinal":0,"object_index":{value},"raw_object_index":{raw},"object_index_source_offset":10,"byte_len":{byte_len},"source_offset":7}}"#);
         let record: FeatureOperationObjectReference = serde_json::from_str(&wire).unwrap();
         assert_eq!(serde_json::to_string(&record).unwrap(), wire);
         for invalid_raw in [serde_json::json!([]), serde_json::json!([255]), serde_json::json!([128,0]),
@@ -448,5 +448,18 @@ fn body_reference_preserves_alternate_widths_and_rejects_invalid_tokens() {
         let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
         invalid["body_object_index"] = serde_json::json!(value + 1);
         assert!(serde_json::from_value::<FeatureBodyReference>(invalid).is_err());
+    }
+}
+
+#[test]
+fn direct_reference_wire_rejects_tag_and_position_drift() {
+    let wire = serde_json::json!({"id":"reference", "operation_label":"operation", "operation_record":"record",
+        "ordinal":0, "tag":23, "object_index":1, "raw_object_index":[1],
+        "object_index_source_offset":10, "byte_len":9, "source_offset":7});
+    for (field, value) in [("tag", serde_json::json!(2)), ("byte_len", serde_json::json!(4)),
+        ("object_index_source_offset", serde_json::json!(11)), ("source_offset", serde_json::json!(u64::MAX))] {
+        let mut invalid = wire.clone();
+        invalid[field] = value;
+        assert!(serde_json::from_value::<FeatureOperationObjectReference>(invalid).unwrap_err().to_string().contains(field));
     }
 }

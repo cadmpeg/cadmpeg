@@ -7,6 +7,7 @@ pub(crate) mod csys_descriptor;
 pub(crate) mod reference_index;
 pub(crate) mod common_frame;
 pub(crate) mod body_write;
+pub(crate) mod direct_reference;
 use body_write::{BodyImageTag, BodyWriteFrame, BodyWriteIndex};
 use common_frame::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
 pub(crate) mod instances;
@@ -1944,40 +1945,6 @@ pub struct OperationBodyReference {
     pub offset: usize,
     /// Referenced body object index.
     pub object_index: reference_index::FeatureReferenceToken,
-}
-
-/// One exact direct tagged-reference field in a bounded operation record.
-///
-/// The field's tag is retained as native evidence; it does not assign a
-/// semantic role to the referenced object.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationTaggedReference {
-    /// Absolute offset of the opening `01 02` marker.
-    pub offset: usize,
-    /// Byte between the opening marker and the object index.
-    pub tag: u8,
-    /// Referenced feature object index.
-    pub object_index: reference_index::CanonicalFeatureReferenceToken,
-    /// Absolute offset of the object-index token.
-    pub object_index_offset: usize,
-    /// Exclusive absolute end offset after the fixed field suffix.
-    pub end_offset: usize,
-}
-
-/// One exact direct operation data-block reference field.
-///
-/// The frame retains its object index and fixed suffix without assigning an
-/// operation or construction role to the target.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationDataBlockReference {
-    /// Absolute offset of the opening `01 02` marker.
-    pub offset: usize,
-    /// Referenced feature object index.
-    pub object_index: reference_index::CanonicalFeatureReferenceToken,
-    /// Absolute offset of the object-index token.
-    pub object_index_offset: usize,
-    /// Exclusive absolute end offset after the fixed field suffix.
-    pub end_offset: usize,
 }
 
 /// Object-index reference in one bounded offset-only OM data block.
@@ -5238,80 +5205,6 @@ fn operation_body_write_frame_at(
     let body_image = BodyWriteIndex::read(payload.get(image_at..)?)?;
     (payload.get(image_at + body_image.raw().len()) == Some(&0xff)).then_some(())?;
     BodyWriteFrame::<usize>::new(body_identity, group_node, endpoint_tag, body_image, payload_offset.checked_add(marker)?)
-}
-
-/// Decode every exact direct `01 02 17 index ff 80 00 00 02` field.
-///
-/// The fixed suffix separates this field from the nested body-write frame,
-/// which uses the same opening marker and tag but has a different
-/// middle sequence. The parser retains no endpoint or operation role.
-pub fn operation_tagged_references(record: OperationRecord<'_>) -> Vec<OperationTaggedReference> {
-    const PREFIX: &[u8] = &[0x01, 0x02, 0x17];
-    const SUFFIX: &[u8] = &[0xff, 0x80, 0x00, 0x00, 0x02];
-    let mut references = Vec::new();
-    for marker in record
-        .payload
-        .windows(PREFIX.len())
-        .enumerate()
-        .filter_map(|(offset, window)| (window == PREFIX).then_some(offset))
-    {
-        let token = marker + PREFIX.len();
-        let Some(object_index) = reference_index::CanonicalFeatureReferenceToken::read(&record.payload[token..]) else {
-            continue;
-        };
-        let end = token + object_index.raw().len();
-        let Some(suffix_end) = end.checked_add(SUFFIX.len()) else {
-            continue;
-        };
-        if record.payload.get(end..suffix_end) != Some(SUFFIX) {
-            continue;
-        }
-        references.push(OperationTaggedReference {
-            offset: record.payload_offset + marker,
-            tag: 0x17,
-            object_index,
-            object_index_offset: record.payload_offset + token,
-            end_offset: record.payload_offset + suffix_end,
-        });
-    }
-    references
-}
-
-/// Decode every exact direct `01 02 03 index 01 00 00 00 00 00` field.
-///
-/// The object index is retained as native evidence. It does not assign a
-/// body, operand, input, output, seed, transform, or construction role.
-pub fn operation_data_block_references(
-    record: OperationRecord<'_>,
-) -> Vec<OperationDataBlockReference> {
-    const PREFIX: &[u8] = &[0x01, 0x02, 0x03];
-    const SUFFIX: &[u8] = &[0x01, 0x00, 0x00, 0x00, 0x00, 0x00];
-    let mut references = Vec::new();
-    for marker in record
-        .payload
-        .windows(PREFIX.len())
-        .enumerate()
-        .filter_map(|(offset, window)| (window == PREFIX).then_some(offset))
-    {
-        let token = marker + PREFIX.len();
-        let Some(object_index) = reference_index::CanonicalFeatureReferenceToken::read(&record.payload[token..]) else {
-            continue;
-        };
-        let end = token + object_index.raw().len();
-        let Some(suffix_end) = end.checked_add(SUFFIX.len()) else {
-            continue;
-        };
-        if record.payload.get(end..suffix_end) != Some(SUFFIX) {
-            continue;
-        }
-        references.push(OperationDataBlockReference {
-            offset: record.payload_offset + marker,
-            object_index,
-            object_index_offset: record.payload_offset + token,
-            end_offset: record.payload_offset + suffix_end,
-        });
-    }
-    references
 }
 
 fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {

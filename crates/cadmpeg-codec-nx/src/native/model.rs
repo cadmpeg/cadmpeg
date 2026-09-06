@@ -570,9 +570,9 @@ impl NativeModel {
             &parasolid_group_records,
             &parasolid_group_members,
         );
-        let feature_operation_tagged_references = feature_operation_tagged_references(container);
+        let feature_operation_tagged_references = feature_operation_object_references(container, crate::om::direct_reference::ReferenceFieldKind::Tagged17);
         let feature_operation_data_block_references =
-            feature_operation_data_block_references(container);
+            feature_operation_object_references(container, crate::om::direct_reference::ReferenceFieldKind::DataBlock03);
         let feature_operation_common_frames = feature_operation_common_frames(container);
         let feature_operation_terminal_discriminators =
             feature_operation_terminal_discriminators(container);

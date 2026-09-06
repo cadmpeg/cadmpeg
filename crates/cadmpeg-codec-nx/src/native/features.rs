@@ -251,18 +251,9 @@ pub struct FeatureOperationObjectReference {
     pub operation_record: String,
     /// Zero-based reference order within the operation payload.
     pub ordinal: u32,
-    /// Byte between the opening `01 02` marker and the object index.
-    pub tag: Option<u8>,
-    /// Referenced feature object index.
-    pub object: crate::om::reference_index::CanonicalFeatureReferenceToken,
+    pub frame: crate::om::direct_reference::DirectReferenceFrame<u64>,
     /// Unique target in the native offset-store data-block arena, when found.
     pub data_block: Option<String>,
-    /// Absolute offset of the object-index token.
-    pub object_index_source_offset: u64,
-    /// Exact serialized field byte length.
-    pub byte_len: u64,
-    /// Absolute offset of the opening `01 02` marker.
-    pub source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -297,10 +288,10 @@ impl From<FeatureOperationObjectReference> for FeatureOperationObjectReferenceWi
     fn from(value: FeatureOperationObjectReference) -> Self {
         Self {
             id: value.id, operation_label: value.operation_label, operation_record: value.operation_record,
-            ordinal: value.ordinal, tag: value.tag,
-            object_index: value.object.value(), raw_object_index: value.object.raw().to_vec(),
-            data_block: value.data_block, object_index_source_offset: value.object_index_source_offset,
-            byte_len: value.byte_len, source_offset: value.source_offset,
+            ordinal: value.ordinal, tag: value.frame.kind().tag(),
+            object_index: value.frame.object().value(), raw_object_index: value.frame.object().raw().to_vec(),
+            data_block: value.data_block, object_index_source_offset: value.frame.object_offset(),
+            byte_len: u64::from(value.frame.byte_len()), source_offset: value.frame.offset(),
         }
     }
 }
@@ -308,13 +299,16 @@ impl From<FeatureOperationObjectReference> for FeatureOperationObjectReferenceWi
 impl TryFrom<FeatureOperationObjectReferenceWire> for FeatureOperationObjectReference {
     type Error = String;
     fn try_from(value: FeatureOperationObjectReferenceWire) -> Result<Self, Self::Error> {
+        let object = crate::om::reference_index::CanonicalFeatureReferenceToken::from_wire(value.object_index, &value.raw_object_index)
+            .map_err(|error| format!("object_index/raw_object_index: {error}"))?;
+        let kind = crate::om::direct_reference::ReferenceFieldKind::from_tag(value.tag)?;
+        let frame = crate::om::direct_reference::DirectReferenceFrame::<u64>::new(kind, object, value.source_offset)
+            .ok_or("source_offset: direct reference field end overflows")?;
+        if value.byte_len != u64::from(frame.byte_len()) { return Err("byte_len disagrees with direct reference field".into()); }
+        if value.object_index_source_offset != frame.object_offset() { return Err("object_index_source_offset disagrees with direct reference field".into()); }
         Ok(Self {
             id: value.id, operation_label: value.operation_label, operation_record: value.operation_record,
-            ordinal: value.ordinal, tag: value.tag,
-            object: crate::om::reference_index::CanonicalFeatureReferenceToken::from_wire(value.object_index, &value.raw_object_index)
-                .map_err(|error| format!("object_index/raw_object_index: {error}"))?,
-            data_block: value.data_block, object_index_source_offset: value.object_index_source_offset,
-            byte_len: value.byte_len, source_offset: value.source_offset,
+            ordinal: value.ordinal, frame, data_block: value.data_block,
         })
     }
 }
@@ -6821,10 +6815,15 @@ pub fn feature_body_write_group_partition_uses(
         .collect()
 }
 
-/// Decode exact direct tagged-reference fields from bounded feature operations.
-pub fn feature_operation_tagged_references(
+/// Decode one direct-reference field family from bounded feature operations.
+pub fn feature_operation_object_references(
     container: &Container,
+    kind: crate::om::direct_reference::ReferenceFieldKind,
 ) -> Vec<FeatureOperationObjectReference> {
+    let stem = match kind {
+        crate::om::direct_reference::ReferenceFieldKind::Tagged17 => "operation-tagged-reference",
+        crate::om::direct_reference::ReferenceFieldKind::DataBlock03 => "operation-data-block-reference",
+    };
     let indexed = container.indexed_om_sections();
     let mut references = Vec::new();
     visit_feature_history_operation_records(
@@ -6835,64 +6834,21 @@ pub fn feature_operation_tagged_references(
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
-            for (ordinal, reference) in crate::om::operation_tagged_references(record)
+            for (ordinal, reference) in crate::om::direct_reference::operation_reference_fields(record, kind)
                 .into_iter()
                 .enumerate()
             {
+                let Some(offset) = entry_offset.checked_add(reference.offset() as u64) else { continue; };
+                let Some(frame) = crate::om::direct_reference::DirectReferenceFrame::<u64>::new(reference.kind(), reference.object(), offset) else { continue; };
                 references.push(FeatureOperationObjectReference {
                     id: format!(
-                        "nx:feature-history:operation-tagged-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                        "nx:feature-history:{stem}#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                     ),
                     operation_label: operation_label.clone(),
                     operation_record: operation_record.clone(),
                     ordinal: ordinal as u32,
-                    tag: Some(reference.tag),
-                    object: reference.object_index,
-                    data_block: unique_offset_data_block(&indexed, reference.object_index.value()),
-                    object_index_source_offset: entry_offset
-                        + reference.object_index_offset as u64,
-                    byte_len: (reference.end_offset - reference.offset) as u64,
-                    source_offset: entry_offset + reference.offset as u64,
-                });
-            }
-        },
-    );
-    references
-}
-
-/// Decode exact direct operation data-block reference fields from bounded
-/// feature operations.
-pub fn feature_operation_data_block_references(
-    container: &Container,
-) -> Vec<FeatureOperationObjectReference> {
-    let indexed = container.indexed_om_sections();
-    let mut references = Vec::new();
-    visit_feature_history_operation_records(
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let operation_record = format!(
-                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
-            );
-            for (ordinal, reference) in crate::om::operation_data_block_references(record)
-                .into_iter()
-                .enumerate()
-            {
-                references.push(FeatureOperationObjectReference {
-                    tag: None,
-                    id: format!(
-                        "nx:feature-history:operation-data-block-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
-                    ),
-                    operation_label: operation_label.clone(),
-                    operation_record: operation_record.clone(),
-                    ordinal: ordinal as u32,
-                    object: reference.object_index,
-                    data_block: unique_offset_data_block(&indexed, reference.object_index.value()),
-                    object_index_source_offset: entry_offset
-                        + reference.object_index_offset as u64,
-                    byte_len: (reference.end_offset - reference.offset) as u64,
-                    source_offset: entry_offset + reference.offset as u64,
+                    data_block: unique_offset_data_block(&indexed, frame.object().value()),
+                    frame,
                 });
             }
         },
