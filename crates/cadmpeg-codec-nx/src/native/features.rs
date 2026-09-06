@@ -5250,7 +5250,7 @@ pub fn feature_operation_state_journal_uses(
             let Some(row_ordinal) = u32::try_from(row_ordinal).ok() else {
                 continue;
             };
-            let key = (group.section_link.as_str(), row.state_ordinal.value());
+            let key = (group.section_link.as_str(), row.ordinal().value());
             match journal_rows.entry(key) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(Some((group, row_ordinal, row)));
@@ -5291,9 +5291,9 @@ pub fn feature_operation_state_journal_uses(
             journal_group: group.id.clone(),
             journal_row_ordinal: *journal_row_ordinal,
             operation_local_ordinal: frame.frame.suffix().local_ordinal(),
-            journal_state_ordinal: row.state_ordinal.value(),
+            journal_state_ordinal: row.ordinal().value(),
             operation_source_offset: frame.frame.offset(),
-            journal_source_offset: row.source_offset,
+            journal_source_offset: row.offset(),
         });
     }
     uses

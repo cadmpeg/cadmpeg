@@ -121,28 +121,6 @@ impl OmAuditTrailRow {
     }
 }
 
-/// One row from the feature-history state journal.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "state_index_wire::OmOperationStateJournalRowWire",
-    into = "state_index_wire::OmOperationStateJournalRowWire"
-)]
-pub struct OmOperationStateJournalRow {
-    /// Big-endian Unix timestamp stored by the journal.
-    pub timestamp: u32,
-    /// Complete tagged integer token.
-    #[serde(flatten)]
-    pub value: crate::om::state_tagged_value::StateTaggedValue,
-    /// Journal schema identifier.
-    pub schema_id: StateIndexToken,
-    /// Monotone state-counter ordinal.
-    pub state_ordinal: StateIndexToken,
-    /// Absolute file offset of the row's `e0` marker.
-    pub source_offset: u64,
-    /// Absolute exclusive end offset after the `13` terminator.
-    pub end_offset: u64,
-}
-
 /// One anchored state-journal group from a feature-history section.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OmOperationStateJournalGroup {
@@ -155,7 +133,7 @@ pub struct OmOperationStateJournalGroup {
     /// Exact two-byte group selector.
     pub selector: [u8; 2],
     /// Ordered journal rows.
-    pub rows: Vec<OmOperationStateJournalRow>,
+    pub rows: Vec<crate::om::state_journal::JournalRow>,
     /// Directory entry containing the feature-history section.
     pub source_entry: String,
     /// Absolute file offset of the `04` group opener.
@@ -177,20 +155,10 @@ pub struct OmOperationStateCounter {
     pub section_link: String,
     /// Zero-based row ordinal within the section's counter map.
     pub ordinal: u32,
-    /// Serialized counter-row kind (`01` or `02`).
-    pub row_kind: crate::om::discriminators::OperationStateCounterKind,
-    /// Object carrying the introduced/last-modified state pair.
-    pub object_index: StateIndexToken,
-    /// State-journal ordinal at object introduction.
-    pub introduced_state: u8,
-    /// State-journal ordinal at the object's last modification.
-    pub modified_state: u8,
-    /// Absolute file offset of the object-index token.
-    pub object_index_source_offset: u64,
+    /// Complete counter row with derived index position.
+    pub frame: crate::om::state_counter::StateCounter,
     /// Directory entry containing the feature-history section.
     pub source_entry: String,
-    /// Absolute file offset of the row's `05` marker.
-    pub source_offset: u64,
 }
 
 /// One typed member in an `m_rollForwardStates` group.
@@ -586,8 +554,7 @@ pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCo
             };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
-            map.rows
-                .into_iter()
+            map.into_rows()
                 .enumerate()
                 .filter_map(move |(ordinal, row)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
@@ -597,13 +564,8 @@ pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCo
                         ),
                         section_link: link.id.clone(),
                         ordinal,
-                        row_kind: row.row_kind,
-                        object_index: row.object_index.token(),
-                        introduced_state: row.introduced_state,
-                        modified_state: row.modified_state,
-                        object_index_source_offset: entry_offset + row.object_index.offset() as u64,
+                        frame: row.into_absolute(entry_offset)?,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + row.span.offset() as u64,
                     })
                 })
                 .collect()
@@ -638,20 +600,9 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
                 .enumerate()
                 .filter_map(move |(ordinal, group)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let rows = group
-                        .rows
-                        .into_iter()
-                        .map(|row| {
-                            OmOperationStateJournalRow {
-                                timestamp: row.timestamp,
-                                value: row.value,
-                                schema_id: row.schema_id.token(),
-                                state_ordinal: row.ordinal.token(),
-                                source_offset: entry_offset + row.span.offset() as u64,
-                                end_offset: entry_offset + row.span.end_offset() as u64,
-                            }
-                        })
-                        .collect();
+                    let rows = group.rows.into_iter()
+                        .map(|row| row.into_absolute(entry_offset))
+                        .collect::<Option<Vec<_>>>()?;
                     Some(OmOperationStateJournalGroup {
                         id: format!(
                             "nx:feature-history:operation-state-journal-group#{section_key}-{ordinal:010}"
@@ -705,8 +656,8 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                                     object_index,
                                     position,
                                 } => OmRollForwardStateRow::List {
-                                    object_index: object_index.token(),
-                                    position: position.token(),
+                                    object_index,
+                                    position,
                                     source_offset: entry_offset + offset as u64,
                                 },
                                 crate::om::OperationStateGroupRow::Pair {
@@ -716,8 +667,8 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                                     second,
                                 } => OmRollForwardStateRow::Pair {
                                     tag,
-                                    first: first.token(),
-                                    second: second.token(),
+                                    first,
+                                    second,
                                     source_offset: entry_offset + offset as u64,
                                 },
                             }
@@ -816,8 +767,8 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                 .enumerate()
                 .filter_map(move |(ordinal, row)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let status_code = row.status_code.token();
-                    let object_index = row.object_index.token();
+                    let status_code = row.status_code;
+                    let object_index = row.object_index;
                     let payload = match row.payload {
                         crate::om::OperationStateStatusPayload::Plain => {
                             OmOperationStateStatusPayload::Plain
@@ -827,7 +778,7 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                             object_index,
                         } => OmOperationStateStatusPayload::Linked {
                             link_code,
-                            object_index: object_index.token(),
+                            object_index,
                         },
                         crate::om::OperationStateStatusPayload::Diagnostic { message } => {
                             OmOperationStateStatusPayload::Diagnostic(OmOperationStateMessageBody {

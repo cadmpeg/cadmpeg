@@ -46,14 +46,14 @@ fn native_catalog_emits_feature_history_state_counter_rows() {
 
     let rows = operation_state_counters(&container);
     assert_eq!(rows.len(), 2);
-    assert_eq!(u8::from(rows[0].row_kind), 1);
-    assert_eq!(rows[0].object_index.value(), 0x320);
-    assert_eq!(rows[0].object_index.raw(), [0x83, 0x20]);
-    assert_eq!(rows[0].introduced_state, 1);
-    assert_eq!(rows[0].modified_state, 2);
-    assert!(rows[0].object_index_source_offset > rows[0].source_offset);
-    assert_eq!(u8::from(rows[1].row_kind), 2);
-    assert_eq!(rows[1].object_index.value(), 0x1234);
+    assert_eq!(u8::from(rows[0].frame.kind()), 1);
+    assert_eq!(rows[0].frame.object().value(), 0x320);
+    assert_eq!(rows[0].frame.object().raw(), [0x83, 0x20]);
+    assert_eq!(rows[0].frame.introduced(), 1);
+    assert_eq!(rows[0].frame.modified(), 2);
+    assert!(rows[0].frame.object_offset() > rows[0].frame.offset());
+    assert_eq!(u8::from(rows[1].frame.kind()), 2);
+    assert_eq!(rows[1].frame.object().value(), 0x1234);
     assert_eq!(rows[1].ordinal, 1);
     assert_eq!(rows[0].section_link, rows[1].section_link);
 
@@ -131,14 +131,14 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].selector, [0x01, 0x02]);
     assert_eq!(groups[0].rows.len(), 1);
-    assert_eq!(groups[0].rows[0].value.marker(), 0xc0);
-    assert_eq!(groups[0].rows[0].value.value(), 0x0001_0203);
-    assert_eq!(groups[0].rows[0].schema_id.value(), 0x310);
-    assert_eq!(groups[0].rows[0].state_ordinal.value(), 2);
+    assert_eq!(groups[0].rows[0].value().marker(), 0xc0);
+    assert_eq!(groups[0].rows[0].value().value(), 0x0001_0203);
+    assert_eq!(groups[0].rows[0].schema().value(), 0x310);
+    assert_eq!(groups[0].rows[0].ordinal().value(), 2);
     assert_eq!(groups[1].selector, [0x05, 0x06]);
-    assert_eq!(groups[1].rows[0].value.marker(), 0xa0);
-    assert_eq!(groups[1].rows[0].value.value(), 0x0102);
-    assert_eq!(groups[1].rows[0].state_ordinal.value(), 3);
+    assert_eq!(groups[1].rows[0].value().marker(), 0xa0);
+    assert_eq!(groups[1].rows[0].value().value(), 0x0102);
+    assert_eq!(groups[1].rows[0].ordinal().value(), 3);
     assert!(groups[1].source_offset > groups[0].source_offset);
 
     let result = NxCodec

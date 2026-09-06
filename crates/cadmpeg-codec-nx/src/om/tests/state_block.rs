@@ -25,7 +25,6 @@ fn operation_state_indices_retain_each_admitted_form() {
             value
         );
         assert_eq!(token.raw(), &bytes[at..at + width]);
-        assert_eq!(token.offset(), at);
         at += width;
     }
     assert_eq!(at, bytes.len());
@@ -47,46 +46,6 @@ fn operation_state_tagged_values_retain_width_and_value() {
         assert_eq!(token.marker(), raw[0]);
         assert_eq!(token.raw(), &raw[..width]);
     }
-}
-
-#[test]
-fn operation_state_counter_map_anchors_to_the_longest_bounded_suffix() {
-    let mut bytes = vec![0x41, 0x83, 0x20, 0x3f];
-    bytes.extend([
-        0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e, 0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a, 0x2b,
-        0x4e, 0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e,
-    ]);
-    bytes.extend([
-        0xb8, 0x6e, 0x58, 0x81, 0xd8, 0xb9, 0x96, 0x62, 0xdf, 0x59, 0xb8, 0x59, 0xc0, 0xd1, 0xf1,
-        0xed,
-    ]);
-
-    let map = super::operation_state_counter_map(&bytes, 1000).expect("counter-map suffix");
-    assert_eq!(map.offset, 1004);
-    assert_eq!(map.rows.len(), 3);
-    assert_eq!(map.end_offset, 1004 + 8 + 8 + 6);
-    assert_eq!(map.trailing_bytes.len(), 16);
-    assert_eq!(u8::from(map.rows[0].row_kind), 1);
-    assert_eq!(Some(map.rows[0].object_index.value()), Some(0x1234));
-    assert_eq!(map.rows[0].introduced_state, 0x56);
-    assert_eq!(map.rows[0].modified_state, 0x57);
-    assert_eq!(u8::from(map.rows[1].row_kind), 2);
-    assert_eq!(Some(map.rows[1].object_index.value()), Some(0x31f85));
-    assert_eq!(map.rows[1].introduced_state, 0x2a);
-    assert_eq!(map.rows[1].modified_state, 0x2b);
-    assert_eq!(map.rows[2].object_index.raw().len(), 1);
-}
-
-#[test]
-fn operation_state_counter_map_rejects_a_short_non_suffix_lane() {
-    let bytes = [
-        0x05, 0x01, 0x12, 0x34, 0x56, 0x4e, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99,
-        0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99,
-        0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99,
-        0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99,
-        0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99,
-    ];
-    assert!(super::operation_state_counter_map(&bytes, 0).is_none());
 }
 
 fn message_bytes(text: &[u8], value: &[u8], count_or_severity: [u8; 2]) -> Vec<u8> {
@@ -304,11 +263,11 @@ fn operation_state_group_table_anchors_to_counter_map_boundary() {
     ]);
     bytes.extend([0x99; 16]);
 
-    let map = super::operation_state_counter_map(&bytes, 0).expect("counter map");
-    let table = super::operation_state_group_table_before_counter_map(&bytes, map.offset, 0)
+    let map = crate::om::state_counter::StateCounterMap::read(&bytes, 0).expect("counter map");
+    let table = super::operation_state_group_table_before_counter_map(&bytes, map.offset(), 0)
         .expect("group table");
     assert_eq!(table.offset, 3);
-    assert_eq!(table.end_offset, map.offset);
+    assert_eq!(table.end_offset, map.offset());
     assert_eq!(table.groups.len(), 3);
     assert_eq!(table.groups[0].members.rows().len(), 2);
     assert_eq!(table.groups[1].members.rows().len(), 1);
@@ -346,10 +305,10 @@ fn operation_state_journal_decodes_timestamp_value_schema_and_ordinal() {
     assert_eq!(groups[0].selector, [0x01, 0x02]);
     assert_eq!(groups[0].rows.len(), 1);
     let row = groups[0].rows[0];
-    assert_eq!(row.timestamp, 0x6553_4d20);
-    assert_eq!(row.value.value(), 0x0001_0203);
-    assert_eq!(Some(row.schema_id.value()), Some(0x310));
-    assert_eq!(Some(row.ordinal.value()), Some(0x2a));
+    assert_eq!(row.timestamp(), 0x6553_4d20);
+    assert_eq!(row.value().value(), 0x0001_0203);
+    assert_eq!(Some(row.schema().value()), Some(0x310));
+    assert_eq!(Some(row.ordinal().value()), Some(0x2a));
 }
 
 #[test]
@@ -368,7 +327,7 @@ fn operation_state_journal_start_accepts_count_token_runs() {
         super::operation_state_journal_groups_before_boundary(&bytes, start, bytes.len(), 0)
             .expect("journal groups");
     assert_eq!(groups.len(), 1);
-    assert_eq!(Some(groups[0].rows[0].ordinal.value()), Some(0x2a));
+    assert_eq!(Some(groups[0].rows[0].ordinal().value()), Some(0x2a));
 }
 
 #[test]

@@ -310,7 +310,7 @@ impl ContainerNoted for OmOperationStateJournalGroup {
 }
 impl ContainerNoted for OmOperationStateCounter {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.frame.offset())
     }
 }
 impl ContainerNoted for OmRollForwardStateGroup {

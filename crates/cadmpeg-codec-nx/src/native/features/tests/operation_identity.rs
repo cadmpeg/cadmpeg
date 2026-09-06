@@ -2,7 +2,8 @@
 
 use super::*;
 use crate::native::features::operation_record::FeatureOperationRecord;
-use crate::native::om::{OmOperationStateJournalGroup, OmOperationStateJournalRow};
+use crate::native::om::OmOperationStateJournalGroup;
+use crate::om::state_journal::JournalRow;
 use crate::test_support::{
     composed_feature_history_payload, composed_feature_history_section, prt_with_named_payloads,
 };
@@ -489,26 +490,25 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
     .is_empty());
 }
 
-fn journal_row(state_ordinal: u32, source_offset: u64) -> OmOperationStateJournalRow {
-    OmOperationStateJournalRow {
-        timestamp: 1_700_000_000,
-        value: crate::om::state_tagged_value::StateTaggedValue::read_at(
+fn journal_row(state_ordinal: u32, source_offset: u64) -> JournalRow {
+    JournalRow::new(
+        source_offset,
+        1_700_000_000,
+        crate::om::state_tagged_value::StateTaggedValue::read_at(
             &[0xe0, 0, 0, 0, state_ordinal as u8],
             0,
         )
         .unwrap(),
-        schema_id: crate::om::state_index::StateIndexToken::read_at(&[12], 0).unwrap(),
-        state_ordinal: crate::om::state_index::StateIndexToken::read_at(&[state_ordinal as u8], 0)
-            .unwrap(),
-        source_offset,
-        end_offset: source_offset + 16,
-    }
+        crate::om::state_index::StateIndexToken::read_at(&[12], 0).unwrap(),
+        crate::om::state_index::StateIndexToken::read_at(&[state_ordinal as u8], 0).unwrap(),
+    )
+    .unwrap()
 }
 
 fn journal_group(
     id: &str,
     section_link: &str,
-    rows: Vec<OmOperationStateJournalRow>,
+    rows: Vec<JournalRow>,
 ) -> OmOperationStateJournalGroup {
     OmOperationStateJournalGroup {
         id: id.to_string(),
