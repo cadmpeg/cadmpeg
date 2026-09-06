@@ -16,6 +16,9 @@ use cadmpeg_core::bytes::{contains, find};
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 
+pub(crate) mod entity_references;
+use entity_references::EntityReferences;
+
 use crate::container::Container;
 use crate::framing::read_and_advance as read_xmt;
 use crate::vec3_at::vec3_be_at;
@@ -161,8 +164,6 @@ pub struct Entity51Record {
     pub offset: usize,
     /// Exact framed record length.
     pub byte_len: usize,
-    /// Record flags preceding the identity.
-    pub flags: u32,
     /// Stream-local record identity.
     pub xmt: u32,
     /// Serialized sequence value.
@@ -172,7 +173,7 @@ pub struct Entity51Record {
     /// Five fixed leading stream-local references.
     pub leading_references: [u32; 5],
     /// Variable trailing stream-local references counted by `flags`.
-    pub trailing_references: Vec<u32>,
+    pub trailing_references: EntityReferences,
 }
 
 /// One self-framed printable type-84 string record.
@@ -412,7 +413,7 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
         }
         for record in records {
             referenced.extend(record.leading_references);
-            referenced.extend(record.trailing_references);
+            referenced.extend(record.trailing_references.into_values());
         }
     }
 
@@ -990,7 +991,6 @@ pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity5
 struct Entity51Frame {
     offset: usize,
     end: usize,
-    flags: u32,
     xmt: u32,
     sequence: u32,
     definition_xmt: u32,
@@ -1028,7 +1028,6 @@ fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
     Some(Entity51Frame {
         offset,
         end,
-        flags,
         xmt,
         sequence,
         definition_xmt,
@@ -1042,11 +1041,10 @@ fn entity_51_record_from_frame(bytes: &[u8], frame: Entity51Frame) -> Option<Ent
     let mut at = frame.references_at;
     let references = entity_51_references(bytes, &mut at, frame.reference_count)?;
     let leading_references = references.get(..5)?.try_into().ok()?;
-    let trailing_references = references.get(5..)?.to_vec();
+    let trailing_references = EntityReferences::new(references.get(5..)?.to_vec()).ok()?;
     Some(Entity51Record {
         offset: frame.offset,
         byte_len: frame.end - frame.offset,
-        flags: frame.flags,
         xmt: frame.xmt,
         sequence: frame.sequence,
         definition_xmt: frame.definition_xmt,

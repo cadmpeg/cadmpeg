@@ -2857,7 +2857,7 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
             let references = record
                 .leading_references
                 .into_iter()
-                .chain(record.trailing_references)
+                .chain(record.trailing_references.into_values())
                 .collect();
             (record.xmt, record.byte_len, references)
         }

@@ -72,7 +72,7 @@ fn parasolid_entity_51_records_retain_layout_selected_references() {
     assert_eq!(records[0].sequence, 2);
     assert_eq!(records[0].definition_xmt, 0x21);
     assert_eq!(records[0].leading_references, [3, 4, 5, 6, 7]);
-    assert_eq!(records[0].trailing_references, [8]);
+    assert_eq!(records[0].trailing_references.values(), [8]);
     assert_eq!(
         crate::parasolid::entity_51_record_at(&bytes, 0),
         Some(records[0].clone())
@@ -113,7 +113,7 @@ fn parasolid_entity_51_reference_count_is_five_plus_flags() {
 
         let record = crate::parasolid::entity_51_record_at(&direct, 0).unwrap();
         assert_eq!(record.leading_references.len(), 5);
-        assert_eq!(record.trailing_references.len(), flags as usize);
+        assert_eq!(record.trailing_references.values().len(), flags as usize);
         assert_eq!(record.byte_len, direct.len() - 2);
         assert!(crate::parasolid::entity_51_record_at(&direct[..direct.len() - 3], 0).is_none());
 
@@ -131,7 +131,7 @@ fn parasolid_entity_51_reference_count_is_five_plus_flags() {
 
         let record = crate::parasolid::entity_51_record_at(&prefixed, 0).unwrap();
         assert_eq!(record.leading_references.len(), 5);
-        assert_eq!(record.trailing_references.len(), flags as usize);
+        assert_eq!(record.trailing_references.values().len(), flags as usize);
         assert_eq!(record.byte_len, prefixed.len() - 2);
         assert!(
             crate::parasolid::entity_51_record_at(&prefixed[..prefixed.len() - 3], 0).is_none()

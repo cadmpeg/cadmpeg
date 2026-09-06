@@ -6,6 +6,9 @@ use super::*;
 
 use crate::deltas::Census;
 
+mod entity51_wire;
+use entity51_wire::Entity51Wire;
+use crate::parasolid::entity_references::EntityReferences;
 pub(crate) mod named_fields;
 use named_fields::NamedField;
 mod support_uv_wire;
@@ -1819,6 +1822,7 @@ pub struct ParasolidTopologyAttributeListReference {
 
 /// Framed Parasolid type-81 entity/attribute-list record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "Entity51Wire", into = "Entity51Wire")]
 pub struct ParasolidEntity51Record {
     /// Globally unique record identity.
     pub id: String,
@@ -1826,8 +1830,6 @@ pub struct ParasolidEntity51Record {
     pub stream_ordinal: u32,
     /// Stream-local record identity.
     pub xmt: u32,
-    /// Exact record flags.
-    pub flags: u32,
     /// Serialized sequence value.
     pub sequence: u32,
     /// Stream-local type-80 attribute-definition identity.
@@ -1835,7 +1837,7 @@ pub struct ParasolidEntity51Record {
     /// Five fixed leading stream-local references.
     pub leading_references: [u32; 5],
     /// Variable trailing stream-local references counted by `flags`.
-    pub trailing_references: Vec<u32>,
+    pub trailing_references: EntityReferences,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -2438,7 +2440,6 @@ pub fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51R
                     ),
                     stream_ordinal: stream_ordinal as u32,
                     xmt: record.xmt,
-                    flags: record.flags,
                     sequence: record.sequence,
                     definition_xmt: record.definition_xmt,
                     leading_references: record.leading_references,
@@ -2653,7 +2654,7 @@ pub fn parasolid_entity_51_numeric_uses(
     let mut uses = Vec::new();
     for entity in entities {
         for (trailing_ordinal, referenced_xmt) in
-            entity.trailing_references.iter().copied().enumerate()
+            entity.trailing_references.values().iter().copied().enumerate()
         {
             let reference_ordinal = trailing_ordinal + 5;
             let Some([(kind, value_record)]) = values
@@ -2696,7 +2697,7 @@ pub fn parasolid_entity_51_string_uses(
     let mut uses = Vec::new();
     for entity in entities {
         for (trailing_ordinal, referenced_xmt) in
-            entity.trailing_references.iter().copied().enumerate()
+            entity.trailing_references.values().iter().copied().enumerate()
         {
             let reference_ordinal = trailing_ordinal + 5;
             let Some([string]) = strings_by_identity
@@ -2778,7 +2779,7 @@ pub fn parasolid_entity_51_structured_uses(
     let mut uses = Vec::new();
     for entity in entities {
         for (trailing_ordinal, referenced_xmt) in
-            entity.trailing_references.iter().copied().enumerate()
+            entity.trailing_references.values().iter().copied().enumerate()
         {
             let reference_ordinal = trailing_ordinal + 5;
             let Some([(kind, value_record)]) = values
@@ -3113,7 +3114,7 @@ pub fn parasolid_topology_attribute_fields_have_untransferred_values(
                 if matches!(field_code, 0 | 9) {
                     return false;
                 }
-                let Some(&referenced_xmt) = entity.trailing_references.get(field_ordinal) else {
+                let Some(&referenced_xmt) = entity.trailing_references.values().get(field_ordinal) else {
                     return true;
                 };
                 if referenced_xmt == 1 {
@@ -4011,11 +4012,10 @@ mod tests {
             id: "entity".into(),
             stream_ordinal: 2,
             xmt: 10,
-            flags: 1,
             sequence: 0,
             definition_xmt: 9,
             leading_references: [1; 5],
-            trailing_references: vec![12],
+            trailing_references: EntityReferences::new(vec![12]).unwrap(),
             byte_len: 32,
             inflated_offset: 40,
         };
@@ -4157,11 +4157,10 @@ mod tests {
             id: "entity".into(),
             stream_ordinal: 0,
             xmt: 30,
-            flags: 1,
             sequence: 0,
             definition_xmt: 20,
             leading_references: [1; 5],
-            trailing_references: vec![40],
+            trailing_references: EntityReferences::new(vec![40]).unwrap(),
             byte_len: 32,
             inflated_offset: 30,
         };
@@ -4232,7 +4231,7 @@ mod tests {
         );
         // Null values and always-empty pointer fields require no value relation.
         let mut null_entity = entity.clone();
-        null_entity.trailing_references[0] = 1;
+        null_entity.trailing_references.values_mut()[0] = 1;
         assert!(
             !parasolid_topology_attribute_fields_have_untransferred_values(
                 &[definition(1, vec![4])],
@@ -4545,11 +4544,10 @@ mod tests {
             id: "entity".into(),
             stream_ordinal: 3,
             xmt: 50,
-            flags: 1,
             sequence: 7,
             definition_xmt: 34,
             leading_references: [60, 61, 1, 62, 63],
-            trailing_references: vec![64],
+            trailing_references: EntityReferences::new(vec![64]).unwrap(),
             byte_len: 26,
             inflated_offset: 200,
         };
@@ -4625,11 +4623,10 @@ mod tests {
             id: "head".into(),
             stream_ordinal: 0,
             xmt: 30,
-            flags: 1,
             sequence: 1,
             definition_xmt: 20,
             leading_references: [40, 1, 1, 1, 1],
-            trailing_references: vec![50],
+            trailing_references: EntityReferences::new(vec![50]).unwrap(),
             byte_len: 26,
             inflated_offset: 30,
         };
@@ -4677,11 +4674,10 @@ mod tests {
             id: "entity".into(),
             stream_ordinal: 3,
             xmt: 50,
-            flags: 2,
             sequence: 7,
             definition_xmt: 34,
             leading_references: [60, 61, 70, 71, 72],
-            trailing_references: vec![70, 71],
+            trailing_references: EntityReferences::new(vec![70, 71]).unwrap(),
             byte_len: 28,
             inflated_offset: 200,
         };
