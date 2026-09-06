@@ -1,4 +1,3 @@
-use crate::test_support::NativeRecordTestExt;
 use super::test_consolidated::{
     validate_consolidated_circles, validate_consolidated_class5b5c_records,
     validate_consolidated_class61_records, validate_consolidated_cone_faces,
@@ -23,6 +22,7 @@ use super::test_zero_entity::{
     validate_zero_entity_support_runs, validate_zero_entity_topology_records,
 };
 use super::*;
+use crate::test_support::NativeRecordTestExt;
 
 impl CatiaNative {
     /// Decode CATIA-native records directly from a synthesized record source.
@@ -90,7 +90,8 @@ impl CatiaNative {
                     .or_else(|| roles.owner_literal.map(CatiaObjectOwner::UnassignedLiteral));
             }
         }
-        let migrate_relation_program = namespace.version() < CATIA_RELATION_PROGRAM_INSTANCE_VERSION
+        let migrate_relation_program = namespace.version()
+            < CATIA_RELATION_PROGRAM_INSTANCE_VERSION
             || namespace.version() < CATIA_RELATION_PROGRAM_CONTEXT_VERSION
             || namespace.version() < CATIA_TYPED_INCIDENCE_CLASS_VERSION
             || namespace.version() < CATIA_RELATION_TYPED_REFERENCE_VERSION
@@ -103,7 +104,8 @@ impl CatiaNative {
             || namespace.version() < CATIA_RELATION_REFERENCE_OFFSET_VERSION
             || namespace.version() < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
             || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION;
-        let migrate_object_production = (namespace.version() < CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION
+        let migrate_object_production = (namespace.version()
+            < CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION
             || namespace.version() < CATIA_TERMINAL_NULL_REFERENCE_VERSION
             || namespace.version() < CATIA_FORMULA_OUTPUT_REFERENCE_VERSION
             || namespace.version() < CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION
@@ -115,10 +117,15 @@ impl CatiaNative {
             || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION)
             || (migrate_relation_program)
             || (namespace.version() < CATIA_CONFIGURATION_INCIDENCE_VERSION
-            || namespace.version() < CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION
-            || namespace.version() < CATIA_TYPED_INCIDENCE_CLASS_VERSION
-            || namespace.version() < CATIA_TYPED_INCIDENCE_NULL_VERSION
-            || namespace.version() < CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION);
+                || namespace.version() < CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION
+                || namespace.version() < CATIA_TYPED_INCIDENCE_CLASS_VERSION
+                || namespace.version() < CATIA_TYPED_INCIDENCE_NULL_VERSION
+                || namespace.version() < CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION);
+        let migrate_value_production = (namespace.version()
+            < CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION
+            || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION)
+            || (namespace.version() < CATIA_SUFFIX_EVALUATION_OFFSET_VERSION
+                || namespace.version() < CATIA_SUFFIX_TRAILER_8193_VERSION);
         let mut entity_namespace = namespace.clone();
         if let Some(records) = entity_namespace.arenas.get_mut("entity_records") {
             for record in records {
@@ -126,8 +133,24 @@ impl CatiaNative {
                 if namespace.version() < CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION {
                     fields.remove("reference_signature");
                 }
+                if migrate_value_production {
+                    for field in [
+                        "relation_expression",
+                        "parameter_value",
+                        "constraint_range",
+                        "definition_value",
+                        "definition_chain_value",
+                    ] {
+                        fields.remove(field);
+                    }
+                }
                 if migrate_object_production {
-                    for field in ["relation_program_instance", "schema_configuration_record", "schema_configuration_row_link", "formula_relation"] {
+                    for field in [
+                        "relation_program_instance",
+                        "schema_configuration_record",
+                        "schema_configuration_row_link",
+                        "formula_relation",
+                    ] {
                         fields.remove(field);
                     }
                 }
@@ -170,43 +193,7 @@ impl CatiaNative {
                 entity.set_suffix_from_bytes(&suffix);
             }
         }
-        if namespace.version() < CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION
-            || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION
-        {
-            for entity in &mut entity_records {
-                entity.relation_expression = relation_expression(
-                    &entity.definition_schema_selections,
-                    &entity.value_schema_selections,
-                );
-                entity.parameter_value = parameter_value(
-                    entity.lead,
-                    &entity.value_schema_selections,
-                    entity.suffix_value(),
-                );
-                entity.constraint_range = resolved_constraint_range(
-                    entity.lead,
-                    &entity.value_schema_selections,
-                    entity.suffix_value(),
-                    &records,
-                    &entity.object_graph,
-                    entity.entity_id,
-                );
-                entity.definition_value = definition_value(
-                    entity.lead,
-                    &entity.definition_schema_selections,
-                    &entity.value_fields(),
-                    entity.suffix_value(),
-                    entity.suffix_schema_selection.as_ref(),
-                );
-                entity.definition_chain_value = definition_chain_value(
-                    entity.lead,
-                    &entity.definition_schema_selections,
-                    &entity.value_fields(),
-                    entity.suffix_value(),
-                    entity.suffix_schema_selection.as_ref(),
-                );
-            }
-        }
+
         if namespace.version() < CATIA_SUFFIX_EVALUATION_OFFSET_VERSION
             || namespace.version() < CATIA_SUFFIX_TRAILER_8193_VERSION
         {
@@ -222,34 +209,13 @@ impl CatiaNative {
                     entity.set_suffix_from_bytes(&suffix);
                     entity.suffix_schema_selection =
                         entity_suffix_schema_selection(entity.suffix_value(), catalog);
-                    entity.parameter_value = parameter_value(
-                        entity.lead,
-                        &entity.value_schema_selections,
-                        entity.suffix_value(),
-                    );
-                    entity.constraint_range = resolved_constraint_range(
-                        entity.lead,
-                        &entity.value_schema_selections,
-                        entity.suffix_value(),
-                        &records,
-                        &entity.object_graph,
-                        entity.entity_id,
-                    );
-                    entity.definition_value = definition_value(
-                        entity.lead,
-                        &entity.definition_schema_selections,
-                        &entity.value_fields(),
-                        entity.suffix_value(),
-                        entity.suffix_schema_selection.as_ref(),
-                    );
-                    entity.definition_chain_value = definition_chain_value(
-                        entity.lead,
-                        &entity.definition_schema_selections,
-                        &entity.value_fields(),
-                        entity.suffix_value(),
-                        entity.suffix_schema_selection.as_ref(),
-                    );
                 }
+            }
+        }
+        if migrate_value_production {
+            for entity in &mut entity_records {
+                entity.value_production =
+                    value_production(entity, &records, &entity.value_fields());
             }
         }
         if namespace.version() < CATIA_RANGE_NOMINAL_VERSION {
@@ -319,7 +285,9 @@ impl CatiaNative {
                 terminal_nulls: &terminal_nulls_by_graph,
             };
             for entity in &mut entity_records {
-                if let Some(production) = entity_table::parse_reference_signature(entity.value_payload()) {
+                if let Some(production) =
+                    entity_table::parse_reference_signature(entity.value_payload())
+                {
                     entity.reference_signature = Some(reference_signature(
                         production,
                         &entity.object_graph,
@@ -385,19 +353,28 @@ impl CatiaNative {
             }
         }
         if migrate_object_production {
-            let records_by_id = records.iter()
-                .map(|record| (record.id.as_str(), record)).collect::<HashMap<_, _>>();
+            let records_by_id = records
+                .iter()
+                .map(|record| (record.id.as_str(), record))
+                .collect::<HashMap<_, _>>();
             let references = CatiaEntityReferenceIndex {
                 entities: &entities_by_graph_identity,
                 classes: &entity_classes_by_graph_identity,
                 terminal_nulls: &terminal_nulls_by_graph,
             };
             for entity in &mut entity_records {
-                entity.object_production = records_by_id.get(entity.object_record.as_str())
-                    .and_then(|object| object_production(
-                        entity, object, &references, &relation_expressions,
-                        &relation_expression_entities, &parameter_bindings,
-                    ));
+                entity.object_production = records_by_id
+                    .get(entity.object_record.as_str())
+                    .and_then(|object| {
+                        object_production(
+                            entity,
+                            object,
+                            &references,
+                            &relation_expressions,
+                            &relation_expression_entities,
+                            &parameter_bindings,
+                        )
+                    });
             }
         }
 
@@ -406,7 +383,9 @@ impl CatiaNative {
             || namespace.version() < CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION
         {
             for entity in &mut entity_records {
-                if let Some(range) = &mut entity.constraint_range {
+                if let Some(CatiaEntityValueProduction::ConstraintRange(range)) =
+                    &mut entity.value_production
+                {
                     (range.incoming_references, range.incoming_storage_references) =
                         entity_incidences(&records, &entity.object_graph, entity.entity_id);
                 }
@@ -490,11 +469,8 @@ impl CatiaNative {
                             )
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.relation_expression
-                            != relation_expression(
-                                &entity.definition_schema_selections,
-                                &entity.value_schema_selections,
-                            )
+                        entity.value_production
+                            != value_production(entity, &graph.records, &entity.value_fields())
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.suffix_value()
@@ -509,14 +485,6 @@ impl CatiaNative {
                             != entity_suffix_schema_selection(entity.suffix_value(), catalog)
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.parameter_value
-                            != parameter_value(
-                                entity.lead,
-                                &entity.value_schema_selections,
-                                entity.suffix_value(),
-                            )
-                    })
-                    || graph_entities.iter().any(|entity| {
                         entity.range_interval
                             != range_interval(
                                 entity.value_payload(),
@@ -528,48 +496,25 @@ impl CatiaNative {
                             )
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.constraint_range
-                            != resolved_constraint_range(
-                                entity.lead,
-                                &entity.value_schema_selections,
-                                entity.suffix_value(),
-                                &graph.records,
-                                &graph.id,
-                                entity.entity_id,
-                            )
-                    })
-                    || graph_entities.iter().any(|entity| {
-                        entity.definition_value
-                            != definition_value(
-                                entity.lead,
-                                &entity.definition_schema_selections,
-                                &entity.value_fields(),
-                                entity.suffix_value(),
-                                entity.suffix_schema_selection.as_ref(),
-                            )
-                    })
-                    || graph_entities.iter().any(|entity| {
-                        entity.definition_chain_value
-                            != definition_chain_value(
-                                entity.lead,
-                                &entity.definition_schema_selections,
-                                &entity.value_fields(),
-                                entity.suffix_value(),
-                                entity.suffix_schema_selection.as_ref(),
-                            )
-                    })
-                    || graph_entities.iter().any(|entity| {
-                        let object = graph.records.iter()
+                        let object = graph
+                            .records
+                            .iter()
                             .find(|record| record.id == entity.object_record);
-                        entity.object_production != object.and_then(|object| object_production(
-                            entity, object,
-                            &CatiaEntityReferenceIndex {
-                                entities: &entities_by_graph_identity,
-                                classes: &entity_classes_by_graph_identity,
-                                terminal_nulls: &terminal_nulls_by_graph,
-                            },
-                            &relation_expressions, &relation_expression_entities, &parameter_bindings,
-                        ))
+                        entity.object_production
+                            != object.and_then(|object| {
+                                object_production(
+                                    entity,
+                                    object,
+                                    &CatiaEntityReferenceIndex {
+                                        entities: &entities_by_graph_identity,
+                                        classes: &entity_classes_by_graph_identity,
+                                        terminal_nulls: &terminal_nulls_by_graph,
+                                    },
+                                    &relation_expressions,
+                                    &relation_expression_entities,
+                                    &parameter_bindings,
+                                )
+                            })
                     })
                     || graph_entities.windows(2).any(|pair| {
                         pair[0].byte_offset.checked_add(pair[0].byte_len)

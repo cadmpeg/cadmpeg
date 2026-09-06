@@ -683,8 +683,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&scalar_suffix));
     let parameter = native.entity_records[0]
-        .parameter_value
-        .as_ref()
+        .parameter_value()
         .expect("complete named parameter value");
     assert_eq!(parameter.name.value, "Thickness");
     assert_eq!(parameter.binding.value, "#1_ /2");
@@ -713,8 +712,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
     ]));
     assert_eq!(
         unset.entity_records[0]
-            .parameter_value
-            .as_ref()
+            .parameter_value()
             .expect("complete unset parameter")
             .evaluation,
         CatiaEntityEvaluation::Unset
@@ -731,8 +729,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
     };
     *opcode_offset = 0;
     stale_offsets.entity_records[0]
-        .parameter_value
-        .as_mut()
+        .parameter_value_mut()
         .expect("complete named parameter value")
         .evaluation_opcode_offset = 0;
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -746,14 +743,13 @@ fn native_namespace_types_and_validates_named_parameter_values() {
     let migrated =
         crate::native::CatiaNative::load(&namespace).expect("migrate named parameter offsets");
     assert_eq!(
-        migrated.entity_records[0].parameter_value,
-        native.entity_records[0].parameter_value
+        migrated.entity_records[0].parameter_value(),
+        native.entity_records[0].parameter_value()
     );
 
     let mut malformed_offset = native.clone();
     malformed_offset.entity_records[0]
-        .parameter_value
-        .as_mut()
+        .parameter_value_mut()
         .expect("complete named parameter value")
         .evaluation_opcode_offset += 1;
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -767,8 +763,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
 
     let mut malformed = native;
     malformed.entity_records[0]
-        .parameter_value
-        .as_mut()
+        .parameter_value_mut()
         .expect("complete named parameter value")
         .name
         .value = "changed".to_string();
@@ -852,8 +847,8 @@ fn native_namespace_binds_two_definition_value_chains() {
     )
     .expect("load definition-chain evaluation");
     assert_eq!(
-        native.entity_records[0].definition_chain_value,
-        Some(CatiaDefinitionChainValue {
+        native.entity_records[0].definition_chain_value(),
+        Some(&CatiaDefinitionChainValue {
             selector: CatiaEntitySchemaValue {
                 offset: native.entity_records[0].definition_schema_selections[0].offset,
                 ordinal: native.entity_records[0].definition_schema_selections[0].ordinal,
@@ -891,8 +886,7 @@ fn native_namespace_binds_two_definition_value_chains() {
     ));
 
     native.entity_records[0]
-        .definition_chain_value
-        .as_mut()
+        .definition_chain_value_mut()
         .expect("definition-chain evaluation")
         .role
         .value = "changed".to_string();
@@ -910,7 +904,7 @@ fn native_namespace_binds_two_definition_value_chains() {
             0x84, 0x88, 0x82, 0x32, 5, 0, 0, 0, 0xe7,
         ]));
     assert!(wrong_selector.entity_records[0]
-        .definition_chain_value
+        .definition_chain_value()
         .is_none());
 
     let atom = CatiaCodec
@@ -941,8 +935,7 @@ fn native_namespace_binds_two_definition_value_chains() {
             .expect("load definition-chain atom");
     assert_eq!(
         atom_native.entity_records[0]
-            .definition_chain_value
-            .as_ref()
+            .definition_chain_value()
             .map(|value| &value.value),
         Some(&CatiaEntitySuffixSchemaValue::Atom { value: 7 })
     );
@@ -989,8 +982,7 @@ fn native_namespace_binds_two_definition_value_chains() {
             .expect("load nested definition-chain selector");
     assert_eq!(
         nested_native.entity_records[0]
-            .definition_chain_value
-            .as_ref()
+            .definition_chain_value()
             .map(|value| &value.value),
         Some(&CatiaEntitySuffixSchemaValue::SchemaSelector {
             offset: 8,
@@ -1323,8 +1315,8 @@ fn native_namespace_binds_and_validates_definition_values() {
     )
     .expect("load definition-bound value");
     assert_eq!(
-        native.entity_records[0].definition_value,
-        Some(CatiaDefinitionValue {
+        native.entity_records[0].definition_value(),
+        Some(&CatiaDefinitionValue {
             definition: CatiaEntitySchemaValue {
                 offset: native.entity_records[0].definition_schema_selections[0].offset,
                 ordinal: native.entity_records[0].definition_schema_selections[0].ordinal,
@@ -1381,8 +1373,7 @@ fn native_namespace_binds_and_validates_definition_values() {
     ));
 
     let definition_value = native.entity_records[0]
-        .definition_value
-        .as_mut()
+        .definition_value_mut()
         .expect("definition-bound value");
     definition_value.payload = CatiaEntitySuffixPayload::Evaluation {
         opcode_offset: 5,
@@ -1405,8 +1396,7 @@ fn native_namespace_binds_and_validates_definition_values() {
     ));
     assert!(matches!(
         control.entity_records[0]
-            .definition_value
-            .as_ref()
+            .definition_value()
             .expect("definition-bound control")
             .payload,
         CatiaEntitySuffixPayload::ControlE8
@@ -1419,8 +1409,7 @@ fn native_namespace_binds_and_validates_definition_values() {
             &[0x84, 0x96, 0x82, 0x32, 4, 0, 0, 0, 0xe7, 0x81, 0x49],
         ));
     let definition_value = schema_selected.entity_records[0]
-        .definition_value
-        .as_ref()
+        .definition_value()
         .expect("definition-bound schema-selected value");
     assert!(matches!(
         definition_value.payload,
@@ -1447,7 +1436,7 @@ fn native_namespace_binds_and_validates_definition_values() {
             &value,
             &suffix,
         ));
-        assert_eq!(native.entity_records[0].definition_value, None);
+        assert_eq!(native.entity_records[0].definition_value(), None);
     }
 }
 
@@ -1461,7 +1450,7 @@ fn named_parameter_value_requires_the_complete_finite_suffix() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&suffix));
     assert!(native.entity_records[0].suffix_value().is_none());
-    assert!(native.entity_records[0].parameter_value.is_none());
+    assert!(native.entity_records[0].parameter_value().is_none());
 
     let control = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
         0x85, 0x96, 0x82, 0x6a, 0xe8, 0x81, 0x52,
@@ -1474,7 +1463,7 @@ fn named_parameter_value_requires_the_complete_finite_suffix() {
             .payload,
         crate::native::CatiaEntitySuffixPayload::ControlE8
     ));
-    assert!(control.entity_records[0].parameter_value.is_none());
+    assert!(control.entity_records[0].parameter_value().is_none());
 }
 
 #[test]
@@ -1483,8 +1472,7 @@ fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(4, false));
     let expression_entity = &native.entity_records[1];
     let expression = expression_entity
-        .relation_expression
-        .as_ref()
+        .relation_expression()
         .expect("complete relation expression");
     assert_eq!(
         (expression.expression.offset, expression.expression.ordinal),
@@ -1495,8 +1483,7 @@ fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
     );
     let parameter_entity = &native.entity_records[2];
     let parameter = parameter_entity
-        .parameter_value
-        .as_ref()
+        .parameter_value()
         .expect("complete named parameter");
     assert_eq!(
         (parameter.name.offset, parameter.name.ordinal),
@@ -1515,14 +1502,12 @@ fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
 
     let mut stale = native.clone();
     let expression = stale.entity_records[1]
-        .relation_expression
-        .as_mut()
+        .relation_expression_mut()
         .expect("complete relation expression");
     expression.expression.offset = 0;
     expression.expression.ordinal = 0;
     let parameter = stale.entity_records[2]
-        .parameter_value
-        .as_mut()
+        .parameter_value_mut()
         .expect("complete named parameter");
     parameter.name.offset = 0;
     parameter.name.ordinal = 0;
@@ -1539,18 +1524,17 @@ fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
     let migrated =
         crate::native::CatiaNative::load(&namespace).expect("migrate typed schema incidences");
     assert_eq!(
-        migrated.entity_records[1].relation_expression,
-        native.entity_records[1].relation_expression
+        migrated.entity_records[1].relation_expression(),
+        native.entity_records[1].relation_expression()
     );
     assert_eq!(
-        migrated.entity_records[2].parameter_value,
-        native.entity_records[2].parameter_value
+        migrated.entity_records[2].parameter_value(),
+        native.entity_records[2].parameter_value()
     );
 
     let mut malformed = native;
     malformed.entity_records[2]
-        .parameter_value
-        .as_mut()
+        .parameter_value_mut()
         .expect("complete named parameter")
         .name
         .offset = u64::MAX;

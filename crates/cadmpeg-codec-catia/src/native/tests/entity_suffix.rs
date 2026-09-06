@@ -199,7 +199,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     )
     .expect("load generic entity suffix");
 
-    assert_eq!(native.entity_records[0].parameter_value, None);
+    assert_eq!(native.entity_records[0].parameter_value(), None);
     assert_eq!(
         native.entity_records[0].suffix_value().cloned(),
         Some(CatiaEntitySuffixValue {

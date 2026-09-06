@@ -15,8 +15,7 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression("param"));
     let expression = native.entity_records[0]
-        .relation_expression
-        .as_ref()
+        .relation_expression()
         .expect("complete relation expression");
     let crate::native::CatiaRelationExpressionFraming::PlaceholderState {
         placeholder,
@@ -46,8 +45,7 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
 
     let mut malformed = native;
     malformed.entity_records[0]
-        .relation_expression
-        .as_mut()
+        .relation_expression_mut()
         .expect("complete relation expression")
         .expression
         .value = "changed".to_string();
@@ -67,8 +65,7 @@ fn parser_version_relation_expression_retains_its_distinct_framing() {
         &standard_catpart_with_parser_version_relation_expression("Boolean", "ParserVersion"),
     );
     let expression = native.entity_records[0]
-        .relation_expression
-        .as_ref()
+        .relation_expression()
         .expect("parser-version relation expression");
 
     let crate::native::CatiaRelationExpressionFraming::BooleanParserVersion {
@@ -107,8 +104,7 @@ fn opened_parser_version_relation_expression_retains_its_distinct_framing() {
         ),
     );
     let expression = native.entity_records[0]
-        .relation_expression
-        .as_ref()
+        .relation_expression()
         .expect("opened parser-version relation expression");
 
     let crate::native::CatiaRelationExpressionFraming::OpenedBooleanParserVersion {
@@ -145,7 +141,7 @@ fn opened_parser_version_relation_expression_requires_every_exact_role() {
             ),
         );
 
-        assert!(native.entity_records[0].relation_expression.is_none());
+        assert!(native.entity_records[0].relation_expression().is_none());
     }
 }
 
@@ -215,8 +211,7 @@ fn unprefixed_parser_version_relation_expression_retains_its_distinct_framing() 
         &standard_catpart_with_unprefixed_parser_version_relation_expression("ParserVersion"),
     );
     let expression = native.entity_records[0]
-        .relation_expression
-        .as_ref()
+        .relation_expression()
         .expect("unprefixed parser-version relation expression");
 
     let crate::native::CatiaRelationExpressionFraming::ParserVersion {
@@ -245,7 +240,7 @@ fn unprefixed_parser_version_relation_expression_requires_the_exact_version_role
         &standard_catpart_with_unprefixed_parser_version_relation_expression("ParserRevision"),
     );
 
-    assert!(native.entity_records[0].relation_expression.is_none());
+    assert!(native.entity_records[0].relation_expression().is_none());
 }
 
 #[test]
@@ -318,7 +313,7 @@ fn parser_version_relation_expression_requires_both_exact_framing_roles() {
             ),
         );
 
-        assert!(native.entity_records[0].relation_expression.is_none());
+        assert!(native.entity_records[0].relation_expression().is_none());
     }
 }
 
@@ -364,8 +359,7 @@ fn relation_expression_signature_preserves_ordered_typed_inputs() {
             "(#1_ :  #In LENGTH,#2_ :  #In ANGLE) : Real",
         ));
     let signature = native.entity_records[0]
-        .relation_expression
-        .as_ref()
+        .relation_expression()
         .and_then(|expression| expression.signature())
         .expect("multi-input signature");
 
@@ -391,8 +385,7 @@ fn relation_expression_signature_accepts_an_empty_input_list_with_an_empty_place
         &standard_catpart_with_relation_expression_signature("param", "", "() : LENGTH"),
     );
     let signature = native.entity_records[0]
-        .relation_expression
-        .as_ref()
+        .relation_expression()
         .and_then(|expression| expression.signature())
         .expect("zero-input signature");
 
@@ -403,8 +396,7 @@ fn relation_expression_signature_accepts_an_empty_input_list_with_an_empty_place
         &standard_catpart_with_relation_expression_signature("param", "#1_ ", "() : LENGTH"),
     );
     assert!(nonempty_placeholder.entity_records[0]
-        .relation_expression
-        .as_ref()
+        .relation_expression()
         .expect("relation expression")
         .signature()
         .is_none());
@@ -424,8 +416,7 @@ fn relation_expression_signature_requires_exact_outer_whitespace() {
 
         assert!(
             native.entity_records[0]
-                .relation_expression
-                .as_ref()
+                .relation_expression()
                 .expect("relation expression")
                 .signature()
                 .is_none(),
@@ -440,8 +431,7 @@ fn native_migrates_and_validates_relation_signature_outer_whitespace() {
         &standard_catpart_with_relation_expression_signature("param", "", "( ) : LENGTH"),
     );
     assert!(native.entity_records[0]
-        .relation_expression
-        .as_ref()
+        .relation_expression()
         .expect("relation expression")
         .signature()
         .is_none());
@@ -452,8 +442,7 @@ fn native_migrates_and_validates_relation_signature_outer_whitespace() {
         .expect("store whitespace signature");
     let loaded = crate::native::CatiaNative::load(&namespace).expect("load whitespace signature");
     assert!(loaded.entity_records[0]
-        .relation_expression
-        .as_ref()
+        .relation_expression()
         .expect("relation expression")
         .signature()
         .is_none());
@@ -469,8 +458,7 @@ fn relation_expression_signature_rejects_duplicate_inputs() {
         ));
 
     assert!(native.entity_records[0]
-        .relation_expression
-        .as_ref()
+        .relation_expression()
         .expect("relation expression")
         .signature()
         .is_none());
@@ -486,8 +474,7 @@ fn relation_expression_signature_requires_canonical_parameter_symbols() {
 
         assert!(
             native.entity_records[0]
-                .relation_expression
-                .as_ref()
+                .relation_expression()
                 .expect("relation expression")
                 .signature()
                 .is_none(),
@@ -505,15 +492,14 @@ fn native_migrates_and_validates_relation_signature_parameter_symbols() {
             "(#1_ : #In LENGTH) : Real",
         ));
     let expected = native.entity_records[0]
-        .relation_expression
-        .clone()
+        .relation_expression().cloned()
         .expect("relation expression");
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut namespace)
         .expect("store relation signature");
     let loaded = crate::native::CatiaNative::load(&namespace).expect("load relation signature");
-    assert_eq!(loaded.entity_records[0].relation_expression, Some(expected));
+    assert_eq!(loaded.entity_records[0].relation_expression(), Some(&expected));
 }
 
 #[test]
@@ -521,7 +507,7 @@ fn relation_expression_requires_every_exact_role() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression("parameter"));
 
-    assert!(native.entity_records[0].relation_expression.is_none());
+    assert!(native.entity_records[0].relation_expression().is_none());
 }
 
 #[test]
@@ -535,8 +521,7 @@ fn relation_expression_signature_requires_the_selected_placeholder() {
 
     let native = crate::native::CatiaNative::decode(&file);
     assert!(native.entity_records[0]
-        .relation_expression
-        .as_ref()
+        .relation_expression()
         .expect("complete relation expression")
         .signature()
         .is_none());

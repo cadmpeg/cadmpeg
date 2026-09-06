@@ -11,7 +11,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
 pub(crate) mod entity_record;
-use entity_record::{CatiaEntityRecord, CatiaEntityRecordBody, CatiaEntityObjectProduction};
+use entity_record::{CatiaEntityRecord, CatiaEntityRecordBody, CatiaEntityObjectProduction, CatiaEntityValueProduction};
 
 pub(crate) mod owner_chart;
 use owner_chart::{
@@ -4297,12 +4297,12 @@ fn design_objects(
 ) -> Vec<CatiaDesignObject> {
     let definition_value_entities = entity_records
         .iter()
-        .filter(|entity| entity.definition_value.is_some())
+        .filter(|entity| entity.definition_value().is_some())
         .map(|entity| entity.id.as_str())
         .collect::<HashSet<_>>();
     let definition_chain_value_entities = entity_records
         .iter()
-        .filter(|entity| entity.definition_chain_value.is_some())
+        .filter(|entity| entity.definition_chain_value().is_some())
         .map(|entity| entity.id.as_str())
         .collect::<HashSet<_>>();
     graphs
@@ -4757,6 +4757,57 @@ fn entity_suffix_schema_selection(
         entry: entry.id.clone(),
         name: entry.value.clone(),
         value,
+    })
+}
+
+fn value_production(
+    entity: &CatiaEntityRecord,
+    records: &[CatiaObjectRecord],
+    value_fields: &[value_block::ValueField],
+) -> Option<CatiaEntityValueProduction> {
+    relation_expression(
+        &entity.definition_schema_selections,
+        &entity.value_schema_selections,
+    )
+    .map(CatiaEntityValueProduction::RelationExpression)
+    .or_else(|| {
+        parameter_value(
+            entity.lead,
+            &entity.value_schema_selections,
+            entity.suffix_value(),
+        )
+        .map(CatiaEntityValueProduction::ParameterValue)
+    })
+    .or_else(|| {
+        resolved_constraint_range(
+            entity.lead,
+            &entity.value_schema_selections,
+            entity.suffix_value(),
+            records,
+            &entity.object_graph,
+            entity.entity_id,
+        )
+        .map(CatiaEntityValueProduction::ConstraintRange)
+    })
+    .or_else(|| {
+        definition_value(
+            entity.lead,
+            &entity.definition_schema_selections,
+            value_fields,
+            entity.suffix_value(),
+            entity.suffix_schema_selection.as_ref(),
+        )
+        .map(CatiaEntityValueProduction::DefinitionValue)
+    })
+    .or_else(|| {
+        definition_chain_value(
+            entity.lead,
+            &entity.definition_schema_selections,
+            value_fields,
+            entity.suffix_value(),
+            entity.suffix_schema_selection.as_ref(),
+        )
+        .map(CatiaEntityValueProduction::DefinitionChainValue)
     })
 }
 
@@ -5407,19 +5458,46 @@ fn object_production(
     expression_entities: &CatiaRelationExpressionEntityIndex,
     parameters: &CatiaParameterBindingIndex,
 ) -> Option<CatiaEntityObjectProduction> {
-    relation_program_instance(entity.entity_id, object, references, expression_entities, parameters)
-        .map(CatiaEntityObjectProduction::RelationProgramInstance)
-        .or_else(|| schema_configuration_record(
-            entity.entity_id, object, &entity.value_schema_selections,
-            references.entities, references.classes, references.terminal_nulls,
-        ).map(CatiaEntityObjectProduction::SchemaConfigurationRecord))
-        .or_else(|| schema_configuration_row_link(
-            entity.entity_id, object, references.entities, references.classes, references.terminal_nulls,
-        ).map(CatiaEntityObjectProduction::SchemaConfigurationRowLink))
-        .or_else(|| formula_relation(
-            &entity.definition_schema_selections, entity.entity_id, object,
-            expressions, references, parameters,
-        ).map(CatiaEntityObjectProduction::FormulaRelation))
+    relation_program_instance(
+        entity.entity_id,
+        object,
+        references,
+        expression_entities,
+        parameters,
+    )
+    .map(CatiaEntityObjectProduction::RelationProgramInstance)
+    .or_else(|| {
+        schema_configuration_record(
+            entity.entity_id,
+            object,
+            &entity.value_schema_selections,
+            references.entities,
+            references.classes,
+            references.terminal_nulls,
+        )
+        .map(CatiaEntityObjectProduction::SchemaConfigurationRecord)
+    })
+    .or_else(|| {
+        schema_configuration_row_link(
+            entity.entity_id,
+            object,
+            references.entities,
+            references.classes,
+            references.terminal_nulls,
+        )
+        .map(CatiaEntityObjectProduction::SchemaConfigurationRowLink)
+    })
+    .or_else(|| {
+        formula_relation(
+            &entity.definition_schema_selections,
+            entity.entity_id,
+            object,
+            expressions,
+            references,
+            parameters,
+        )
+        .map(CatiaEntityObjectProduction::FormulaRelation)
+    })
 }
 
 fn relation_program_instance(
@@ -6070,7 +6148,7 @@ fn semantic_entity_indices(
     let relation_expressions = entities
         .iter()
         .filter_map(|entity| {
-            let expression = entity.relation_expression.as_ref()?;
+            let expression = entity.relation_expression()?;
             Some((
                 entity.object_record.clone(),
                 expression.expression.value.clone(),
@@ -6080,7 +6158,7 @@ fn semantic_entity_indices(
     let relation_expression_entities = entities
         .iter()
         .filter_map(|entity| {
-            let expression = entity.relation_expression.as_ref()?;
+            let expression = entity.relation_expression()?;
             Some((
                 (entity.object_graph.clone(), entity.entity_id),
                 CatiaRelationExpressionEntity {
@@ -6116,7 +6194,7 @@ fn semantic_entity_indices(
         .collect();
     let mut parameter_bindings = CatiaParameterBindingIndex::new();
     for entity in entities {
-        let Some(parameter) = &entity.parameter_value else {
+        let Some(parameter) = entity.parameter_value() else {
             continue;
         };
         parameter_bindings
@@ -9347,19 +9425,11 @@ impl CatiaNative {
                 let value_fields = entity.value_fields();
                 entity.value_schema_selections =
                     entity_value_schema_selections(&value_fields, catalog, &entity.value_packets);
-                entity.relation_expression = relation_expression(
-                    &entity.definition_schema_selections,
-                    &entity.value_schema_selections,
-                );
                 let record_suffix = entity.record_suffix().to_vec();
                 entity.set_suffix_from_bytes(&record_suffix);
                 entity.suffix_schema_selection =
                     entity_suffix_schema_selection(entity.suffix_value(), catalog);
-                entity.parameter_value = parameter_value(
-                    entity.lead,
-                    &entity.value_schema_selections,
-                    entity.suffix_value(),
-                );
+                entity.value_production = value_production(entity, &graph.records, &value_fields);
                 entity.range_interval = range_interval(
                     entity.value_payload(),
                     &entity.value_schema_selections,
@@ -9367,28 +9437,6 @@ impl CatiaNative {
                     &graph.records,
                     &graph.id,
                     entity.entity_id,
-                );
-                entity.constraint_range = resolved_constraint_range(
-                    entity.lead,
-                    &entity.value_schema_selections,
-                    entity.suffix_value(),
-                    &graph.records,
-                    &graph.id,
-                    entity.entity_id,
-                );
-                entity.definition_value = definition_value(
-                    entity.lead,
-                    &entity.definition_schema_selections,
-                    &value_fields,
-                    entity.suffix_value(),
-                    entity.suffix_schema_selection.as_ref(),
-                );
-                entity.definition_chain_value = definition_chain_value(
-                    entity.lead,
-                    &entity.definition_schema_selections,
-                    &value_fields,
-                    entity.suffix_value(),
-                    entity.suffix_schema_selection.as_ref(),
                 );
             }
         }
@@ -9902,12 +9950,8 @@ fn native_object_graph(
                 entity_id: entity.entity_id,
                 value_schema_selections: Vec::new(),
                 object_production: None,
-                relation_expression: None,
-                parameter_value: None,
+                value_production: None,
                 range_interval: None,
-                constraint_range: None,
-                definition_value: None,
-                definition_chain_value: None,
                 value_packets,
                 numeric_pair,
                 reference_signature: reference_signature.map(|production| {

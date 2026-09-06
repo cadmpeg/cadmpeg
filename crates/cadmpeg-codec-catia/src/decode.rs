@@ -769,7 +769,7 @@ fn finish_decode(
     ) = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_expression.as_ref())
+        .filter_map(|record| record.relation_expression())
         .fold(
             (0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
             |(total, placeholder, parser, boolean, opened, typed), expression| {
@@ -800,7 +800,7 @@ fn finish_decode(
     let parameter_value_count = native
         .entity_records
         .iter()
-        .filter(|record| record.parameter_value.is_some())
+        .filter(|record| record.parameter_value().is_some())
         .count();
     let (
         range_interval_count,
@@ -848,7 +848,7 @@ fn finish_decode(
     ) = native
         .entity_records
         .iter()
-        .filter_map(|record| record.constraint_range.as_ref())
+        .filter_map(|record| record.constraint_range())
         .fold(
             (0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
             |(total, dimensions, complex, evaluated, unset), range| {
@@ -873,7 +873,7 @@ fn finish_decode(
     let unresolved_dimension_quantity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.constraint_range.as_ref())
+        .filter_map(|record| record.constraint_range())
         .filter(|range| {
             matches!(
                 range.framing,
@@ -901,7 +901,7 @@ fn finish_decode(
         native
             .entity_records
             .iter()
-            .filter_map(|record| record.constraint_range.as_ref())
+            .filter_map(|record| record.constraint_range())
             .map(|range| {
                 (
                     range.incoming_references.as_slice(),
@@ -932,7 +932,7 @@ fn finish_decode(
     let definition_value_count = native
         .entity_records
         .iter()
-        .filter(|record| record.definition_value.is_some())
+        .filter(|record| record.definition_value().is_some())
         .count();
     let owned_definition_value_count = native
         .design_objects
@@ -954,7 +954,7 @@ fn finish_decode(
     ) = native
         .entity_records
         .iter()
-        .filter_map(|record| record.definition_chain_value.as_ref())
+        .filter_map(|record| record.definition_chain_value())
         .fold(
             (
                 0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize,
@@ -1221,8 +1221,7 @@ fn finish_decode(
         .iter()
         .filter(|entity| {
             entity
-                .relation_expression
-                .as_ref()
+                .relation_expression()
                 .is_some_and(|expression| expression.signature().is_some())
         })
         .map(|entity| entity.id.as_str())
@@ -1429,7 +1428,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.relation_expression.is_some()
+            record.relation_expression().is_some()
                 && referenced_relation_expressions.contains(record.id.as_str())
         })
         .count();
@@ -1669,7 +1668,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.definition_chain_value.is_some()
+            record.definition_chain_value().is_some()
                 && object_records_by_id
                     .get(record.object_record.as_str())
                     .is_some_and(|record| record.has_unassigned_owner())
@@ -1679,7 +1678,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.definition_chain_value.as_ref().is_some_and(|value| {
+            record.definition_chain_value().is_some_and(|value| {
                 matches!(
                     &value.value,
                     crate::native::CatiaEntitySuffixSchemaValue::Evaluation { .. }
@@ -1694,7 +1693,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.definition_chain_value.as_ref().is_some_and(|value| {
+            record.definition_chain_value().is_some_and(|value| {
                 matches!(
                     &value.value,
                     crate::native::CatiaEntitySuffixSchemaValue::Evaluation { .. }

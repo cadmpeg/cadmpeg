@@ -15,13 +15,10 @@ use crate::value_block;
 
 use super::*;
 use super::{
-    consolidated_vertex_identities, containing_finjpl_segment, definition_chain_value,
-    definition_schema_selections, definition_value, derive_reference_signature_cohorts,
+    consolidated_vertex_identities, containing_finjpl_segment, definition_schema_selections, derive_reference_signature_cohorts,
     derive_schema_configuration_row_chains, design_object_id, design_objects, entity_class_index,
     entity_incidences, entity_suffix_schema_selection, entity_suffix_value,
-    entity_value_schema_selections, external_reference_views, finjpl_family, parameter_value, preview_views, range_interval, reference_signature, relation_expression,
-    repeated_reference_schema_selection, resolved_constraint_range,
-    resolved_payload_references, resolved_storage_link, semantic_entity_indices, store_projection,
+    entity_value_schema_selections, external_reference_views, finjpl_family, preview_views, range_interval, reference_signature, repeated_reference_schema_selection, resolved_payload_references, resolved_storage_link, semantic_entity_indices, store_projection,
     terminal_null_entity_id, valid_legacy_identifier, value_schema_selections,
     zero_entity_endpoint_locus_candidates, zero_entity_endpoint_pair_candidates,
     zero_entity_record, zero_entity_vertex_owner, CatiaEntityReferenceIndex,

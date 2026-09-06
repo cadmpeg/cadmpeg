@@ -71,7 +71,7 @@ fn pmi_id(source_offset: u64) -> PmiId {
 
 fn dimension_definition(entity: &CatiaEntityRecord) -> Option<PmiDefinition> {
     let range = entity.range_interval.as_ref()?;
-    if entity.constraint_range.is_some() {
+    if entity.constraint_range().is_some() {
         return None;
     }
     range_only_dimension_definition(entity, range)
@@ -197,8 +197,6 @@ use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
             definition_schema_selections: Vec::new(),
             entity_id: 1,
             value_schema_selections: Vec::new(),
-            relation_expression: None,
-            parameter_value: None,
             range_interval: Some(CatiaRangeInterval {
                 range: schema_value("Range"),
                 interval: RangeInterval {
@@ -222,7 +220,7 @@ use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
                 incoming_references: Vec::new(),
                 incoming_storage_references: Vec::new(),
             }),
-            constraint_range: Some(CatiaConstraintRange {
+            value_production: Some(crate::native::entity_record::CatiaEntityValueProduction::ConstraintRange(CatiaConstraintRange {
                 range: schema_value("Range"),
                 constraint: schema_value("CstAttr_Dimension"),
                 framing: CatiaConstraintRangeFraming::DimensionDC,
@@ -230,9 +228,7 @@ use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
                 evaluation_opcode_offset: 0,
                 incoming_references: Vec::new(),
                 incoming_storage_references: Vec::new(),
-            }),
-            definition_value: None,
-            definition_chain_value: None,
+            })),
             object_production: None,
             value_packets: Vec::new(),
             numeric_pair: None,
@@ -279,7 +275,7 @@ use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
             payload_offset: 7,
             source: CatiaObjectRecordReferenceSource::Field,
         }];
-        entity.constraint_range = None;
+        entity.value_production = None;
         entity
     }
 

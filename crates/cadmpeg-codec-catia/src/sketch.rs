@@ -616,7 +616,7 @@ pub(crate) fn transfer_constraint_ranges(
     let mut transferred = HashSet::new();
 
     for entity in &native.entity_records {
-        let Some(range) = entity.constraint_range.as_ref() else {
+        let Some(range) = entity.constraint_range() else {
             continue;
         };
         let Some(binding) =
@@ -1043,13 +1043,9 @@ use crate::native::entity_record::{CatiaEntityRecordBody};
             definition_schema_selections: Vec::new(),
             entity_id,
             value_schema_selections: Vec::new(),
-            relation_expression: None,
-            parameter_value: None,
             range_interval: None,
-            constraint_range: None,
-            definition_value: None,
-            definition_chain_value: None,
             object_production: None,
+            value_production: None,
             value_packets: Vec::new(),
             numeric_pair: None,
             reference_signature: None,
@@ -1060,7 +1056,7 @@ use crate::native::entity_record::{CatiaEntityRecordBody};
 
     fn fixture(storage: bool) -> (CadIr, CatiaNative, DesignFeatureTransfer, HashSet<String>) {
         let mut range_entity = entity_record("catia:outer:entity-record#range", "range-record", 10);
-        range_entity.constraint_range = Some(CatiaConstraintRange {
+        range_entity.value_production = Some(crate::native::entity_record::CatiaEntityValueProduction::ConstraintRange(CatiaConstraintRange {
             range: CatiaEntitySchemaValue {
                 offset: 2,
                 ordinal: 3,
@@ -1080,7 +1076,7 @@ use crate::native::entity_record::{CatiaEntityRecordBody};
             evaluation_opcode_offset: 6,
             incoming_references: Vec::new(),
             incoming_storage_references: Vec::new(),
-        });
+        }));
         let mut source_record = object_record(
             "source-record",
             Some("source-object"),
@@ -1090,8 +1086,7 @@ use crate::native::entity_record::{CatiaEntityRecordBody};
         );
         if storage {
             range_entity
-                .constraint_range
-                .as_mut()
+                .constraint_range_mut()
                 .expect("constraint range")
                 .incoming_storage_references
                 .push(crate::native::CatiaEntityIncomingStorageReference {
@@ -1110,8 +1105,7 @@ use crate::native::entity_record::{CatiaEntityRecordBody};
             });
         } else {
             range_entity
-                .constraint_range
-                .as_mut()
+                .constraint_range_mut()
                 .expect("constraint range")
                 .incoming_references
                 .push(CatiaEntityIncomingReference {
@@ -1801,8 +1795,7 @@ use crate::native::entity_record::{CatiaEntityRecordBody};
     fn refuses_a_constraint_range_with_repeated_incidences() {
         let (mut ir, mut native, transfer, graph_scope) = fixture(false);
         let range = native.entity_records[0]
-            .constraint_range
-            .as_mut()
+            .constraint_range_mut()
             .expect("constraint range");
         range
             .incoming_references

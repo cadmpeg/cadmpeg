@@ -909,7 +909,7 @@ fn native_operation_definition_properties(
         .iter()
         .flat_map(|owned| owned.definition_values.iter())
         .filter_map(|entity_id| entities.get(entity_id.as_str()).copied())
-        .filter(|entity| entity.definition_value.is_some())
+        .filter(|entity| entity.definition_value().is_some())
         .collect::<Vec<_>>();
     definition_values.sort_by(|left, right| {
         left.byte_offset
@@ -923,8 +923,7 @@ fn native_operation_definition_properties(
         let prefix = format!("catia_definition_value_{ordinal}");
         properties.insert(format!("{prefix}_entity"), entity.id.clone());
         let value = entity
-            .definition_value
-            .as_ref()
+            .definition_value()
             .expect("definition values were filtered to complete records");
         insert_schema_value_properties(
             &mut properties,
@@ -949,7 +948,7 @@ fn native_operation_definition_properties(
         .iter()
         .flat_map(|owned| owned.definition_chain_values.iter())
         .filter_map(|entity_id| entities.get(entity_id.as_str()).copied())
-        .filter(|entity| entity.definition_chain_value.is_some())
+        .filter(|entity| entity.definition_chain_value().is_some())
         .collect::<Vec<_>>();
     definition_chain_values.sort_by(|left, right| {
         left.byte_offset
@@ -963,8 +962,7 @@ fn native_operation_definition_properties(
         let prefix = format!("catia_definition_chain_value_{ordinal}");
         properties.insert(format!("{prefix}_entity"), entity.id.clone());
         let value = entity
-            .definition_chain_value
-            .as_ref()
+            .definition_chain_value()
             .expect("definition chains were filtered to complete records");
         insert_schema_value_properties(
             &mut properties,

@@ -383,8 +383,7 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
 
     let mut empty_binding_native = native.clone();
     empty_binding_native.entity_records[2]
-        .parameter_value
-        .as_mut()
+        .parameter_value_mut()
         .expect("complete input parameter")
         .binding
         .value

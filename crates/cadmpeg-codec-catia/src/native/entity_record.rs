@@ -14,6 +14,16 @@ use crate::{entity_table, value_block};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Complete production selected by the entity value and suffix frames.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CatiaEntityValueProduction {
+    RelationExpression(CatiaRelationExpression),
+    ParameterValue(CatiaParameterValue),
+    ConstraintRange(CatiaConstraintRange),
+    DefinitionValue(CatiaDefinitionValue),
+    DefinitionChainValue(CatiaDefinitionChainValue),
+}
+
 /// Complete production of the paired object payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CatiaEntityObjectProduction {
@@ -83,18 +93,10 @@ pub struct CatiaEntityRecord {
     pub value_schema_selections: Vec<CatiaEntityValueSchemaSelection>,
     /// Mutually exclusive production of the paired object payload.
     pub object_production: Option<CatiaEntityObjectProduction>,
-    /// Complete relation-expression program carried by the value selectors.
-    pub relation_expression: Option<CatiaRelationExpression>,
-    /// Complete named parameter-value production.
-    pub parameter_value: Option<CatiaParameterValue>,
+    /// Exclusive value/suffix production; the independent Range interval remains separate.
+    pub value_production: Option<CatiaEntityValueProduction>,
     /// Complete source-schema `Range` interval production.
     pub range_interval: Option<CatiaRangeInterval>,
-    /// Complete constraint-range production.
-    pub constraint_range: Option<CatiaConstraintRange>,
-    /// Complete suffix value bound to the entity's sole definition selector.
-    pub definition_value: Option<CatiaDefinitionValue>,
-    /// Complete value bound by a two-definition role chain.
-    pub definition_chain_value: Option<CatiaDefinitionChainValue>,
     /// Exact packets in the value program, in source order.
     pub value_packets: Vec<entity_table::EntityValuePacket>,
     /// Complete nullable numeric pair when the entire `7C07` payload has that production.
@@ -122,6 +124,81 @@ impl CatiaEntityRecordBody {
 }
 
 impl CatiaEntityRecord {
+    pub fn relation_expression(&self) -> Option<&CatiaRelationExpression> {
+        match &self.value_production {
+            Some(CatiaEntityValueProduction::RelationExpression(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn relation_expression_mut(&mut self) -> Option<&mut CatiaRelationExpression> {
+        match &mut self.value_production {
+            Some(CatiaEntityValueProduction::RelationExpression(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn parameter_value(&self) -> Option<&CatiaParameterValue> {
+        match &self.value_production {
+            Some(CatiaEntityValueProduction::ParameterValue(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn parameter_value_mut(&mut self) -> Option<&mut CatiaParameterValue> {
+        match &mut self.value_production {
+            Some(CatiaEntityValueProduction::ParameterValue(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn constraint_range(&self) -> Option<&CatiaConstraintRange> {
+        match &self.value_production {
+            Some(CatiaEntityValueProduction::ConstraintRange(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn constraint_range_mut(&mut self) -> Option<&mut CatiaConstraintRange> {
+        match &mut self.value_production {
+            Some(CatiaEntityValueProduction::ConstraintRange(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn definition_value(&self) -> Option<&CatiaDefinitionValue> {
+        match &self.value_production {
+            Some(CatiaEntityValueProduction::DefinitionValue(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn definition_value_mut(&mut self) -> Option<&mut CatiaDefinitionValue> {
+        match &mut self.value_production {
+            Some(CatiaEntityValueProduction::DefinitionValue(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn definition_chain_value(&self) -> Option<&CatiaDefinitionChainValue> {
+        match &self.value_production {
+            Some(CatiaEntityValueProduction::DefinitionChainValue(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn definition_chain_value_mut(&mut self) -> Option<&mut CatiaDefinitionChainValue> {
+        match &mut self.value_production {
+            Some(CatiaEntityValueProduction::DefinitionChainValue(value)) => Some(value),
+            _ => None,
+        }
+    }
+
     pub fn relation_program_instance(&self) -> Option<&CatiaRelationProgramInstance> {
         match &self.object_production {
             Some(CatiaEntityObjectProduction::RelationProgramInstance(value)) => Some(value),
@@ -417,6 +494,30 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
             }
             None => (None, None, None, None),
         };
+        let (
+            relation_expression,
+            parameter_value,
+            constraint_range,
+            definition_value,
+            definition_chain_value,
+        ) = match value.value_production {
+            Some(CatiaEntityValueProduction::RelationExpression(value)) => {
+                (Some(value), None, None, None, None)
+            }
+            Some(CatiaEntityValueProduction::ParameterValue(value)) => {
+                (None, Some(value), None, None, None)
+            }
+            Some(CatiaEntityValueProduction::ConstraintRange(value)) => {
+                (None, None, Some(value), None, None)
+            }
+            Some(CatiaEntityValueProduction::DefinitionValue(value)) => {
+                (None, None, None, Some(value), None)
+            }
+            Some(CatiaEntityValueProduction::DefinitionChainValue(value)) => {
+                (None, None, None, None, Some(value))
+            }
+            None => (None, None, None, None, None),
+        };
         Self {
             id: value.id,
             object_graph: value.object_graph,
@@ -435,12 +536,12 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
             value_payload,
             value_fields,
             value_schema_selections: value.value_schema_selections,
-            relation_expression: value.relation_expression,
-            parameter_value: value.parameter_value,
+            relation_expression,
+            parameter_value,
             range_interval: value.range_interval,
-            constraint_range: value.constraint_range,
-            definition_value: value.definition_value,
-            definition_chain_value: value.definition_chain_value,
+            constraint_range,
+            definition_value,
+            definition_chain_value,
             relation_program_instance,
             schema_configuration_record,
             schema_configuration_row_link,
@@ -518,6 +619,31 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             (None, None, None, None) => None,
             _ => return Err("entity record has incompatible object payload productions".to_owned()),
         };
+        let value_production = match (
+            wire.relation_expression,
+            wire.parameter_value,
+            wire.constraint_range,
+            wire.definition_value,
+            wire.definition_chain_value,
+        ) {
+            (Some(value), None, None, None, None) => {
+                Some(CatiaEntityValueProduction::RelationExpression(value))
+            }
+            (None, Some(value), None, None, None) => {
+                Some(CatiaEntityValueProduction::ParameterValue(value))
+            }
+            (None, None, Some(value), None, None) => {
+                Some(CatiaEntityValueProduction::ConstraintRange(value))
+            }
+            (None, None, None, Some(value), None) => {
+                Some(CatiaEntityValueProduction::DefinitionValue(value))
+            }
+            (None, None, None, None, Some(value)) => {
+                Some(CatiaEntityValueProduction::DefinitionChainValue(value))
+            }
+            (None, None, None, None, None) => None,
+            _ => return Err("entity record has incompatible value/suffix productions".to_owned()),
+        };
         Ok(Self {
             id: wire.id,
             object_graph: wire.object_graph,
@@ -531,12 +657,8 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             entity_id: wire.entity_id,
             value_schema_selections: wire.value_schema_selections,
             object_production,
-            relation_expression: wire.relation_expression,
-            parameter_value: wire.parameter_value,
+            value_production,
             range_interval: wire.range_interval,
-            constraint_range: wire.constraint_range,
-            definition_value: wire.definition_value,
-            definition_chain_value: wire.definition_chain_value,
             value_packets: wire.value_packets,
             numeric_pair: wire.numeric_pair,
             reference_signature: wire.reference_signature,
@@ -569,5 +691,31 @@ mod tests {
         assert!(error
             .to_string()
             .contains("incompatible object payload productions"));
+    }
+
+    #[test]
+    fn wire_rejects_competing_value_productions() {
+        use crate::native::{CatiaEntitySchemaValue, CatiaEntitySuffixPayload};
+
+        let native = CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
+        let entity = &native.entity_records[2];
+        assert!(entity.parameter_value().is_some());
+        let mut wire = serde_json::to_value(entity).expect("serialize parameter entity");
+        wire["definition_value"] = serde_json::to_value(CatiaDefinitionValue {
+            definition: CatiaEntitySchemaValue {
+                offset: 0,
+                ordinal: 1,
+                entry: "definition-entry".to_owned(),
+                value: "definition".to_owned(),
+            },
+            payload: CatiaEntitySuffixPayload::Atom { value: 1 },
+            schema_selection: None,
+        })
+        .expect("serialize definition production");
+        let error = serde_json::from_value::<CatiaEntityRecord>(wire)
+            .expect_err("a named parameter and a definition value require distinct value frames");
+        assert!(error
+            .to_string()
+            .contains("incompatible value/suffix productions"));
     }
 }

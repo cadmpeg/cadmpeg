@@ -155,13 +155,9 @@ fn entity_record(
         definition_schema_selections: Vec::new(),
         entity_id,
         value_schema_selections: Vec::new(),
-        relation_expression: None,
-        parameter_value: None,
         range_interval: None,
-        constraint_range: None,
-        definition_value: None,
-        definition_chain_value: None,
         object_production: None,
+            value_production: None,
         value_packets: Vec::new(),
         numeric_pair: None,
         reference_signature: None,
@@ -774,7 +770,7 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
         .push("definition-entity".to_string());
     operation.fields.push("definition-record".to_string());
     let mut definition_entity = entity_record("definition-entity", "definition-record", 20, 1);
-    definition_entity.definition_value = Some(CatiaDefinitionValue {
+    definition_entity.value_production = Some(crate::native::entity_record::CatiaEntityValueProduction::DefinitionValue(CatiaDefinitionValue {
         definition: CatiaEntitySchemaValue {
             offset: 4,
             ordinal: 2,
@@ -789,7 +785,7 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
             encoding: CatiaEntityEvaluationEncoding::Direct,
         },
         schema_selection: None,
-    });
+    }));
     let native = CatiaNative {
         design_objects: vec![operation],
         object_graphs: vec![CatiaObjectGraph {
@@ -905,7 +901,7 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
     operation.fields.push("definition-chain-record".to_string());
     let mut chain_entity =
         entity_record("definition-chain-entity", "definition-chain-record", 20, 1);
-    chain_entity.definition_chain_value = Some(CatiaDefinitionChainValue {
+    chain_entity.value_production = Some(crate::native::entity_record::CatiaEntityValueProduction::DefinitionChainValue(CatiaDefinitionChainValue {
         selector: CatiaEntitySchemaValue {
             offset: 4,
             ordinal: 2,
@@ -924,7 +920,7 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
                 bits: 12.5_f64.to_bits(),
             },
         },
-    });
+    }));
     let native = CatiaNative {
         design_objects: vec![operation],
         object_graphs: vec![CatiaObjectGraph {
@@ -1054,7 +1050,7 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
         .push("descendant-chain-entity".to_string());
     let mut descendant_entity =
         entity_record("descendant-chain-entity", "descendant-record", 30, 2);
-    descendant_entity.definition_chain_value = Some(CatiaDefinitionChainValue {
+    descendant_entity.value_production = Some(crate::native::entity_record::CatiaEntityValueProduction::DefinitionChainValue(CatiaDefinitionChainValue {
         selector: CatiaEntitySchemaValue {
             offset: 2,
             ordinal: 4,
@@ -1068,7 +1064,7 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
             value: "UnsupportedRole".to_string(),
         },
         value: CatiaEntitySuffixSchemaValue::Atom { value: 3 },
-    });
+    }));
     let native = CatiaNative {
         design_objects: vec![operation, descendant],
         object_graphs: vec![CatiaObjectGraph {
@@ -1530,8 +1526,7 @@ fn pattern_schema_definition_does_not_create_a_feature_instance() {
         &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
     ));
     native.entity_records[0]
-        .definition_value
-        .as_mut()
+        .definition_value_mut()
         .expect("definition value")
         .definition
         .value = "CircPattern".to_string();

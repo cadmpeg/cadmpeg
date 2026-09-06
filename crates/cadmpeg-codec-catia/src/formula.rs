@@ -128,7 +128,7 @@ pub(crate) fn transfer_parameters(
         else {
             continue;
         };
-        let Some(expression) = &expression_entity.relation_expression else {
+        let Some(expression) = expression_entity.relation_expression() else {
             continue;
         };
         let Some(signature) = expression.signature() else {
@@ -237,7 +237,7 @@ pub(crate) fn transfer_parameters(
             .filter(|_| transferable_expression.is_some())
             .and_then(|id| entities.get(id))
         {
-            if let Some(output_value) = &output.parameter_value {
+            if let Some(output_value) = output.parameter_value() {
                 let output_id = neutral_parameter_id(&output.id);
                 if !dependencies.contains(&output_id) {
                     if let Some(value) =
@@ -318,7 +318,7 @@ pub(crate) fn transfer_parameters(
         else {
             continue;
         };
-        let Some(expression) = &expression_entity.relation_expression else {
+        let Some(expression) = expression_entity.relation_expression() else {
             continue;
         };
         let Some(signature) = expression.signature() else {
@@ -483,7 +483,7 @@ pub(crate) fn transfer_parameters(
                 .native_ref
                 .as_ref()
                 .and_then(|native_ref| entities.get(native_ref.as_str()))
-                .is_some_and(|entity| entity.definition_chain_value.is_some())
+                .is_some_and(|entity| entity.definition_chain_value().is_some())
         })
         .count();
     let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
@@ -524,7 +524,7 @@ fn collect_definition_chain_parameters(
     for entity in native.entity_records.iter().filter(|entity| {
         graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
     }) {
-        let Some(chain) = entity.definition_chain_value.as_ref() else {
+        let Some(chain) = entity.definition_chain_value() else {
             continue;
         };
         let Some(candidate) = definition_chain_parameter_candidate(entity, chain) else {
@@ -1164,10 +1164,10 @@ fn typed_entity_parameter_candidate_for_source(
     entity: &crate::native::entity_record::CatiaEntityRecord,
     source_type: &str,
 ) -> Option<FormulaParameterCandidate> {
-    if let Some(parameter) = &entity.parameter_value {
+    if let Some(parameter) = entity.parameter_value() {
         return typed_entity_parameter_candidate(entity, parameter, source_type);
     }
-    let chain = entity.definition_chain_value.as_ref()?;
+    let chain = entity.definition_chain_value()?;
     let candidate = definition_chain_parameter_candidate(entity, chain)?;
     (canonical_parameter_type(source_type) == Some(candidate.parameter_type)).then_some(candidate)
 }
@@ -1291,7 +1291,7 @@ fn relation_program_output_candidate(
     } else {
         type_checked_expression.as_ref()
     })?;
-    let output_value = output_entity.parameter_value.as_ref()?;
+    let output_value = output_entity.parameter_value()?;
     let output_id = neutral_parameter_id(&output_entity.id);
     if dependencies.contains(&output_id) {
         return None;
