@@ -1243,18 +1243,24 @@ pub(crate) fn append_freeform_surface_pools(
             .map(|site| site.point)
             .collect::<Vec<_>>();
         let first = guide
-            .first_derivatives
+            .sites
             .iter()
-            .map(|value| [value[0], value[1], value[2]])
+            .map(|site| {
+                let value = site.first_derivative;
+                [value[0], value[1], value[2]]
+            })
             .collect::<Vec<_>>();
         let second = guide
-            .second_derivatives
+            .sites
             .iter()
-            .map(|value| [value[0], value[1], value[2]])
+            .map(|site| {
+                let value = site.second_derivative;
+                [value[0], value[1], value[2]]
+            })
             .collect::<Vec<_>>();
         let Some((knots, control_points)) = crate::nurbs::quintic_jet_bspline3(
             guide.degree,
-            &guide.knots,
+            &guide.knots(),
             &points,
             &first,
             &second,

@@ -1438,19 +1438,13 @@ fn surface_alias_carrier(
 fn object_stream_pcurve_candidate(
     jet: &crate::families::a5a8::records::A8Pcurve,
 ) -> Option<B5Pcurve> {
-    let (_, control_points) = crate::nurbs::quintic_jet_bspline(
-        jet.degree,
-        &jet.knots,
-        &jet.points,
-        &jet.first_derivatives,
-        &jet.second_derivatives,
-    )?;
+    let (_, control_points) = jet.bspline()?;
     Some(B5Pcurve {
         object_id: jet.object_id,
         surface: jet.support_id,
-        degree: jet.degree,
-        distinct_knots: jet.knots.clone(),
-        multiplicities: vec![jet.degree + 1; jet.knots.len()],
+        degree: crate::families::a5a8::records::A8Pcurve::DEGREE,
+        distinct_knots: jet.knots(),
+        multiplicities: vec![crate::families::a5a8::records::A8Pcurve::DEGREE + 1; jet.sites.len()],
         control_points,
         weights: None,
         parameter_range: Some(jet.range),

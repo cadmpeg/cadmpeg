@@ -425,21 +425,53 @@ pub struct A8Pcurve {
     pub object_id: u32,
     /// Referenced support-surface object identifier.
     pub support_id: u32,
-    /// Parametric curve degree.
-    pub degree: u32,
-    /// Distinct parameter knots.
-    pub knots: Vec<f64>,
     /// Stored UV-jet channel-mode byte.
     #[cfg(test)]
     pub mode: u8,
-    /// UV positions at the knot sites.
-    pub points: Vec<[f64; 2]>,
-    /// UV first derivatives at the knot sites.
-    pub first_derivatives: Vec<[f64; 2]>,
-    /// UV second derivatives at the knot sites.
-    pub second_derivatives: Vec<[f64; 2]>,
+    /// Knot-aligned UV jet sites.
+    pub sites: Vec<A8PcurveSite>,
     /// Native parameter range.
     pub range: [f64; 2],
+}
+
+/// One knot and its complete UV jet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct A8PcurveSite {
+    pub knot: f64,
+    pub point: [f64; 2],
+    pub first_derivative: [f64; 2],
+    pub second_derivative: [f64; 2],
+}
+
+impl A8Pcurve {
+    pub const DEGREE: u32 = 5;
+
+    pub fn knots(&self) -> Vec<f64> {
+        self.sites.iter().map(|site| site.knot).collect()
+    }
+
+    #[cfg(test)]
+    pub fn points(&self) -> Vec<[f64; 2]> {
+        self.sites.iter().map(|site| site.point).collect()
+    }
+
+    pub fn bspline(&self) -> Option<(Vec<f64>, Vec<[f64; 2]>)> {
+        crate::nurbs::quintic_jet_bspline(
+            Self::DEGREE,
+            &self.knots(),
+            &self.sites.iter().map(|site| site.point).collect::<Vec<_>>(),
+            &self
+                .sites
+                .iter()
+                .map(|site| site.first_derivative)
+                .collect::<Vec<_>>(),
+            &self
+                .sites
+                .iter()
+                .map(|site| site.second_derivative)
+                .collect::<Vec<_>>(),
+        )
+    }
 }
 
 /// Decode framed `a5 03 20` consolidated UV jets.
@@ -565,6 +597,12 @@ pub(crate) fn rolling_ball_limit_curve(
 /// One position and unit reference direction in an `a5/a6/a7 03 39` jet.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GuideCurveSite {
+    /// Parameter knot.
+    pub knot: f64,
+    /// Six first-derivative channels.
+    pub first_derivative: [f64; 6],
+    /// Six second-derivative channels.
+    pub second_derivative: [f64; 6],
     /// Guide-curve point.
     pub point: [f64; 3],
     /// Unit direction from the first stored triple to the second.
@@ -580,14 +618,14 @@ pub struct A5GuideCurve {
     pub header_token: u32,
     /// Parametric degree.
     pub degree: u32,
-    /// Distinct parameter knots.
-    pub knots: Vec<f64>,
     /// Position and unit-direction values at the knot sites.
     pub sites: Vec<GuideCurveSite>,
-    /// Six first-derivative channels per site.
-    pub first_derivatives: Vec<[f64; 6]>,
-    /// Six second-derivative channels per site.
-    pub second_derivatives: Vec<[f64; 6]>,
+}
+
+impl A5GuideCurve {
+    pub fn knots(&self) -> Vec<f64> {
+        self.sites.iter().map(|site| site.knot).collect()
+    }
 }
 
 /// One non-rational degree-5 NURBS curve stored in an `a5 13 16` frame.
@@ -756,7 +794,10 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
     let second_derivatives = block(at + 2 * block_bytes)?;
     let sites: Option<Vec<_>> = positions
         .into_iter()
-        .map(|value| {
+        .zip(knots)
+        .zip(first_derivatives)
+        .zip(second_derivatives)
+        .map(|(((value, knot), first_derivative), second_derivative)| {
             let point = [value[0], value[1], value[2]];
             let direction = [
                 value[3] - value[0],
@@ -765,18 +806,20 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
             ];
             let length =
                 (direction[0].powi(2) + direction[1].powi(2) + direction[2].powi(2)).sqrt();
-            ((length - 1.0).abs() < EPS_GUIDE_DIRECTION_UNIT)
-                .then_some(GuideCurveSite { point, direction })
+            ((length - 1.0).abs() < EPS_GUIDE_DIRECTION_UNIT).then_some(GuideCurveSite {
+                knot,
+                point,
+                direction,
+                first_derivative,
+                second_derivative,
+            })
         })
         .collect();
     Some(A5GuideCurve {
         pos: frame.pos,
         header_token: frame.header_token,
         degree,
-        knots,
         sites: sites?,
-        first_derivatives,
-        second_derivatives,
     })
 }
 
@@ -1121,7 +1164,7 @@ fn parse_object_stream_pcurve(
     data.get(..at)?;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     at += if data.get(at) == Some(&0x08) { 2 } else { 1 };
-    if count < 2 || degree != 5 {
+    if count < 2 || degree != A8Pcurve::DEGREE {
         return None;
     }
     let knot_bytes = count.checked_mul(8)?;
@@ -1194,13 +1237,20 @@ fn parse_object_stream_pcurve(
         pos,
         object_id,
         support_id,
-        degree,
-        knots,
         #[cfg(test)]
         mode,
-        points: u.into_iter().zip(v).map(|p| [p.0, p.1]).collect(),
-        first_derivatives: du.into_iter().zip(dv).map(|p| [p.0, p.1]).collect(),
-        second_derivatives: ddu.into_iter().zip(ddv).map(|p| [p.0, p.1]).collect(),
+        sites: knots
+            .into_iter()
+            .zip(u.into_iter().zip(v))
+            .zip(du.into_iter().zip(dv))
+            .zip(ddu.into_iter().zip(ddv))
+            .map(|(((knot, (u, v)), (du, dv)), (ddu, ddv))| A8PcurveSite {
+                knot,
+                point: [u, v],
+                first_derivative: [du, dv],
+                second_derivative: [ddu, ddv],
+            })
+            .collect(),
         range,
     })
 }

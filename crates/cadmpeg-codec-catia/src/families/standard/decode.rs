@@ -2755,11 +2755,7 @@ pub(crate) fn standard_object_evidence_from_streams(
                 .and_modify(|stored| {
                     if stored.as_ref().is_some_and(|stored| {
                         stored.support_id != pcurve.support_id
-                            || stored.degree != pcurve.degree
-                            || stored.knots != pcurve.knots
-                            || stored.points != pcurve.points
-                            || stored.first_derivatives != pcurve.first_derivatives
-                            || stored.second_derivatives != pcurve.second_derivatives
+                            || stored.sites != pcurve.sites
                             || stored.range != pcurve.range
                     }) {
                         *stored = None;

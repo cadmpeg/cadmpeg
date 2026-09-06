@@ -438,7 +438,7 @@ fn a8_pcurve_parser_reads_degree5_uv_jet() {
         (pcurves[0].object_id, pcurves[0].support_id),
         (0x5678, 0x1234)
     );
-    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
+    assert_eq!(pcurves[0].points(), vec![[0.0, 0.0], [1.0, 1.0]]);
     assert_eq!(pcurves[0].range, [0.0, 1.0]);
     assert_eq!(pcurves[0].mode, 0x01);
     let mut wrong_degree = a8_pcurve_stream();
@@ -464,8 +464,8 @@ fn a8_pcurve_parser_reads_degree5_uv_jet() {
 fn a8_pcurve_parser_accepts_frame_bounded_site_count() {
     let pcurves = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream_with_count(8193));
     assert_eq!(pcurves.len(), 1);
-    assert_eq!(pcurves[0].knots.len(), 8193);
-    assert_eq!(pcurves[0].points.len(), 8193);
+    assert_eq!(pcurves[0].knots().len(), 8193);
+    assert_eq!(pcurves[0].points().len(), 8193);
 }
 
 #[test]
@@ -475,7 +475,7 @@ fn a8_pcurve_parser_accepts_finite_large_jet_values() {
     let [pcurve] = crate::families::a5a8::records::a8_pcurves(&bytes)
         .try_into()
         .expect("one pcurve");
-    assert_eq!(pcurve.points[0][0], 2e12);
+    assert_eq!(pcurve.points()[0][0], 2e12);
 
     bytes[40..48].copy_from_slice(&le_f64(f64::NAN));
     assert!(crate::families::a5a8::records::a8_pcurves(&bytes).is_empty());
@@ -488,7 +488,7 @@ fn a8_pcurve_parser_retains_mode_five_uv_jet() {
     let pcurves = crate::families::a5a8::records::a8_pcurves(&bytes);
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].mode, 0x05);
-    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
+    assert_eq!(pcurves[0].points(), vec![[0.0, 0.0], [1.0, 1.0]]);
 }
 
 #[test]
@@ -506,7 +506,7 @@ fn b5_pcurve_parser_reads_degree5_uv_jet() {
         (pcurves[0].object_id, pcurves[0].support_id),
         (0x5678, 0x1234)
     );
-    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
+    assert_eq!(pcurves[0].points(), vec![[0.0, 0.0], [1.0, 1.0]]);
 }
 
 #[test]
@@ -1005,7 +1005,7 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
     let derivatives = vec![[0.0; 3]; 2];
     let (knots, controls) = crate::nurbs::quintic_jet_bspline3(
         curves[0].degree,
-        &curves[0].knots,
+        &curves[0].knots(),
         &points,
         &derivatives,
         &derivatives,
@@ -1021,7 +1021,7 @@ fn guide_curve_parser_accepts_frame_bounded_site_count() {
     let curves =
         crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream_with_count(4097));
     assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].knots.len(), 4097);
+    assert_eq!(curves[0].knots().len(), 4097);
     assert_eq!(curves[0].sites.len(), 4097);
 }
 
@@ -1111,10 +1111,7 @@ fn indexed_a5_record_decoders_match_one_shot_wrappers() {
         assert_eq!(one_shot.pos, indexed.pos);
         assert_eq!(one_shot.header_token, indexed.header_token);
         assert_eq!(one_shot.degree, indexed.degree);
-        assert_eq!(one_shot.knots, indexed.knots);
         assert_eq!(one_shot.sites, indexed.sites);
-        assert_eq!(one_shot.first_derivatives, indexed.first_derivatives);
-        assert_eq!(one_shot.second_derivatives, indexed.second_derivatives);
     }
 
     let nurbs = a5_nurbs_curve_stream();

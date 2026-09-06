@@ -718,19 +718,13 @@ pub(crate) fn resolved_object_stream_pcurve(
     let carrier = graph
         .and_then(|graph| resolved_surface_carrier_in_graph(graph, pcurve.support_id))
         .or_else(|| resolved_surface_carrier(surface))?;
-    let (knots, control_points) = crate::nurbs::quintic_jet_bspline(
-        pcurve.degree,
-        &pcurve.knots,
-        &pcurve.points,
-        &pcurve.first_derivatives,
-        &pcurve.second_derivatives,
-    )?;
+    let (knots, control_points) = pcurve.bspline()?;
     Some(ResolvedObjectStreamPcurve {
         surface_object_id: pcurve.support_id,
         carrier,
         geometry: PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::new(
-                pcurve.degree,
+                crate::families::a5a8::records::A8Pcurve::DEGREE,
                 knots,
                 control_points
                     .into_iter()
