@@ -16679,6 +16679,8 @@ pub enum SketchPointRecordForm {
     },
     /// Class version 11 with same-segment references and eight flags.
     Version11 {
+        /// Optional origin bitfield preceding the persistent identity.
+        entity_genesis: Option<u64>,
         /// Whether four fixed zero bytes follow the repeated companion reference.
         padded_paired_reference: bool,
         persistent_id: u64,
@@ -16687,6 +16689,8 @@ pub enum SketchPointRecordForm {
     },
     /// Class version 11 with inline target-type GUIDs on its references and eight flags.
     Version11InlineTyped {
+        /// Optional origin bitfield preceding the persistent identity.
+        entity_genesis: Option<u64>,
         /// Final inline-typed reference following the repeated companion reference.
         trailing_reference: u32,
         persistent_id: u64,
@@ -16695,24 +16699,21 @@ pub enum SketchPointRecordForm {
     },
 }
 
-impl Default for SketchPointRecordForm {
-    fn default() -> Self {
-        Self::version11(0, SketchPointClosure::Selector0State0)
-    }
-}
-
 impl SketchPointRecordForm {
-    pub(crate) fn version11(persistent_id: u64, closure: SketchPointClosure) -> Self {
+    pub(crate) fn version11(
+        persistent_id: u64,
+        closure: SketchPointClosure,
+        entity_genesis: Option<u64>,
+    ) -> Self {
         Self::Version11 {
+            entity_genesis,
             padded_paired_reference: false,
             persistent_id,
             flags: [false; 8],
             closure,
         }
     }
-}
 
-impl SketchPointRecordForm {
     pub(crate) fn class_version(&self) -> u32 {
         match self {
             Self::Version0 { .. } => 0,
@@ -16830,8 +16831,6 @@ pub struct SketchPoint {
     pub byte_offset: u64,
     /// Byte offset of the first coordinate relative to the record start.
     pub coordinate_offset: u32,
-    /// Optional `EntityGenesis` origin bitfield carried ahead of the point identity.
-    pub entity_genesis: Option<u64>,
     /// Serialized point-record member sequence, identity, flags, and closure.
     pub record_form: SketchPointRecordForm,
     /// Record index of the paired reverse curve-incidence companion.
@@ -16845,6 +16844,17 @@ pub struct SketchPoint {
 }
 
 impl SketchPoint {
+    pub(crate) fn entity_genesis(&self) -> Option<u64> {
+        match self.record_form {
+            SketchPointRecordForm::Version11 { entity_genesis, .. }
+            | SketchPointRecordForm::Version11InlineTyped { entity_genesis, .. } => entity_genesis,
+            SketchPointRecordForm::Version0 { .. }
+            | SketchPointRecordForm::Version8 { .. }
+            | SketchPointRecordForm::Version10 { .. }
+            | SketchPointRecordForm::Version10InlineTyped { .. } => None,
+        }
+    }
+
     pub(crate) fn persistent_id(&self) -> Option<u64> {
         self.record_form.persistent_id()
     }
@@ -16928,6 +16938,15 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
         if wire.flags.iter().any(|flag| *flag > 1) {
             return Err("sketch point flags must be zero or one".into());
         }
+        if wire.entity_genesis.is_some()
+            && !matches!(
+                wire.record_form,
+                SketchPointRecordFormSerde::Version11 { .. }
+                    | SketchPointRecordFormSerde::Version11InlineTyped { .. }
+            )
+        {
+            return Err("sketch point entity_genesis requires version 11".into());
+        }
         let flags = wire.flags.map(|flag| flag == 1);
         let closure = wire.closure.map(SketchPointClosure::try_from).transpose()?;
         let record_form = match (wire.record_form, wire.persistent_id, closure) {
@@ -16972,6 +16991,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 Some(persistent_id),
                 Some(closure),
             ) => SketchPointRecordForm::Version11 {
+                entity_genesis: wire.entity_genesis,
                 padded_paired_reference,
                 persistent_id,
                 flags,
@@ -16982,6 +17002,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 Some(persistent_id),
                 Some(closure),
             ) => SketchPointRecordForm::Version11InlineTyped {
+                entity_genesis: wire.entity_genesis,
                 trailing_reference,
                 persistent_id,
                 flags,
@@ -17005,7 +17026,6 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             class_tag: wire.class_tag,
             byte_offset: wire.byte_offset,
             coordinate_offset: wire.coordinate_offset,
-            entity_genesis: wire.entity_genesis,
             record_form,
             paired_reference: wire.paired_reference,
             coordinates: wire.coordinates,
@@ -17017,6 +17037,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
 
 impl From<SketchPoint> for SketchPointSerde {
     fn from(point: SketchPoint) -> Self {
+        let entity_genesis = point.entity_genesis();
         let persistent_id = point.persistent_id();
         let flags = point.flags();
         let closure = point.closure().map(SketchPointClosureSerde::from);
@@ -17044,7 +17065,7 @@ impl From<SketchPoint> for SketchPointSerde {
             class_tag: point.class_tag,
             byte_offset: point.byte_offset,
             coordinate_offset: point.coordinate_offset,
-            entity_genesis: point.entity_genesis,
+            entity_genesis,
             record_form,
             persistent_id,
             paired_reference: point.paired_reference,

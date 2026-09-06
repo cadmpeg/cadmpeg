@@ -202,10 +202,10 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         class_tag: "300".into(),
         byte_offset: 0,
         coordinate_offset: 0,
-        entity_genesis: None,
         record_form: crate::records::SketchPointRecordForm::version11(
             50,
             crate::records::SketchPointClosure::Selector0State0,
+            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(4.5, 0.0),

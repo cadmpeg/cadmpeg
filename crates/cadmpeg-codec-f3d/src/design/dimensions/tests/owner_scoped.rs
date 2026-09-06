@@ -342,10 +342,10 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         class_tag: "300".into(),
         byte_offset,
         coordinate_offset: 0,
-        entity_genesis: None,
         record_form: crate::records::SketchPointRecordForm::version11(
             u64::from(record_index),
             crate::records::SketchPointClosure::Selector0State0,
+            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(0.0, 0.0),

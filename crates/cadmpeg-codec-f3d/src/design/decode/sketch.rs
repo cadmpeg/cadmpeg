@@ -1421,7 +1421,6 @@ pub(crate) fn decode_sketch_points_from_stream(
             class_tag: frame.class_tag.to_string(),
             byte_offset: frame.start as u64,
             coordinate_offset: decoded.coordinate_offset,
-            entity_genesis: decoded.entity_genesis,
             record_form: decoded.record_form,
             paired_reference: decoded.paired_reference,
             coordinates: Point2::new(u, v),
@@ -2181,7 +2180,6 @@ pub(crate) fn decode_sketch_text_record(
 struct DecodedSketchPoint {
     owner_reference: Option<u32>,
     coordinate_offset: u32,
-    entity_genesis: Option<u64>,
     record_form: SketchPointRecordForm,
     paired_reference: u32,
     coordinates: [f64; 3],
@@ -2260,7 +2258,6 @@ fn decode_version_zero_sketch_point(
     Some(DecodedSketchPoint {
         owner_reference: Some(owner_reference),
         coordinate_offset,
-        entity_genesis: None,
         record_form: SketchPointRecordForm::Version0 { flag: flag == 1 },
         paired_reference,
         coordinates: [x, y, 0.0],
@@ -2398,6 +2395,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 }
                 (
                     SketchPointRecordForm::Version11InlineTyped {
+                        entity_genesis,
                         trailing_reference,
                         persistent_id,
                         flags: flags.map(|flag| flag == 1),
@@ -2418,6 +2416,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
                 (
                     SketchPointRecordForm::Version11 {
+                        entity_genesis,
                         padded_paired_reference,
                         persistent_id,
                         flags: flags.map(|flag| flag == 1),
@@ -2434,7 +2433,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     Some(DecodedSketchPoint {
         owner_reference,
         coordinate_offset,
-        entity_genesis,
         record_form,
         paired_reference,
         coordinates,

@@ -1118,7 +1118,7 @@ fn decode_transfers_generated_protein_appearance() {
         .cloned()
         .expect("point 600");
     assert_eq!(point_600.coordinates.u, -40.0);
-    assert_eq!(point_600.entity_genesis, Some(9));
+    assert_eq!(point_600.entity_genesis(), Some(9));
     assert_eq!(f3d_native(result.ir()).sketch_curve_identities.len(), 2);
     assert_eq!(
         f3d_native(result.ir()).sketch_curve_identities[0].primary_id,

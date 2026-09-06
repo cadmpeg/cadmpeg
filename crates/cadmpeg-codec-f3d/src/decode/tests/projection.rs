@@ -1268,10 +1268,10 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         class_tag: "000".into(),
         byte_offset: 0,
         coordinate_offset: 0,
-        entity_genesis: None,
         record_form: crate::records::SketchPointRecordForm::version11(
             1,
             crate::records::SketchPointClosure::Selector0State0,
+            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(0.0, 0.0),

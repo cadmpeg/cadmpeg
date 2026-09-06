@@ -493,9 +493,9 @@ fn encode_sketch_point(
             point.id
         ))
     })?;
-    let shift = usize::from(point.entity_genesis.is_some()) * 52;
     let SketchPointRecordForm::Version11 {
         padded_paired_reference,
+        entity_genesis,
         persistent_id,
         flags,
         closure,
@@ -506,12 +506,13 @@ fn encode_sketch_point(
             point.id
         )));
     };
+    let shift = usize::from(entity_genesis.is_some()) * 52;
     let mut record = std::iter::repeat_n(0u8, 105 + shift).collect::<Vec<_>>();
     encode_sketch_record_header(&mut record, &point.class_tag, point.record_index)?;
     record[20] = 1;
-    record[21..25].copy_from_slice(&(1 + u32::from(point.entity_genesis.is_some())).to_le_bytes());
-    if let Some(entity_genesis) = point.entity_genesis {
-        encode_entity_genesis(&mut record, entity_genesis);
+    record[21..25].copy_from_slice(&(1 + u32::from(entity_genesis.is_some())).to_le_bytes());
+    if let Some(entity_genesis) = entity_genesis {
+        encode_entity_genesis(&mut record, *entity_genesis);
     }
     record[25 + shift..29 + shift].copy_from_slice(&6u32.to_le_bytes());
     record[29 + shift..35 + shift].copy_from_slice(b"pt_tag");

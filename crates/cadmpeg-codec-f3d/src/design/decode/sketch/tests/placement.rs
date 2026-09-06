@@ -198,10 +198,10 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         class_tag: "256".into(),
         byte_offset: 0,
         coordinate_offset: 141,
-        entity_genesis: Some(2),
         record_form: crate::records::SketchPointRecordForm::version11(
             20,
             crate::records::SketchPointClosure::Selector0State0,
+            Some(2),
         ),
         paired_reference: 0,
         coordinates: Point2::new(120.0, 30.0),
@@ -212,7 +212,6 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     identityless_point.id = "f3d:native:sketch-point#1".into();
     identityless_point.record_index = 21;
     identityless_point.coordinate_offset = 33;
-    identityless_point.entity_genesis = None;
     identityless_point.record_form = crate::records::SketchPointRecordForm::Version0 { flag: false };
 
     // The `EntityGenesis`-flavor frame stores its origin in centimetres
@@ -764,10 +763,10 @@ fn sketch_member_run_backfills_relation_free_owners() {
         class_tag: "256".into(),
         byte_offset: u64::from(record_index),
         coordinate_offset: 141,
-        entity_genesis: Some(2),
         record_form: crate::records::SketchPointRecordForm::version11(
             u64::from(record_index),
             crate::records::SketchPointClosure::Selector0State0,
+            Some(2),
         ),
         paired_reference: 0,
         coordinates: Point2::new(0.0, 0.0),

@@ -496,10 +496,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         class_tag: "258".into(),
         byte_offset: 0,
         coordinate_offset: 89,
-        entity_genesis: Some(900),
         record_form: crate::records::SketchPointRecordForm::version11(
             500,
             crate::records::SketchPointClosure::Selector0State1,
+            Some(900),
         ),
         paired_reference: 101,
         coordinates: Point2::new(12.5, -25.0),
@@ -721,7 +721,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     let native = f3d_native(round_trip.ir());
     assert_eq!(native.sketch_points.len(), 1);
     assert_eq!(native.sketch_points[0].persistent_id(), Some(500));
-    assert_eq!(native.sketch_points[0].entity_genesis, Some(900));
+    assert_eq!(native.sketch_points[0].entity_genesis(), Some(900));
     assert_eq!(native.sketch_points[0].coordinate_offset, 141);
     assert_eq!(native.sketch_points[0].owner_reference, Some(277));
     assert_eq!(native.sketch_points[0].depth, 0.0);
@@ -805,6 +805,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         point.depth = 7.5;
         let persistent_id = point.persistent_id().unwrap_or(0);
         point.record_form = crate::records::SketchPointRecordForm::Version11 {
+            entity_genesis: point.entity_genesis(),
             padded_paired_reference: true,
             persistent_id,
             flags: [true, false, false, true, false, true, false, true],

@@ -247,10 +247,10 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         class_tag: "301".into(),
         byte_offset: 0,
         coordinate_offset: 89,
-        entity_genesis: None,
         record_form: crate::records::SketchPointRecordForm::version11(
             20,
             crate::records::SketchPointClosure::Selector0State0,
+            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(1.0, 2.0),

@@ -125,6 +125,7 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
             assert_eq!(
                 decoded.record_form,
                 SketchPointRecordForm::Version11 {
+            entity_genesis: None,
                     padded_paired_reference,
                     persistent_id: 500,
                     flags: [false; 8],

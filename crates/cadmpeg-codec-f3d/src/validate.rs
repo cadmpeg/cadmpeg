@@ -8158,14 +8158,14 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
         });
         let identity_form_valid = match point.record_form {
             crate::records::SketchPointRecordForm::Version0 { .. } => {
-                point.entity_genesis.is_none() && point.depth == 0.0
+                point.depth == 0.0
             }
             crate::records::SketchPointRecordForm::Version8 { persistent_id, .. }
             | crate::records::SketchPointRecordForm::Version10 { persistent_id, .. }
             | crate::records::SketchPointRecordForm::Version10InlineTyped {
                 persistent_id, ..
-            } => persistent_id != 0 && point.entity_genesis.is_none(),
-            crate::records::SketchPointRecordForm::Version11 { persistent_id, .. }
+            }
+            | crate::records::SketchPointRecordForm::Version11 { persistent_id, .. }
             | crate::records::SketchPointRecordForm::Version11InlineTyped {
                 persistent_id, ..
             } => persistent_id != 0,
