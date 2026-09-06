@@ -28,7 +28,7 @@ impl Type70State {
     pub(crate) fn xmt(&self) -> u32 { self.xmt.into() }
     pub(crate) fn node_id(&self) -> u32 { self.node_id }
     pub(crate) fn references(&self) -> [u32; 4] { self.references }
-    pub(crate) fn trailing_reference(&self) -> u32 { self.trailing_reference.into() }
+    pub(crate) fn trailing_reference(&self) -> NonNullXmt { self.trailing_reference }
 }
 #[derive(Serialize, Deserialize)]
 struct StateWire {
@@ -40,7 +40,7 @@ struct StateWire {
 }
 impl From<Type70State> for StateWire {
     fn from(state: Type70State) -> Self {
-        Self { xmt: state.xmt(), node_id: state.node_id, references: state.references, count: state.count.get(), trailing_reference: state.trailing_reference() }
+        Self { xmt: state.xmt(), node_id: state.node_id, references: state.references, count: state.count.get(), trailing_reference: state.trailing_reference().into() }
     }
 }
 impl TryFrom<StateWire> for Type70State {

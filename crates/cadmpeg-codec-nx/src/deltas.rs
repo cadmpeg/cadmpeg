@@ -27,6 +27,7 @@ use transmit_state::TransmitState;
 use state_frame::{ReferenceStateFrame, StateFrames};
 use state_references::StateReferences;
 use crate::framing::xmt_reference::NonNullXmt;
+use crate::parasolid::entity_references::EntityReferences;
 pub(crate) mod preamble_state;
 use preamble_state::PreambleState;
 pub(crate) mod type150_state;
@@ -132,11 +133,12 @@ pub enum RecordFamily {
         node_id: u32,
     },
     Type70 {
-        references: [u32; 6],
+        references: [u32; 4],
+        trailing_reference: NonNullXmt,
         node_id: u32,
     },
     AttdefList { references: Vec<u32> },
-    Entity51 { references: Vec<u32> },
+    Entity51 { leading_references: [u32; 5], trailing_references: EntityReferences },
     Entity52,
     Entity53,
     Entity54,
@@ -320,48 +322,50 @@ impl RecordFamily {
     }
 
     /// Ordered references retained by this record layout.
-    pub fn references(&self) -> &[u32] {
+    pub fn references(&self) -> Vec<u32> {
         match self {
-            Self::Body { references, .. } => references,
-            Self::Shell { references, .. } => references,
-            Self::Face { references, .. } => references,
-            Self::Loop { references, .. } => references,
-            Self::Edge { references, .. } => references,
-            Self::Fin { references, .. } => references,
-            Self::Vertex { references, .. } => references,
-            Self::Region { references, .. } => references,
-            Self::Point { references, .. } => references,
-            Self::Line { references, .. } => references,
-            Self::Circle { references, .. } => references,
-            Self::Ellipse { references, .. } => references,
-            Self::Intersection { references, .. } => references,
-            Self::Plane { references, .. } => references,
-            Self::Cylinder { references, .. } => references,
-            Self::Cone { references, .. } => references,
-            Self::Sphere { references, .. } => references,
-            Self::Torus { references, .. } => references,
-            Self::BlendSurf { references, .. } => references,
-            Self::BlendBound { references, .. } => references,
-            Self::OffsetSurf { references, .. } => references,
-            Self::Type67 { references, .. } => references,
-            Self::Type70 { references, .. } => references,
-            Self::AttdefList { references, .. } => references,
-            Self::Entity51 { references, .. } => references,
-            Self::Group { references, .. } => references,
-            Self::IntersectionData { references, .. } => references,
-            Self::Type91 { references, .. } => references,
-            Self::Type101 { references, .. } => references,
-            Self::BSurface { references, .. } => references,
-            Self::TrimmedCurve { references, .. } => references,
-            Self::BCurve { references, .. } => references,
-            Self::BCurveDescriptor { references, .. } => references,
-            Self::SpCurve { references, .. } => references,
-            Self::Type141 { references, .. } => references,
+            Self::Body { references, .. } => references.to_vec(),
+            Self::Shell { references, .. } => references.to_vec(),
+            Self::Face { references, .. } => references.to_vec(),
+            Self::Loop { references, .. } => references.to_vec(),
+            Self::Edge { references, .. } => references.to_vec(),
+            Self::Fin { references, .. } => references.to_vec(),
+            Self::Vertex { references, .. } => references.to_vec(),
+            Self::Region { references, .. } => references.to_vec(),
+            Self::Point { references, .. } => references.to_vec(),
+            Self::Line { references, .. } => references.to_vec(),
+            Self::Circle { references, .. } => references.to_vec(),
+            Self::Ellipse { references, .. } => references.to_vec(),
+            Self::Intersection { references, .. } => references.to_vec(),
+            Self::Plane { references, .. } => references.to_vec(),
+            Self::Cylinder { references, .. } => references.to_vec(),
+            Self::Cone { references, .. } => references.to_vec(),
+            Self::Sphere { references, .. } => references.to_vec(),
+            Self::Torus { references, .. } => references.to_vec(),
+            Self::BlendSurf { references, .. } => references.to_vec(),
+            Self::BlendBound { references, .. } => references.to_vec(),
+            Self::OffsetSurf { references, .. } => references.to_vec(),
+            Self::Type67 { references, .. } => references.to_vec(),
+            Self::Type70 { references, trailing_reference, .. } => references.iter().copied()
+                .chain([u32::from(*trailing_reference); 2]).collect(),
+            Self::AttdefList { references, .. } => references.to_vec(),
+            Self::Entity51 { leading_references, trailing_references } => leading_references.iter().copied()
+                .chain(trailing_references.values().iter().copied()).collect(),
+            Self::Group { references, .. } => references.to_vec(),
+            Self::IntersectionData { references, .. } => references.to_vec(),
+            Self::Type91 { references, .. } => references.to_vec(),
+            Self::Type101 { references, .. } => references.to_vec(),
+            Self::BSurface { references, .. } => references.to_vec(),
+            Self::TrimmedCurve { references, .. } => references.to_vec(),
+            Self::BCurve { references, .. } => references.to_vec(),
+            Self::BCurveDescriptor { references, .. } => references.to_vec(),
+            Self::SpCurve { references, .. } => references.to_vec(),
+            Self::Type141 { references, .. } => references.to_vec(),
             Self::Chart | Self::TermUse | Self::Type45
             | Self::Entity52 | Self::Entity53 | Self::Entity54 | Self::Entity55
             | Self::Entity56 | Self::Entity57 | Self::Entity58 | Self::Entity59
             | Self::Entity62 | Self::BSurfaceData | Self::BSurfaceDescriptor
-            | Self::Multiplicities | Self::Knots | Self::BCurveData | Self::SupportUv => &[],
+            | Self::Multiplicities | Self::Knots | Self::BCurveData | Self::SupportUv => Vec::new(),
         }
     }
 
@@ -393,22 +397,6 @@ impl RecordFamily {
             133 => Self::TrimmedCurve { references: references.try_into().ok()?, node_id: node_id? },
             134 => Self::BCurve { references: references.try_into().ok()?, node_id: node_id? },
             137 => Self::SpCurve { references: references.try_into().ok()?, node_id: node_id? },
-            _ => return None,
-        })
-    }
-
-    fn from_variable_kind(kind: u16, references: Vec<u32>) -> Option<Self> {
-        Some(match kind {
-            81 => Self::Entity51 { references },
-            82 => { references.is_empty().then_some(())?; Self::Entity52 },
-            83 => { references.is_empty().then_some(())?; Self::Entity53 },
-            84 => { references.is_empty().then_some(())?; Self::Entity54 },
-            85 => { references.is_empty().then_some(())?; Self::Entity55 },
-            86 => { references.is_empty().then_some(())?; Self::Entity56 },
-            87 => { references.is_empty().then_some(())?; Self::Entity57 },
-            88 => { references.is_empty().then_some(())?; Self::Entity58 },
-            89 => { references.is_empty().then_some(())?; Self::Entity59 },
-            98 => { references.is_empty().then_some(())?; Self::Entity62 },
             _ => return None,
         })
     }
@@ -451,9 +439,21 @@ impl RecordFamily {
             "BLEND_BOUND" => Self::BlendBound { references: references.try_into().ok()? },
             "OFFSET_SURF" => Self::OffsetSurf { references: references.try_into().ok()?, node_id: node_id? },
             "TYPE_67" => Self::Type67 { references: references.try_into().ok()?, node_id: node_id? },
-            "TYPE_70" => Self::Type70 { references: references.try_into().ok()?, node_id: node_id? },
+            "TYPE_70" => {
+                let [a, b, c, d, trailing, repeated] = <[u32; 6]>::try_from(references).ok()?;
+                (trailing == repeated).then_some(())?;
+                Self::Type70 {
+                    references: [a, b, c, d],
+                    trailing_reference: NonNullXmt::try_from(trailing).ok()?,
+                    node_id: node_id?,
+                }
+            },
             "ATTDEF_LIST" => Self::AttdefList { references },
-            "ENTITY_51" => Self::Entity51 { references },
+            "ENTITY_51" => {
+                let leading_references = references.get(..5)?.try_into().ok()?;
+                let trailing_references = EntityReferences::new(references.into_iter().skip(5).collect()).ok()?;
+                Self::Entity51 { leading_references, trailing_references }
+            },
             "ENTITY_52" => { references.is_empty().then_some(())?; Self::Entity52 },
             "ENTITY_53" => { references.is_empty().then_some(())?; Self::Entity53 },
             "ENTITY_54" => { references.is_empty().then_some(())?; Self::Entity54 },
@@ -2870,21 +2870,31 @@ fn fixed_layout(
 }
 
 fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
-    let (xmt, byte_len, references) = match kind {
+    let (xmt, byte_len, family) = match kind {
         81 => {
             let record = crate::parasolid::entity_51_record_at(stream, offset)?;
-            let references = record
-                .leading_references
-                .into_iter()
-                .chain(record.trailing_references.into_values())
-                .collect();
-            (record.xmt.into(), record.byte_len, references)
+            (record.xmt.into(), record.byte_len, RecordFamily::Entity51 {
+                leading_references: record.leading_references,
+                trailing_references: record.trailing_references,
+            })
         }
         82..=89 | 98 => {
             let (parsed_kind, xmt, byte_len) =
                 crate::parasolid::value_records::entity_value_record_identity_at(stream, offset)?;
             (parsed_kind == kind).then_some(())?;
-            (xmt, byte_len, Vec::new())
+            let family = match parsed_kind {
+                82 => RecordFamily::Entity52,
+                83 => RecordFamily::Entity53,
+                84 => RecordFamily::Entity54,
+                85 => RecordFamily::Entity55,
+                86 => RecordFamily::Entity56,
+                87 => RecordFamily::Entity57,
+                88 => RecordFamily::Entity58,
+                89 => RecordFamily::Entity59,
+                98 => RecordFamily::Entity62,
+                _ => return None,
+            };
+            (xmt, byte_len, family)
         }
         90 => return consume_group(stream, offset),
         91 => return consume_type_91(stream, offset),
@@ -2892,12 +2902,9 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
     };
     let end = offset.checked_add(byte_len)?;
     Some(Record {
-        family: RecordFamily::from_variable_kind(kind, references)?,
+        family,
         xmt,
-        canonical_bytes: stream
-            .get(offset..end)
-            .expect("validated variable record bounds")
-            .to_vec(),
+        canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
         end,
     })
@@ -2949,30 +2956,23 @@ fn consume_attdef_list(stream: &[u8], offset: usize) -> Option<Record> {
 
 fn consume_type_70(stream: &[u8], offset: usize) -> Option<Record> {
     (View::u16_be_at(stream, offset) == Some(70)).then_some(())?;
-    let direct = type_70_layout(stream, offset, 0);
+    let direct = type_70_body(stream, offset.checked_add(2)?, TrailingCopies::Two);
     let escaped_marker = stream.get(offset + 2) == Some(&0xff);
     let escaped = escaped_marker
-        .then(|| type_70_layout(stream, offset, 1))
+        .then(|| type_70_body(stream, offset.checked_add(3)?, TrailingCopies::Two))
         .flatten();
-    let (xmt, node_id, references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
+    let (state, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
-        family: RecordFamily::Type70 { node_id, references: references.try_into().ok()? },
-        xmt,
+        family: RecordFamily::Type70 {
+            node_id: state.node_id(),
+            references: state.references(),
+            trailing_reference: state.trailing_reference(),
+        },
+        xmt: state.xmt(),
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
         end,
     })
-}
-
-fn type_70_layout(
-    stream: &[u8],
-    offset: usize,
-    envelope_len: usize,
-) -> Option<(u32, u32, Vec<u32>, usize)> {
-    let body = offset.checked_add(2 + envelope_len)?;
-    let (state, end) = type_70_body(stream, body, TrailingCopies::Two)?;
-    let references = state.references().into_iter().chain([state.trailing_reference(); 2]).collect();
-    Some((state.xmt(), state.node_id(), references, end))
 }
 
 fn type_70_body(
@@ -4355,7 +4355,7 @@ mod inline_schema_tests {
             single_declaration.fields,
             InlineSchemaFields::Type70 {
                 ref state,
-            } if state.trailing_reference() == 45
+            } if u32::from(state.trailing_reference()) == 45
         ));
         assert_eq!(single_declaration.end, single.len());
 
@@ -4365,7 +4365,7 @@ mod inline_schema_tests {
             duplicated_declaration.fields,
             InlineSchemaFields::Type70 {
                 ref state,
-            } if state.trailing_reference() == 11
+            } if u32::from(state.trailing_reference()) == 11
         ));
         assert_eq!(duplicated_declaration.end, duplicated.len());
     }

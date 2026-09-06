@@ -390,7 +390,7 @@ impl From<ParasolidDeltasRecord> for ParasolidDeltasRecordWire {
             kind: value.family.kind(),
             xmt: value.xmt,
             node_id: value.family.node_id(),
-            references: value.family.references().to_vec(),
+            references: value.family.references(),
             group_selector,
             group_linked_reference_status,
             position: value.family.position(),
@@ -449,6 +449,36 @@ mod deltas_record_wire_tests {
                 .unwrap_err().to_string().contains("references"));
         }
     }
+
+    #[test]
+    fn type_70_generates_the_repeated_trailing_reference() {
+        let json = r#"{"id":"type70","stream_ordinal":0,"family":"TYPE_70","kind":70,"xmt":6,"node_id":0,"references":[3,1,1,0,52,52],"position":null,"byte_len":32,"inflated_offset":0}"#;
+        let record: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        for references in [[3,1,1,0,52,53], [3,1,1,0,0,0], [3,1,1,0,1,1]] {
+            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            wire["references"] = serde_json::json!(references);
+            assert!(serde_json::from_value::<ParasolidDeltasRecord>(wire)
+                .unwrap_err().to_string().contains("references"));
+        }
+    }
+
+    #[test]
+    fn entity_51_retains_the_bounded_trailing_lane() {
+        for count in [6, 37] {
+            let references = vec![0; count];
+            let json = format!(r#"{{"id":"entity","stream_ordinal":0,"family":"ENTITY_51","kind":81,"xmt":10,"node_id":null,"references":{},"position":null,"byte_len":32,"inflated_offset":0}}"#, serde_json::to_string(&references).unwrap());
+            let record: ParasolidDeltasRecord = serde_json::from_str(&json).unwrap();
+            assert_eq!(serde_json::to_string(&record).unwrap(), json);
+            for invalid_count in [0, 5, 38] {
+                let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
+                wire["references"] = serde_json::json!(vec![0; invalid_count]);
+                assert!(serde_json::from_value::<ParasolidDeltasRecord>(wire)
+                    .unwrap_err().to_string().contains("references"));
+            }
+        }
+    }
+
 }
 
 /// One compact deletion in a Parasolid deltas stream.
