@@ -1,18 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::om::{OperationLabel, OperationRecord};
+use crate::om::operation_record::OperationPayload;
 use crate::om::direct_reference::{operation_reference_fields, DirectReferenceFrame, ReferenceFieldKind};
 
-fn record(payload: &[u8], payload_offset: usize) -> OperationRecord<'_> {
-    OperationRecord {
-        bytes: payload,
-        payload_offset,
-        payload,
-        label: OperationLabel {
-            header: crate::om::header_references::OperationHeader::<usize>::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
-            value: "EXTRUDE",
-        },
-    }
+fn record(payload: &[u8], payload_offset: usize) -> OperationPayload<'_> {
+    OperationPayload::new(payload, payload_offset, "EXTRUDE").unwrap()
 }
 
 fn data_block_field(index: &[u8]) -> Vec<u8> {

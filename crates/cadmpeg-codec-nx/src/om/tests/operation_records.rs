@@ -2,6 +2,7 @@
 //! Operation-header validation and record-boundary tests.
 
 use super::*;
+use crate::om::operation_record::OperationPayload;
 
 #[test]
 fn unlabeled_operation_header_still_bounds_adjacent_records() {
@@ -19,11 +20,11 @@ fn unlabeled_operation_header_still_bounds_adjacent_records() {
     assert_eq!(labels.len(), 2);
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].0, 0);
-    assert_eq!(records[0].1.label.value, "BLOCK");
-    assert_eq!(records[0].1.payload, b"owned");
+    assert_eq!(records[0].1.label().value, "BLOCK");
+    assert_eq!(records[0].1.payload(), b"owned");
     assert_eq!(records[1].0, 2);
-    assert_eq!(records[1].1.label.value, "SKETCH");
-    assert_eq!(records[1].1.payload, b"tail");
+    assert_eq!(records[1].1.label().value, "SKETCH");
+    assert_eq!(records[1].1.payload(), b"tail");
 
     let unlabeled = unlabeled_operation_records_with_ordinals(&bytes, 100, &labels);
     let [(ordinal, record)] = unlabeled.as_slice() else {
@@ -47,16 +48,8 @@ fn every_body_identity_opens_a_body_write_frame() {
     let payload = [
         0x01, 0x02, 0x11, 0x80, 0xa9, 0x97, 0x75, 0x01, 0x02, 0x10, 0x86, 0x93, 0xff,
     ];
-    let label = OperationLabel {
-        header: crate::om::header_references::OperationHeader::<usize>::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
-        value: "EXTRUDE",
-    };
-    let record = OperationRecord {
-        bytes: &payload,
-        payload_offset: 100,
-        payload: &payload,
-        label,
-    };
+    let label = "EXTRUDE";
+    let record = OperationPayload::new(&payload, 100, label).unwrap();
     let writes = operation_body_write_frames(record);
     let [write] = writes.as_slice() else {
         panic!("one body-write frame");
@@ -69,11 +62,7 @@ fn every_body_identity_opens_a_body_write_frame() {
     for endpoint_tag in [0x12, 0x15] {
         let mut generation = payload;
         generation[9] = endpoint_tag;
-        let writes = operation_body_write_frames(OperationRecord {
-            bytes: &generation,
-            payload: &generation,
-            ..record
-        });
+        let writes = operation_body_write_frames(OperationPayload::new(&generation, record.payload_offset(), record.name()).unwrap());
         let [write] = writes.as_slice() else {
             panic!("generation body-write frame");
         };
@@ -82,11 +71,7 @@ fn every_body_identity_opens_a_body_write_frame() {
 
     let mut invalid_endpoint = payload;
     invalid_endpoint[9] = 0x11;
-    assert!(operation_body_write_frames(OperationRecord {
-        bytes: &invalid_endpoint,
-        payload: &invalid_endpoint,
-        ..record
-    })
+    assert!(operation_body_write_frames(OperationPayload::new(&invalid_endpoint, record.payload_offset(), record.name()).unwrap())
     .is_empty());
 }
 

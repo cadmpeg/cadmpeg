@@ -6136,7 +6136,7 @@ fn feature_history_sections(container: &Container) -> Vec<(usize, SegmentOmLink)
 
 fn visit_feature_history_operation_records(
     container: &Container,
-    mut visit: impl FnMut(&crate::om::Section<'_>, &str, u64, usize, crate::om::OperationRecord<'_>),
+    mut visit: impl FnMut(&crate::om::Section<'_>, &str, u64, usize, crate::om::operation_record::OperationRecord<'_>),
 ) {
     let sections = container.om_sections();
     for (section_ordinal, link) in feature_history_sections(container) {
@@ -6313,7 +6313,7 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
                 .operation_records_with_label_ordinals()
                 .into_iter()
                 .map(|(ordinal, record)| {
-                    let label = record.label;
+                    let label = record.label();
                     FeatureOperationLabel {
                         id: format!(
                             "nx:feature-history:operation-label#{section_key}-{ordinal:010}"
@@ -6341,7 +6341,7 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
             let Some(operation) = section
                 .boolean_operations()
                 .into_iter()
-                .find(|operation| operation.offset == record.label.header.end_offset())
+                .find(|operation| operation.offset == record.label().header.end_offset())
             else {
                 return;
             };
@@ -6386,10 +6386,10 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let stable_identity =
-                operation_header_identity_key(record.label.header.objects().values(), &block_identities);
+                operation_header_identity_key(record.label().header.objects().values(), &block_identities);
             let Some(span) = entry_offset.checked_add(record.offset() as u64)
-                .zip(entry_offset.checked_add(record.payload_offset as u64))
-                .and_then(|(start, payload)| OperationRecordSpan::new(start, payload, record.payload.len() as u64)) else {
+                .zip(entry_offset.checked_add(record.payload_offset() as u64))
+                .and_then(|(start, payload)| OperationRecordSpan::new(start, payload, record.payload().len() as u64)) else {
                 return;
             };
             if let Some(key) = &stable_identity {
@@ -6402,8 +6402,8 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
                     ),
                     operation_label: operation_label.clone(),
                     ordinal: operation_ordinal as u32,
-                    sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
-                    payload_sha256: cadmpeg_ir::hash::sha256_hex(record.payload),
+                    sha256: cadmpeg_ir::hash::sha256_hex(record.bytes()),
+                    payload_sha256: cadmpeg_ir::hash::sha256_hex(record.payload()),
                     stable_identity: None,
                     span,
                 },
@@ -6486,7 +6486,7 @@ pub fn feature_operation_body_writes(container: &Container) -> Vec<FeatureOperat
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
-            for (ordinal, write) in crate::om::operation_body_write_frames(record)
+            for (ordinal, write) in crate::om::operation_body_write_frames(record.payload_view())
                 .into_iter()
                 .enumerate()
             {
@@ -6756,7 +6756,7 @@ pub fn feature_operation_object_references(
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
-            for (ordinal, reference) in crate::om::direct_reference::operation_reference_fields(record, kind)
+            for (ordinal, reference) in crate::om::direct_reference::operation_reference_fields(record.payload_view(), kind)
                 .into_iter()
                 .enumerate()
             {
@@ -6788,7 +6788,7 @@ pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOper
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
-            for (ordinal, frame) in crate::om::operation_common_frames(record)
+            for (ordinal, frame) in crate::om::operation_common_frames(record.payload_view())
                 .into_iter()
                 .enumerate()
             {
@@ -6817,7 +6817,7 @@ pub fn feature_operation_terminal_frames(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(frame) = crate::om::operation_terminal_frame(record) else {
+            let Some(frame) = crate::om::operation_terminal_frame(record.payload_view()) else {
                 return;
             };
             let operation_record = format!(
@@ -6927,7 +6927,7 @@ pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadStrin
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
             strings.extend(
-                crate::om::operation_payload_strings(record)
+                crate::om::operation_payload_strings(record.payload_view())
                     .into_iter()
                     .enumerate()
                     .map(|(ordinal, value)| FeaturePayloadString {
@@ -6946,9 +6946,9 @@ pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadStrin
 }
 
 fn symbolic_thread_text_frames(
-    record: crate::om::OperationRecord<'_>,
+    record: crate::om::operation_record::OperationPayload<'_>,
 ) -> Option<Vec<crate::om::OperationPayloadTextFrame<'_>>> {
-    if record.label.value != "SYMBOLIC_THREAD" {
+    if record.name() != "SYMBOLIC_THREAD" {
         return None;
     }
     let frames = crate::om::operation_payload_text_frames(record)
@@ -6964,7 +6964,7 @@ pub fn feature_symbolic_threads(container: &Container) -> Vec<FeatureSymbolicThr
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(frames) = symbolic_thread_text_frames(record) else {
+            let Some(frames) = symbolic_thread_text_frames(record.payload_view()) else {
                 return;
             };
             let operation_label =
@@ -7116,7 +7116,7 @@ pub fn feature_simple_hole_repeated_scalar_lanes(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(pair) = crate::om::simple_hole_repeated_scalar_lane(record) else {
+            let Some(pair) = crate::om::simple_hole_repeated_scalar_lane(record.payload_view()) else {
                 return;
             };
             pairs.push(FeatureSimpleHoleRepeatedScalarLane {
@@ -7167,7 +7167,7 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
                 return;
             };
             let Some(decoded) =
-                crate::om::simple_hole_repeated_scalar_lane_block_references(record)
+                crate::om::simple_hole_repeated_scalar_lane_block_references(record.payload_view())
             else {
                 return;
             };
@@ -7295,7 +7295,7 @@ pub fn feature_hole_package_construction_group_lanes(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::hole_package_construction_group_lane(record) else {
+            let Some(lane) = crate::om::hole_package_construction_group_lane(record.payload_view()) else {
                 return;
             };
             let [a, b, c, d] = lane.references.map(|reference| {
@@ -7319,7 +7319,7 @@ pub fn feature_hole_package_construction_group_lanes(
                 branch: lane.branch,
                 references: [a, b, c, d],
                 payload_offset: lane.offset as u64,
-                source_offset: entry_offset + record.payload_offset as u64 + lane.offset as u64,
+                source_offset: entry_offset + record.payload_offset() as u64 + lane.offset as u64,
             });
         },
     );
@@ -7443,7 +7443,7 @@ pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReferenc
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(reference) = crate::om::operation_body_reference(record) else {
+            let Some(reference) = crate::om::operation_body_reference(record.body_view()) else {
                 return;
             };
             let operation_label =
@@ -7494,7 +7494,7 @@ pub fn feature_body_reference_occurrences(container: &Container) -> Vec<FeatureB
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             references.extend(
-                crate::om::operation_body_references(record)
+                crate::om::operation_body_references(record.body_view())
                     .into_iter()
                     .enumerate()
                     .map(|(ordinal, reference)| FeatureBodyReference {
@@ -7694,7 +7694,7 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let label = record.label;
+            let label = record.label();
             for (input_slot, object) in label.header.objects().0.into_iter().enumerate() {
                 let Some(object) = object else {
                     continue;
@@ -8005,7 +8005,7 @@ pub fn feature_datum_csys_constructions(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(field) = crate::om::datum_csys_references(record) else {
+            let Some(field) = crate::om::datum_csys_references(record.payload_view()) else {
                 return;
             };
             let operation_label =
@@ -9468,7 +9468,7 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(decoded) = crate::om::sketch_payload_references(record) else {
+            let Some(decoded) = crate::om::sketch_payload_references(record.payload_view()) else {
                 return;
             };
             let operation_label =
@@ -9506,14 +9506,14 @@ struct ResolvedFeaturePayloadReference {
 
 fn resolved_feature_payload_references(
     container: &Container,
-    decode: impl Fn(crate::om::OperationRecord<'_>) -> Option<Vec<crate::om::PayloadObjectReference>>,
+    decode: impl Fn(crate::om::operation_record::OperationPayload<'_>) -> Option<Vec<crate::om::PayloadObjectReference>>,
 ) -> Vec<ResolvedFeaturePayloadReference> {
     let indexed = container.indexed_om_sections();
     let mut references = Vec::new();
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(decoded) = decode(record) else {
+            let Some(decoded) = decode(record.payload_view()) else {
                 return;
             };
             references.extend(decoded.into_iter().enumerate().map(|(ordinal, reference)| {
@@ -9568,7 +9568,7 @@ pub fn feature_fset_reference_graphs(container: &Container) -> Vec<FeatureFsetRe
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(graph) = crate::om::fset_payload_reference_graph(record) else {
+            let Some(graph) = crate::om::fset_payload_reference_graph(record.payload_view()) else {
                 return;
             };
             let operation_label =
@@ -9660,7 +9660,7 @@ pub fn feature_delete_reference_fields(container: &Container) -> Vec<FeatureDele
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(field) = crate::om::delete_payload_references(record) else {
+            let Some(field) = crate::om::delete_payload_references(record.payload_view()) else {
                 return;
             };
             fields.push(FeatureDeleteReferenceField {
@@ -9831,7 +9831,7 @@ pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternRe
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(decoded) = crate::om::pattern_payload_references(record) else {
+            let Some(decoded) = crate::om::pattern_payload_references(record.payload_view()) else {
                 return;
             };
             let layout = match decoded.layout {
@@ -9875,7 +9875,7 @@ pub fn feature_pattern_counted_reference_lanes(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::pattern_payload_counted_reference_lane(record) else {
+            let Some(lane) = crate::om::pattern_payload_counted_reference_lane(record.payload_view()) else {
                 return;
             };
             lanes.push(FeaturePatternCountedReferenceLane {
@@ -10040,7 +10040,7 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::pattern_payload_transform_lane(record) else {
+            let Some(lane) = crate::om::pattern_payload_transform_lane(record.payload_view()) else {
                 return;
             };
             lanes.push(FeaturePatternTransformLane {
@@ -10073,7 +10073,7 @@ pub fn feature_multi_instance_output_lanes(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::multi_instance_output_payload_lane(record) else {
+            let Some(lane) = crate::om::multi_instance_output_payload_lane(record.payload_view()) else {
                 return;
             };
             lanes.push(FeatureMultiInstanceOutputLane {
@@ -10100,7 +10100,7 @@ pub fn feature_identical_instance_output_lanes(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::identical_instance_output_payload_lane(record) else {
+            let Some(lane) = crate::om::identical_instance_output_payload_lane(record.payload_view()) else {
                 return;
             };
             lanes.push(FeatureIdenticalInstanceOutputLane {
@@ -10132,7 +10132,7 @@ pub fn feature_point_construction_headers(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(header) = crate::om::point_feature_payload_header(record) else {
+            let Some(header) = crate::om::point_feature_payload_header(record.payload_view()) else {
                 return;
             };
             headers.push(FeaturePointConstructionHeader {
@@ -10258,11 +10258,11 @@ pub fn feature_draft_construction_index_lanes(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::draft_feature_leading_index_lane(record) else {
+            let Some(lane) = crate::om::draft_feature_leading_index_lane(record.payload_view()) else {
                 return;
             };
             let section_ordinal =
-                crate::om::draft_feature_payload_references(record).and_then(|graph| {
+                crate::om::draft_feature_payload_references(record.payload_view()).and_then(|graph| {
                     let complete_indices = graph
                         .references
                         .iter()
@@ -10533,7 +10533,7 @@ pub fn feature_draft_construction_terminal_lanes(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::draft_feature_terminal_lane(record) else {
+            let Some(lane) = crate::om::draft_feature_terminal_lane(record.payload_view()) else {
                 return;
             };
             lanes.push(FeatureDraftConstructionTerminalLane {
@@ -10598,7 +10598,7 @@ pub fn feature_thru_curve_construction_envelopes(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(field) = crate::om::thru_curve_payload_references(record) else {
+            let Some(field) = crate::om::thru_curve_payload_references(record.payload_view()) else {
                 return;
             };
             let operation_key = format!("{section_key}-{operation_ordinal:010}");
@@ -10609,7 +10609,7 @@ pub fn feature_thru_curve_construction_envelopes(
                 controls: field.controls,
                 trailing_control: field.trailing_control,
                 trailing_value: field.trailing_value,
-                source_offset: entry_offset + record.payload_offset as u64,
+                source_offset: entry_offset + record.payload_offset() as u64,
             });
         },
     );
@@ -10625,7 +10625,7 @@ pub fn feature_thru_curve_construction_branch_groups(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(group) = crate::om::thru_curve_payload_branch_group(record) else {
+            let Some(group) = crate::om::thru_curve_payload_branch_group(record.payload_view()) else {
                 return;
             };
             let operation_key = format!("{section_key}-{operation_ordinal:010}");
@@ -10670,7 +10670,7 @@ pub fn feature_swp104_leading_branches(container: &Container) -> Vec<FeatureSwp1
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(branch) = crate::om::swp104_payload_leading_branch(record) else {
+            let Some(branch) = crate::om::swp104_payload_leading_branch(record.payload_view()) else {
                 return;
             };
             let operation_key = format!("{section_key}-{operation_ordinal:010}");
@@ -10694,8 +10694,8 @@ pub fn feature_swp104_leading_branches(container: &Container) -> Vec<FeatureSwp1
                 state_lane: branch.state_lane,
                 members,
                 terminal,
-                byte_len: (branch.end_offset - record.payload_offset) as u64,
-                source_offset: entry_offset + record.payload_offset as u64,
+                byte_len: (branch.end_offset - record.payload_offset()) as u64,
+                source_offset: entry_offset + record.payload_offset() as u64,
             });
         },
     );
@@ -10832,7 +10832,7 @@ pub fn feature_surface_construction_branches(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(group) = crate::om::surface_feature_payload_branches(record) else {
+            let Some(group) = crate::om::surface_feature_payload_branches(record.payload_view()) else {
                 return;
             };
             let operation_label =
@@ -10878,7 +10878,7 @@ pub fn feature_extrude_profile_references(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(decoded) = crate::om::extrude_profile_references(record) else {
+            let Some(decoded) = crate::om::extrude_profile_references(record.payload_view()) else {
                 return;
             };
             let operation_label =
@@ -10909,7 +10909,7 @@ pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtr
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(header) = crate::om::extrude_payload_header(record) else {
+            let Some(header) = crate::om::extrude_payload_header(record.payload_view()) else {
                 return;
             };
             headers.push(FeatureExtrudePayloadHeader {
@@ -10935,7 +10935,7 @@ pub fn feature_operation_terminal_discriminators(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::operation_terminal_discriminator(record) else {
+            let Some(lane) = crate::om::operation_terminal_discriminator(record.payload_view()) else {
                 return;
             };
             lanes.push(FeatureOperationTerminalDiscriminator {
@@ -10969,7 +10969,7 @@ pub fn feature_operation_body_scalar_triples(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            for triple in crate::om::operation_body_scalar_triples(record) {
+            for triple in crate::om::operation_body_scalar_triples(record.body_view()) {
                 triples.push(FeatureOperationBodyScalarTriple {
                     id: format!(
                         "nx:feature-history:operation-body-scalar-triple#{section_key}-{operation_ordinal:010}-{}",
@@ -10999,7 +10999,7 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             members.extend(
-                crate::om::operation_body_members(record)
+                crate::om::operation_body_members(record.body_view())
                     .into_iter()
                     .map(|member| FeatureOperationBodyMember {
                         id: format!(
@@ -11124,7 +11124,7 @@ pub fn feature_operation_body_11_continuations(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             continuations.extend(
-                crate::om::operation_body_11_continuations(record)
+                crate::om::operation_body_11_continuations(record.body_view())
                     .into_iter()
                     .map(|continuation| FeatureOperationBody11Continuation {
                         id: format!(
@@ -11158,7 +11158,7 @@ pub fn feature_operation_body_reference_lanes(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            for lane in crate::om::operation_body_reference_lanes(record) {
+            for lane in crate::om::operation_body_reference_lanes(record.body_view()) {
                 let references = match lane.values {
                     crate::om::OperationBodyReferenceLaneValues::CompactIndex(values) => {
                         FeatureOperationBodyReferences::CompactIndex(values.into_iter().map(|value| ConstructionReference {
@@ -11248,7 +11248,7 @@ pub fn feature_extrude_payload_32_branches(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(branch) = crate::om::extrude_payload_32_branch(record) else {
+            let Some(branch) = crate::om::extrude_payload_32_branch(record.body_view()) else {
                 return;
             };
             branches.push(FeatureExtrudePayload32Branch {
@@ -11373,7 +11373,7 @@ pub fn feature_block_construction_references(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(field) = crate::om::block_construction_references(record) else {
+            let Some(field) = crate::om::block_construction_references(record.payload_view()) else {
                 return;
             };
             let terminal_ordinal = field.references.len() - 1;
