@@ -8,6 +8,8 @@ pub(crate) mod record_kind;
 pub(crate) mod packet_marker;
 pub(crate) mod xmt_reference;
 pub(crate) mod state_references;
+pub(crate) mod state_frame;
+use state_frame::{ReferenceStateFrame, StateFrames};
 use state_references::StateReferences;
 use xmt_reference::NonNullXmt;
 pub(crate) mod preamble_state;
@@ -571,22 +573,11 @@ pub struct ReferenceTypeMap {
     pub end: usize,
 }
 
-/// One four-reference frame in a deltas state packet.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ReferenceStateFrame {
-    /// Four ordered stream-local XMT references.
-    pub references: StateReferences,
-    /// Five ordered big-endian state words.
-    pub state_words: [u32; 5],
-    /// Terminal serialized state byte.
-    pub state_byte: u8,
-}
-
 /// One deltas packet carrying one or more reference-state frames.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceStatePacket {
     /// Ordered packet frames.
-    pub frames: Vec<ReferenceStateFrame>,
+    pub frames: StateFrames,
     /// Whether the packet ends with `ref(1)[3], u32(1)`.
     pub terminal: bool,
     /// First byte of the packet.
@@ -1600,13 +1591,13 @@ fn reference_state_packet(
 ) -> Option<ReferenceStatePacket> {
     (View::u16_be_at(stream, offset) == Some(1) && View::u16_be_at(stream, offset + 2) == Some(1))
         .then_some(())?;
-    let mut at = offset.checked_add(4)?;
-    let mut frames = Vec::new();
+    let first_offset = offset.checked_add(4)?;
+    let (first, mut at) = reference_state_frame(stream, first_offset, gap_end)?;
+    let mut frames = StateFrames::new(first);
     while let Some((frame, end)) = reference_state_frame(stream, at, gap_end) {
         frames.push(frame);
         at = end;
     }
-    (!frames.is_empty()).then_some(())?;
     let terminal_end = reference_state_terminal(stream, at, gap_end);
     let terminal = terminal_end.is_some();
     at = terminal_end.unwrap_or(at);

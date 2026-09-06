@@ -13,7 +13,7 @@ mod body_revision_wire;
 use body_revision_wire::RevisionLengths;
 use crate::deltas::packet_marker::ReferenceMarker;
 use crate::deltas::xmt_reference::NonNullXmt;
-use crate::deltas::ReferenceStateFrame;
+use crate::deltas::state_frame::StateFrames;
 use crate::deltas::preamble_state::PreambleState;
 use crate::deltas::type150_state::Type150State;
 use crate::deltas::tails::{NullTailForm, NumericTailValues};
@@ -590,7 +590,7 @@ pub struct ParasolidDeltasReferenceStatePacket {
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
     /// Ordered packet frames.
-    pub frames: Vec<ReferenceStateFrame>,
+    pub frames: StateFrames,
     /// Whether the packet ends with `ref(1)[3], u32(1)`.
     pub terminal: bool,
     /// Exact packet byte length.
@@ -3898,8 +3898,8 @@ mod tests {
         assert_eq!(events.reference_state_packets.len(), 1);
         let packet = &events.reference_state_packets[0];
         assert_eq!(
-            packet.frames,
-            [ReferenceStateFrame {
+            packet.frames.as_slice(),
+            [crate::deltas::state_frame::ReferenceStateFrame {
                 references: [2, 3, 4, 1].try_into().unwrap(),
                 state_words: [34, 6, 11, 22_362, 1],
                 state_byte: 65,

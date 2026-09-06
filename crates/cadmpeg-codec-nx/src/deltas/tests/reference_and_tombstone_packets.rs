@@ -72,8 +72,8 @@ fn deltas_reference_state_packets_decode_compact_and_extended_references() {
 
     assert_eq!(census.reference_state_packets.len(), 1);
     assert_eq!(
-        census.reference_state_packets[0].frames,
-        [crate::deltas::ReferenceStateFrame {
+        census.reference_state_packets[0].frames.as_slice(),
+        [crate::deltas::state_frame::ReferenceStateFrame {
             references: [2, 3, 40_000, 1].try_into().unwrap(),
             state_words: [34, 6, 11, 22_362, 1],
             state_byte: 65,
@@ -119,7 +119,7 @@ fn deltas_reference_state_packets_decode_compact_and_extended_references() {
 
     let compound_census = crate::deltas::walk(&compound);
     assert_eq!(compound_census.reference_state_packets.len(), 1);
-    assert_eq!(compound_census.reference_state_packets[0].frames.len(), 2);
+    assert_eq!(compound_census.reference_state_packets[0].frames.as_slice().len(), 2);
     assert!(compound_census.reference_state_packets[0].terminal);
     assert_eq!(
         compound_census.reference_state_packets[0].end,
