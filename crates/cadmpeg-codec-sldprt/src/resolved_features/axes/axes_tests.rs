@@ -446,8 +446,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -614,8 +613,7 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -694,8 +692,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -926,8 +923,7 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut entities = vec![
         marker("vertical-near", 0, Some(1), Some([0.0, 0.01])),

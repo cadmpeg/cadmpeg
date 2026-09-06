@@ -84,10 +84,16 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
             .collect::<Vec<_>>(),
         [Some(1), Some(2), Some(3)]
     );
-    assert_eq!(lane.sketch_entities[0].link_selector, Some(1));
     assert_eq!(
         lane.sketch_entities[0]
             .links
+            .as_ref()
+            .map(|links| links.selector),
+        Some(1)
+    );
+    assert_eq!(
+        lane.sketch_entities[0]
+            .links()
             .iter()
             .map(|link| (link.local_id, link.entity_ref.as_str()))
             .collect::<Vec<_>>(),

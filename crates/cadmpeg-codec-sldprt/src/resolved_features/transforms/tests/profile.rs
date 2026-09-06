@@ -27,10 +27,13 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
     center.object_index = Some(1);
     let mut distance_handle = marker("distance-handle", None);
     distance_handle.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
-    distance_handle.links = vec![SketchInputLink {
-        local_id: 2,
-        entity_ref: center.id.clone(),
-    }];
+    distance_handle.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 2,
+            entity_ref: center.id.clone(),
+        }],
+    );
     let markers = [&corner, &center, &distance_handle]
         .into_iter()
         .map(|marker| (marker.id.as_str(), marker))
@@ -385,10 +388,13 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     payload.extend([0; 32]);
     let mut point = marker("point", Some([0.001, 0.002]));
     point.feature_ref = Some("sketch-native".into());
-    point.links = vec![SketchInputLink {
-        local_id: 2,
-        entity_ref: "curve".into(),
-    }];
+    point.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 2,
+            entity_ref: "curve".into(),
+        }],
+    );
     let mut curve = marker("curve", Some([0.003, 0.004]));
     curve.feature_ref = Some("sketch-native".into());
     curve.ordinal = 1;
@@ -408,10 +414,13 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     arc_start.feature_ref = Some("sketch-native".into());
     arc_start.ordinal = 4;
     arc_start.offset = 4;
-    arc_start.links = vec![SketchInputLink {
-        local_id: 4,
-        entity_ref: arc.id.clone(),
-    }];
+    arc_start.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 4,
+            entity_ref: arc.id.clone(),
+        }],
+    );
     let mut arc_end = marker("arc-end", Some([0.0, 0.001]));
     arc_end.feature_ref = Some("sketch-native".into());
     arc_end.ordinal = 5;
@@ -439,16 +448,19 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         line.ordinal = ordinal;
         line.offset = offset;
         line.kind = SketchInputKind::LineOrCircle;
-        line.links = vec![
-            SketchInputLink {
-                local_id: 10,
-                entity_ref: first.into(),
-            },
-            SketchInputLink {
-                local_id: 11,
-                entity_ref: second.into(),
-            },
-        ];
+        line.links = crate::records::SketchInputLinks::new(
+            0,
+            vec![
+                SketchInputLink {
+                    local_id: 10,
+                    entity_ref: first.into(),
+                },
+                SketchInputLink {
+                    local_id: 11,
+                    entity_ref: second.into(),
+                },
+            ],
+        );
         line
     };
     let triangle = [

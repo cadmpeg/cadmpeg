@@ -864,7 +864,7 @@ fn marker_entities_inner(
         return direct.into_iter().flatten().collect();
     };
     let mut linked = marker
-        .links
+        .links()
         .iter()
         .filter(|link| link.entity_ref != marker_id)
         .map(|link| {

@@ -1309,13 +1309,7 @@ impl SldprtNative {
                 )));
             }
             for record in &lane.sketch_entities {
-                if record.links.is_empty() != record.link_selector.is_none() {
-                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                        "sketch input entity {} has inconsistent local-link selector",
-                        record.id
-                    )));
-                }
-                for link in &record.links {
+                for link in record.links() {
                     let Some(target) = sketch_entities.get(link.entity_ref.as_str()) else {
                         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                             "sketch input entity {} references missing local-link target {}",

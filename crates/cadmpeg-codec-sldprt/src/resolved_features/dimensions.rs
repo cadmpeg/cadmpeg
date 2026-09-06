@@ -273,7 +273,7 @@ fn unique_linked_declared_entity_handle_arc_carrier<'a>(
                 && handle.kind == SketchInputKind::LineOrCircle
         })
         .filter_map(|handle| {
-            let [first, second] = handle.links.as_slice() else {
+            let [first, second] = handle.links() else {
                 return None;
             };
             if first.entity_ref != second.entity_ref || first.local_id != second.local_id {

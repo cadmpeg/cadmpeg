@@ -870,16 +870,19 @@ fn implicit_circle_uses_its_solver_relation_in_a_mixed_point_roster() {
     relation.offset = 40;
     relation.object_index = Some(1);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
-    relation.links = vec![
-        SketchInputLink {
-            local_id: 11,
-            entity_ref: center.id.clone(),
-        },
-        SketchInputLink {
-            local_id: 11,
-            entity_ref: center.id.clone(),
-        },
-    ];
+    relation.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 11,
+                entity_ref: center.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 11,
+                entity_ref: center.id.clone(),
+            },
+        ],
+    );
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,

@@ -48,7 +48,7 @@ pub(super) fn linked_single_arc_entity(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchEntityId> {
     let links = marker
-        .links
+        .links()
         .iter()
         .filter(|link| !relation_link_identifies_owner(marker, link))
         .collect::<Vec<_>>();
@@ -94,7 +94,7 @@ pub(super) fn linked_midpoint_operands(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<(SketchLocus, SketchEntityId)> {
     let links = marker
-        .links
+        .links()
         .iter()
         .filter(|link| !relation_link_identifies_owner(marker, link))
         .collect::<Vec<_>>();
@@ -126,7 +126,7 @@ pub(super) fn relation_operand_loci(
 ) -> Option<Vec<SketchLocus>> {
     let owners = relation_owner_markers(relation, markers_by_id);
     let loci = relation
-        .links
+        .links()
         .iter()
         .filter(|link| relation_link_is_geometric_operand(relation, link, markers_by_id))
         .map(|link| link.entity_ref.as_str())
@@ -149,7 +149,7 @@ pub(super) fn linked_single_entities(
 ) -> Option<Vec<SketchEntityId>> {
     let mut result = Vec::new();
     for link in marker
-        .links
+        .links()
         .iter()
         .filter(|link| !relation_link_identifies_owner(marker, link))
     {
@@ -1428,7 +1428,7 @@ pub(super) fn doubled_profile_distance_loci(
         marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str())
             && marker.kind
                 == SketchInputKind::Relation(crate::records::SketchRelationKind::Distance)
-            && matches!(marker.links.as_slice(), [link] if link.entity_ref == center_marker.id)
+            && matches!(marker.links(), [link] if link.entity_ref == center_marker.id)
     });
     if !center_is_distance_handle {
         return None;
@@ -1943,7 +1943,7 @@ fn unique_dynamic_direct_point_roster_pair(
     let is_direct_point = |marker: &SketchInputEntity| {
         marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str())
             && marker.coordinates_m.is_some()
-            && marker.links.is_empty()
+            && marker.links().is_empty()
             && matches!(
                 marker.kind,
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
@@ -2506,7 +2506,7 @@ fn collect_marker_identity_ids(
     let Some(marker) = markers_by_id.get(marker_id) else {
         return;
     };
-    for link in marker.links.iter().filter(|link| {
+    for link in marker.links().iter().filter(|link| {
         link.entity_ref != marker_id
             && (!matches!(marker.kind, SketchInputKind::Relation(_))
                 || !relation_link_identifies_owner(marker, link))
@@ -3084,7 +3084,7 @@ fn qualified_or_linked_point_locus(
         SketchInputKind::LineOrCircle | SketchInputKind::Arc
     ) {
         let mut linked = marker
-            .links
+            .links()
             .iter()
             .filter(|link| link.entity_ref != marker_id)
             .filter(|link| {
@@ -3147,7 +3147,7 @@ pub(super) fn resolved_marker_locus(
     }
     let marker = markers_by_id.get(marker_id)?;
     let mut linked = marker
-        .links
+        .links()
         .iter()
         .filter(|link| link.entity_ref != marker_id)
         .filter(|link| {
@@ -3239,7 +3239,7 @@ pub(super) fn single_marker_line_entity(
     }
     let marker = markers_by_id.get(marker_id)?;
     let links = marker
-        .links
+        .links()
         .iter()
         .filter(|link| {
             link.entity_ref != marker_id
@@ -3393,7 +3393,7 @@ fn marker_line_entities_inner(
         return direct.into_iter().flatten().collect();
     };
     let mut linked = marker
-        .links
+        .links()
         .iter()
         .filter(|link| {
             link.entity_ref != marker_id
@@ -3822,12 +3822,12 @@ pub(super) fn unique_linked_endpoint_locus(
     entities_by_id: &HashMap<&SketchEntityId, &SketchEntity>,
     quantum: f64,
 ) -> Option<SketchLocus> {
-    if marker.links.len() < 2 {
+    if marker.links().len() < 2 {
         return None;
     }
     let mut groups = Vec::<HashMap<(i64, i64), Vec<SketchLocus>>>::new();
     let mut sketches = HashSet::new();
-    for link in &marker.links {
+    for link in marker.links() {
         let entities = marker_entities(&link.entity_ref, markers_by_id, loci_by_marker);
         if entities.is_empty() {
             return None;

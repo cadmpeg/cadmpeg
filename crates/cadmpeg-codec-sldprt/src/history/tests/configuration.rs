@@ -359,8 +359,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
             kind: crate::records::SketchInputKind::LineOrCircle,
             state_value: None,
             coordinates_m: None,
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         },
         crate::records::SketchInputEntity {
             id: "relation-marker".into(),
@@ -375,11 +374,13 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
             ),
             state_value: None,
             coordinates_m: None,
-            links: vec![crate::records::SketchInputLink {
-                local_id: 1,
-                entity_ref: "line-marker".into(),
-            }],
-            link_selector: None,
+            links: crate::records::SketchInputLinks::new(
+                0,
+                vec![crate::records::SketchInputLink {
+                    local_id: 1,
+                    entity_ref: "line-marker".into(),
+                }],
+            ),
         },
     ];
 

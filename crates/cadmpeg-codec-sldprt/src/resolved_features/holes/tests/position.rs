@@ -84,8 +84,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
                 kind: SketchInputKind::LineOrCircle,
                 state_value: Some(1.0),
                 coordinates_m: Some(coordinates_m),
-                links: Vec::new(),
-                link_selector: None,
+                links: None,
             },
         )
         .collect();
@@ -130,8 +129,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             kind: SketchInputKind::Point,
             state_value: Some(1.0),
             coordinates_m: Some([1.0, 1.0]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         },
         SketchInputEntity {
             id: "auxiliary-anchor".into(),
@@ -144,8 +142,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             kind: SketchInputKind::Point,
             state_value: Some(1.0),
             coordinates_m: Some([0.0, 0.0]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         },
     ]);
     assert_eq!(
@@ -217,8 +214,7 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
             kind: SketchInputKind::Arc,
             state_value: Some(1.0),
             coordinates_m: Some(coordinates_m),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         })
         .collect();
     let surfaces = [-70.0, 70.0]
@@ -265,8 +261,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = lane();
     lane.sketch_entities = vec![
@@ -552,8 +547,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some([0.002, 0.003]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     });
     lane.sketch_entities.push(SketchInputEntity {
         id: "origin-marker".into(),
@@ -779,8 +773,7 @@ fn unique_unindexed_point_locus_is_projected() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     lane.sketch_entities = vec![
         marker("relation-anchor-0", 0, [0.0, 0.0]),
@@ -896,8 +889,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     });
     lane.sketch_entities.push(SketchInputEntity {
         id: "same-axis-endpoint".into(),
@@ -910,8 +902,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     });
     lane.sketch_entities.push(SketchInputEntity {
         id: "construction-point".into(),
@@ -924,8 +915,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     });
     let sketch = SpatialSketch {
         id: sketch_id.clone(),
@@ -1145,8 +1135,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         kind: SketchInputKind::Relation(SketchRelationKind::Vertical),
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     });
     let sketch = SpatialSketch {
         id: sketch_id.clone(),

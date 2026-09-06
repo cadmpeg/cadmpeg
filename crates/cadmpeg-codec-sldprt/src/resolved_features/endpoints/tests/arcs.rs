@@ -149,8 +149,7 @@ fn extended_geometry_locus_construction_line_uses_direct_point_object_ids() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, 8, SketchInputKind::LineOrCircle, None);
     let first = entity("first", 100, 13, SketchInputKind::Point, Some([0.0, 0.0]));
@@ -662,8 +661,7 @@ fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, None, None, SketchInputKind::LineOrCircle);
     let start = entity(
@@ -702,8 +700,7 @@ fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -819,8 +816,7 @@ fn legacy_compact_96_profile_line_falls_back_to_one_based_complete_roster() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut entities = vec![entity(
         "curve".into(),
@@ -909,8 +905,7 @@ fn wide_indexed_curve_owns_its_endpoint_trailer_in_all_generations() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -1122,8 +1117,7 @@ fn current_wide_arc_uses_direct_point_ids_with_an_arc_center_carrier() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         entity("curve", Some(2), None, SketchInputKind::Arc),
@@ -1180,8 +1174,7 @@ fn wide_line_uses_direct_point_ids_after_one_based_resolution_fails() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         entity("curve", Some(6), None, SketchInputKind::LineOrCircle),
@@ -1253,8 +1246,7 @@ fn extended_marker104_arc_prefers_point_roster_endpoints() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, None, None, SketchInputKind::Arc);
     let object_indices = [1, 2, 4, 5, 6, 7, 8];
@@ -1316,8 +1308,7 @@ fn extended_geometry_104_arc_uses_zero_based_roster_and_center_index() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, None, SketchInputKind::Arc);
     let center = entity("center", 10, Some([0.0, 0.0]), SketchInputKind::Point);
@@ -1384,8 +1375,7 @@ fn extended_compact_104_arc_uses_geometry_roster_for_center_index() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, None, SketchInputKind::Arc);
     let relation = entity(
@@ -1438,8 +1428,7 @@ fn extended_terminal_102_profile_arc_uses_object_center_fallback() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, None, None, SketchInputKind::Arc);
     let center = entity(
@@ -1517,8 +1506,7 @@ fn coordinate_roster_arc_center_requires_matching_indexed_endpoints() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, SketchInputKind::Arc, None);
     let relation = entity(
@@ -1575,8 +1563,7 @@ fn extended_geometry_116_arc_uses_relation_tail_and_center_index() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, None, SketchInputKind::Arc);
     let first = entity("first", 10, Some([9.0, 9.0]), SketchInputKind::Point);
@@ -1638,8 +1625,7 @@ fn extended_geometry_terminal_circle_uses_dimension_tail() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let circle = entity("circle", 0, None, SketchInputKind::Arc);
     let witness = entity("witness", 5, Some([9.0, 9.0]), SketchInputKind::Arc);
@@ -1732,8 +1718,7 @@ fn compact_legacy_bounded_curve_can_use_direct_point_ids() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         entity("curve", Some(1), None, SketchInputKind::Arc),

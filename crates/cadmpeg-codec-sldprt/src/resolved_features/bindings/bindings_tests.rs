@@ -135,8 +135,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
             kind: SketchInputKind::Point,
             state_value: Some(1.0),
             coordinates_m: Some([0.0, 0.0]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         }],
     };
 
@@ -665,8 +664,7 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -738,8 +736,7 @@ fn local_link_promotes_a_coordinate_bearing_curve_to_a_profile_vertex() {
         kind,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -844,8 +841,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "sldprt:feature-input:config-objects#1".into(),

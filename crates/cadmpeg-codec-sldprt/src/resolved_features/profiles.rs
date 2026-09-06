@@ -2729,8 +2729,7 @@ mod detached_legacy_sketch_tests {
             kind,
             state_value: None,
             coordinates_m,
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         }
     }
 

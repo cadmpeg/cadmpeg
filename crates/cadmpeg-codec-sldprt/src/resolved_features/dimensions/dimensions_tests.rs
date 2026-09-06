@@ -39,8 +39,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let wrong = marker("wrong", 5, Some(1), Some(1), Some([0.100, 0.100]));
     let center = marker("center", 10, Some(50), Some(49), Some([0.010, 0.020]));
@@ -196,8 +195,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -308,8 +306,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -452,8 +449,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let lane = |kind| FeatureInputLane {
         id: "lane".into(),
@@ -683,8 +679,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
             kind,
             state_value: Some(1.0),
             coordinates_m,
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -906,8 +901,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some([0.01, 0.02]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -972,8 +966,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some([0.03, 0.04]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     });
     let unrelated_markers = unrelated_lane
         .sketch_entities
@@ -1013,8 +1006,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         kind: marker_kind,
         state_value: None,
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let lane = |circular_kind| FeatureInputLane {
         id: "lane".into(),
@@ -1156,8 +1148,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         kind: marker_kind,
         state_value: None,
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -1441,8 +1432,7 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
         kind,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let center = marker("center", 10, SketchInputKind::Point, Some([0.0, 0.0]));
     let radial = marker("radial", 20, SketchInputKind::Point, Some([0.005, 0.0]));
@@ -1571,8 +1561,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             kind: SketchInputKind::Point,
             state_value: Some(1.0),
             coordinates_m: Some([0.001, 0.002]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         }],
     };
     let feature = Feature {
@@ -1674,8 +1663,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             kind: SketchInputKind::Point,
             state_value: Some(1.0),
             coordinates_m: Some([0.0, 0.0]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         },
         SketchInputEntity {
             id: "implicit-relation".into(),
@@ -1688,17 +1676,19 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             kind: SketchInputKind::Relation(SketchRelationKind::Distance),
             state_value: Some(1.0),
             coordinates_m: None,
-            links: vec![
-                SketchInputLink {
-                    local_id: 0,
-                    entity_ref: "implicit-center".into(),
-                },
-                SketchInputLink {
-                    local_id: 0,
-                    entity_ref: "implicit-center".into(),
-                },
-            ],
-            link_selector: None,
+            links: crate::records::SketchInputLinks::new(
+                0,
+                vec![
+                    SketchInputLink {
+                        local_id: 0,
+                        entity_ref: "implicit-center".into(),
+                    },
+                    SketchInputLink {
+                        local_id: 0,
+                        entity_ref: "implicit-center".into(),
+                    },
+                ],
+            ),
         },
         SketchInputEntity {
             id: "implicit-radial".into(),
@@ -1711,8 +1701,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             kind: SketchInputKind::Point,
             state_value: Some(1.0),
             coordinates_m: Some([0.002, 0.0]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         },
     ]);
     let mut implicit_entities = vec![SketchEntity::new(
@@ -1750,8 +1739,7 @@ fn arc_dimension_center_requires_one_matching_radial_witness() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let center = marker("center", 10, SketchInputKind::Arc, Some([0.1, 0.2]));
     let radial = marker("radial", 20, SketchInputKind::Point, Some([0.103, 0.2]));
@@ -1806,8 +1794,7 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let center = SketchInputEntity {
         id: "center".into(),
@@ -1820,17 +1807,19 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
         kind: SketchInputKind::Arc,
         state_value: Some(1.0),
         coordinates_m: Some([0.0, 0.0]),
-        links: vec![
-            SketchInputLink {
-                local_id: 0,
-                entity_ref: "start".into(),
-            },
-            SketchInputLink {
-                local_id: 0,
-                entity_ref: "end".into(),
-            },
-        ],
-        link_selector: None,
+        links: crate::records::SketchInputLinks::new(
+            0,
+            vec![
+                SketchInputLink {
+                    local_id: 0,
+                    entity_ref: "start".into(),
+                },
+                SketchInputLink {
+                    local_id: 0,
+                    entity_ref: "end".into(),
+                },
+            ],
+        ),
     };
     let start = marker("start", 20, [0.003, 0.0]);
     let end = marker("end", 30, [0.0, 0.003]);
@@ -1888,8 +1877,7 @@ fn terminal_radial_address_resolves_every_consecutive_equal_radius_pair() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = [
         marker(0, 2, [0.0, 0.0]),

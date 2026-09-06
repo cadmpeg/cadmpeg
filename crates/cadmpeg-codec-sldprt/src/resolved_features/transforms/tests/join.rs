@@ -57,18 +57,20 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         native_ref: Some("feature-native".into()),
     };
     let mut reference = marker("reference", None);
-    reference.links = vec![
-        SketchInputLink {
-            local_id: 1,
-            entity_ref: "marker-a".into(),
-        },
-        SketchInputLink {
-            local_id: 2,
-            entity_ref: "marker-b".into(),
-        },
-    ];
+    reference.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: "marker-a".into(),
+            },
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: "marker-b".into(),
+            },
+        ],
+    );
     reference.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
-    reference.link_selector = Some(0);
     let mut native_payload = vec![0; 108];
     for offset in [0, 27, 54] {
         native_payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
@@ -115,13 +117,16 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         vec![first.clone()]
     );
     let mut wrapper = marker("wrapper", None);
-    wrapper.links = vec![SketchInputLink {
-        local_id: 1,
-        entity_ref: "marker-a".into(),
-    }];
+    wrapper.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 1,
+            entity_ref: "marker-a".into(),
+        }],
+    );
     let mut nested_reference = reference.clone();
     nested_reference.id = "nested-reference".into();
-    nested_reference.links[0].entity_ref = wrapper.id.clone();
+    nested_reference.links.as_mut().unwrap().entries_mut()[0].entity_ref = wrapper.id.clone();
     markers.insert(wrapper.id.as_str(), &wrapper);
     markers.insert(nested_reference.id.as_str(), &nested_reference);
     assert_eq!(
@@ -129,10 +134,13 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         vec![first.clone()]
     );
     let mut cycle = marker("cycle", None);
-    cycle.links = vec![SketchInputLink {
-        local_id: 1,
-        entity_ref: cycle.id.clone(),
-    }];
+    cycle.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 1,
+            entity_ref: cycle.id.clone(),
+        }],
+    );
     markers.insert(cycle.id.as_str(), &cycle);
     assert!(marker_entities("cycle", &markers, &joins).is_empty());
     assert_eq!(
@@ -193,10 +201,13 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     let point_handle = marker("point-handle", None);
     let mut point_horizontal = marker("point-horizontal", None);
     point_horizontal.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
-    point_horizontal.links = vec![SketchInputLink {
-        local_id: 1,
-        entity_ref: point_handle.id.clone(),
-    }];
+    point_horizontal.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 1,
+            entity_ref: point_handle.id.clone(),
+        }],
+    );
     let mut point_loci = joins.clone();
     point_loci.insert(
         point_handle.id.clone(),
@@ -223,16 +234,19 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     );
     let mut parallel = marker("parallel", None);
     parallel.kind = SketchInputKind::Relation(SketchRelationKind::Parallel);
-    parallel.links = vec![
-        SketchInputLink {
-            local_id: 1,
-            entity_ref: "marker-a".into(),
-        },
-        SketchInputLink {
-            local_id: 3,
-            entity_ref: "marker-c".into(),
-        },
-    ];
+    parallel.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: "marker-a".into(),
+            },
+            SketchInputLink {
+                local_id: 3,
+                entity_ref: "marker-c".into(),
+            },
+        ],
+    );
     markers.insert(parallel.id.as_str(), &parallel);
     assert_eq!(
         typed_marker_relation_definition(&parallel, &markers, &joins),
@@ -316,16 +330,19 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     entity_marker.kind = SketchInputKind::LineOrCircle;
     let mut midpoint = marker("midpoint", None);
     midpoint.kind = SketchInputKind::Relation(SketchRelationKind::Midpoint);
-    midpoint.links = vec![
-        SketchInputLink {
-            local_id: 3,
-            entity_ref: entity_marker.id.clone(),
-        },
-        SketchInputLink {
-            local_id: 1,
-            entity_ref: "marker-a".into(),
-        },
-    ];
+    midpoint.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 3,
+                entity_ref: entity_marker.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: "marker-a".into(),
+            },
+        ],
+    );
     let mut midpoint_loci = joins.clone();
     midpoint_loci.insert(
         entity_marker.id.clone(),
@@ -362,10 +379,13 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     ] {
         let mut arc_angle = marker("arc-angle", None);
         arc_angle.kind = SketchInputKind::Relation(kind);
-        arc_angle.links = vec![SketchInputLink {
-            local_id: 1,
-            entity_ref: arc_marker.id.clone(),
-        }];
+        arc_angle.links = crate::records::SketchInputLinks::new(
+            0,
+            vec![SketchInputLink {
+                local_id: 1,
+                entity_ref: arc_marker.id.clone(),
+            }],
+        );
         assert_eq!(
             typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
             Some(SketchConstraintDefinition::ArcAngle {
@@ -373,7 +393,9 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
                 angle: cadmpeg_ir::features::Angle(angle),
             })
         );
-        arc_angle.links[0].entity_ref.clone_from(&entity_marker.id);
+        arc_angle.links.as_mut().unwrap().entries_mut()[0]
+            .entity_ref
+            .clone_from(&entity_marker.id);
         assert!(matches!(
             typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
             Some(SketchConstraintDefinition::Native {
@@ -682,16 +704,19 @@ fn coordinate_less_point_handle_selects_one_shared_endpoint() {
     let mut second_marker = marker("second-marker", Some([0.0, 0.0]));
     second_marker.kind = SketchInputKind::LineOrCircle;
     let mut point = marker("point", None);
-    point.links = vec![
-        SketchInputLink {
-            local_id: 1,
-            entity_ref: first_marker.id.clone(),
-        },
-        SketchInputLink {
-            local_id: 2,
-            entity_ref: second_marker.id.clone(),
-        },
-    ];
+    point.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: first_marker.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: second_marker.id.clone(),
+            },
+        ],
+    );
     let markers = HashMap::from([
         (first_marker.id.as_str(), &first_marker),
         (second_marker.id.as_str(), &second_marker),

@@ -89,8 +89,7 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let inputs = [
         input("center-left", 100, SketchInputKind::Point, Some([0.0, 0.0])),

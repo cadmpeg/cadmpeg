@@ -307,11 +307,13 @@ fn native_store_rejects_missing_sketch_marker_local_link() {
         .unwrap();
     let mut native = sldprt_native(decoded.ir());
     let entity = &mut native.feature_input_lanes[0].sketch_entities[0];
-    entity.links = vec![crate::records::SketchInputLink {
-        local_id: 7,
-        entity_ref: "sldprt:feature-input:sketch-entity#missing".into(),
-    }];
-    entity.link_selector = Some(0);
+    entity.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![crate::records::SketchInputLink {
+            local_id: 7,
+            entity_ref: "sldprt:feature-input:sketch-entity#missing".into(),
+        }],
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     let error = native.store(&mut namespace).unwrap_err();
@@ -342,17 +344,19 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     entities[2].kind = crate::records::SketchInputKind::ConstrainedPoint;
     entities[0].kind =
         crate::records::SketchInputKind::Relation(crate::records::SketchRelationKind::Midpoint);
-    entities[0].links = vec![
-        crate::records::SketchInputLink {
-            local_id: 7,
-            entity_ref: point_id,
-        },
-        crate::records::SketchInputLink {
-            local_id: 8,
-            entity_ref: second_point_id,
-        },
-    ];
-    entities[0].link_selector = Some(0);
+    entities[0].links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            crate::records::SketchInputLink {
+                local_id: 7,
+                entity_ref: point_id,
+            },
+            crate::records::SketchInputLink {
+                local_id: 8,
+                entity_ref: second_point_id,
+            },
+        ],
+    );
     for scalar in &mut native.feature_input_lanes[0].scalars {
         for operand in &mut scalar.operands {
             operand.entity_ref = None;
@@ -368,7 +372,9 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     native.store(&mut namespace).unwrap();
     let stored = crate::native::SldprtNative::load(&namespace).unwrap();
     assert_eq!(
-        stored.feature_input_lanes[0].sketch_entities[0].links.len(),
+        stored.feature_input_lanes[0].sketch_entities[0]
+            .links()
+            .len(),
         2
     );
 }

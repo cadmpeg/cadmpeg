@@ -1374,7 +1374,6 @@ fn resolved_feature_payload(
             || usize::try_from(entity.offset) != Ok(*expected_offset)
             || entity.feature_ref != expected_entity.feature_ref
             || entity.links != expected_entity.links
-            || entity.link_selector != expected_entity.link_selector
             || entity.object_index
                 != crate::resolved_features::markers::marker_object_index(
                     &lane.native_payload,

@@ -234,8 +234,7 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
             .zip(&actual_lane.sketch_entities)
         {
             expected.feature_ref.clone_from(&actual.feature_ref);
-            expected.links.clear();
-            expected.link_selector = None;
+            expected.links = None;
         }
         for (expected, actual) in expected_lane
             .references
@@ -375,9 +374,7 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
                     entity: Some(entity.id.clone()),
                 });
             }
-            if entity.links != expected_entity.links
-                || entity.link_selector != expected_entity.link_selector
-            {
+            if entity.links != expected_entity.links {
                 findings.push(Finding {
                     check: Check::NativeLinks,
                     severity: Severity::Error,

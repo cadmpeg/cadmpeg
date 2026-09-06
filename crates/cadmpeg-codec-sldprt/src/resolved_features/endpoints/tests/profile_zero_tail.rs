@@ -44,8 +44,7 @@ fn current_extended_zero_tail_92_profile_curve_uses_coordinate_roster() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = SketchInputEntity {
         id: "curve".into(),
@@ -58,8 +57,7 @@ fn current_extended_zero_tail_92_profile_curve_uses_coordinate_roster() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let first = entity("first", 10, Some([0.0, 0.0]));
     let second = entity("second", 20, Some([1.0, 0.0]));

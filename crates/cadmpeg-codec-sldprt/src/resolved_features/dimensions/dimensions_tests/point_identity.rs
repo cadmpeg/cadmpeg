@@ -20,8 +20,7 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -140,8 +139,7 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let kind = FeatureInputOperandKind::Native(0x825c);
     let lane = FeatureInputLane {
@@ -229,8 +227,7 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let kind = FeatureInputOperandKind::Native(0x825c);
     let lane = FeatureInputLane {
@@ -289,8 +286,7 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
                 kind: SketchInputKind::LineOrCircle,
                 state_value: Some(1.0),
                 coordinates_m: Some([0.020, 0.020]),
-                links: Vec::new(),
-                link_selector: None,
+                links: None,
             },
             marker("line-radial", 60, Some(6), Some(0), [0.025, 0.020]),
         ],

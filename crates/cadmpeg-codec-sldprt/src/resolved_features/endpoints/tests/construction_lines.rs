@@ -33,8 +33,7 @@ fn compact_84_construction_line_prefers_points_and_accepts_one_curve_marker() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", Some(1), None, SketchInputKind::LineOrCircle);
     let point_impostor = entity(

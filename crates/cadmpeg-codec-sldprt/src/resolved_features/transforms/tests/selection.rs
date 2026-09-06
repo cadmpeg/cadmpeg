@@ -89,52 +89,64 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     relation_line.kind = SketchInputKind::Arc;
     let mut support_handle = marker("support-handle", None);
     support_handle.offset = 85;
-    support_handle.links = vec![SketchInputLink {
-        local_id: 3,
-        entity_ref: relation_line.id.clone(),
-    }];
+    support_handle.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 3,
+            entity_ref: relation_line.id.clone(),
+        }],
+    );
     let mut qualified_curve = marker("qualified-curve", Some([0.0045, 0.0025]));
     qualified_curve.id = "sldprt:feature-input:sketch-entity#qualified-curve".into();
     qualified_curve.offset = 86;
     qualified_curve.kind = SketchInputKind::LineOrCircle;
-    relation_line.links = vec![
-        SketchInputLink {
-            local_id: 1,
-            entity_ref: endpoint_a.id.clone(),
-        },
-        SketchInputLink {
-            local_id: 2,
-            entity_ref: qualified_curve.id.clone(),
-        },
-    ];
+    relation_line.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: endpoint_a.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: qualified_curve.id.clone(),
+            },
+        ],
+    );
     let mut coincident_point = marker("coincident-point", Some([0.002, 0.001]));
     coincident_point.offset = 87;
     let mut self_linked_curve = marker("self-linked-curve", Some([0.006, 0.005]));
     self_linked_curve.offset = 88;
     self_linked_curve.kind = SketchInputKind::Arc;
-    self_linked_curve.links = vec![
-        SketchInputLink {
-            local_id: 8,
-            entity_ref: self_linked_curve.id.clone(),
-        },
-        SketchInputLink {
-            local_id: 9,
-            entity_ref: endpoint_b.id.clone(),
-        },
-    ];
+    self_linked_curve.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 8,
+                entity_ref: self_linked_curve.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 9,
+                entity_ref: endpoint_b.id.clone(),
+            },
+        ],
+    );
     let mut forward_linked_curve = marker("forward-linked-curve", Some([0.009, 0.009]));
     forward_linked_curve.offset = 89;
     forward_linked_curve.kind = SketchInputKind::Arc;
-    forward_linked_curve.links = vec![
-        SketchInputLink {
-            local_id: 10,
-            entity_ref: endpoint_a.id.clone(),
-        },
-        SketchInputLink {
-            local_id: 11,
-            entity_ref: endpoint_b.id.clone(),
-        },
-    ];
+    forward_linked_curve.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 10,
+                entity_ref: endpoint_a.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 11,
+                entity_ref: endpoint_b.id.clone(),
+            },
+        ],
+    );
     markers.extend([
         endpoint_a,
         endpoint_b,

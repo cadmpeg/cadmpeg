@@ -429,7 +429,7 @@ pub(crate) fn project_relation_point_geometry(
         let mut linked = Vec::new();
         for marker in markers_by_id.values().copied() {
             let marker_referenced = referenced.contains(marker.id.as_str());
-            for link in &marker.links {
+            for link in marker.links() {
                 let adjacent = if marker_referenced {
                     Some(link.entity_ref.as_str())
                 } else if referenced.contains(link.entity_ref.as_str()) {
@@ -569,9 +569,12 @@ pub(crate) fn project_relation_point_geometry(
                 });
             let self_linked_curve_handle = curve_operands.contains(marker.id.as_str())
                 && marker.coordinates_m.is_some()
-                && marker.links.iter().any(|link| link.entity_ref == marker.id)
                 && marker
-                    .links
+                    .links()
+                    .iter()
+                    .any(|link| link.entity_ref == marker.id)
+                && marker
+                    .links()
                     .iter()
                     .filter(|link| link.entity_ref != marker.id)
                     .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()))
@@ -579,7 +582,10 @@ pub(crate) fn project_relation_point_geometry(
                     .count()
                     == 1;
             let linked_curve_handle = curve_operands.contains(marker.id.as_str())
-                && !marker.links.iter().any(|link| link.entity_ref == marker.id)
+                && !marker
+                    .links()
+                    .iter()
+                    .any(|link| link.entity_ref == marker.id)
                 && (linked_coordinate_line_endpoints(marker, &markers_by_id).is_some()
                     || coordinate_line_endpoints_with_linked_point(marker, &markers_by_id)
                         .is_some());
@@ -619,7 +625,7 @@ pub(crate) fn project_relation_point_geometry(
                     .into_iter()
                     .chain(
                         marker
-                            .links
+                            .links()
                             .iter()
                             .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
                             .filter(|endpoint| endpoint.id != marker.id)
@@ -1539,11 +1545,11 @@ pub(super) fn implicit_circle_marker<'a>(
                 marker.feature_ref.as_deref() == Some(feature)
                     && marker.object_index == Some(relation_index)
                     && marker.kind == SketchInputKind::Relation(SketchRelationKind::Distance)
-                    && matches!(marker.links.as_slice(), [first, second]
+                    && matches!(marker.links(), [first, second]
                         if first.entity_ref == second.entity_ref
                             && first.local_id == second.local_id)
             })?;
-            let center_id = relation.links.first()?.entity_ref.as_str();
+            let center_id = relation.links().first()?.entity_ref.as_str();
             let center = lane
                 .sketch_entities
                 .iter()
@@ -2978,30 +2984,36 @@ mod relation_geometry_tests {
             SketchInputEntity::new("first-line", LANE, 6, 20, SketchInputKind::LineOrCircle);
         first_line.feature_ref = Some(FEATURE.into());
         first_line.object_index = Some(0);
-        first_line.links = vec![
-            crate::records::SketchInputLink {
-                local_id: 0,
-                entity_ref: first_start.id.clone(),
-            },
-            crate::records::SketchInputLink {
-                local_id: 1,
-                entity_ref: first_end.id.clone(),
-            },
-        ];
+        first_line.links = crate::records::SketchInputLinks::new(
+            0,
+            vec![
+                crate::records::SketchInputLink {
+                    local_id: 0,
+                    entity_ref: first_start.id.clone(),
+                },
+                crate::records::SketchInputLink {
+                    local_id: 1,
+                    entity_ref: first_end.id.clone(),
+                },
+            ],
+        );
         let mut second_line =
             SketchInputEntity::new("second-line", LANE, 7, 21, SketchInputKind::LineOrCircle);
         second_line.feature_ref = Some(FEATURE.into());
         second_line.object_index = Some(1);
-        second_line.links = vec![
-            crate::records::SketchInputLink {
-                local_id: 2,
-                entity_ref: second_start.id.clone(),
-            },
-            crate::records::SketchInputLink {
-                local_id: 3,
-                entity_ref: second_end.id.clone(),
-            },
-        ];
+        second_line.links = crate::records::SketchInputLinks::new(
+            0,
+            vec![
+                crate::records::SketchInputLink {
+                    local_id: 2,
+                    entity_ref: second_start.id.clone(),
+                },
+                crate::records::SketchInputLink {
+                    local_id: 3,
+                    entity_ref: second_end.id.clone(),
+                },
+            ],
+        );
         let relation = FeatureInputRelationInstance {
             id: "relation".into(),
             parent: LANE.into(),
@@ -3097,29 +3109,35 @@ mod relation_geometry_tests {
             match marker.id.as_str() {
                 "first-line" => {
                     marker.object_index = Some(1);
-                    marker.links = vec![
-                        crate::records::SketchInputLink {
-                            local_id: 4,
-                            entity_ref: "distractor-start".into(),
-                        },
-                        crate::records::SketchInputLink {
-                            local_id: 5,
-                            entity_ref: "distractor-end".into(),
-                        },
-                    ];
+                    marker.links = crate::records::SketchInputLinks::new(
+                        0,
+                        vec![
+                            crate::records::SketchInputLink {
+                                local_id: 4,
+                                entity_ref: "distractor-start".into(),
+                            },
+                            crate::records::SketchInputLink {
+                                local_id: 5,
+                                entity_ref: "distractor-end".into(),
+                            },
+                        ],
+                    );
                 }
                 "second-line" => {
                     marker.object_index = Some(2);
-                    marker.links = vec![
-                        crate::records::SketchInputLink {
-                            local_id: 6,
-                            entity_ref: "distractor-start".into(),
-                        },
-                        crate::records::SketchInputLink {
-                            local_id: 7,
-                            entity_ref: "distractor-end".into(),
-                        },
-                    ];
+                    marker.links = crate::records::SketchInputLinks::new(
+                        0,
+                        vec![
+                            crate::records::SketchInputLink {
+                                local_id: 6,
+                                entity_ref: "distractor-start".into(),
+                            },
+                            crate::records::SketchInputLink {
+                                local_id: 7,
+                                entity_ref: "distractor-end".into(),
+                            },
+                        ],
+                    );
                 }
                 _ => {}
             }

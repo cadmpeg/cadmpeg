@@ -34,8 +34,7 @@ fn indexed_arcs_use_one_equidistant_center_marker() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut coordinates = (0..11)
         .map(|index| {
@@ -205,8 +204,7 @@ fn compact_legacy_bounded_arc_uses_its_diameter_center_marker() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = marker("arc", 0, SketchInputKind::Arc, None);
     let start = marker("start", 1, SketchInputKind::Point, Some([1.0, 0.0]));

@@ -641,15 +641,78 @@ pub struct SketchInputEntity {
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coordinates_m: Option<[f64; 2]>,
-    /// Resolved marker-local links carried by the reference-bearing layout.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub links: Vec<SketchInputLink>,
-    /// Selector stored beside `links` in the reference-bearing layout.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub link_selector: Option<u16>,
+    /// Resolved links and their selector from the reference-bearing layout.
+    #[serde(flatten, with = "sketch_input_links_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "sketch_input_links_wire::Wire"))]
+    pub links: Option<SketchInputLinks>,
+}
+
+/// A selector paired with a nonempty collection of resolved marker links.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SketchInputLinks {
+    pub selector: u16,
+    entries: Vec<SketchInputLink>,
+}
+
+impl SketchInputLinks {
+    pub fn new(selector: u16, entries: Vec<SketchInputLink>) -> Option<Self> {
+        (!entries.is_empty()).then_some(Self { selector, entries })
+    }
+
+    pub fn entries(&self) -> &[SketchInputLink] {
+        &self.entries
+    }
+
+    #[cfg(test)]
+    pub(crate) fn entries_mut(&mut self) -> &mut [SketchInputLink] {
+        &mut self.entries
+    }
+}
+
+mod sketch_input_links_wire {
+    use super::{SketchInputLink, SketchInputLinks};
+    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    pub(super) struct Wire {
+        #[serde(default)]
+        links: Vec<SketchInputLink>,
+        #[serde(default)]
+        link_selector: Option<u16>,
+    }
+
+    pub(super) fn serialize<S: Serializer>(
+        links: &Option<SketchInputLinks>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(if links.is_some() { 2 } else { 0 }))?;
+        if let Some(links) = links {
+            map.serialize_entry("links", links.entries())?;
+            map.serialize_entry("link_selector", &links.selector)?;
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<SketchInputLinks>, D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        match (wire.links.is_empty(), wire.link_selector) {
+            (true, None) => Ok(None),
+            (false, Some(selector)) => Ok(SketchInputLinks::new(selector, wire.links)),
+            _ => Err(serde::de::Error::custom(
+                "links and link_selector must be present together, with nonempty links",
+            )),
+        }
+    }
 }
 
 impl SketchInputEntity {
+    pub fn links(&self) -> &[SketchInputLink] {
+        self.links.as_ref().map_or(&[], SketchInputLinks::entries)
+    }
+
     /// Construct a marker from its identity, parent lane, ordinal, offset, and kind.
     pub fn new(
         id: impl Into<String>,
@@ -669,8 +732,7 @@ impl SketchInputEntity {
             kind,
             state_value: None,
             coordinates_m: None,
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         }
     }
 }
@@ -1121,6 +1183,35 @@ impl SketchRelationKind {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sketch_links_preserve_flat_wire_and_reject_split_pairs() {
+        use super::{SketchInputEntity, SketchInputLinks};
+        let wire = serde_json::json!({
+            "id": "marker", "parent": "lane", "ordinal": 0, "offset": 0,
+            "kind": "point",
+            "links": [{ "local_id": 7, "entity_ref": "target" }],
+            "link_selector": 3
+        });
+        let entity: SketchInputEntity = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(entity).unwrap(), wire);
+        for missing in ["links", "link_selector"] {
+            let mut split = wire.clone();
+            split.as_object_mut().unwrap().remove(missing);
+            let error = serde_json::from_value::<SketchInputEntity>(split).unwrap_err();
+            assert!(error.to_string().contains("links and link_selector"));
+        }
+        let mut empty = wire.clone();
+        empty["links"] = serde_json::json!([]);
+        assert!(serde_json::from_value::<SketchInputEntity>(empty).is_err());
+        let mut absent = wire;
+        absent.as_object_mut().unwrap().remove("links");
+        absent.as_object_mut().unwrap().remove("link_selector");
+        let entity: SketchInputEntity = serde_json::from_value(absent.clone()).unwrap();
+        assert!(entity.links.is_none());
+        assert_eq!(serde_json::to_value(entity).unwrap(), absent);
+        assert!(SketchInputLinks::new(3, Vec::new()).is_none());
+    }
+
     use super::{SketchInputKind, SketchRelationKind};
 
     #[test]

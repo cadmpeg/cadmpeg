@@ -132,10 +132,18 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
     );
     let mut arc_marker = marker("arc-marker", 1, 1, SketchInputKind::Arc, None);
     let arc_marker_id = arc_marker.id.clone();
-    arc_marker.links.push(SketchInputLink {
-        local_id: 15,
-        entity_ref: point_marker.id.clone(),
-    });
+    arc_marker.links = crate::records::SketchInputLinks::new(
+        0,
+        arc_marker
+            .links()
+            .iter()
+            .cloned()
+            .chain(std::iter::once(SketchInputLink {
+                local_id: 15,
+                entity_ref: point_marker.id.clone(),
+            }))
+            .collect(),
+    );
     let line_marker = marker("line-marker", 2, 2, SketchInputKind::LineOrCircle, None);
     let point = point_entity("point", &sketch, &point_marker.id, Point2::new(0.0, 1.0));
     let line = line_entity(

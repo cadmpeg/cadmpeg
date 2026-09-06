@@ -54,8 +54,7 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
             kind: SketchInputKind::LineOrCircle,
             state_value: Some(1.0),
             coordinates_m: Some([0.001, 0.002]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         }],
     }
 }

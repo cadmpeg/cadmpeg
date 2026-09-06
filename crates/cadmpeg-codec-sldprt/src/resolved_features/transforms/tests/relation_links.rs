@@ -22,10 +22,13 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
     owner.kind = SketchInputKind::LineOrCircle;
     owner.object_index = Some(7);
     owner.offset = 1;
-    owner.links = vec![SketchInputLink {
-        local_id: 4,
-        entity_ref: relation.id.clone(),
-    }];
+    owner.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 4,
+            entity_ref: relation.id.clone(),
+        }],
+    );
     let mut point = marker("point", Some([1.0, 2.0]));
     point.object_index = Some(8);
     point.offset = 2;
@@ -70,10 +73,13 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
 fn self_link_does_not_make_a_relation_operand_bearing() {
     let mut relation = marker("relation", Some([0.0, 0.0]));
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Perpendicular);
-    relation.links = vec![SketchInputLink {
-        local_id: 0,
-        entity_ref: relation.id.clone(),
-    }];
+    relation.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 0,
+            entity_ref: relation.id.clone(),
+        }],
+    );
     let markers = HashMap::from([(relation.id.as_str(), &relation)]);
 
     assert!(!marker_owns_constraint(&relation, &markers));
@@ -88,16 +94,19 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Tangent);
     relation.local_id = Some(7);
     relation.object_index = Some(8);
-    relation.links = vec![
-        SketchInputLink {
-            local_id: 7,
-            entity_ref: collision.id.clone(),
-        },
-        SketchInputLink {
-            local_id: 7,
-            entity_ref: collision.id.clone(),
-        },
-    ];
+    relation.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 7,
+                entity_ref: collision.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 7,
+                entity_ref: collision.id.clone(),
+            },
+        ],
+    );
     let markers = HashMap::from([
         (relation.id.as_str(), &relation),
         (collision.id.as_str(), &collision),
@@ -117,16 +126,19 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
     relation.local_id = Some(7);
     relation.object_index = Some(8);
-    relation.links = vec![
-        SketchInputLink {
-            local_id: 7,
-            entity_ref: "first-point".into(),
-        },
-        SketchInputLink {
-            local_id: 8,
-            entity_ref: "second-point".into(),
-        },
-    ];
+    relation.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 7,
+                entity_ref: "first-point".into(),
+            },
+            SketchInputLink {
+                local_id: 8,
+                entity_ref: "second-point".into(),
+            },
+        ],
+    );
     let first = marker("first-point", Some([0.0, 0.0]));
     let second = marker("second-point", Some([1.0, 0.0]));
     let markers = HashMap::from([
@@ -175,10 +187,13 @@ fn object_index_collision_remains_a_forward_curve_operand() {
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
     relation.local_id = Some(2);
     relation.object_index = Some(1);
-    relation.links = vec![SketchInputLink {
-        local_id: 1,
-        entity_ref: "line".into(),
-    }];
+    relation.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 1,
+            entity_ref: "line".into(),
+        }],
+    );
     let mut line = marker("line", None);
     line.kind = SketchInputKind::LineOrCircle;
     line.local_id = Some(1);
@@ -202,16 +217,19 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
     relation.kind = SketchInputKind::Relation(SketchRelationKind::ArcAngle90);
     relation.local_id = Some(7);
     relation.object_index = Some(7);
-    relation.links = vec![
-        SketchInputLink {
-            local_id: 7,
-            entity_ref: "ignored-arc".into(),
-        },
-        SketchInputLink {
-            local_id: 9,
-            entity_ref: "operand-arc".into(),
-        },
-    ];
+    relation.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 7,
+                entity_ref: "ignored-arc".into(),
+            },
+            SketchInputLink {
+                local_id: 9,
+                entity_ref: "operand-arc".into(),
+            },
+        ],
+    );
     let mut ignored_arc = marker("ignored-arc", None);
     ignored_arc.kind = SketchInputKind::Arc;
     let mut operand_arc = marker("operand-arc", None);
@@ -247,18 +265,24 @@ fn self_identifying_forward_link_is_not_a_relation_locus() {
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
     relation.local_id = Some(1);
     relation.object_index = Some(1);
-    relation.links = vec![SketchInputLink {
-        local_id: 1,
-        entity_ref: "center".into(),
-    }];
+    relation.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 1,
+            entity_ref: "center".into(),
+        }],
+    );
     let mut center = marker("center", Some([0.0, 1.0]));
     center.kind = SketchInputKind::Arc;
     let mut first = marker("first", Some([-1.0, 0.0]));
     first.offset = 1;
-    first.links = vec![SketchInputLink {
-        local_id: 3,
-        entity_ref: relation.id.clone(),
-    }];
+    first.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 3,
+            entity_ref: relation.id.clone(),
+        }],
+    );
     let mut second = marker("second", Some([1.0, 0.0]));
     second.offset = 2;
     second.links = first.links.clone();
@@ -297,16 +321,19 @@ fn native_fallback_entities_exclude_self_identity_collisions() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
     relation.local_id = Some(3);
-    relation.links = vec![
-        SketchInputLink {
-            local_id: 3,
-            entity_ref: "collision".into(),
-        },
-        SketchInputLink {
-            local_id: 4,
-            entity_ref: "operand".into(),
-        },
-    ];
+    relation.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 3,
+                entity_ref: "collision".into(),
+            },
+            SketchInputLink {
+                local_id: 4,
+                entity_ref: "operand".into(),
+            },
+        ],
+    );
     let collision = marker("collision", Some([0.0, 0.0]));
     let operand = marker("operand", Some([1.0, 0.0]));
     let markers = HashMap::from([
@@ -339,10 +366,13 @@ fn native_fallback_entities_exclude_self_identity_collisions() {
 fn exact_curve_identity_precedes_incident_locus_expansion() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
-    relation.links = vec![SketchInputLink {
-        local_id: 3,
-        entity_ref: "curve-marker".into(),
-    }];
+    relation.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 3,
+            entity_ref: "curve-marker".into(),
+        }],
+    );
     let mut curve = marker("curve-marker", Some([1.0, 1.0]));
     curve.kind = SketchInputKind::LineOrCircle;
     let markers = HashMap::from([
@@ -392,16 +422,19 @@ fn exact_curve_identity_precedes_incident_locus_expansion() {
 fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles() {
     let mut relation = marker("fixed", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Fixed);
-    relation.links = vec![
-        SketchInputLink {
-            local_id: 2,
-            entity_ref: "point".into(),
-        },
-        SketchInputLink {
-            local_id: 7,
-            entity_ref: "radius".into(),
-        },
-    ];
+    relation.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: "point".into(),
+            },
+            SketchInputLink {
+                local_id: 7,
+                entity_ref: "radius".into(),
+            },
+        ],
+    );
     let mut point = marker("point", Some([1.0, 2.0]));
     point.kind = SketchInputKind::Point;
     let mut radius = marker("radius", None);
@@ -440,10 +473,18 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
 
     let mut second = marker("second", Some([3.0, 4.0]));
     second.kind = SketchInputKind::Point;
-    relation.links.push(SketchInputLink {
-        local_id: 8,
-        entity_ref: second.id.clone(),
-    });
+    relation.links = crate::records::SketchInputLinks::new(
+        0,
+        relation
+            .links()
+            .iter()
+            .cloned()
+            .chain(std::iter::once(SketchInputLink {
+                local_id: 8,
+                entity_ref: second.id.clone(),
+            }))
+            .collect(),
+    );
     let markers = HashMap::from([
         (relation.id.as_str(), &relation),
         (point.id.as_str(), &point),

@@ -154,8 +154,7 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = [
         marker(
@@ -441,8 +440,7 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
                 kind,
                 state_value: Some(1.0),
                 coordinates_m,
-                links: Vec::new(),
-                link_selector: None,
+                links: None,
             }
         };
     let markers = [
@@ -599,8 +597,7 @@ fn current_compact_line_cycle_infers_its_missing_rectangle_corner() {
             },
             state_value: Some(1.0),
             coordinates_m,
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         };
     let markers = [
         marker("missing", 500, Some(1), None),
@@ -660,8 +657,7 @@ fn legacy_rectangle_diagonal_carries_one_endpoint_and_two_distinct_corner_links(
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
 
     assert_eq!(
@@ -695,8 +691,7 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m: Some([u, v]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = [
         marker("center", -0.023, 0.0),
@@ -753,8 +748,7 @@ fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let point = |u, v| Point2::new(u, v);
     let lines = vec![
@@ -840,11 +834,13 @@ fn linked_semicircle_records_close_a_two_center_profile() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: vec![SketchInputLink {
-            entity_ref: center.into(),
-            local_id: 1,
-        }],
-        link_selector: Some(1),
+        links: crate::records::SketchInputLinks::new(
+            1,
+            vec![SketchInputLink {
+                entity_ref: center.into(),
+                local_id: 1,
+            }],
+        ),
     };
     let records = [
         marker("curve-a", 0, "center-a"),

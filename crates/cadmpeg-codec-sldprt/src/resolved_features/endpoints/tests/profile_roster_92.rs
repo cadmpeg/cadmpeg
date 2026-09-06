@@ -45,8 +45,7 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, Some(9), SketchInputKind::LineOrCircle, None);
     let first = entity(

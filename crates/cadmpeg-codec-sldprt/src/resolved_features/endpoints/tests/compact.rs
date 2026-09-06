@@ -19,8 +19,7 @@ fn one_ended_line_uses_its_same_index_radius_relation_pair() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links,
-        link_selector: None,
+        links: crate::records::SketchInputLinks::new(0, links),
     };
     let first = marker(
         "first",
@@ -111,8 +110,7 @@ fn one_ended_line_accepts_a_direct_radius_relation_link_only_when_unique() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links,
-        link_selector: None,
+        links: crate::records::SketchInputLinks::new(0, links),
     };
     let first = marker(
         "first",
@@ -164,10 +162,17 @@ fn one_ended_line_accepts_a_direct_radius_relation_link_only_when_unique() {
         )
     };
     let radius = relation("radius", &first);
-    line.links.push(SketchInputLink {
-        local_id: 1,
-        entity_ref: radius.id.clone(),
-    });
+    line.links = crate::records::SketchInputLinks::new(
+        0,
+        line.links()
+            .iter()
+            .cloned()
+            .chain(std::iter::once(SketchInputLink {
+                local_id: 1,
+                entity_ref: radius.id.clone(),
+            }))
+            .collect(),
+    );
     let markers_by_id = [&first, &second, &third, &line, &radius]
         .into_iter()
         .map(|marker| (marker.id.as_str(), marker))
@@ -207,8 +212,7 @@ fn coordinate_profile_line_uses_its_own_coordinate_and_one_point_link() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some([0.0, 1.0]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let relation = SketchInputEntity {
         id: "relation".into(),
@@ -221,8 +225,7 @@ fn coordinate_profile_line_uses_its_own_coordinate_and_one_point_link() {
         kind: SketchInputKind::Relation(SketchRelationKind::Horizontal),
         state_value: None,
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = SketchInputEntity {
         id: "curve".into(),
@@ -235,17 +238,19 @@ fn coordinate_profile_line_uses_its_own_coordinate_and_one_point_link() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: Some([1.0, 0.0]),
-        links: vec![
-            SketchInputLink {
-                local_id: 3,
-                entity_ref: relation.id.clone(),
-            },
-            SketchInputLink {
-                local_id: 2,
-                entity_ref: point.id.clone(),
-            },
-        ],
-        link_selector: None,
+        links: crate::records::SketchInputLinks::new(
+            0,
+            vec![
+                SketchInputLink {
+                    local_id: 3,
+                    entity_ref: relation.id.clone(),
+                },
+                SketchInputLink {
+                    local_id: 2,
+                    entity_ref: point.id.clone(),
+                },
+            ],
+        ),
     };
     let markers = [&curve, &point, &relation];
     let markers_by_id = markers
@@ -298,8 +303,7 @@ fn shared_endpoint_resolution_uses_compact_legacy_code_one_line_records() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = SketchInputEntity {
         id: "line".into(),
@@ -312,8 +316,7 @@ fn shared_endpoint_resolution_uses_compact_legacy_code_one_line_records() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let first = point("first", 100, 1, Some([0.0, 0.0]));
     let second = point("second", 200, 2, Some([1.0, 0.0]));
@@ -376,8 +379,7 @@ fn compact_legacy_90_geometry_line_uses_feature_marker_roster() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = SketchInputEntity {
         id: "line".into(),
@@ -390,8 +392,7 @@ fn compact_legacy_90_geometry_line_uses_feature_marker_roster() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let first = point("first", 100, Some([0.0, 0.0]));
     let non_point = SketchInputEntity {
@@ -405,8 +406,7 @@ fn compact_legacy_90_geometry_line_uses_feature_marker_roster() {
         kind: SketchInputKind::Native(7),
         state_value: None,
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let second = point("second", 300, Some([1.0, 0.0]));
     let markers = [&curve, &first, &non_point, &second];
@@ -898,8 +898,7 @@ fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = marker("curve", Some(1), SketchInputKind::LineOrCircle, None);
     let relation = marker(
@@ -963,8 +962,7 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = SketchInputEntity {
         kind: SketchInputKind::LineOrCircle,
@@ -1021,8 +1019,7 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
         kind: SketchInputKind::Relation(SketchRelationKind::Distance),
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = [&curve, &first, &relation];
     assert!(relation_reference_curve_record(&payload, &curve, &markers));
@@ -1055,8 +1052,7 @@ fn compact_complete_marker_roster_rejects_conflicting_index_bases() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = SketchInputEntity {
         kind: SketchInputKind::LineOrCircle,
@@ -1111,8 +1107,7 @@ fn current_referenced_compact_roster_prefers_complete_roster() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = marker("curve", 0, SketchInputKind::Arc, None);
     let first = marker("first", 10, SketchInputKind::Point, Some([1.0, 0.0]));
@@ -1170,8 +1165,7 @@ fn current_referenced_compact_roster_falls_back_when_complete_slot_is_not_a_poin
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = marker("curve", 0, SketchInputKind::LineOrCircle, None);
     let relation = marker(
@@ -1229,8 +1223,7 @@ fn current_compact_curve_falls_back_to_raw_object_indices() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let first = marker("first", Some(15), 1, Some([0.0, 0.0]));
     let second = marker("second", Some(6), 2, Some([1.0, 0.0]));
@@ -1245,8 +1238,7 @@ fn current_compact_curve_falls_back_to_raw_object_indices() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = [&first, &second];
     let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
@@ -1302,8 +1294,7 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let first = marker("first", Some(1), Some([0.0, 0.0]));
     let second = marker("second", Some(2), Some([1.0, 0.0]));
@@ -1319,8 +1310,7 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = [&first, &second];
     assert_eq!(

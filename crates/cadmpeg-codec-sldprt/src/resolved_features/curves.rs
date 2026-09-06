@@ -209,7 +209,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
                 .copied()
                 .filter(|record| {
                     record
-                        .links
+                        .links()
                         .iter()
                         .any(|link| link.entity_ref == **center_ref)
                 })

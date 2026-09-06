@@ -106,8 +106,7 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let point = |id: &str, offset| SketchInputEntity {
         id: id.into(),
@@ -120,8 +119,7 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = [
         curve.clone(),

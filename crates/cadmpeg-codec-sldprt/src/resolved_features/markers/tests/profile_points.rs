@@ -60,8 +60,7 @@ fn current_indexed_line_uses_its_unique_reverse_incidence_pair() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         entity("curve", 0, Some(7)),

@@ -76,8 +76,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
             kind: SketchInputKind::Point,
             state_value: Some(1.0),
             coordinates_m: Some([0.001, 0.002]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         }],
     };
     let feature = Feature {

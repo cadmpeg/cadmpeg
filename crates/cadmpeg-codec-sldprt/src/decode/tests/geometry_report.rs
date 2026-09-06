@@ -97,8 +97,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         kind,
         state_value: None,
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let relation = FeatureInputRelationInstance {
         id: "relation-instance".into(),
@@ -129,10 +128,18 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         0,
         SketchInputKind::Relation(SketchRelationKind::Horizontal),
     );
-    relation_marker.links.push(SketchInputLink {
-        local_id: 1,
-        entity_ref: "geometry-marker".into(),
-    });
+    relation_marker.links = crate::records::SketchInputLinks::new(
+        0,
+        relation_marker
+            .links()
+            .iter()
+            .cloned()
+            .chain(std::iter::once(SketchInputLink {
+                local_id: 1,
+                entity_ref: "geometry-marker".into(),
+            }))
+            .collect(),
+    );
     let native = SldprtNative {
         feature_input_lanes: vec![FeatureInputLane {
             id: "lane".into(),
@@ -224,11 +231,13 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
                     kind: SketchInputKind::Relation(SketchRelationKind::Horizontal),
                     state_value: None,
                     coordinates_m: None,
-                    links: vec![SketchInputLink {
-                        local_id: 1,
-                        entity_ref: "geometry-marker".into(),
-                    }],
-                    link_selector: None,
+                    links: crate::records::SketchInputLinks::new(
+                        0,
+                        vec![SketchInputLink {
+                            local_id: 1,
+                            entity_ref: "geometry-marker".into(),
+                        }],
+                    ),
                 },
                 SketchInputEntity {
                     id: "geometry-marker".into(),
@@ -241,8 +250,7 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
                     kind: SketchInputKind::Native(99),
                     state_value: None,
                     coordinates_m: None,
-                    links: Vec::new(),
-                    link_selector: None,
+                    links: None,
                 },
             ],
         }],

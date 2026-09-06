@@ -38,8 +38,7 @@ fn marker(
         kind,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     }
 }
 
@@ -195,8 +194,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         kind: SketchInputKind::LineOrCircle,
         state_value: None,
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = HashMap::from([(marker.id.as_str(), &marker)]);
     let loci = HashMap::from([(
@@ -726,20 +724,23 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
     first_marker.object_index = Some(2);
     let mut second_marker = marker("second-marker", 1, 20, SketchInputKind::Point, None);
     second_marker.object_index = Some(3);
-    second_marker.links = vec![
-        SketchInputLink {
-            local_id: 0,
-            entity_ref: "second-target".into(),
-        },
-        SketchInputLink {
-            local_id: 1,
-            entity_ref: "second-near".into(),
-        },
-        SketchInputLink {
-            local_id: 2,
-            entity_ref: "second-other".into(),
-        },
-    ];
+    second_marker.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 0,
+                entity_ref: "second-target".into(),
+            },
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: "second-near".into(),
+            },
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: "second-other".into(),
+            },
+        ],
+    );
     let second_target_marker = marker("second-target", 2, 30, SketchInputKind::Point, None);
     let second_near_marker = marker("second-near", 3, 40, SketchInputKind::Point, None);
     let second_other_marker = marker("second-other", 4, 50, SketchInputKind::Point, None);
@@ -1059,10 +1060,13 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
         None,
     );
     wrapper_marker.object_index = Some(4);
-    wrapper_marker.links = vec![SketchInputLink {
-        local_id: 0,
-        entity_ref: arc_marker.id.clone(),
-    }];
+    wrapper_marker.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 0,
+            entity_ref: arc_marker.id.clone(),
+        }],
+    );
     let point = SketchEntity::new(
         SketchEntityId("point".into()),
         sketch.clone(),
@@ -1125,16 +1129,19 @@ fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
         None,
     );
     wrapper_marker.object_index = Some(4);
-    wrapper_marker.links = vec![
-        SketchInputLink {
-            local_id: 0,
-            entity_ref: first_marker.id.clone(),
-        },
-        SketchInputLink {
-            local_id: 1,
-            entity_ref: second_marker.id.clone(),
-        },
-    ];
+    wrapper_marker.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 0,
+                entity_ref: first_marker.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: second_marker.id.clone(),
+            },
+        ],
+    );
     let point = SketchEntity::new(
         SketchEntityId("point".into()),
         sketch.clone(),
@@ -1199,16 +1206,19 @@ fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
     let point_marker = marker("point-marker", 0, 10, SketchInputKind::Point, None);
     let mut line_marker = marker("line-marker", 1, 20, SketchInputKind::LineOrCircle, None);
     line_marker.object_index = Some(1);
-    line_marker.links = vec![
-        SketchInputLink {
-            local_id: 0,
-            entity_ref: "line-start".into(),
-        },
-        SketchInputLink {
-            local_id: 1,
-            entity_ref: "line-end".into(),
-        },
-    ];
+    line_marker.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 0,
+                entity_ref: "line-start".into(),
+            },
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: "line-end".into(),
+            },
+        ],
+    );
     let line_start = marker("line-start", 2, 30, SketchInputKind::Point, None);
     let line_end = marker("line-end", 3, 40, SketchInputKind::Point, None);
     let point = SketchEntity::new(
@@ -1261,27 +1271,33 @@ fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
 fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
     let sketch = SketchId("sketch".into());
     let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::LineOrCircle, None);
-    first_marker.links = vec![
-        SketchInputLink {
-            local_id: 0,
-            entity_ref: "first-start".into(),
-        },
-        SketchInputLink {
-            local_id: 1,
-            entity_ref: "first-end".into(),
-        },
-    ];
+    first_marker.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 0,
+                entity_ref: "first-start".into(),
+            },
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: "first-end".into(),
+            },
+        ],
+    );
     let mut second_marker = marker("second-marker", 1, 20, SketchInputKind::LineOrCircle, None);
-    second_marker.links = vec![
-        SketchInputLink {
-            local_id: 2,
-            entity_ref: "second-start".into(),
-        },
-        SketchInputLink {
-            local_id: 3,
-            entity_ref: "second-end".into(),
-        },
-    ];
+    second_marker.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: "second-start".into(),
+            },
+            SketchInputLink {
+                local_id: 3,
+                entity_ref: "second-end".into(),
+            },
+        ],
+    );
     let first_start = marker("first-start", 2, 30, SketchInputKind::Point, None);
     let first_end = marker("first-end", 3, 40, SketchInputKind::Point, None);
     let second_start = marker("second-start", 4, 50, SketchInputKind::Point, None);
@@ -1491,16 +1507,19 @@ fn dynamic_line_distance_does_not_bypass_explicit_operands() {
 fn dynamic_angle_disambiguates_one_marker_scoped_line_by_angle() {
     let sketch = SketchId("sketch".into());
     let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::LineOrCircle, None);
-    first_marker.links = vec![
-        SketchInputLink {
-            local_id: 0,
-            entity_ref: "first-start".into(),
-        },
-        SketchInputLink {
-            local_id: 1,
-            entity_ref: "first-end".into(),
-        },
-    ];
+    first_marker.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 0,
+                entity_ref: "first-start".into(),
+            },
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: "first-end".into(),
+            },
+        ],
+    );
     let second_marker = marker("second-marker", 1, 20, SketchInputKind::LineOrCircle, None);
     let first_start = marker("first-start", 2, 30, SketchInputKind::Point, None);
     let first_end = marker("first-end", 3, 40, SketchInputKind::Point, None);

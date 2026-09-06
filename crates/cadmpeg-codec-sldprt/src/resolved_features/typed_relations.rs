@@ -63,7 +63,7 @@ fn unique_entity_from_link_intersection(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchEntityId> {
     let links = marker
-        .links
+        .links()
         .iter()
         .filter(|link| !relation_link_identifies_owner(marker, link))
         .collect::<Vec<_>>();
@@ -109,7 +109,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     }
     let native = || {
         let mut entities = marker
-            .links
+            .links()
             .iter()
             .filter(|link| !relation_link_identifies_owner(marker, link))
             .flat_map(|link| marker_entities(&link.entity_ref, markers_by_id, loci_by_marker))
@@ -125,7 +125,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
         entities.sort_by(|left, right| left.0.cmp(&right.0));
         entities.dedup();
         let mut operands = marker
-            .links
+            .links()
             .iter()
             .map(|link| SketchNativeOperand {
                 native_kind: "sldprt:marker-local-id".into(),
@@ -178,7 +178,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
         // Forward point links are explicit operands. Reverse incidences are
         // ownership metadata and must not suppress those operands.
         let point_links = marker
-            .links
+            .links()
             .iter()
             .filter(|link| {
                 link.entity_ref != marker.id
@@ -258,7 +258,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
             if matches!(kind, Horizontal | Vertical) {
                 let point_links = marker
-                    .links
+                    .links()
                     .iter()
                     .filter(|link| !relation_link_identifies_owner(marker, link))
                     .collect::<Vec<_>>();
@@ -293,7 +293,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let inferred_entities =
                 marker_entities(marker.id.as_str(), markers_by_id, loci_by_marker);
             let mut exact_entities = marker
-                .links
+                .links()
                 .iter()
                 .filter(|link| !relation_link_identifies_owner(marker, link))
                 .flat_map(|link| {
@@ -496,7 +496,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let owner_entities =
                 relation_owner_curve_entities(marker, markers_by_id, loci_by_marker);
             let forward_entities = marker
-                .links
+                .links()
                 .iter()
                 .filter(|link| !relation_link_identifies_owner(marker, link))
                 .flat_map(|link| marker_entities(&link.entity_ref, markers_by_id, loci_by_marker))
@@ -504,7 +504,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 .collect::<Vec<_>>();
             let geometry_pair = if owner_entities.is_empty() && !sketch_entities.is_empty() {
                 let links = marker
-                    .links
+                    .links()
                     .iter()
                     .filter(|link| !relation_link_identifies_owner(marker, link))
                     .collect::<Vec<_>>();
@@ -1168,7 +1168,7 @@ pub(super) fn unique_axis_aligned_linked_loci(
     horizontal: bool,
 ) -> Option<Vec<SketchLocus>> {
     let links = marker
-        .links
+        .links()
         .iter()
         .filter(|link| relation_link_is_geometric_operand(marker, link, markers_by_id))
         .collect::<Vec<_>>();
@@ -1221,7 +1221,7 @@ fn axis_relation_point_loci(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<[SketchLocus; 2]> {
-    if !relation.links.iter().any(|link| {
+    if !relation.links().iter().any(|link| {
         !relation_link_identifies_owner(relation, link)
             && matches!(
                 markers_by_id
@@ -1286,7 +1286,7 @@ fn collect_axis_relation_point_loci(
         return;
     }
     for link in relation
-        .links
+        .links()
         .iter()
         .filter(|link| !relation_link_identifies_owner(relation, link))
     {
@@ -1383,7 +1383,7 @@ pub(super) fn relation_owner_markers<'a>(
         })
         .filter(|marker| {
             marker
-                .links
+                .links()
                 .iter()
                 .any(|link| link.entity_ref == relation.id)
         })
@@ -1397,7 +1397,7 @@ pub(crate) fn marker_owns_constraint(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
 ) -> bool {
     let mut axis_point_links = marker
-        .links
+        .links()
         .iter()
         .filter(|link| link.entity_ref != marker.id)
         .filter(|link| {
@@ -1427,7 +1427,7 @@ pub(crate) fn marker_owns_constraint(
     marker.kind.owns_constraint()
         && (axis_point_pair
             || marker
-                .links
+                .links()
                 .iter()
                 .any(|link| !relation_link_identifies_owner(marker, link))
             || !relation_owner_markers(marker, markers_by_id).is_empty())
@@ -1670,12 +1670,12 @@ pub(super) fn line_endpoint_markers<'a>(
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
 ) -> Vec<&'a SketchInputEntity> {
     let mut endpoints = line
-        .links
+        .links()
         .iter()
         .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
         .chain(markers_by_id.values().copied().filter(|candidate| {
             candidate
-                .links
+                .links()
                 .iter()
                 .any(|link| link.entity_ref == line.id)
         }))
@@ -1820,7 +1820,7 @@ fn coordinate_profile_line_endpoints<'a>(
     }
     let mut point = None;
     for link in curve
-        .links
+        .links()
         .iter()
         .filter(|link| link.entity_ref != curve.id)
     {

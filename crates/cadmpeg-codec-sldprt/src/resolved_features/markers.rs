@@ -847,8 +847,7 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 kind,
                 state_value: marker_state_value(payload, offset),
                 coordinates_m,
-                links: Vec::new(),
-                link_selector: None,
+                links: None,
             }
         })
         .collect()

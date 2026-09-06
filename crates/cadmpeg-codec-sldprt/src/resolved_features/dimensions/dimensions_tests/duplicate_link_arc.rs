@@ -28,8 +28,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
             kind: marker_kind,
             state_value: None,
             coordinates_m,
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         };
     let center = marker(
         "unrelated-center",
@@ -71,16 +70,19 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         Some(u32::MAX - 65536),
         None,
     );
-    handle.links = vec![
-        SketchInputLink {
-            entity_ref: "arc".into(),
-            local_id: 7,
-        },
-        SketchInputLink {
-            entity_ref: "arc".into(),
-            local_id: 7,
-        },
-    ];
+    handle.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                entity_ref: "arc".into(),
+                local_id: 7,
+            },
+            SketchInputLink {
+                entity_ref: "arc".into(),
+                local_id: 7,
+            },
+        ],
+    );
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -138,7 +140,12 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
     assert_eq!(carrier.construction, Some(false));
 
     let mut mismatched_lane = lane.clone();
-    mismatched_lane.sketch_entities[4].links[1].local_id = 8;
+    mismatched_lane.sketch_entities[4]
+        .links
+        .as_mut()
+        .unwrap()
+        .entries_mut()[1]
+        .local_id = 8;
     let mismatched_markers = mismatched_lane
         .sketch_entities
         .iter()
@@ -194,16 +201,19 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         Some(u32::MAX - 65536),
         None,
     );
-    second_handle.links = vec![
-        SketchInputLink {
-            entity_ref: "second-arc".into(),
-            local_id: 11,
-        },
-        SketchInputLink {
-            entity_ref: "second-arc".into(),
-            local_id: 11,
-        },
-    ];
+    second_handle.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                entity_ref: "second-arc".into(),
+                local_id: 11,
+            },
+            SketchInputLink {
+                entity_ref: "second-arc".into(),
+                local_id: 11,
+            },
+        ],
+    );
     ambiguous_lane
         .sketch_entities
         .extend([second_arc, second_witness, second_handle]);

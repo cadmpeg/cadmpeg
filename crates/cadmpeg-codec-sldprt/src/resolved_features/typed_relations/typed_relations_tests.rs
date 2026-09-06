@@ -65,8 +65,7 @@ fn coordinate_lines_use_their_centered_endpoint_pairs() {
         kind: SketchInputKind::LineOrCircle,
         state_value: None,
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let line = entity("line", 0, [2.0, 3.0]);
     let first = entity("first", 143, [1.0, 2.0]);
@@ -137,8 +136,7 @@ fn current_coordinate_line_uses_its_single_local_link() {
         kind,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let line = entity(
         "line",
@@ -189,8 +187,7 @@ fn current_coordinate_line_accepts_a_coordinate_bearing_curve_vertex() {
         kind,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let line = entity(
         "line",
@@ -245,8 +242,7 @@ fn extended_wide_selected_axis_uses_object_ids_then_one_based_point_roster() {
         },
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, Some(8), None);
     let first = entity("first", 10, Some(1), Some([0.0, 0.0]));
@@ -296,8 +292,7 @@ fn current_line_resolves_one_based_point_roster_endpoints() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, None, SketchInputKind::LineOrCircle);
     let points = [
@@ -362,8 +357,7 @@ fn legacy_geometry_locus_line_resolves_zero_based_point_roster_endpoints() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, None, SketchInputKind::LineOrCircle);
     let points = [
@@ -417,8 +411,7 @@ fn terminal_legacy_indexed_curve_retains_its_sibling_line_kind() {
         kind,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let sibling = entity("sibling", 0, SketchInputKind::LineOrCircle);
     let terminal = entity("terminal", detail as u64, SketchInputKind::Arc);

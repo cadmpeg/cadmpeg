@@ -875,8 +875,7 @@ pub(crate) fn bind_scalar_operands(
     for lane in lanes {
         for entity in &mut lane.sketch_entities {
             entity.feature_ref = None;
-            entity.links.clear();
-            entity.link_selector = None;
+            entity.links = None;
         }
         let mut starts = histories
             .iter()
@@ -994,9 +993,8 @@ pub(super) fn finalize_lane_bindings(
                 })
             })
             .collect::<Vec<_>>();
-        if !links.is_empty() {
-            entity.links = links;
-            entity.link_selector = Some(selector);
+        if let Some(links) = crate::records::SketchInputLinks::new(selector, links) {
+            entity.links = Some(links);
         }
     }
     bind_resolved_curve_vertices(lane);
