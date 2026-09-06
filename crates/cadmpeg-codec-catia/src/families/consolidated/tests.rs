@@ -944,7 +944,7 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     };
     assert_eq!(run.circle.center_pair, [12.0, 34.0]);
     assert_eq!(run.circle.radius, 5.0);
-    assert_eq!(run.descriptor.frame.header_token, 0x15);
+    assert_eq!(run.descriptor.header_token, 0x15);
     assert_eq!(
         run.definition.frame.pos,
         parameter.len() + circle.len() + 10

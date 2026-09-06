@@ -462,10 +462,8 @@ pub struct B2Class5b5cRecord {
     pub source_index: usize,
     /// Logical offset within the bounded record source.
     pub source_offset: usize,
-    /// Complete framed-record byte length.
-    pub byte_len: usize,
     /// Record class.
-    pub class: crate::native::CatiaClass5b5c,
+    pub class: crate::native::class5b5c::CatiaClass5b5c,
 }
 
 /// Target encoding of a structurally complete class-`0x5f` node.
@@ -1515,14 +1513,12 @@ pub(crate) fn b2_class5b5c_records_from_records(
             if !record.physically_contiguous || record.family != ConsolidatedFamily::B {
                 return None;
             }
-            let class = crate::native::CatiaClass5b5c::try_from(record.class).ok()?;
+            let class = crate::native::class5b5c::CatiaClass5b5c::try_from(record.class).ok()?;
             let payload = data.get(record.payload.clone())?;
-            let byte_len = record.range.end.checked_sub(record.range.start)?;
             Some(B2Class5b5cRecord {
                 frame: ConsolidatedRawFrame::from_record(record, payload.to_vec())?,
                 source_index: record.source_index,
                 source_offset: record.source_range.start,
-                byte_len,
                 class,
             })
         })

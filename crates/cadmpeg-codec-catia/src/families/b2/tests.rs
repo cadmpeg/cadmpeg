@@ -627,10 +627,7 @@ fn b2_class5b5c_parser_retains_complete_source_local_control_lanes() {
         [0x13, 0x03, 0x83]
     );
     assert!(records.iter().all(|record| {
-        record.source_index == 0
-            && record.source_offset == record.frame.pos
-            && record.byte_len
-                == 4 + usize::from(u8::from(record.frame.width)) + record.frame.payload.len()
+        record.source_index == 0 && record.source_offset == record.frame.pos
     }));
 
     let mut invalid_flag = bytes;

@@ -1544,11 +1544,11 @@ pub(super) fn validate_consolidated_edge_runs(
                 && node.parameter_selectors == [2, 1]
         });
         let definition_valid = node.definition.as_ref().is_none_or(|definition| {
-            let token_limit = 1u32.checked_shl(u32::from(u8::from(definition.width)) * 8);
+            let token_limit = 1u32.checked_shl(u32::from(u8::from(definition.frame.width)) * 8);
             node.uses.is_some()
-                && token_limit.is_some_and(|limit| definition.header_token < limit)
-                && !definition.payload.is_empty()
-                && definition.byte_offset < node.byte_offset
+                && token_limit.is_some_and(|limit| definition.frame.header_token < limit)
+                && !definition.frame.payload.is_empty()
+                && definition.frame.pos < node.byte_offset
         });
         let analytic_circle_valid = node.analytic_circle.as_ref().is_none_or(|binding| {
             let definition = node.definition.as_ref();
@@ -1564,8 +1564,8 @@ pub(super) fn validate_consolidated_edge_runs(
                             }) if values.len() == 8
                         )
                         && circle.is_some_and(|circle| {
-                            binding.descriptor.byte_offset < circle.byte_offset
-                                && circle.byte_offset < definition.byte_offset
+                            binding.descriptor.pos < circle.byte_offset
+                                && circle.byte_offset < definition.frame.pos
                         })
                 })
                 && 1u32
@@ -1584,7 +1584,7 @@ pub(super) fn validate_consolidated_edge_runs(
                                     | ConsolidatedEdgeDefinitionData::SegmentedScalar25 { .. }
                             )
                         )
-                        && descriptor.byte_offset < definition.byte_offset
+                        && descriptor.byte_offset < definition.frame.pos
                 })
                 && matches!(descriptor.control, 0x02 | 0x0a)
                 && matches!(descriptor.values.len(), 2 | 3)

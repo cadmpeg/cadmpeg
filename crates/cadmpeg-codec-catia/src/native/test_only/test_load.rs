@@ -1,3 +1,4 @@
+use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
 use super::test_consolidated::{
     validate_consolidated_circles, validate_consolidated_class5b5c_records,
     validate_consolidated_class61_records, validate_consolidated_cone_faces,

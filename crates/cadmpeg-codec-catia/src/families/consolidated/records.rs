@@ -67,7 +67,7 @@ pub struct ConsolidatedTopologyEdgeRun {
 #[derive(Debug, Clone)]
 pub struct ConsolidatedAnalyticCircleEdgeRun {
     /// Class-`0x18` descriptor immediately preceding the circle carrier.
-    pub descriptor: ConsolidatedAnalyticCircleDescriptor,
+    pub descriptor: ConsolidatedRawFrame,
     /// Arc-length circle carrier.
     pub circle: B2Circle,
     /// Eight-scalar class-`0x23` edge definition.
@@ -75,13 +75,6 @@ pub struct ConsolidatedAnalyticCircleEdgeRun {
     pub definition: ConsolidatedEdgeDefinition,
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
-}
-
-/// Exact class-`0x18` frame attached to an analytic circle carrier.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConsolidatedAnalyticCircleDescriptor {
-    /// Framed record.
-    pub frame: ConsolidatedRawFrame,
 }
 
 /// Complete class-`0x25` edge run with its adjacent class-`0x18` descriptor.
@@ -571,12 +564,10 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
                 _ => return None,
             }
             Some(ConsolidatedAnalyticCircleEdgeRun {
-                descriptor: ConsolidatedAnalyticCircleDescriptor {
-                    frame: ConsolidatedRawFrame::from_record(
-                        parameter,
-                        data[parameter.payload.clone()].to_vec(),
-                    )?,
-                },
+                descriptor: ConsolidatedRawFrame::from_record(
+                    parameter,
+                    data[parameter.payload.clone()].to_vec(),
+                )?,
                 circle: circles.get(&circle.range.start)?.clone(),
                 #[cfg(test)]
                 definition,

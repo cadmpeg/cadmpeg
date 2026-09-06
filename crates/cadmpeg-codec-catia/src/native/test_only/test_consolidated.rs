@@ -1,3 +1,4 @@
+use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
 use super::*;
 
 pub(super) fn validate_consolidated_class61_records(
@@ -34,16 +35,12 @@ pub(super) fn validate_consolidated_class5b5c_records(
     records: &[CatiaConsolidatedClass5b5cRecord],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, record) in records.iter().enumerate() {
-        let expected_len = 4u64
-            .checked_add(u64::from(u8::from(record.width)))
-            .and_then(|len| len.checked_add(u64::try_from(record.payload.len()).ok()?));
         let source_order_valid = index == 0
             || (
                 records[index - 1].source_index,
                 records[index - 1].source_offset,
             ) < (record.source_index, record.source_offset);
         if record.id != format!("catia:consolidated:class5b5c-record#{index}")
-            || expected_len != Some(record.byte_len)
             || !source_order_valid
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(

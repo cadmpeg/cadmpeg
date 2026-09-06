@@ -255,10 +255,12 @@ impl TryFrom<u8> for ConsolidatedFrameFlag {
 }
 
 /// Length-closed A/B-family frame shared by edge-definition and descriptor records.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConsolidatedRawFrame {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ConsolidatedRawFrame<Offset = usize> {
     /// Record byte offset.
-    pub pos: usize,
+    #[serde(rename = "byte_offset")]
+    pub pos: Offset,
     /// Header-token width in bytes.
     pub width: ConsolidatedFrameWidth,
     /// Independent framing flag.
@@ -278,6 +280,18 @@ impl ConsolidatedRawFrame {
             header_token: record.header_token,
             payload,
         })
+    }
+}
+
+impl From<ConsolidatedRawFrame> for ConsolidatedRawFrame<u64> {
+    fn from(frame: ConsolidatedRawFrame) -> Self {
+        Self {
+            pos: frame.pos as u64,
+            width: frame.width,
+            flag: frame.flag,
+            header_token: frame.header_token,
+            payload: frame.payload,
+        }
     }
 }
 

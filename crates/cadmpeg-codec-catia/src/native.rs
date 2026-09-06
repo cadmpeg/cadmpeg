@@ -10,6 +10,9 @@ use std::ops::Range;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
+pub(crate) mod class5b5c;
+use class5b5c::CatiaConsolidatedClass5b5cRecord;
+
 pub(crate) mod edge_definition;
 use edge_definition::CatiaConsolidatedEdgeDefinition;
 
@@ -1316,69 +1319,6 @@ pub struct CatiaConsolidatedClass61Record {
     pub payload: CatiaConsolidatedClass61Payload,
 }
 
-/// Record class of a consolidated B-family class-`0x5b` or class-`0x5c` frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "u8", into = "u8")]
-pub enum CatiaClass5b5c {
-    /// Class `0x5b`.
-    Class5b,
-    /// Class `0x5c`.
-    Class5c,
-}
-
-impl From<CatiaClass5b5c> for u8 {
-    fn from(value: CatiaClass5b5c) -> Self {
-        match value {
-            CatiaClass5b5c::Class5b => 0x5b,
-            CatiaClass5b5c::Class5c => 0x5c,
-        }
-    }
-}
-
-impl TryFrom<u8> for CatiaClass5b5c {
-    type Error = String;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0x5b => Ok(Self::Class5b),
-            0x5c => Ok(Self::Class5c),
-            other => Err(format!("class {other:#x} is not 0x5b or 0x5c")),
-        }
-    }
-}
-
-/// One complete consolidated B-family class-`0x5b` or class-`0x5c` record.
-///
-/// These records retain their source-local control lane. The payload has no
-/// assigned semantic fields or cross-source identity relation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaConsolidatedClass5b5cRecord {
-    /// Stable native-record identity.
-    pub id: String,
-    /// Byte offset of the framed record.
-    pub byte_offset: u64,
-    /// Zero-based bounded record-source ordinal.
-    pub source_index: u64,
-    /// Logical offset within the bounded record source.
-    pub source_offset: u64,
-    /// Complete framed-record byte length.
-    pub byte_len: u64,
-    /// Header-token width in bytes.
-    pub width: crate::wire::records::ConsolidatedFrameWidth,
-    /// Independent frame flag.
-    pub flag: crate::wire::records::ConsolidatedFrameFlag,
-    /// Record class.
-    pub class: CatiaClass5b5c,
-    /// Width-coded frame header token.
-    pub header_token: u32,
-    /// Complete opaque payload in source order.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
-    pub payload: Vec<u8>,
-}
-
 /// Structurally decoded payload of a consolidated class-`0x61` record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1517,25 +1457,9 @@ pub struct CatiaConsolidatedClass25Descriptor {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedAnalyticCircleBinding {
     /// Exact class-`0x18` descriptor frame.
-    pub descriptor: CatiaConsolidatedAnalyticCircleDescriptor,
+    pub descriptor: crate::wire::records::ConsolidatedRawFrame<u64>,
     /// Referenced consolidated circle support.
     pub circle: String,
-}
-
-/// Exact class-`0x18` descriptor frame attached to an analytic circle.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaConsolidatedAnalyticCircleDescriptor {
-    /// Record byte offset.
-    pub byte_offset: u64,
-    /// Header-token width in bytes.
-    pub width: crate::wire::records::ConsolidatedFrameWidth,
-    /// Independent framing flag.
-    pub flag: crate::wire::records::ConsolidatedFrameFlag,
-    /// Width-coded header token.
-    pub header_token: u32,
-    /// Complete class-specific payload.
-    pub payload: Vec<u8>,
 }
 
 /// Exact oriented-use allocation chain owned by one consolidated edge node.
@@ -7673,15 +7597,10 @@ fn consolidated_class5b5c_records(
         .enumerate()
         .map(|(index, record)| CatiaConsolidatedClass5b5cRecord {
             id: format!("catia:consolidated:class5b5c-record#{index}"),
-            byte_offset: record.frame.pos as u64,
+            frame: record.frame.into(),
             source_index: record.source_index as u64,
             source_offset: record.source_offset as u64,
-            byte_len: record.byte_len as u64,
-            width: record.frame.width,
-            flag: record.frame.flag,
             class: record.class,
-            header_token: record.frame.header_token,
-            payload: record.frame.payload,
         })
         .collect()
 }
@@ -8674,13 +8593,7 @@ fn consolidated_edge_nodes(
                 Some((
                     run.node.pos,
                     CatiaConsolidatedAnalyticCircleBinding {
-                        descriptor: CatiaConsolidatedAnalyticCircleDescriptor {
-                            byte_offset: run.descriptor.frame.pos as u64,
-                            width: run.descriptor.frame.width,
-                            flag: run.descriptor.frame.flag,
-                            header_token: run.descriptor.frame.header_token,
-                            payload: run.descriptor.frame.payload,
-                        },
+                        descriptor: run.descriptor.into(),
                         circle: (*circle).to_string(),
                     },
                 ))
@@ -8745,12 +8658,8 @@ fn native_consolidated_edge_definition(
     definition: crate::families::consolidated::records::ConsolidatedEdgeDefinition,
 ) -> CatiaConsolidatedEdgeDefinition {
     CatiaConsolidatedEdgeDefinition {
-        byte_offset: definition.frame.pos as u64,
-        width: definition.frame.width,
-        flag: definition.frame.flag,
+        frame: definition.frame.into(),
         class: definition.class,
-        header_token: definition.frame.header_token,
-        payload: definition.frame.payload,
     }
 }
 
