@@ -5,6 +5,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod record_kind;
+pub(crate) mod packet_marker;
+use packet_marker::{ReferenceMarker, Type150Marker};
 pub(crate) mod group;
 pub(crate) mod tails;
 use tails::{TerminalNullReferences, TermUseNumericTail};
@@ -614,7 +616,7 @@ pub struct ReferenceMarkerPacket {
     /// Non-null stream-local XMT reference.
     pub reference: u32,
     /// Serialized marker byte.
-    pub marker: u8,
+    pub marker: ReferenceMarker,
     /// First byte of the packet.
     pub offset: usize,
     /// First byte following the packet.
@@ -627,7 +629,7 @@ pub struct Type150StatePacket {
     /// Five ordered stream-local XMT references.
     pub references: [u32; 5],
     /// Serialized state discriminator.
-    pub marker: u8,
+    pub marker: Type150Marker,
     /// Nine finite binary64 state values.
     pub values: [f64; 9],
     /// First byte of the packet.
@@ -2367,8 +2369,7 @@ fn reference_marker_packet(
     at = at.checked_add(consumed)?;
     (stream.get(at) == Some(&1)).then_some(())?;
     at = at.checked_add(1)?;
-    let marker = *stream.get(at)?;
-    matches!(marker, 0x53 | 0x56).then_some(())?;
+    let marker = ReferenceMarker::try_from(*stream.get(at)?).ok()?;
     at = at.checked_add(1)?;
     let (second_null, consumed) = read_xmt(stream, at)?;
     (second_null == 1).then_some(())?;
@@ -2405,8 +2406,7 @@ fn type_150_state_packet(
         *reference = value;
     }
     (references[0] == 1 && references[1..].iter().all(|reference| *reference > 1)).then_some(())?;
-    let marker = *stream.get(at)?;
-    matches!(marker, 0x2b | 0x2d).then_some(())?;
+    let marker = Type150Marker::try_from(*stream.get(at)?).ok()?;
     at = at.checked_add(1)?;
     let mut values = [0.0; 9];
     for value in &mut values {
@@ -3919,7 +3919,7 @@ mod type_150_state_packet_tests {
         assert_eq!(census.type_150_state_packets.len(), 1);
         let packet = &census.type_150_state_packets[0];
         assert_eq!(packet.references, [1, 3, 6_192, 6_193, 6_194]);
-        assert_eq!(packet.marker, 0x2b);
+        assert_eq!(u8::from(packet.marker), 0x2b);
         assert_eq!(
             packet.values,
             [-0.025, -0.05, 0.25, 0.0, 1.0, 0.0, 0.0, -0.0, 1.0]

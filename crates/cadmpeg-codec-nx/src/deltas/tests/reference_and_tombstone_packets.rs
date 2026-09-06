@@ -141,7 +141,7 @@ fn deltas_reference_marker_packets_decode_extended_references_atomically() {
 
     assert_eq!(census.reference_marker_packets.len(), 1);
     assert_eq!(census.reference_marker_packets[0].reference, 40_000);
-    assert_eq!(census.reference_marker_packets[0].marker, 0x56);
+    assert_eq!(u8::from(census.reference_marker_packets[0].marker), 0x56);
     assert_eq!(census.reference_marker_packets[0].offset, 0);
     assert_eq!(census.reference_marker_packets[0].end, packet.len());
     assert_eq!(census.bytes_decoded, packet.len());

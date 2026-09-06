@@ -11,6 +11,7 @@ mod chart_wire;
 mod tail_wire;
 mod body_revision_wire;
 use body_revision_wire::RevisionLengths;
+use crate::deltas::packet_marker::{ReferenceMarker, Type150Marker};
 use crate::deltas::tails::{NullTailForm, NumericTailValues};
 pub(crate) mod group_member;
 use group_member::GroupMemberTarget;
@@ -647,7 +648,7 @@ pub struct ParasolidDeltasReferenceMarkerPacket {
     /// Non-null stream-local XMT reference.
     pub reference: u32,
     /// Serialized marker byte.
-    pub marker: u8,
+    pub marker: ReferenceMarker,
     /// Exact packet byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact packet bytes.
@@ -666,7 +667,7 @@ pub struct ParasolidDeltasType150StatePacket {
     /// Five ordered stream-local XMT references.
     pub references: [u32; 5],
     /// Serialized state discriminator.
-    pub marker: u8,
+    pub marker: Type150Marker,
     /// Nine finite binary64 state values.
     pub values: [f64; 9],
     /// Exact packet byte length.
@@ -4040,7 +4041,7 @@ mod tests {
         assert_eq!(events.reference_marker_packets.len(), 1);
         let packet = &events.reference_marker_packets[0];
         assert_eq!(packet.reference, 9);
-        assert_eq!(packet.marker, 0x53);
+        assert_eq!(u8::from(packet.marker), 0x53);
         assert_eq!(packet.byte_len, 10);
         assert_eq!(packet.inflated_offset, packet_offset as u64);
         assert_eq!(
@@ -4657,7 +4658,7 @@ mod tests {
         assert_eq!(events.type_150_state_packets.len(), 1);
         let packet = &events.type_150_state_packets[0];
         assert_eq!(packet.references, [1, 3, 6_192, 6_193, 6_194]);
-        assert_eq!(packet.marker, 0x2b);
+        assert_eq!(u8::from(packet.marker), 0x2b);
         assert_eq!(packet.values, values);
         assert_eq!(packet.inflated_offset, packet_offset as u64);
         assert_eq!(packet.byte_len, (packet_end - packet_offset) as u64);
