@@ -798,7 +798,7 @@ fn note_features_feature_sketch_point_uses(
         a.note(
             &point_use.id,
             annotation_stream,
-            point_use.source_offsets[0],
+            point_use.references[0].source_offset,
         )
         .tag("SKETCH_POINT_USE");
         a.exactness(&point_use.id, Exactness::Derived);
@@ -828,7 +828,7 @@ fn note_features_feature_parameter_uses(
         a.note(
             &parameter_use.id,
             annotation_stream,
-            parameter_use.source_offsets[0],
+            parameter_use.bindings[0].source_offset,
         )
         .tag("FEATURE_PARAMETER_USE");
         a.exactness(&parameter_use.id, Exactness::Derived);

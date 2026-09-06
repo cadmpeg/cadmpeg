@@ -1141,6 +1141,7 @@ pub struct FeatureParameterBinding {
 
 /// All binding occurrences by which one operation consumes one expression.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureParameterUseWire", into = "FeatureParameterUseWire")]
 pub struct FeatureParameterUse {
     /// Globally unique use identity.
     pub id: String,
@@ -1149,9 +1150,62 @@ pub struct FeatureParameterUse {
     /// Exact numeric expression consumed by the operation.
     pub expression: String,
     /// Binding occurrences in ascending source-offset order.
-    pub bindings: Vec<String>,
-    /// Binding source offsets aligned with `bindings`.
-    pub source_offsets: Vec<u64>,
+    pub bindings: Vec<FeatureParameterUseBinding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureParameterUseBinding {
+    pub binding: String,
+    pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureParameterUseWire {
+    id: String,
+    operation_label: String,
+    expression: String,
+    bindings: Vec<String>,
+    source_offsets: Vec<u64>,
+}
+
+impl From<FeatureParameterUse> for FeatureParameterUseWire {
+    fn from(value: FeatureParameterUse) -> Self {
+        let (bindings, source_offsets) = value
+            .bindings
+            .into_iter()
+            .map(|binding| (binding.binding, binding.source_offset))
+            .unzip();
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            expression: value.expression,
+            bindings,
+            source_offsets,
+        }
+    }
+}
+
+impl TryFrom<FeatureParameterUseWire> for FeatureParameterUse {
+    type Error = String;
+    fn try_from(wire: FeatureParameterUseWire) -> Result<Self, Self::Error> {
+        if wire.bindings.len() != wire.source_offsets.len() {
+            return Err("bindings and source_offsets must have equal lengths".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            expression: wire.expression,
+            bindings: wire
+                .bindings
+                .into_iter()
+                .zip(wire.source_offsets)
+                .map(|(binding, source_offset)| FeatureParameterUseBinding {
+                    binding,
+                    source_offset,
+                })
+                .collect(),
+        })
+    }
 }
 
 /// Ordered sketch-history record and its exact native input lanes.
@@ -1429,7 +1483,9 @@ impl FeatureScalarPayload {
     pub fn id(&self) -> &str {
         match self {
             Self::DatumCsys { datum_csys_payload } => datum_csys_payload,
-            Self::Construction { construction_payload } => construction_payload,
+            Self::Construction {
+                construction_payload,
+            } => construction_payload,
         }
     }
 }
@@ -2288,21 +2344,99 @@ pub struct FeatureSketchPrecedingNamedPointUse {
 
 /// Exact identity of one solved sketch point across its payload and reference lanes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureSketchPointUseWire",
+    into = "FeatureSketchPointUseWire"
+)]
 pub struct FeatureSketchPointUse {
-    /// Globally unique point-use identity.
     pub id: String,
-    /// Sketch operation carrying both point encodings.
     pub operation_label: String,
-    /// Ordered sketch-reference occurrences addressing the named-point span.
-    pub sketch_references: Vec<String>,
-    /// Exact block-use witnesses corresponding to the sketch references.
-    pub block_uses: Vec<String>,
-    /// Exact same-name sketch-point group.
+    pub references: Vec<FeatureSketchPointUseReference>,
     pub sketch_point_group: String,
-    /// Independently framed named-point object addressed by the reference.
     pub named_point: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureSketchPointUseReference {
+    pub sketch_reference: String,
+    pub block_use: String,
+    pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureSketchPointUseWire {
+    /// Globally unique point-use identity.
+    id: String,
+    /// Sketch operation carrying both point encodings.
+    operation_label: String,
+    /// Ordered sketch-reference occurrences addressing the named-point span.
+    sketch_references: Vec<String>,
+    /// Exact block-use witnesses corresponding to the sketch references.
+    block_uses: Vec<String>,
+    /// Exact same-name sketch-point group.
+    sketch_point_group: String,
+    /// Independently framed named-point object addressed by the reference.
+    named_point: String,
     /// Absolute source offsets of the sketch references.
-    pub source_offsets: Vec<u64>,
+    source_offsets: Vec<u64>,
+}
+
+impl From<FeatureSketchPointUse> for FeatureSketchPointUseWire {
+    fn from(value: FeatureSketchPointUse) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            sketch_references: value
+                .references
+                .iter()
+                .map(|reference| reference.sketch_reference.clone())
+                .collect(),
+            block_uses: value
+                .references
+                .iter()
+                .map(|reference| reference.block_use.clone())
+                .collect(),
+            sketch_point_group: value.sketch_point_group,
+            named_point: value.named_point,
+            source_offsets: value
+                .references
+                .iter()
+                .map(|reference| reference.source_offset)
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<FeatureSketchPointUseWire> for FeatureSketchPointUse {
+    type Error = String;
+    fn try_from(wire: FeatureSketchPointUseWire) -> Result<Self, Self::Error> {
+        if wire.sketch_references.len() != wire.block_uses.len()
+            || wire.sketch_references.len() != wire.source_offsets.len()
+        {
+            return Err(
+                "sketch_references, block_uses, and source_offsets must have equal lengths".into(),
+            );
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            sketch_point_group: wire.sketch_point_group,
+            named_point: wire.named_point,
+            references: wire
+                .sketch_references
+                .into_iter()
+                .zip(wire.block_uses)
+                .zip(wire.source_offsets)
+                .map(|((sketch_reference, block_use), source_offset)| {
+                    FeatureSketchPointUseReference {
+                        sketch_reference,
+                        block_use,
+                        source_offset,
+                    }
+                })
+                .collect(),
+        })
+    }
 }
 
 /// Exact ordered dependency from a sketch point to a datum coordinate system.
@@ -2525,23 +2659,101 @@ pub struct FeaturePatternReference {
 
 /// Exact counted reference lane carried by a bounded `Pattern Feature` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeaturePatternCountedReferenceLaneWire",
+    into = "FeaturePatternCountedReferenceLaneWire"
+)]
 pub struct FeaturePatternCountedReferenceLane {
-    /// Globally unique lane identity.
     pub id: String,
-    /// Owning `Pattern Feature` operation label.
     pub operation_label: String,
-    /// Serialized count including the implicit owner slot.
     pub declared_count: u8,
-    /// Ordered serialized object indices.
-    pub object_indices: Vec<u32>,
-    /// Exact variable-width object-index tokens in lane order.
-    pub raw_object_indices: Vec<Vec<u8>>,
-    /// Independently resolved offset-store blocks; unresolved entries are `None`.
-    pub data_blocks: Vec<Option<String>>,
-    /// Absolute source offset of the opening `01, count` field.
+    pub references: Vec<FeatureDataBlockToken<Vec<u8>>>,
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeaturePatternCountedReferenceLaneWire {
+    /// Globally unique lane identity.
+    id: String,
+    /// Owning `Pattern Feature` operation label.
+    operation_label: String,
+    /// Serialized count including the implicit owner slot.
+    declared_count: u8,
+    /// Ordered serialized object indices.
+    object_indices: Vec<u32>,
+    /// Exact variable-width object-index tokens in lane order.
+    raw_object_indices: Vec<Vec<u8>>,
+    /// Independently resolved offset-store blocks; unresolved entries are `None`.
+    data_blocks: Vec<Option<String>>,
+    /// Absolute source offset of the opening `01, count` field.
+    source_offset: u64,
     /// Absolute source offsets of the object-index tokens.
-    pub object_index_source_offsets: Vec<u64>,
+    object_index_source_offsets: Vec<u64>,
+}
+
+impl From<FeaturePatternCountedReferenceLane> for FeaturePatternCountedReferenceLaneWire {
+    fn from(value: FeaturePatternCountedReferenceLane) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            declared_count: value.declared_count,
+            source_offset: value.source_offset,
+            object_indices: value
+                .references
+                .iter()
+                .map(|reference| reference.value)
+                .collect(),
+            raw_object_indices: value
+                .references
+                .iter()
+                .map(|reference| reference.raw.clone())
+                .collect(),
+            data_blocks: value
+                .references
+                .iter()
+                .map(|reference| reference.data_block.clone())
+                .collect(),
+            object_index_source_offsets: value
+                .references
+                .iter()
+                .map(|reference| reference.source_offset)
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<FeaturePatternCountedReferenceLaneWire> for FeaturePatternCountedReferenceLane {
+    type Error = String;
+    fn try_from(wire: FeaturePatternCountedReferenceLaneWire) -> Result<Self, Self::Error> {
+        let count = wire.object_indices.len();
+        if wire.raw_object_indices.len() != count
+            || wire.data_blocks.len() != count
+            || wire.object_index_source_offsets.len() != count
+        {
+            return Err("object_indices, raw_object_indices, data_blocks, and object_index_source_offsets must have equal lengths".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            declared_count: wire.declared_count,
+            source_offset: wire.source_offset,
+            references: wire
+                .object_indices
+                .into_iter()
+                .zip(wire.raw_object_indices)
+                .zip(wire.data_blocks)
+                .zip(wire.object_index_source_offsets)
+                .map(
+                    |(((value, raw), data_block), source_offset)| FeatureDataBlockToken {
+                        value,
+                        raw,
+                        data_block,
+                        source_offset,
+                    },
+                )
+                .collect(),
+        })
+    }
 }
 
 /// Byte layout selected by a pattern construction-reference field.
@@ -4245,44 +4457,211 @@ pub enum FeatureOperationBodyReferenceLaneEncoding {
 
 /// Counted reference lane following an operation body scalar clause.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureOperationBodyReferenceLaneWire",
+    into = "FeatureOperationBodyReferenceLaneWire"
+)]
 pub struct FeatureOperationBodyReferenceLane {
-    /// Globally unique lane identity.
     pub id: String,
-    /// Owning operation label.
     pub operation_label: String,
-    /// Zero-based body-reference occurrence order.
     pub body_reference_ordinal: u32,
-    /// Serialized body object index.
     pub body_object_index: u32,
-    /// Branch discriminator following the body-reference terminator.
     pub branch: u8,
-    /// Homogeneous encoding used by every lane value.
     pub encoding: FeatureOperationBodyReferenceLaneEncoding,
+    pub references: Vec<FeatureDataBlockToken<Vec<u8>>>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureOperationBodyReferenceLaneWire {
+    /// Globally unique lane identity.
+    id: String,
+    /// Owning operation label.
+    operation_label: String,
+    /// Zero-based body-reference occurrence order.
+    body_reference_ordinal: u32,
+    /// Serialized body object index.
+    body_object_index: u32,
+    /// Branch discriminator following the body-reference terminator.
+    branch: u8,
+    /// Homogeneous encoding used by every lane value.
+    encoding: FeatureOperationBodyReferenceLaneEncoding,
     /// Ordered decoded indices.
-    pub object_indices: Vec<u32>,
+    object_indices: Vec<u32>,
     /// Exact encoded index tokens in lane order.
-    pub raw_object_indices: Vec<Vec<u8>>,
+    raw_object_indices: Vec<Vec<u8>>,
     /// Unique offset-only data blocks addressed by the ordered indices.
-    pub data_blocks: Vec<Option<String>>,
+    data_blocks: Vec<Option<String>>,
     /// Absolute file offsets of the encoded index markers.
-    pub source_offsets: Vec<u64>,
+    source_offsets: Vec<u64>,
+}
+
+impl From<FeatureOperationBodyReferenceLane> for FeatureOperationBodyReferenceLaneWire {
+    fn from(value: FeatureOperationBodyReferenceLane) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            body_reference_ordinal: value.body_reference_ordinal,
+            body_object_index: value.body_object_index,
+            branch: value.branch,
+            encoding: value.encoding,
+            object_indices: value
+                .references
+                .iter()
+                .map(|reference| reference.value)
+                .collect(),
+            raw_object_indices: value
+                .references
+                .iter()
+                .map(|reference| reference.raw.clone())
+                .collect(),
+            data_blocks: value
+                .references
+                .iter()
+                .map(|reference| reference.data_block.clone())
+                .collect(),
+            source_offsets: value
+                .references
+                .iter()
+                .map(|reference| reference.source_offset)
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<FeatureOperationBodyReferenceLaneWire> for FeatureOperationBodyReferenceLane {
+    type Error = String;
+    fn try_from(wire: FeatureOperationBodyReferenceLaneWire) -> Result<Self, Self::Error> {
+        let count = wire.object_indices.len();
+        if wire.raw_object_indices.len() != count
+            || wire.data_blocks.len() != count
+            || wire.source_offsets.len() != count
+        {
+            return Err("object_indices, raw_object_indices, data_blocks, and source_offsets must have equal lengths".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            body_reference_ordinal: wire.body_reference_ordinal,
+            body_object_index: wire.body_object_index,
+            branch: wire.branch,
+            encoding: wire.encoding,
+            references: wire
+                .object_indices
+                .into_iter()
+                .zip(wire.raw_object_indices)
+                .zip(wire.data_blocks)
+                .zip(wire.source_offsets)
+                .map(
+                    |(((value, raw), data_block), source_offset)| FeatureDataBlockToken {
+                        value,
+                        raw,
+                        data_block,
+                        source_offset,
+                    },
+                )
+                .collect(),
+        })
+    }
 }
 
 /// Atomically witnessed extrusion construction profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureExtrudeConstructionProfileWire",
+    into = "FeatureExtrudeConstructionProfileWire"
+)]
 pub struct FeatureExtrudeConstructionProfile {
-    /// Globally unique construction-profile identity.
     pub id: String,
-    /// Owning `EXTRUDE` operation label.
     pub operation_label: String,
+    pub references: Vec<FeatureExtrudeConstructionProfileReference>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureExtrudeConstructionProfileReference {
+    pub object_index: u32,
+    pub data_block: String,
+    pub profile_source_offset: u64,
+    pub witness_source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureExtrudeConstructionProfileWire {
+    /// Globally unique construction-profile identity.
+    id: String,
+    /// Owning `EXTRUDE` operation label.
+    operation_label: String,
     /// Ordered serialized profile object indices.
-    pub object_indices: Vec<u32>,
+    object_indices: Vec<u32>,
     /// Ordered uniquely resolved profile data blocks.
-    pub data_blocks: Vec<String>,
+    data_blocks: Vec<String>,
     /// Source offsets from the independently encoded profile field.
-    pub profile_source_offsets: Vec<u64>,
+    profile_source_offsets: Vec<u64>,
     /// Source offsets from the independently encoded duplicate list.
-    pub witness_source_offsets: Vec<u64>,
+    witness_source_offsets: Vec<u64>,
+}
+
+impl From<FeatureExtrudeConstructionProfile> for FeatureExtrudeConstructionProfileWire {
+    fn from(value: FeatureExtrudeConstructionProfile) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            object_indices: value
+                .references
+                .iter()
+                .map(|reference| reference.object_index)
+                .collect(),
+            data_blocks: value
+                .references
+                .iter()
+                .map(|reference| reference.data_block.clone())
+                .collect(),
+            profile_source_offsets: value
+                .references
+                .iter()
+                .map(|reference| reference.profile_source_offset)
+                .collect(),
+            witness_source_offsets: value
+                .references
+                .iter()
+                .map(|reference| reference.witness_source_offset)
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<FeatureExtrudeConstructionProfileWire> for FeatureExtrudeConstructionProfile {
+    type Error = String;
+    fn try_from(wire: FeatureExtrudeConstructionProfileWire) -> Result<Self, Self::Error> {
+        let count = wire.object_indices.len();
+        if wire.data_blocks.len() != count
+            || wire.profile_source_offsets.len() != count
+            || wire.witness_source_offsets.len() != count
+        {
+            return Err("object_indices, data_blocks, profile_source_offsets, and witness_source_offsets must have equal lengths".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            references: wire
+                .object_indices
+                .into_iter()
+                .zip(wire.data_blocks)
+                .zip(wire.profile_source_offsets)
+                .zip(wire.witness_source_offsets)
+                .map(
+                    |(
+                        ((object_index, data_block), profile_source_offset),
+                        witness_source_offset,
+                    )| FeatureExtrudeConstructionProfileReference {
+                        object_index,
+                        data_block,
+                        profile_source_offset,
+                        witness_source_offset,
+                    },
+                )
+                .collect(),
+        })
+    }
 }
 
 /// Structured `32` branch following an extrusion body-reference field.
@@ -6450,9 +6829,7 @@ pub(crate) fn unique_feature_body_references(
 }
 
 /// Decode every ordered body-reference field from bounded feature operations.
-pub fn feature_body_reference_occurrences(
-    container: &Container,
-) -> Vec<FeatureBodyReference> {
+pub fn feature_body_reference_occurrences(container: &Container) -> Vec<FeatureBodyReference> {
     let mut references = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -8441,20 +8818,16 @@ pub fn feature_sketch_point_uses(
                 1,
             ),
             operation_label: block_use.operation_label.clone(),
-            sketch_references: point_block_uses
-                .iter()
-                .map(|block_use| block_use.sketch_reference.clone())
-                .collect(),
-            block_uses: point_block_uses
-                .iter()
-                .map(|block_use| block_use.id.clone())
+            references: point_block_uses
+                .into_iter()
+                .map(|block_use| FeatureSketchPointUseReference {
+                    sketch_reference: block_use.sketch_reference.clone(),
+                    block_use: block_use.id.clone(),
+                    source_offset: block_use.source_offset,
+                })
                 .collect(),
             sketch_point_group: point_group.id.clone(),
             named_point: named_point.id.clone(),
-            source_offsets: point_block_uses
-                .iter()
-                .map(|block_use| block_use.source_offset)
-                .collect(),
         });
     }
     uses
@@ -8596,7 +8969,7 @@ pub fn feature_sketch_datum_csys_dependencies(
             datum_csys_construction: construction.id.clone(),
             block_relation: block_relation.clone(),
             scalar_aliases,
-            source_offset: point_use.source_offsets[0],
+            source_offset: point_use.references[0].source_offset,
         });
     }
     dependencies.sort_by(|left, right| left.id.cmp(&right.id));
@@ -9128,27 +9501,13 @@ pub fn feature_pattern_counted_reference_lanes(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 declared_count: lane.declared_count,
-                object_indices: lane
-                    .references
-                    .iter()
-                    .map(|reference| reference.object_index)
-                    .collect(),
-                raw_object_indices: lane
-                    .references
-                    .iter()
-                    .map(|reference| reference.raw_object_index.clone())
-                    .collect(),
-                data_blocks: lane
-                    .references
-                    .iter()
-                    .map(|reference| unique_offset_data_block(&indexed, reference.object_index))
-                    .collect(),
+                references: lane.references.into_iter().map(|reference| FeatureDataBlockToken {
+                    value: reference.object_index,
+                    raw: reference.raw_object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    source_offset: entry_offset + reference.offset as u64,
+                }).collect(),
                 source_offset: entry_offset + lane.offset as u64,
-                object_index_source_offsets: lane
-                    .references
-                    .iter()
-                    .map(|reference| entry_offset + reference.offset as u64)
-                    .collect(),
             });
         },
     );
@@ -10695,15 +11054,6 @@ pub fn feature_operation_body_reference_lanes(
                         FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex
                     }
                 };
-                let object_indices = lane
-                    .values
-                    .iter()
-                    .map(|value| value.object_index)
-                    .collect::<Vec<_>>();
-                let data_blocks = object_indices
-                    .iter()
-                    .map(|index| unique_offset_data_block(&indexed, *index))
-                    .collect();
                 lanes.push(FeatureOperationBodyReferenceLane {
                     id: format!(
                         "nx:feature-history:operation-body-reference-lane#{section_key}-{operation_ordinal:010}-{}",
@@ -10716,18 +11066,12 @@ pub fn feature_operation_body_reference_lanes(
                     body_object_index: lane.body_object_index,
                     branch: lane.branch,
                     encoding,
-                    object_indices,
-                    raw_object_indices: lane
-                        .values
-                        .iter()
-                        .map(|value| value.raw_value.clone())
-                        .collect(),
-                    data_blocks,
-                    source_offsets: lane
-                        .values
-                        .iter()
-                        .map(|value| entry_offset + value.offset as u64)
-                        .collect(),
+                    references: lane.values.into_iter().map(|value| FeatureDataBlockToken {
+                        value: value.object_index,
+                        raw: value.raw_value,
+                        data_block: unique_offset_data_block(&indexed, value.object_index),
+                        source_offset: entry_offset + value.offset as u64,
+                    }).collect(),
                 });
             }
         },
@@ -10753,26 +11097,20 @@ pub fn feature_extrude_construction_profiles(
             || operation_references
                 .iter()
                 .enumerate()
-                .any(|(ordinal, reference)| {
-                    reference.ordinal != ordinal as u32 || reference.witness_source_offset.is_none()
-                })
+                .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
         {
             continue;
         }
-        let object_indices = operation_references
+        let Some(references) = operation_references
             .iter()
-            .map(|reference| reference.object_index)
-            .collect::<Vec<_>>();
-        let Some(data_blocks) = operation_references
-            .iter()
-            .map(|reference| reference.data_block.clone())
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
-        let Some(witness_source_offsets) = operation_references
-            .iter()
-            .map(|reference| reference.witness_source_offset)
+            .map(|reference| {
+                Some(FeatureExtrudeConstructionProfileReference {
+                    object_index: reference.object_index,
+                    data_block: reference.data_block.clone()?,
+                    profile_source_offset: reference.source_offset,
+                    witness_source_offset: reference.witness_source_offset?,
+                })
+            })
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -10780,13 +11118,7 @@ pub fn feature_extrude_construction_profiles(
         profiles.push(FeatureExtrudeConstructionProfile {
             id: operation_label.replacen("operation-label", "extrude-construction-profile", 1),
             operation_label: operation_label.to_string(),
-            object_indices,
-            data_blocks,
-            profile_source_offsets: operation_references
-                .iter()
-                .map(|reference| reference.source_offset)
-                .collect(),
-            witness_source_offsets,
+            references,
         });
     }
     profiles
@@ -11515,10 +11847,12 @@ pub fn feature_parameter_uses(bindings: &[FeatureParameterBinding]) -> Vec<Featu
                 id: format!("nx:feature-history:parameter-use#{operation_key}-{expression_key}"),
                 operation_label: operation_label.to_string(),
                 expression: expression.to_string(),
-                bindings: bindings.iter().map(|binding| binding.id.clone()).collect(),
-                source_offsets: bindings
-                    .iter()
-                    .map(|binding| binding.source_offset)
+                bindings: bindings
+                    .into_iter()
+                    .map(|binding| FeatureParameterUseBinding {
+                        binding: binding.id.clone(),
+                        source_offset: binding.source_offset,
+                    })
                     .collect(),
             }
         })

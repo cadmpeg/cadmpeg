@@ -3,8 +3,9 @@ use super::*;
 #[test]
 fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     use super::super::{
-        feature_sketch_fixed_points, feature_sketch_payload_named_records, FeaturePayloadTypeCode,
-        FeatureConstructionPayload, FeatureSketchPayloadFixedPair, FeatureSketchPayloadName,
+        feature_sketch_fixed_points, feature_sketch_payload_named_records,
+        FeatureConstructionPayload, FeaturePayloadTypeCode, FeatureSketchPayloadFixedPair,
+        FeatureSketchPayloadName,
     };
     let payload = FeatureConstructionPayload {
         id: "payload".to_string(),
@@ -245,9 +246,23 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].sketch_point_group, groups[0].id);
     assert_eq!(uses[0].named_point, named_point.id);
-    assert_eq!(uses[0].sketch_references, ["reference", "reference-2"]);
-    assert_eq!(uses[0].block_uses.len(), 2);
-    assert_eq!(uses[0].source_offsets, [300, 301]);
+    assert_eq!(
+        uses[0]
+            .references
+            .iter()
+            .map(|reference| reference.sketch_reference.as_str())
+            .collect::<Vec<_>>(),
+        ["reference", "reference-2"]
+    );
+    assert_eq!(uses[0].references.len(), 2);
+    assert_eq!(
+        uses[0]
+            .references
+            .iter()
+            .map(|reference| reference.source_offset)
+            .collect::<Vec<_>>(),
+        [300, 301]
+    );
 
     let mut different = point.clone();
     different.id = "different".to_string();

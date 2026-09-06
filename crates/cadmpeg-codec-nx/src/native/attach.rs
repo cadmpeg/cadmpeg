@@ -4000,8 +4000,7 @@ fn attach_sketch_graph(
             return None;
         }
     }
-    let mut scalars_by_id =
-        BTreeMap::<&str, &crate::native::features::FeaturePayloadScalar>::new();
+    let mut scalars_by_id = BTreeMap::<&str, &crate::native::features::FeaturePayloadScalar>::new();
     for scalar in sources.payload_scalars {
         if scalars_by_id.insert(scalar.id.as_str(), scalar).is_some() {
             return None;
@@ -4019,8 +4018,12 @@ fn attach_sketch_graph(
             return None;
         }
         let point_use = point_uses_by_group.get(group.id.as_str()).copied();
-        let source_offsets = if let Some(point_use) = point_use {
-            point_use.source_offsets.clone()
+        let source_offsets: Vec<_> = if let Some(point_use) = point_use {
+            point_use
+                .references
+                .iter()
+                .map(|reference| reference.source_offset)
+                .collect()
         } else {
             group
                 .points
@@ -8670,9 +8673,10 @@ pub(crate) fn attach_expression_parameters(
     for uses in uses_by_expression.values_mut() {
         uses.sort_by(|first, second| {
             first
-                .source_offsets
+                .bindings
                 .first()
-                .cmp(&second.source_offsets.first())
+                .map(|binding| binding.source_offset)
+                .cmp(&second.bindings.first().map(|binding| binding.source_offset))
                 .then_with(|| first.id.cmp(&second.id))
         });
     }

@@ -793,11 +793,13 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let point_use = crate::native::features::FeatureSketchPointUse {
         id: "nx:feature-history:sketch-point-use#section-7-0".to_string(),
         operation_label: label.id.clone(),
-        sketch_references: vec!["reference".to_string()],
-        block_uses: vec!["block-use".to_string()],
+        references: vec![crate::native::features::FeatureSketchPointUseReference {
+            sketch_reference: "reference".to_string(),
+            block_use: "block-use".to_string(),
+            source_offset: 52,
+        }],
         sketch_point_group: group.id.clone(),
         named_point: "named-point".to_string(),
-        source_offsets: vec![52],
     };
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
@@ -946,8 +948,10 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         id: id.to_string(),
         operation_label: "operation".to_string(),
         expression: expression.to_string(),
-        bindings: vec![format!("binding-{id}")],
-        source_offsets: vec![0],
+        bindings: vec![crate::native::features::FeatureParameterUseBinding {
+            binding: format!("binding-{id}"),
+            source_offset: 0,
+        }],
     };
     let expressions = vec![
         expression("expression-a", "p1_length", "p2_length * 2"),

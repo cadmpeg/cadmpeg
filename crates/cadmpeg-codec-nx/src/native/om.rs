@@ -6264,8 +6264,22 @@ mod tests {
             binding("other", "nx:feature-history:operation-label#1-3", 0, 40),
         ]);
         assert_eq!(uses.len(), 2);
-        assert_eq!(uses[0].bindings, ["early", "late"]);
-        assert_eq!(uses[0].source_offsets, [20, 30]);
+        assert_eq!(
+            uses[0]
+                .bindings
+                .iter()
+                .map(|binding| binding.binding.as_str())
+                .collect::<Vec<_>>(),
+            ["early", "late"]
+        );
+        assert_eq!(
+            uses[0]
+                .bindings
+                .iter()
+                .map(|binding| binding.source_offset)
+                .collect::<Vec<_>>(),
+            [20, 30]
+        );
 
         let expression = super::Expression {
             id: "nx:test:expression#20".to_string(),
@@ -6323,8 +6337,10 @@ mod tests {
                 id: id.to_string(),
                 operation_label: operation.to_string(),
                 expression: expression.id.clone(),
-                bindings: vec![format!("binding-{id}")],
-                source_offsets: vec![source_offset],
+                bindings: vec![crate::native::features::FeatureParameterUseBinding {
+                    binding: format!("binding-{id}"),
+                    source_offset,
+                }],
             }
         };
         let uses = [
@@ -6372,8 +6388,10 @@ mod tests {
             id: "use".to_string(),
             operation_label: "nx:feature-history:operation-label#1-2".to_string(),
             expression: expression.id.clone(),
-            bindings: vec!["binding".to_string()],
-            source_offsets: vec![30],
+            bindings: vec![crate::native::features::FeatureParameterUseBinding {
+                binding: "binding".to_string(),
+                source_offset: 30,
+            }],
         };
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();

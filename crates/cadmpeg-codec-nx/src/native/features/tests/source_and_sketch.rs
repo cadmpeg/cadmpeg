@@ -981,7 +981,7 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
 #[test]
 fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
     use super::{
-        FeatureDatumCsysConstruction, FeaturePayloadScalar, FeatureOperationLabel,
+        FeatureDatumCsysConstruction, FeatureOperationLabel, FeaturePayloadScalar,
         FeatureSketchDatumCsysBlockRelation, FeatureSketchPointUse, OffsetStoreNamedPoint,
     };
 
@@ -1008,11 +1008,13 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
     let point_use = FeatureSketchPointUse {
         id: "point-use".to_string(),
         operation_label: "sketch".to_string(),
-        sketch_references: vec!["reference".to_string()],
-        block_uses: vec!["block-use".to_string()],
+        references: vec![crate::native::features::FeatureSketchPointUseReference {
+            sketch_reference: "reference".to_string(),
+            block_use: "block-use".to_string(),
+            source_offset: 300,
+        }],
         sketch_point_group: "point-group".to_string(),
         named_point: point.id.clone(),
-        source_offsets: vec![300],
     };
     let mut blocks = std::array::from_fn(|index| format!("block-{index}"));
     blocks[3] = "shared".to_string();
@@ -1240,9 +1242,30 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
     });
     let profiles = super::feature_extrude_construction_profiles(&references);
     assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].object_indices, [100, 101]);
-    assert_eq!(profiles[0].data_blocks, ["block-10", "block-11"]);
-    assert_eq!(profiles[0].witness_source_offsets, [30, 31]);
+    assert_eq!(
+        profiles[0]
+            .references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        [100, 101]
+    );
+    assert_eq!(
+        profiles[0]
+            .references
+            .iter()
+            .map(|reference| reference.data_block.as_str())
+            .collect::<Vec<_>>(),
+        ["block-10", "block-11"]
+    );
+    assert_eq!(
+        profiles[0]
+            .references
+            .iter()
+            .map(|reference| reference.witness_source_offset)
+            .collect::<Vec<_>>(),
+        [30, 31]
+    );
 
     for ordinal in [0, 2] {
         let mut malformed = references.clone();
