@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Sketch scalars with the implicit `30` marker and one-quarter scale.
+
+use serde::{Deserialize, Serialize};
+use super::scalar::ShiftedBinary32;
+
+const SKETCH_FIXED_ATOM_SCALE: f64 = 0.25;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SketchScaledAtom([u8; 7]);
+
+impl SketchScaledAtom {
+    pub(crate) fn from_raw(raw: [u8; 7]) -> Self { Self(raw) }
+
+    pub(crate) fn raw(self) -> [u8; 7] { self.0 }
+
+    pub(crate) fn value(self) -> f64 {
+        let mut encoded = [0_u8; 8];
+        encoded[0] = 0x40;
+        encoded[1..].copy_from_slice(&self.0);
+        f64::from_be_bytes(encoded) * SKETCH_FIXED_ATOM_SCALE
+    }
+
+    pub(crate) fn from_wire(value: f64, raw: [u8; 7]) -> Result<Self, &'static str> {
+        let scalar = Self(raw);
+        if scalar.value().to_bits() != value.to_bits() {
+            return Err("values must match scaled shifted-binary64 raw_values");
+        }
+        Ok(scalar)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "MixedWire", into = "MixedWire")]
+pub(crate) struct SketchMixedScalars {
+    pub(crate) fixed: SketchScaledAtom,
+    pub(crate) binary32: ShiftedBinary32,
+}
+
+#[derive(Serialize, Deserialize)]
+struct MixedWire {
+    fixed_value: f64,
+    binary32_value: f64,
+    fixed_raw_value: [u8; 7],
+    binary32_raw_value: [u8; 4],
+}
+
+impl From<SketchMixedScalars> for MixedWire {
+    fn from(scalars: SketchMixedScalars) -> Self {
+        Self {
+            fixed_value: scalars.fixed.value(),
+            binary32_value: scalars.binary32.value(),
+            fixed_raw_value: scalars.fixed.raw(),
+            binary32_raw_value: scalars.binary32.raw(),
+        }
+    }
+}
+
+impl TryFrom<MixedWire> for SketchMixedScalars {
+    type Error = String;
+
+    fn try_from(wire: MixedWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            fixed: SketchScaledAtom::from_wire(wire.fixed_value, wire.fixed_raw_value)
+                .map_err(|error| format!("fixed_value/fixed_raw_value: {error}"))?,
+            binary32: ShiftedBinary32::from_wire(wire.binary32_value, &wire.binary32_raw_value)
+                .map_err(|error| format!("binary32_value/binary32_raw_value: {error}"))?,
+        })
+    }
+}
+
+pub(crate) mod pair_wire {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use super::SketchScaledAtom;
+
+    #[derive(Serialize, Deserialize)]
+    struct Wire {
+        values: [f64; 2],
+        raw_values: [[u8; 7]; 2],
+    }
+
+    pub(crate) fn serialize<S: Serializer>(values: &[SketchScaledAtom; 2], serializer: S) -> Result<S::Ok, S::Error> {
+        Wire { values: values.map(SketchScaledAtom::value), raw_values: values.map(SketchScaledAtom::raw) }.serialize(serializer)
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<[SketchScaledAtom; 2], D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        let [a, b] = std::array::from_fn(|i| SketchScaledAtom::from_wire(wire.values[i], wire.raw_values[i]));
+        Ok([a.map_err(serde::de::Error::custom)?, b.map_err(serde::de::Error::custom)?])
+    }
+}

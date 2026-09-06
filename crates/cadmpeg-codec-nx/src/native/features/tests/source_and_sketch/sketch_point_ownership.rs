@@ -40,8 +40,7 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
         operation_label: "sketch".to_string(),
         construction_payload: "payload".to_string(),
         ordinal: 0,
-        values: [0.5, -0.5],
-        raw_values: [[0; 7]; 2],
+        values: [[0; 7], [8, 0, 0, 0, 0, 0, 0]].map(crate::om::sketch_scalar::SketchScaledAtom::from_raw),
         discriminator: vec![0x04],
         payload_offset: 20,
         value_payload_offsets: [28, 37],
@@ -67,7 +66,7 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     let points = feature_sketch_fixed_points(&records, &names, &pairs);
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].name, "Point1");
-    assert_eq!(points[0].values, [0.5, -0.5]);
+    assert_eq!(points[0].values, [0.5, 0.75]);
 }
 
 #[test]

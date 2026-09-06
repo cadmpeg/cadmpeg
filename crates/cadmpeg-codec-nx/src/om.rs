@@ -11,6 +11,8 @@ pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 use branch_items::BranchItems;
 pub(crate) mod parameter_name;
+pub(crate) mod sketch_scalar;
+use sketch_scalar::{SketchScaledAtom, SketchMixedScalars};
 pub(crate) mod fixed;
 use fixed::{Q155, Q155Atom, Q155Marker};
 pub(crate) mod nonempty;
@@ -2463,11 +2465,9 @@ pub struct SketchPayloadFixedPair {
     /// Payload-relative offset of the discriminator.
     pub offset: usize,
     /// Ordered values reconstructed from the `30` shifted-binary64 atoms and scaled by `1/4`.
-    pub values: [f64; 2],
+    pub values: [SketchScaledAtom; 2],
     /// Payload-relative offsets of the two `30` atom markers.
     pub value_offsets: [usize; 2],
-    /// Exact seven-byte suffixes following the two `30` atom markers.
-    pub raw_values: [[u8; 7]; 2],
     /// Exact discriminator and branch prefix selecting the pair layout.
     pub discriminator: Vec<u8>,
 }
@@ -2490,14 +2490,8 @@ pub struct SketchPayloadScalarLane {
 pub struct SketchPayloadMixedPair {
     /// Payload-relative offset of the discriminator.
     pub offset: usize,
-    /// Value reconstructed from the `30` shifted-binary64 atom and scaled by `1/4`.
-    pub fixed_value: f64,
-    /// Finite shifted-IEEE binary32 value widened exactly to binary64.
-    pub binary32_value: f64,
-    /// Exact seven-byte suffix following the `30` shifted-binary64 atom marker.
-    pub fixed_raw_value: [u8; 7],
-    /// Exact four-byte shifted-binary32 encoding.
-    pub binary32_raw_value: [u8; 4],
+    /// Exact scaled binary64 and binary32 atoms.
+    pub scalars: SketchMixedScalars,
     /// Payload-relative offsets of the two atom markers.
     pub value_offsets: [usize; 2],
     /// Exact discriminator selecting the mixed pair layout.
@@ -6086,17 +6080,16 @@ pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
             {
                 continue;
             }
-            let Some((first_raw, first_value)) = sketch_fixed_atom(bytes, first) else {
+            let Some(first_value) = sketch_fixed_atom(bytes, first) else {
                 continue;
             };
-            let Some((second_raw, second_value)) = sketch_fixed_atom(bytes, second) else {
+            let Some(second_value) = sketch_fixed_atom(bytes, second) else {
                 continue;
             };
             pairs.push(SketchPayloadFixedPair {
                 offset,
                 values: [first_value, second_value],
                 value_offsets: [first, second],
-                raw_values: [first_raw, second_raw],
                 discriminator: discriminator.to_vec(),
             });
         }
@@ -6128,15 +6121,12 @@ pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
         else {
             continue;
         };
-        let Some((fixed_raw_value, fixed_value)) = sketch_fixed_atom(bytes, fixed_offset) else {
+        let Some(fixed) = sketch_fixed_atom(bytes, fixed_offset) else {
             continue;
         };
         pairs.push(SketchPayloadMixedPair {
             offset,
-            fixed_value,
-            binary32_value: binary32_atom.value(),
-            fixed_raw_value,
-            binary32_raw_value,
+            scalars: SketchMixedScalars { fixed, binary32: binary32_atom },
             value_offsets: [fixed_offset, binary32_offset],
             discriminator: DISCRIMINATOR.to_vec(),
         });
@@ -6144,18 +6134,8 @@ pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
     pairs
 }
 
-const SKETCH_FIXED_ATOM_SCALE: f64 = 0.25;
-
-fn sketch_fixed_atom_value(raw: [u8; 7]) -> Option<f64> {
-    let mut encoded = [0_u8; 8];
-    encoded[0] = 0x30;
-    encoded[1..].copy_from_slice(&raw);
-    shifted_ieee_f64(&encoded).map(|value| value * SKETCH_FIXED_ATOM_SCALE)
-}
-
-fn sketch_fixed_atom(bytes: &[u8], offset: usize) -> Option<([u8; 7], f64)> {
-    let raw = bytes.get(offset + 1..offset + 8)?.try_into().ok()?;
-    Some((raw, sketch_fixed_atom_value(raw)?))
+fn sketch_fixed_atom(bytes: &[u8], offset: usize) -> Option<SketchScaledAtom> {
+    Some(SketchScaledAtom::from_raw(bytes.get(offset + 1..offset + 8)?.try_into().ok()?))
 }
 
 /// Decode every exactly framed signed Q1.55 pair in a datum-CSYS payload.

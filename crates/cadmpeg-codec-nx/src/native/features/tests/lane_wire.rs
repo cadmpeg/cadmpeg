@@ -325,3 +325,25 @@ fn q155_lanes_reject_mismatched_values_and_unknown_markers() {
         assert!(serde_json::from_value::<FeatureDraftConstructionFixedLane>(invalid).is_err());
     }
 }
+
+#[test]
+fn scaled_sketch_pair_preserves_values_and_raw_values_wire() {
+    check_lane_wire::<FeatureSketchPayloadFixedPair>(
+        r#"{"id":"pair","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.5,0.75],"raw_values":[[0,0,0,0,0,0,0],[8,0,0,0,0,0,0]],"discriminator":[4,224,72,14,2,3,128,132],"payload_offset":0,"value_payload_offsets":[8,17],"source_offset":100,"value_source_offsets":[108,117]}"#,
+        &["values", "raw_values", "value_payload_offsets", "value_source_offsets"],
+    );
+}
+
+#[test]
+fn mixed_sketch_pair_preserves_interleaved_atom_wire() {
+    check_lane_wire::<FeatureSketchPayloadMixedPair>(
+        r#"{"id":"pair","operation_label":"operation","construction_payload":"payload","ordinal":0,"fixed_value":0.5,"binary32_value":3.25,"fixed_raw_value":[0,0,0,0,0,0,0],"binary32_raw_value":[80,80,0,0],"discriminator":[4,224,72,14,2,3,128,132],"payload_offset":0,"value_payload_offsets":[8,17],"source_offset":100,"value_source_offsets":[108,117]}"#,
+        &["fixed_raw_value", "binary32_raw_value", "value_payload_offsets", "value_source_offsets"],
+    );
+}
+
+#[test]
+fn scaled_sketch_pair_rejects_values_inconsistent_with_its_marker() {
+    let invalid = r#"{"id":"pair","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.5,-0.5],"raw_values":[[0,0,0,0,0,0,0],[0,0,0,0,0,0,0]],"discriminator":[4,224,72,14,2,3,128,132],"payload_offset":0,"value_payload_offsets":[8,17],"source_offset":100,"value_source_offsets":[108,117]}"#;
+    assert!(serde_json::from_str::<FeatureSketchPayloadFixedPair>(invalid).unwrap_err().to_string().contains("raw_values"));
+}

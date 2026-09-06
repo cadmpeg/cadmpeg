@@ -33,7 +33,7 @@ fn sketch_fixed_pair_parser_reads_scaled_shifted_binary64_atoms() {
 
     let pairs = super::sketch_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
-    assert_sketch_fixed_pair_values(pairs[0].values, [0.5, 0.75]);
+    assert_sketch_fixed_pair_values(pairs[0].values.map(crate::om::sketch_scalar::SketchScaledAtom::value), [0.5, 0.75]);
     assert_eq!(
         pairs[0].value_offsets,
         [discriminator.len(), discriminator.len() + 9]
@@ -58,11 +58,11 @@ fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
 
     let short_pair = super::sketch_payload_fixed_pairs(&short);
     assert_eq!(short_pair.len(), 1);
-    assert_sketch_fixed_pair_values(short_pair[0].values, [0.5, 0.75]);
+    assert_sketch_fixed_pair_values(short_pair[0].values.map(crate::om::sketch_scalar::SketchScaledAtom::value), [0.5, 0.75]);
 
     let extended_pair = super::sketch_payload_fixed_pairs(&extended);
     assert_eq!(extended_pair.len(), 1);
-    assert_sketch_fixed_pair_values(extended_pair[0].values, [0.5, 0.5]);
+    assert_sketch_fixed_pair_values(extended_pair[0].values.map(crate::om::sketch_scalar::SketchScaledAtom::value), [0.5, 0.5]);
 
     let mut malformed = short;
     malformed[short_discriminator.len() + 8] = 0x31;
@@ -78,7 +78,7 @@ fn sketch_fixed_pair_parser_accepts_the_three_member_branch() {
 
     let pairs = super::sketch_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
-    assert_sketch_fixed_pair_values(pairs[0].values, [0.5, 0.75]);
+    assert_sketch_fixed_pair_values(pairs[0].values.map(crate::om::sketch_scalar::SketchScaledAtom::value), [0.5, 0.75]);
 
     let mut malformed = bytes;
     malformed[14] = 0x02;
@@ -94,8 +94,8 @@ fn sketch_mixed_pair_parser_requires_scaled_shifted_binary64_then_binary32() {
     bytes.extend_from_slice(&shifted);
 
     let pairs = super::sketch_payload_mixed_pairs(&bytes);
-    assert!((pairs[0].fixed_value - 0.5).abs() < EPS_SKETCH_FIXED_ATOM);
-    assert!((pairs[0].binary32_value - 3.25).abs() < EPS_SKETCH_FIXED_ATOM);
+    assert!((pairs[0].scalars.fixed.value() - 0.5).abs() < EPS_SKETCH_FIXED_ATOM);
+    assert!((pairs[0].scalars.binary32.value() - 3.25).abs() < EPS_SKETCH_FIXED_ATOM);
 
     let mut malformed = bytes;
     malformed[discriminator.len() + 8] = 1;

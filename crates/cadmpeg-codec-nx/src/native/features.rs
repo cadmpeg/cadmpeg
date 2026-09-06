@@ -15,6 +15,7 @@ use crate::om::swp104_state::Swp104StateLane;
 use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, RepeatedScalar, ShiftedBinary32, ShiftedBinary64, ShiftedScalar};
 use crate::om::branch_items::BranchItems;
 use crate::om::nonempty::NonEmpty;
+use crate::om::sketch_scalar::{SketchScaledAtom, SketchMixedScalars};
 use crate::om::fixed::{Q155, Q155Atom, Q155Marker};
 use crate::om::pattern::{PatternRow, PatternRows, PatternScalarEncoding, PatternTerminal, PatternValue, PatternWideValues};
 use crate::om::thru_curve_state::ThruCurveBranchItems;
@@ -2116,9 +2117,8 @@ pub struct FeatureSketchPayloadFixedPair {
     /// Zero-based frame order within the payload.
     pub ordinal: u32,
     /// Ordered values reconstructed from the `30` shifted-binary64 atoms and scaled by `1/4`.
-    pub values: [f64; 2],
-    /// Exact ordered seven-byte suffixes following the `30` atom markers.
-    pub raw_values: [[u8; 7]; 2],
+    #[serde(flatten, with = "crate::om::sketch_scalar::pair_wire")]
+    pub values: [SketchScaledAtom; 2],
     /// Exact discriminator and branch prefix selecting the pair layout.
     pub discriminator: Vec<u8>,
     /// Payload-relative offset of the discriminator.
@@ -2142,14 +2142,9 @@ pub struct FeatureSketchPayloadMixedPair {
     pub construction_payload: String,
     /// Zero-based frame order within the payload.
     pub ordinal: u32,
-    /// Value reconstructed from the `30` shifted-binary64 atom and scaled by `1/4`.
-    pub fixed_value: f64,
-    /// Finite shifted-IEEE binary32 value widened exactly to binary64.
-    pub binary32_value: f64,
-    /// Exact seven-byte suffix following the `30` shifted-binary64 atom marker.
-    pub fixed_raw_value: [u8; 7],
-    /// Exact four-byte shifted-binary32 encoding.
-    pub binary32_raw_value: [u8; 4],
+    /// Exact scaled binary64 and binary32 atoms.
+    #[serde(flatten)]
+    pub scalars: SketchMixedScalars,
     /// Exact discriminator selecting the mixed pair layout.
     pub discriminator: Vec<u8>,
     /// Payload-relative offset of the discriminator.
@@ -8739,7 +8734,6 @@ pub fn feature_sketch_payload_fixed_pairs(
                 construction_payload: payload.id.clone(),
                 ordinal: ordinal as u32,
                 values: pair.values,
-                raw_values: pair.raw_values,
                 discriminator: pair.discriminator,
                 payload_offset: pair.offset as u64,
                 value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
@@ -8769,10 +8763,7 @@ pub fn feature_sketch_payload_mixed_pairs(
                 operation_label: payload.operation_label.clone(),
                 construction_payload: payload.id.clone(),
                 ordinal: ordinal as u32,
-                fixed_value: pair.fixed_value,
-                binary32_value: pair.binary32_value,
-                fixed_raw_value: pair.fixed_raw_value,
-                binary32_raw_value: pair.binary32_raw_value,
+                scalars: pair.scalars,
                 discriminator: pair.discriminator,
                 payload_offset: pair.offset as u64,
                 value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
@@ -9167,7 +9158,6 @@ pub fn feature_sketch_fixed_points(
             let pair = fixed_pairs.get(fixed_pair_id.as_str())?;
             if pair.operation_label != record.operation_label
                 || pair.construction_payload != record.construction_payload
-                || pair.values.iter().any(|value| !value.is_finite())
             {
                 return None;
             }
@@ -9179,7 +9169,7 @@ pub fn feature_sketch_fixed_points(
                 named_record: record.id.clone(),
                 name: name.value.clone(),
                 fixed_pair: pair.id.clone(),
-                values: pair.values,
+                values: pair.values.map(SketchScaledAtom::value),
                 source_offset: pair.source_offset,
             })
         })
