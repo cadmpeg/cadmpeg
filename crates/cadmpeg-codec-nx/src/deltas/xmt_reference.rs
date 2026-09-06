@@ -10,7 +10,7 @@ pub(crate) struct NonNullXmt(u32);
 impl TryFrom<u32> for NonNullXmt {
     type Error = &'static str;
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        if value <= 1 { return Err("reference: must exceed one"); }
+        if value <= 1 { return Err("xmt reference: must exceed one"); }
         Ok(Self(value))
     }
 }

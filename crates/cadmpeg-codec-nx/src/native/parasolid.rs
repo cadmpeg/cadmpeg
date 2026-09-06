@@ -3856,7 +3856,7 @@ mod tests {
         assert_eq!(
             declaration.fields,
             InlineSchemaFields::Region {
-                xmt: 11,
+                xmt: 11u32.try_into().unwrap(),
                 state_word: 5,
                 references: [1, 3, 1, 9],
             }

@@ -15,7 +15,7 @@ pub(crate) enum InlineSchemaFields {
     /// REGION declaration state.
     Region {
         /// Non-null stream-local declaration identity.
-        xmt: u32,
+        xmt: NonNullXmt,
         /// Serialized big-endian state word.
         state_word: u32,
         /// Four ordered stream-local XMT references.

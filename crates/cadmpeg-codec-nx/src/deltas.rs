@@ -2142,7 +2142,7 @@ fn region_schema_declaration(
 ) -> Option<InlineSchemaDeclaration> {
     let mut at = offset.checked_add(REGION_SCHEMA_HEADER.len())?;
     let (xmt, consumed) = read_xmt(stream, at)?;
-    (xmt > 1).then_some(())?;
+    let xmt = NonNullXmt::try_from(xmt).ok()?;
     at = at.checked_add(consumed)?;
     let state_word = View::u32_be_at(stream, at)?;
     at = at.checked_add(4)?;

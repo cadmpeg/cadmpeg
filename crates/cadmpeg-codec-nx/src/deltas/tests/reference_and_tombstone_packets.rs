@@ -182,7 +182,7 @@ fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
     assert_eq!(
         declaration.fields,
         crate::deltas::inline_schema_fields::InlineSchemaFields::Region {
-            xmt: 40_000,
+            xmt: 40_000u32.try_into().unwrap(),
             state_word: 5,
             references: [1, 3, 1, 9],
         }
