@@ -6,6 +6,7 @@ use super::state_message::{OperationStateMessage, StateMessage};
 use super::state_slot_lane::StateSlotLane;
 use super::state_status::{operation_state_opaque_lane_end_at, operation_state_status_row_at};
 use super::state_table::{OperationStateStatusTable, StateTableEntry};
+use std::num::NonZeroUsize;
 
 pub(super) struct OperationStateBlock<'a> {
     offset: usize,
@@ -120,7 +121,7 @@ fn operation_state_status_end_at(
 
 #[derive(Clone, Copy)]
 struct OperationStatePath {
-    length: usize,
+    length: NonZeroUsize,
     end: usize,
 }
 
@@ -163,7 +164,8 @@ pub(super) fn operation_state_block_before_boundary(
                 let continuation = (next < end)
                     .then(|| operation_state_path_at(&message_paths, next))
                     .flatten();
-                let length = continuation.map_or(Some(1), |path| path.length.checked_add(1))?;
+                let length = continuation
+                    .map_or(Some(NonZeroUsize::MIN), |path| path.length.checked_add(1))?;
                 let path_end = continuation.map_or(next, |path| path.end);
                 message_paths.try_reserve(1).ok()?;
                 message_paths.push((
@@ -176,31 +178,24 @@ pub(super) fn operation_state_block_before_boundary(
             }
         }
 
-        let (status_length, status_end) =
+        let status_path =
             operation_state_status_end_at(bytes, at, end, base_offset, Some(&opaque_lane_starts))
                 .filter(|next| *next > at && *next <= end)
-                .map_or((0, usize::MAX), |next| {
+                .and_then(|next| {
                     let continuation = (next < end)
                         .then(|| operation_state_path_at(&status_paths, next))
                         .flatten();
-                    let Some(length) =
-                        continuation.map_or(Some(1), |path| path.length.checked_add(1))
-                    else {
-                        return (0, usize::MAX);
-                    };
-                    let path_end = continuation.map_or(next, |path| path.end);
-                    (length, path_end)
+                    let length = continuation
+                        .map_or(Some(NonZeroUsize::MIN), |path| path.length.checked_add(1))?;
+                    Some(OperationStatePath {
+                        length,
+                        end: continuation.map_or(next, |path| path.end),
+                    })
                 });
         let message_path = operation_state_path_at(&message_paths, at);
-        let best_path =
-            if status_length >= message_path.map_or(0, |path| path.length) && status_length > 0 {
-                Some(OperationStatePath {
-                    length: status_length,
-                    end: status_end,
-                })
-            } else {
-                message_path
-            };
+        let best_path = status_path
+            .filter(|status| message_path.is_none_or(|message| status.length >= message.length))
+            .or(message_path);
         if let Some(path) = best_path {
             status_paths.try_reserve(1).ok()?;
             status_paths.push((at, path));
@@ -224,36 +219,38 @@ pub(super) fn operation_state_block_before_boundary(
     let mut messages = Vec::new();
     let mut at = offset;
     while at < path_end {
-        let status_next =
-            operation_state_status_end_at(bytes, at, end, base_offset, Some(&opaque_lane_starts));
-        let status_length = status_next
-            .filter(|next| {
-                *next > at
-                    && *next <= path_end
-                    && (*next == path_end
-                        || (*next < end
-                            && operation_state_path_at(&status_paths, *next)
-                                .is_some_and(|path| path.end == path_end)))
-            })
-            .map_or(0, |next| {
-                if next == path_end {
-                    1
-                } else {
-                    operation_state_path_at(&status_paths, next)
-                        .and_then(|path| path.length.checked_add(1))
-                        .unwrap_or(0)
-                }
-            });
-        let message = OperationStateMessage::read(bytes, at, base_offset);
-        let message_next = message
-            .as_ref()
-            .map(|message| message.end_offset() - base_offset);
-        let message_length = operation_state_path_at(&message_paths, at)
+        let status_candidate =
+            operation_state_status_end_at(bytes, at, end, base_offset, Some(&opaque_lane_starts))
+                .filter(|next| {
+                    *next > at
+                        && *next <= path_end
+                        && (*next == path_end
+                            || (*next < end
+                                && operation_state_path_at(&status_paths, *next)
+                                    .is_some_and(|path| path.end == path_end)))
+                })
+                .and_then(|next| {
+                    let length = if next == path_end {
+                        NonZeroUsize::MIN
+                    } else {
+                        operation_state_path_at(&status_paths, next)?
+                            .length
+                            .checked_add(1)?
+                    };
+                    Some((next, length))
+                });
+        let message_candidate = operation_state_path_at(&message_paths, at)
             .filter(|path| path.end == path_end)
-            .map_or(0, |path| path.length);
+            .and_then(|path| {
+                OperationStateMessage::read(bytes, at, base_offset)
+                    .map(|message| (message, path.length))
+            });
 
-        if status_length >= message_length && status_length > 0 {
-            let next = status_next?;
+        if let Some((next, _)) = status_candidate.filter(|(_, length)| {
+            message_candidate
+                .as_ref()
+                .is_none_or(|(_, message_length)| length >= message_length)
+        }) {
             if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
                 let lane = StateSlotLane::read(bytes, at, end, base_offset)?;
                 let lane_end = lane.end_offset() - base_offset;
@@ -274,9 +271,9 @@ pub(super) fn operation_state_block_before_boundary(
                 at = next;
             }
         } else {
-            let message = message?;
-            let next = message_next?;
-            (next > at && next <= path_end && message_length > 0).then_some(())?;
+            let (message, _) = message_candidate?;
+            let next = message.end_offset() - base_offset;
+            (next > at && next <= path_end).then_some(())?;
             messages.push(message.body());
             at = next;
             break;
