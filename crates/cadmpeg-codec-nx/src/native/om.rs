@@ -3,11 +3,13 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::om::reference_value::{DirectReference, RecordReference};
 use crate::om::control_leading_value::ControlLeadingValue;
 use crate::printable_string::PrintableString;
 use crate::om::state_index::StateIndexToken;
 mod state_index_wire;
 pub(crate) mod material_texture;
+mod reference_wire;
 use material_texture::MaterialTextureAsset;
 
 use crate::om::compact::{CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex};
@@ -1561,7 +1563,7 @@ fn stable_object_record_identities(source_entry: &str, records: &[&[u8]]) -> Vec
         .map(|bytes| {
             crate::om::counted_record_references(bytes, 0, records.len())
                 .into_iter()
-                .map(|reference| (reference.offset, reference.value as usize))
+                .map(|reference| (reference.offset, usize::from(reference.value)))
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
@@ -2858,18 +2860,6 @@ pub struct ObjectUuidValue {
     pub source_offset: u64,
 }
 
-/// Tagged reference family serialized in an NX OM record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ObjectReferenceKind {
-    /// `e0` marker followed by a 32-bit persistent handle.
-    PersistentHandle,
-    /// Four-byte `0xC?` tagged 28-bit reference.
-    Tagged28,
-    /// Count-framed `90` reference to a record ordinal in the same section.
-    RecordOrdinal16,
-}
-
 /// Ordered tagged-reference occurrence owned by one NX OM record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObjectReference {
@@ -2881,12 +2871,9 @@ pub struct ObjectReference {
     pub object_id: Option<u32>,
     /// Zero-based occurrence ordinal within the owning record.
     pub ordinal: u32,
-    /// Tagged reference family.
-    pub kind: ObjectReferenceKind,
-    /// Reference value without marker/tag bits.
-    pub value: u32,
-    /// Resolved target in the native OM record directory.
-    pub target_record: Option<String>,
+    /// Typed reference and its same-section target when present.
+    #[serde(flatten, with = "reference_wire")]
+    pub reference: RecordReference<String>,
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Absolute file offset of the reference marker.
@@ -2923,10 +2910,9 @@ pub struct DataBlockControlReference {
     pub data_block: String,
     /// Zero-based retained-reference order within the control block.
     pub ordinal: u32,
-    /// Tagged reference family.
-    pub kind: ObjectReferenceKind,
-    /// Reference value without marker or tag bits.
-    pub value: u32,
+    /// Self-identifying reference payload.
+    #[serde(flatten)]
+    pub reference: DirectReference,
     /// Absolute file offset of the reference marker.
     pub source_offset: u64,
 }
@@ -3811,10 +3797,10 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
         let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
         let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
         for (source, _, _, reference) in section.references() {
-            if reference.kind != crate::om::ReferenceKind::RecordOrdinal16 {
+            let RecordReference::RecordOrdinal16 { ordinal, .. } = reference.value else {
                 continue;
-            }
-            let target = reference.value as usize;
+            };
+            let target = usize::from(ordinal);
             let outgoing = dependencies.entry(source).or_default();
             if !outgoing.contains(&target) {
                 outgoing.push(target);
@@ -4266,24 +4252,15 @@ pub fn data_block_control_references(container: &Container) -> Vec<DataBlockCont
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             crate::om::references(control.bytes, control.offset)
                 .into_iter()
-                .filter_map(|reference| {
-                    let kind = match reference.kind {
-                        crate::om::ReferenceKind::PersistentHandle => ObjectReferenceKind::PersistentHandle,
-                        crate::om::ReferenceKind::Tagged28 => ObjectReferenceKind::Tagged28,
-                        crate::om::ReferenceKind::RecordOrdinal16 => return None,
-                    };
-                    Some((kind, reference))
-                })
                 .enumerate()
-                .map(|(ordinal, (kind, reference))| DataBlockControlReference {
+                .map(|(ordinal, reference)| DataBlockControlReference {
                     id: format!(
                         "nx:om-data-block-control-references-{section_ordinal}:reference#{}",
                         reference.offset
                     ),
                     data_block: data_block.clone(),
                     ordinal: ordinal as u32,
-                    kind,
-                    value: reference.value,
+                    reference: reference.value,
                     source_offset: entry_offset + reference.offset as u64,
                 })
                 .collect()
@@ -4295,30 +4272,28 @@ pub fn data_block_control_references(container: &Container) -> Vec<DataBlockCont
 pub fn data_block_control_handle_pairs(
     references: &[DataBlockControlReference],
 ) -> Vec<DataBlockControlHandlePair> {
-    let mut by_block = BTreeMap::<&str, Vec<&DataBlockControlReference>>::new();
-    for reference in references
-        .iter()
-        .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
-    {
+    let mut by_block = BTreeMap::<&str, Vec<(&DataBlockControlReference, u32)>>::new();
+    for reference in references {
+        let DirectReference::PersistentHandle(handle) = reference.reference else { continue; };
         by_block
             .entry(reference.data_block.as_str())
             .or_default()
-            .push(reference);
+            .push((reference, handle));
     }
     let mut pairs = Vec::new();
     for (data_block, mut block_references) in by_block {
-        block_references.sort_by_key(|reference| reference.source_offset);
+        block_references.sort_by_key(|(reference, _)| reference.source_offset);
         let mut at = 0;
         while at < block_references.len() {
             let start = at;
             while block_references
                 .get(at + 1)
-                .is_some_and(|next| next.source_offset == block_references[at].source_offset + 5)
+                .is_some_and(|next| next.0.source_offset == block_references[at].0.source_offset + 5)
             {
                 at += 1;
             }
             let run = &block_references[start..=at];
-            if let [first, second] = run {
+            if let [(first, first_handle), (second, second_handle)] = run {
                 pairs.push(DataBlockControlHandlePair {
                     id: format!(
                         "nx:om-data-block-control:handle-pair#{}",
@@ -4327,8 +4302,8 @@ pub fn data_block_control_handle_pairs(
                     data_block: data_block.to_string(),
                     first_reference: first.id.clone(),
                     second_reference: second.id.clone(),
-                    first_handle: first.value,
-                    second_handle: second.value,
+                    first_handle: *first_handle,
+                    second_handle: *second_handle,
                     source_offset: first.source_offset,
                 });
             }
@@ -5203,24 +5178,13 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
                             record,
                             object_id,
                             ordinal: reference_ordinal as u32,
-                            kind: match reference.kind {
-                                crate::om::ReferenceKind::PersistentHandle => {
-                                    ObjectReferenceKind::PersistentHandle
-                                }
-                                crate::om::ReferenceKind::Tagged28 => ObjectReferenceKind::Tagged28,
-                                crate::om::ReferenceKind::RecordOrdinal16 => {
-                                    ObjectReferenceKind::RecordOrdinal16
-                                }
+                            reference: match reference.value {
+                                RecordReference::Direct(value) => RecordReference::Direct(value),
+                                RecordReference::RecordOrdinal16 { ordinal, .. } => RecordReference::RecordOrdinal16 {
+                                    ordinal,
+                                    target: format!("nx:om-record-directory-{section_ordinal}:entry#{ordinal}"),
+                                },
                             },
-                            value: reference.value,
-                            target_record: (reference.kind
-                                == crate::om::ReferenceKind::RecordOrdinal16)
-                                .then(|| {
-                                    format!(
-                                        "nx:om-record-directory-{section_ordinal}:entry#{}",
-                                        reference.value
-                                    )
-                                }),
                             source_entry: entry.name.clone(),
                             source_offset: entry_offset + reference.offset as u64,
                         }
@@ -5233,38 +5197,36 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
 
 /// Join maximal two-token adjacent persistent-handle runs within object records.
 pub fn object_record_handle_pairs(references: &[ObjectReference]) -> Vec<ObjectRecordHandlePair> {
-    let mut by_record = BTreeMap::<&str, Vec<&ObjectReference>>::new();
-    for reference in references
-        .iter()
-        .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
-    {
+    let mut by_record = BTreeMap::<&str, Vec<(&ObjectReference, u32)>>::new();
+    for reference in references {
+        let RecordReference::Direct(DirectReference::PersistentHandle(handle)) = reference.reference else { continue; };
         by_record
             .entry(reference.record.as_str())
             .or_default()
-            .push(reference);
+            .push((reference, handle));
     }
     let mut pairs = Vec::new();
     for (record, mut record_references) in by_record {
-        record_references.sort_by_key(|reference| reference.source_offset);
+        record_references.sort_by_key(|(reference, _)| reference.source_offset);
         let mut at = 0;
         while at < record_references.len() {
             let start = at;
             while record_references
                 .get(at + 1)
-                .is_some_and(|next| next.source_offset == record_references[at].source_offset + 5)
+                .is_some_and(|next| next.0.source_offset == record_references[at].0.source_offset + 5)
             {
                 at += 1;
             }
             let run = &record_references[start..=at];
-            if let [first, second] = run {
+            if let [(first, first_handle), (second, second_handle)] = run {
                 pairs.push(ObjectRecordHandlePair {
                     id: format!("nx:om-object-record:handle-pair#{}", first.source_offset),
                     record: record.to_string(),
                     object_id: first.object_id,
                     first_reference: first.id.clone(),
                     second_reference: second.id.clone(),
-                    first_handle: first.value,
-                    second_handle: second.value,
+                    first_handle: *first_handle,
+                    second_handle: *second_handle,
                     source_offset: first.source_offset,
                 });
             }
@@ -5291,11 +5253,9 @@ pub fn persistent_handles(
     }
 
     let mut groups = BTreeMap::<u32, Group>::new();
-    for reference in references
-        .iter()
-        .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
-    {
-        let group = groups.entry(reference.value).or_default();
+    for reference in references {
+        let RecordReference::Direct(DirectReference::PersistentHandle(handle)) = reference.reference else { continue; };
+        let group = groups.entry(handle).or_default();
         group.occurrence_count += 1;
         if group.records.last() != Some(&reference.record)
             && !group.records.contains(&reference.record)
@@ -5303,11 +5263,9 @@ pub fn persistent_handles(
             group.records.push(reference.record.clone());
         }
     }
-    for reference in control_references
-        .iter()
-        .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
-    {
-        let group = groups.entry(reference.value).or_default();
+    for reference in control_references {
+        let DirectReference::PersistentHandle(handle) = reference.reference else { continue; };
+        let group = groups.entry(handle).or_default();
         group.occurrence_count += 1;
         if !group.data_blocks.contains(&reference.data_block) {
             group.data_blocks.push(reference.data_block.clone());
@@ -6891,20 +6849,15 @@ mod tests {
         assert_eq!(references.len(), 3);
         assert_eq!(references[0].record, object_records[1].id);
         assert_eq!(references[0].object_id, Some(0x102));
-        assert_eq!(references[0].value, 0x1234_5678);
-        assert_eq!(references[0].target_record, None);
-        assert_eq!(references[1].kind, super::ObjectReferenceKind::Tagged28);
-        assert_eq!(references[1].value, 0x0abc_def0);
-        assert_eq!(references[1].target_record, None);
-        assert_eq!(
-            references[2].kind,
-            super::ObjectReferenceKind::RecordOrdinal16
-        );
-        assert_eq!(references[2].value, 0);
-        assert_eq!(
-            references[2].target_record.as_ref(),
-            Some(&object_records[0].id)
-        );
+        let wire = serde_json::to_value(&references).unwrap();
+        assert_eq!(wire[0]["value"], 0x1234_5678);
+        assert_eq!(wire[0]["target_record"], serde_json::Value::Null);
+        assert_eq!(wire[1]["kind"], "tagged28");
+        assert_eq!(wire[1]["value"], 0x0abc_def0);
+        assert_eq!(wire[1]["target_record"], serde_json::Value::Null);
+        assert_eq!(wire[2]["kind"], "record_ordinal16");
+        assert_eq!(wire[2]["value"], 0);
+        assert_eq!(wire[2]["target_record"].as_str(), Some(object_records[0].id.as_str()));
         let handles = result
             .ir()
             .native

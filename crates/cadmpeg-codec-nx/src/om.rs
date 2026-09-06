@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Frame NX object-model entities using external boundary and identity arrays.
 
+pub(crate) mod reference_value;
+use reference_value::{DirectReference, LocatedReference, RecordReference, Tagged28};
+
 pub(crate) mod draft_identity;
 pub(crate) mod plane_descriptor;
 pub(crate) mod csys_descriptor;
@@ -193,17 +196,6 @@ pub struct RecordAreaHeader<'a> {
     pub control_words: [u32; 3],
     /// Product/version record following the control words.
     pub product: StoreVersion<'a>,
-}
-
-/// Tagged NX OM cross-record reference family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReferenceKind {
-    /// `e0` marker followed by a 32-bit big-endian persistent handle.
-    PersistentHandle,
-    /// Four-byte word whose high nibble is `c` and low 28 bits are the value.
-    Tagged28,
-    /// `90` marker followed by a 16-bit big-endian record ordinal.
-    RecordOrdinal16,
 }
 
 /// One value in an NX OM compact-index lane.
@@ -998,17 +990,6 @@ fn construction_payload_name_text(bytes: &[u8], length_offset: usize) -> Option<
         return None;
     }
     std::str::from_utf8(text).ok()
-}
-
-/// One tagged reference occurrence in an externally bounded OM record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ReferenceValue {
-    /// Absolute byte offset of the reference marker.
-    pub offset: usize,
-    /// Reference family.
-    pub kind: ReferenceKind,
-    /// Unsigned reference value without its marker/tag bits.
-    pub value: u32,
 }
 
 /// Unit declared by an NX numeric-expression serialization.
@@ -2029,15 +2010,21 @@ impl<'a> IndexedSection<'a> {
     }
 
     /// Decode tagged cross-record references from every bounded record.
-    pub fn references(&self) -> Vec<(usize, usize, Option<u32>, ReferenceValue)> {
+    pub fn references(&self) -> Vec<(usize, usize, Option<u32>, LocatedReference<RecordReference<()>>)> {
         let records = self.record_views();
         let record_count = records.len();
         records
             .into_iter()
             .enumerate()
             .flat_map(|(record_ordinal, (offset, bytes, object_id))| {
-                let mut references = record_references(bytes, offset);
-                references.extend(counted_record_references(bytes, offset, record_count));
+                let mut references = record_references(bytes, offset).into_iter().map(|reference| LocatedReference {
+                    offset: reference.offset,
+                    value: RecordReference::Direct(reference.value),
+                }).collect::<Vec<_>>();
+                references.extend(counted_record_references(bytes, offset, record_count).into_iter().map(|reference| LocatedReference {
+                    offset: reference.offset,
+                    value: RecordReference::RecordOrdinal16 { ordinal: reference.value, target: () },
+                }));
                 references.sort_by_key(|reference| reference.offset);
                 references
                     .into_iter()
@@ -6158,7 +6145,7 @@ pub fn counted_record_references(
     bytes: &[u8],
     base_offset: usize,
     record_count: usize,
-) -> Vec<ReferenceValue> {
+) -> Vec<LocatedReference<u16>> {
     let mut references = Vec::new();
     let mut at = 0usize;
     while at + 5 <= bytes.len() {
@@ -6175,56 +6162,39 @@ pub fn counted_record_references(
             at += 1;
             continue;
         }
-        if (0..count).any(|index| {
+        let run = (0..count).map(|index| {
             let token = at + 2 + index * 3;
-            let value = u16::from_be_bytes([bytes[token + 1], bytes[token + 2]]);
-            usize::from(value) >= record_count
-        }) {
-            at += 1;
-            continue;
-        }
-        let mut run = Vec::with_capacity(count);
-        for index in 0..count {
-            let token = at + 2 + index * 3;
-            let Some(value) = View::u16_be_at(bytes, token + 1) else {
-                run.clear();
-                break;
-            };
-            if usize::from(value) >= record_count {
-                run.clear();
-                break;
-            }
-            run.push(ReferenceValue {
+            let value = View::u16_be_at(bytes, token + 1)?;
+            (usize::from(value) < record_count).then_some(LocatedReference {
                 offset: base_offset + token,
-                kind: ReferenceKind::RecordOrdinal16,
-                value: u32::from(value),
-            });
-        }
-        if run.is_empty() {
-            at += 1;
-        } else {
+                value,
+            })
+        }).collect::<Option<Vec<_>>>();
+        if let Some(run) = run {
             references.extend(run);
             at = end;
+        } else {
+            at += 1;
         }
     }
     references
 }
 
 /// Decode self-identifying persistent handles and exact adjacent handle pairs.
-pub fn record_references(bytes: &[u8], base_offset: usize) -> Vec<ReferenceValue> {
+pub fn record_references(bytes: &[u8], base_offset: usize) -> Vec<LocatedReference<DirectReference>> {
     let parsed = references(bytes, base_offset);
     let mut out = parsed
         .iter()
         .copied()
-        .filter(|reference| reference.kind == ReferenceKind::PersistentHandle)
+        .filter(|reference| matches!(reference.value, DirectReference::PersistentHandle(_)))
         .collect::<Vec<_>>();
     out.extend(parsed.iter().zip(parsed.iter().skip(1)).filter_map(|(persistent, tagged)| {
         let adjacent = persistent
             .offset
             .checked_add(5)
             .is_some_and(|offset| tagged.offset == offset);
-        (persistent.kind == ReferenceKind::PersistentHandle
-            && tagged.kind == ReferenceKind::Tagged28
+        (matches!(persistent.value, DirectReference::PersistentHandle(_))
+            && matches!(tagged.value, DirectReference::Tagged28(_))
             && adjacent)
             .then_some(*tagged)
     }));
@@ -6233,26 +6203,24 @@ pub fn record_references(bytes: &[u8], base_offset: usize) -> Vec<ReferenceValue
 }
 
 /// Decode tagged references wholly contained in `bytes`.
-pub fn references(bytes: &[u8], base_offset: usize) -> Vec<ReferenceValue> {
+pub fn references(bytes: &[u8], base_offset: usize) -> Vec<LocatedReference<DirectReference>> {
     let mut out = Vec::new();
     let mut at = 0usize;
     while at < bytes.len() {
         if bytes[at] == 0xe0 {
             if let Some(value) = View::u32_be_at(bytes, at + 1) {
-                out.push(ReferenceValue {
+                out.push(LocatedReference {
                     offset: base_offset + at,
-                    kind: ReferenceKind::PersistentHandle,
-                    value,
+                    value: DirectReference::PersistentHandle(value),
                 });
                 at += 5;
                 continue;
             }
         } else if bytes[at] & 0xf0 == 0xc0 {
             if let Some(value) = View::u32_be_at(bytes, at) {
-                out.push(ReferenceValue {
+                out.push(LocatedReference {
                     offset: base_offset + at,
-                    kind: ReferenceKind::Tagged28,
-                    value: value & 0x0fff_ffff,
+                    value: DirectReference::Tagged28(Tagged28::from_word(value)),
                 });
                 at += 4;
                 continue;

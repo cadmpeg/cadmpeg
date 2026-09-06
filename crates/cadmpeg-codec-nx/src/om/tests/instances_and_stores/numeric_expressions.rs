@@ -1,3 +1,5 @@
+use crate::om::reference_value::{DirectReference, Tagged28};
+
 #[test]
 fn om_numeric_expression_types_only_canonical_parameter_names() {
     for name in ["p12foo", "p12_", "p4294967296_radius"] {
@@ -112,14 +114,9 @@ fn om_tagged_references_preserve_family_value_order_and_bounds() {
     let references = super::super::references(bytes, 20);
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].offset, 20);
-    assert_eq!(
-        references[0].kind,
-        super::super::ReferenceKind::PersistentHandle
-    );
-    assert_eq!(references[0].value, 0x1234_5678);
+    assert_eq!(references[0].value, DirectReference::PersistentHandle(0x1234_5678));
     assert_eq!(references[1].offset, 25);
-    assert_eq!(references[1].kind, super::super::ReferenceKind::Tagged28);
-    assert_eq!(references[1].value, 0x0abc_def0);
+    assert_eq!(references[1].value, DirectReference::Tagged28(Tagged28::try_from(0x0abc_def0).unwrap()));
 }
 
 #[test]
@@ -128,10 +125,6 @@ fn om_counted_record_references_require_a_complete_in_bounds_run() {
     let references = super::super::counted_record_references(bytes, 100, 5);
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].offset, 103);
-    assert_eq!(
-        references[0].kind,
-        super::super::ReferenceKind::RecordOrdinal16
-    );
     assert_eq!(references[0].value, 2);
     assert_eq!(references[1].value, 4);
 }
@@ -153,7 +146,7 @@ fn om_record_references_require_adjacent_persistent_tagged_pairs() {
     assert_eq!(
         super::super::record_references(&unpaired, 0)
             .into_iter()
-            .filter(|reference| reference.kind == super::super::ReferenceKind::Tagged28)
+            .filter(|reference| matches!(reference.value, DirectReference::Tagged28(_)))
             .count(),
         8
     );
@@ -161,7 +154,7 @@ fn om_record_references_require_adjacent_persistent_tagged_pairs() {
     let lone_tagged = [0xc0, 0, 0, 1];
     assert!(super::super::record_references(&lone_tagged, 0)
         .into_iter()
-        .all(|reference| reference.kind != super::super::ReferenceKind::Tagged28));
+        .all(|reference| !matches!(reference.value, DirectReference::Tagged28(_))));
 }
 
 #[test]

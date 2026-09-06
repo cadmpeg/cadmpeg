@@ -1,3 +1,4 @@
+use crate::om::reference_value::{DirectReference, RecordReference};
 use super::super::*;
 use super::*;
 
@@ -172,9 +173,7 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         record: "nx:test:om-record#0".into(),
         object_id: Some(1),
         ordinal: 0,
-        kind: super::super::ObjectReferenceKind::PersistentHandle,
-        value: 0x1020_3040,
-        target_record: None,
+        reference: RecordReference::Direct(DirectReference::PersistentHandle(0x1020_3040)),
         source_entry: "om".into(),
         source_offset: 0,
     };
@@ -192,8 +191,7 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         id: "nx:test:control-reference#0".into(),
         data_block: "nx:test:control-block#0".into(),
         ordinal: 0,
-        kind: super::super::ObjectReferenceKind::PersistentHandle,
-        value: 0x1020_3040,
+        reference: DirectReference::PersistentHandle(0x1020_3040),
         source_offset: 20,
     };
 
@@ -226,8 +224,7 @@ fn nx_control_handle_pairs_require_maximal_runs_of_exactly_two() {
         id: format!("reference#{ordinal}"),
         data_block: "block#0".into(),
         ordinal,
-        kind: super::super::ObjectReferenceKind::PersistentHandle,
-        value: ordinal + 100,
+        reference: DirectReference::PersistentHandle(ordinal + 100),
         source_offset: offset,
     };
     let references = [
@@ -253,9 +250,7 @@ fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
         record: record.into(),
         object_id: Some(7),
         ordinal,
-        kind: super::super::ObjectReferenceKind::PersistentHandle,
-        value: ordinal + 100,
-        target_record: None,
+        reference: RecordReference::Direct(DirectReference::PersistentHandle(ordinal + 100)),
         source_entry: "om".into(),
         source_offset: offset,
     };
