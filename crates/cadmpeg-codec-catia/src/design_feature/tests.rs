@@ -8,13 +8,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use std::io::Cursor;
 
-use crate::native::{
-    CatiaDefinitionChainValue, CatiaDefinitionValue, CatiaDesignClass, CatiaDesignObjectRelation,
-    CatiaDesignObjectRelationSource, CatiaEntityEvaluation, CatiaEntityEvaluationEncoding,
-    CatiaEntityRecord, CatiaEntityRecordBody, CatiaEntitySchemaValue, CatiaEntitySuffixPayload,
-    CatiaEntitySuffixSchemaValue, CatiaObjectGraph, CatiaObjectOwner,
-    CatiaObjectRecordReferenceSource,
-};
+use crate::native::{CatiaDefinitionChainValue, CatiaDefinitionValue, CatiaDesignClass, CatiaDesignObjectRelation, CatiaDesignObjectRelationSource, CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySchemaValue, CatiaEntitySuffixPayload, CatiaEntitySuffixSchemaValue, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecordReferenceSource};
+use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
 use crate::object_graph::HeadToken;
 use crate::object_graph::ObjectPayload;
 use crate::test_support::*;
@@ -166,10 +161,7 @@ fn entity_record(
         constraint_range: None,
         definition_value: None,
         definition_chain_value: None,
-        relation_program_instance: None,
-        schema_configuration_record: None,
-        schema_configuration_row_link: None,
-        formula_relation: None,
+        object_production: None,
         value_packets: Vec::new(),
         numeric_pair: None,
         reference_signature: None,

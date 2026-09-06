@@ -18,8 +18,7 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         &standard_catpart_with_relation_program_instance(1, 1, 1, 2),
     );
     let instance = native.entity_records[1]
-        .relation_program_instance
-        .as_ref()
+        .relation_program_instance()
         .expect("complete instance frame");
     assert!(matches!(
         instance.framing,
@@ -98,8 +97,7 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         &standard_catpart_with_relation_program_instance(2, 1, 3, 2),
     );
     let instance = native.entity_records[1]
-        .relation_program_instance
-        .as_ref()
+        .relation_program_instance()
         .expect("resolved non-expression program");
     assert_eq!(
         instance.program_entity.entity(),
@@ -116,8 +114,7 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         &standard_catpart_with_relation_program_instance(3, 3, 1, 2),
     );
     let instance = native.entity_records[1]
-        .relation_program_instance
-        .as_ref()
+        .relation_program_instance()
         .expect("unresolved program identity");
     assert!(instance.program_entity.entity().is_none());
     assert_eq!(instance.repeated_entity.entity_id(), 3);
@@ -130,7 +127,7 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
     assert!(native
         .entity_records
         .iter()
-        .all(|entity| entity.relation_program_instance.is_none()));
+        .all(|entity| entity.relation_program_instance().is_none()));
 }
 
 #[test]
@@ -139,8 +136,7 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
         &standard_catpart_with_relation_program_instance_class(1, 1, 1, 2, "paramout"),
     );
     let lead12_instance = lead12.entity_records[1]
-        .relation_program_instance
-        .as_ref()
+        .relation_program_instance()
         .expect("lead-12 relation-program instance");
     assert_eq!(
         lead12_instance.output_entity(),
@@ -190,8 +186,7 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
         &standard_catpart_with_relation_program_instance_class(1, 1, 1, 2, "body"),
     );
     assert!(lead12_body.entity_records[1]
-        .relation_program_instance
-        .as_ref()
+        .relation_program_instance()
         .expect("lead-12 body relation-program instance")
         .output_entity()
         .is_none());
@@ -200,8 +195,7 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
         &standard_catpart_with_lead54_relation_program_instance_class(1, 1, 1, 2, "paramout"),
     );
     let lead54_instance = lead54.entity_records[1]
-        .relation_program_instance
-        .as_ref()
+        .relation_program_instance()
         .expect("lead-54 relation-program instance");
     assert_eq!(
         lead54_instance.output_entity(),
@@ -219,8 +213,7 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
         &standard_catpart_with_lead54_relation_program_instance_class(1, 1, 1, 2, "body"),
     );
     assert!(lead54_body.entity_records[1]
-        .relation_program_instance
-        .as_ref()
+        .relation_program_instance()
         .expect("lead-54 body relation-program instance")
         .output_entity()
         .is_none());
@@ -344,9 +337,7 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
     let mut native =
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
     let parameter_entity = native.entity_records[2].clone();
-    native.entity_records[0].formula_relation = None;
-    native.entity_records[0].relation_program_instance =
-        Some(crate::native::CatiaRelationProgramInstance {
+    native.entity_records[0].object_production = Some(crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(crate::native::CatiaRelationProgramInstance {
             framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
                 context_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
             },
@@ -365,7 +356,7 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
                     Some("param".to_string()),
                 ),
             }]),
-        });
+        }));
 
     let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
@@ -419,15 +410,14 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
 
     let mut conflicting_native = native.clone();
     let mut conflicting_instance = conflicting_native.entity_records[0]
-        .relation_program_instance
-        .clone()
+        .relation_program_instance().cloned()
         .expect("complete relation-program instance");
     conflicting_instance
         .inputs
         .as_mut()
         .expect("complete relation-program inputs")[0]
         .value_type = "Real".to_string();
-    conflicting_native.entity_records[1].relation_program_instance = Some(conflicting_instance);
+    conflicting_native.entity_records[1].object_production = Some(crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(conflicting_instance));
     let mut conflicting_ir = CadIr::empty();
     let conflicting_transfer = crate::formula::transfer_parameters(
         &mut conflicting_ir,
@@ -448,9 +438,7 @@ fn complete_relation_program_output_transfers_a_typed_result() {
     let expression_entity = native.entity_records[1].clone();
     let input_entity = native.entity_records[2].clone();
     let output_entity = native.entity_records[3].clone();
-    native.entity_records[0].formula_relation = None;
-    native.entity_records[0].relation_program_instance =
-        Some(crate::native::CatiaRelationProgramInstance {
+    native.entity_records[0].object_production = Some(crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(crate::native::CatiaRelationProgramInstance {
             framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
                 context_entity: crate::native::CatiaEntityReference::from_parts(
                     output_entity.entity_id,
@@ -474,7 +462,7 @@ fn complete_relation_program_output_transfers_a_typed_result() {
                     Some("param".to_string()),
                 ),
             }]),
-        });
+        }));
 
     let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
@@ -496,10 +484,9 @@ fn complete_relation_program_output_transfers_a_typed_result() {
 
     let mut ambiguous_native = native;
     let duplicate_program = ambiguous_native.entity_records[0]
-        .relation_program_instance
-        .clone()
+        .relation_program_instance().cloned()
         .expect("compound relation-program instance");
-    ambiguous_native.entity_records[1].relation_program_instance = Some(duplicate_program);
+    ambiguous_native.entity_records[1].object_production = Some(crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(duplicate_program));
     let mut ambiguous_ir = CadIr::empty();
     let ambiguous_transfer = crate::formula::transfer_parameters(
         &mut ambiguous_ir,
@@ -519,8 +506,7 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
     let file = standard_catpart_with_lead54_relation_program_instance(1, 1, 1, 2);
     let native = crate::native::CatiaNative::decode(&file);
     let instance = native.entity_records[1]
-        .relation_program_instance
-        .as_ref()
+        .relation_program_instance()
         .expect("complete lead-54 instance frame");
     assert!(matches!(
         instance.framing,
@@ -693,8 +679,7 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         &standard_catpart_with_lead54_relation_program_instance(1, 3, 3, 2),
     );
     let instance = unresolved.entity_records[1]
-        .relation_program_instance
-        .as_ref()
+        .relation_program_instance()
         .expect("unresolved repeated identity");
     assert_eq!(instance.repeated_entity.entity_id(), 3);
     assert!(instance.repeated_entity.entity().is_none());
@@ -710,7 +695,7 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
     assert!(malformed
         .entity_records
         .iter()
-        .all(|entity| entity.relation_program_instance.is_none()));
+        .all(|entity| entity.relation_program_instance().is_none()));
 }
 
 #[test]
@@ -958,8 +943,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
         ),
     ] {
         let expected = native.entity_records[1]
-            .relation_program_instance
-            .clone()
+            .relation_program_instance().cloned()
             .expect("decoded relation-program instance");
         let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
         native
@@ -1050,8 +1034,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 .expect("migrate relation-program instance");
             assert_eq!(
                 migrated.entity_records[1]
-                    .relation_program_instance
-                    .as_ref(),
+                    .relation_program_instance(),
                 Some(&expected)
             );
         }
@@ -1084,8 +1067,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .expect("migrate relation-program reference offsets");
         assert_eq!(
             migrated.entity_records[1]
-                .relation_program_instance
-                .as_ref(),
+                .relation_program_instance(),
             Some(&expected)
         );
 
@@ -1119,15 +1101,13 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .expect("migrate relation-program dependency offsets");
         assert_eq!(
             migrated.entity_records[1]
-                .relation_program_instance
-                .as_ref(),
+                .relation_program_instance(),
             Some(&expected)
         );
 
         let mut malformed_dependencies = native.clone();
         malformed_dependencies.entity_records[1]
-            .relation_program_instance
-            .as_mut()
+            .relation_program_instance_mut()
             .expect("decoded relation-program instance")
             .parameter_dependencies[0]
             .symbol = "#999_".to_string();
@@ -1142,8 +1122,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
 
         let mut malformed_inputs = native.clone();
         malformed_inputs.entity_records[1]
-            .relation_program_instance
-            .as_mut()
+            .relation_program_instance_mut()
             .expect("decoded relation-program instance")
             .inputs = Some(Vec::new());
         let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -1157,8 +1136,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
 
         let mut malformed_offset = native.clone();
         malformed_offset.entity_records[1]
-            .relation_program_instance
-            .as_mut()
+            .relation_program_instance_mut()
             .expect("decoded relation-program instance")
             .reference_incidences[0]
             .payload_offset = u64::MAX;
@@ -1173,16 +1151,14 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
 
         let mut malformed = native;
         let malformed_reference = malformed.entity_records[1]
-            .relation_program_instance
-            .as_ref()
+            .relation_program_instance()
             .expect("decoded relation-program instance")
             .reference_incidences[0]
             .reference
             .clone()
             .with_entity_id(u32::MAX);
         malformed.entity_records[1]
-            .relation_program_instance
-            .as_mut()
+            .relation_program_instance_mut()
             .expect("decoded relation-program instance")
             .reference_incidences[0]
             .reference = malformed_reference;
@@ -1208,8 +1184,7 @@ fn native_load_rederives_relation_program_paramout_outputs_from_older_namespaces
         ),
     ] {
         let expected = native.entity_records[1]
-            .relation_program_instance
-            .clone()
+            .relation_program_instance().cloned()
             .expect("decoded paramout relation-program instance");
         assert!(expected.output_entity().is_some());
         let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -1235,8 +1210,7 @@ fn native_load_rederives_relation_program_paramout_outputs_from_older_namespaces
             .expect("migrate paramout relation-program output");
         assert_eq!(
             migrated.entity_records[1]
-                .relation_program_instance
-                .as_ref(),
+                .relation_program_instance(),
             Some(&expected)
         );
     }

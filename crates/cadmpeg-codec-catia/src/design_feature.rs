@@ -10,10 +10,8 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
 use crate::entity_table::{RangeIntervalPrefix, RangeIntervalSlot};
-use crate::native::{
-    CatiaDesignObject, CatiaDesignObjectRelationSource, CatiaEntityRecord, CatiaNative,
-    CatiaObjectRecord, CatiaRangeInterval, CatiaRangeNominalFraming,
-};
+use crate::native::{CatiaDesignObject, CatiaDesignObjectRelationSource, CatiaNative, CatiaObjectRecord, CatiaRangeInterval, CatiaRangeNominalFraming};
+use crate::native::entity_record::{CatiaEntityRecord};
 use crate::object_graph::{PayloadField, PayloadSubtype};
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -248,7 +246,7 @@ impl DesignFeatureTransfer {
 
 fn assign_feature_parameter_ordinals(
     ir: &mut CadIr,
-    entities: &HashMap<&str, &crate::native::CatiaEntityRecord>,
+    entities: &HashMap<&str, &crate::native::entity_record::CatiaEntityRecord>,
     object_records: &HashMap<&str, &CatiaObjectRecord>,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
     feature_ids: &HashMap<String, FeatureId>,

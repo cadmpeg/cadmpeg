@@ -96,8 +96,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     let bytes = standard_catpart_with_formula_relation(4, false);
     let native = crate::native::CatiaNative::decode(&bytes);
     let output_entity = &native.entity_records[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("complete formula relation")
         .output_entity
         .reference;
@@ -164,8 +163,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         usize::from(output_entity.class_name().is_none())
     );
     let expression_classified = native.entity_records[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("complete formula relation")
         .expression_entity
         .reference
@@ -184,8 +182,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         usize::from(!expression_classified)
     );
     let dependency_candidate = &native.entity_records[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("complete formula relation")
         .parameter_dependencies[0]
         .candidates[0];

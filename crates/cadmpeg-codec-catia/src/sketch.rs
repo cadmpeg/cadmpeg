@@ -10,10 +10,8 @@ use cadmpeg_ir::sketches::{
 };
 
 use crate::design_feature::{self, DesignFeatureTransfer};
-use crate::native::{
-    CatiaConstraintRange, CatiaDesignObject, CatiaEntityEvaluation, CatiaEntityRecord, CatiaNative,
-    CatiaObjectRecord, CatiaObjectRecordReference, CatiaObjectRecordReferenceSource,
-};
+use crate::native::{CatiaConstraintRange, CatiaDesignObject, CatiaEntityEvaluation, CatiaNative, CatiaObjectRecord, CatiaObjectRecordReference, CatiaObjectRecordReferenceSource};
+use crate::native::entity_record::{CatiaEntityRecord};
 
 const NATIVE_SKETCH_GEOMETRY_CLASSES: &[&str] = &["2DPoint"];
 
@@ -969,11 +967,8 @@ mod tests {
     use cadmpeg_ir::sketches::{Sketch, SketchPlacement};
 
     use crate::design_feature::DesignFeatureTransfer;
-    use crate::native::{
-        CatiaConstraintRangeFraming, CatiaEntityEvaluation, CatiaEntityIncomingReference,
-        CatiaEntityRecordBody, CatiaEntitySchemaValue, CatiaObjectGraph, CatiaObjectOwner,
-        CatiaObjectRecordReference, CatiaObjectRecordReferenceSource,
-    };
+    use crate::native::{CatiaConstraintRangeFraming, CatiaEntityEvaluation, CatiaEntityIncomingReference, CatiaEntitySchemaValue, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecordReference, CatiaObjectRecordReferenceSource};
+use crate::native::entity_record::{CatiaEntityRecordBody};
     use crate::object_graph::{ObjectPayload, PayloadField, PayloadSubtype};
 
     fn design_object(id: &str, owner_design_object: Option<&str>) -> CatiaDesignObject {
@@ -1054,10 +1049,7 @@ mod tests {
             constraint_range: None,
             definition_value: None,
             definition_chain_value: None,
-            relation_program_instance: None,
-            schema_configuration_record: None,
-            schema_configuration_row_link: None,
-            formula_relation: None,
+            object_production: None,
             value_packets: Vec::new(),
             numeric_pair: None,
             reference_signature: None,

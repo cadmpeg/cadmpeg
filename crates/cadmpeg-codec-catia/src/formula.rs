@@ -40,14 +40,12 @@ pub(crate) fn transfer_parameters(
         graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
     }) {
         let outputs = entity
-            .formula_relation
-            .as_ref()
+            .formula_relation()
             .and_then(|relation| relation.output_entity.reference.entity())
             .into_iter()
             .chain(
                 entity
-                    .relation_program_instance
-                    .as_ref()
+                    .relation_program_instance()
                     .and_then(|instance| instance.output_entity())
                     .and_then(|output| output.entity()),
             );
@@ -76,8 +74,7 @@ pub(crate) fn transfer_parameters(
         graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
     }) {
         let Some(inputs) = program_entity
-            .relation_program_instance
-            .as_ref()
+            .relation_program_instance()
             .and_then(|instance| instance.inputs.as_ref())
         else {
             continue;
@@ -120,7 +117,7 @@ pub(crate) fn transfer_parameters(
     for formula_entity in native.entity_records.iter().filter(|entity| {
         graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
     }) {
-        let Some(formula) = &formula_entity.formula_relation else {
+        let Some(formula) = &formula_entity.formula_relation() else {
             continue;
         };
         let Some(expression_entity) = formula
@@ -304,7 +301,7 @@ pub(crate) fn transfer_parameters(
     for relation_entity in native.entity_records.iter().filter(|entity| {
         graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
     }) {
-        let Some(instance) = relation_entity.relation_program_instance.as_ref() else {
+        let Some(instance) = relation_entity.relation_program_instance() else {
             continue;
         };
         let Some(output_entity) = instance
@@ -459,7 +456,7 @@ pub(crate) fn transfer_parameters(
         .filter_map(|entity| {
             let entity = entities.get(entity.as_str())?;
             let object = object_records.get(entity.object_record.as_str())?;
-            (entity.formula_relation.is_some()
+            (entity.formula_relation().is_some()
                 || object.subtype == crate::object_graph::PayloadSubtype::Empty
                     && object.references.is_empty())
             .then(|| object.id.clone())
@@ -547,7 +544,7 @@ fn collect_definition_chain_parameters(
 }
 
 fn definition_chain_parameter_candidate(
-    entity: &crate::native::CatiaEntityRecord,
+    entity: &crate::native::entity_record::CatiaEntityRecord,
     chain: &crate::native::CatiaDefinitionChainValue,
 ) -> Option<FormulaParameterCandidate> {
     let parameter_type = canonical_parameter_type(&chain.role.value)?;
@@ -1126,7 +1123,7 @@ impl FormulaParameterRole {
 }
 
 fn typed_entity_parameter_candidate(
-    entity: &crate::native::CatiaEntityRecord,
+    entity: &crate::native::entity_record::CatiaEntityRecord,
     parameter: &crate::native::CatiaParameterValue,
     source_type: &str,
 ) -> Option<FormulaParameterCandidate> {
@@ -1164,7 +1161,7 @@ fn typed_entity_parameter_candidate(
 }
 
 fn typed_entity_parameter_candidate_for_source(
-    entity: &crate::native::CatiaEntityRecord,
+    entity: &crate::native::entity_record::CatiaEntityRecord,
     source_type: &str,
 ) -> Option<FormulaParameterCandidate> {
     if let Some(parameter) = &entity.parameter_value {
@@ -1234,13 +1231,13 @@ fn merge_formula_parameter_candidate(
 }
 
 fn relation_program_output_candidate(
-    relation_entity: &crate::native::CatiaEntityRecord,
-    expression_entity: &crate::native::CatiaEntityRecord,
-    output_entity: &crate::native::CatiaEntityRecord,
+    relation_entity: &crate::native::entity_record::CatiaEntityRecord,
+    expression_entity: &crate::native::entity_record::CatiaEntityRecord,
+    output_entity: &crate::native::entity_record::CatiaEntityRecord,
     expression: &crate::native::CatiaRelationExpression,
     signature: &crate::native::CatiaRelationTypeSignature,
     inputs: &[crate::native::CatiaRelationProgramInput],
-    entities: &HashMap<&str, &crate::native::CatiaEntityRecord>,
+    entities: &HashMap<&str, &crate::native::entity_record::CatiaEntityRecord>,
 ) -> Option<(FormulaProgramCandidate, FormulaParameterCandidate)> {
     if inputs.len() != signature.inputs.len()
         || inputs

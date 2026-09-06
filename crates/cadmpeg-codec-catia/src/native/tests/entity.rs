@@ -1117,8 +1117,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
             0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe6, 0, 0, 0, 0, 0, 0, 0, 0,
         ]));
     let parameter_entity = native.entity_records[0].clone();
-    native.entity_records[0].relation_program_instance =
-        Some(crate::native::CatiaRelationProgramInstance {
+    native.entity_records[0].object_production = Some(crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(crate::native::CatiaRelationProgramInstance {
             framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
                 context_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
             },
@@ -1137,7 +1136,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
                     Some("param".to_string()),
                 ),
             }]),
-        });
+        }));
     let mut relation_ir = CadIr::empty();
     let relation_transfer = crate::formula::transfer_parameters(
         &mut relation_ir,

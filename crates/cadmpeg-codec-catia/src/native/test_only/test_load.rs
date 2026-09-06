@@ -103,6 +103,22 @@ impl CatiaNative {
             || namespace.version() < CATIA_RELATION_REFERENCE_OFFSET_VERSION
             || namespace.version() < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
             || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION;
+        let migrate_object_production = (namespace.version() < CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION
+            || namespace.version() < CATIA_TERMINAL_NULL_REFERENCE_VERSION
+            || namespace.version() < CATIA_FORMULA_OUTPUT_REFERENCE_VERSION
+            || namespace.version() < CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION
+            || namespace.version() < CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION
+            || namespace.version() < CATIA_TYPED_INCIDENCE_NULL_VERSION
+            || namespace.version() < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
+            || namespace.version() < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
+            || namespace.version() < CATIA_FORMULA_REFERENCE_OFFSET_VERSION
+            || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION)
+            || (migrate_relation_program)
+            || (namespace.version() < CATIA_CONFIGURATION_INCIDENCE_VERSION
+            || namespace.version() < CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION
+            || namespace.version() < CATIA_TYPED_INCIDENCE_CLASS_VERSION
+            || namespace.version() < CATIA_TYPED_INCIDENCE_NULL_VERSION
+            || namespace.version() < CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION);
         let mut entity_namespace = namespace.clone();
         if let Some(records) = entity_namespace.arenas.get_mut("entity_records") {
             for record in records {
@@ -110,8 +126,10 @@ impl CatiaNative {
                 if namespace.version() < CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION {
                     fields.remove("reference_signature");
                 }
-                if migrate_relation_program {
-                    fields.remove("relation_program_instance");
+                if migrate_object_production {
+                    for field in ["relation_program_instance", "schema_configuration_record", "schema_configuration_row_link", "formula_relation"] {
+                        fields.remove(field);
+                    }
                 }
             }
         }
@@ -366,64 +384,23 @@ impl CatiaNative {
                 }
             }
         }
-        if namespace.version() < CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION
-            || namespace.version() < CATIA_TERMINAL_NULL_REFERENCE_VERSION
-            || namespace.version() < CATIA_FORMULA_OUTPUT_REFERENCE_VERSION
-            || namespace.version() < CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION
-            || namespace.version() < CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION
-            || namespace.version() < CATIA_TYPED_INCIDENCE_NULL_VERSION
-            || namespace.version() < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
-            || namespace.version() < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
-            || namespace.version() < CATIA_FORMULA_REFERENCE_OFFSET_VERSION
-            || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION
-        {
-            let records_by_id = records
-                .iter()
-                .map(|record| (record.id.as_str(), record))
-                .collect::<HashMap<_, _>>();
+        if migrate_object_production {
+            let records_by_id = records.iter()
+                .map(|record| (record.id.as_str(), record)).collect::<HashMap<_, _>>();
+            let references = CatiaEntityReferenceIndex {
+                entities: &entities_by_graph_identity,
+                classes: &entity_classes_by_graph_identity,
+                terminal_nulls: &terminal_nulls_by_graph,
+            };
             for entity in &mut entity_records {
-                entity.formula_relation = records_by_id
-                    .get(entity.object_record.as_str())
-                    .and_then(|object| {
-                        formula_relation(
-                            &entity.definition_schema_selections,
-                            entity.entity_id,
-                            object,
-                            &relation_expressions,
-                            &CatiaEntityReferenceIndex {
-                                entities: &entities_by_graph_identity,
-                                classes: &entity_classes_by_graph_identity,
-                                terminal_nulls: &terminal_nulls_by_graph,
-                            },
-                            &parameter_bindings,
-                        )
-                    });
+                entity.object_production = records_by_id.get(entity.object_record.as_str())
+                    .and_then(|object| object_production(
+                        entity, object, &references, &relation_expressions,
+                        &relation_expression_entities, &parameter_bindings,
+                    ));
             }
         }
-        if migrate_relation_program
-        {
-            let records_by_id = records
-                .iter()
-                .map(|record| (record.id.as_str(), record))
-                .collect::<HashMap<_, _>>();
-            for entity in &mut entity_records {
-                entity.relation_program_instance = records_by_id
-                    .get(entity.object_record.as_str())
-                    .and_then(|object| {
-                        relation_program_instance(
-                            entity.entity_id,
-                            object,
-                            &CatiaEntityReferenceIndex {
-                                entities: &entities_by_graph_identity,
-                                classes: &entity_classes_by_graph_identity,
-                                terminal_nulls: &terminal_nulls_by_graph,
-                            },
-                            &relation_expression_entities,
-                            &parameter_bindings,
-                        )
-                    });
-            }
-        }
+
         if namespace.version() < CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION
             || namespace.version() < CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION
             || namespace.version() < CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION
@@ -435,42 +412,7 @@ impl CatiaNative {
                 }
             }
         }
-        if namespace.version() < CATIA_CONFIGURATION_INCIDENCE_VERSION
-            || namespace.version() < CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION
-            || namespace.version() < CATIA_TYPED_INCIDENCE_CLASS_VERSION
-            || namespace.version() < CATIA_TYPED_INCIDENCE_NULL_VERSION
-            || namespace.version() < CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION
-        {
-            let records_by_id = records
-                .iter()
-                .map(|record| (record.id.as_str(), record))
-                .collect::<HashMap<_, _>>();
-            for entity in &mut entity_records {
-                entity.schema_configuration_record = records_by_id
-                    .get(entity.object_record.as_str())
-                    .and_then(|object| {
-                        schema_configuration_record(
-                            entity.entity_id,
-                            object,
-                            &entity.value_schema_selections,
-                            &entities_by_graph_identity,
-                            &entity_classes_by_graph_identity,
-                            &terminal_nulls_by_graph,
-                        )
-                    });
-                entity.schema_configuration_row_link = records_by_id
-                    .get(entity.object_record.as_str())
-                    .and_then(|object| {
-                        schema_configuration_row_link(
-                            entity.entity_id,
-                            object,
-                            &entities_by_graph_identity,
-                            &entity_classes_by_graph_identity,
-                            &terminal_nulls_by_graph,
-                        )
-                    });
-            }
-        }
+
         let expected_schema_configuration_row_chains = derive_schema_configuration_row_chains(
             &entity_records,
             &entities_by_graph_identity,
@@ -617,78 +559,17 @@ impl CatiaNative {
                             )
                     })
                     || graph_entities.iter().any(|entity| {
-                        let object = graph
-                            .records
-                            .iter()
+                        let object = graph.records.iter()
                             .find(|record| record.id == entity.object_record);
-                        entity.relation_program_instance
-                            != object.and_then(|object| {
-                                relation_program_instance(
-                                    entity.entity_id,
-                                    object,
-                                    &CatiaEntityReferenceIndex {
-                                        entities: &entities_by_graph_identity,
-                                        classes: &entity_classes_by_graph_identity,
-                                        terminal_nulls: &terminal_nulls_by_graph,
-                                    },
-                                    &relation_expression_entities,
-                                    &parameter_bindings,
-                                )
-                            })
-                    })
-                    || graph_entities.iter().any(|entity| {
-                        let object = graph
-                            .records
-                            .iter()
-                            .find(|record| record.id == entity.object_record);
-                        entity.schema_configuration_record
-                            != object.and_then(|object| {
-                                schema_configuration_record(
-                                    entity.entity_id,
-                                    object,
-                                    &entity.value_schema_selections,
-                                    &entities_by_graph_identity,
-                                    &entity_classes_by_graph_identity,
-                                    &terminal_nulls_by_graph,
-                                )
-                            })
-                    })
-                    || graph_entities.iter().any(|entity| {
-                        let object = graph
-                            .records
-                            .iter()
-                            .find(|record| record.id == entity.object_record);
-                        entity.schema_configuration_row_link
-                            != object.and_then(|object| {
-                                schema_configuration_row_link(
-                                    entity.entity_id,
-                                    object,
-                                    &entities_by_graph_identity,
-                                    &entity_classes_by_graph_identity,
-                                    &terminal_nulls_by_graph,
-                                )
-                            })
-                    })
-                    || graph_entities.iter().any(|entity| {
-                        let object = graph
-                            .records
-                            .iter()
-                            .find(|record| record.id == entity.object_record);
-                        entity.formula_relation
-                            != object.and_then(|object| {
-                                formula_relation(
-                                    &entity.definition_schema_selections,
-                                    entity.entity_id,
-                                    object,
-                                    &relation_expressions,
-                                    &CatiaEntityReferenceIndex {
-                                        entities: &entities_by_graph_identity,
-                                        classes: &entity_classes_by_graph_identity,
-                                        terminal_nulls: &terminal_nulls_by_graph,
-                                    },
-                                    &parameter_bindings,
-                                )
-                            })
+                        entity.object_production != object.and_then(|object| object_production(
+                            entity, object,
+                            &CatiaEntityReferenceIndex {
+                                entities: &entities_by_graph_identity,
+                                classes: &entity_classes_by_graph_identity,
+                                terminal_nulls: &terminal_nulls_by_graph,
+                            },
+                            &relation_expressions, &relation_expression_entities, &parameter_bindings,
+                        ))
                     })
                     || graph_entities.windows(2).any(|pair| {
                         pair[0].byte_offset.checked_add(pair[0].byte_len)

@@ -15,8 +15,7 @@ fn native_namespace_types_and_validates_formula_relations() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
     let formula = native.entity_records[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("complete formula relation");
     assert_eq!(formula.expression_entity.payload_offset, 4);
     assert_eq!(formula.output_entity.payload_offset, 6);
@@ -109,8 +108,8 @@ fn native_namespace_types_and_validates_formula_relations() {
     let migrated = crate::native::CatiaNative::load(&version_235_namespace)
         .expect("migrate formula output reference");
     assert_eq!(
-        migrated.entity_records[0].formula_relation,
-        Some(expected_formula.clone())
+        migrated.entity_records[0].formula_relation(),
+        Some(&expected_formula)
     );
 
     let mut version_236_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -146,8 +145,8 @@ fn native_namespace_types_and_validates_formula_relations() {
     let migrated = crate::native::CatiaNative::load(&version_236_namespace)
         .expect("migrate formula expression reference");
     assert_eq!(
-        migrated.entity_records[0].formula_relation,
-        Some(expected_formula.clone())
+        migrated.entity_records[0].formula_relation(),
+        Some(&expected_formula)
     );
 
     let mut version_249_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -180,8 +179,8 @@ fn native_namespace_types_and_validates_formula_relations() {
     let migrated = crate::native::CatiaNative::load(&version_249_namespace)
         .expect("migrate formula reference offsets");
     assert_eq!(
-        migrated.entity_records[0].formula_relation,
-        Some(expected_formula.clone())
+        migrated.entity_records[0].formula_relation(),
+        Some(&expected_formula)
     );
 
     let mut version_237_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -220,8 +219,8 @@ fn native_namespace_types_and_validates_formula_relations() {
     let migrated = crate::native::CatiaNative::load(&version_237_namespace)
         .expect("migrate formula dependency references");
     assert_eq!(
-        migrated.entity_records[0].formula_relation,
-        Some(expected_formula.clone())
+        migrated.entity_records[0].formula_relation(),
+        Some(&expected_formula)
     );
 
     let mut version_245_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -251,20 +250,19 @@ fn native_namespace_types_and_validates_formula_relations() {
     let migrated = crate::native::CatiaNative::load(&version_245_namespace)
         .expect("migrate formula dependency offsets");
     assert_eq!(
-        migrated.entity_records[0].formula_relation,
-        Some(expected_formula.clone())
+        migrated.entity_records[0].formula_relation(),
+        Some(&expected_formula)
     );
 
     let mut version_205_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut version_205_namespace)
         .expect("store current formula dependency candidates");
-    let mut version_205_entities: Vec<crate::native::CatiaEntityRecord> = version_205_namespace
+    let mut version_205_entities: Vec<crate::native::entity_record::CatiaEntityRecord> = version_205_namespace
         .arena_as("entity_records")
         .expect("load version 205 entity records");
     version_205_entities[0]
-        .formula_relation
-        .as_mut()
+        .formula_relation_mut()
         .expect("complete formula relation")
         .parameter_dependencies[0]
         .candidates
@@ -276,22 +274,20 @@ fn native_namespace_types_and_validates_formula_relations() {
     let migrated = crate::native::CatiaNative::load(&version_205_namespace)
         .expect("migrate version 205 formula dependency candidates");
     assert_eq!(
-        migrated.entity_records[0].formula_relation,
-        Some(expected_formula)
+        migrated.entity_records[0].formula_relation(),
+        Some(&expected_formula)
     );
 
     let mut malformed = native;
     let malformed_output = malformed.entity_records[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("complete formula relation")
         .output_entity
         .reference
         .clone()
         .with_entity_id(98);
     malformed.entity_records[0]
-        .formula_relation
-        .as_mut()
+        .formula_relation_mut()
         .expect("complete formula relation")
         .output_entity
         .reference = malformed_output;
@@ -307,8 +303,7 @@ fn native_namespace_types_and_validates_formula_relations() {
     let mut malformed_offset =
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
     malformed_offset.entity_records[0]
-        .formula_relation
-        .as_mut()
+        .formula_relation_mut()
         .expect("complete formula relation")
         .expression_entity
         .payload_offset = u64::MAX;
@@ -332,7 +327,7 @@ fn formula_relation_requires_a_complete_relation_expression_target() {
     file[role..role + "param".len()].copy_from_slice(b"other");
 
     let native = crate::native::CatiaNative::decode(&file);
-    assert!(native.entity_records[0].formula_relation.is_none());
+    assert!(native.entity_records[0].formula_relation().is_none());
 }
 
 #[test]
@@ -340,8 +335,7 @@ fn formula_parameter_dependency_requires_a_unique_binding() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, true));
     let dependency = &native.entity_records[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("complete formula relation")
         .parameter_dependencies[0];
 
@@ -360,8 +354,7 @@ fn formula_parameter_dependency_retains_an_unmatched_symbol() {
         "µ+#1_ /2-2mm",
     ));
     let dependency = &native.entity_records[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("complete formula relation")
         .parameter_dependencies[0];
 
@@ -381,8 +374,7 @@ fn formula_parameter_dependencies_exclude_string_literal_contents() {
         "\"literal #1_ /2\"+ToString(#1_ /2)",
     ));
     let dependencies = &native.entity_records[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("complete formula relation")
         .parameter_dependencies;
 
@@ -392,8 +384,7 @@ fn formula_parameter_dependencies_exclude_string_literal_contents() {
     assert_eq!(dependencies[0].candidates.len(), 1);
 
     let expected_formula = native.entity_records[0]
-        .formula_relation
-        .clone()
+        .formula_relation().cloned()
         .expect("complete formula relation");
     let mut old_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
@@ -430,8 +421,8 @@ fn formula_parameter_dependencies_exclude_string_literal_contents() {
     let migrated = crate::native::CatiaNative::load(&old_namespace)
         .expect("migrate string-literal relation dependencies");
     assert_eq!(
-        migrated.entity_records[0].formula_relation,
-        Some(expected_formula)
+        migrated.entity_records[0].formula_relation(),
+        Some(&expected_formula)
     );
 
     let unterminated =
@@ -444,8 +435,7 @@ fn formula_parameter_dependencies_exclude_string_literal_contents() {
             "\"unterminated #1_ /2",
         ));
     assert!(unterminated.entity_records[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("complete formula relation")
         .parameter_dependencies
         .is_empty());
@@ -464,8 +454,7 @@ fn formula_relation_resolves_bare_expression_symbols() {
 
     assert_eq!(
         native.entity_records[0]
-            .formula_relation
-            .as_ref()
+            .formula_relation()
             .expect("complete formula relation")
             .parameter_dependencies,
         [crate::native::CatiaRelationParameterDependency {
@@ -490,8 +479,7 @@ fn terminal_entity_identity_is_a_null_formula_output() {
     let bytes = standard_catpart_with_formula_relation(5, false);
     let native = crate::native::CatiaNative::decode(&bytes);
     let formula = native.entity_records[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("complete formula relation");
     assert_eq!(formula.output_entity.reference.entity_id(), 5);
     assert!(formula.output_entity.reference.is_null());
@@ -519,20 +507,18 @@ fn terminal_entity_identity_is_a_null_formula_output() {
     version_210_namespace
         .set_arena("object_graph_records", &version_210_records)
         .expect("store version 210 object records");
-    let mut version_210_entities: Vec<crate::native::CatiaEntityRecord> = version_210_namespace
+    let mut version_210_entities: Vec<crate::native::entity_record::CatiaEntityRecord> = version_210_namespace
         .arena_as("entity_records")
         .expect("load version 210 entity records");
     let cleared_output = version_210_entities[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("complete formula relation")
         .output_entity
         .reference
         .clone()
         .with_null_cleared();
     version_210_entities[0]
-        .formula_relation
-        .as_mut()
+        .formula_relation_mut()
         .expect("complete formula relation")
         .output_entity
         .reference = cleared_output;
@@ -544,8 +530,7 @@ fn terminal_entity_identity_is_a_null_formula_output() {
         .expect("migrate terminal null references");
     assert!(migrated.object_graphs[0].records[0].references[2].is_null());
     assert!(migrated.entity_records[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("migrated formula relation")
         .output_entity
         .reference

@@ -1037,30 +1037,30 @@ fn finish_decode(
     let formula_relation_count = native
         .entity_records
         .iter()
-        .filter(|record| record.formula_relation.is_some())
+        .filter(|record| record.formula_relation().is_some())
         .count();
     let relation_program_instance_count = native
         .entity_records
         .iter()
-        .filter(|record| record.relation_program_instance.is_some())
+        .filter(|record| record.relation_program_instance().is_some())
         .count();
     let relation_program_output_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter(|instance| instance.output_entity().is_some())
         .count();
     let resolved_relation_program_output_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.output_entity())
         .filter(|output| output.entity().is_some())
         .count();
     let null_relation_program_output_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.output_entity())
         .filter(|output| output.is_null())
         .count();
@@ -1070,20 +1070,20 @@ fn finish_decode(
     let relation_program_reference_incidence_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .map(|instance| instance.reference_incidences.len())
         .sum::<usize>();
     let resolved_relation_program_reference_incidence_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .flat_map(|instance| &instance.reference_incidences)
         .filter(|incidence| incidence.reference.entity().is_some())
         .count();
     let null_relation_program_reference_incidence_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .flat_map(|instance| &instance.reference_incidences)
         .filter(|incidence| incidence.reference.is_null())
         .count();
@@ -1094,14 +1094,14 @@ fn finish_decode(
     let classified_relation_program_reference_incidence_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .flat_map(|instance| &instance.reference_incidences)
         .filter(|incidence| incidence.reference.class_name().is_some())
         .count();
     let (lead12_relation_program_instance_count, lead54_relation_program_instance_count) = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .fold((0, 0), |(lead12, lead54), instance| {
             match instance.framing {
                 crate::native::CatiaRelationProgramInstanceFraming::Lead12 { .. } => {
@@ -1115,14 +1115,14 @@ fn finish_decode(
     let resolved_lead54_relation_program_trailing_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.lead54_trailing_entity())
         .filter(|trailing| trailing.entity().is_some())
         .count();
     let null_lead54_relation_program_trailing_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.lead54_trailing_entity())
         .filter(|trailing| trailing.is_null())
         .count();
@@ -1133,14 +1133,14 @@ fn finish_decode(
     let resolved_lead12_relation_program_context_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.lead12_context_entity())
         .filter(|context| context.entity().is_some())
         .count();
     let null_lead12_relation_program_context_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.lead12_context_entity())
         .filter(|context| context.is_null())
         .count();
@@ -1151,14 +1151,14 @@ fn finish_decode(
     let classified_lead12_relation_program_context_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.lead12_context_entity())
         .filter(|context| context.class_name().is_some())
         .count();
     let lead12_relation_program_paramout_context_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.lead12_context_entity())
         .filter(|context| context.class_name() == Some("paramout"))
         .count();
@@ -1171,13 +1171,13 @@ fn finish_decode(
     let resolved_relation_program_instance_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter(|instance| instance.program_entity.entity().is_some())
         .count();
     let null_relation_program_instance_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter(|instance| instance.program_entity.is_null())
         .count();
     let unresolved_relation_program_instance_count = relation_program_instance_count
@@ -1186,13 +1186,13 @@ fn finish_decode(
     let resolved_relation_program_repeated_reference_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter(|instance| instance.repeated_entity.entity().is_some())
         .count();
     let null_relation_program_repeated_reference_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter(|instance| instance.repeated_entity.is_null())
         .count();
     let unresolved_relation_program_repeated_reference_count = relation_program_instance_count
@@ -1201,19 +1201,19 @@ fn finish_decode(
     let classified_relation_program_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter(|instance| instance.program_entity.class_name().is_some())
         .count();
     let classified_relation_program_repeated_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter(|instance| instance.repeated_entity.class_name().is_some())
         .count();
     let relation_expression_instance_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter(|instance| instance.relation_expression.is_some())
         .count();
     let typed_relation_expression_entities = native
@@ -1230,14 +1230,14 @@ fn finish_decode(
     let typed_relation_program_instance_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.relation_expression.as_deref())
         .filter(|entity| typed_relation_expression_entities.contains(entity))
         .count();
     let resolved_relation_program_input_instance_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter(|instance| instance.inputs.is_some())
         .count();
     let unresolved_relation_program_input_instance_count =
@@ -1245,14 +1245,14 @@ fn finish_decode(
     let resolved_relation_program_input_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.inputs.as_ref())
         .map(Vec::len)
         .sum::<usize>();
     let distinct_relation_program_input_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.inputs.as_ref())
         .flatten()
         .filter_map(|input| input.entity.entity())
@@ -1261,27 +1261,27 @@ fn finish_decode(
     let instanced_relation_expression_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.relation_expression.as_deref())
         .collect::<HashSet<_>>()
         .len();
     let relation_program_parameter_dependency_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .map(|instance| instance.parameter_dependencies.len())
         .sum::<usize>();
     let resolved_relation_program_parameter_dependency_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .flat_map(|instance| &instance.parameter_dependencies)
         .filter(|dependency| dependency.candidates.len() == 1)
         .count();
     let ambiguous_relation_program_parameter_dependency_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .flat_map(|instance| &instance.parameter_dependencies)
         .filter(|dependency| dependency.candidates.len() > 1)
         .count();
@@ -1293,18 +1293,18 @@ fn finish_decode(
     let schema_configuration_record_count = native
         .entity_records
         .iter()
-        .filter(|record| record.schema_configuration_record.is_some())
+        .filter(|record| record.schema_configuration_record().is_some())
         .count();
     let resolved_schema_configuration_reference_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.schema_configuration_record.as_ref())
+        .filter_map(|record| record.schema_configuration_record())
         .filter(|record| record.entity_reference.reference.entity().is_some())
         .count();
     let null_schema_configuration_reference_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.schema_configuration_record.as_ref())
+        .filter_map(|record| record.schema_configuration_record())
         .filter(|record| record.entity_reference.reference.is_null())
         .count();
     let unresolved_schema_configuration_reference_count = schema_configuration_record_count
@@ -1313,36 +1313,36 @@ fn finish_decode(
     let classified_schema_configuration_entity_reference_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.schema_configuration_record.as_ref())
+        .filter_map(|record| record.schema_configuration_record())
         .filter(|record| record.entity_reference.reference.class_name().is_some())
         .count();
     let schema_configuration_row_link_count = native
         .entity_records
         .iter()
-        .filter(|record| record.schema_configuration_row_link.is_some())
+        .filter(|record| record.schema_configuration_row_link().is_some())
         .count();
     let resolved_schema_configuration_row_class_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.schema_configuration_row_link.as_ref())
+        .filter_map(|record| record.schema_configuration_row_link())
         .filter(|link| link.class_reference.entity().is_some())
         .count();
     let null_schema_configuration_row_class_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.schema_configuration_row_link.as_ref())
+        .filter_map(|record| record.schema_configuration_row_link())
         .filter(|link| link.class_reference.is_null())
         .count();
     let resolved_schema_configuration_row_successor_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.schema_configuration_row_link.as_ref())
+        .filter_map(|record| record.schema_configuration_row_link())
         .filter(|link| link.successor.entity().is_some())
         .count();
     let null_schema_configuration_row_successor_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.schema_configuration_row_link.as_ref())
+        .filter_map(|record| record.schema_configuration_row_link())
         .filter(|link| link.successor.is_null())
         .count();
     let (
@@ -1393,7 +1393,7 @@ fn finish_decode(
     let schema_configuration_entities = native
         .entity_records
         .iter()
-        .filter(|entity| entity.schema_configuration_record.is_some())
+        .filter(|entity| entity.schema_configuration_record().is_some())
         .map(|entity| entity.id.as_str())
         .collect::<HashSet<_>>();
     let schema_configuration_row_intervening_schema_configuration_count = native
@@ -1408,13 +1408,13 @@ fn finish_decode(
     let formula_referenced_relation_expressions = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .filter_map(|formula| formula.expression_entity.reference.entity())
         .collect::<HashSet<_>>();
     let program_referenced_relation_expressions = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.relation_expression.as_deref())
         .collect::<HashSet<_>>();
     let referenced_relation_expressions = formula_referenced_relation_expressions
@@ -1438,25 +1438,25 @@ fn finish_decode(
     let resolved_formula_output_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .filter(|formula| formula.output_entity.reference.entity().is_some())
         .count();
     let null_formula_output_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .filter(|formula| formula.output_entity.reference.is_null())
         .count();
     let classified_formula_output_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .filter(|formula| formula.output_entity.reference.class_name().is_some())
         .count();
     let classified_formula_expression_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .filter(|formula| formula.expression_entity.reference.class_name().is_some())
         .count();
     let unresolved_formula_output_count =
@@ -1464,20 +1464,20 @@ fn finish_decode(
     let formula_parameter_dependency_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .map(|formula| formula.parameter_dependencies.len())
         .sum();
     let formula_parameter_dependency_candidate_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .flat_map(|formula| &formula.parameter_dependencies)
         .map(|dependency| dependency.candidates.len())
         .sum();
     let classified_formula_parameter_dependency_candidate_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .flat_map(|formula| &formula.parameter_dependencies)
         .flat_map(|dependency| &dependency.candidates)
         .filter(|candidate| candidate.class_name().is_some())
@@ -1485,14 +1485,14 @@ fn finish_decode(
     let resolved_formula_parameter_dependency_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .flat_map(|formula| &formula.parameter_dependencies)
         .filter(|dependency| dependency.candidates.len() == 1)
         .count();
     let ambiguous_formula_parameter_dependency_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .flat_map(|formula| &formula.parameter_dependencies)
         .filter(|dependency| dependency.candidates.len() > 1)
         .count();
