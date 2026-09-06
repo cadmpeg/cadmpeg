@@ -3663,11 +3663,11 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
                     id: format!("nx:om-entry-{entry_index}:class#{}", definition.offset),
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
-                    trailing_code: definition.trailing_code,
+                    trailing_code: definition.registry_tail[0],
                     registry_storage_code: registry_fields.storage_code,
                     registry_base_class: registry_fields.base_class,
                     registry_reference: registry_fields.reference,
-                    registry_suffix: definition.registry_suffix.to_vec(),
+                    registry_suffix: definition.registry_tail[1..].to_vec(),
                     layout_prefix: registry_fields.layout_prefix,
                     schema_fingerprint: registry_fields.schema_fingerprint,
                     layout_terminal: registry_fields.layout_terminal,
@@ -3694,11 +3694,11 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
                     id: format!("nx:om-entry-{entry_index}:class#{}", definition.offset),
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
-                    trailing_code: definition.trailing_code,
+                    trailing_code: definition.registry_tail[0],
                     registry_storage_code: registry_fields.storage_code,
                     registry_base_class: registry_fields.base_class,
                     registry_reference: registry_fields.reference,
-                    registry_suffix: definition.registry_suffix.to_vec(),
+                    registry_suffix: definition.registry_tail[1..].to_vec(),
                     layout_prefix: registry_fields.layout_prefix,
                     schema_fingerprint: registry_fields.schema_fingerprint,
                     layout_terminal: registry_fields.layout_terminal,
@@ -3736,7 +3736,7 @@ struct ClassRegistryFields {
 
 fn class_registry_fields(definition: &OmTypeDefinition<'_>) -> ClassRegistryFields {
     let (layout_prefix, legacy_fingerprint, layout_terminal) =
-        registry_layout_fields(definition.registry_suffix);
+        registry_layout_fields(&definition.registry_tail[1..]);
     let registry = definition.class_registry_layout();
     ClassRegistryFields {
         layout_prefix,
@@ -3762,7 +3762,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
             let (layout_prefix, schema_fingerprint, layout_terminal) =
-                registry_layout_fields(definition.registry_suffix);
+                registry_layout_fields(&definition.registry_tail[1..]);
             let registry = definition.field_registry_layout();
             definitions.insert(
                 (entry_index, definition.offset),
@@ -3770,10 +3770,10 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
                     id: format!("nx:om-entry-{entry_index}:field#{}", definition.offset),
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
-                    trailing_code: definition.trailing_code,
+                    trailing_code: definition.registry_tail[0],
                     registry_storage_code: registry.map(|layout| layout.storage_code.value),
                     registry_owner_class: registry.map(|layout| layout.owner_class),
-                    registry_suffix: definition.registry_suffix.to_vec(),
+                    registry_suffix: definition.registry_tail[1..].to_vec(),
                     layout_prefix,
                     schema_fingerprint,
                     layout_terminal,
@@ -3794,7 +3794,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
             let (layout_prefix, schema_fingerprint, layout_terminal) =
-                registry_layout_fields(definition.registry_suffix);
+                registry_layout_fields(&definition.registry_tail[1..]);
             let registry = definition.field_registry_layout();
             definitions
                 .entry((entry_index, definition.offset))
@@ -3802,10 +3802,10 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
                     id: format!("nx:om-entry-{entry_index}:field#{}", definition.offset),
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
-                    trailing_code: definition.trailing_code,
+                    trailing_code: definition.registry_tail[0],
                     registry_storage_code: registry.map(|layout| layout.storage_code.value),
                     registry_owner_class: registry.map(|layout| layout.owner_class),
-                    registry_suffix: definition.registry_suffix.to_vec(),
+                    registry_suffix: definition.registry_tail[1..].to_vec(),
                     layout_prefix,
                     schema_fingerprint,
                     layout_terminal,
@@ -7121,9 +7121,8 @@ mod tests {
         let legacy_definition = crate::om::TypeDefinition {
             offset: 0,
             name: "UGS::FEATURE_RECORD",
-            trailing_code: 0xa0,
-            registry_suffix: &[
-                0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06,
+            registry_tail: &[
+                0xa0, 0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06,
             ],
         };
 
@@ -7140,8 +7139,9 @@ mod tests {
         let complete_definition = crate::om::TypeDefinition {
             offset: 0,
             name: "UGS::FEATURE_RECORD",
-            trailing_code: 0x38,
-            registry_suffix: &[0x05, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x02],
+            registry_tail: &[
+                0x38, 0x05, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x02,
+            ],
         };
         let complete = super::class_registry_fields(&complete_definition);
         assert_eq!(complete.storage_code, Some(0x38));

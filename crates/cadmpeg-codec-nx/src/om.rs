@@ -56,10 +56,8 @@ pub struct TypeDefinition<'a> {
     pub offset: usize,
     /// Registered `UGS::` class name.
     pub name: &'a str,
-    /// First registry-token byte following the name (legacy field name).
-    pub trailing_code: u8,
-    /// Bytes between this declaration core and the next class declaration.
-    pub registry_suffix: &'a [u8],
+    /// Complete registry bytes following the class name.
+    pub registry_tail: &'a [u8],
 }
 
 /// One member declaration in an NX OM field registry.
@@ -69,21 +67,14 @@ pub struct FieldDefinition<'a> {
     pub offset: usize,
     /// Registered `m_` member name.
     pub name: &'a str,
-    /// First registry-token byte following the name (legacy field name).
-    pub trailing_code: u8,
-    /// Bytes between this declaration core and the next member declaration.
-    pub registry_suffix: &'a [u8],
+    /// Complete registry bytes following the member name.
+    pub registry_tail: &'a [u8],
 }
 
 impl TypeDefinition<'_> {
     /// Decode the complete registry tail of this class declaration.
-    ///
-    /// The source representation keeps the first tail byte in
-    /// `trailing_code` for compatibility. Registry tokens are decoded from
-    /// the logical concatenation of that byte and `registry_suffix`; the
-    /// generic operation compact-index family is deliberately not reused.
     pub(crate) fn class_registry_layout(&self) -> Option<registry::ClassRegistryLayout> {
-        registry::class_registry_layout(self.trailing_code, self.registry_suffix)
+        registry::class_registry_layout(self.registry_tail)
     }
 }
 
@@ -91,7 +82,7 @@ impl FieldDefinition<'_> {
     /// Decode the storage and owner tokens at the head of this member
     /// declaration.
     pub(crate) fn field_registry_layout(&self) -> Option<registry::FieldRegistryLayout> {
-        registry::field_registry_layout(self.trailing_code, self.registry_suffix)
+        registry::field_registry_layout(self.registry_tail)
     }
 }
 
@@ -1257,8 +1248,7 @@ struct IndexedByteRange {
 struct IndexedDefinitionLayout {
     offset: usize,
     name_len: usize,
-    trailing_code: u8,
-    registry_suffix: Option<IndexedByteRange>,
+    registry_tail: IndexedByteRange,
 }
 
 /// One cached entity-record range in an indexed section.
@@ -1293,38 +1283,8 @@ pub(crate) struct IndexedSectionLayout {
 
 impl IndexedSectionLayout {
     fn from_section(section: &IndexedSection<'_>) -> Self {
-        let types = section
-            .types
-            .iter()
-            .map(|definition| IndexedDefinitionLayout {
-                offset: definition.offset,
-                name_len: definition.name.len(),
-                trailing_code: definition.trailing_code,
-                registry_suffix: Some(IndexedByteRange {
-                    start: definition.offset + definition.name.len() + 2,
-                    end: definition.offset
-                        + definition.name.len()
-                        + 2
-                        + definition.registry_suffix.len(),
-                }),
-            })
-            .collect();
-        let fields = section
-            .fields
-            .iter()
-            .map(|definition| IndexedDefinitionLayout {
-                offset: definition.offset,
-                name_len: definition.name.len(),
-                trailing_code: definition.trailing_code,
-                registry_suffix: Some(IndexedByteRange {
-                    start: definition.offset + definition.name.len() + 2,
-                    end: definition.offset
-                        + definition.name.len()
-                        + 2
-                        + definition.registry_suffix.len(),
-                }),
-            })
-            .collect();
+        let types = registry::type_definition_layouts(&section.types);
+        let fields = registry::field_definition_layouts(&section.fields);
         let record_layout =
             |offset: usize, bytes: &[u8], object_id: Option<(u32, u64)>| IndexedRecordLayout {
                 object_id,

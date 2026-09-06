@@ -1916,7 +1916,7 @@ fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].types.len(), 1);
     assert_eq!(sections[0].types[0].name, "UGS::EXP_expression");
-    assert_eq!(sections[0].types[0].trailing_code, 0x81);
+    assert_eq!(sections[0].types[0].registry_tail[0], 0x81);
     assert_eq!(sections[0].types[0].offset, 8);
 }
 

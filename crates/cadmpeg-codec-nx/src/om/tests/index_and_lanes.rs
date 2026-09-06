@@ -1498,13 +1498,13 @@ fn om_size_frame_bounds_its_type_declarations() {
     assert_eq!(sections[0].types.len(), 2);
     assert_eq!(sections[0].types[0].name, "UGS::FEATURE_RECORD");
     assert_eq!(
-        sections[0].types[0].registry_suffix,
+        &sections[0].types[0].registry_tail[1..],
         &[0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06]
     );
-    assert_eq!(sections[0].types[1].trailing_code, 0x65);
+    assert_eq!(sections[0].types[1].registry_tail[0], 0x65);
     assert_eq!(sections[0].fields.len(), 2);
     assert_eq!(sections[0].fields[0].name, "m_target");
-    assert_eq!(sections[0].fields[1].trailing_code, 0x81);
+    assert_eq!(sections[0].fields[1].registry_tail[0], 0x81);
     assert_eq!(sections[0].record_area, None);
 
     let mut truncated = bytes;
