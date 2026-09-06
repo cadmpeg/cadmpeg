@@ -1,3 +1,4 @@
+use crate::native::edge_node::CatiaConsolidatedEdgeNode;
 use super::test_consolidated::valid_consolidated_plane_geometry;
 use super::*;
 

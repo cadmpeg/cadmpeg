@@ -1196,7 +1196,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
     };
     assert_eq!(node.vertex_refs, [139, 142]);
     assert_eq!(
-        node.vertex_identity_ids(),
+        native.vertex_identity_ids(node),
         [
             "catia:consolidated:vertex-identity#0",
             "catia:consolidated:vertex-identity#1"
@@ -1348,11 +1348,11 @@ fn compact_owner_does_not_type_unresolved_edge_references_as_vertices() {
         Some(2)
     );
     assert_eq!(
-        native.consolidated_edge_nodes[0].vertex_identity_ids(),
+        native.vertex_identity_ids(&native.consolidated_edge_nodes[0]),
         ["", ""]
     );
     assert_eq!(
-        native.consolidated_edge_nodes[1].vertex_identity_ids(),
+        native.vertex_identity_ids(&native.consolidated_edge_nodes[1]),
         ["", ""]
     );
 }
@@ -1385,8 +1385,8 @@ fn compact_vertex_identity_uses_resolved_endpoint_records() {
         Some([first_vertex_pos, second_vertex_pos])
     );
     assert_eq!(
-        native.consolidated_edge_nodes[0].vertex_identity_ids(),
-        native.consolidated_edge_nodes[1].vertex_identity_ids()
+        native.vertex_identity_ids(&native.consolidated_edge_nodes[0]),
+        native.vertex_identity_ids(&native.consolidated_edge_nodes[1])
     );
     assert_eq!(
         native
@@ -1439,8 +1439,8 @@ fn width_coded_forward_endpoints_merge_by_class18_record_identity() {
         Some([first_endpoint, second_endpoint])
     );
     assert_eq!(
-        native.consolidated_edge_nodes[0].vertex_identity_ids(),
-        native.consolidated_edge_nodes[1].vertex_identity_ids()
+        native.vertex_identity_ids(&native.consolidated_edge_nodes[0]),
+        native.vertex_identity_ids(&native.consolidated_edge_nodes[1])
     );
     assert_eq!(
         native
@@ -1473,8 +1473,8 @@ fn native_namespace_merges_shared_consolidated_vertex_identity() {
         ]
     );
     assert_eq!(
-        native.consolidated_edge_nodes[0].vertex_identity_ids()[1],
-        native.consolidated_edge_nodes[1].vertex_identity_ids()[0]
+        native.vertex_identity_ids(&native.consolidated_edge_nodes[0])[1],
+        native.vertex_identity_ids(&native.consolidated_edge_nodes[1])[0]
     );
 }
 
@@ -1507,8 +1507,8 @@ fn native_vertex_identity_namespace_is_bounded_by_record_source() {
     assert_eq!(repeated[0].source_index, 0);
     assert_eq!(repeated[1].source_index, 1);
     assert_ne!(
-        native.consolidated_edge_nodes[0].vertex_identity_ids()[1],
-        native.consolidated_edge_nodes[1].vertex_identity_ids()[0]
+        native.vertex_identity_ids(&native.consolidated_edge_nodes[0])[1],
+        native.vertex_identity_ids(&native.consolidated_edge_nodes[1])[0]
     );
 }
 
@@ -1562,8 +1562,8 @@ fn explicit_vertex_encodings_share_one_complete_run_identity_namespace() {
         ]
     );
     assert_eq!(
-        native.consolidated_edge_nodes[0].vertex_identity_ids()[1],
-        native.consolidated_edge_nodes[1].vertex_identity_ids()[0]
+        native.vertex_identity_ids(&native.consolidated_edge_nodes[0])[1],
+        native.vertex_identity_ids(&native.consolidated_edge_nodes[1])[0]
     );
     assert_eq!(
         native.consolidated_edge_nodes[2].reference_encodings[1..3],
@@ -1573,8 +1573,8 @@ fn explicit_vertex_encodings_share_one_complete_run_identity_namespace() {
         ]
     );
     assert_eq!(
-        native.consolidated_edge_nodes[1].vertex_identity_ids()[1],
-        native.consolidated_edge_nodes[2].vertex_identity_ids()[0]
+        native.vertex_identity_ids(&native.consolidated_edge_nodes[1])[1],
+        native.vertex_identity_ids(&native.consolidated_edge_nodes[2])[0]
     );
 }
 
@@ -1597,7 +1597,7 @@ fn native_namespace_retains_standalone_consolidated_edge_nodes() {
     );
     assert_eq!(node.vertex_refs, [889, 895]);
     assert!(node.uses.is_none());
-    assert_eq!(node.vertex_identity_ids(), ["", ""]);
+    assert_eq!(native.vertex_identity_ids(node), ["", ""]);
     assert!(native.consolidated_vertex_identities.is_empty());
 
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);

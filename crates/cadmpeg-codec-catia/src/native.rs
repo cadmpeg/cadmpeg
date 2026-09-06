@@ -10,6 +10,12 @@ use std::ops::Range;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
+pub(crate) mod edge_node;
+use edge_node::{
+    CatiaConsolidatedEdgeNode, CatiaConsolidatedEdgeNodeWire, consolidated_vertex_identities,
+    edge_node_wires, load_edge_nodes,
+};
+
 pub(crate) mod entity_record;
 use entity_record::{CatiaEntityRecord, CatiaEntityRecordBody, CatiaEntityObjectProduction, CatiaEntityValueProduction};
 
@@ -1487,181 +1493,6 @@ pub enum CatiaOwnerIdentityEncoding {
     Allocation(CatiaAllocationReferenceEncoding),
     /// Raw one-byte weak identity in the width-coded alternating dialect.
     RawU8,
-}
-
-/// One structurally complete width-coded class-`0x5e` edge node.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    try_from = "CatiaConsolidatedEdgeNodeWire",
-    into = "CatiaConsolidatedEdgeNodeWire"
-)]
-pub struct CatiaConsolidatedEdgeNode {
-    /// Stable native-record identity.
-    pub id: String,
-    /// Record byte offset.
-    pub byte_offset: u64,
-    /// Zero-based bounded record-source ordinal.
-    pub source_index: usize,
-    /// Header-token width in bytes.
-    pub width: u8,
-    /// Independent framing flag.
-    pub flag: u8,
-    /// Width-coded header token.
-    pub header_token: u32,
-    /// Owning compact class-`0x62` packet and frame ordinal.
-    pub allocation: Option<(String, u32)>,
-    /// Allocation-local curve-support reference.
-    pub curve_ref: u32,
-    /// Middle reference pair. These are endpoint addresses only when an
-    /// allocation walk or complete edge-use run proves that layout.
-    pub vertex_refs: [u32; 2],
-    /// Resolved structural endpoint records in edge direction.
-    pub endpoint_records: Option<[u64; 2]>,
-    /// Final reference pair. Complete edge-use runs interpret these as
-    /// allocation-local side selectors; other layouts retain them untyped.
-    pub parameter_selectors: [u32; 2],
-    /// Wire addressing forms of curve, vertex, and parameter references.
-    pub reference_encodings: [CatiaAllocationReferenceEncoding; 5],
-    /// Decoded value of the one-byte terminal allocation reference.
-    pub terminal_value: u32,
-    /// Wire addressing form of the terminal allocation reference.
-    pub terminal_encoding: CatiaAllocationReferenceEncoding,
-    /// Identity ids retained so CADIR JSON still emits `vertices`.
-    vertex_identity_ids: [String; 2],
-    /// Terminal layout byte.
-    pub tail: u8,
-    /// Adjacent class-`0x23..=0x25` edge-definition frame.
-    pub definition: Option<CatiaConsolidatedEdgeDefinition>,
-    /// Adjacent oriented uses whose references close on this edge node.
-    pub uses: Option<CatiaConsolidatedEdgeUses>,
-    /// Analytic circle carrier structurally bound by an adjacent six-record run.
-    pub analytic_circle: Option<CatiaConsolidatedAnalyticCircleBinding>,
-    /// Typed class-`0x18` descriptor bound to a class-`0x25` edge run.
-    pub class25_descriptor: Option<CatiaConsolidatedClass25Descriptor>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct CatiaConsolidatedEdgeNodeWire {
-    id: String,
-    byte_offset: u64,
-    source_index: usize,
-    width: u8,
-    flag: u8,
-    header_token: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    allocation_owner: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    allocation_ordinal: Option<u32>,
-    curve_ref: u32,
-    vertex_refs: [u32; 2],
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    endpoint_records: Option<[u64; 2]>,
-    vertices: [String; 2],
-    parameter_selectors: [u32; 2],
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    reference_encodings: Option<[CatiaAllocationReferenceEncoding; 5]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    terminal_value: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    terminal_encoding: Option<CatiaAllocationReferenceEncoding>,
-    tail: u8,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    definition: Option<CatiaConsolidatedEdgeDefinition>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    uses: Option<CatiaConsolidatedEdgeUses>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    analytic_circle: Option<CatiaConsolidatedAnalyticCircleBinding>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    class25_descriptor: Option<CatiaConsolidatedClass25Descriptor>,
-}
-
-impl From<CatiaConsolidatedEdgeNode> for CatiaConsolidatedEdgeNodeWire {
-    fn from(value: CatiaConsolidatedEdgeNode) -> Self {
-        let (allocation_owner, allocation_ordinal) = match value.allocation {
-            Some((owner, ordinal)) => (Some(owner), Some(ordinal)),
-            None => (None, None),
-        };
-        Self {
-            id: value.id,
-            byte_offset: value.byte_offset,
-            source_index: value.source_index,
-            width: value.width,
-            flag: value.flag,
-            header_token: value.header_token,
-            allocation_owner,
-            allocation_ordinal,
-            curve_ref: value.curve_ref,
-            vertex_refs: value.vertex_refs,
-            endpoint_records: value.endpoint_records,
-            vertices: value.vertex_identity_ids,
-            parameter_selectors: value.parameter_selectors,
-            reference_encodings: Some(value.reference_encodings),
-            terminal_value: Some(value.terminal_value),
-            terminal_encoding: Some(value.terminal_encoding),
-            tail: value.tail,
-            definition: value.definition,
-            uses: value.uses,
-            analytic_circle: value.analytic_circle,
-            class25_descriptor: value.class25_descriptor,
-        }
-    }
-}
-
-impl TryFrom<CatiaConsolidatedEdgeNodeWire> for CatiaConsolidatedEdgeNode {
-    type Error = String;
-
-    fn try_from(wire: CatiaConsolidatedEdgeNodeWire) -> Result<Self, Self::Error> {
-        let allocation = match (wire.allocation_owner, wire.allocation_ordinal) {
-            (Some(owner), Some(ordinal)) => Some((owner, ordinal)),
-            (None, None) => None,
-            _ => {
-                return Err(
-                    "consolidated edge node allocation owner and ordinal are both-or-neither"
-                        .to_owned(),
-                );
-            }
-        };
-        Ok(Self {
-            id: wire.id,
-            byte_offset: wire.byte_offset,
-            source_index: wire.source_index,
-            width: wire.width,
-            flag: wire.flag,
-            header_token: wire.header_token,
-            allocation,
-            curve_ref: wire.curve_ref,
-            vertex_refs: wire.vertex_refs,
-            endpoint_records: wire.endpoint_records,
-            parameter_selectors: wire.parameter_selectors,
-            reference_encodings: wire
-                .reference_encodings
-                .ok_or_else(|| "consolidated edge node requires reference_encodings".to_owned())?,
-            terminal_value: wire
-                .terminal_value
-                .ok_or_else(|| "consolidated edge node requires terminal_value".to_owned())?,
-            terminal_encoding: wire
-                .terminal_encoding
-                .ok_or_else(|| "consolidated edge node requires terminal_encoding".to_owned())?,
-            vertex_identity_ids: wire.vertices,
-            tail: wire.tail,
-            definition: wire.definition,
-            uses: wire.uses,
-            analytic_circle: wire.analytic_circle,
-            class25_descriptor: wire.class25_descriptor,
-        })
-    }
-}
-
-impl CatiaConsolidatedEdgeNode {
-    #[cfg(test)]
-    pub fn vertex_identity_ids(&self) -> [&str; 2] {
-        [
-            self.vertex_identity_ids[0].as_str(),
-            self.vertex_identity_ids[1].as_str(),
-        ]
-    }
 }
 
 /// Typed class-`0x18` descriptor bound to a class-`0x25` edge definition.
@@ -7135,6 +6966,7 @@ macro_rules! define_catia_arenas {
         /// CATIA-native records retained outside the format-neutral model.
         #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[serde(try_from = "CatiaNativeWire", into = "CatiaNativeWire")]
         pub struct CatiaNative {
             /// Schema version this namespace was written under.
             pub version: u32,
@@ -7145,6 +6977,36 @@ macro_rules! define_catia_arenas {
                     $vis $field: Vec<$record>,
                 )?
             )*
+        }
+
+        #[derive(Serialize, Deserialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        struct CatiaNativeWire {
+            version: u32,
+            $($( $(#[$attr])* #[serde(default)]
+                $field: define_catia_arenas!(@native_type $field, $stored, $record),
+            )?)*
+        }
+
+        impl From<CatiaNative> for CatiaNativeWire {
+            fn from(mut native: CatiaNative) -> Self {
+                let nodes = edge_node_wires(std::mem::take(&mut native.consolidated_edge_nodes), &native.consolidated_vertex_identities);
+                Self {
+                    version: native.version,
+                    $($( $field: define_catia_arenas!(@native_value $field, $stored, native, nodes), )?)*
+                }
+            }
+        }
+
+        impl TryFrom<CatiaNativeWire> for CatiaNative {
+            type Error = String;
+            fn try_from(mut wire: CatiaNativeWire) -> Result<Self, Self::Error> {
+                let nodes = load_edge_nodes(std::mem::take(&mut wire.consolidated_edge_nodes), &wire.consolidated_vertex_identities)?;
+                Ok(Self {
+                    version: wire.version,
+                    $($( $field: define_catia_arenas!(@native_value $field, $stored, wire, nodes), )?)*
+                })
+            }
         }
 
         /// Owning, flattened arena payload shared by borrowed and consuming stores.
@@ -7234,6 +7096,15 @@ macro_rules! define_catia_arenas {
             }
         }
     };
+    (@native_type consolidated_edge_nodes, $kind:ident, $record:ty) => { Vec<CatiaConsolidatedEdgeNodeWire> };
+    (@native_type $field:ident, $kind:ident, $record:ty) => { Vec<$record> };
+    (@native_value consolidated_edge_nodes, $kind:ident, $owner:ident, $nodes:ident) => { $nodes };
+    (@native_value $field:ident, $kind:ident, $owner:ident, $nodes:ident) => { $owner.$field };
+    (@type consolidated_edge_nodes, $kind:ident, $record:ty) => { Vec<CatiaConsolidatedEdgeNodeWire> };
+    (@prepare consolidated_edge_nodes, $native:ident, $kind:ident, $binding:ident) => {
+        let $binding = edge_node_wires(std::mem::take(&mut $native.consolidated_edge_nodes), &$native.consolidated_vertex_identities);
+    };
+    (@stored_value stored, $native:ident, consolidated_edge_nodes, $binding:ident) => { $binding };
     (@type catalogs, $kind:ident, $record:ty) => {
         Vec<CatiaCatalogWire>
     };
@@ -8881,8 +8752,7 @@ fn consolidated_edge_nodes(
                     .map(native_allocation_reference_encoding),
                 terminal_value: node.terminal_value,
                 terminal_encoding: native_allocation_reference_encoding(node.terminal_encoding),
-                vertex_identity_ids: [String::new(), String::new()],
-                tail: node.tail,
+                    tail: node.tail,
                 definition: use_runs.get(&node.pos).and_then(|(_, value)| value.clone()),
                 uses: use_runs.get(&node.pos).map(|(value, _)| value.clone()),
                 analytic_circle: analytic_circles.get(&node.pos).cloned(),
@@ -8952,59 +8822,6 @@ fn native_consolidated_edge_uses(
         .try_into()
         .ok()?;
     (senses == [0x88, 0x84]).then_some(CatiaConsolidatedEdgeUses { references })
-}
-
-fn consolidated_vertex_identities(
-    nodes: &mut [CatiaConsolidatedEdgeNode],
-) -> Vec<CatiaConsolidatedVertexIdentity> {
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    enum IdentityKey {
-        EndpointRecord(u64),
-        Unresolved(usize, Option<String>, u32),
-    }
-
-    let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
-    let mut identity_indices = HashMap::<IdentityKey, usize>::new();
-    for node in nodes {
-        if node.endpoint_records.is_none() && node.uses.is_none() {
-            continue;
-        }
-        for (endpoint, identity) in node.vertex_refs.into_iter().enumerate() {
-            let endpoint_record = node.endpoint_records.map(|records| records[endpoint]);
-            let key = endpoint_record.map_or_else(
-                || {
-                    IdentityKey::Unresolved(
-                        node.source_index,
-                        node.allocation.as_ref().map(|(owner, _)| owner.clone()),
-                        identity,
-                    )
-                },
-                IdentityKey::EndpointRecord,
-            );
-            let index = *identity_indices.entry(key.clone()).or_insert_with(|| {
-                let index = identities.len();
-                identities.push(CatiaConsolidatedVertexIdentity {
-                    id: format!("catia:consolidated:vertex-identity#{index}"),
-                    identity,
-                    source_index: node.source_index,
-                    endpoint_record,
-                    reference_values: vec![identity],
-                    allocation_owner: node.allocation.as_ref().map(|(owner, _)| owner.clone()),
-                    incident_edge_nodes: Vec::new(),
-                });
-                index
-            });
-            let vertex = &mut identities[index];
-            if !vertex.reference_values.contains(&identity) {
-                vertex.reference_values.push(identity);
-            }
-            node.vertex_identity_ids[endpoint].clone_from(&vertex.id);
-            if vertex.incident_edge_nodes.last() != Some(&node.id) {
-                vertex.incident_edge_nodes.push(node.id.clone());
-            }
-        }
-    }
-    identities
 }
 
 fn point_coordinates(point: &cadmpeg_ir::math::Point3) -> [f64; 3] {
@@ -9645,7 +9462,7 @@ impl CatiaNative {
             zero_entity_support_runs(parsed_zero_entity_support_runs, &zero_entity_records);
         let zero_entity_vertex_incidences =
             zero_entity_vertex_incidences(bytes, zero_entity_range, &zero_entity_records);
-        let mut consolidated_edge_nodes =
+        let consolidated_edge_nodes =
             consolidated_edge_nodes(bytes, consolidated_records, &consolidated_circles);
         let consolidated_edge_runs = consolidated_edge_runs(
             bytes,
@@ -9654,7 +9471,7 @@ impl CatiaNative {
             &consolidated_edge_nodes,
         );
         let consolidated_vertex_identities =
-            consolidated_vertex_identities(&mut consolidated_edge_nodes);
+            consolidated_vertex_identities(&consolidated_edge_nodes);
         Self {
             version: CATIA_NATIVE_VERSION,
             alias_rows,

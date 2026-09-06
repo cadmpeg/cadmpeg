@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural validation for synthesized CATIA native records.
 
+use crate::native::edge_node::CatiaConsolidatedEdgeNode;
 use super::*;
 
 pub(super) fn validate_consolidated_class61_records(

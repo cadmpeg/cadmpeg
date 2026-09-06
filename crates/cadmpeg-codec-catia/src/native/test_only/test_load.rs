@@ -13,8 +13,8 @@ use super::test_legacy::{
     validate_legacy_entity_runs,
 };
 use super::test_links::{
-    validate_consolidated_edge_runs, validate_consolidated_owner_packets, validate_native_links,
-    ConsolidatedSupportArenas,
+    ConsolidatedSupportArenas, validate_consolidated_edge_runs,
+    validate_consolidated_owner_packets, validate_native_links,
 };
 use super::test_zero_entity::{
     validate_zero_entity_endpoint_locus_candidates, validate_zero_entity_endpoint_pair_candidates,
@@ -22,6 +22,7 @@ use super::test_zero_entity::{
     validate_zero_entity_support_runs, validate_zero_entity_topology_records,
 };
 use super::*;
+use crate::native::edge_node::{CatiaConsolidatedEdgeNodeWire, load_edge_nodes};
 use crate::test_support::NativeRecordTestExt;
 
 impl CatiaNative {
@@ -955,11 +956,16 @@ impl CatiaNative {
         let mut consolidated_edge_runs: Vec<CatiaConsolidatedEdgeRun> =
             namespace.arena_as("consolidated_edge_runs")?;
         consolidated_edge_runs.sort_by_key(|run| run.byte_offset);
-        let mut consolidated_edge_nodes: Vec<CatiaConsolidatedEdgeNode> =
+        let consolidated_edge_node_wires: Vec<CatiaConsolidatedEdgeNodeWire> =
             namespace.arena_as("consolidated_edge_nodes")?;
-        consolidated_edge_nodes.sort_by_key(|node| node.byte_offset);
         let consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity> =
             namespace.arena_as("consolidated_vertex_identities")?;
+        let mut consolidated_edge_nodes = load_edge_nodes(
+            consolidated_edge_node_wires,
+            &consolidated_vertex_identities,
+        )
+        .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)?;
+        consolidated_edge_nodes.sort_by_key(|node| node.byte_offset);
         let mut zero_entity_edge_strides: Vec<CatiaZeroEntityEdgeStride> =
             namespace.arena_as("zero_entity_edge_strides")?;
         zero_entity_edge_strides.sort_by_key(|record| record.byte_offset);
