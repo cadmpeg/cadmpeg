@@ -1998,7 +1998,7 @@ fn attach_feature_operations(
             .flatten()
         {
             if let Some(writer) =
-                body_writer_history.native_writer(canonical_body(operand.operand_object_index))
+                body_writer_history.native_writer(canonical_body(operand.operand.atom.value()))
             {
                 if !dependencies.contains(writer) {
                     dependencies.push(writer.clone());
@@ -3151,7 +3151,7 @@ fn attach_feature_operations(
                 operand
                     .operand_data_block
                     .clone()
-                    .unwrap_or_else(|| operand.operand_object_index.to_string()),
+                    .unwrap_or_else(|| operand.operand.atom.value().to_string()),
             );
             source_properties.insert(
                 format!(
@@ -8248,7 +8248,7 @@ fn offset_store_trim_body_feature_definition(
             let mut operand_indices = BTreeSet::new();
             let distinct_operand_indices = operands
                 .iter()
-                .all(|operand| operand_indices.insert(operand.operand_object_index));
+                .all(|operand| operand_indices.insert(operand.operand.atom.value()));
             let same_store = tool_data_blocks.iter().all(|tool_data_block| {
                 tool_data_block
                     .rsplit_once(":block#")
@@ -8261,7 +8261,7 @@ fn offset_store_trim_body_feature_definition(
                 .all(|tool_data_block| tool_data_block != data_block);
             if operands.iter().all(|operand| {
                 operand.body_object_index == *object_index
-                    && operand.operand_object_index != *object_index
+                    && operand.operand.atom.value() != *object_index
             }) && distinct_operand_indices
                 && same_store
                 && distinct_tool_blocks
@@ -8273,7 +8273,7 @@ fn offset_store_trim_body_feature_definition(
                         "nx:om-object-indices#{}",
                         operands
                             .iter()
-                            .map(|operand| operand.operand_object_index.to_string())
+                            .map(|operand| operand.operand.atom.value().to_string())
                             .collect::<Vec<_>>()
                             .join(",")
                     ),
@@ -8310,7 +8310,7 @@ fn sew_body_feature_definition(
     let primary_body_object_index = primary_segment_body_object_index
         .or_else(|| primary_offset_store_body.map(|(object_index, _)| object_index))?;
     let object_indices = std::iter::once(primary_body_object_index)
-        .chain(operands.iter().map(|operand| operand.operand_object_index))
+        .chain(operands.iter().map(|operand| operand.operand.atom.value()))
         .collect::<Vec<_>>();
     let native = format!(
         "nx:om-object-indices#{}",
@@ -8395,7 +8395,7 @@ fn trim_body_feature_definition(
     }
     let tool_object_indices = operands
         .iter()
-        .map(|operand| operand.operand_object_index)
+        .map(|operand| operand.operand.atom.value())
         .collect::<Vec<_>>();
     let native_tools = format!(
         "nx:om-object-indices#{}",

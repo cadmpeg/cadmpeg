@@ -11,11 +11,12 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
         body_object_index: 114,
         body_reference_ordinal: 0,
         ordinal: 0,
-        operand_object_index: 113,
-        raw_operand_object_index: vec![113],
+        operand: crate::om::compact::LocatedCompactIndex {
+            atom: crate::om::compact::CompactIndexAtom::from_wire(113, &[113]).unwrap(),
+            offset: 0,
+        },
         operand_data_block: Some("nx:om-data-blocks-2:block#113".to_string()),
         segment_body_bindings: Vec::new(),
-        source_offset: 0,
     };
     let expected_target = Some(FeatureDefinition::TrimBodies {
         targets: BodySelection::Local {
@@ -37,7 +38,7 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
     );
 
     let mut duplicate_block_operand = operand.clone();
-    duplicate_block_operand.operand_object_index = 112;
+    duplicate_block_operand.operand.atom = crate::om::compact::CompactIndexAtom::read(&[112]).unwrap();
     assert_eq!(
         super::offset_store_trim_body_feature_definition(
             std::slice::from_ref(&body),
@@ -47,7 +48,7 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
     );
 
     let mut target_alias_operand = operand;
-    target_alias_operand.operand_object_index = 115;
+    target_alias_operand.operand.atom = crate::om::compact::CompactIndexAtom::read(&[115]).unwrap();
     target_alias_operand.operand_data_block = Some(body.1.clone());
     assert_eq!(
         super::offset_store_trim_body_feature_definition(

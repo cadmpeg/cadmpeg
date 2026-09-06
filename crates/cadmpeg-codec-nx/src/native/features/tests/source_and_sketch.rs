@@ -1263,9 +1263,10 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         body_reference_ordinal: 0,
         body_object_index: 10,
         ordinal,
-        member_index,
-        raw_member_index: vec![member_index as u8],
-        source_offset: u64::from(ordinal),
+        member: crate::om::compact::LocatedCompactIndex {
+            atom: crate::om::compact::CompactIndexAtom::from_wire(member_index, &[member_index as u8]).unwrap(),
+            offset: u64::from(ordinal),
+        },
     };
     let members = [member(0, 20), member(1, 30), member(2, 10)];
     let references = [FeatureBodyReference {
@@ -1291,7 +1292,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     assert_eq!(
         operands
             .iter()
-            .map(|operand| operand.operand_object_index)
+            .map(|operand| operand.operand.atom.value())
             .collect::<Vec<_>>(),
         [20, 30]
     );
@@ -1384,7 +1385,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         &bindings,
     );
     assert_eq!(distinct_member_operand.len(), 1);
-    assert_eq!(distinct_member_operand[0].operand_object_index, 30);
+    assert_eq!(distinct_member_operand[0].operand.atom.value(), 30);
     assert_eq!(
         distinct_member_operand[0].operand_data_block.as_deref(),
         Some("nx:om-data-blocks-1:block#30")

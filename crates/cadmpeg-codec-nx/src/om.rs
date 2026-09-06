@@ -1924,12 +1924,8 @@ pub struct OperationBodyMember {
     pub body_object_index: u32,
     /// Zero-based member order in the counted lane.
     pub ordinal: u32,
-    /// Decoded compact index.
-    pub member_index: u32,
-    /// Exact compact-index token.
-    pub raw_member_index: Vec<u8>,
-    /// Absolute offset of the compact-index marker.
-    pub offset: usize,
+    /// Exact compact index and its absolute source position.
+    pub member: LocatedCompactIndex,
 }
 
 /// Exact continuation following a `TRIM BODY` branch-`11` member lane.
@@ -4337,12 +4333,11 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
                 }
                 at += 1;
                 let member_at = at;
-                let Some((CompactIndex::Value(member_index), width)) =
-                    record.bytes.get(at..).and_then(compact_index)
+                let Some(atom) = record.bytes.get(at..).and_then(CompactIndexAtom::read)
                 else {
                     return Vec::new();
                 };
-                at += width;
+                at += atom.raw().len();
                 if record.bytes.get(at) != Some(&0x00) {
                     return Vec::new();
                 }
@@ -4351,9 +4346,7 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
                     body_reference_ordinal: body_ordinal as u32,
                     body_object_index: reference.object_index,
                     ordinal: ordinal as u32,
-                    member_index,
-                    raw_member_index: record.bytes[member_at..member_at + width].to_vec(),
-                    offset: record.offset() + member_at,
+                    member: LocatedCompactIndex { atom, offset: record.offset() + member_at },
                 });
             }
             members

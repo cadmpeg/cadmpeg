@@ -324,7 +324,7 @@ pub fn terminal_feature_body_indices(
             continue;
         }
         let position = *positions.get(operand.operation_label.as_str())?;
-        let body = canonical(operand.operand_object_index);
+        let body = canonical(operand.operand.atom.value());
         if last_writers
             .get(&body)
             .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
@@ -1791,11 +1791,12 @@ mod tests {
             body_object_index: 10,
             body_reference_ordinal: 0,
             ordinal: 0,
-            operand_object_index: 30,
-            raw_operand_object_index: vec![30],
+            operand: crate::om::compact::LocatedCompactIndex {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(30, &[30]).unwrap(),
+                offset: 0,
+            },
             operand_data_block: None,
             segment_body_bindings: vec!["binding#0".to_string()],
-            source_offset: 0,
         }];
         assert_eq!(
             super::terminal_feature_body_indices(
@@ -1842,11 +1843,12 @@ mod tests {
             body_object_index: 10,
             body_reference_ordinal: 0,
             ordinal: 0,
-            operand_object_index: 30,
-            raw_operand_object_index: vec![30],
+            operand: crate::om::compact::LocatedCompactIndex {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(30, &[30]).unwrap(),
+                offset: 0,
+            },
             operand_data_block: Some("data-block#0".to_string()),
             segment_body_bindings: Vec::new(),
-            source_offset: 0,
         }];
         assert_eq!(
             super::terminal_feature_body_indices(

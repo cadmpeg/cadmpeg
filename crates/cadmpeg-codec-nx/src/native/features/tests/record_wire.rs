@@ -380,3 +380,36 @@ fn body_11_continuation_preserves_wire_and_checks_both_token_grammars() {
         assert!(serde_json::from_value::<super::super::FeatureOperationBody11Continuation>(invalid).is_err());
     }
 }
+
+#[test]
+fn operation_body_member_preserves_exact_compact_token_and_rejects_invalid_wire() {
+    for (value, raw) in [(1, "[1]"), (1, "[128,1]"), (4097, "[144,1]")] {
+        let wire = format!(r#"{{"id":"member","operation_label":"operation","body_reference_ordinal":0,"body_object_index":66,"ordinal":0,"member_index":{value},"raw_member_index":{raw},"source_offset":122}}"#);
+        let record: super::super::FeatureOperationBodyMember = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        for invalid_raw in [serde_json::json!([]), serde_json::json!([255]), serde_json::json!([128]), serde_json::json!([144,0,1])] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+            invalid["raw_member_index"] = invalid_raw;
+            let error = serde_json::from_value::<super::super::FeatureOperationBodyMember>(invalid).unwrap_err();
+            assert!(error.to_string().contains("member_index"));
+        }
+        let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+        invalid["member_index"] = serde_json::json!(value + 1);
+        assert!(serde_json::from_value::<super::super::FeatureOperationBodyMember>(invalid).is_err());
+    }
+}
+
+#[test]
+fn operation_body_operand_preserves_exact_token_and_optional_relations() {
+    for relations in ["", r#", "operand_data_block":"block", "segment_body_bindings":["binding"]"#] {
+        let wire = format!(r#"{{"id":"operand","operation_label":"operation","body_object_index":66,"body_reference_ordinal":0,"ordinal":0,"operand_object_index":4097,"raw_operand_object_index":[144,1]{relations},"source_offset":122}}"#).replace(", ", ",");
+        let record: super::super::FeatureOperationBodyOperand = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        for raw in [serde_json::json!([]), serde_json::json!([255]), serde_json::json!([144]), serde_json::json!([144,0,1]), serde_json::json!([1])] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+            invalid["raw_operand_object_index"] = raw;
+            let error = serde_json::from_value::<super::super::FeatureOperationBodyOperand>(invalid).unwrap_err();
+            assert!(error.to_string().contains("operand_object_index"));
+        }
+    }
+}

@@ -5098,7 +5098,24 @@ impl TryFrom<FeatureOperationBodyScalarTripleWire> for FeatureOperationBodyScala
 
 /// Ordered member index in a branch-`11` operation body clause.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureOperationBodyMemberWire", into = "FeatureOperationBodyMemberWire")]
 pub struct FeatureOperationBodyMember {
+    /// Globally unique member identity.
+    pub id: String,
+    /// Owning operation label.
+    pub operation_label: String,
+    /// Zero-based body-reference occurrence order.
+    pub body_reference_ordinal: u32,
+    /// Serialized body object index.
+    pub body_object_index: u32,
+    /// Zero-based member order in the counted lane.
+    pub ordinal: u32,
+    /// Exact compact index and its absolute file position.
+    pub member: LocatedCompactIndex<u64>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureOperationBodyMemberWire {
     /// Globally unique member identity.
     pub id: String,
     /// Owning operation label.
@@ -5117,9 +5134,61 @@ pub struct FeatureOperationBodyMember {
     pub source_offset: u64,
 }
 
+impl From<FeatureOperationBodyMember> for FeatureOperationBodyMemberWire {
+    fn from(value: FeatureOperationBodyMember) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            body_reference_ordinal: value.body_reference_ordinal,
+            body_object_index: value.body_object_index,
+            ordinal: value.ordinal,
+            member_index: value.member.atom.value(),
+            raw_member_index: value.member.atom.raw().to_vec(),
+            source_offset: value.member.offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureOperationBodyMemberWire> for FeatureOperationBodyMember {
+    type Error = String;
+    fn try_from(wire: FeatureOperationBodyMemberWire) -> Result<Self, Self::Error> {
+        let atom = CompactIndexAtom::from_wire(wire.member_index, &wire.raw_member_index)
+            .map_err(|error| format!("operation body member member_index: {error}"))?;
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            body_reference_ordinal: wire.body_reference_ordinal,
+            body_object_index: wire.body_object_index,
+            ordinal: wire.ordinal,
+            member: LocatedCompactIndex { atom, offset: wire.source_offset },
+        })
+    }
+}
+
 /// Wrapped operation member resolved in the feature-body identity namespace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureOperationBodyOperandWire", into = "FeatureOperationBodyOperandWire")]
 pub struct FeatureOperationBodyOperand {
+    /// Globally unique operand identity.
+    pub id: String,
+    /// Owning operation label.
+    pub operation_label: String,
+    /// Body clause containing the operand.
+    pub body_object_index: u32,
+    /// Zero-based body-reference occurrence order.
+    pub body_reference_ordinal: u32,
+    /// Zero-based operand order in the wrapped member lane.
+    pub ordinal: u32,
+    /// Exact operand compact index and its absolute file position.
+    pub operand: LocatedCompactIndex<u64>,
+    /// Same-store offset data block named by the operand, when resolved.
+    pub operand_data_block: Option<String>,
+    /// Segment body bindings naming the same body image.
+    pub segment_body_bindings: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureOperationBodyOperandWire {
     /// Globally unique operand identity.
     pub id: String,
     /// Owning operation label.
@@ -5142,6 +5211,41 @@ pub struct FeatureOperationBodyOperand {
     pub segment_body_bindings: Vec<String>,
     /// Absolute file offset of the compact-index marker.
     pub source_offset: u64,
+}
+
+impl From<FeatureOperationBodyOperand> for FeatureOperationBodyOperandWire {
+    fn from(value: FeatureOperationBodyOperand) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            body_object_index: value.body_object_index,
+            body_reference_ordinal: value.body_reference_ordinal,
+            ordinal: value.ordinal,
+            operand_object_index: value.operand.atom.value(),
+            raw_operand_object_index: value.operand.atom.raw().to_vec(),
+            operand_data_block: value.operand_data_block,
+            segment_body_bindings: value.segment_body_bindings,
+            source_offset: value.operand.offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureOperationBodyOperandWire> for FeatureOperationBodyOperand {
+    type Error = String;
+    fn try_from(wire: FeatureOperationBodyOperandWire) -> Result<Self, Self::Error> {
+        let atom = CompactIndexAtom::from_wire(wire.operand_object_index, &wire.raw_operand_object_index)
+            .map_err(|error| format!("operation body operand operand_object_index: {error}"))?;
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            body_object_index: wire.body_object_index,
+            body_reference_ordinal: wire.body_reference_ordinal,
+            ordinal: wire.ordinal,
+            operand: LocatedCompactIndex { atom, offset: wire.source_offset },
+            operand_data_block: wire.operand_data_block,
+            segment_body_bindings: wire.segment_body_bindings,
+        })
+    }
 }
 
 impl FeatureOperationBodyOperand {
@@ -11137,9 +11241,7 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
                         body_reference_ordinal: member.body_reference_ordinal,
                         body_object_index: member.body_object_index,
                         ordinal: member.ordinal,
-                        member_index: member.member_index,
-                        raw_member_index: member.raw_member_index,
-                        source_offset: entry_offset + member.offset as u64,
+                        member: LocatedCompactIndex { atom: member.member.atom, offset: entry_offset + member.member.offset as u64 },
                     }),
             );
         },
@@ -11187,7 +11289,7 @@ pub fn feature_operation_body_operands(
     members
         .iter()
         .filter_map(|member| {
-            if member.member_index == member.body_object_index {
+            if member.member.atom.value() == member.body_object_index {
                 return None;
             }
             let member_store = unique_stores.get(member.operation_label.as_str()).copied();
@@ -11196,7 +11298,7 @@ pub fn feature_operation_body_operands(
                 return None;
             }
             let operand_data_block = member_store.and_then(|store| {
-                let id = format!("{store}:block#{}", member.member_index);
+                let id = format!("{store}:block#{}", member.member.atom.value());
                 block_ids.contains(id.as_str()).then_some(id)
             });
             let same_namespace_reference = references.iter().any(|reference| match member_store {
@@ -11212,8 +11314,8 @@ pub fn feature_operation_body_operands(
                 bindings
                     .iter()
                     .filter(|binding| {
-                        binding.body_object_index == member.member_index
-                            || binding.body_alias_object_index == member.member_index
+                        binding.body_object_index == member.member.atom.value()
+                            || binding.body_alias_object_index == member.member.atom.value()
                     })
                     .map(|binding| binding.id.clone())
                     .collect::<Vec<_>>()
@@ -11234,11 +11336,9 @@ pub fn feature_operation_body_operands(
                 body_object_index: member.body_object_index,
                 body_reference_ordinal: member.body_reference_ordinal,
                 ordinal: member.ordinal,
-                operand_object_index: member.member_index,
-                raw_operand_object_index: member.raw_member_index.clone(),
+                operand: member.member,
                 operand_data_block,
                 segment_body_bindings,
-                source_offset: member.source_offset,
             })
         })
         .collect()
