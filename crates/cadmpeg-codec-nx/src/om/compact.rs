@@ -2,7 +2,7 @@
 //! Exact non-null compact indices and bounded counted-lane members.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Encoding { Direct(u8), Extended([u8; 2]) }
+enum Encoding { Direct(u8), Extended(ExtendedCompactIndex) }
 
 /// Exact compact-index encoding, excluding the `ff` null token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,22 +12,21 @@ impl CompactIndexAtom {
     pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
         match bytes.first().copied()? {
             value @ 0..=0x7f => Some(Self(Encoding::Direct(value))),
-            high @ 0x80..=0xfe => Some(Self(Encoding::Extended([high, *bytes.get(1)?]))),
-            _ => None,
+            _ => ExtendedCompactIndex::read(bytes).map(|index| Self(Encoding::Extended(index))),
         }
     }
 
     pub(crate) fn value(self) -> u32 {
         match self.0 {
             Encoding::Direct(value) => u32::from(value),
-            Encoding::Extended([high, low]) => u32::from(high - 0x80) * 256 + u32::from(low),
+            Encoding::Extended(index) => index.value(),
         }
     }
 
     pub(crate) fn raw(&self) -> &[u8] {
         match &self.0 {
             Encoding::Direct(value) => std::slice::from_ref(value),
-            Encoding::Extended(raw) => raw,
+            Encoding::Extended(index) => index.raw(),
         }
     }
 
@@ -40,23 +39,48 @@ impl CompactIndexAtom {
     }
 }
 
-/// Extended compact index inside a `3d high low 00` word.
+/// Non-null compact index restricted to its two-byte encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct WrappedCompactIndex([u8; 2]);
+pub(crate) struct ExtendedCompactIndex([u8; 2]);
 
-impl WrappedCompactIndex {
-    pub(crate) fn read(raw: u32) -> Option<Self> {
-        let [marker, high, low, terminal] = raw.to_be_bytes();
-        (marker == 0x3d && terminal == 0 && (0x80..=0xfe).contains(&high))
-            .then_some(Self([high, low]))
+impl ExtendedCompactIndex {
+    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+        match bytes {
+            [high @ 0x80..=0xfe, low, ..] => Some(Self([*high, *low])),
+            _ => None,
+        }
     }
 
     pub(crate) fn value(self) -> u32 {
         u32::from(self.0[0] - 0x80) * 256 + u32::from(self.0[1])
     }
 
+    pub(crate) fn raw(&self) -> &[u8; 2] { &self.0 }
+
+    pub(crate) fn from_wire(value: u32, raw: &[u8; 2]) -> Result<Self, &'static str> {
+        let index = Self::read(raw).ok_or("invalid two-byte compact index")?;
+        if index.value() != value { return Err("index/raw token: value mismatch"); }
+        Ok(index)
+    }
+}
+
+/// Extended compact index inside a `3d high low 00` word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WrappedCompactIndex(ExtendedCompactIndex);
+
+impl WrappedCompactIndex {
+    pub(crate) fn read(raw: u32) -> Option<Self> {
+        let [marker, high, low, terminal] = raw.to_be_bytes();
+        (marker == 0x3d && terminal == 0).then_some(())?;
+        ExtendedCompactIndex::read(&[high, low]).map(Self)
+    }
+
+    pub(crate) fn value(self) -> u32 {
+        self.0.value()
+    }
+
     pub(crate) fn raw(self) -> u32 {
-        0x3d00_0000 | (u32::from(self.0[0]) << 16) | (u32::from(self.0[1]) << 8)
+        0x3d00_0000 | (u32::from(self.0.raw()[0]) << 16) | (u32::from(self.0.raw()[1]) << 8)
     }
 
     pub(crate) fn from_wire(value: u32, raw: u32) -> Result<Self, &'static str> {

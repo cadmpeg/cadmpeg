@@ -1588,13 +1588,9 @@ pub struct DraftFeatureLeadingIndexLane {
 
 /// End-anchored compact-index lane in a draft-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DraftFeatureTerminalLane {
-    /// Two non-null compact indices in serialized order.
-    pub indices: [u32; 2],
-    /// Exact two-byte compact-index tokens in serialized order.
-    pub raw_indices: [[u8; 2]; 2],
-    /// Absolute offsets of the compact-index tokens.
-    pub index_offsets: [usize; 2],
+pub struct DraftFeatureTerminalLane<O = usize> {
+    /// Two exact two-byte compact indices and their source offsets.
+    pub indices: [LocatedCompactIndex<O, compact::ExtendedCompactIndex>; 2],
     /// Three uninterpreted bytes preceding the terminal zero.
     pub tail: [u8; 3],
 }
@@ -3678,74 +3674,19 @@ pub fn draft_feature_terminal_lane(
     if record.label.value != "DRAFT" {
         return None;
     }
-    let mut candidate = None;
-    for start in 0..record.payload.len() {
-        let mut at = start;
-        let first_offset = at;
-        if !record
-            .payload
-            .get(at)
-            .is_some_and(|marker| (0x80..=0xfe).contains(marker))
-        {
-            continue;
-        }
-        let Some((CompactIndex::Value(first), first_width)) =
-            record.payload.get(at..).and_then(compact_index)
-        else {
-            continue;
-        };
-        at += first_width;
-        let second_offset = at;
-        if !record
-            .payload
-            .get(at)
-            .is_some_and(|marker| (0x80..=0xfe).contains(marker))
-        {
-            continue;
-        }
-        let Some((CompactIndex::Value(second), second_width)) =
-            record.payload.get(at..).and_then(compact_index)
-        else {
-            continue;
-        };
-        at += second_width;
-        if record.payload.get(at..at + FIXED.len()) != Some(&FIXED) {
-            continue;
-        }
-        at += FIXED.len();
-        let Some(tail) = record
-            .payload
-            .get(at..at + 3)
-            .and_then(|bytes| bytes.try_into().ok())
-        else {
-            continue;
-        };
-        at += 3;
-        if at + 1 != record.payload.len() || record.payload.get(at) != Some(&0x00) {
-            continue;
-        }
-        let lane = DraftFeatureTerminalLane {
-            indices: [first, second],
-            raw_indices: [
-                record.payload[first_offset..first_offset + first_width]
-                    .try_into()
-                    .ok()?,
-                record.payload[second_offset..second_offset + second_width]
-                    .try_into()
-                    .ok()?,
-            ],
-            index_offsets: [
-                record.payload_offset + first_offset,
-                record.payload_offset + second_offset,
-            ],
-            tail,
-        };
-        if candidate.is_some() {
-            return None;
-        }
-        candidate = Some(lane);
-    }
-    candidate
+    let start = record.payload.len().checked_sub(4 + FIXED.len() + 4)?;
+    let first = compact::ExtendedCompactIndex::read(record.payload.get(start..)?)?;
+    let second = compact::ExtendedCompactIndex::read(record.payload.get(start + 2..)?)?;
+    let at = start + 4;
+    (record.payload.get(at..at + FIXED.len()) == Some(&FIXED)).then_some(())?;
+    let at = at + FIXED.len();
+    let tail = record.payload.get(at..at + 3)?.try_into().ok()?;
+    (record.payload.get(at + 3) == Some(&0x00)).then_some(())?;
+    Some(DraftFeatureTerminalLane {
+        indices: [LocatedCompactIndex { atom: first, offset: record.payload_offset + start },
+            LocatedCompactIndex { atom: second, offset: record.payload_offset + start + 2 }],
+        tail,
+    })
 }
 
 /// Decode the exact common construction-reference envelope in a bounded

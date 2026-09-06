@@ -384,9 +384,9 @@ fn om_draft_feature_references_require_one_complete_graph() {
         vec![vec![0x80, 0x94], vec![0x82, 0x49]]
     );
     let terminal_lane = super::draft_feature_terminal_lane(record).expect("complete terminal lane");
-    assert_eq!(terminal_lane.indices, [350, 184]);
-    assert_eq!(terminal_lane.raw_indices, [[0x81, 0x5e], [0x80, 0xb8]]);
-    assert_eq!(terminal_lane.index_offsets, [284, 286]);
+    assert_eq!(terminal_lane.indices.map(|token| token.atom.value()), [350, 184]);
+    assert_eq!(terminal_lane.indices.map(|token| *token.atom.raw()), [[0x81, 0x5e], [0x80, 0xb8]]);
+    assert_eq!(terminal_lane.indices.map(|token| token.offset), [284, 286]);
     assert_eq!(terminal_lane.tail, [0x29, 0x29, 0x0c]);
 
     let mut malformed = payload.clone();

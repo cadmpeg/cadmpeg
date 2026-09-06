@@ -329,6 +329,19 @@ fn draft_terminal_lane_derives_its_source_offset() {
 }
 
 #[test]
+fn draft_terminal_lane_requires_two_byte_compact_indices() {
+    let json = r#"{"id":"lane","operation_label":"operation","indices":[4096,1],"raw_indices":[[144,0],[128,1]],"tail":[1,2,3],"index_source_offsets":[100,102],"source_offset":100}"#;
+    check_lane_wire::<FeatureDraftConstructionTerminalLane>(json, &[]);
+    for (value, raw) in [(4096, [255, 0]), (4096, [127, 0]), (1, [1, 0]), (1, [128, 2])] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["indices"][0] = serde_json::json!(value);
+        wire["raw_indices"][0] = serde_json::json!(raw);
+        let error = serde_json::from_value::<FeatureDraftConstructionTerminalLane>(wire).unwrap_err();
+        assert!(error.to_string().contains("indices[0]"));
+    }
+}
+
+#[test]
 fn pattern_rows_reject_scalar_families_outside_their_layout() {
     let narrow = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":2,"encodings":["exact_one"],"values":[1.0],"raw_values":[[1]],"selectors":[7],"raw_selectors":[[7]],"source_offset":100,"value_source_offsets":[110],"selector_source_offsets":[111]}"#;
     assert!(serde_json::from_str::<FeaturePatternTransformLane>(narrow).is_err());

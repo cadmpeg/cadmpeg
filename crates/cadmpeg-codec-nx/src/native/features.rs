@@ -20,7 +20,7 @@ use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncodin
 use crate::om::branch_items::BranchItems;
 use crate::om::nonempty::NonEmpty;
 use crate::om::reference_index::{PayloadIndexToken, ReferenceIndexToken};
-use crate::om::compact::{CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex, WrappedCompactIndex};
+use crate::om::compact::{CompactIndexAtom, CountedIndexMembers, ExtendedCompactIndex, LocatedCompactIndex, WrappedCompactIndex};
 use crate::om::sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLaneForm};
 use crate::om::fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 use crate::om::scalar_run::FramedScalarRun;
@@ -4378,14 +4378,8 @@ pub struct FeatureDraftConstructionTerminalLane {
     pub id: String,
     /// Owning `DRAFT` operation label.
     pub operation_label: String,
-    /// Two non-null compact indices in serialized order.
-    pub indices: [u32; 2],
-    /// Exact two-byte compact-index tokens in serialized order.
-    pub raw_indices: [[u8; 2]; 2],
-    /// Exact uninterpreted bytes preceding the terminal zero.
-    pub tail: [u8; 3],
-    /// Absolute source offsets of the compact-index tokens.
-    pub index_source_offsets: [u64; 2],
+    /// Checked terminal indices and tail with absolute source offsets.
+    pub lane: crate::om::DraftFeatureTerminalLane<u64>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -4411,11 +4405,11 @@ impl From<FeatureDraftConstructionTerminalLane> for FeatureDraftConstructionTerm
         Self {
             id: lane.id,
             operation_label: lane.operation_label,
-            indices: lane.indices,
-            raw_indices: lane.raw_indices,
-            tail: lane.tail,
-            index_source_offsets: lane.index_source_offsets,
-            source_offset: lane.index_source_offsets[0],
+            indices: lane.lane.indices.map(|token| token.atom.value()),
+            raw_indices: lane.lane.indices.map(|token| *token.atom.raw()),
+            tail: lane.lane.tail,
+            index_source_offsets: lane.lane.indices.map(|token| token.offset),
+            source_offset: lane.lane.indices[0].offset,
         }
     }
 }
@@ -4427,13 +4421,20 @@ impl TryFrom<FeatureDraftConstructionTerminalLaneWire> for FeatureDraftConstruct
         if wire.source_offset != wire.index_source_offsets[0] {
             return Err("source_offset must equal the first index_source_offsets entry".into());
         }
+        let [first, second] = [0, 1].map(|slot| -> Result<_, String> {
+            Ok(LocatedCompactIndex {
+                atom: ExtendedCompactIndex::from_wire(wire.indices[slot], &wire.raw_indices[slot])
+                    .map_err(|error| format!("indices[{slot}]: {error}"))?,
+                offset: wire.index_source_offsets[slot],
+            })
+        });
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            indices: wire.indices,
-            raw_indices: wire.raw_indices,
-            tail: wire.tail,
-            index_source_offsets: wire.index_source_offsets,
+            lane: crate::om::DraftFeatureTerminalLane {
+                indices: [first?, second?],
+                tail: wire.tail,
+            },
         })
     }
 }
@@ -10667,12 +10668,13 @@ pub fn feature_draft_construction_terminal_lanes(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                indices: lane.indices,
-                raw_indices: lane.raw_indices,
-                tail: lane.tail,
-                index_source_offsets: lane
-                    .index_offsets
-                    .map(|offset| entry_offset + offset as u64),
+                lane: crate::om::DraftFeatureTerminalLane {
+                    indices: lane.indices.map(|token| LocatedCompactIndex {
+                        atom: token.atom,
+                        offset: entry_offset + token.offset as u64,
+                    }),
+                    tail: lane.tail,
+                },
             });
         },
     );
