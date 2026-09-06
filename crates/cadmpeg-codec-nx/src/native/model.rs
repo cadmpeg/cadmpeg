@@ -5,6 +5,7 @@
 //! record vectors into domain sub-structs. Extraction is infallible: malformed
 //! data is omitted, never surfaced as an error.
 
+use crate::native::om::object_uuid::{ObjectUuidValue, object_uuid_values};
 use crate::native::om::material_texture::{MaterialTextureAsset, material_texture_assets};
 use crate::native::features::object_frame::DataBlockObjectFrame;
 use crate::native::features::swp104_branch::FeatureSwp104LeadingBranch;

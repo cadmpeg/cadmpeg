@@ -200,7 +200,7 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         handle_set_record: external.id.clone(),
         ordinal: 0,
         persistent_handle: 0x5060_7080,
-        tagged_reference: 7,
+        tagged_reference: crate::om::reference_value::Tagged28::try_from(7).unwrap(),
         source_offset: 30,
     };
 

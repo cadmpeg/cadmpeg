@@ -340,7 +340,7 @@ fn external_reference_tail_pairs_require_adjacent_complete_tokens() {
     ];
     assert_eq!(
         crate::container::parse_extref_reference_pairs(&bytes),
-        vec![(1, 0x1234_5678, 0x0abc_def0)]
+        vec![(1, 0x1234_5678, crate::om::reference_value::Tagged28::try_from(0x0abc_def0).unwrap())]
     );
     assert!(crate::container::parse_extref_reference_pairs(&bytes[10..]).is_empty());
 }

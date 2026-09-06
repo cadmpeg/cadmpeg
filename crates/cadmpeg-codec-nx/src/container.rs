@@ -706,14 +706,18 @@ pub(crate) fn parse_extref_empty_record(bytes: &[u8]) -> Option<bool> {
 }
 
 /// Decode exact adjacent persistent-handle and tagged-reference pairs.
-pub(crate) fn parse_extref_reference_pairs(bytes: &[u8]) -> Vec<(usize, u32, u32)> {
+pub(crate) fn parse_extref_reference_pairs(bytes: &[u8]) -> Vec<(usize, u32, crate::om::reference_value::Tagged28)> {
     let mut pairs = Vec::new();
     let mut at = 0usize;
-    while at + 9 <= bytes.len() {
-        if bytes[at] == 0xe0 && bytes[at + 5] & 0xf0 == 0xc0 {
-            let handle = View::u32_be_at(bytes, at + 1).expect("four-byte persistent handle");
-            let tagged_reference =
-                View::u32_be_at(bytes, at + 5).expect("four-byte tagged reference") & 0x0fff_ffff;
+    while at < bytes.len() {
+        let pair = (|| {
+            let bytes = bytes.get(at..)?;
+            if bytes.first() != Some(&0xe0) || *bytes.get(5)? & 0xf0 != 0xc0 {
+                return None;
+            }
+            Some((View::u32_be_at(bytes, 1)?, crate::om::reference_value::Tagged28::from_word(View::u32_be_at(bytes, 5)?)))
+        })();
+        if let Some((handle, tagged_reference)) = pair {
             pairs.push((at, handle, tagged_reference));
             at += 9;
         } else {
