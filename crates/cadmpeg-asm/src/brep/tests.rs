@@ -1011,3 +1011,25 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
     assert_eq!(brep.edges[0].curve, None);
     assert_eq!(brep.edges[0].param_range, Some([1.0, 0.0]));
 }
+
+#[test]
+fn append_preserves_body_ordinals_within_each_source_brep() {
+    let key = |source: &str| BodyNativeKey {
+        source_namespace: records::identity::NativeRecordNamespace::new(FORMAT),
+        record_index: 17,
+        body: if source == "first" { "f3d:brep:entity#17" } else { "f3d:brep:entity#18" }.into(),
+        body_ordinal: 0,
+        source_brep: Some(source.into()),
+        asm_body_key: Some(23),
+    };
+    let mut first = AsmBrep::default();
+    first.body_native_keys.push(key("first"));
+    let mut second = AsmBrep::default();
+    second.body_native_keys.push(key("second"));
+    first.append(second);
+    assert_eq!(first.body_native_keys.len(), 2);
+    assert_eq!(first.body_native_keys[0].body_ordinal, 0);
+    assert_eq!(first.body_native_keys[1].body_ordinal, 0);
+    assert_eq!(first.body_native_keys[0].source_brep.as_deref(), Some("first"));
+    assert_eq!(first.body_native_keys[1].source_brep.as_deref(), Some("second"));
+}
