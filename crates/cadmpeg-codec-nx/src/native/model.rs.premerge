@@ -5,6 +5,7 @@
 //! record vectors into domain sub-structs. Extraction is infallible: malformed
 //! data is omitted, never surfaced as an error.
 
+<<<<<<< HEAD
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
 use crate::container::Container;
@@ -12,10 +13,13 @@ use crate::native::features::block_reference::FeatureBlockConstructionReference;
 use crate::native::features::datum_plane_header::{
     feature_datum_plane_headers, FeatureDatumPlaneHeader,
 };
+=======
+use crate::native::om::object_uuid::{ObjectUuidValue, object_uuid_values};
+use crate::native::om::material_texture::{MaterialTextureAsset, material_texture_assets};
+>>>>>>> feat/version-refactor
 use crate::native::features::object_frame::DataBlockObjectFrame;
 use crate::native::features::swp104_branch::FeatureSwp104LeadingBranch;
 use crate::native::om::material_texture::{material_texture_assets, MaterialTextureAsset};
-use crate::native::om::object_uuid::{object_uuid_values, ObjectUuidValue};
 use crate::parasolid::Stream;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::ids::BodyId;

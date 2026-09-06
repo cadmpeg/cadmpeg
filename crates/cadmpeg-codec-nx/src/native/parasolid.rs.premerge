@@ -9,8 +9,13 @@ use crate::parasolid::name_references::NameReferences;
 use crate::topology::blend_surface_state::BlendSurfaceState;
 use crate::topology::offset_surface_state::OffsetSurfaceState;
 
-use crate::deltas::record_family::{PointCoordinates, RecordFamily};
+<<<<<<< HEAD
+use crate::deltas::record_family::PointCoordinates;
 use crate::deltas::Census;
+=======
+use crate::deltas::Census;
+use crate::deltas::record_family::{PointCoordinates, RecordFamily};
+>>>>>>> feat/version-refactor
 use crate::intersection::finite_point::FinitePoint;
 use crate::parasolid::attribute_action::AttributeAction;
 use crate::parasolid::attribute_field::AttributeField;
@@ -2710,18 +2715,16 @@ pub(crate) fn parasolid_entity_value_records(
                 .iter()
                 .filter_map(|record| {
                     (record.stream_ordinal == stream_ordinal as u32
-                        && matches!(
-                            record.family,
+                        && matches!(record.family,
                             RecordFamily::Entity52
-                                | RecordFamily::Entity53
-                                | RecordFamily::Entity54
-                                | RecordFamily::Entity55
-                                | RecordFamily::Entity56
-                                | RecordFamily::Entity57
-                                | RecordFamily::Entity58
-                                | RecordFamily::Entity59
-                                | RecordFamily::Entity62
-                        ))
+                            | RecordFamily::Entity53
+                            | RecordFamily::Entity54
+                            | RecordFamily::Entity55
+                            | RecordFamily::Entity56
+                            | RecordFamily::Entity57
+                            | RecordFamily::Entity58
+                            | RecordFamily::Entity59
+                            | RecordFamily::Entity62))
                     .then(|| usize::try_from(record.inflated_offset).ok())
                     .flatten()
                 })

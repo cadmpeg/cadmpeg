@@ -583,39 +583,64 @@ fn native_entity_key(id: &str) -> String {
     id.replace([':', '#'], "-")
 }
 
+/// One agreed palette definition and its earliest source occurrence.
+enum RmColorChoice<'a> {
+    Unique {
+        definition: &'a str,
+        source_offset: u64,
+    },
+    Conflicting,
+}
+
+impl<'a> RmColorChoice<'a> {
+    fn new(assignment: &'a super::om::RmDisplayColorAssignment) -> Self {
+        Self::Unique {
+            definition: &assignment.color_definition,
+            source_offset: assignment.source_offset,
+        }
+    }
+
+    fn observe(&mut self, assignment: &'a super::om::RmDisplayColorAssignment) {
+        if let Self::Unique {
+            definition,
+            source_offset,
+        } = self
+        {
+            if *definition == assignment.color_definition {
+                *source_offset = (*source_offset).min(assignment.source_offset);
+            } else {
+                *self = Self::Conflicting;
+            }
+        }
+    }
+}
+
 fn resolve_rm_source_color_bindings(
     assignments: &[super::om::RmDisplayColorAssignment],
 ) -> Vec<RmSourceColorBinding> {
-    let mut definitions_by_source = BTreeMap::<String, BTreeSet<String>>::new();
-    let mut first_offset_by_source = BTreeMap::<String, u64>::new();
+    let mut choices = BTreeMap::<&str, RmColorChoice<'_>>::new();
     for assignment in assignments {
-        let Some(source_id) = assignment.target_object_id.as_ref() else {
+        let Some(source_id) = assignment.target_object_id.as_deref() else {
             continue;
         };
-        definitions_by_source
-            .entry(source_id.clone())
-            .or_default()
-            .insert(assignment.color_definition.clone());
-        first_offset_by_source
-            .entry(source_id.clone())
-            .and_modify(|offset| *offset = (*offset).min(assignment.source_offset))
-            .or_insert(assignment.source_offset);
+        choices
+            .entry(source_id)
+            .and_modify(|choice| choice.observe(assignment))
+            .or_insert_with(|| RmColorChoice::new(assignment));
     }
-    definitions_by_source
+    choices
         .into_iter()
-        .filter_map(|(source_id, color_definitions)| {
-            let mut definitions = color_definitions.into_iter();
-            let color_definition = definitions.next()?;
-            if definitions.next().is_some() {
+        .filter_map(|(source_id, choice)| {
+            let RmColorChoice::Unique {
+                definition,
+                source_offset,
+            } = choice
+            else {
                 return None;
-            }
-            let source_offset = first_offset_by_source
-                .get(&source_id)
-                .copied()
-                .expect("every source has one assignment");
+            };
             Some(RmSourceColorBinding {
-                source_id,
-                color_definition,
+                source_id: source_id.to_owned(),
+                color_definition: definition.to_owned(),
                 source_offset,
             })
         })
@@ -667,82 +692,67 @@ fn resolve_rm_face_color_bindings(
         }
     }
 
-    let mut colors_by_object = BTreeMap::<u32, BTreeSet<String>>::new();
+    let mut choices = BTreeMap::<u32, RmColorChoice<'_>>::new();
     for assignment in assignments {
         let crate::native::om::RmDisplayColorAssignmentEncoding::Linked { object_index, .. } =
             &assignment.encoding
         else {
             continue;
         };
-        colors_by_object
+        choices
             .entry(object_index.atom.value())
-            .or_default()
-            .insert(assignment.color_definition.clone());
+            .and_modify(|choice| choice.observe(assignment))
+            .or_insert_with(|| RmColorChoice::new(assignment));
     }
-    let mut source_offsets_by_object = BTreeMap::<u32, u64>::new();
-    for assignment in assignments {
-        let crate::native::om::RmDisplayColorAssignmentEncoding::Linked { object_index, .. } =
-            &assignment.encoding
-        else {
-            continue;
-        };
-        source_offsets_by_object
-            .entry(object_index.atom.value())
-            .and_modify(|offset| *offset = (*offset).min(assignment.source_offset))
-            .or_insert(assignment.source_offset);
-    }
-    let definitions_by_id = definitions
+    let definition_ids = definitions
         .iter()
-        .map(|definition| (definition.id.as_str(), definition))
-        .collect::<BTreeMap<_, _>>();
+        .map(|definition| definition.id.as_str())
+        .collect::<BTreeSet<_>>();
     let mut face_records_by_node = BTreeMap::<u32, Vec<_>>::new();
-    for record in records
-        .iter()
-        .filter(|record| record.family_name() == "FACE")
-    {
-        let Some(node_id) = record.node_id() else {
+    for record in records {
+        let crate::deltas::record_family::RecordFamily::Face { node_id, .. } = &record.family
+        else {
             continue;
         };
         face_records_by_node
-            .entry(node_id)
+            .entry(*node_id)
             .or_default()
             .push(record);
     }
 
     let mut bindings = Vec::new();
-    for (object_index, definition_ids) in colors_by_object {
-        if definition_ids.len() != 1 {
-            continue;
-        }
-        let definition_id = definition_ids.first().expect("one definition id");
-        let Some(_definition) = definitions_by_id.get(definition_id.as_str()) else {
+    for (object_index, choice) in choices {
+        let RmColorChoice::Unique {
+            definition,
+            source_offset,
+        } = choice
+        else {
             continue;
         };
+        if !definition_ids.contains(definition) {
+            continue;
+        }
         let candidates = face_records_by_node
             .get(&object_index)
             .into_iter()
             .flatten()
             .filter_map(|record| {
                 let partitions = partitions_by_delta.get(&record.stream_ordinal)?;
-                if partitions.len() != 1 {
+                let mut partitions = partitions.iter();
+                let (Some(partition), None) = (partitions.next(), partitions.next()) else {
                     return None;
-                }
-                let partition = partitions.first().expect("one partition");
+                };
                 let face_id = format!("nx:s{partition}:face#{}", record.xmt);
                 face_ids.contains(&face_id).then_some(face_id)
             })
             .collect::<BTreeSet<_>>();
-        if candidates.len() != 1 {
+        let mut candidates = candidates.into_iter();
+        let (Some(face_id), None) = (candidates.next(), candidates.next()) else {
             continue;
-        }
-        let face_id = candidates.first().expect("one face id");
-        let source_offset = source_offsets_by_object
-            .get(&object_index)
-            .copied()
-            .expect("every linked color object has an assignment");
+        };
         bindings.push(RmFaceColorBinding {
-            face_id: face_id.clone(),
-            color_definition: definition_id.clone(),
+            face_id,
+            color_definition: definition.to_owned(),
             source_offset,
         });
     }

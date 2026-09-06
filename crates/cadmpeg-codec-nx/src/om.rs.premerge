@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Frame NX object-model entities using external boundary and identity arrays.
 
+<<<<<<< HEAD
+=======
 pub(crate) mod reference_value;
 use reference_value::{DirectReference, LocatedReference, RecordReference, Tagged28};
 
+pub(crate) mod draft_identity;
+pub(crate) mod plane_descriptor;
+>>>>>>> feat/version-refactor
 pub(crate) mod csys_descriptor;
 pub(crate) mod draft_identity;
 pub(crate) mod header_references;
@@ -2056,38 +2061,21 @@ impl<'a> IndexedSection<'a> {
     }
 
     /// Decode tagged cross-record references from every bounded record.
-    pub fn references(
-        &self,
-    ) -> Vec<(
-        usize,
-        usize,
-        Option<u32>,
-        LocatedReference<RecordReference<()>>,
-    )> {
+    pub fn references(&self) -> Vec<(usize, usize, Option<u32>, LocatedReference<RecordReference<()>>)> {
         let records = self.record_views();
         let record_count = records.len();
         records
             .into_iter()
             .enumerate()
             .flat_map(|(record_ordinal, (offset, bytes, object_id))| {
-                let mut references = record_references(bytes, offset)
-                    .into_iter()
-                    .map(|reference| LocatedReference {
-                        offset: reference.offset,
-                        value: RecordReference::Direct(reference.value),
-                    })
-                    .collect::<Vec<_>>();
-                references.extend(
-                    counted_record_references(bytes, offset, record_count)
-                        .into_iter()
-                        .map(|reference| LocatedReference {
-                            offset: reference.offset,
-                            value: RecordReference::RecordOrdinal16 {
-                                ordinal: reference.value,
-                                target: (),
-                            },
-                        }),
-                );
+                let mut references = record_references(bytes, offset).into_iter().map(|reference| LocatedReference {
+                    offset: reference.offset,
+                    value: RecordReference::Direct(reference.value),
+                }).collect::<Vec<_>>();
+                references.extend(counted_record_references(bytes, offset, record_count).into_iter().map(|reference| LocatedReference {
+                    offset: reference.offset,
+                    value: RecordReference::RecordOrdinal16 { ordinal: reference.value, target: () },
+                }));
                 references.sort_by_key(|reference| reference.offset);
                 references
                     .into_iter()
@@ -6391,16 +6379,14 @@ pub fn counted_record_references(
             at += 1;
             continue;
         }
-        let run = (0..count)
-            .map(|index| {
-                let token = at + 2 + index * 3;
-                let value = View::u16_be_at(bytes, token + 1)?;
-                (usize::from(value) < record_count).then_some(LocatedReference {
-                    offset: base_offset + token,
-                    value,
-                })
+        let run = (0..count).map(|index| {
+            let token = at + 2 + index * 3;
+            let value = View::u16_be_at(bytes, token + 1)?;
+            (usize::from(value) < record_count).then_some(LocatedReference {
+                offset: base_offset + token,
+                value,
             })
-            .collect::<Option<Vec<_>>>();
+        }).collect::<Option<Vec<_>>>();
         if let Some(run) = run {
             references.extend(run);
             at = end;
@@ -6412,16 +6398,14 @@ pub fn counted_record_references(
 }
 
 /// Decode self-identifying persistent handles and exact adjacent handle pairs.
-pub fn record_references(
-    bytes: &[u8],
-    base_offset: usize,
-) -> Vec<LocatedReference<DirectReference>> {
+pub fn record_references(bytes: &[u8], base_offset: usize) -> Vec<LocatedReference<DirectReference>> {
     let parsed = references(bytes, base_offset);
     let mut out = parsed
         .iter()
         .copied()
         .filter(|reference| matches!(reference.value, DirectReference::PersistentHandle(_)))
         .collect::<Vec<_>>();
+<<<<<<< HEAD
     out.extend(
         parsed
             .iter()
@@ -6431,12 +6415,24 @@ pub fn record_references(
                     .offset
                     .checked_add(5)
                     .is_some_and(|offset| tagged.offset == offset);
-                (matches!(persistent.value, DirectReference::PersistentHandle(_))
-                    && matches!(tagged.value, DirectReference::Tagged28(_))
+                (persistent.kind == ReferenceKind::PersistentHandle
+                    && tagged.kind == ReferenceKind::Tagged28
                     && adjacent)
                     .then_some(*tagged)
             }),
     );
+=======
+    out.extend(parsed.iter().zip(parsed.iter().skip(1)).filter_map(|(persistent, tagged)| {
+        let adjacent = persistent
+            .offset
+            .checked_add(5)
+            .is_some_and(|offset| tagged.offset == offset);
+        (matches!(persistent.value, DirectReference::PersistentHandle(_))
+            && matches!(tagged.value, DirectReference::Tagged28(_))
+            && adjacent)
+            .then_some(*tagged)
+    }));
+>>>>>>> feat/version-refactor
     out.sort_by_key(|reference| reference.offset);
     out
 }

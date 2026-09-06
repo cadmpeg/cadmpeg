@@ -1,5 +1,6 @@
 use super::super::*;
 use super::*;
+use crate::om::reference_value::{DirectReference, RecordReference};
 
 #[test]
 fn decode_retains_strict_tiff_material_texture_assets() {
@@ -179,9 +180,7 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         record: "nx:test:om-record#0".into(),
         object_id: Some(1),
         ordinal: 0,
-        kind: super::super::ObjectReferenceKind::PersistentHandle,
-        value: 0x1020_3040,
-        target_record: None,
+        reference: RecordReference::Direct(DirectReference::PersistentHandle(0x1020_3040)),
         source_entry: "om".into(),
         source_offset: 0,
     };
@@ -203,8 +202,7 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         id: "nx:test:control-reference#0".into(),
         data_block: "nx:test:control-block#0".into(),
         ordinal: 0,
-        kind: super::super::ObjectReferenceKind::PersistentHandle,
-        value: 0x1020_3040,
+        reference: DirectReference::PersistentHandle(0x1020_3040),
         source_offset: 20,
     };
 
@@ -213,7 +211,7 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         handle_set_record: external.id.clone(),
         ordinal: 0,
         persistent_handle: 0x5060_7080,
-        tagged_reference: 7,
+        tagged_reference: crate::om::reference_value::Tagged28::try_from(7).unwrap(),
         source_offset: 30,
     };
 
@@ -237,8 +235,7 @@ fn nx_control_handle_pairs_require_maximal_runs_of_exactly_two() {
         id: format!("reference#{ordinal}"),
         data_block: "block#0".into(),
         ordinal,
-        kind: super::super::ObjectReferenceKind::PersistentHandle,
-        value: ordinal + 100,
+        reference: DirectReference::PersistentHandle(ordinal + 100),
         source_offset: offset,
     };
     let references = [
@@ -264,9 +261,7 @@ fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
         record: record.into(),
         object_id: Some(7),
         ordinal,
-        kind: super::super::ObjectReferenceKind::PersistentHandle,
-        value: ordinal + 100,
-        target_record: None,
+        reference: RecordReference::Direct(DirectReference::PersistentHandle(ordinal + 100)),
         source_entry: "om".into(),
         source_offset: offset,
     };
@@ -569,7 +564,9 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     assert_eq!(uses.len(), 4);
     assert_eq!(uses[0].id, "nx:external-reference:record-string-use#7-0");
     assert_eq!(
-        uses.iter().map(|use_| use_.slot).collect::<Vec<_>>(),
+        uses.iter()
+            .map(|use_| u8::from(use_.slot))
+            .collect::<Vec<_>>(),
         [0, 1, 2, 3]
     );
     assert_eq!(

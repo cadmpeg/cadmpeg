@@ -8,7 +8,7 @@ use cadmpeg_core::decode::View;
 
 use crate::container::Container;
 use crate::layout::fastload_structure_envelope as envelope;
-use crate::native::om::ObjectUuidValue;
+use crate::native::om::object_uuid::ObjectUuidValue;
 
 mod uuid_group_members;
 use uuid_group_members::UuidGroupMembers;
@@ -766,7 +766,8 @@ mod tests {
                 id: format!("nx:test:object-uuid#{ordinal}"),
                 section_ordinal: 0,
                 uuid: uuids[0].uuid.clone(),
-                records: vec![format!("nx:test:record#{ordinal}")],
+                records: crate::om::nonempty::NonEmpty::new([format!("nx:test:record#{ordinal}")])
+                    .unwrap(),
                 source_entry: "om".into(),
                 source_offset: 200 + ordinal,
             })

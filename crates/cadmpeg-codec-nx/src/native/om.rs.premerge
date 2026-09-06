@@ -3,23 +3,30 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use crate::om::control_leading_value::ControlLeadingValue;
 use crate::om::reference_value::{DirectReference, RecordReference};
+use crate::om::control_leading_value::ControlLeadingValue;
 use crate::om::state_index::StateIndexToken;
 use crate::printable_string::PrintableString;
 pub(crate) mod material_texture;
+<<<<<<< HEAD
+mod state_index_wire;
+=======
 pub(crate) mod object_uuid;
 mod reference_wire;
-mod state_index_wire;
+>>>>>>> feat/version-refactor
 use material_texture::MaterialTextureAsset;
 
 use crate::om::compact::{CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex};
 mod membership_wire;
 mod row_wire;
 use crate::container::extref_handles::ExtrefHandles;
-use crate::container::extref_slot::ExtrefSlot;
+<<<<<<< HEAD
 use crate::container::membership::ObjectIdMembers;
 use crate::om::color::{ColorComponent, PaletteIndex, BACKGROUND_NAME, PALETTE_SIZE};
+=======
+use crate::container::extref_slot::ExtrefSlot;
+use crate::om::color::{ColorComponent, PaletteIndex, PALETTE_SIZE, BACKGROUND_NAME};
+>>>>>>> feat/version-refactor
 mod color_wire;
 pub(crate) mod column_index;
 use column_index::ColumnIndexRows;
@@ -3533,11 +3540,7 @@ pub fn external_reference_record_string_uses(
     records
         .iter()
         .flat_map(|record| {
-            if record
-                .source_offset
-                .checked_add(ExtrefSlot::Fourth.offset())
-                .is_none()
-            {
+            if record.source_offset.checked_add(ExtrefSlot::Fourth.offset()).is_none() {
                 return Vec::new();
             }
             let resolved = record
@@ -3552,19 +3555,14 @@ pub fn external_reference_record_string_uses(
             let Some(resolved) = resolved else {
                 return Vec::new();
             };
-            ExtrefSlot::ALL
-                .into_iter()
-                .zip(resolved)
+            ExtrefSlot::ALL.into_iter().zip(resolved)
                 .map(|(slot, reference)| {
                     let record_key = record
                         .id
                         .split_once('#')
                         .map_or(record.id.as_str(), |(_, key)| key);
                     ExternalReferenceRecordStringUse {
-                        id: format!(
-                            "nx:external-reference:record-string-use#{record_key}-{}",
-                            u8::from(slot)
-                        ),
+                        id: format!("nx:external-reference:record-string-use#{record_key}-{}", u8::from(slot)),
                         external_record: record.id.clone(),
                         slot,
                         string_index: record.id_slots[slot.index()],
@@ -4401,6 +4399,19 @@ pub fn data_block_control_references(container: &Container) -> Vec<DataBlockCont
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             crate::om::references(control.bytes, control.offset)
                 .into_iter()
+<<<<<<< HEAD
+                .filter_map(|reference| {
+                    let kind = match reference.kind {
+                        crate::om::ReferenceKind::PersistentHandle => {
+                            ObjectReferenceKind::PersistentHandle
+                        }
+                        crate::om::ReferenceKind::Tagged28 => ObjectReferenceKind::Tagged28,
+                        crate::om::ReferenceKind::RecordOrdinal16 => return None,
+                    };
+                    Some((kind, reference))
+                })
+=======
+>>>>>>> feat/version-refactor
                 .enumerate()
                 .map(|(ordinal, reference)| DataBlockControlReference {
                     id: format!(
@@ -4423,9 +4434,7 @@ pub fn data_block_control_handle_pairs(
 ) -> Vec<DataBlockControlHandlePair> {
     let mut by_block = BTreeMap::<&str, Vec<(&DataBlockControlReference, u32)>>::new();
     for reference in references {
-        let DirectReference::PersistentHandle(handle) = reference.reference else {
-            continue;
-        };
+        let DirectReference::PersistentHandle(handle) = reference.reference else { continue; };
         by_block
             .entry(reference.data_block.as_str())
             .or_default()
@@ -4437,9 +4446,10 @@ pub fn data_block_control_handle_pairs(
         let mut at = 0;
         while at < block_references.len() {
             let start = at;
-            while block_references.get(at + 1).is_some_and(|next| {
-                next.0.source_offset == block_references[at].0.source_offset + 5
-            }) {
+            while block_references
+                .get(at + 1)
+                .is_some_and(|next| next.0.source_offset == block_references[at].0.source_offset + 5)
+            {
                 at += 1;
             }
             let run = &block_references[start..=at];
@@ -5382,11 +5392,7 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
 pub fn object_record_handle_pairs(references: &[ObjectReference]) -> Vec<ObjectRecordHandlePair> {
     let mut by_record = BTreeMap::<&str, Vec<(&ObjectReference, u32)>>::new();
     for reference in references {
-        let RecordReference::Direct(DirectReference::PersistentHandle(handle)) =
-            reference.reference
-        else {
-            continue;
-        };
+        let RecordReference::Direct(DirectReference::PersistentHandle(handle)) = reference.reference else { continue; };
         by_record
             .entry(reference.record.as_str())
             .or_default()
@@ -5398,9 +5404,10 @@ pub fn object_record_handle_pairs(references: &[ObjectReference]) -> Vec<ObjectR
         let mut at = 0;
         while at < record_references.len() {
             let start = at;
-            while record_references.get(at + 1).is_some_and(|next| {
-                next.0.source_offset == record_references[at].0.source_offset + 5
-            }) {
+            while record_references
+                .get(at + 1)
+                .is_some_and(|next| next.0.source_offset == record_references[at].0.source_offset + 5)
+            {
                 at += 1;
             }
             let run = &record_references[start..=at];
@@ -5440,11 +5447,7 @@ pub fn persistent_handles(
 
     let mut groups = BTreeMap::<u32, Group>::new();
     for reference in references {
-        let RecordReference::Direct(DirectReference::PersistentHandle(handle)) =
-            reference.reference
-        else {
-            continue;
-        };
+        let RecordReference::Direct(DirectReference::PersistentHandle(handle)) = reference.reference else { continue; };
         let group = groups.entry(handle).or_default();
         group.occurrence_count += 1;
         if group.records.last() != Some(&reference.record)
@@ -5454,9 +5457,7 @@ pub fn persistent_handles(
         }
     }
     for reference in control_references {
-        let DirectReference::PersistentHandle(handle) = reference.reference else {
-            continue;
-        };
+        let DirectReference::PersistentHandle(handle) = reference.reference else { continue; };
         let group = groups.entry(handle).or_default();
         group.occurrence_count += 1;
         if !group.data_blocks.contains(&reference.data_block) {
@@ -7097,10 +7098,7 @@ mod tests {
         assert_eq!(wire[1]["target_record"], serde_json::Value::Null);
         assert_eq!(wire[2]["kind"], "record_ordinal16");
         assert_eq!(wire[2]["value"], 0);
-        assert_eq!(
-            wire[2]["target_record"].as_str(),
-            Some(object_records[0].id.as_str())
-        );
+        assert_eq!(wire[2]["target_record"].as_str(), Some(object_records[0].id.as_str()));
         let handles = result
             .ir()
             .native
