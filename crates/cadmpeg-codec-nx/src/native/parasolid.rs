@@ -9,6 +9,8 @@ use crate::deltas::Census;
 mod support_uv_wire;
 mod chart_wire;
 mod tail_wire;
+mod body_revision_wire;
+use body_revision_wire::RevisionLengths;
 use crate::deltas::tails::{NullTailForm, NumericTailValues};
 pub(crate) mod group_member;
 use group_member::GroupMemberTarget;
@@ -468,6 +470,7 @@ impl TryFrom<ParasolidDeltasTombstoneWire> for ParasolidDeltasTombstone {
 
 /// BODY revision envelope in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "body_revision_wire::RevisionWire", into = "body_revision_wire::RevisionWire")]
 pub struct ParasolidDeltasBodyRevision {
     /// Globally unique revision identity.
     pub id: String,
@@ -479,12 +482,8 @@ pub struct ParasolidDeltasBodyRevision {
     pub node_id: u32,
     /// Eight ordered BODY references.
     pub references: [u32; 8],
-    /// Exact complete envelope length.
-    pub byte_len: u64,
-    /// Exact validated prefix length.
-    pub prefix_byte_len: u64,
-    /// Exact bounded state-tail length.
-    pub state_tail_byte_len: u64,
+    /// Prefix and state-tail lengths with a representable total.
+    pub lengths: RevisionLengths,
     /// SHA-256 of the exact bounded state-tail bytes.
     pub state_tail_sha256: String,
     /// BODY tag offset in the inflated stream.
@@ -979,9 +978,9 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                 xmt: revision.xmt,
                 node_id: revision.node_id,
                 references: revision.references,
-                byte_len: (revision.end - revision.offset) as u64,
-                prefix_byte_len: (revision.prefix_end - revision.offset) as u64,
-                state_tail_byte_len: state_tail.len() as u64,
+                lengths: RevisionLengths::from_slices(
+                    &stream.inflated[revision.offset..revision.prefix_end], state_tail,
+                ),
                 state_tail_sha256: cadmpeg_ir::hash::sha256_hex(state_tail),
                 inflated_offset: revision.offset as u64,
             });
@@ -3676,15 +3675,15 @@ mod tests {
             events.body_revisions[0].references,
             [2, 3, 4, 5, 6, 7, 8, 9]
         );
-        assert_eq!(events.body_revisions[0].prefix_byte_len, 32);
-        assert_eq!(events.body_revisions[0].state_tail_byte_len, 4);
-        assert_eq!(events.body_revisions[0].byte_len, 36);
+        assert_eq!(events.body_revisions[0].lengths.prefix(), 32);
+        assert_eq!(events.body_revisions[0].lengths.tail(), 4);
+        assert_eq!(events.body_revisions[0].lengths.total(), 36);
         assert_eq!(
             events.body_revisions[0].state_tail_sha256,
             cadmpeg_ir::hash::sha256_hex(&revision_state_tail)
         );
         assert_eq!(
-            events.body_revisions[0].inflated_offset + events.body_revisions[0].prefix_byte_len,
+            events.body_revisions[0].inflated_offset + events.body_revisions[0].lengths.prefix(),
             revision_prefix_end as u64
         );
         assert_eq!(events.records.len(), 1);
