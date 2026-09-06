@@ -618,16 +618,19 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
             };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
+            let table_end_offset = entry_offset + table.end_offset() as u64;
+            let table_trailing_bytes = table.trailing_bytes();
             table
-                .groups
+                .into_groups()
                 .into_iter()
                 .enumerate()
                 .filter_map(move |(ordinal, group)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let members = group.members.map_rows(|_, row| {
+                    let source_offset = entry_offset + group.offset() as u64;
+                    let opener = group.opener();
+                    let members = group.map_rows(|offset, row| {
                             match row {
-                                crate::om::OperationStateGroupRow::List {
-                                    offset,
+                                crate::om::roll_forward::OperationStateGroupRow::List {
                                     object_index,
                                     position,
                                 } => OmRollForwardStateRow::List {
@@ -635,8 +638,7 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                                     position,
                                     source_offset: entry_offset + offset as u64,
                                 },
-                                crate::om::OperationStateGroupRow::Pair {
-                                    offset,
+                                crate::om::roll_forward::OperationStateGroupRow::Pair {
                                     tag,
                                     first,
                                     second,
@@ -654,12 +656,12 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                         ),
                         section_link: link.id.clone(),
                         ordinal,
-                        opener: group.opener,
+                        opener,
                         members,
-                        table_trailing_bytes: table.trailing_bytes.to_vec(),
+                        table_trailing_bytes: table_trailing_bytes.to_vec(),
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + group.span.offset() as u64,
-                        table_end_offset: entry_offset + table.end_offset as u64,
+                        source_offset,
+                        table_end_offset: table_end_offset,
                     })
                 })
                 .collect()

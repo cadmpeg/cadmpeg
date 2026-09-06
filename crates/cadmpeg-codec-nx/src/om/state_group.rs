@@ -86,7 +86,6 @@ impl<R> StateGroupMembers<R> {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn rows(&self) -> &[R] {
         match &self.0 {
             GroupBody::Empty | GroupBody::CountedZero => &[],

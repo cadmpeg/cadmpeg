@@ -68,8 +68,9 @@ use source_span::SourceSpan;
 use state_slots::StateSlots;
 pub(crate) mod state_link;
 use state_link::StateLinkCode;
+pub(crate) mod roll_forward;
+use roll_forward::{operation_state_group_at, operation_state_group_end_at, OperationStateGroupTable};
 pub(crate) mod state_group;
-use state_group::{OperationStateGroupCount, OperationStateGroupOpener, StateGroupMembers};
 use state_index::{OperationStateIndex, StateIndexToken};
 pub(crate) mod state_message_text;
 use nonempty::NonEmpty;
@@ -87,7 +88,7 @@ pub(crate) mod thru_curve_controls;
 pub(crate) mod thru_curve_endings;
 use thru_curve_controls::ThruCurveControls;
 pub(crate) mod thru_curve_state;
-use discriminators::{DraftBinary32Branch, OperationStatePairTag};
+use discriminators::DraftBinary32Branch;
 use swp104_state::Swp104StateLane;
 use thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
 use thru_curve_state::ThruCurveBranchItems;
@@ -708,57 +709,6 @@ struct OperationStateBlock<'a> {
     rows: Vec<OperationStateStatus<'a>>,
     slot_lanes: Vec<OperationStateSlotLane>,
     messages: Vec<OperationStateMessage<'a>>,
-}
-
-/// One row in an `m_rollForwardStates` group table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStateGroupRow {
-    /// `4a object_index position ff` list member. The common position is a
-    /// direct byte; one generation uses the same compact token family as an
-    /// object index for positions above the direct range.
-    List {
-        /// Absolute byte offset of the row's `4a` marker.
-        offset: usize,
-        /// Ordered feature-record member.
-        object_index: StateIndexToken,
-        /// Serialized list-position token.
-        position: StateIndexToken,
-    },
-    /// `tag object_index object_index ff ff` relation member.
-    Pair {
-        /// Absolute byte offset of the row's relation tag.
-        offset: usize,
-        /// Schema-generation relation tag (`4f` or `48`).
-        tag: OperationStatePairTag,
-        /// First relation endpoint.
-        first: StateIndexToken,
-        /// Second relation endpoint.
-        second: StateIndexToken,
-    },
-}
-
-/// One counted `m_rollForwardStates` group.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationStateGroup {
-    /// Checked source position within its record area.
-    pub span: SourceSpan,
-    /// Admitted two-byte group opener.
-    pub opener: OperationStateGroupOpener,
-    /// Ordered rows with their exact count-header form.
-    pub members: StateGroupMembers<OperationStateGroupRow>,
-}
-
-/// A bounded sequence of `m_rollForwardStates` groups.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationStateGroupTable<'a> {
-    /// Absolute byte offset of the first group.
-    pub offset: usize,
-    /// Absolute byte offset after the final group.
-    pub end_offset: usize,
-    /// Groups in serialized order.
-    pub groups: Vec<OperationStateGroup>,
-    /// Exact table-boundary bytes after the final complete group.
-    pub trailing_bytes: &'a [u8],
 }
 
 /// One length-framed UTF-8 string in a bounded operation payload.
@@ -1578,7 +1528,7 @@ impl<'a> Section<'a> {
 
     /// Decode the field-declared `m_rollForwardStates` group table before the
     /// bounded operation-state counter map.
-    pub fn operation_state_group_table(&self) -> Option<OperationStateGroupTable<'a>> {
+    pub fn operation_state_group_table(&self) -> Option<OperationStateGroupTable> {
         if !self
             .fields
             .iter()
@@ -1632,11 +1582,11 @@ impl<'a> Section<'a> {
         let group = self.operation_state_group_table();
         let terminal = group
             .as_ref()
-            .map_or(map.offset(), |table| table.offset)
+            .map_or(map.offset(), |table| table.offset())
             .checked_sub(base_offset)?;
         let mut ends = Vec::with_capacity(2);
         if let Some(table) = &group {
-            let overlap_end = terminal.checked_add(table.groups.first()?.opener.bytes().len())?;
+            let overlap_end = terminal.checked_add(table.groups().first().opener().bytes().len())?;
             ends.push(overlap_end);
         }
         ends.push(terminal);
@@ -4813,110 +4763,11 @@ pub fn operation_state_status_table(
     })
 }
 
-fn operation_state_group_header_at(
-    bytes: &[u8],
-    at: usize,
-) -> Option<(OperationStateGroupOpener, OperationStateGroupCount, usize)> {
-    let raw_opener: [u8; 2] = bytes.get(at..at + 2)?.try_into().ok()?;
-    let opener = OperationStateGroupOpener::try_from(raw_opener).ok()?;
-    let count_at = at.checked_add(2)?;
-    let (count, cursor) = match bytes.get(count_at) {
-        Some(0) => (OperationStateGroupCount::Empty, count_at + 1),
-        Some(1) => (
-            OperationStateGroupCount::Counted(*bytes.get(count_at + 1)?),
-            count_at + 2,
-        ),
-        _ => return None,
-    };
-    Some((opener, count, cursor))
-}
-
-fn operation_state_group_row_at(
-    bytes: &[u8],
-    cursor: usize,
-    base_offset: usize,
-) -> Option<(OperationStateGroupRow, usize)> {
-    let tag = *bytes.get(cursor)?;
-    match tag {
-        0x4a => {
-            let object_at = cursor.checked_add(1)?;
-            let object_index =
-                OperationStateIndex::read_at(bytes, object_at, base_offset)?.token()?;
-            let position_at = object_at.checked_add(object_index.raw().len())?;
-            let position =
-                OperationStateIndex::read_at(bytes, position_at, base_offset)?.token()?;
-            let sentinel_at = position_at.checked_add(position.raw().len())?;
-            let row_end = sentinel_at.checked_add(1)?;
-            (bytes.get(sentinel_at) == Some(&0xff)).then_some((
-                OperationStateGroupRow::List {
-                    offset: base_offset.checked_add(cursor)?,
-                    object_index,
-                    position,
-                },
-                row_end,
-            ))
-        }
-        tag => {
-            let tag = OperationStatePairTag::try_from(tag).ok()?;
-            let first_at = cursor.checked_add(1)?;
-            let first = OperationStateIndex::read_at(bytes, first_at, base_offset)?.token()?;
-            let second_at = first_at.checked_add(first.raw().len())?;
-            let second = OperationStateIndex::read_at(bytes, second_at, base_offset)?.token()?;
-            let sentinels_at = second_at.checked_add(second.raw().len())?;
-            let row_end = sentinels_at.checked_add(2)?;
-            (bytes.get(sentinels_at..row_end) == Some(&[0xff, 0xff])).then_some((
-                OperationStateGroupRow::Pair {
-                    offset: base_offset.checked_add(cursor)?,
-                    tag,
-                    first,
-                    second,
-                },
-                row_end,
-            ))
-        }
-    }
-}
-
-fn operation_state_group_end_at(
-    bytes: &[u8],
-    at: usize,
-    end: usize,
-    base_offset: usize,
-) -> Option<usize> {
-    let (_, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
-    let member_count = usize::from(count.declared_count().saturating_sub(1));
-    for _ in 0..member_count {
-        cursor = operation_state_group_row_at(bytes, cursor, base_offset)?.1;
-    }
-    (cursor <= end).then_some(cursor)
-}
-
-fn operation_state_group_at(
-    bytes: &[u8],
-    at: usize,
-    end: usize,
-    base_offset: usize,
-) -> Option<OperationStateGroup> {
-    let (opener, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
-    let member_count = usize::from(count.declared_count().saturating_sub(1));
-    let mut rows = Vec::with_capacity(member_count);
-    for _ in 0..member_count {
-        let (row, row_end) = operation_state_group_row_at(bytes, cursor, base_offset)?;
-        rows.push(row);
-        cursor = row_end;
-    }
-    (cursor <= end).then_some(OperationStateGroup {
-        span: SourceSpan::new(base_offset, at, cursor)?,
-        opener,
-        members: StateGroupMembers::new(count, rows).ok()?,
-    })
-}
-
 fn operation_state_group_table_before_counter_map(
     bytes: &[u8],
     map_start: usize,
     base_offset: usize,
-) -> Option<OperationStateGroupTable<'_>> {
+) -> Option<OperationStateGroupTable> {
     #[derive(Clone, Copy)]
     struct GroupPath {
         last_candidate: usize,
@@ -4977,7 +4828,6 @@ fn operation_state_group_table_before_counter_map(
         candidate = predecessors[candidate_index];
     }
     path.reverse();
-    let first = *path.first()?;
     let last = *path.last()?;
     let groups = path
         .into_iter()
@@ -4985,12 +4835,7 @@ fn operation_state_group_table_before_counter_map(
             operation_state_group_at(bytes, candidates[candidate].0, map_start, base_offset)
         })
         .collect::<Option<Vec<_>>>()?;
-    Some(OperationStateGroupTable {
-        offset: base_offset.checked_add(candidates[first].0)?,
-        end_offset: base_offset.checked_add(map_start)?,
-        groups,
-        trailing_bytes: bytes.get(candidates[last].1..map_start)?,
-    })
+    OperationStateGroupTable::new(groups, bytes.get(candidates[last].1..map_start)?)
 }
 
 /// Decode a complete bounded `m_rollForwardStates` group table.
@@ -5000,7 +4845,7 @@ pub fn operation_state_group_table(
     start: usize,
     end: usize,
     base_offset: usize,
-) -> Option<OperationStateGroupTable<'_>> {
+) -> Option<OperationStateGroupTable> {
     if start >= end || end > bytes.len() {
         return None;
     }
@@ -5016,15 +4861,13 @@ pub fn operation_state_group_table(
             }
             return None;
         };
-        at = group.span.local_end();
+        at = group.end_offset().checked_sub(base_offset)?;
         groups.push(group);
     }
-    (!groups.is_empty() && at == end).then_some(OperationStateGroupTable {
-        offset: base_offset.checked_add(start)?,
-        end_offset: base_offset.checked_add(end)?,
-        groups,
-        trailing_bytes: bytes.get(trailing_start..end)?,
-    })
+    if at != end {
+        return None;
+    }
+    OperationStateGroupTable::new(groups, bytes.get(trailing_start..end)?)
 }
 
 fn audit_trail_row_at(
