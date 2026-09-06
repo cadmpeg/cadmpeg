@@ -159,9 +159,9 @@ impl PayloadIndexToken {
     }
 
     pub(crate) fn from_wire(value: u32, raw: &[u8]) -> Result<Self, &'static str> {
-        let token = Self::read(raw).ok_or("invalid payload reference token")?;
+        let token = Self::read(raw).ok_or("raw_object_index: invalid payload reference token")?;
         if token.raw().len() != raw.len() || token.value() != value {
-            return Err("payload index/raw token: value or width mismatch");
+            return Err("object_index/raw_object_index: value or width mismatch");
         }
         Ok(token)
     }

@@ -662,10 +662,14 @@ impl TryFrom<FeatureDraftConstructionTerminalLaneWire> for FeatureDraftConstruct
 pub fn feature_draft_construction_references(
     container: &Container,
 ) -> Vec<FeatureDraftConstructionReference> {
-    resolved_feature_payload_references(container, |record| {
-        crate::om::draft_feature_payload_references(record)
-            .map(|field| field.references.into_iter().collect())
-    })
+    resolved_feature_payload_references(
+        container,
+        |record| {
+            crate::om::draft_feature_payload_references(record)
+                .map(|field| field.references.into_iter().collect())
+        },
+        crate::om::reference_index::ReferenceIndexToken::value,
+    )
     .into_iter()
     .map(|reference| {
         let operation_label = format!(

@@ -2507,7 +2507,7 @@ pub struct FeatureProjectedCurveReference {
     pub ordinal: u32,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: crate::om::reference_index::ReferenceIndexToken,
+    pub token: PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -7423,21 +7423,22 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
     references
 }
 
-struct ResolvedFeaturePayloadReference {
+struct ResolvedFeaturePayloadReference<T> {
     section_key: String,
     operation_ordinal: usize,
     ordinal: usize,
-    token: crate::om::reference_index::ReferenceIndexToken,
+    token: T,
     data_block: Option<String>,
     source_offset: u64,
 }
 
-fn resolved_feature_payload_references(
+fn resolved_feature_payload_references<T: Copy>(
     container: &Container,
     decode: impl Fn(
         crate::om::operation_record::OperationPayload<'_>,
-    ) -> Option<Vec<crate::om::PayloadObjectReference>>,
-) -> Vec<ResolvedFeaturePayloadReference> {
+    ) -> Option<Vec<crate::om::PayloadObjectReference<T>>>,
+    value: impl Fn(T) -> u32,
+) -> Vec<ResolvedFeaturePayloadReference<T>> {
     let indexed = container.indexed_om_sections();
     let mut references = Vec::new();
     visit_feature_history_operation_records(
@@ -7452,7 +7453,7 @@ fn resolved_feature_payload_references(
                     operation_ordinal,
                     ordinal,
                     token: reference.token,
-                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
+                    data_block: unique_offset_data_block(&indexed, value(reference.token)),
                     source_offset: entry_offset + reference.offset as u64,
                 }
             }));
@@ -7466,9 +7467,14 @@ fn resolved_feature_payload_references(
 pub fn feature_projected_curve_references(
     container: &Container,
 ) -> Vec<FeatureProjectedCurveReference> {
-    resolved_feature_payload_references(container, |record| {
-        crate::om::projected_curve_payload_references(record).map(|field| field.references)
-    })
+    resolved_feature_payload_references(
+        container,
+        |record| {
+            crate::om::projected_references::ProjectedCurveReferences::read(record)
+                .map(crate::om::projected_references::ProjectedCurveReferences::into_references)
+        },
+        PayloadIndexToken::value,
+    )
     .into_iter()
     .map(|reference| {
         let operation_label = format!(
@@ -7851,14 +7857,18 @@ pub fn feature_point_construction_scalar_lanes(
 pub fn feature_surface_construction_references(
     container: &Container,
 ) -> Vec<FeatureSurfaceConstructionReference> {
-    resolved_feature_payload_references(container, |record| {
-        crate::om::surface_feature_payload_references(record)
-            .map(|field| field.references.into_iter().collect())
-            .or_else(|| {
-                crate::om::thru_curve_payload_references(record)
-                    .map(|field| field.references.into_iter().collect())
-            })
-    })
+    resolved_feature_payload_references(
+        container,
+        |record| {
+            crate::om::surface_feature_payload_references(record)
+                .map(|field| field.references.into_iter().collect())
+                .or_else(|| {
+                    crate::om::thru_curve_payload_references(record)
+                        .map(|field| field.references.into_iter().collect())
+                })
+        },
+        ReferenceIndexToken::value,
+    )
     .into_iter()
     .map(|reference| {
         let operation_label = format!(

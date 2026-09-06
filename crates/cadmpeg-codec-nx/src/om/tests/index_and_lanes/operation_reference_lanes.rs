@@ -1,5 +1,6 @@
 use crate::om::compact::LocatedCompactIndex;
 use crate::om::pattern::{PatternRows, PatternScalarEncoding};
+use crate::om::projected_references::ProjectedCurveReferences;
 use crate::om::scalar::ShiftedScalar;
 use crate::om::PatternPayloadTransformLane;
 
@@ -81,10 +82,10 @@ fn om_projected_curve_references_require_one_complete_field() {
     let payload =
         b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let field = super::super::projected_curve_payload_references(record).expect("complete field");
+    let field = ProjectedCurveReferences::read(record).expect("complete field");
     assert_eq!(
         field
-            .references
+            .into_references()
             .iter()
             .map(|reference| (reference.token.value(), reference.offset))
             .collect::<Vec<_>>(),
@@ -93,7 +94,7 @@ fn om_projected_curve_references_require_one_complete_field() {
 
     let mut malformed = payload.to_vec();
     malformed[17] = 0x00;
-    assert!(super::super::projected_curve_payload_references(
+    assert!(ProjectedCurveReferences::read(
         crate::om::operation_record::OperationPayload::new(
             &malformed,
             record.payload_offset(),
@@ -104,7 +105,7 @@ fn om_projected_curve_references_require_one_complete_field() {
     .is_none());
 
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(super::super::projected_curve_payload_references(
+    assert!(ProjectedCurveReferences::read(
         crate::om::operation_record::OperationPayload::new(
             &ambiguous,
             record.payload_offset(),
@@ -120,10 +121,10 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
     let label = "CPROJ_CMB";
     let payload = b"\x3c\x32\x01\x02\x32\x01\x04\x36\x01\x33\xf1\x03\x18\x33\xf1\x03\x19\x00\xf1\x03\x1a\x00\x00\x00\x00\x00\x00\xf1\x03\x1b\x16\x01\x02\xf1\x03\x18\x01\x02\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x03\x1c\x00\x81\x5c\x16\x01\x02\xf1\x03\x19\x01\x02\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x03\x1d\x00\x81\x5c\xff\x01\xff\x01\xf1\x03\x1e\xf1\x03\x1f\x04\x02";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let field = super::super::projected_curve_payload_references(record).expect("complete graph");
+    let field = ProjectedCurveReferences::read(record).expect("complete graph");
     assert_eq!(
         field
-            .references
+            .into_references()
             .iter()
             .map(|reference| (reference.token.value(), reference.offset))
             .collect::<Vec<_>>(),
@@ -141,7 +142,7 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
 
     let mut inconsistent = payload.to_vec();
     inconsistent[35] = 0x19;
-    assert!(super::super::projected_curve_payload_references(
+    assert!(ProjectedCurveReferences::read(
         crate::om::operation_record::OperationPayload::new(
             &inconsistent,
             record.payload_offset(),
@@ -153,7 +154,7 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
 
     let mut malformed = payload.to_vec();
     malformed[84] = 0x00;
-    assert!(super::super::projected_curve_payload_references(
+    assert!(ProjectedCurveReferences::read(
         crate::om::operation_record::OperationPayload::new(
             &malformed,
             record.payload_offset(),
@@ -164,7 +165,7 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
     .is_none());
 
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(super::super::projected_curve_payload_references(
+    assert!(ProjectedCurveReferences::read(
         crate::om::operation_record::OperationPayload::new(
             &ambiguous,
             record.payload_offset(),
