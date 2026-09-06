@@ -5780,8 +5780,9 @@ fn cacheless_variable_blend_domain_contains(
 ) -> bool {
     let exact_construction = matches!(
         construction.cache,
-        crate::geometry::RevisionCacheForm::Parameterization(_)
-    ) || construction.shape_prefix == 0;
+        crate::geometry::VariableBlendCache::Parameterization { .. }
+            | crate::geometry::VariableBlendCache::Stale
+    );
     exact_construction
         && (0.0..=1.0).contains(&u)
         && sweep_tail_interval_contains(construction.slice_range, v)
@@ -5794,12 +5795,10 @@ fn cacheless_variable_blend_domain_contains(
 fn variable_blend_has_current_cache(
     construction: &crate::geometry::VariableBlendConstruction,
 ) -> bool {
-    construction.shape_prefix > 0
+    construction.cache.shape_prefix() > 0
         && matches!(
             construction.cache,
-            crate::geometry::RevisionCacheForm::SolvedCache {
-                fit_tolerance: crate::geometry::VariableBlendSolvedCache::Current { .. }
-            }
+            crate::geometry::VariableBlendCache::Current { .. }
         )
 }
 

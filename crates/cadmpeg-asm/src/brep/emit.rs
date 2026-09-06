@@ -2059,7 +2059,6 @@ fn emit_variable_blend_surface(
             cross_section: construction.cross_section,
             u_range: construction.u_range,
             v_lower: construction.v_lower,
-            shape_prefix: construction.shape_prefix,
             shape_parameter: construction.shape_parameter,
             shape_length: construction.shape_length,
             shape_tail: construction.shape_tail,

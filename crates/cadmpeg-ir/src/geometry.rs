@@ -1969,10 +1969,7 @@ impl ProceduralSurfaceDefinition {
 
     fn revision_cache_fit_tolerance(&self) -> Option<Option<f64>> {
         if let Self::VariableBlend { construction } = self {
-            return Some(match &construction.cache {
-                RevisionCacheForm::SolvedCache { fit_tolerance } => fit_tolerance.fit_tolerance(),
-                RevisionCacheForm::Parameterization(_) => None,
-            });
+            return Some(construction.cache.fit_tolerance());
         }
         self.revision_cache().map(RevisionCacheForm::fit_tolerance)
     }
@@ -1987,9 +1984,6 @@ pub enum CacheFitToleranceError {
     /// A stale variable-blend cache cannot carry an active fit contract.
     #[error("cache_fit_tolerance must be absent for a stale variable-blend cache")]
     StaleVariableBlend,
-    /// The variable-blend approximation-current field conflicts with its solved-cache state.
-    #[error("variable-blend approximation-current state conflicts with its solved cache")]
-    VariableBlendState,
     /// A solved revision cache cannot lose its required tolerance.
     #[error("cache_fit_tolerance is required for a solved revision cache")]
     MissingSolved,
@@ -2107,10 +2101,7 @@ impl ProceduralSurface {
     /// Scale the effective cache-fit tolerance in place.
     pub fn scale_cache_fit_tolerance(&mut self, scale: f64) {
         if let ProceduralSurfaceDefinition::VariableBlend { construction } = &mut self.definition {
-            if let RevisionCacheForm::SolvedCache {
-                fit_tolerance: VariableBlendSolvedCache::Current { fit_tolerance },
-            } = &mut construction.cache
-            {
+            if let VariableBlendCache::Current { fit_tolerance, .. } = &mut construction.cache {
                 *fit_tolerance *= scale;
             }
             return;
@@ -2135,79 +2126,40 @@ fn reconcile_surface_cache_fit_tolerance(
         return reconcile_cache_fit_tolerance(definition.revision_cache(), supplied);
     };
     match (&construction.cache, supplied) {
-        (RevisionCacheForm::Parameterization(_), Some(_)) => {
+        (VariableBlendCache::Parameterization { .. }, Some(_)) => {
             Err(CacheFitToleranceError::Parameterized)
         }
+        (VariableBlendCache::Stale, Some(_)) => Err(CacheFitToleranceError::StaleVariableBlend),
         (
-            RevisionCacheForm::SolvedCache {
-                fit_tolerance: VariableBlendSolvedCache::Stale,
-            },
-            Some(_),
-        ) => Err(CacheFitToleranceError::StaleVariableBlend),
-        (
-            RevisionCacheForm::SolvedCache {
-                fit_tolerance:
-                    VariableBlendSolvedCache::Current {
-                        fit_tolerance: stored,
-                    },
+            VariableBlendCache::Current {
+                fit_tolerance: stored,
+                ..
             },
             Some(supplied),
         ) if supplied != *stored => Err(CacheFitToleranceError::Conflicting {
             supplied,
             stored: *stored,
         }),
-        (
-            RevisionCacheForm::SolvedCache {
-                fit_tolerance: VariableBlendSolvedCache::Stale,
-            },
-            None,
-        ) if construction.shape_prefix != 0 => Err(CacheFitToleranceError::VariableBlendState),
-        (
-            RevisionCacheForm::SolvedCache {
-                fit_tolerance: VariableBlendSolvedCache::Current { .. },
-            },
-            _,
-        ) if construction.shape_prefix == 0 => Err(CacheFitToleranceError::VariableBlendState),
         _ => Ok(None),
     }
 }
 
 fn set_variable_blend_cache_fit_tolerance(
-    cache: &mut RevisionCacheForm<RevisionSurfaceParameterization, VariableBlendSolvedCache>,
+    cache: &mut VariableBlendCache,
     value: Option<f64>,
 ) -> Result<(), CacheFitToleranceError> {
     match (cache, value) {
-        (RevisionCacheForm::Parameterization(_), Some(_)) => {
+        (VariableBlendCache::Parameterization { .. }, Some(_)) => {
             Err(CacheFitToleranceError::Parameterized)
         }
-        (RevisionCacheForm::Parameterization(_), None) => Ok(()),
-        (
-            RevisionCacheForm::SolvedCache {
-                fit_tolerance: VariableBlendSolvedCache::Current { fit_tolerance },
-            },
-            Some(value),
-        ) => {
+        (VariableBlendCache::Parameterization { .. }, None) => Ok(()),
+        (VariableBlendCache::Current { fit_tolerance, .. }, Some(value)) => {
             *fit_tolerance = value;
             Ok(())
         }
-        (
-            RevisionCacheForm::SolvedCache {
-                fit_tolerance: VariableBlendSolvedCache::Current { .. },
-            },
-            None,
-        ) => Err(CacheFitToleranceError::MissingSolved),
-        (
-            RevisionCacheForm::SolvedCache {
-                fit_tolerance: VariableBlendSolvedCache::Stale,
-            },
-            Some(_),
-        ) => Err(CacheFitToleranceError::StaleVariableBlend),
-        (
-            RevisionCacheForm::SolvedCache {
-                fit_tolerance: VariableBlendSolvedCache::Stale,
-            },
-            None,
-        ) => Ok(()),
+        (VariableBlendCache::Current { .. }, None) => Err(CacheFitToleranceError::MissingSolved),
+        (VariableBlendCache::Stale, Some(_)) => Err(CacheFitToleranceError::StaleVariableBlend),
+        (VariableBlendCache::Stale, None) => Ok(()),
     }
 }
 
@@ -2844,17 +2796,13 @@ impl<F: Default> RevisionSurfaceForm<F> {
 }
 
 /// Mutually exclusive payloads of a revision-gated approximation cache.
-///
-/// `S` is the solved-cache contract. Most carriers store a fit tolerance
-/// directly. Variable blends use [`VariableBlendSolvedCache`] because an
-/// approximation-current value of zero makes the stored cache stale.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub enum RevisionCacheForm<P = RevisionSurfaceParameterization, S = f64> {
+pub enum RevisionCacheForm<P = RevisionSurfaceParameterization> {
     /// A solved cache followed by its carrier-specific cache contract.
     SolvedCache {
         /// Carrier-specific solved-cache contract.
-        fit_tolerance: S,
+        fit_tolerance: f64,
     },
     /// Parameterization stored in place of a solved cache.
     Parameterization(P),
@@ -2881,7 +2829,7 @@ struct CacheFirstCurveCacheSchemaWire {
     parameterization: Option<CacheFirstCurveParameterization>,
 }
 
-impl<P, S> RevisionCacheForm<P, S> {
+impl<P> RevisionCacheForm<P> {
     /// Native selector emitted for this cache form.
     #[must_use]
     pub const fn selector(&self) -> i64 {
@@ -2899,9 +2847,7 @@ impl<P, S> RevisionCacheForm<P, S> {
             Self::Parameterization(parameterization) => Some(parameterization),
         }
     }
-}
 
-impl<P> RevisionCacheForm<P> {
     /// Fit tolerance carried by a solved cache.
     #[must_use]
     pub const fn fit_tolerance(&self) -> Option<f64> {
@@ -2912,26 +2858,65 @@ impl<P> RevisionCacheForm<P> {
     }
 }
 
-/// Solved-cache state of a variable blend.
+/// Approximation state and its dependent fit contract for a variable blend.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub enum VariableBlendSolvedCache {
-    /// The approximation is current and owns an active fit contract.
+pub enum VariableBlendCache {
+    /// A nonzero approximation-current flag with an active fit contract.
     Current {
-        /// Fit tolerance of the solved cache, in document length units.
+        /// Native approximation-current flag.
+        shape_prefix: NonZeroI64,
+        /// Fit tolerance in document length units.
         fit_tolerance: f64,
     },
-    /// The approximation is stale and has no active fit contract.
+    /// A zero approximation-current flag without an active fit contract.
     Stale,
+    /// Parameterization in place of a solved cache.
+    Parameterization {
+        /// Native approximation-current flag, independent of the parameterization.
+        shape_prefix: i64,
+        /// Surface parameterization.
+        parameterization: RevisionSurfaceParameterization,
+    },
 }
 
-impl VariableBlendSolvedCache {
-    /// Active fit tolerance, absent for a stale approximation.
+impl VariableBlendCache {
+    /// Native approximation-current flag.
+    #[must_use]
+    pub const fn shape_prefix(&self) -> i64 {
+        match self {
+            Self::Current { shape_prefix, .. } => shape_prefix.get(),
+            Self::Stale => 0,
+            Self::Parameterization { shape_prefix, .. } => *shape_prefix,
+        }
+    }
+
+    /// Native tail selector.
+    #[must_use]
+    pub const fn selector(&self) -> i64 {
+        match self {
+            Self::Current { .. } | Self::Stale => 0,
+            Self::Parameterization { .. } => 2,
+        }
+    }
+
+    /// Parameterization carried in place of a solved cache.
+    #[must_use]
+    pub const fn parameterization(&self) -> Option<&RevisionSurfaceParameterization> {
+        match self {
+            Self::Parameterization {
+                parameterization, ..
+            } => Some(parameterization),
+            _ => None,
+        }
+    }
+
+    /// Active fit tolerance, absent for a stale or parameterized approximation.
     #[must_use]
     pub const fn fit_tolerance(&self) -> Option<f64> {
         match self {
-            Self::Current { fit_tolerance } => Some(*fit_tolerance),
-            Self::Stale => None,
+            Self::Current { fit_tolerance, .. } => Some(*fit_tolerance),
+            _ => None,
         }
     }
 }
@@ -3001,24 +2986,22 @@ mod revision_surface_cache_wire {
 }
 
 mod variable_blend_cache_wire {
-    use super::{RevisionCacheForm, RevisionSurfaceParameterization, VariableBlendSolvedCache};
+    use super::{RevisionSurfaceParameterization, VariableBlendCache};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    type Cache = RevisionCacheForm<RevisionSurfaceParameterization, VariableBlendSolvedCache>;
-
-    #[derive(Serialize)]
-    struct SolvedWire {
-        tail_enum: i64,
-    }
+    use std::num::NonZeroI64;
 
     #[derive(Serialize)]
-    struct ParameterizationWriteWire<'a> {
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    pub(super) struct WriteWire<'a> {
+        shape_prefix: i64,
         tail_enum: i64,
-        tail_parameterization: &'a RevisionSurfaceParameterization,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tail_parameterization: Option<&'a RevisionSurfaceParameterization>,
     }
 
     #[derive(Deserialize)]
     struct ReadWire {
+        shape_prefix: i64,
         #[serde(alias = "cache_selector")]
         tail_enum: i64,
         #[serde(default)]
@@ -3027,44 +3010,28 @@ mod variable_blend_cache_wire {
         cache_fit_tolerance: Option<f64>,
     }
 
-    pub fn serialize<S>(value: &Cache, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(value: &VariableBlendCache, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        match value {
-            RevisionCacheForm::SolvedCache { .. } => {
-                SolvedWire { tail_enum: 0 }.serialize(serializer)
-            }
-            RevisionCacheForm::Parameterization(parameterization) => ParameterizationWriteWire {
-                tail_enum: 2,
-                tail_parameterization: parameterization,
-            }
-            .serialize(serializer),
+        WriteWire {
+            shape_prefix: value.shape_prefix(),
+            tail_enum: value.selector(),
+            tail_parameterization: value.parameterization(),
         }
+        .serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Cache, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<VariableBlendCache, D::Error>
     where
         D: Deserializer<'de>,
     {
         let wire = ReadWire::deserialize(deserializer)?;
-        match (
-            wire.tail_enum,
-            wire.tail_parameterization,
-            wire.cache_fit_tolerance,
-        ) {
-            (0, None, Some(fit_tolerance)) => Ok(RevisionCacheForm::SolvedCache {
-                fit_tolerance: VariableBlendSolvedCache::Current { fit_tolerance },
-            }),
-            (0, None, None) => Ok(RevisionCacheForm::SolvedCache {
-                fit_tolerance: VariableBlendSolvedCache::Stale,
-            }),
-            (2, Some(parameterization), None) => {
-                Ok(RevisionCacheForm::Parameterization(parameterization))
-            }
-            (selector, _, _) => Err(serde::de::Error::custom(format_args!(
-                "tail_enum must be 0 with variable-blend cache state or 2 with tail_parameterization, got {selector}"
-            ))),
+        match (wire.tail_enum, wire.tail_parameterization, wire.cache_fit_tolerance, NonZeroI64::new(wire.shape_prefix)) {
+            (0, None, Some(fit_tolerance), Some(shape_prefix)) => Ok(VariableBlendCache::Current { shape_prefix, fit_tolerance }),
+            (0, None, None, None) => Ok(VariableBlendCache::Stale),
+            (2, Some(parameterization), None, _) => Ok(VariableBlendCache::Parameterization { shape_prefix: wire.shape_prefix, parameterization }),
+            _ => Err(serde::de::Error::custom("variable-blend cache requires a nonzero prefix with a fit tolerance, a zero prefix without a fit tolerance, or tail_enum 2 with parameterization")),
         }
     }
 }
@@ -4691,9 +4658,6 @@ pub struct VariableBlendConstruction {
         schemars(rename = "v_range", with = "[Option<f64>; 2]")
     )]
     pub v_lower: Option<f64>,
-    /// Approximation-current flag preceding the surface cache; `1` when the
-    /// cache approximation is current.
-    pub shape_prefix: i64,
     /// Requested fit tolerance for the surface cache.
     pub shape_parameter: f64,
     /// Achieved fit tolerance for the surface cache, at or below
@@ -4703,8 +4667,11 @@ pub struct VariableBlendConstruction {
     pub shape_tail: i64,
     /// Approximation-cache form selected by the shared tail enum.
     #[serde(flatten, with = "variable_blend_cache_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "RevisionSurfaceCacheSchemaWire"))]
-    pub cache: RevisionCacheForm<RevisionSurfaceParameterization, VariableBlendSolvedCache>,
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "variable_blend_cache_wire::WriteWire<'_>")
+    )]
+    pub cache: VariableBlendCache,
     /// Six ordered ASM discontinuity arrays closing the shared tail.
     pub discontinuities: [Vec<f64>; 6],
     /// Native Boolean following the discontinuity arrays.

@@ -88,17 +88,17 @@ fn variable_blend_eval_fixture(
                 cross_section,
                 u_range: [0.0, 1.0],
                 v_lower: Some(0.0),
-                shape_prefix: 1,
                 shape_parameter: 0.0,
                 shape_length: 0.0,
                 shape_tail: 0,
-                cache: crate::geometry::RevisionCacheForm::Parameterization(
-                    RevisionSurfaceParameterization {
+                cache: crate::geometry::VariableBlendCache::Parameterization {
+                    shape_prefix: 1,
+                    parameterization: RevisionSurfaceParameterization {
                         u_interval: [Some(0.0), Some(1.0)],
                         v_interval: [Some(0.0), Some(1.0)],
                         ..Default::default()
                     },
-                ),
+                },
                 discontinuities: std::array::from_fn(|_| Vec::new()),
                 tail_flag: false,
                 tail_extensions: [0; 3],
@@ -226,11 +226,9 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
         let ProceduralSurfaceDefinition::VariableBlend { construction } = definition else {
             unreachable!()
         };
-        construction.shape_prefix = 1;
-        construction.cache = crate::geometry::RevisionCacheForm::SolvedCache {
-            fit_tolerance: crate::geometry::VariableBlendSolvedCache::Current {
-                fit_tolerance: 0.0,
-            },
+        construction.cache = crate::geometry::VariableBlendCache::Current {
+            shape_prefix: std::num::NonZeroI64::new(1).unwrap(),
+            fit_tolerance: 0.0,
         };
     });
 
@@ -249,7 +247,7 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
         let ProceduralSurfaceDefinition::VariableBlend { construction } = definition else {
             unreachable!()
         };
-        construction.shape_prefix = 0;
+        construction.cache = crate::geometry::VariableBlendCache::Stale;
     });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(

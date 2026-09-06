@@ -711,3 +711,5 @@ mod compound_components;
 mod compound_loft;
 
 mod vertex_blend_twists;
+
+mod variable_blend_cache;

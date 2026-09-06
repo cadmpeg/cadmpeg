@@ -18,7 +18,7 @@ use crate::sab::Token;
 use cadmpeg_core::decode::bounded_len;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, RevisionCacheForm,
-    RevisionSurfaceParameterization, SurfaceGeometry, VariableBlendSolvedCache,
+    RevisionSurfaceParameterization, SurfaceGeometry, VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::num::NonZeroI64;
@@ -282,8 +282,6 @@ pub struct EmbeddedVariableBlend {
     /// Second interval `(T lo, F)`: a lower bound with an unbounded-above
     /// marker decoding to `[Some(lo), None]`.
     pub v_lower: Option<f64>,
-    /// Approximation-current flag (`1` when the cache is current).
-    pub shape_prefix: i64,
     /// Requested fit tolerance.
     pub shape_parameter: f64,
     /// Achieved fit tolerance, at or below `shape_parameter`.
@@ -292,7 +290,7 @@ pub struct EmbeddedVariableBlend {
     /// values `-1` and `1`.
     pub shape_tail: i64,
     /// Approximation-cache form selected by the shared tail enum.
-    pub cache: RevisionCacheForm<RevisionSurfaceParameterization, VariableBlendSolvedCache>,
+    pub cache: VariableBlendCache,
     /// Six discontinuity arrays of the shared tail.
     pub discontinuities: [Vec<f64>; 6],
     /// The boolean serialized after the discontinuity arrays.

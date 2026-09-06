@@ -3895,7 +3895,7 @@ fn encode_native_variable_blend(
             }
         }
     }
-    native_i64(bytes, construction.shape_prefix);
+    native_i64(bytes, construction.cache.shape_prefix());
     native_f64(bytes, construction.shape_parameter);
     native_f64(bytes, construction.shape_length / LEN_TO_MM);
     native_i64(bytes, construction.shape_tail);
@@ -6080,16 +6080,11 @@ fn native_revision_tail_head(
 
 fn native_variable_blend_revision_tail_head(
     bytes: &mut Vec<u8>,
-    cache: &cadmpeg_ir::geometry::RevisionCacheForm<
-        cadmpeg_ir::geometry::RevisionSurfaceParameterization,
-        cadmpeg_ir::geometry::VariableBlendSolvedCache,
-    >,
+    cache: &cadmpeg_ir::geometry::VariableBlendCache,
     solved_cache: Option<&cadmpeg_ir::geometry::NurbsSurface>,
 ) -> Result<(), CodecError> {
     match cache {
-        cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache {
-            fit_tolerance: cadmpeg_ir::geometry::VariableBlendSolvedCache::Current { fit_tolerance },
-        } => {
+        cadmpeg_ir::geometry::VariableBlendCache::Current { fit_tolerance, .. } => {
             native_enum(bytes, 0);
             let solved_cache = solved_cache.ok_or_else(|| {
                 CodecError::Malformed("variable blend tail form `0` requires a solved cache".into())
@@ -6097,14 +6092,14 @@ fn native_variable_blend_revision_tail_head(
             native_nurbs_surface(bytes, solved_cache)?;
             native_f64(bytes, *fit_tolerance / LEN_TO_MM);
         }
-        cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache {
-            fit_tolerance: cadmpeg_ir::geometry::VariableBlendSolvedCache::Stale,
-        } => {
+        cadmpeg_ir::geometry::VariableBlendCache::Stale => {
             return Err(CodecError::Malformed(
                 "variable blend requires a native cache-fit tolerance".into(),
             ));
         }
-        cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(parameterization) => {
+        cadmpeg_ir::geometry::VariableBlendCache::Parameterization {
+            parameterization, ..
+        } => {
             native_enum(bytes, 2);
             for bound in parameterization
                 .u_interval

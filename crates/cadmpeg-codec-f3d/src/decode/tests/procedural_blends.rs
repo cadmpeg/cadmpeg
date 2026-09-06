@@ -473,12 +473,10 @@ fn stale_variable_blend_cache_yields_to_the_construction_carrier() {
     assert!(matches!(
         stale_procedural.definition(),
         ProceduralSurfaceDefinition::VariableBlend { construction }
-            if construction.shape_prefix == 0
+            if construction.cache.shape_prefix() == 0
                 && matches!(
                     construction.cache,
-                    cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache {
-                        fit_tolerance: cadmpeg_ir::geometry::VariableBlendSolvedCache::Stale
-                    }
+                    cadmpeg_ir::geometry::VariableBlendCache::Stale
                 )
     ));
     assert!(!cadmpeg_ir::validate_neutral(stale.ir(), Vec::new())
@@ -578,7 +576,7 @@ fn variable_blend_second_interval_decodes_unbounded_upper_bound() {
     };
     assert_eq!(construction.u_range, [-1.0, 2.0]);
     assert_eq!(construction.v_lower, Some(-0.5));
-    assert_eq!(construction.shape_prefix, 11);
+    assert_eq!(construction.cache.shape_prefix(), 11);
     assert_eq!(construction.shape_length, 6.0);
 }
 
@@ -748,7 +746,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         assert_eq!(construction.slice_range, [None, None]);
         assert_eq!(construction.u_range, [-1.0, 2.0]);
         assert_eq!(construction.v_lower, None);
-        assert_eq!(construction.shape_prefix, 11);
+        assert_eq!(construction.cache.shape_prefix(), 11);
         assert_eq!(construction.shape_length, 6.0);
         assert_eq!(construction.cache.selector(), 0);
         assert_eq!(

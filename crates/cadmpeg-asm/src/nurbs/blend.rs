@@ -30,7 +30,7 @@ use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, RevisionCacheForm,
-    SurfaceGeometry, VariableBlendSolvedCache,
+    SurfaceGeometry, VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -1146,22 +1146,24 @@ pub(crate) fn var_blend_spl_sur(
                 cross_section,
                 u_range: [u_lower, u_upper],
                 v_lower,
-                shape_prefix,
                 shape_parameter,
                 shape_length,
                 shape_tail,
                 cache: match cache.into_form() {
                     RevisionCacheForm::SolvedCache { fit_tolerance } => {
-                        RevisionCacheForm::SolvedCache {
-                            fit_tolerance: if shape_prefix == 0 {
-                                VariableBlendSolvedCache::Stale
-                            } else {
-                                VariableBlendSolvedCache::Current { fit_tolerance }
+                        match std::num::NonZeroI64::new(shape_prefix) {
+                            Some(shape_prefix) => VariableBlendCache::Current {
+                                shape_prefix,
+                                fit_tolerance,
                             },
+                            None => VariableBlendCache::Stale,
                         }
                     }
                     RevisionCacheForm::Parameterization(parameterization) => {
-                        RevisionCacheForm::Parameterization(parameterization)
+                        VariableBlendCache::Parameterization {
+                            shape_prefix,
+                            parameterization,
+                        }
                     }
                 },
                 discontinuities,
