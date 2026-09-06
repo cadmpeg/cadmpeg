@@ -100,8 +100,11 @@ fn sketch_points_require_owned_finite_scalar_fields() {
         },
         ordinal: 0,
         field_code: 100,
-        value,
-        raw_value: [0; 8],
+        scalar: {
+            let mut raw = value.to_be_bytes();
+            raw[0] -= 0x10;
+            crate::om::scalar::ShiftedBinary64::try_from(raw).unwrap()
+        },
         payload_offset: 20,
         source_offset: 1020,
     };
@@ -130,7 +133,4 @@ fn sketch_points_require_owned_finite_scalar_fields() {
     )
     .is_empty());
 
-    let mut nonfinite = scalars;
-    nonfinite[1].value = f64::NAN;
-    assert!(feature_sketch_points(&[record], &[name], &nonfinite).is_empty());
 }

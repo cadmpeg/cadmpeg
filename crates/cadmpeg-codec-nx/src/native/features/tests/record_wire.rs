@@ -184,3 +184,16 @@ fn swp104_state_wire_preserves_independent_witness_and_absence() {
         }
     }
 }
+
+#[test]
+fn construction_scalar_wire_derives_the_number_from_its_atom() {
+    for payload in ["datum_csys_payload", "construction_payload"] {
+        let json = format!(r#"{{"id":"scalar","operation_label":"operation","{payload}":"payload","ordinal":0,"field_code":100,"value":1.0,"raw_value":[47,240,0,0,0,0,0,0],"payload_offset":8,"source_offset":108}}"#);
+        let scalar: super::FeaturePayloadScalar = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_string(&scalar).unwrap(), json);
+        for invalid in [json.replace("1.0", "2.0"), json.replace("[47,240", "[0,240")] {
+            let error = serde_json::from_str::<super::FeaturePayloadScalar>(&invalid).unwrap_err();
+            assert!(error.to_string().contains("value/raw_value"));
+        }
+    }
+}

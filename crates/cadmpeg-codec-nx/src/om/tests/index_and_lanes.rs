@@ -171,7 +171,8 @@ fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0].offset, 1);
     assert_eq!(fields[0].field_code, 0x64);
-    assert!((fields[0].value - 38.1).abs() < 2.0e-12);
+    const EPS_SHIFTED_SCALAR_ROUNDING: f64 = 2.0e-12;
+    assert!((fields[0].scalar.value() - 38.1).abs() < EPS_SHIFTED_SCALAR_ROUNDING);
 
     let mut malformed = bytes;
     malformed[5] = 1;
@@ -345,8 +346,8 @@ fn om_datum_csys_scalar_field_uses_the_common_shifted_binary64_frame() {
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0].offset, 1);
     assert_eq!(fields[0].field_code, 0x64);
-    assert_eq!(fields[0].value, 25.4);
-    assert_eq!(fields[0].raw_value, shifted);
+    assert_eq!(fields[0].scalar.value(), 25.4);
+    assert_eq!(fields[0].scalar.raw(), shifted);
 }
 
 #[test]

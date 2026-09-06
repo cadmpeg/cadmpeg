@@ -4049,7 +4049,7 @@ fn attach_sketch_graph(
                         || scalar_fields.iter().zip(group.coordinates).any(
                             |(scalar, coordinate)| {
                                 scalar.operation_label != label.id
-                                    || scalar.value.to_bits() != coordinate.to_bits()
+                                    || scalar.scalar.value().to_bits() != coordinate.to_bits()
                             },
                         )
                     {

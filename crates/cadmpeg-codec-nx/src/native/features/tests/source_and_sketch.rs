@@ -1035,8 +1035,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         },
         ordinal: 0,
         field_code: 0x64,
-        value: 2.0,
-        raw_value: shifted_f64_bytes(2.0),
+        scalar: crate::om::scalar::ShiftedBinary64::try_from(shifted_f64_bytes(2.0)).unwrap(),
         payload_offset: 8,
         source_offset: 220,
     };

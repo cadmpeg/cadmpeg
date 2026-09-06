@@ -885,8 +885,11 @@ fn named_sketch_points_project_without_an_external_named_point() {
             },
             ordinal,
             field_code: 100,
-            value,
-            raw_value: [0; 8],
+            scalar: {
+                let mut raw = value.to_be_bytes();
+                raw[0] -= 0x10;
+                crate::om::scalar::ShiftedBinary64::try_from(raw).unwrap()
+            },
             payload_offset: ordinal as u64,
             source_offset,
         }

@@ -907,8 +907,7 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
             },
             ordinal,
             field_code: 100,
-            value,
-            raw_value,
+            scalar: crate::om::scalar::ShiftedBinary64::try_from(raw_value).unwrap(),
             payload_offset: 20 + u64::from(ordinal) * 13,
             source_offset: 110 + u64::from(ordinal) * 13,
         }

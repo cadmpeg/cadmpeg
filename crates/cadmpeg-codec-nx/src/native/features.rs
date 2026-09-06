@@ -1487,6 +1487,7 @@ pub struct FeatureDatumCsysPayloadFixedPair {
 
 /// One exactly framed scalar field in a reconstructed feature payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "FeaturePayloadScalarWire", into = "FeaturePayloadScalarWire")]
 pub struct FeaturePayloadScalar {
     /// Globally unique scalar-field identity.
     pub id: String,
@@ -1499,14 +1500,69 @@ pub struct FeaturePayloadScalar {
     pub ordinal: u32,
     /// Serialized discriminator following the `50 59 66` marker.
     pub field_code: u8,
-    /// Finite shifted-IEEE binary64 value.
-    pub value: f64,
-    /// Exact shifted-binary64 encoding.
-    pub raw_value: [u8; 8],
+    /// Checked shifted-binary64 atom.
+    pub scalar: ShiftedBinary64,
     /// Payload-relative offset of the field marker.
     pub payload_offset: u64,
     /// Absolute source offset of the field marker.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeaturePayloadScalarWire {
+    /// Globally unique scalar-field identity.
+    id: String,
+    /// Owning operation label.
+    operation_label: String,
+    /// Reconstructed payload carrying the field.
+    #[serde(flatten)]
+    payload: FeatureScalarPayload,
+    /// Zero-based field order within the payload.
+    ordinal: u32,
+    /// Serialized discriminator following the `50 59 66` marker.
+    field_code: u8,
+    /// Finite shifted-IEEE binary64 value.
+    value: f64,
+    /// Exact shifted-binary64 encoding.
+    raw_value: [u8; 8],
+    /// Payload-relative offset of the field marker.
+    payload_offset: u64,
+    /// Absolute source offset of the field marker.
+    source_offset: u64,
+}
+
+impl From<FeaturePayloadScalar> for FeaturePayloadScalarWire {
+    fn from(value: FeaturePayloadScalar) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            payload: value.payload,
+            ordinal: value.ordinal,
+            field_code: value.field_code,
+            value: value.scalar.value(),
+            raw_value: value.scalar.raw(),
+            payload_offset: value.payload_offset,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeaturePayloadScalarWire> for FeaturePayloadScalar {
+    type Error = String;
+
+    fn try_from(wire: FeaturePayloadScalarWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            payload: wire.payload,
+            ordinal: wire.ordinal,
+            field_code: wire.field_code,
+            scalar: ShiftedBinary64::from_wire(wire.value, wire.raw_value)
+                .map_err(|error| format!("value/raw_value: {error}"))?,
+            payload_offset: wire.payload_offset,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Payload identity under its native record field name.
@@ -8140,8 +8196,7 @@ pub fn feature_datum_csys_payload_scalars(
                 },
                 ordinal: ordinal as u32,
                 field_code: scalar.field_code,
-                value: scalar.value,
-                raw_value: scalar.raw_value,
+                scalar: scalar.scalar,
                 payload_offset: scalar.offset as u64,
                 source_offset: source_offset(scalar.offset)?,
             })
@@ -8690,8 +8745,7 @@ pub fn feature_sketch_payload_scalars(
                             },
                             ordinal: ordinal as u32,
                             field_code: field.field_code,
-                            value: field.value,
-                            raw_value: field.raw_value,
+                            scalar: field.scalar,
                             payload_offset: field.offset as u64,
                             source_offset,
                         }
@@ -8917,7 +8971,6 @@ pub fn feature_sketch_points(
             if [first, second].into_iter().any(|scalar| {
                 scalar.operation_label != record.operation_label
                     || scalar.payload.id() != record.construction_payload
-                    || !scalar.value.is_finite()
             }) {
                 return None;
             }
@@ -8930,7 +8983,7 @@ pub fn feature_sketch_points(
                 named_record: record.id.clone(),
                 name: name.value.clone(),
                 scalar_fields: [first.id.clone(), second.id.clone()],
-                coordinates: [first.value, second.value],
+                coordinates: [first.scalar.value(), second.scalar.value()],
             })
         })
         .collect()
@@ -11770,8 +11823,7 @@ pub fn feature_block_payload_scalars(
                         },
                         ordinal: ordinal as u32,
                         field_code: field.field_code,
-                        value: field.value,
-                        raw_value: field.raw_value,
+                        scalar: field.scalar,
                         payload_offset: field.offset as u64,
                         source_offset,
                     })
@@ -11904,7 +11956,7 @@ pub fn feature_block_payload_points(
                 named_record: record.id.clone(),
                 name: name.value.clone(),
                 scalar_fields: [first.id.clone(), second.id.clone()],
-                coordinates: [first.value, second.value],
+                coordinates: [first.scalar.value(), second.scalar.value()],
             })
         })
         .collect()

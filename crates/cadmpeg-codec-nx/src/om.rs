@@ -987,10 +987,8 @@ pub struct ConstructionPayloadScalarField {
     pub offset: usize,
     /// Serialized field discriminator following the marker.
     pub field_code: u8,
-    /// Finite decoded binary64 value.
-    pub value: f64,
-    /// Exact shifted-binary64 encoding.
-    pub raw_value: [u8; 8],
+    /// Checked shifted-binary64 atom.
+    pub scalar: ShiftedBinary64,
 }
 
 const SHIFTED_BINARY64_SCALAR_FRAME_LEN: usize = 13;
@@ -1001,26 +999,19 @@ pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPaylo
     for start in 0..bytes.len().saturating_sub(12) {
         if bytes.get(start..start + 3) != Some(b"PYf")
             || bytes.get(start + 4) != Some(&0x00)
-            || !bytes
-                .get(start + 5)
-                .is_some_and(|marker| is_shifted_ieee_f64_marker(*marker))
         {
             continue;
         }
-        let Some(raw_value) = bytes
+        let Some(scalar) = bytes
             .get(start + 5..start + SHIFTED_BINARY64_SCALAR_FRAME_LEN)
-            .and_then(|value| <[u8; 8]>::try_from(value).ok())
+            .and_then(ShiftedBinary64::read)
         else {
-            continue;
-        };
-        let Some(value) = shifted_ieee_f64(&raw_value) else {
             continue;
         };
         fields.push(ConstructionPayloadScalarField {
             offset: start,
             field_code: bytes[start + 3],
-            value,
-            raw_value,
+            scalar,
         });
     }
     fields
@@ -1110,8 +1101,8 @@ pub(crate) fn offset_store_named_point<'a>(
             [first_scalar, second_scalar] => {
                 candidate.get_or_insert_with(|| OffsetStoreNamedPoint {
                     name: name.value.to_string(),
-                    values: [first_scalar.value, second_scalar.value],
-                    raw_values: [first_scalar.raw_value, second_scalar.raw_value],
+                    values: [first_scalar.scalar.value(), second_scalar.scalar.value()],
+                    raw_values: [first_scalar.scalar.raw(), second_scalar.scalar.raw()],
                     value_offsets: [first_scalar.offset, second_scalar.offset],
                     block_count: block_ordinal + 1,
                 });
