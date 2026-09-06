@@ -2190,6 +2190,24 @@ pub struct MultiInstanceOutputPayloadLane {
     pub trailing_references: Vec<PayloadObjectReference>,
 }
 
+/// Count schema index with room for the three consecutive selector-row indices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IdenticalInstanceSchemaIndex(u8);
+
+impl IdenticalInstanceSchemaIndex {
+    pub fn new(value: u8) -> Option<Self> {
+        value.checked_add(3).map(|_| Self(value))
+    }
+
+    pub fn value(self) -> u8 {
+        self.0
+    }
+
+    pub fn row_indices(self) -> [u8; 3] {
+        [self.0 + 1, self.0 + 2, self.0 + 3]
+    }
+}
+
 /// Exact counted selector lane in an identical-instance output payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdenticalInstanceOutputPayloadLane {
@@ -2198,9 +2216,7 @@ pub struct IdenticalInstanceOutputPayloadLane {
     /// Schema index preceding the count field.
     pub leading_schema_index: u8,
     /// Schema index framing the serialized count.
-    pub count_schema_index: u8,
-    /// Three consecutive schema indices framing every selector row.
-    pub row_schema_indices: [u8; 3],
+    pub count_schema_index: IdenticalInstanceSchemaIndex,
     /// Ordered non-null compact selectors with their exact source tokens.
     pub selectors: Vec<LaneToken<u32>>,
 }
@@ -4514,13 +4530,12 @@ pub fn identical_instance_output_payload_lane(
     }
     let validate = |start: usize| {
         let leading_schema_index = *record.payload.get(start)?;
-        let count_schema_index = *record.payload.get(start + 1)?;
+        let count_schema_index = IdenticalInstanceSchemaIndex::new(*record.payload.get(start + 1)?)?;
         (record.payload.get(start + 2) == Some(&0x01)).then_some(())?;
         let declared_count = *record.payload.get(start + 3)?;
         (declared_count >= 2).then_some(())?;
-        let first_schema_index = count_schema_index.checked_add(1)?;
-        let second_schema_index = count_schema_index.checked_add(2)?;
-        let third_schema_index = count_schema_index.checked_add(3)?;
+        let [first_schema_index, second_schema_index, third_schema_index] =
+            count_schema_index.row_indices();
         let mut at = start + 4;
         for ordinal in 2..=declared_count {
             (record.payload.get(at) == Some(&first_schema_index)).then_some(())?;
@@ -4585,7 +4600,6 @@ pub fn identical_instance_output_payload_lane(
             offset: record.payload_offset + start,
             leading_schema_index,
             count_schema_index,
-            row_schema_indices: [first_schema_index, second_schema_index, third_schema_index],
             selectors,
         })
     };

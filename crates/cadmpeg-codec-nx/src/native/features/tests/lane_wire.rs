@@ -106,7 +106,7 @@ fn draft_binary32_lane_preserves_parallel_wire_and_requires_complete_tokens() {
 #[test]
 fn multi_instance_lane_preserves_wire_and_requires_complete_rows_and_references() {
     check_lane_wire::<FeatureMultiInstanceOutputLane>(
-        r#"{"id":"lane","operation_label":"operation","declared_count":3,"selectors":[7,8],"raw_selectors":[[7],[8]],"ordinals":[1,2],"row_indices":[3,4],"instance_count":2,"trailing_object_indices":[9],"raw_trailing_object_indices":[[9]],"source_offset":100,"selector_source_offsets":[110,120],"trailing_object_index_source_offsets":[130]}"#,
+        r#"{"id":"lane","operation_label":"operation","declared_count":3,"selectors":[7,8],"raw_selectors":[[7],[8]],"ordinals":[1,2],"row_indices":[2,3],"instance_count":2,"trailing_object_indices":[9],"raw_trailing_object_indices":[[9]],"source_offset":100,"selector_source_offsets":[110,120],"trailing_object_index_source_offsets":[130]}"#,
         &[
             "selectors",
             "raw_selectors",
@@ -122,10 +122,21 @@ fn multi_instance_lane_preserves_wire_and_requires_complete_rows_and_references(
 
 #[test]
 fn identical_instance_lane_preserves_wire_and_requires_complete_selectors() {
+    let json = r#"{"id":"lane","operation_label":"operation","leading_schema_index":4,"count_schema_index":5,"row_schema_indices":[6,7,8],"declared_count":3,"selectors":[7,8],"raw_selectors":[[7],[8]],"source_offset":100,"selector_source_offsets":[110,120]}"#;
     check_lane_wire::<FeatureIdenticalInstanceOutputLane>(
-        r#"{"id":"lane","operation_label":"operation","leading_schema_index":4,"count_schema_index":5,"row_schema_indices":[6,7,8],"declared_count":3,"selectors":[7,8],"raw_selectors":[[7],[8]],"source_offset":100,"selector_source_offsets":[110,120]}"#,
+        json,
         &["selectors", "raw_selectors", "selector_source_offsets"],
     );
+    for (field, value) in [
+        ("count_schema_index", serde_json::json!(253)),
+        ("row_schema_indices", serde_json::json!([6, 7, 9])),
+    ] {
+        let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+        malformed[field] = value;
+        let error = serde_json::from_value::<FeatureIdenticalInstanceOutputLane>(malformed)
+            .unwrap_err();
+        assert!(error.to_string().contains(field));
+    }
 }
 
 #[test]

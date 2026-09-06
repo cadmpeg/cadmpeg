@@ -3393,9 +3393,7 @@ pub struct FeatureIdenticalInstanceOutputLane {
     /// Schema index preceding the count field.
     pub leading_schema_index: u8,
     /// Schema index framing the serialized count.
-    pub count_schema_index: u8,
-    /// Three consecutive schema indices framing every selector row.
-    pub row_schema_indices: [u8; 3],
+    pub count_schema_index: crate::om::IdenticalInstanceSchemaIndex,
     /// Ordered complete source tokens.
     pub selectors: Vec<FeatureIndexToken>,
     /// Absolute source offset of the leading schema index.
@@ -3433,8 +3431,8 @@ impl From<FeatureIdenticalInstanceOutputLane> for FeatureIdenticalInstanceOutput
             id: lane.id,
             operation_label: lane.operation_label,
             leading_schema_index: lane.leading_schema_index,
-            count_schema_index: lane.count_schema_index,
-            row_schema_indices: lane.row_schema_indices,
+            count_schema_index: lane.count_schema_index.value(),
+            row_schema_indices: lane.count_schema_index.row_indices(),
             declared_count: lane.selectors.len() + 1,
             source_offset: lane.source_offset,
             selectors: lane.selectors.iter().map(|token| token.value).collect(),
@@ -3455,6 +3453,11 @@ impl From<FeatureIdenticalInstanceOutputLane> for FeatureIdenticalInstanceOutput
 impl TryFrom<FeatureIdenticalInstanceOutputLaneWire> for FeatureIdenticalInstanceOutputLane {
     type Error = String;
     fn try_from(wire: FeatureIdenticalInstanceOutputLaneWire) -> Result<Self, Self::Error> {
+        let count_schema_index = crate::om::IdenticalInstanceSchemaIndex::new(wire.count_schema_index)
+            .ok_or("count_schema_index must leave room for three row schema indices")?;
+        if wire.row_schema_indices != count_schema_index.row_indices() {
+            return Err("row_schema_indices must follow count_schema_index consecutively".into());
+        }
         if wire.declared_count != wire.selectors.len() + 1 {
             return Err("declared_count must equal the row count plus the implicit seed".into());
         }
@@ -3470,8 +3473,7 @@ impl TryFrom<FeatureIdenticalInstanceOutputLaneWire> for FeatureIdenticalInstanc
             id: wire.id,
             operation_label: wire.operation_label,
             leading_schema_index: wire.leading_schema_index,
-            count_schema_index: wire.count_schema_index,
-            row_schema_indices: wire.row_schema_indices,
+            count_schema_index,
             source_offset: wire.source_offset,
             selectors: wire
                 .selectors
@@ -9957,7 +9959,6 @@ pub fn feature_identical_instance_output_lanes(
                 ),
                 leading_schema_index: lane.leading_schema_index,
                 count_schema_index: lane.count_schema_index,
-                row_schema_indices: lane.row_schema_indices,
                 selectors: lane.selectors.into_iter().map(|token| FeatureIndexToken {
                     value: token.value,
                     raw: token.raw,

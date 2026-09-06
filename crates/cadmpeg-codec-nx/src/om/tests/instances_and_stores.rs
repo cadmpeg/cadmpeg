@@ -154,8 +154,8 @@ fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
         .expect("complete identical-instance lane");
     assert_eq!(lane.offset, 201);
     assert_eq!(lane.leading_schema_index, 0x34);
-    assert_eq!(lane.count_schema_index, 0x13);
-    assert_eq!(lane.row_schema_indices, [0x14, 0x15, 0x16]);
+    assert_eq!(lane.count_schema_index.value(), 0x13);
+    assert_eq!(lane.count_schema_index.row_indices(), [0x14, 0x15, 0x16]);
     assert_eq!(lane.selectors.len() + 1, 4);
     assert_eq!(
         lane.selectors
