@@ -103,3 +103,59 @@ impl TryFrom<FeaturePayloadNameWire> for FeaturePayloadName {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::FeaturePayloadName;
+
+    #[test]
+    fn payload_names_reject_inconsistent_compact_type_codes() {
+
+        for (value, raw) in [(0, vec![0]), (131, vec![128, 131]), (1, vec![128, 1])] {
+            let wire = serde_json::json!({
+                "id": "name", "operation_label": "operation", "construction_payload": "payload",
+                "ordinal": 0, "type_code": value, "raw_type_code": raw,
+                "type_code_payload_offset": 11, "payload_leading": false,
+                "value": "Point1", "payload_offset": 10, "source_offset": 100,
+            });
+            let name: FeaturePayloadName = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(name).unwrap(), wire);
+            for invalid_raw in [vec![], vec![255], vec![128], vec![0, 0], vec![127]] {
+                let mut invalid = wire.clone();
+                invalid["raw_type_code"] = serde_json::json!(invalid_raw);
+                let name = serde_json::from_value::<FeaturePayloadName>(invalid).unwrap_err();
+                assert!(name.to_string().contains("type_code/raw_type_code"));
+            }
+        }
+    }
+
+    #[test]
+    fn payload_name_wire_enforces_frame_positions_and_leading_form() {
+
+        for json in [
+            r#"{"id":"name","operation_label":"operation","construction_payload":"payload","ordinal":0,"payload_leading":true,"value":"Point1","payload_offset":0,"source_offset":100}"#,
+            r#"{"id":"name","operation_label":"operation","construction_payload":"payload","ordinal":0,"type_code":131,"raw_type_code":[128,131],"type_code_payload_offset":11,"type_code_source_offset":20,"payload_leading":false,"value":"Point1","payload_offset":10,"source_offset":100}"#,
+        ] {
+            let name: FeaturePayloadName = serde_json::from_str(json).unwrap();
+            assert_eq!(serde_json::to_string(&name).unwrap(), json);
+            let wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            for (field, replacement) in [
+                ("payload_offset", serde_json::json!(1)),
+                ("type_code_payload_offset", serde_json::json!(12)),
+                ("value", serde_json::json!("A B")),
+            ] {
+                let mut invalid = wire.clone();
+                invalid[field] = replacement;
+                assert!(serde_json::from_value::<FeaturePayloadName>(invalid).is_err());
+            }
+        }
+        let overflowing = serde_json::json!({
+            "id": "name", "operation_label": "operation", "construction_payload": "payload",
+            "ordinal": 0, "type_code": 1, "raw_type_code": [1],
+            "type_code_payload_offset": u64::MAX, "payload_leading": false,
+            "value": "A", "payload_offset": u64::MAX - 1, "source_offset": 100,
+        });
+        let name = serde_json::from_value::<FeaturePayloadName>(overflowing).unwrap_err();
+        assert!(name.to_string().contains("payload_offset"));
+    }
+}

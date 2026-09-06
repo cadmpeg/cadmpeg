@@ -110,53 +110,6 @@ fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
 }
 
 #[test]
-fn om_sketch_name_field_decodes_direct_and_extended_compact_type_codes() {
-    let bytes = [
-        0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00, 0xaa, 0x66, 0x80, 0x83,
-        0x03, 0x07, b'L', b'i', b'n', b'e', b'2', 0x00,
-    ];
-    let fields = crate::om::name_field::scan(&bytes);
-    assert_eq!(fields.len(), 2);
-    assert_eq!(fields[0].offset(), 0);
-    assert_eq!(fields[0].value(), "Point1");
-    let first = fields[0].code().expect("typed name");
-    assert_eq!(first.atom.value(), 0x32);
-    assert_eq!(first.atom.raw(), vec![0x32]);
-    assert_eq!(first.offset, 1);
-    assert_eq!(fields[1].offset(), 12);
-    assert_eq!(fields[1].value(), "Line2");
-    let second = fields[1].code().expect("typed name");
-    assert_eq!(second.atom.value(), 0x83);
-    assert_eq!(second.atom.raw(), vec![0x80, 0x83]);
-    assert_eq!(second.offset, 13);
-
-    assert!(crate::om::name_field::scan(&[
-        0x66, 0xff, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00,
-    ])
-    .is_empty());
-    assert!(crate::om::name_field::scan(&[
-        0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't',
-    ])
-    .is_empty());
-}
-
-#[test]
-fn om_sketch_name_field_decodes_type_free_payload_leading_form() {
-    let fields = crate::om::name_field::scan(&[
-        0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00, 0x04,
-    ]);
-    assert_eq!(fields.len(), 1);
-    assert_eq!(fields[0].offset(), 0);
-    assert!(fields[0].code().is_none());
-    assert_eq!(fields[0].value(), "Point1");
-
-    assert!(crate::om::name_field::scan(&[
-        0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1',
-    ])
-    .is_empty());
-}
-
-#[test]
 fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
     let first = [
         0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'7', 0x00, 0x50, 0x59, 0x66, 0x58, 0x00, 0x30,
