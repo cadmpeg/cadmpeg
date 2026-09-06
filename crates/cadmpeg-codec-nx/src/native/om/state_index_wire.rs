@@ -2,11 +2,11 @@
 //! Native operation-state index projections at the JSON boundary.
 
 use super::{
-    OmAuditTrailRow, OmOperationStateCounter, OmOperationStateMessageBody, OmOperationStateStatus,
-    OmOperationStateStatusPayload,
+    OmAuditTrailRow, OmOperationStateCounter, OmOperationStateStatus, OmOperationStateStatusPayload,
 };
 use crate::om::roll_forward::OperationStateGroupRow;
 use crate::om::state_index::StateIndexToken;
+use crate::om::state_message::StateMessage;
 use crate::om::state_slots::StateSlots;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
@@ -344,7 +344,7 @@ pub(super) enum OmOperationStateStatusPayloadWire {
         object_index: u32,
         raw_object_index: Vec<u8>,
     },
-    Diagnostic(OmOperationStateMessageBody),
+    Diagnostic(StateMessage<String>),
     Opaque {
         raw: Vec<u8>,
     },

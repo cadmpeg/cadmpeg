@@ -6,6 +6,7 @@ use super::*;
 use crate::om::control_leading_value::ControlLeadingValue;
 use crate::om::reference_value::{DirectReference, RecordReference};
 use crate::om::state_index::StateIndexToken;
+use crate::om::state_message::StateMessage;
 use crate::printable_string::PrintableString;
 pub(crate) mod material_texture;
 pub(crate) mod object_uuid;
@@ -141,89 +142,6 @@ pub struct OmOperationStateCounter {
     pub source_entry: String,
 }
 
-/// Typed high-byte outcome of an operation-state diagnostic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OmOperationStateMessageSeverity {
-    /// Non-fatal update alert.
-    Alert,
-    /// Failed update outcome.
-    Failure,
-}
-
-fn operation_state_message_severity(word: u16) -> Option<OmOperationStateMessageSeverity> {
-    match word >> 8 {
-        0x01 => Some(OmOperationStateMessageSeverity::Alert),
-        0x03 => Some(OmOperationStateMessageSeverity::Failure),
-        _ => None,
-    }
-}
-
-/// Diagnostic text, tagged value, and count/severity word of an operation-state message.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "OmOperationStateMessageBodyWire",
-    into = "OmOperationStateMessageBodyWire"
-)]
-pub struct OmOperationStateMessageBody {
-    /// Exact Part Navigator diagnostic text with its derived frame length.
-    #[serde(flatten)]
-    pub text: crate::om::state_message_text::StateMessageText<String>,
-    /// Complete tagged integer token.
-    #[serde(flatten)]
-    pub value: crate::om::state_tagged_value::StateTaggedValue,
-    /// Big-endian count or severity word.
-    pub count_or_severity: u16,
-}
-
-impl OmOperationStateMessageBody {
-    /// Typed high-byte severity when the word uses a known outcome class.
-    pub fn severity(&self) -> Option<OmOperationStateMessageSeverity> {
-        operation_state_message_severity(self.count_or_severity)
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-struct OmOperationStateMessageBodyWire {
-    #[serde(flatten)]
-    text: crate::om::state_message_text::StateMessageText<String>,
-    #[serde(flatten)]
-    value: crate::om::state_tagged_value::StateTaggedValue,
-    count_or_severity: u16,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    severity: Option<OmOperationStateMessageSeverity>,
-}
-
-impl From<OmOperationStateMessageBody> for OmOperationStateMessageBodyWire {
-    fn from(value: OmOperationStateMessageBody) -> Self {
-        let severity = value.severity();
-        Self {
-            text: value.text,
-            value: value.value,
-            count_or_severity: value.count_or_severity,
-            severity,
-        }
-    }
-}
-
-impl TryFrom<OmOperationStateMessageBodyWire> for OmOperationStateMessageBody {
-    type Error = String;
-
-    fn try_from(wire: OmOperationStateMessageBodyWire) -> Result<Self, Self::Error> {
-        let body = Self {
-            text: wire.text,
-            value: wire.value,
-            count_or_severity: wire.count_or_severity,
-        };
-        if wire.severity != body.severity() {
-            return Err(
-                "operation-state message severity disagrees with count_or_severity".to_owned(),
-            );
-        }
-        Ok(body)
-    }
-}
-
 /// One standalone operation-state message record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OmOperationStateMessage {
@@ -235,7 +153,7 @@ pub struct OmOperationStateMessage {
     pub ordinal: u32,
     /// Diagnostic payload.
     #[serde(flatten)]
-    pub body: OmOperationStateMessageBody,
+    pub body: StateMessage<String>,
     /// Directory entry containing the feature-history section.
     pub source_entry: String,
     /// Absolute file offset of the opening `03` marker.
@@ -259,7 +177,7 @@ pub enum OmOperationStateStatusPayload {
         object_index: StateIndexToken,
     },
     /// Status carrying an inline diagnostic message.
-    Diagnostic(OmOperationStateMessageBody),
+    Diagnostic(StateMessage<String>),
     /// Typed status whose payload grammar is not assigned.
     Opaque {
         /// Exact bounded payload bytes.
@@ -553,13 +471,9 @@ pub fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMe
                         ),
                         section_link: link.id.clone(),
                         ordinal,
-                        body: OmOperationStateMessageBody {
-                            text: message.text.into_owned(),
-                            value: message.value,
-                            count_or_severity: message.count_or_severity,
-                        },
+                        body: message.body().into_owned(),
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + message.span.offset() as u64,
+                        source_offset: entry_offset + message.offset() as u64,
                     })
                 })
                 .collect()
@@ -609,11 +523,7 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                             object_index,
                         },
                         crate::om::OperationStateStatusPayload::Diagnostic { message } => {
-                            OmOperationStateStatusPayload::Diagnostic(OmOperationStateMessageBody {
-                                text: message.text.into_owned(),
-                                value: message.value,
-                                count_or_severity: message.count_or_severity,
-                            })
+                            OmOperationStateStatusPayload::Diagnostic(message.body().into_owned())
                         }
                         crate::om::OperationStateStatusPayload::Opaque { raw } => {
                             OmOperationStateStatusPayload::Opaque { raw: raw.to_vec() }

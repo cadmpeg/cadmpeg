@@ -74,7 +74,8 @@ pub(crate) mod state_group;
 use state_index::{OperationStateIndex, StateIndexToken};
 pub(crate) mod state_message_text;
 use nonempty::NonEmpty;
-use state_message_text::StateMessageText;
+pub(crate) mod state_message;
+use state_message::OperationStateMessage;
 use state_tagged_value::StateTaggedValue;
 pub(crate) mod pattern;
 use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWideValues};
@@ -627,19 +628,6 @@ impl<'a> UnlabeledOperationRecord<'a> {
 pub struct OperationTerminalFrame {
     pub immediate_common_frame_offset: Option<usize>,
     pub frame: TerminalFrame<usize>,
-}
-
-/// One diagnostic/message record in the operation-state block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationStateMessage<'a> {
-    /// Checked source position within its record area.
-    pub span: SourceSpan,
-    /// Exact byte-length-framed ASCII Part Navigator text.
-    pub text: StateMessageText<&'a str>,
-    /// Tagged value following the four zero bytes.
-    pub value: StateTaggedValue,
-    /// Big-endian count or severity word following the tagged value.
-    pub count_or_severity: u16,
 }
 
 /// Payload form of one per-object operation-state status row.
@@ -1600,7 +1588,7 @@ impl<'a> Section<'a> {
         let block = self.operation_state_block()?;
         let status_after = block.status_end_offset.checked_sub(base_offset)?;
         let message_start = match block.messages.first() {
-            Some(message) => message.span.local_start(),
+            Some(message) => message.offset().checked_sub(base_offset)?,
             None => status_after,
         };
         (!block.rows.is_empty() || !block.slot_lanes.is_empty()).then_some(
@@ -4331,35 +4319,6 @@ fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)>
     }
 }
 
-fn operation_state_message_at(
-    bytes: &[u8],
-    at: usize,
-    base_offset: usize,
-) -> Option<OperationStateMessage<'_>> {
-    if bytes.get(at) != Some(&0x03) {
-        return None;
-    }
-    let declared_length = *bytes.get(at + 1)?;
-    let text_end = at.checked_add(usize::from(declared_length))?;
-    let text = bytes.get(at + 2..text_end)?;
-    let text = StateMessageText::new(std::str::from_utf8(text).ok()?).ok()?;
-    let terminator = text_end;
-    (bytes.get(terminator) == Some(&0)).then_some(())?;
-    let zeros_start = terminator.checked_add(1)?;
-    let zeros_end = zeros_start.checked_add(4)?;
-    (bytes.get(zeros_start..zeros_end) == Some(&[0, 0, 0, 0])).then_some(())?;
-    let value = StateTaggedValue::read_at(bytes, zeros_end)?;
-    let count_at = zeros_end.checked_add(value.raw().len())?;
-    let count_or_severity = View::u16_be_at(bytes, count_at)?;
-    let end = count_at.checked_add(2)?;
-    Some(OperationStateMessage {
-        span: SourceSpan::new(base_offset, at, end)?,
-        text,
-        value,
-        count_or_severity,
-    })
-}
-
 fn operation_state_status_end_at(
     bytes: &[u8],
     at: usize,
@@ -4427,8 +4386,8 @@ fn operation_state_block_before_boundary(
     let mut status_paths = Vec::new();
     let mut message_paths = Vec::new();
     for at in (start..end).rev() {
-        if let Some(message) = operation_state_message_at(bytes, at, base_offset) {
-            let next = message.span.local_end();
+        if let Some(message) = OperationStateMessage::read(bytes, at, base_offset) {
+            let next = message.end_offset() - base_offset;
             if next > at && next <= end {
                 let continuation = (next < end)
                     .then(|| operation_state_path_at(&message_paths, next))
@@ -4498,8 +4457,8 @@ fn operation_state_block_before_boundary(
     let mut in_messages = false;
     while at < path_end {
         if in_messages {
-            let message = operation_state_message_at(bytes, at, base_offset)?;
-            let next = message.span.local_end();
+            let message = OperationStateMessage::read(bytes, at, base_offset)?;
+            let next = message.end_offset() - base_offset;
             (next > at && next <= path_end).then_some(())?;
             messages.push(message);
             at = next;
@@ -4526,8 +4485,8 @@ fn operation_state_block_before_boundary(
                         .unwrap_or(0)
                 }
             });
-        let message = operation_state_message_at(bytes, at, base_offset);
-        let message_next = message.as_ref().map(|message| message.span.local_end());
+        let message = OperationStateMessage::read(bytes, at, base_offset);
+        let message_next = message.as_ref().map(|message| message.end_offset() - base_offset);
         let message_length = operation_state_path_at(&message_paths, at)
             .filter(|path| path.end == path_end)
             .map_or(0, |path| path.length);
@@ -4583,11 +4542,11 @@ pub fn operation_state_messages(
     let mut messages = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
-        let Some(message) = operation_state_message_at(bytes, at, base_offset) else {
+        let Some(message) = OperationStateMessage::read(bytes, at, base_offset) else {
             at += 1;
             continue;
         };
-        at = message.span.local_end();
+        at = message.end_offset() - base_offset;
         messages.push(message);
     }
     messages
@@ -4695,8 +4654,8 @@ fn operation_state_status_row_at<'a>(
     let (payload, payload_end) = match bytes[payload_at] {
         0x3f => (OperationStateStatusPayload::Plain, payload_at + 1),
         0x03 => {
-            let message = operation_state_message_at(bytes, payload_at, base_offset)?;
-            let payload_end = message.span.local_end();
+            let message = OperationStateMessage::read(bytes, payload_at, base_offset)?;
+            let payload_end = message.end_offset() - base_offset;
             (
                 OperationStateStatusPayload::Diagnostic { message },
                 payload_end,
@@ -4739,7 +4698,7 @@ pub fn operation_state_status_table(
     let mut slot_lanes = Vec::new();
     let mut at = start;
     while at < end {
-        if operation_state_message_at(bytes, at, base_offset).is_some() {
+        if OperationStateMessage::read(bytes, at, base_offset).is_some() {
             break;
         }
         if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {

@@ -2,6 +2,7 @@
 
 use crate::native::om::roll_forward::OmRollForwardStateGroup;
 use crate::om::roll_forward::OperationStateGroupRow;
+use crate::om::state_message::{StateMessage, StateMessageSeverity};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -13,7 +14,7 @@ use crate::native::om::{
     audit_trail_rows, operation_state_counters, operation_state_groups,
     operation_state_journal_groups, operation_state_messages, operation_state_slot_lanes,
     operation_state_statuses, OmAuditTrailRow, OmOperationStateCounter, OmOperationStateMessage,
-    OmOperationStateMessageSeverity, OmOperationStateSlotLane, OmOperationStateStatus,
+    OmOperationStateSlotLane, OmOperationStateStatus,
 };
 use crate::test_support::{
     composed_feature_history_payload_with_operation_state_statuses,
@@ -27,14 +28,14 @@ use crate::NxCodec;
 #[test]
 fn operation_state_message_severity_uses_only_known_high_bytes() {
     assert_eq!(
-        super::super::operation_state_message_severity(0x01ff),
-        Some(OmOperationStateMessageSeverity::Alert)
+        StateMessageSeverity::from_word(0x01ff),
+        Some(StateMessageSeverity::Alert)
     );
     assert_eq!(
-        super::super::operation_state_message_severity(0x0300),
-        Some(OmOperationStateMessageSeverity::Failure)
+        StateMessageSeverity::from_word(0x0300),
+        Some(StateMessageSeverity::Failure)
     );
-    assert_eq!(super::super::operation_state_message_severity(0x0003), None);
+    assert_eq!(StateMessageSeverity::from_word(0x0003), None);
 }
 
 #[test]
@@ -240,7 +241,7 @@ fn native_catalog_emits_bounded_operation_state_messages() {
     assert_eq!(messages[0].body.count_or_severity, 0x0100);
     assert_eq!(
         messages[0].body.severity(),
-        Some(OmOperationStateMessageSeverity::Alert)
+        Some(StateMessageSeverity::Alert)
     );
 
     let result = NxCodec
@@ -327,27 +328,23 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
 #[test]
 fn message_body_preserves_flat_tagged_value_wire() {
     let json = r#"{"declared_length":3,"text":"A","value_marker":160,"value":0,"raw_value":[160,0,0],"count_or_severity":0}"#;
-    let body: super::OmOperationStateMessageBody = serde_json::from_str(json).unwrap();
+    let body: StateMessage<String> = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&body).unwrap(), json);
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
     wire["value"] = 1.into();
-    assert!(
-        serde_json::from_value::<super::OmOperationStateMessageBody>(wire)
-            .unwrap_err()
-            .to_string()
-            .contains("value")
-    );
+    assert!(serde_json::from_value::<StateMessage<String>>(wire)
+        .unwrap_err()
+        .to_string()
+        .contains("value"));
 }
 
 #[test]
 fn message_body_rejects_text_length_mismatch() {
     let json = r#"{"declared_length":4,"text":"A","value_marker":160,"value":0,"raw_value":[160,0,0],"count_or_severity":0}"#;
-    assert!(
-        serde_json::from_str::<super::OmOperationStateMessageBody>(json)
-            .unwrap_err()
-            .to_string()
-            .contains("declared_length")
-    );
+    assert!(serde_json::from_str::<StateMessage<String>>(json)
+        .unwrap_err()
+        .to_string()
+        .contains("declared_length"));
 }
 
 #[test]

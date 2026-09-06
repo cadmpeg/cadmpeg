@@ -64,13 +64,13 @@ fn operation_state_messages_decode_text_value_and_severity() {
     let bytes = message_bytes(b"hello", &[0xc0, 0x01, 0x02, 0x03], [0, 3]);
     let messages = super::operation_state_messages(&bytes, 500);
     assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].span.offset(), 500);
-    assert_eq!(messages[0].text.declared_length(), 7);
-    assert_eq!(messages[0].text.as_str(), "hello");
-    assert_eq!(messages[0].value.raw().len(), 4);
-    assert_eq!(messages[0].value.value(), 0x0001_0203);
-    assert_eq!(messages[0].count_or_severity, 3);
-    assert_eq!(messages[0].span.end_offset(), 500 + bytes.len());
+    assert_eq!(messages[0].offset(), 500);
+    assert_eq!(messages[0].body().text.declared_length(), 7);
+    assert_eq!(messages[0].body().text.as_str(), "hello");
+    assert_eq!(messages[0].body().value.raw().len(), 4);
+    assert_eq!(messages[0].body().value.value(), 0x0001_0203);
+    assert_eq!(messages[0].body().count_or_severity, 3);
+    assert_eq!(messages[0].end_offset(), 500 + bytes.len());
 }
 
 #[test]
@@ -84,8 +84,8 @@ fn operation_state_messages_accept_terminal_count_shared_with_group_opener() {
         .expect("terminal message")
         .messages;
     assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].text.as_str(), "terminal");
-    assert_eq!(messages[0].span.end_offset(), 500 + group_start + 2);
+    assert_eq!(messages[0].body().text.as_str(), "terminal");
+    assert_eq!(messages[0].end_offset(), 500 + group_start + 2);
     assert_eq!(table.offset(), 500 + group_start);
     assert_eq!(table.groups().first().opener().bytes(), [0x01, 0x00]);
 }
@@ -119,7 +119,7 @@ fn operation_state_status_table_retains_plain_link_diagnostic_and_opaque_rows() 
     let OperationStateStatusPayload::Diagnostic { message } = table.rows[2].payload else {
         panic!("diagnostic row was not typed");
     };
-    assert_eq!(message.text.as_str(), "bad curve");
+    assert_eq!(message.body().text.as_str(), "bad curve");
     let OperationStateStatusPayload::Opaque { raw } = table.rows[3].payload else {
         panic!("opaque state lane was not retained");
     };
@@ -150,7 +150,7 @@ fn operation_state_block_keeps_inline_diagnostics_out_of_standalone_messages() {
         OperationStateStatusPayload::Diagnostic { .. }
     ));
     assert_eq!(block.messages.len(), 1);
-    assert_eq!(block.messages[0].text.as_str(), "standalone");
+    assert_eq!(block.messages[0].body().text.as_str(), "standalone");
     assert_eq!(block.status_end_offset, 500 + 3 + diagnostic.len());
 }
 
@@ -222,7 +222,7 @@ fn operation_state_block_prefers_boundary_closed_path() {
     assert_eq!(block.offset, 500 + closed_path_start);
     assert_eq!(block.rows.len(), 1);
     assert_eq!(block.messages.len(), 1);
-    assert_eq!(block.messages[0].text.as_str(), "closed");
+    assert_eq!(block.messages[0].body().text.as_str(), "closed");
 }
 
 #[test]

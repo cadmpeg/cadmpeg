@@ -23,6 +23,7 @@ impl SourceSpan {
     pub(crate) fn end_offset(self) -> usize {
         self.base + self.end
     }
+    #[cfg(test)]
     pub(crate) fn local_start(self) -> usize {
         self.start
     }
