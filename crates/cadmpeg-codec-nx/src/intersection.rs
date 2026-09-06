@@ -8,6 +8,10 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 
+pub(crate) mod chart_samples;
+
+use chart_samples::ChartSamples;
+
 use crate::framing::read_xmt_width as read_xmt;
 use crate::layout::chart_s_preamble as chart_preamble;
 use crate::topology::{self, CompositeCurve};
@@ -211,10 +215,8 @@ pub struct IntersectionCurve {
     pub supports: [u32; 2],
     /// Type-tag offset of the construction record.
     pub pos: usize,
-    /// Chart points in millimetres.
-    pub points: Vec<Point3>,
-    /// Native chart parameter at each point.
-    pub parameters: Vec<f64>,
+    /// Paired chart points in millimetres and native parameters.
+    pub samples: ChartSamples,
     /// Chart chordal error in millimetres.
     pub fit_tolerance: f64,
     /// Ordered support UV values in native Parasolid parameter units.
@@ -317,8 +319,7 @@ enum Rejection {
 
 #[derive(Debug, Clone)]
 struct Chart {
-    points: Vec<Point3>,
-    parameters: Vec<f64>,
+    samples: ChartSamples,
     fit_tolerance: f64,
     ext_support_uv: SupportUv,
 }
@@ -516,10 +517,7 @@ fn enrich(
     let chart = charts
         .get(&construction.references[2])
         .ok_or(Rejection::MissingChart)?;
-    let chart_endpoints = [
-        *chart.points.first().ok_or(Rejection::MissingChart)?,
-        *chart.points.last().ok_or(Rejection::MissingChart)?,
-    ];
+    let chart_endpoints = chart.samples.endpoints();
     let serialized_terms = [
         terms.get(&construction.references[3]).copied(),
         terms.get(&construction.references[4]).copied(),
@@ -572,8 +570,7 @@ fn enrich(
         references: construction.references,
         supports,
         pos: construction.pos,
-        points: chart.points.clone(),
-        parameters: chart.parameters.clone(),
+        samples: chart.samples.clone(),
         fit_tolerance: chart.fit_tolerance,
         support_uv,
         ext_support_uv: chart.ext_support_uv.clone(),
@@ -744,21 +741,23 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
         if !fit_tolerance.is_finite() {
             continue;
         }
-        let mut chord_parameters = Vec::with_capacity(source.points.len());
-        chord_parameters.push(source.base_parameter);
-        for pair in source.points.windows(2) {
-            let chord_m = distance(pair[0], pair[1]) / 1000.0;
-            chord_parameters.push(
-                chord_parameters
-                    .last()
-                    .copied()
-                    .expect("invariant: base parameter inserted")
-                    + chord_m * source.base_scale,
-            );
-        }
+        let mut parameter = source.base_parameter;
+        let chord_parameters = std::iter::once(parameter)
+            .chain(source.points.windows(2).map(|pair| {
+                let chord_m = distance(pair[0], pair[1]) / 1000.0;
+                parameter += chord_m * source.base_scale;
+                parameter
+            }))
+            .collect();
+        let has_native_parameters = source.native_parameters.is_some();
+        let Ok(samples) = ChartSamples::new(
+            source.points,
+            source.native_parameters.unwrap_or(chord_parameters),
+        ) else {
+            continue;
+        };
         let candidate = Chart {
-            points: source.points,
-            parameters: source.native_parameters.clone().unwrap_or(chord_parameters),
+            samples,
             fit_tolerance,
             ext_support_uv: source.ext_support_uv,
         };
@@ -766,24 +765,30 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(candidate);
             }
-            std::collections::btree_map::Entry::Occupied(mut entry)
-                if !complemented.contains(&source.xmt)
-                    && source.native_parameters.is_some()
-                    && entry.get().points.len() == candidate.points.len()
-                    && entry.get().points.iter().zip(&candidate.points).all(
-                        |(first, second)| {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let complements = !complemented.contains(&source.xmt)
+                    && has_native_parameters
+                    && entry
+                        .get()
+                        .samples
+                        .points()
+                        .iter()
+                        .zip(candidate.samples.points())
+                        .all(|(first, second)| {
                             distance(*first, *second)
                                 <= entry.get().fit_tolerance.max(candidate.fit_tolerance)
-                        },
-                    ) =>
-            {
-                entry.get_mut().parameters = candidate.parameters;
-                entry.get_mut().ext_support_uv = candidate.ext_support_uv;
-                complemented.insert(source.xmt);
-            }
-            std::collections::btree_map::Entry::Occupied(entry) => {
-                entry.remove();
-                duplicates.insert(source.xmt);
+                        })
+                    && entry
+                        .get_mut()
+                        .samples
+                        .replace_parameters_from(&candidate.samples);
+                if complements {
+                    entry.get_mut().ext_support_uv = candidate.ext_support_uv;
+                    complemented.insert(source.xmt);
+                } else {
+                    entry.remove();
+                    duplicates.insert(source.xmt);
+                }
             }
         }
     }

@@ -359,7 +359,7 @@ fn intersection_chart_accepts_one_matching_parameter_complement() {
             .curves
             .try_into()
             .expect("complemented curve");
-    assert_eq!(curve.parameters, [2.0, 5.0]);
+    assert_eq!(curve.samples.parameters(), [2.0, 5.0]);
 
     let base_chart = crate::intersection::chart_source_records(
         &base,

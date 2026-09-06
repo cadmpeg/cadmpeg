@@ -602,7 +602,7 @@ pub(crate) fn try_decode_geometry(
                         &model_index,
                         &surfaces_by_xmt,
                         charted.supports,
-                        &charted.points,
+                        charted.samples.points(),
                         charted.fit_tolerance,
                         &charted.support_uv,
                         &serialized_support_uv_geometry_budget,
@@ -611,7 +611,7 @@ pub(crate) fn try_decode_geometry(
                         &model_index,
                         &surfaces_by_xmt,
                         charted.supports,
-                        &charted.points,
+                        charted.samples.points(),
                         charted.fit_tolerance,
                         &charted.ext_support_uv,
                         &serialized_support_uv_geometry_budget,
@@ -660,8 +660,7 @@ pub(crate) fn try_decode_geometry(
                 }
                 pending_ext11_support_uv.push((
                     procedural_id.clone(),
-                    charted.points.clone(),
-                    charted.parameters.clone(),
+                    charted.samples.clone(),
                     charted.fit_tolerance,
                     SerializedSupportUv {
                         values: charted.support_uv.clone(),
@@ -683,8 +682,8 @@ pub(crate) fn try_decode_geometry(
                     CurveGeometry::Nurbs(
                         NurbsCurve::new(
                             1,
-                            linear_knots(&charted.parameters),
-                            charted.points.clone(),
+                            linear_knots(charted.samples.parameters()),
+                            charted.samples.points().to_vec(),
                             None,
                             false,
                         )
@@ -729,8 +728,8 @@ pub(crate) fn try_decode_geometry(
                     charted.supports[0],
                     support_uv[0]
                         .as_deref()
-                        .filter(|uv| uv.len() == charted.parameters.len())
-                        .map(|uv| (uv, charted.parameters.as_slice())),
+                        .filter(|uv| uv.len() == charted.samples.parameters().len())
+                        .map(|uv| (uv, charted.samples.parameters())),
                 );
                 let second = intersection_side(
                     &ir,
@@ -738,19 +737,13 @@ pub(crate) fn try_decode_geometry(
                     charted.supports[1],
                     support_uv[1]
                         .as_deref()
-                        .filter(|uv| uv.len() == charted.parameters.len())
-                        .map(|uv| (uv, charted.parameters.as_slice())),
+                        .filter(|uv| uv.len() == charted.samples.parameters().len())
+                        .map(|uv| (uv, charted.samples.parameters())),
                 );
                 ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext {
                         sides: [first, second],
-                        parameter_range: [
-                            charted.parameters[0],
-                            *charted
-                                .parameters
-                                .last()
-                                .expect("validated chart has points"),
-                        ],
+                        parameter_range: charted.samples.parameter_range(),
                         discontinuities: [Vec::new(), Vec::new(), Vec::new()],
                     },
                     discontinuity_flag: false,

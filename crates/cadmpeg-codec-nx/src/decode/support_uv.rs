@@ -329,8 +329,7 @@ impl SerializedSupportUv {
 
 pub(crate) type PendingExt11SupportUv = (
     ProceduralCurveId,
-    Vec<Point3>,
-    Vec<f64>,
+    crate::intersection::chart_samples::ChartSamples,
     f64,
     SerializedSupportUv,
 );
@@ -351,10 +350,7 @@ pub(crate) fn validated_support_uv_endpoint_witnesses(
         .map(|procedural| (&procedural.id, procedural))
         .collect::<BTreeMap<_, _>>();
     let mut witnesses: EndpointWitnesses = BTreeMap::new();
-    for (procedural_id, points, parameters, _, _) in pending {
-        if points.len() < 2 || points.len() != parameters.len() {
-            continue;
-        }
+    for (procedural_id, samples, _, _) in pending {
         let Some(procedural) = procedural_by_id.get(procedural_id).copied() else {
             continue;
         };
@@ -365,10 +361,7 @@ pub(crate) fn validated_support_uv_endpoint_witnesses(
         else {
             continue;
         };
-        let expected_range = [
-            parameters[0],
-            *parameters.last().expect("at least two points"),
-        ];
+        let expected_range = samples.parameter_range();
         if context.parameter_range != expected_range {
             continue;
         }
@@ -387,11 +380,7 @@ pub(crate) fn validated_support_uv_endpoint_witnesses(
             witnesses
                 .entry((owner.clone(), surface))
                 .or_default()
-                .push((
-                    pcurve,
-                    context.parameter_range,
-                    [points[0], *points.last().expect("at least two points")],
-                ));
+                .push((pcurve, context.parameter_range, samples.endpoints()));
         }
     }
     witnesses
@@ -555,7 +544,9 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
 ) {
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let mut replacements = Vec::new();
-    for (procedural_id, points, parameters, fit_tolerance, serialized) in pending {
+    for (procedural_id, samples, fit_tolerance, serialized) in pending {
+        let points = samples.points();
+        let parameters = samples.parameters();
         let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
             continue;
         };
@@ -757,7 +748,9 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
         let mut invalid = Vec::new();
         let mut endpoint_witnesses: EndpointWitnesses = BTreeMap::new();
         let mut lane_geometry_exhausted = false;
-        for (procedural_id, points, parameters, fit_tolerance, _) in pending {
+        for (procedural_id, samples, fit_tolerance, _) in pending {
+            let points = samples.points();
+            let parameters = samples.parameters();
             if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
                 break;
             }
@@ -800,8 +793,7 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                     .as_ref()
                     .unwrap_or(parent_geometry_budget);
                 let mut inconsistent = false;
-                let mut fully_validated =
-                    parameters.len() == points.len() && !parameters.is_empty();
+                let mut fully_validated = true;
                 let mut endpoints = [None, None];
                 for (sample_index, (parameter, point)) in parameters.iter().zip(points).enumerate()
                 {
@@ -919,7 +911,9 @@ fn complete_support_uv_wave(
         let mut replacements = Vec::new();
         let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-        for (procedural_id, points, parameters, fit_tolerance, serialized) in pending {
+        for (procedural_id, samples, fit_tolerance, serialized) in pending {
+            let points = samples.points();
+            let parameters = samples.parameters();
             if support_uv_budget_exhausted(support_budget) {
                 break;
             }
@@ -1510,7 +1504,9 @@ fn complete_coupled_support_uv(
     let mut replacements = Vec::new();
     let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    for (procedural_id, points, parameters, fit_tolerance, serialized) in pending {
+    for (procedural_id, samples, fit_tolerance, serialized) in pending {
+        let points = samples.points();
+        let parameters = samples.parameters();
         let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
             continue;
         };
