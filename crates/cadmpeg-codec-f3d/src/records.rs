@@ -18775,7 +18775,8 @@ fn pad_or_check(
     len: usize,
 ) -> Result<Vec<u32>, SketchRelationPayloadError> {
     if values.is_empty() {
-        Ok(vec![0; len])
+        cadmpeg_core::decode::alloc_filled(len, 0, "pad sketch relation offsets")
+            .map_err(|error| SketchRelationPayloadError(error.to_string()))
     } else if values.len() == len {
         Ok(values)
     } else {
@@ -18792,7 +18793,8 @@ fn pad_resolved(
     len: usize,
 ) -> Result<Vec<Option<SketchRelationOperand>>, SketchRelationPayloadError> {
     if values.is_empty() {
-        Ok(vec![None; len])
+        cadmpeg_core::decode::alloc_filled(len, None, "pad sketch relation resolutions")
+            .map_err(|error| SketchRelationPayloadError(error.to_string()))
     } else if values.len() == len {
         Ok(values.into_iter().map(Some).collect())
     } else {
