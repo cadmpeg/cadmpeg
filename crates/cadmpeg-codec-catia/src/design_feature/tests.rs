@@ -158,8 +158,7 @@ fn entity_record(
         range_interval: None,
         object_production: None,
             value_production: None,
-        value_packets: Vec::new(),
-        numeric_pair: None,
+
         reference_signature: None,
         suffix: None,
         suffix_schema_selection: None,

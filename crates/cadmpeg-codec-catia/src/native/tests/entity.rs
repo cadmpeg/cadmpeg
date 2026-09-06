@@ -159,8 +159,7 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
 
     let native = crate::native::CatiaNative::decode(&bytes);
     let pair = native.entity_records[0]
-        .numeric_pair
-        .as_ref()
+        .numeric_pair()
         .expect("complete numeric pair");
     assert_eq!(
         pair.slots,
@@ -173,33 +172,25 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
         ]
     );
 
-    let mut legacy = native.clone();
-    legacy.entity_records[0].numeric_pair = None;
     let mut legacy_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    legacy
+    native
         .store(&mut legacy_namespace)
         .expect("store legacy numeric-pair view");
+    legacy_namespace.arenas.get_mut("entity_records").unwrap()[0]
+        .fields_mut().remove("numeric_pair");
     legacy_namespace.set_version(
         std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_COHORT_VERSION).unwrap(),
     );
     let migrated =
         crate::native::CatiaNative::load(&legacy_namespace).expect("migrate numeric-pair view");
-    assert!(migrated.entity_records[0].numeric_pair.is_some());
+    assert!(migrated.entity_records[0].numeric_pair().is_some());
 
-    let mut malformed = native;
-    malformed.entity_records[0]
-        .numeric_pair
-        .as_mut()
-        .expect("complete numeric pair")
-        .slots[0] = crate::entity_table::NumericPairSlot::ControlE8 { offset: 8 };
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    malformed
-        .store(&mut namespace)
-        .expect("store malformed numeric-pair view");
-    assert!(matches!(
-        crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-    ));
+    let mut wire = serde_json::to_value(&native.entity_records[0]).unwrap();
+    wire["numeric_pair"]["slots"][0] = serde_json::to_value(
+        crate::entity_table::NumericPairSlot::ControlE8 { offset: 8 }
+    ).unwrap();
+    assert!(serde_json::from_value::<crate::native::entity_record::CatiaEntityRecord>(wire).is_err());
+
 }
 
 #[test]
@@ -1552,7 +1543,7 @@ fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
 fn entity_value_schema_selection_excludes_a_packet_crossing_its_boundary() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_crossing_entity_value_packet());
-    assert_eq!(native.entity_records[0].value_packets.len(), 1);
+    assert_eq!(native.entity_records[0].value_packets().len(), 1);
     assert_eq!(native.entity_records[0].value_schema_selections.len(), 2);
     assert!(native.entity_records[0]
         .value_schema_selections

@@ -11,7 +11,6 @@ use crate::entity_table;
 use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 use crate::legacy_entity;
 use crate::object_graph;
-use crate::value_block;
 
 use super::*;
 use super::{

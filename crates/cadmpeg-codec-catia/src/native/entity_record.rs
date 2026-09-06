@@ -97,10 +97,6 @@ pub struct CatiaEntityRecord {
     pub value_production: Option<CatiaEntityValueProduction>,
     /// Complete source-schema `Range` interval production.
     pub range_interval: Option<CatiaRangeInterval>,
-    /// Exact packets in the value program, in source order.
-    pub value_packets: Vec<entity_table::EntityValuePacket>,
-    /// Complete nullable numeric pair when the entire `7C07` payload has that production.
-    pub numeric_pair: Option<entity_table::NumericPair>,
     /// Complete reference signature when the entire `7C07` payload has that production.
     pub reference_signature: Option<CatiaReferenceSignature>,
     /// Exclusive suffix occupant.
@@ -124,6 +120,14 @@ impl CatiaEntityRecordBody {
 }
 
 impl CatiaEntityRecord {
+    pub fn value_packets(&self) -> Vec<entity_table::EntityValuePacket> {
+        entity_table::value_packets(self.value_payload(), &self.value_fields())
+    }
+
+    pub fn numeric_pair(&self) -> Option<entity_table::NumericPair> {
+        entity_table::parse_numeric_pair(self.value_payload())
+    }
+
     pub fn relation_expression(&self) -> Option<&CatiaRelationExpression> {
         match &self.value_production {
             Some(CatiaEntityValueProduction::RelationExpression(value)) => Some(value),
@@ -357,7 +361,7 @@ impl CatiaEntityRecord {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct CatiaEntityRecordWire {
+pub(super) struct CatiaEntityRecordWire {
     id: String,
     object_graph: String,
     object_record: String,
@@ -431,6 +435,13 @@ struct CatiaEntityRecordWire {
     suffix_schema_selection: Option<CatiaEntitySuffixSchemaSelection>,
 }
 
+#[cfg(test)]
+impl CatiaEntityRecordWire {
+    pub(super) fn migrate_numeric_pair(&mut self) {
+        self.numeric_pair = entity_table::parse_numeric_pair(&self.value_payload);
+    }
+}
+
 impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
     fn from(value: CatiaEntityRecord) -> Self {
         let (
@@ -469,6 +480,8 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
             ),
         };
         let value_fields = value_block::tokenize(&value_payload);
+        let value_packets = entity_table::value_packets(&value_payload, &value_fields);
+        let numeric_pair = entity_table::parse_numeric_pair(&value_payload);
         let (suffix_value, suffix_framing) = match value.suffix {
             Some(CatiaEntityRecordSuffix::Value(suffix)) => (Some(suffix), None),
             Some(CatiaEntityRecordSuffix::Framing(framing)) => (None, Some(framing)),
@@ -546,8 +559,8 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
             schema_configuration_record,
             schema_configuration_row_link,
             formula_relation,
-            value_packets: value.value_packets,
-            numeric_pair: value.numeric_pair,
+            value_packets,
+            numeric_pair,
             reference_signature: value.reference_signature,
             record_suffix,
             suffix_value,
@@ -587,8 +600,12 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             CatiaEntityRecordBody::Inline(_) => &[][..],
             CatiaEntityRecordBody::Nested { value_payload, .. } => value_payload.as_slice(),
         };
-        if wire.value_fields != value_block::tokenize(payload) {
-            return Err("entity record value_fields must tokenize value_payload".to_owned());
+        let value_fields = value_block::tokenize(payload);
+        if wire.value_fields != value_fields
+            || wire.value_packets != entity_table::value_packets(payload, &value_fields)
+            || wire.numeric_pair != entity_table::parse_numeric_pair(payload)
+        {
+            return Err("entity record value views disagree with payload".to_owned());
         }
         let suffix = match (wire.suffix_value, wire.suffix_framing) {
             (Some(_), Some(_)) => {
@@ -659,8 +676,6 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             object_production,
             value_production,
             range_interval: wire.range_interval,
-            value_packets: wire.value_packets,
-            numeric_pair: wire.numeric_pair,
             reference_signature: wire.reference_signature,
             suffix,
             suffix_schema_selection: wire.suffix_schema_selection,

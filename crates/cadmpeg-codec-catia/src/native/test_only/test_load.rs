@@ -160,13 +160,18 @@ impl CatiaNative {
                 }
             }
         }
-        let mut entity_records: Vec<CatiaEntityRecord> =
+        let entity_wires: Vec<crate::native::entity_record::CatiaEntityRecordWire> =
             entity_namespace.arena_as("entity_records")?;
-        if namespace.version() < CATIA_NUMERIC_PAIR_VERSION {
-            for entity in &mut entity_records {
-                entity.numeric_pair = entity_table::parse_numeric_pair(entity.value_payload());
-            }
-        }
+        let mut entity_records = entity_wires
+            .into_iter()
+            .map(|mut wire| {
+                if namespace.version() < CATIA_NUMERIC_PAIR_VERSION {
+                    wire.migrate_numeric_pair();
+                }
+                CatiaEntityRecord::try_from(wire)
+                    .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let row_chain_arena = if namespace
             .arenas
             .contains_key("schema_configuration_row_chains")
@@ -469,7 +474,7 @@ impl CatiaNative {
                             != entity_value_schema_selections(
                                 &entity.value_fields(),
                                 catalog,
-                                &entity.value_packets,
+                                &entity.value_packets(),
                             )
                     })
                     || graph_entities.iter().any(|entity| {

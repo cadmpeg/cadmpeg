@@ -230,8 +230,7 @@ use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
                 incoming_storage_references: Vec::new(),
             })),
             object_production: None,
-            value_packets: Vec::new(),
-            numeric_pair: None,
+
             reference_signature: None,
             suffix: None,
             suffix_schema_selection: None,

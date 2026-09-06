@@ -640,15 +640,6 @@ pub enum EntityBody {
 }
 
 impl EntityRecord {
-    /// Complete numeric-pair view when the entire value payload has that production.
-    #[must_use]
-    pub fn numeric_pair(&self) -> Option<NumericPair> {
-        match &self.body {
-            EntityBody::Nested { value_payload, .. } => parse_numeric_pair(value_payload),
-            EntityBody::Inline(_) => None,
-        }
-    }
-
     /// Complete reference-signature view when the entire value payload has that production.
     #[must_use]
     pub fn reference_signature(&self) -> Option<ReferenceSignature> {

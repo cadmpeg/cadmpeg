@@ -16,8 +16,6 @@ pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
             && record.value_payload().is_empty()
             && record.value_fields().is_empty()
             && record.value_schema_selections.is_empty()
-            && record.value_packets.is_empty()
-            && record.numeric_pair.is_none()
             && record.reference_signature.is_none()
             && record.record_suffix().is_empty()
             && record.suffix_value().is_none()
@@ -55,10 +53,6 @@ pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
     u64::from(record.definition_len()) == definition_body_len + 6
         && u64::from(record.value_len()) == value_len
         && record.byte_len == total_len
-        && record.value_fields() == value_block::tokenize(record.value_payload())
-        && record.value_packets
-            == entity_table::value_packets(record.value_payload(), &record.value_fields())
-        && record.numeric_pair == entity_table::parse_numeric_pair(record.value_payload())
         && record
             .reference_signature
             .as_ref()

@@ -9578,7 +9578,7 @@ impl CatiaNative {
                 );
                 let value_fields = entity.value_fields();
                 entity.value_schema_selections =
-                    entity_value_schema_selections(&value_fields, catalog, &entity.value_packets);
+                    entity_value_schema_selections(&value_fields, catalog, &entity.value_packets());
                 let record_suffix = entity.record_suffix().to_vec();
                 entity.set_suffix_from_bytes(&record_suffix);
                 entity.suffix_schema_selection =
@@ -10058,7 +10058,6 @@ fn native_object_graph(
         .enumerate()
         .filter_map(|(ordinal, entity)| {
             let object_record = records.get(ordinal)?;
-            let numeric_pair = entity.numeric_pair();
             let reference_signature = entity.reference_signature();
             let body = match entity.body {
                 entity_table::EntityBody::Inline(bytes) => CatiaEntityRecordBody::Inline(bytes),
@@ -10079,12 +10078,6 @@ fn native_object_graph(
                     record_suffix,
                 },
             };
-            let value_payload = match &body {
-                CatiaEntityRecordBody::Inline(_) => &[][..],
-                CatiaEntityRecordBody::Nested { value_payload, .. } => value_payload.as_slice(),
-            };
-            let value_fields = value_block::tokenize(value_payload);
-            let value_packets = entity_table::value_packets(value_payload, &value_fields);
             Some(CatiaEntityRecord {
                 id: format!("catia:outer:entity-record#{:010}", entity.pos),
                 object_graph: id.clone(),
@@ -10102,8 +10095,6 @@ fn native_object_graph(
                 object_production: None,
                 value_production: None,
                 range_interval: None,
-                value_packets,
-                numeric_pair,
                 reference_signature: reference_signature.map(|production| {
                     CatiaReferenceSignature {
                         production,

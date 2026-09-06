@@ -621,22 +621,22 @@ fn finish_decode(
         .iter()
         .map(|record| record.value_schema_selections.len())
         .sum();
-    let compact_entity_value_packet_count = native
-        .entity_records
-        .iter()
-        .flat_map(|record| &record.value_packets)
-        .filter(|packet| matches!(packet, entity_table::EntityValuePacket::Compact { .. }))
-        .count();
-    let numeric_entity_value_packet_count = native
-        .entity_records
-        .iter()
-        .flat_map(|record| &record.value_packets)
-        .filter(|packet| matches!(packet, entity_table::EntityValuePacket::Numeric { .. }))
-        .count();
+    let mut compact_entity_value_packet_count = 0;
+    let mut numeric_entity_value_packet_count = 0;
+    let mut layout_entity_value_packet_count = 0;
+    let mut e9_scalar_entity_value_packet_count = 0;
+    for packet in native.entity_records.iter().flat_map(|record| record.value_packets()) {
+        match packet {
+            entity_table::EntityValuePacket::Compact { .. } => compact_entity_value_packet_count += 1,
+            entity_table::EntityValuePacket::Numeric { .. } => numeric_entity_value_packet_count += 1,
+            entity_table::EntityValuePacket::Layout { .. } => layout_entity_value_packet_count += 1,
+            entity_table::EntityValuePacket::E9Scalar { .. } => e9_scalar_entity_value_packet_count += 1,
+        }
+    }
     let numeric_entity_value_pair_count = native
         .entity_records
         .iter()
-        .filter(|record| record.numeric_pair.is_some())
+        .filter(|record| record.numeric_pair().is_some())
         .count();
     let reference_signature_count = native
         .entity_records
@@ -746,18 +746,6 @@ fn finish_decode(
         .consolidated_edge_runs
         .iter()
         .filter(|run| run.endpoint_loci.is_some())
-        .count();
-    let layout_entity_value_packet_count = native
-        .entity_records
-        .iter()
-        .flat_map(|record| &record.value_packets)
-        .filter(|packet| matches!(packet, entity_table::EntityValuePacket::Layout { .. }))
-        .count();
-    let e9_scalar_entity_value_packet_count = native
-        .entity_records
-        .iter()
-        .flat_map(|record| &record.value_packets)
-        .filter(|packet| matches!(packet, entity_table::EntityValuePacket::E9Scalar { .. }))
         .count();
     let (
         relation_expression_count,
