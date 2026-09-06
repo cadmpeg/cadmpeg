@@ -260,9 +260,10 @@ fn project_default_bindings(
         .map(|body| AppearanceBinding {
             id: format!(
                 "inventor:presentation:body-default#{}",
-                &sha256_hex(body.0.as_bytes())[..16]
+                &sha256_hex(body.as_str().as_bytes())[..16]
             )
-            .into(),
+            .try_into()
+            .expect("valid identity"),
             target: AppearanceTarget::Body(body.clone()),
             appearance: appearance.clone(),
             source_entity_id: Some(format!(
@@ -293,7 +294,7 @@ fn project_face_bindings(
     }
     let mut appearance_ids = std::collections::HashMap::new();
     let mut ordered_face_keys = face_keys.iter().collect::<Vec<_>>();
-    ordered_face_keys.sort_by(|(left, _), (right, _)| left.0.cmp(&right.0));
+    ordered_face_keys.sort_by(|(left, _), (right, _)| left.cmp(right));
     for (face_id, key) in ordered_face_keys {
         let matching_faces = inventory
             .graphics_faces
@@ -387,9 +388,10 @@ fn project_face_bindings(
         projection.bindings.push(AppearanceBinding {
             id: format!(
                 "inventor:presentation:face-override#{}",
-                &sha256_hex(face_id.0.as_bytes())[..16]
+                &sha256_hex(face_id.as_str().as_bytes())[..16]
             )
-            .into(),
+            .try_into()
+            .expect("valid identity"),
             target: AppearanceTarget::Face(face_id.clone()),
             appearance: appearance_id,
             source_entity_id: Some(format!(

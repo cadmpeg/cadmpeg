@@ -989,7 +989,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor feature result does not resolve to its PmDc object collection".into(),
-                Some(result.id.0.clone()),
+                Some(result.id.as_str().to_owned()),
             ));
             continue;
         };
@@ -1001,7 +1001,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor feature result native reference is not an object collection".into(),
-                Some(result.id.0.clone()),
+                Some(result.id.as_str().to_owned()),
             ));
             continue;
         };
@@ -1024,7 +1024,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor feature result bodies do not match its PmDc object collection".into(),
-                Some(result.id.0.clone()),
+                Some(result.id.as_str().to_owned()),
             ));
         }
     }
