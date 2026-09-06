@@ -7,6 +7,9 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::native::owner_chart::{
+    CatiaOwnerChartAddress, CatiaOwnerChartBridge, CatiaOwnerChartCarrier, CatiaOwnerChartSideAxis,
+};
 use crate::test_support::*;
 use crate::CatiaCodec;
 
@@ -946,12 +949,12 @@ fn native_namespace_retains_source_closed_owner_chart() {
         panic!("one consolidated owner packet")
     };
     let chart = packet.owner_chart().expect("owner chart relation");
-    assert_eq!(chart.carrier, crate::native::CatiaOwnerChartCarrier::B2b);
+    assert_eq!(chart.carrier, CatiaOwnerChartCarrier::B2b);
     assert_eq!(
         chart.side_axis,
-        crate::native::CatiaOwnerChartSideAxis::SecondParameter
+        CatiaOwnerChartSideAxis::SecondParameter
     );
-    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+    let CatiaOwnerChartBridge::SupportedSurface {
         byte_offset,
         carrier_surface,
         support_surfaces,
@@ -975,7 +978,7 @@ fn native_namespace_retains_source_closed_owner_chart() {
         [1, 100, 0, 101, 1]
     );
     assert_eq!(
-        carrier_surface.encoding,
+        carrier_surface.encoding(),
         crate::native::CatiaAllocationReferenceEncoding::BackwardDistance
     );
     assert_eq!(*controls, [0x09, 0x05, 0x03, 0x05, 0x01, 0x05]);
@@ -1008,7 +1011,7 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
     let chart = native.consolidated_owner_packets[0]
         .owner_chart()
         .expect("owner chart");
-    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+    let CatiaOwnerChartBridge::SupportedSurface {
         carrier_surface,
         support_surfaces,
         support_pcurves,
@@ -1029,44 +1032,40 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
         .expect("support-pcurve alias");
     assert_eq!(
         support_surfaces[0]
-            .alias
-            .as_ref()
+            .alias()
             .map(|binding| binding.row.as_str()),
         Some(surface_alias.id.as_str())
     );
     assert_eq!(
         support_surfaces[0]
-            .alias
-            .as_ref()
+            .alias()
             .and_then(|binding| binding.canonical_tag),
         Some(200)
     );
     assert_eq!(
         support_pcurves[0]
-            .alias
-            .as_ref()
+            .alias()
             .map(|binding| binding.row.as_str()),
         Some(pcurve_alias.id.as_str())
     );
     assert_eq!(
         support_pcurves[0]
-            .alias
-            .as_ref()
+            .alias()
             .and_then(|binding| binding.canonical_tag),
         Some(101)
     );
     assert_ne!(
-        support_pcurves[1].encoding,
+        support_pcurves[1].encoding(),
         crate::native::CatiaAllocationReferenceEncoding::WidthCoded
     );
-    assert_eq!(support_pcurves[1].alias, None);
-    assert_eq!(carrier_surface.alias, None);
+    assert_eq!(support_pcurves[1].alias(), None);
+    assert_eq!(carrier_surface.alias(), None);
 
     let mut legacy = native.clone();
     let Some(chart) = legacy.consolidated_owner_packets[0].owner_chart_mut() else {
         panic!("owner chart")
     };
-    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+    let CatiaOwnerChartBridge::SupportedSurface {
         support_surfaces,
         support_pcurves,
         ..
@@ -1075,7 +1074,9 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
         panic!("supported-surface bridge")
     };
     for reference in support_surfaces.iter_mut().chain(support_pcurves) {
-        reference.alias = None;
+        if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
+            *alias = None;
+        }
     }
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     legacy
@@ -1090,13 +1091,15 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
     let Some(chart) = invalid.consolidated_owner_packets[0].owner_chart_mut() else {
         panic!("owner chart")
     };
-    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+    let CatiaOwnerChartBridge::SupportedSurface {
         support_surfaces, ..
     } = &mut chart.bridge
     else {
         panic!("supported-surface bridge")
     };
-    if let Some(alias) = &mut support_surfaces[0].alias {
+    if let CatiaOwnerChartAddress::WidthCoded { alias: Some(alias) } =
+        &mut support_surfaces[0].address
+    {
         alias.canonical_tag = Some(100);
     }
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -1123,13 +1126,13 @@ fn owner_chart_duplicate_alias_tags_remain_unresolved() {
     let chart = native.consolidated_owner_packets[0]
         .owner_chart()
         .expect("owner chart");
-    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+    let CatiaOwnerChartBridge::SupportedSurface {
         support_surfaces, ..
     } = &chart.bridge
     else {
         panic!("supported-surface bridge")
     };
-    assert_eq!(support_surfaces[0].alias, None);
+    assert_eq!(support_surfaces[0].alias(), None);
 }
 
 #[test]
