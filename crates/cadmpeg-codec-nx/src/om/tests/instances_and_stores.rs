@@ -383,7 +383,6 @@ fn om_draft_feature_references_require_one_complete_graph() {
     assert_eq!(terminal_lane.raw_indices, [[0x81, 0x5e], [0x80, 0xb8]]);
     assert_eq!(terminal_lane.index_offsets, [284, 286]);
     assert_eq!(terminal_lane.tail, [0x29, 0x29, 0x0c]);
-    assert_eq!(terminal_lane.offset, 284);
 
     let mut malformed = payload.clone();
     malformed[53] = 0x00;

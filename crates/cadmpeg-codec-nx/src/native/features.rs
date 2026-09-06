@@ -4121,6 +4121,10 @@ pub enum FeatureDraftConstructionIdentityFrameForm {
 
 /// End-anchored compact-index lane in a bounded draft construction payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureDraftConstructionTerminalLaneWire",
+    into = "FeatureDraftConstructionTerminalLaneWire"
+)]
 pub struct FeatureDraftConstructionTerminalLane {
     /// Globally unique lane identity.
     pub id: String,
@@ -4134,8 +4138,56 @@ pub struct FeatureDraftConstructionTerminalLane {
     pub tail: [u8; 3],
     /// Absolute source offsets of the compact-index tokens.
     pub index_source_offsets: [u64; 2],
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureDraftConstructionTerminalLaneWire {
+    /// Globally unique lane identity.
+    id: String,
+    /// Owning `DRAFT` operation label.
+    operation_label: String,
+    /// Two non-null compact indices in serialized order.
+    indices: [u32; 2],
+    /// Exact two-byte compact-index tokens in serialized order.
+    raw_indices: [[u8; 2]; 2],
+    /// Exact uninterpreted bytes preceding the terminal zero.
+    tail: [u8; 3],
+    /// Absolute source offsets of the compact-index tokens.
+    index_source_offsets: [u64; 2],
     /// Absolute source offset of the first compact-index token.
-    pub source_offset: u64,
+    source_offset: u64,
+}
+
+impl From<FeatureDraftConstructionTerminalLane> for FeatureDraftConstructionTerminalLaneWire {
+    fn from(lane: FeatureDraftConstructionTerminalLane) -> Self {
+        Self {
+            id: lane.id,
+            operation_label: lane.operation_label,
+            indices: lane.indices,
+            raw_indices: lane.raw_indices,
+            tail: lane.tail,
+            index_source_offsets: lane.index_source_offsets,
+            source_offset: lane.index_source_offsets[0],
+        }
+    }
+}
+
+impl TryFrom<FeatureDraftConstructionTerminalLaneWire> for FeatureDraftConstructionTerminalLane {
+    type Error = String;
+
+    fn try_from(wire: FeatureDraftConstructionTerminalLaneWire) -> Result<Self, Self::Error> {
+        if wire.source_offset != wire.index_source_offsets[0] {
+            return Err("source_offset must equal the first index_source_offsets entry".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            indices: wire.indices,
+            raw_indices: wire.raw_indices,
+            tail: wire.tail,
+            index_source_offsets: wire.index_source_offsets,
+        })
+    }
 }
 
 /// Ordered construction reference carried by a bounded surface-feature payload.
@@ -10490,7 +10542,6 @@ pub fn feature_draft_construction_terminal_lanes(
                 index_source_offsets: lane
                     .index_offsets
                     .map(|offset| entry_offset + offset as u64),
-                source_offset: entry_offset + lane.offset as u64,
             });
         },
     );

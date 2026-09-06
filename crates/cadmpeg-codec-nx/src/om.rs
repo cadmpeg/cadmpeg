@@ -2266,8 +2266,6 @@ pub struct DraftFeatureTerminalLane {
     pub index_offsets: [usize; 2],
     /// Three uninterpreted bytes preceding the terminal zero.
     pub tail: [u8; 3],
-    /// Absolute offset of the first compact-index token.
-    pub offset: usize,
 }
 
 /// Exact common construction references in a surface-feature payload.
@@ -4845,7 +4843,6 @@ pub fn draft_feature_terminal_lane(
                 record.payload_offset + second_offset,
             ],
             tail,
-            offset: record.payload_offset + start,
         };
         if candidate.is_some() {
             return None;

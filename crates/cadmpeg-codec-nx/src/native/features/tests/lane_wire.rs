@@ -235,3 +235,14 @@ fn boolean_operation_preserves_wire_and_requires_complete_tools() {
         ],
     );
 }
+
+#[test]
+fn draft_terminal_lane_derives_its_source_offset() {
+    let json = r#"{"id":"lane","operation_label":"operation","indices":[128,129],"raw_indices":[[128,128],[128,129]],"tail":[1,2,3],"index_source_offsets":[100,102],"source_offset":100}"#;
+    check_lane_wire::<FeatureDraftConstructionTerminalLane>(json, &[]);
+    let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+    malformed["source_offset"] = serde_json::json!(101);
+    let error = serde_json::from_value::<FeatureDraftConstructionTerminalLane>(malformed)
+        .unwrap_err();
+    assert!(error.to_string().contains("source_offset"));
+}
