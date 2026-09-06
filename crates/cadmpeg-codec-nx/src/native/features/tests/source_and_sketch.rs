@@ -95,7 +95,7 @@ fn nx_symbolic_thread_retains_all_complete_type_three_text_frames() {
 
     let frames = super::symbolic_thread_text_frames(record).expect("two text frames");
     assert_eq!(frames.len(), 3);
-    assert_eq!(frames[0].marker, 0x03);
+    assert_eq!(frames[0].marker, crate::om::OperationTextMarker::Text);
     assert_eq!(frames[0].offset, 500);
     assert_eq!(frames[0].value, "M Profile");
     assert_eq!(frames[1].offset, 512);

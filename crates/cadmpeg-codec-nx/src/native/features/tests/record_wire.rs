@@ -96,3 +96,15 @@ fn datum_plane_payload_derives_terminal_index_count() {
         assert!(error.to_string().contains("index_lane_declared_count"));
     }
 }
+
+#[test]
+fn symbolic_thread_text_frame_derives_marker() {
+    let json = r#"{"id":"frame","symbolic_thread":"thread","ordinal":0,"marker":3,"value":"CUT","source_offset":10}"#;
+    let frame: super::FeatureSymbolicThreadTextFrame = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&frame).unwrap(), json);
+    for marker in [0, 4, 255] {
+        let invalid = json.replace("\"marker\":3", &format!("\"marker\":{marker}"));
+        let error = serde_json::from_str::<super::FeatureSymbolicThreadTextFrame>(&invalid).unwrap_err();
+        assert!(error.to_string().contains("marker"));
+    }
+}

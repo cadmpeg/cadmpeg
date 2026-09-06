@@ -2026,11 +2026,18 @@ pub struct OperationPayloadString<'a> {
     pub value: &'a str,
 }
 
+/// Marker selecting a bounded operation text frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationTextMarker {
+    Text,
+    String,
+}
+
 /// One length-framed UTF-8 text frame in a bounded operation payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationPayloadTextFrame<'a> {
     /// Marker selecting the payload text-frame family.
-    pub marker: u8,
+    pub marker: OperationTextMarker,
     /// Absolute offset of the marker.
     pub offset: usize,
     /// Exact non-empty text value.
@@ -3477,10 +3484,14 @@ pub fn operation_payload_text_frames(
     let mut frames = Vec::new();
     let mut at = 0usize;
     while at + 4 <= record.payload.len() {
-        if !matches!(record.payload[at], 0x03 | 0x04) {
-            at += 1;
-            continue;
-        }
+        let marker = match record.payload[at] {
+            0x03 => OperationTextMarker::Text,
+            0x04 => OperationTextMarker::String,
+            _ => {
+                at += 1;
+                continue;
+            }
+        };
         let declared = usize::from(record.payload[at + 1]);
         let Some(end) = at.checked_add(declared) else {
             at += 1;
@@ -3501,7 +3512,7 @@ pub fn operation_payload_text_frames(
             continue;
         }
         frames.push(OperationPayloadTextFrame {
-            marker: record.payload[at],
+            marker,
             offset: record.payload_offset + at,
             value,
         });
@@ -3514,7 +3525,7 @@ pub fn operation_payload_text_frames(
 pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPayloadString<'_>> {
     operation_payload_text_frames(record)
         .into_iter()
-        .filter(|frame| frame.marker == 0x04)
+        .filter(|frame| frame.marker == OperationTextMarker::String)
         .map(|frame| OperationPayloadString {
             offset: frame.offset,
             value: frame.value,

@@ -1716,17 +1716,17 @@ fn om_operation_payload_text_frames_retain_marker_and_order() {
         frames,
         vec![
             super::OperationPayloadTextFrame {
-                marker: 0x03,
+                marker: super::OperationTextMarker::Text,
                 offset: 200,
                 value: "CUT",
             },
             super::OperationPayloadTextFrame {
-                marker: 0x04,
+                marker: super::OperationTextMarker::String,
                 offset: 206,
                 value: "DONE",
             },
             super::OperationPayloadTextFrame {
-                marker: 0x03,
+                marker: super::OperationTextMarker::Text,
                 offset: 213,
                 value: "M Profile",
             },

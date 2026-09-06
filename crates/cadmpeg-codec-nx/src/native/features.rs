@@ -393,6 +393,7 @@ pub struct FeaturePayloadString {
 
 /// Exact text frame retained from a `SYMBOLIC_THREAD` operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureSymbolicThreadTextFrameWire", into = "FeatureSymbolicThreadTextFrameWire")]
 pub struct FeatureSymbolicThreadTextFrame {
     /// Globally unique text-frame identity.
     pub id: String,
@@ -400,12 +401,50 @@ pub struct FeatureSymbolicThreadTextFrame {
     pub symbolic_thread: String,
     /// Zero-based order among the operation's type-`03` text frames.
     pub ordinal: u32,
-    /// Exact serialized text-frame marker.
-    pub marker: u8,
     /// Exact UTF-8 text value.
     pub value: String,
     /// Absolute file offset of the text-frame marker.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureSymbolicThreadTextFrameWire {
+    id: String,
+    symbolic_thread: String,
+    ordinal: u32,
+    marker: u8,
+    value: String,
+    source_offset: u64,
+}
+
+impl From<FeatureSymbolicThreadTextFrame> for FeatureSymbolicThreadTextFrameWire {
+    fn from(frame: FeatureSymbolicThreadTextFrame) -> Self {
+        Self {
+            id: frame.id,
+            symbolic_thread: frame.symbolic_thread,
+            ordinal: frame.ordinal,
+            marker: 3,
+            value: frame.value,
+            source_offset: frame.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureSymbolicThreadTextFrameWire> for FeatureSymbolicThreadTextFrame {
+    type Error = String;
+
+    fn try_from(wire: FeatureSymbolicThreadTextFrameWire) -> Result<Self, Self::Error> {
+        if wire.marker != 3 {
+            return Err("marker must be 3 for a symbolic-thread text frame".to_owned());
+        }
+        Ok(Self {
+            id: wire.id,
+            symbolic_thread: wire.symbolic_thread,
+            ordinal: wire.ordinal,
+            value: wire.value,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Typed text-frame payload retained from one `SYMBOLIC_THREAD` operation.
@@ -6493,7 +6532,7 @@ fn symbolic_thread_text_frames(
     }
     let frames = crate::om::operation_payload_text_frames(record)
         .into_iter()
-        .filter(|frame| frame.marker == 0x03)
+        .filter(|frame| frame.marker == crate::om::OperationTextMarker::Text)
         .collect::<Vec<_>>();
     (frames.len() >= 2).then_some(frames)
 }
@@ -6523,7 +6562,6 @@ pub fn feature_symbolic_threads(container: &Container) -> Vec<FeatureSymbolicThr
                     ),
                     symbolic_thread: id.clone(),
                     ordinal: ordinal as u32,
-                    marker: frame.marker,
                     value: frame.value.to_string(),
                     source_offset: entry_offset + frame.offset as u64,
                 })
