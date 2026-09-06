@@ -3243,22 +3243,112 @@ pub struct FeatureDraftConstructionReference {
 
 /// Counted compact-index lane preceding a bounded draft construction graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureDraftConstructionIndexLaneWire",
+    into = "FeatureDraftConstructionIndexLaneWire"
+)]
 pub struct FeatureDraftConstructionIndexLane {
-    /// Globally unique lane identity.
     pub id: String,
-    /// Owning `DRAFT` operation label.
     pub operation_label: String,
-    /// Serialized count including the omitted lane owner.
     pub declared_count: u8,
+    pub indices: FeatureDraftConstructionIndices,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FeatureDraftConstructionIndices {
+    Unresolved(Vec<FeatureIndexToken>),
+    Resolved(Vec<FeatureResolvedIndexToken>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureResolvedIndexToken {
+    pub token: FeatureIndexToken,
+    pub data_block: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureDraftConstructionIndexLaneWire {
+    /// Globally unique lane identity.
+    id: String,
+    /// Owning `DRAFT` operation label.
+    operation_label: String,
+    /// Serialized count including the omitted lane owner.
+    declared_count: u8,
     /// Non-null compact indices in serialized order.
-    pub indices: Vec<u32>,
+    indices: Vec<u32>,
     /// Exact compact-index tokens in serialized order.
-    pub raw_indices: Vec<Vec<u8>>,
+    raw_indices: Vec<Vec<u8>>,
     /// Same-store native blocks when the complete lane and graph select one store.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_blocks: Option<Vec<String>>,
+    data_blocks: Option<Vec<String>>,
     /// Absolute source offsets of the compact-index tokens.
-    pub source_offsets: Vec<u64>,
+    source_offsets: Vec<u64>,
+}
+
+impl From<FeatureDraftConstructionIndexLane> for FeatureDraftConstructionIndexLaneWire {
+    fn from(lane: FeatureDraftConstructionIndexLane) -> Self {
+        let (tokens, data_blocks): (Vec<_>, _) = match lane.indices {
+            FeatureDraftConstructionIndices::Unresolved(tokens) => (tokens, None),
+            FeatureDraftConstructionIndices::Resolved(tokens) => {
+                let (tokens, blocks) = tokens
+                    .into_iter()
+                    .map(|row| (row.token, row.data_block))
+                    .unzip();
+                (tokens, Some(blocks))
+            }
+        };
+        Self {
+            id: lane.id,
+            operation_label: lane.operation_label,
+            declared_count: lane.declared_count,
+            indices: tokens.iter().map(|token| token.value).collect(),
+            raw_indices: tokens.iter().map(|token| token.raw.clone()).collect(),
+            data_blocks,
+            source_offsets: tokens.iter().map(|token| token.source_offset).collect(),
+        }
+    }
+}
+
+impl TryFrom<FeatureDraftConstructionIndexLaneWire> for FeatureDraftConstructionIndexLane {
+    type Error = String;
+
+    fn try_from(wire: FeatureDraftConstructionIndexLaneWire) -> Result<Self, Self::Error> {
+        let count = wire.indices.len();
+        if wire.raw_indices.len() != count
+            || wire.source_offsets.len() != count
+            || wire
+                .data_blocks
+                .as_ref()
+                .is_some_and(|blocks| blocks.len() != count)
+        {
+            return Err("draft index lane columns must have equal lengths".into());
+        }
+        let tokens = wire
+            .indices
+            .into_iter()
+            .zip(wire.raw_indices)
+            .zip(wire.source_offsets)
+            .map(|((value, raw), source_offset)| FeatureIndexToken {
+                value,
+                raw,
+                source_offset,
+            });
+        let indices = match wire.data_blocks {
+            None => FeatureDraftConstructionIndices::Unresolved(tokens.collect()),
+            Some(blocks) => FeatureDraftConstructionIndices::Resolved(
+                tokens
+                    .zip(blocks)
+                    .map(|(token, data_block)| FeatureResolvedIndexToken { token, data_block })
+                    .collect(),
+            ),
+        };
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            declared_count: wire.declared_count,
+            indices,
+        })
+    }
 }
 
 /// Exact logical payload reconstructed from a resolved draft index lane.
@@ -9332,29 +9422,35 @@ pub fn feature_draft_construction_index_lanes(
             let Some(lane) = crate::om::draft_feature_leading_index_lane(record) else {
                 return;
             };
-            let indices = lane
-                .indices
-                .iter()
-                .map(|token| token.value)
-                .collect::<Vec<_>>();
-            let data_blocks =
+            let section_ordinal =
                 crate::om::draft_feature_payload_references(record).and_then(|graph| {
-                    let mut complete_indices = graph
+                    let complete_indices = graph
                         .references
                         .iter()
                         .map(|reference| reference.object_index)
+                        .chain(lane.indices.iter().map(|token| token.value))
                         .collect::<Vec<_>>();
-                    complete_indices.extend(&indices);
-                    let section_ordinal = unique_offset_data_store(&indexed, &complete_indices)?;
-                    Some(
-                        indices
-                            .iter()
-                            .map(|index| {
-                                format!("nx:om-data-blocks-{section_ordinal}:block#{index}")
-                            })
-                            .collect(),
-                    )
+                    unique_offset_data_store(&indexed, &complete_indices)
                 });
+            let tokens = lane.indices.into_iter().map(|token| FeatureIndexToken {
+                value: token.value,
+                raw: token.raw,
+                source_offset: entry_offset + token.offset as u64,
+            });
+            let indices = match section_ordinal {
+                None => FeatureDraftConstructionIndices::Unresolved(tokens.collect()),
+                Some(section_ordinal) => FeatureDraftConstructionIndices::Resolved(
+                    tokens
+                        .map(|token| {
+                            let data_block = format!(
+                                "nx:om-data-blocks-{section_ordinal}:block#{}",
+                                token.value
+                            );
+                            FeatureResolvedIndexToken { token, data_block }
+                        })
+                        .collect(),
+                ),
+            };
             lanes.push(FeatureDraftConstructionIndexLane {
                 id: format!(
                     "nx:feature-history:draft-construction-index-lane#{section_key}-{operation_ordinal:010}"
@@ -9364,13 +9460,6 @@ pub fn feature_draft_construction_index_lanes(
                 ),
                 declared_count: lane.declared_count,
                 indices,
-                raw_indices: lane.indices.iter().map(|token| token.raw.clone()).collect(),
-                data_blocks,
-                source_offsets: lane
-                    .indices
-                    .iter()
-                    .map(|token| entry_offset + token.offset as u64)
-                    .collect(),
             });
         },
     );
@@ -9386,7 +9475,13 @@ pub fn feature_draft_construction_payloads(
     lanes
         .iter()
         .filter_map(|lane| {
-            let data_blocks = lane.data_blocks.clone()?;
+            let FeatureDraftConstructionIndices::Resolved(tokens) = &lane.indices else {
+                return None;
+            };
+            let data_blocks = tokens
+                .iter()
+                .map(|row| row.data_block.clone())
+                .collect::<Vec<_>>();
             let (bytes, block_payload_offsets, block_byte_lengths, block_source_offsets) =
                 join_data_block_bytes(&data_blocks, &blocks)?;
             Some(FeatureDraftConstructionPayload {
@@ -9418,8 +9513,10 @@ pub fn feature_draft_construction_graph_payloads(
     lanes
         .iter()
         .filter_map(|lane| {
-            let lane_blocks = lane.data_blocks.as_ref()?;
-            let store = lane_blocks.first()?.rsplit_once(":block#")?.0;
+            let FeatureDraftConstructionIndices::Resolved(tokens) = &lane.indices else {
+                return None;
+            };
+            let store = tokens.first()?.data_block.rsplit_once(":block#")?.0;
             let mut graph = references
                 .iter()
                 .filter(|reference| reference.operation_label == lane.operation_label)

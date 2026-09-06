@@ -150,3 +150,15 @@ fn point_scalar_lane_preserves_wire_and_requires_six_complete_tokens() {
         &["values", "raw_values", "source_offsets"],
     );
 }
+
+#[test]
+fn draft_index_lane_preserves_wire_and_groups_resolution_with_tokens() {
+    check_lane_wire::<FeatureDraftConstructionIndexLane>(
+        r#"{"id":"lane","operation_label":"operation","declared_count":3,"indices":[7,8],"raw_indices":[[7],[8]],"data_blocks":["first","second"],"source_offsets":[110,120]}"#,
+        &["indices", "raw_indices", "data_blocks", "source_offsets"],
+    );
+    check_lane_wire::<FeatureDraftConstructionIndexLane>(
+        r#"{"id":"lane","operation_label":"operation","declared_count":3,"indices":[7,8],"raw_indices":[[7],[8]],"source_offsets":[110,120]}"#,
+        &["indices", "raw_indices", "source_offsets"],
+    );
+}
