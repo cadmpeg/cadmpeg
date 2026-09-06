@@ -264,7 +264,32 @@ pub struct FeatureBodyWriteGroupPartitionUse {
 /// The optional tag and object identity are native evidence. They do not assign a
 /// body, operand, input, or output role.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureOperationObjectReferenceWire", into = "FeatureOperationObjectReferenceWire")]
 pub struct FeatureOperationObjectReference {
+    /// Globally unique reference identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Owning bounded operation-record identity.
+    pub operation_record: String,
+    /// Zero-based reference order within the operation payload.
+    pub ordinal: u32,
+    /// Byte between the opening `01 02` marker and the object index.
+    pub tag: Option<u8>,
+    /// Referenced feature object index.
+    pub object: crate::om::reference_index::CanonicalFeatureReferenceToken,
+    /// Unique target in the native offset-store data-block arena, when found.
+    pub data_block: Option<String>,
+    /// Absolute offset of the object-index token.
+    pub object_index_source_offset: u64,
+    /// Exact serialized field byte length.
+    pub byte_len: u64,
+    /// Absolute offset of the opening `01 02` marker.
+    pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureOperationObjectReferenceWire {
     /// Globally unique reference identity.
     pub id: String,
     /// Owning operation-label identity.
@@ -289,6 +314,32 @@ pub struct FeatureOperationObjectReference {
     pub byte_len: u64,
     /// Absolute offset of the opening `01 02` marker.
     pub source_offset: u64,
+}
+
+impl From<FeatureOperationObjectReference> for FeatureOperationObjectReferenceWire {
+    fn from(value: FeatureOperationObjectReference) -> Self {
+        Self {
+            id: value.id, operation_label: value.operation_label, operation_record: value.operation_record,
+            ordinal: value.ordinal, tag: value.tag,
+            object_index: value.object.value(), raw_object_index: value.object.raw().to_vec(),
+            data_block: value.data_block, object_index_source_offset: value.object_index_source_offset,
+            byte_len: value.byte_len, source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureOperationObjectReferenceWire> for FeatureOperationObjectReference {
+    type Error = String;
+    fn try_from(value: FeatureOperationObjectReferenceWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: value.id, operation_label: value.operation_label, operation_record: value.operation_record,
+            ordinal: value.ordinal, tag: value.tag,
+            object: crate::om::reference_index::CanonicalFeatureReferenceToken::from_wire(value.object_index, &value.raw_object_index)
+                .map_err(|error| format!("object_index/raw_object_index: {error}"))?,
+            data_block: value.data_block, object_index_source_offset: value.object_index_source_offset,
+            byte_len: value.byte_len, source_offset: value.source_offset,
+        })
+    }
 }
 
 /// Exactly framed common record in one bounded feature operation.
@@ -6875,9 +6926,8 @@ pub fn feature_operation_tagged_references(
                     operation_record: operation_record.clone(),
                     ordinal: ordinal as u32,
                     tag: Some(reference.tag),
-                    object_index: reference.object_index,
-                    raw_object_index: reference.raw_object_index,
-                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    object: reference.object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index.value()),
                     object_index_source_offset: entry_offset
                         + reference.object_index_offset as u64,
                     byte_len: (reference.end_offset - reference.offset) as u64,
@@ -6916,9 +6966,8 @@ pub fn feature_operation_data_block_references(
                     operation_label: operation_label.clone(),
                     operation_record: operation_record.clone(),
                     ordinal: ordinal as u32,
-                    object_index: reference.object_index,
-                    raw_object_index: reference.raw_object_index,
-                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    object: reference.object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index.value()),
                     object_index_source_offset: entry_offset
                         + reference.object_index_offset as u64,
                     byte_len: (reference.end_offset - reference.offset) as u64,

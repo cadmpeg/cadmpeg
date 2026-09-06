@@ -2045,9 +2045,7 @@ pub struct OperationTaggedReference {
     /// Byte between the opening marker and the object index.
     pub tag: u8,
     /// Referenced feature object index.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    pub object_index: reference_index::CanonicalFeatureReferenceToken,
     /// Absolute offset of the object-index token.
     pub object_index_offset: usize,
     /// Exclusive absolute end offset after the fixed field suffix.
@@ -2063,9 +2061,7 @@ pub struct OperationDataBlockReference {
     /// Absolute offset of the opening `01 02` marker.
     pub offset: usize,
     /// Referenced feature object index.
-    pub object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_object_index: Vec<u8>,
+    pub object_index: reference_index::CanonicalFeatureReferenceToken,
     /// Absolute offset of the object-index token.
     pub object_index_offset: usize,
     /// Exclusive absolute end offset after the fixed field suffix.
@@ -5388,13 +5384,10 @@ pub fn operation_tagged_references(record: OperationRecord<'_>) -> Vec<Operation
         .filter_map(|(offset, window)| (window == PREFIX).then_some(offset))
     {
         let token = marker + PREFIX.len();
-        let Some((Some(object_index), end)) = feature_object_index(record.payload, token) else {
+        let Some(object_index) = reference_index::CanonicalFeatureReferenceToken::read(&record.payload[token..]) else {
             continue;
         };
-        let raw_object_index = &record.payload[token..end];
-        if !canonical_feature_object_index(Some(object_index), raw_object_index) {
-            continue;
-        }
+        let end = token + object_index.raw().len();
         let Some(suffix_end) = end.checked_add(SUFFIX.len()) else {
             continue;
         };
@@ -5405,7 +5398,6 @@ pub fn operation_tagged_references(record: OperationRecord<'_>) -> Vec<Operation
             offset: record.payload_offset + marker,
             tag: 0x17,
             object_index,
-            raw_object_index: raw_object_index.to_vec(),
             object_index_offset: record.payload_offset + token,
             end_offset: record.payload_offset + suffix_end,
         });
@@ -5430,13 +5422,10 @@ pub fn operation_data_block_references(
         .filter_map(|(offset, window)| (window == PREFIX).then_some(offset))
     {
         let token = marker + PREFIX.len();
-        let Some((Some(object_index), end)) = feature_object_index(record.payload, token) else {
+        let Some(object_index) = reference_index::CanonicalFeatureReferenceToken::read(&record.payload[token..]) else {
             continue;
         };
-        let raw_object_index = &record.payload[token..end];
-        if !canonical_feature_object_index(Some(object_index), raw_object_index) {
-            continue;
-        }
+        let end = token + object_index.raw().len();
         let Some(suffix_end) = end.checked_add(SUFFIX.len()) else {
             continue;
         };
@@ -5446,7 +5435,6 @@ pub fn operation_data_block_references(
         references.push(OperationDataBlockReference {
             offset: record.payload_offset + marker,
             object_index,
-            raw_object_index: raw_object_index.to_vec(),
             object_index_offset: record.payload_offset + token,
             end_offset: record.payload_offset + suffix_end,
         });

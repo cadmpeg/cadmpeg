@@ -413,3 +413,22 @@ fn operation_body_operand_preserves_exact_token_and_optional_relations() {
         }
     }
 }
+
+#[test]
+fn operation_object_reference_requires_canonical_feature_token() {
+    for (value, raw) in [(0, "[0]"), (128, "[128,128]"), (4096, "[144,16,0]")] {
+        let wire = format!(r#"{{"id":"reference","operation_label":"operation","operation_record":"record","ordinal":0,"object_index":{value},"raw_object_index":{raw},"object_index_source_offset":10,"byte_len":4,"source_offset":7}}"#);
+        let record: FeatureOperationObjectReference = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        for invalid_raw in [serde_json::json!([]), serde_json::json!([255]), serde_json::json!([128,0]),
+            serde_json::json!([144,0,0]), serde_json::json!([240,0]), serde_json::json!([144,16]),
+            serde_json::json!([0,0])] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+            invalid["raw_object_index"] = invalid_raw;
+            assert!(serde_json::from_value::<FeatureOperationObjectReference>(invalid).unwrap_err().to_string().contains("object_index/raw_object_index"));
+        }
+        let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+        invalid["object_index"] = serde_json::json!(value + 1);
+        assert!(serde_json::from_value::<FeatureOperationObjectReference>(invalid).is_err());
+    }
+}

@@ -84,6 +84,29 @@ impl FeatureReferenceToken {
     pub(crate) fn raw(&self) -> &[u8] { self.0.raw() }
 }
 
+/// Feature reference encoded with the shortest permitted token width.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CanonicalFeatureReferenceToken(FeatureReferenceToken);
+
+impl CanonicalFeatureReferenceToken {
+    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+        let token = FeatureReferenceToken::read(bytes)?;
+        let width = match token.value() { 0..=0x7f => 1, 0x80..=0xfff => 2, _ => 3 };
+        (token.raw().len() == width).then_some(Self(token))
+    }
+
+    pub(crate) fn from_wire(value: u32, raw: &[u8]) -> Result<Self, &'static str> {
+        let token = Self::read(raw).ok_or("invalid canonical feature reference token")?;
+        if token.raw().len() != raw.len() || token.value() != value {
+            return Err("feature index/raw token: value or width mismatch");
+        }
+        Ok(token)
+    }
+
+    pub(crate) fn value(self) -> u32 { self.0.value() }
+    pub(crate) fn raw(&self) -> &[u8] { self.0.raw() }
+}
+
 /// Required index restricted to the payload `f0`/`f1` grammar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PayloadIndexToken(ReferenceIndexToken);
