@@ -767,6 +767,46 @@ fn rejects_wrong_runtime_types_for_named_product_carriers() {
 }
 
 #[test]
+fn link_group_retains_element_list_on_the_native_wire() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="App::LinkGroup" name="Group"/><Object type="Part::Feature" name="Member"/></Objects>
+<ObjectData Count="2"><Object name="Group"><Properties Count="1">
+<Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property>
+</Properties></Object><Object name="Member"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("link group");
+    let records = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let [group] = records.as_slice() else {
+        panic!("one link group")
+    };
+    assert_eq!(group.element_objects(), ["fcstd:native:object#Member"]);
+    assert!(matches!(group.node, native::ProductNode::LinkGroup { .. }));
+    let wire = serde_json::to_value(group).expect("link group wire");
+    assert_eq!(wire["kind"], "link_group");
+    assert_eq!(
+        wire["element_objects"],
+        serde_json::json!(["fcstd:native:object#Member"])
+    );
+    assert_eq!(
+        serde_json::from_value::<native::ProductNodeRecord>(wire.clone()).unwrap(),
+        *group
+    );
+    let mut invalid = wire;
+    invalid["prototype"] = serde_json::json!("fcstd:native:object#Member");
+    assert!(serde_json::from_value::<native::ProductNodeRecord>(invalid).is_err());
+}
+
+#[test]
 fn product_record_identity_rejects_duplicates() {
     let records = [node("A", &[]), node("A", &[])];
     assert!(matches!(
@@ -904,13 +944,7 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
             .rows()[0][3],
         8.0
     );
-    assert_eq!(
-        occurrence("Override")
-            .linked_prototype
-            .expect("linked prototype placement")
-            .rows()[0][3],
-        0.0
-    );
+    assert!(occurrence("Override").linked_prototype.is_none());
     let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
         .expect("valid assembly graph");
     assert_eq!(

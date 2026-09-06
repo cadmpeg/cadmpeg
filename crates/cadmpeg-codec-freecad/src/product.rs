@@ -136,7 +136,10 @@ pub(crate) fn transfer(
                 match kind {
                     "group" => ProductNode::Group(container),
                     "part" => ProductNode::Part(container),
-                    _ => ProductNode::LinkGroup(container),
+                    _ => ProductNode::LinkGroup {
+                        container,
+                        element_objects,
+                    },
                 }
             }
             _ => {

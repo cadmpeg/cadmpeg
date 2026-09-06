@@ -833,7 +833,12 @@ pub enum ProductNode {
     /// `App::Part` or assembly container.
     Part(ContainerNode),
     /// `App::LinkGroup`.
-    LinkGroup(ContainerNode),
+    LinkGroup {
+        /// Group placement and any explicit `Group` membership.
+        container: ContainerNode,
+        /// Ordered `ElementList` application objects.
+        element_objects: Vec<String>,
+    },
     /// `App::Link` or `App::LinkElement`.
     Occurrence(LinkOccurrence),
 }
@@ -894,7 +899,7 @@ impl ProductNodeRecord {
         match self.node {
             ProductNode::Group(_) => "group",
             ProductNode::Part(_) => "part",
-            ProductNode::LinkGroup(_) => "link_group",
+            ProductNode::LinkGroup { .. } => "link_group",
             ProductNode::Occurrence(_) => "occurrence",
         }
     }
@@ -902,9 +907,11 @@ impl ProductNodeRecord {
     /// Ordered contained application objects.
     pub fn members(&self) -> &[String] {
         match &self.node {
-            ProductNode::Group(node) | ProductNode::Part(node) | ProductNode::LinkGroup(node) => {
-                &node.members
-            }
+            ProductNode::Group(node)
+            | ProductNode::Part(node)
+            | ProductNode::LinkGroup {
+                container: node, ..
+            } => &node.members,
             ProductNode::Occurrence(node) => &node.members,
         }
     }
@@ -912,9 +919,11 @@ impl ProductNodeRecord {
     /// Local placement matrix when stored on the node.
     pub fn local_transform(&self) -> Option<[[f64; 4]; 4]> {
         match &self.node {
-            ProductNode::Group(node) | ProductNode::Part(node) | ProductNode::LinkGroup(node) => {
-                node.local_transform
-            }
+            ProductNode::Group(node)
+            | ProductNode::Part(node)
+            | ProductNode::LinkGroup {
+                container: node, ..
+            } => node.local_transform,
             ProductNode::Occurrence(node) => node.local_transform,
         }
     }
@@ -922,9 +931,11 @@ impl ProductNodeRecord {
     /// Property supplying the placement.
     pub fn placement_property(&self) -> Option<&str> {
         match &self.node {
-            ProductNode::Group(node) | ProductNode::Part(node) | ProductNode::LinkGroup(node) => {
-                node.placement_property.as_deref()
-            }
+            ProductNode::Group(node)
+            | ProductNode::Part(node)
+            | ProductNode::LinkGroup {
+                container: node, ..
+            } => node.placement_property.as_deref(),
             ProductNode::Occurrence(node) => node.placement_property.as_deref(),
         }
     }
@@ -1012,27 +1023,13 @@ impl ProductNodeRecord {
 
     /// Explicit per-element application objects in array order.
     pub fn element_objects(&self) -> &[String] {
-        self.occurrence()
-            .map_or(&[], |node| node.element_objects.as_slice())
-    }
-}
-
-impl LinkOccurrence {
-    fn is_empty_link_payload(&self) -> bool {
-        self.prototype.is_none()
-            && self.external_document.is_none()
-            && self.element_count.is_none()
-            && self.link_transform.is_none()
-            && self.element_transforms.is_empty()
-            && self.element_scales.is_empty()
-            && self.linked_subelements.is_empty()
-            && self.claim_child.is_none()
-            && self.copy_on_change.is_none()
-            && self.copy_on_change_source.is_none()
-            && self.copy_on_change_group.is_none()
-            && self.copy_on_change_touched.is_none()
-            && self.scale.is_none()
-            && self.element_objects.is_empty()
+        match &self.node {
+            ProductNode::LinkGroup {
+                element_objects, ..
+            } => element_objects,
+            ProductNode::Occurrence(node) => &node.element_objects,
+            ProductNode::Group(_) | ProductNode::Part(_) => &[],
+        }
     }
 }
 
@@ -1064,72 +1061,55 @@ struct ProductNodeRecordWire {
 
 impl From<ProductNodeRecord> for ProductNodeRecordWire {
     fn from(value: ProductNodeRecord) -> Self {
-        let kind = value.kind().to_owned();
-        let (members, local_transform, placement_property, occurrence) = match value.node {
-            ProductNode::Group(node) | ProductNode::Part(node) | ProductNode::LinkGroup(node) => (
-                node.members,
-                node.local_transform,
-                node.placement_property,
-                None,
-            ),
-            ProductNode::Occurrence(node) => (
-                node.members.clone(),
-                node.local_transform,
-                node.placement_property.clone(),
-                Some(node),
-            ),
-        };
-        let occurrence = occurrence.unwrap_or_else(|| LinkOccurrence {
-            members: Vec::new(),
-            prototype: None,
-            external_document: None,
-            local_transform: None,
-            placement_property: None,
-            element_count: None,
-            link_transform: None,
-            element_transforms: Vec::new(),
-            element_scales: Vec::new(),
-            linked_subelements: Vec::new(),
-            claim_child: None,
-            copy_on_change: None,
-            copy_on_change_source: None,
-            copy_on_change_group: None,
-            copy_on_change_touched: None,
-            scale: None,
-            element_objects: Vec::new(),
-        });
         Self {
-            id: value.id,
-            object: value.object,
-            kind,
-            members,
-            prototype: occurrence.prototype,
-            external_document: occurrence
-                .external_document
-                .as_ref()
+            kind: value.kind().to_owned(),
+            members: value.members().to_vec(),
+            prototype: value.prototype().map(str::to_owned),
+            external_document: value
+                .external_document()
                 .map(ExternalDocument::as_str)
                 .map(str::to_owned),
-            external_document_attribute: occurrence
-                .external_document
-                .as_ref()
+            external_document_attribute: value
+                .external_document()
                 .and_then(ExternalDocument::attribute)
                 .map(str::to_owned),
-            local_transform,
-            placement_property,
-            element_count: occurrence.element_count,
-            link_transform: occurrence.link_transform,
-            element_transforms: occurrence.element_transforms,
-            element_scales: occurrence.element_scales,
-            linked_subelements: occurrence.linked_subelements,
-            claim_child: occurrence.claim_child,
-            copy_on_change: occurrence.copy_on_change,
-            copy_on_change_source: occurrence.copy_on_change_source,
-            copy_on_change_group: occurrence.copy_on_change_group,
-            copy_on_change_touched: occurrence.copy_on_change_touched,
-            scale: occurrence.scale,
+            local_transform: value.local_transform(),
+            placement_property: value.placement_property().map(str::to_owned),
+            element_count: value.element_count(),
+            link_transform: value.link_transform(),
+            element_transforms: value.element_transforms().to_vec(),
+            element_scales: value.element_scales().to_vec(),
+            linked_subelements: value.linked_subelements().to_vec(),
+            claim_child: value.claim_child(),
+            copy_on_change: value.copy_on_change().map(str::to_owned),
+            copy_on_change_source: value.copy_on_change_source().map(str::to_owned),
+            copy_on_change_group: value.copy_on_change_group().map(str::to_owned),
+            copy_on_change_touched: value.copy_on_change_touched(),
+            scale: value.scale(),
             element_visibility: Vec::new(),
-            element_objects: occurrence.element_objects,
+            element_objects: value.element_objects().to_vec(),
+            id: value.id,
+            object: value.object,
         }
+    }
+}
+
+impl ProductNodeRecordWire {
+    fn has_occurrence_fields(&self) -> bool {
+        self.prototype.is_some()
+            || self.external_document.is_some()
+            || self.external_document_attribute.is_some()
+            || self.element_count.is_some()
+            || self.link_transform.is_some()
+            || !self.element_transforms.is_empty()
+            || !self.element_scales.is_empty()
+            || !self.linked_subelements.is_empty()
+            || self.claim_child.is_some()
+            || self.copy_on_change.is_some()
+            || self.copy_on_change_source.is_some()
+            || self.copy_on_change_group.is_some()
+            || self.copy_on_change_touched.is_some()
+            || self.scale.is_some()
     }
 }
 
@@ -1140,41 +1120,50 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
         if !wire.element_visibility.is_empty() {
             return Err("product node element_visibility is unused and must be empty".to_owned());
         }
-        let container = ContainerNode {
-            members: wire.members,
-            local_transform: wire.local_transform,
-            placement_property: wire.placement_property,
-        };
-        let occurrence = LinkOccurrence {
-            members: container.members.clone(),
-            prototype: wire.prototype,
-            external_document: ExternalDocument::from_wire(
-                wire.external_document,
-                wire.external_document_attribute.as_deref(),
-            )?,
-            local_transform: container.local_transform,
-            placement_property: container.placement_property.clone(),
-            element_count: wire.element_count,
-            link_transform: wire.link_transform,
-            element_transforms: wire.element_transforms,
-            element_scales: wire.element_scales,
-            linked_subelements: wire.linked_subelements,
-            claim_child: wire.claim_child,
-            copy_on_change: wire.copy_on_change,
-            copy_on_change_source: wire.copy_on_change_source,
-            copy_on_change_group: wire.copy_on_change_group,
-            copy_on_change_touched: wire.copy_on_change_touched,
-            scale: wire.scale,
-            element_objects: wire.element_objects,
-        };
+        if wire.kind != "occurrence" && wire.has_occurrence_fields() {
+            return Err("container product node carries occurrence-only link fields".to_owned());
+        }
+        if matches!(wire.kind.as_str(), "group" | "part") && !wire.element_objects.is_empty() {
+            return Err("non-link container product node carries element_objects".to_owned());
+        }
         let node = match wire.kind.as_str() {
-            "group" if occurrence.is_empty_link_payload() => ProductNode::Group(container),
-            "part" if occurrence.is_empty_link_payload() => ProductNode::Part(container),
-            "link_group" if occurrence.is_empty_link_payload() => ProductNode::LinkGroup(container),
-            "occurrence" => ProductNode::Occurrence(occurrence),
             "group" | "part" | "link_group" => {
-                return Err("container product node carries occurrence-only link fields".to_owned())
+                let container = ContainerNode {
+                    members: wire.members,
+                    local_transform: wire.local_transform,
+                    placement_property: wire.placement_property,
+                };
+                match wire.kind.as_str() {
+                    "group" => ProductNode::Group(container),
+                    "part" => ProductNode::Part(container),
+                    _ => ProductNode::LinkGroup {
+                        container,
+                        element_objects: wire.element_objects,
+                    },
+                }
             }
+            "occurrence" => ProductNode::Occurrence(LinkOccurrence {
+                members: wire.members,
+                prototype: wire.prototype,
+                external_document: ExternalDocument::from_wire(
+                    wire.external_document,
+                    wire.external_document_attribute.as_deref(),
+                )?,
+                local_transform: wire.local_transform,
+                placement_property: wire.placement_property,
+                element_count: wire.element_count,
+                link_transform: wire.link_transform,
+                element_transforms: wire.element_transforms,
+                element_scales: wire.element_scales,
+                linked_subelements: wire.linked_subelements,
+                claim_child: wire.claim_child,
+                copy_on_change: wire.copy_on_change,
+                copy_on_change_source: wire.copy_on_change_source,
+                copy_on_change_group: wire.copy_on_change_group,
+                copy_on_change_touched: wire.copy_on_change_touched,
+                scale: wire.scale,
+                element_objects: wire.element_objects,
+            }),
             _ => return Err("unknown product node kind".to_owned()),
         };
         Ok(Self {
