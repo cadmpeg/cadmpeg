@@ -1208,8 +1208,22 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
     );
     assert_eq!(constructions.len(), 1);
     assert_eq!(constructions[0].body_object_index, 42);
-    assert_eq!(constructions[0].profile_references, ["profile#0"]);
-    assert_eq!(constructions[0].profile_data_blocks, ["block#100"]);
+    assert_eq!(
+        constructions[0]
+            .profiles
+            .iter()
+            .map(|member| member.reference.as_str())
+            .collect::<Vec<_>>(),
+        ["profile#0"]
+    );
+    assert_eq!(
+        constructions[0]
+            .profiles
+            .iter()
+            .map(|member| member.data_block.as_str())
+            .collect::<Vec<_>>(),
+        ["block#100"]
+    );
     assert_eq!(constructions[0].atom_data_blocks, ["block#1"]);
     assert_eq!(constructions[0].first_data_blocks, ["block#2"]);
     assert_eq!(constructions[0].second_data_blocks, ["block#3"]);

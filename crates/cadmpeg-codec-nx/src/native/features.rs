@@ -3,8 +3,10 @@
 
 pub(crate) mod delete;
 pub(crate) mod draft;
+pub(crate) mod extrude_32;
 pub(crate) mod fset;
 use self::fset::FeatureFsetReferenceGroup;
+use extrude_32::FeatureExtrude32Construction;
 pub(crate) mod holes;
 pub(crate) mod pattern;
 pub(crate) mod payload_name;
@@ -3683,29 +3685,6 @@ impl TryFrom<FeatureExtrudePayload32BranchWire> for FeatureExtrudePayload32Branc
             source_offset: wire.source_offset,
         })
     }
-}
-
-/// Complete alternate extrusion construction using the structured `32` branch.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureExtrude32Construction {
-    /// Globally unique construction identity.
-    pub id: String,
-    /// Owning `EXTRUDE` operation label.
-    pub operation_label: String,
-    /// Structured branch supplying the body-anchored construction lanes.
-    pub branch: String,
-    /// Body object index witnessed at both ends of the structured branch.
-    pub body_object_index: u32,
-    /// Ordered profile-reference identities.
-    pub profile_references: Vec<String>,
-    /// Ordered uniquely resolved profile blocks.
-    pub profile_data_blocks: Vec<String>,
-    /// Ordered uniquely resolved blocks from the fixed-atom lane.
-    pub atom_data_blocks: Vec<String>,
-    /// Ordered uniquely resolved blocks from the first compact-index lane.
-    pub first_data_blocks: Vec<String>,
-    /// Ordered uniquely resolved blocks from the second compact-index lane.
-    pub second_data_blocks: Vec<String>,
 }
 
 /// Completely resolved construction-reference field of one `BLOCK` feature.
@@ -7941,18 +7920,24 @@ pub fn feature_extrude_32_constructions(
             .filter(|reference| reference.operation_label == operation_label)
             .collect::<Vec<_>>();
         profile.sort_by_key(|reference| reference.ordinal);
-        if profile.is_empty()
-            || profile
-                .iter()
-                .enumerate()
-                .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
+        let Some(profile) = NonEmpty::new(profile) else {
+            continue;
+        };
+        if profile
+            .iter()
+            .enumerate()
+            .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
         {
             continue;
         }
-        let Some(profile_data_blocks) = profile
-            .iter()
-            .map(|reference| reference.data_block.clone())
-            .collect::<Option<Vec<_>>>()
+        let Some(profiles) = profile
+            .map(|reference| {
+                Some(FeatureConstructionMember {
+                    reference: reference.id.clone(),
+                    data_block: reference.data_block.clone()?,
+                })
+            })
+            .transpose()
         else {
             continue;
         };
@@ -7987,11 +7972,7 @@ pub fn feature_extrude_32_constructions(
             operation_label: branch.operation_label.clone(),
             branch: branch.id.clone(),
             body_object_index: branch.terminal.value(),
-            profile_references: profile
-                .iter()
-                .map(|reference| reference.id.clone())
-                .collect(),
-            profile_data_blocks,
+            profiles,
             atom_data_blocks,
             first_data_blocks,
             second_data_blocks,
