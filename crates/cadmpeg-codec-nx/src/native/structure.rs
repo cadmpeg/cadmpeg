@@ -37,7 +37,7 @@ pub struct FastLoadComponentUuid {
     /// Zero-based position in the serialized UUID table.
     pub ordinal: u32,
     /// Canonical lowercase UUID text.
-    pub uuid: String,
+    pub uuid: crate::canonical_uuid::CanonicalUuid<String>,
     /// Directory entry containing the UUID table.
     pub source_entry: String,
     /// Absolute file offset of the UUID tag.
@@ -81,7 +81,7 @@ pub struct FastLoadComponentObjectGroup {
     /// Referenced [`FastLoadComponentUuid::id`].
     pub component_uuid: String,
     /// Canonical lowercase UUID shared by every member.
-    pub uuid: String,
+    pub uuid: crate::canonical_uuid::CanonicalUuid<String>,
     /// Ordered [`FastLoadComponentOccurrence::id`] values.
     pub occurrences: Vec<String>,
     /// Ordered [`ObjectUuidValue::id`] values.
@@ -133,7 +133,7 @@ struct Candidate {
     occurrence_markers: Vec<u8>,
     occurrences_offset: usize,
     prototype_indices: Vec<u8>,
-    uuids: Vec<(usize, String)>,
+    uuids: Vec<(usize, crate::canonical_uuid::CanonicalUuid<String>)>,
     uuid_indices_offset: usize,
     uuid_indices: Vec<u8>,
 }
@@ -350,8 +350,8 @@ fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
     let mut uuids = Vec::with_capacity(uuid_count);
     for _ in 0..uuid_count {
         let uuid = parse_tagged_string(bytes, &mut at, 3)?;
-        crate::om::canonical_uuid_text(&uuid.1).then_some(())?;
-        uuids.push(uuid);
+        let value = crate::canonical_uuid::CanonicalUuid::new(uuid.1).ok()?;
+        uuids.push((uuid.0, value));
     }
     take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
     (decoded_count(*take(bytes, &mut at, 1)?.first()?)? == occurrence_count).then_some(())?;

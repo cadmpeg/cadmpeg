@@ -120,7 +120,7 @@ pub struct UuidStringValue<'a> {
     /// Absolute byte offset of the `03 26` marker.
     pub offset: usize,
     /// Canonical lowercase UUID text.
-    pub value: &'a str,
+    pub value: crate::canonical_uuid::CanonicalUuid<&'a str>,
 }
 
 /// One self-framed printable string in a surface-referenced payload.
@@ -7995,18 +7995,6 @@ pub fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue<'_>> {
         .collect()
 }
 
-/// Return whether `value` is canonical lowercase UUID text.
-pub fn canonical_uuid_text(value: &str) -> bool {
-    value.len() == 36
-        && value.bytes().enumerate().all(|(index, byte)| {
-            if matches!(index, 8 | 13 | 18 | 23) {
-                byte == b'-'
-            } else {
-                byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
-            }
-        })
-}
-
 /// Decode complete `03 26, canonical UUID text, 00` values in `bytes`.
 pub fn uuid_string_values(bytes: &[u8], base_offset: usize) -> Vec<UuidStringValue<'_>> {
     const MARKER: &[u8] = &[0x03, 0x26];
@@ -8019,8 +8007,8 @@ pub fn uuid_string_values(bytes: &[u8], base_offset: usize) -> Vec<UuidStringVal
             let start = offset.checked_add(MARKER.len())?;
             let end = start.checked_add(TEXT_LEN)?;
             let raw = bytes.get(start..end)?;
-            let value = std::str::from_utf8(raw).ok()?;
-            (canonical_uuid_text(value) && bytes.get(end) == Some(&0)).then_some(UuidStringValue {
+            let value = crate::canonical_uuid::CanonicalUuid::new(std::str::from_utf8(raw).ok()?).ok()?;
+            (bytes.get(end) == Some(&0)).then_some(UuidStringValue {
                 offset: base_offset + offset,
                 value,
             })
@@ -8038,13 +8026,13 @@ mod uuid_string_value_tests {
         let values = uuid_string_values(&bytes, 100);
         assert_eq!(values.len(), 1);
         assert_eq!(values[0].offset, 106);
-        assert_eq!(values[0].value, "01234567-89ab-cdef-0123-456789abcdef");
+        assert_eq!(values[0].value.as_str(), "01234567-89ab-cdef-0123-456789abcdef");
 
         bytes[6 + 2 + 9] = b'A';
         assert!(uuid_string_values(&bytes, 0).is_empty());
-        assert!(!canonical_uuid_text("01234567-89ab-cdef-0123-456789abcde"));
-        assert!(!canonical_uuid_text("01234567-89ab-cdef-0123_456789abcdef"));
-        assert!(!canonical_uuid_text("01234567-89ab-cdef-0123-456789abcdeg"));
+        assert!(crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcde").is_err());
+        assert!(crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123_456789abcdef").is_err());
+        assert!(crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcdeg").is_err());
     }
 
     #[test]

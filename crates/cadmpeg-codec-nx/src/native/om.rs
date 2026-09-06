@@ -2873,7 +2873,7 @@ pub struct ObjectUuidValue {
     /// Zero-based indexed-section ordinal within the container.
     pub section_ordinal: u32,
     /// Exact UUID text.
-    pub uuid: String,
+    pub uuid: crate::canonical_uuid::CanonicalUuid<String>,
     /// Bounded OM records intersected by the complete UUID frame.
     pub records: Vec<String>,
     /// Directory entry containing the OM section.
@@ -5301,7 +5301,7 @@ pub fn object_uuid_values(container: &Container) -> Vec<ObjectUuidValue> {
                             value.offset
                         ),
                         section_ordinal: section_ordinal as u32,
-                        uuid: value.value.to_owned(),
+                        uuid: value.value.into_owned(),
                         records,
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + value.offset as u64,

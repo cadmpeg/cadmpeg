@@ -94,6 +94,7 @@ pub(crate) mod om;
 pub(crate) mod om_tokens;
 pub(crate) mod parasolid;
 mod printable_string;
+mod canonical_uuid;
 pub(crate) mod topology;
 mod vec3_at;
 
