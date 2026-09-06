@@ -6,6 +6,7 @@ use super::xmt_reference::NonNullXmt;
 use super::precision_state::PrecisionState;
 use super::type101_state::Type101State;
 use super::attdef_state::AttdefState;
+use super::type70_state::Type70State;
 
 /// Body of an inline schema declaration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -29,16 +30,8 @@ pub(crate) enum InlineSchemaFields {
     },
     /// Type 70 declaration state.
     Type70 {
-        /// Non-null stream-local declaration identity.
-        xmt: u32,
-        /// Serialized node identity.
-        node_id: u32,
-        /// Four ordered body references.
-        references: [u32; 4],
-        /// Serialized declaration count.
-        count: u16,
-        /// Repeated terminal non-null reference.
-        trailing_reference: u32,
+        #[serde(flatten)]
+        state: Type70State,
     },
     /// Type 100 declaration and its precision state.
     Type100 {

@@ -11,6 +11,8 @@ pub(crate) mod inline_schema_fields;
 pub(crate) mod precision_state;
 pub(crate) mod type101_state;
 pub(crate) mod attdef_state;
+pub(crate) mod type70_state;
+use type70_state::{TrailingCopies, Type70State};
 use attdef_state::AttdefState;
 use precision_state::PrecisionState;
 use inline_schema_fields::{BodyStateBytes, InlineBodyStateFields, InlineSchemaFields, TermUseValues};
@@ -1747,22 +1749,15 @@ fn inline_schema_declaration(
         == Some(TYPE_70_SCHEMA_HEADER)
     {
         let body = offset.checked_add(TYPE_70_SCHEMA_HEADER.len())?;
-        let (xmt, node_id, all_references, count, end) = type_70_body(stream, body, 2)
-            .filter(|(_, _, _, _, end)| *end <= gap_end)
+        let (state, end) = type_70_body(stream, body, TrailingCopies::Two)
+            .filter(|(_, end)| *end <= gap_end)
             .or_else(|| {
-                type_70_body(stream, body, 1).filter(|(_, _, _, _, end)| {
+                type_70_body(stream, body, TrailingCopies::One).filter(|(_, end)| {
                     *end <= gap_end && (*end == gap_end || plausible_next(stream, *end))
                 })
             })?;
-        let references = all_references[..4].try_into().ok()?;
         return Some(InlineSchemaDeclaration {
-            fields: InlineSchemaFields::Type70 {
-                xmt,
-                node_id,
-                references,
-                count,
-                trailing_reference: all_references[4],
-            },
+            fields: InlineSchemaFields::Type70 { state },
             offset,
             end,
         });
@@ -3038,52 +3033,48 @@ fn type_70_layout(
     envelope_len: usize,
 ) -> Option<(u32, u32, Vec<u32>, usize)> {
     let body = offset.checked_add(2 + envelope_len)?;
-    let (xmt, node_id, references, _, end) = type_70_body(stream, body, 2)?;
-    Some((xmt, node_id, references, end))
+    let (state, end) = type_70_body(stream, body, TrailingCopies::Two)?;
+    let references = state.references().into_iter().chain([state.trailing_reference(); 2]).collect();
+    Some((state.xmt(), state.node_id(), references, end))
 }
 
 fn type_70_body(
     stream: &[u8],
     body: usize,
-    trailing_count: usize,
-) -> Option<(u32, u32, Vec<u32>, u16, usize)> {
-    matches!(trailing_count, 1 | 2).then_some(())?;
+    trailing_copies: TrailingCopies,
+) -> Option<(Type70State, usize)> {
     let (xmt, consumed) = read_xmt(stream, body)?;
-    (xmt > 1).then_some(())?;
     let mut at = body.checked_add(consumed)?;
     let node_id = View::u32_be_at(stream, at)?;
     at += 4;
     (stream.get(at) == Some(&4)).then_some(())?;
     at += 1;
-    let mut references = Vec::new();
-    for _ in 0..4 {
+    let mut references = [0; 4];
+    for reference in &mut references {
         (stream.get(at) == Some(&1)).then_some(())?;
         at += 1;
-        let (reference, consumed) = read_xmt(stream, at)?;
+        let (value, consumed) = read_xmt(stream, at)?;
         at += consumed;
-        references.push(reference);
+        *reference = value;
     }
     let count = View::u16_be_at(stream, at)?;
-    (count > 0).then_some(())?;
     at += 2;
     (View::u32_be_at(stream, at) == Some(20)).then_some(())?;
     at += 4;
     (View::u32_be_at(stream, at) == Some(1)).then_some(())?;
     at += 4;
-    let first_trailing = references.len();
-    for _ in 0..trailing_count {
-        let (reference, consumed) = read_xmt(stream, at)?;
-        (reference > 1).then_some(())?;
+    let (trailing_reference, consumed) = read_xmt(stream, at)?;
+    at += consumed;
+    (stream.get(at) == Some(&0)).then_some(())?;
+    at += 1;
+    if matches!(trailing_copies, TrailingCopies::Two) {
+        let (repeated, consumed) = read_xmt(stream, at)?;
+        (repeated == trailing_reference).then_some(())?;
         at += consumed;
         (stream.get(at) == Some(&0)).then_some(())?;
         at += 1;
-        references.push(reference);
     }
-    references[first_trailing..]
-        .windows(2)
-        .all(|pair| pair[0] == pair[1])
-        .then_some(())?;
-    Some((xmt, node_id, references, count, at))
+    Some((Type70State::new(xmt, node_id, references, count, trailing_reference).ok()?, at))
 }
 
 fn consume_type_101(stream: &[u8], offset: usize) -> Option<Record> {
@@ -4448,9 +4439,8 @@ mod inline_schema_tests {
         assert!(matches!(
             single_declaration.fields,
             InlineSchemaFields::Type70 {
-                trailing_reference: 45,
-                ..
-            }
+                ref state,
+            } if state.trailing_reference() == 45
         ));
         assert_eq!(single_declaration.end, single.len());
 
@@ -4459,9 +4449,8 @@ mod inline_schema_tests {
         assert!(matches!(
             duplicated_declaration.fields,
             InlineSchemaFields::Type70 {
-                trailing_reference: 11,
-                ..
-            }
+                ref state,
+            } if state.trailing_reference() == 11
         ));
         assert_eq!(duplicated_declaration.end, duplicated.len());
     }
