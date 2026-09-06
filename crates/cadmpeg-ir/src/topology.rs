@@ -241,7 +241,7 @@ impl FaceLoops {
     /// Inner loops, excluding the outer when one is present.
     pub fn inner(&self) -> impl Iterator<Item = &LoopId> + '_ {
         let outer = match self.classification {
-            FaceLoopClassification::Unspecified => Some(0).filter(|_| !self.ids.is_empty()),
+            FaceLoopClassification::Unspecified => (!self.ids.is_empty()).then_some(0),
             FaceLoopClassification::Classified { outer } => outer,
         };
         self.ids.iter().enumerate().filter_map(
@@ -349,8 +349,7 @@ impl FaceLoops {
     pub fn role(&self, id: &LoopId) -> LoopBoundaryRole {
         self.iter()
             .position(|member| member == id)
-            .map(|index| self.role_of(index))
-            .unwrap_or(LoopBoundaryRole::Unspecified)
+            .map_or(LoopBoundaryRole::Unspecified, |index| self.role_of(index))
     }
 
     fn role_of(&self, index: usize) -> LoopBoundaryRole {

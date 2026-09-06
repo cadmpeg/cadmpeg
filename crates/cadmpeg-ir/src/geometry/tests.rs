@@ -678,11 +678,11 @@ fn solved_caches_reject_procedural_carriers_below_transform_chains() {
     for _ in 0..3 {
         curve = CurveGeometry::Transformed {
             basis: Box::new(curve),
-            transform: Default::default(),
+            transform: crate::transform::Transform::default(),
         };
         surface = SurfaceGeometry::Transformed {
             basis: Box::new(surface),
-            transform: Default::default(),
+            transform: crate::transform::Transform::default(),
         };
         assert_eq!(SolvedCurveGeometry::new(curve.clone()), Err(curve.clone()));
         assert_eq!(
@@ -700,11 +700,11 @@ fn solved_caches_reject_procedural_carriers_below_transform_chains() {
     }
     let curve = CurveGeometry::Transformed {
         basis: Box::new(CurveGeometry::Unknown { record: None }),
-        transform: Default::default(),
+        transform: crate::transform::Transform::default(),
     };
     let surface = SurfaceGeometry::Transformed {
         basis: Box::new(SurfaceGeometry::Unknown { record: None }),
-        transform: Default::default(),
+        transform: crate::transform::Transform::default(),
     };
     assert_eq!(
         SolvedCurveGeometry::new(curve.clone())

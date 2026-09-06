@@ -169,11 +169,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            PmiDefinition::Presentation {
-                semantics,
-                placement: _,
-                ..
-            } => {
+            PmiDefinition::Presentation { semantics, .. } => {
                 if semantics.iter().any(|id| !ids.contains(id.as_str())) {
                     invalid(
                         findings,

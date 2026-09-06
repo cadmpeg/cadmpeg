@@ -262,9 +262,16 @@ mod tests {
                 value_offset: 4,
                 content,
             };
-            assert_eq!(serde_json::to_string(&property).unwrap(), expected);
-            let decoded: DecodedProperty = serde_json::from_str(expected).unwrap();
-            assert_eq!(serde_json::to_string(&decoded).unwrap(), expected);
+            assert_eq!(
+                serde_json::to_string(&property).expect("serialize decoded property"),
+                expected
+            );
+            let decoded: DecodedProperty =
+                serde_json::from_str(expected).expect("decode property fixture");
+            assert_eq!(
+                serde_json::to_string(&decoded).expect("serialize round-trip property"),
+                expected
+            );
             assert_eq!(decoded.connections(), property.connections());
         }
     }
@@ -272,7 +279,8 @@ mod tests {
     #[test]
     fn mixed_reference_and_scalar_elements_are_rejected_at_deserialization() {
         let wire = r#"{"value_offset":0,"value":{"kind":"multiple","value":[{"kind":"reference"},{"kind":"float","value":1.5}]},"connections":[]}"#;
-        let error = serde_json::from_str::<DecodedProperty>(wire).unwrap_err();
+        let error = serde_json::from_str::<DecodedProperty>(wire)
+            .expect_err("reject contradictory property payload");
         assert!(error.to_string().contains("value: reference elements"));
     }
 }

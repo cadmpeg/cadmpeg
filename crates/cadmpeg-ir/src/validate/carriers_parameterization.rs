@@ -21,7 +21,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve.as_ref().map(|id| id.as_str()))
+        .filter_map(|edge| edge.curve.as_ref().map(super::super::ids::CurveId::as_str))
         .collect::<HashSet<_>>();
     curves.extend(
         ir.model
@@ -61,7 +61,11 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             boundary_pcurves, ..
         } = surface.definition()
         {
-            pcurves.extend(boundary_pcurves.iter().map(|pcurve| pcurve.as_str()));
+            pcurves.extend(
+                boundary_pcurves
+                    .iter()
+                    .map(super::super::ids::PcurveId::as_str),
+            );
         }
     }
     let mut points = ir
@@ -138,7 +142,13 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     if let Some(curve) = &entry.path.curve {
                         curves.insert(curve.id.as_str());
                     }
-                    curves.extend(entry.path.auxiliaries.iter().map(|curve| curve.as_str()));
+                    curves.extend(
+                        entry
+                            .path
+                            .auxiliaries
+                            .iter()
+                            .map(super::super::ids::CurveId::as_str),
+                    );
                     for member in &entry.profile {
                         curves.insert(member.curve.id.as_str());
                         if let Some(surface) = member.form.surface() {
@@ -173,7 +183,12 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
                 for scale in scales {
                     curves.insert(scale.path.as_str());
-                    curves.extend(scale.auxiliaries.iter().map(|curve| curve.as_str()));
+                    curves.extend(
+                        scale
+                            .auxiliaries
+                            .iter()
+                            .map(super::super::ids::CurveId::as_str),
+                    );
                     for member in &scale.members {
                         curves.insert(member.curve.as_str());
                         surfaces.insert(member.data.surface.as_str());
@@ -210,7 +225,12 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 curves.insert(construction.tail_curve.as_str());
                 for scale in scales {
                     curves.insert(scale.path.as_str());
-                    curves.extend(scale.auxiliaries.iter().map(|curve| curve.as_str()));
+                    curves.extend(
+                        scale
+                            .auxiliaries
+                            .iter()
+                            .map(super::super::ids::CurveId::as_str),
+                    );
                     for member in &scale.members {
                         curves.insert(member.curve.as_str());
                         surfaces.insert(member.data.surface.as_str());
@@ -306,7 +326,13 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     if let Some(curve) = &entry.path.curve {
                         curves.insert(curve.id.as_str());
                     }
-                    curves.extend(entry.path.auxiliaries.iter().map(|curve| curve.as_str()));
+                    curves.extend(
+                        entry
+                            .path
+                            .auxiliaries
+                            .iter()
+                            .map(super::super::ids::CurveId::as_str),
+                    );
                     for member in &entry.profile {
                         curves.insert(member.curve.id.as_str());
                         if let Some(surface) = member.form.surface() {
@@ -351,7 +377,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     ]
                     .into_iter()
                     .flatten()
-                    .map(|curve| curve.as_str()),
+                    .map(super::super::ids::CurveId::as_str),
                 );
             }
             ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
@@ -371,7 +397,11 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     if let Some(curve) = &path.curve {
                         curves.insert(curve.id.as_str());
                     }
-                    curves.extend(path.auxiliaries.iter().map(|curve| curve.as_str()));
+                    curves.extend(
+                        path.auxiliaries
+                            .iter()
+                            .map(super::super::ids::CurveId::as_str),
+                    );
                 }
                 curves.extend(
                     [
@@ -385,7 +415,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     ]
                     .into_iter()
                     .flatten()
-                    .map(|curve| curve.as_str()),
+                    .map(super::super::ids::CurveId::as_str),
                 );
             }
             ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
@@ -543,7 +573,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 ..
             } => {
                 surfaces.insert(support.as_str());
-                curves.extend(boundaries.iter().map(|curve| curve.as_str()));
+                curves.extend(boundaries.iter().map(super::super::ids::CurveId::as_str));
             }
             ProceduralSurfaceDefinition::Deformable { construction } => {
                 surfaces.insert(construction.support.as_str());
@@ -613,7 +643,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralCurveDefinition::TolerantIntersection { supports, .. } => {
-                surfaces.extend(supports.iter().map(|surface| surface.as_str()));
+                surfaces.extend(supports.iter().map(super::super::ids::SurfaceId::as_str));
             }
             ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } => {
                 for side in context.sides.iter().chain(std::iter::once(third)) {

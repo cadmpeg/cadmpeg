@@ -583,6 +583,8 @@ macro_rules! declare_arena_name {
 
             /// Parse a registry field name.
             #[must_use]
+            // This registry lookup returns an optional arena name rather than a parse error.
+            #[allow(clippy::should_implement_trait)]
             pub fn from_str(name: &str) -> Option<Self> {
                 match name {
                     $(stringify!($field) => Some(Self::$field),)*
@@ -948,6 +950,8 @@ impl Model {
     }
 
     /// Attaches one procedural surface construction to its carrier.
+    // Attachment accepts the owner ID and its construction at the same ownership boundary.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn add_procedural_surface(
         &mut self,
         owner: SurfaceId,
@@ -1015,6 +1019,8 @@ impl Model {
     }
 
     /// Attaches one procedural curve construction to its carrier.
+    // Attachment accepts the owner ID and its construction at the same ownership boundary.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn add_procedural_curve(
         &mut self,
         owner: CurveId,

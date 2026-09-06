@@ -111,6 +111,8 @@ impl<'de> Deserialize<'de> for LegacyExtensionFlags {
 
 /// Mutually exclusive pre-revision and revision-gated offset layouts.
 #[derive(Debug, Clone, PartialEq)]
+// Variant payloads retain the native layout as one value without separate heap ownership.
+#[allow(clippy::large_enum_variant)]
 pub enum OffsetExtension {
     /// Pre-revision conditional flag sequence.
     Legacy(LegacyExtensionFlags),
@@ -232,6 +234,8 @@ pub struct BsplineSurface {
 
 impl BsplineSurface {
     /// Build a rectangular grid with full knot vectors for both parameters.
+    // Both parameter axes and their shared control grid form one NURBS invariant.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         u_degree: u32,
         v_degree: u32,
@@ -378,6 +382,8 @@ fn require_curve_cardinality(
 
 impl NurbsSurface {
     /// Build a tensor-product NURBS surface with consistent cardinalities.
+    // Both parameter axes and their shared control grid form one NURBS invariant.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         u_degree: u32,
         v_degree: u32,
@@ -1051,7 +1057,8 @@ pub struct SolvedSurfaceGeometry(Box<SurfaceGeometry>);
 
 impl SolvedSurfaceGeometry {
     /// Wrap a non-procedural solved surface geometry.
-    #[must_use]
+    // Failed admission returns the complete input geometry to its caller.
+    #[allow(clippy::result_large_err)]
     pub fn new(geometry: SurfaceGeometry) -> Result<Self, SurfaceGeometry> {
         let mut basis = &geometry;
         while let SurfaceGeometry::Transformed { basis: inner, .. } = basis {
@@ -1245,7 +1252,8 @@ pub struct SolvedCurveGeometry(Box<CurveGeometry>);
 
 impl SolvedCurveGeometry {
     /// Wrap a non-procedural solved curve geometry.
-    #[must_use]
+    // Failed admission returns the complete input geometry to its caller.
+    #[allow(clippy::result_large_err)]
     pub fn new(geometry: CurveGeometry) -> Result<Self, CurveGeometry> {
         let mut basis = &geometry;
         while let CurveGeometry::Transformed { basis: inner, .. } = basis {
@@ -1449,6 +1457,8 @@ pub enum SplineSurfaceParameters {
 
 /// Mutually exclusive legacy and revision-gated exact-spline layouts.
 #[derive(Debug, Clone, PartialEq)]
+// Variant payloads retain the native layout as one value without separate heap ownership.
+#[allow(clippy::large_enum_variant)]
 pub enum ExactSpline {
     /// Legacy solved-cache layout with ordered U/V ranges.
     Legacy {
@@ -2073,6 +2083,8 @@ impl ProceduralSurfaceDefinition {
         self.revision_cache().is_some() || matches!(self, Self::VariableBlend { .. })
     }
 
+    // Outer absence means no revision layout; inner absence means no cache tolerance.
+    #[allow(clippy::option_option)]
     fn revision_cache_fit_tolerance(&self) -> Option<Option<f64>> {
         if let Self::VariableBlend { construction } = self {
             return Some(construction.cache.fit_tolerance());
@@ -4111,6 +4123,8 @@ mod g2_blend_full_support_wire {
         tolerance: Option<f64>,
     }
 
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
     pub fn serialize<S>(
         value: &Option<G2BlendFullSupport>,
         serializer: S,
@@ -4685,6 +4699,8 @@ mod variable_blend_u_range_wire {
 mod variable_blend_v_range_wire {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
     pub fn serialize<S>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -5279,7 +5295,7 @@ pub enum CompoundLoftDirection {
 }
 
 const fn default_compound_loft_curve_selector() -> NonZeroI64 {
-    NonZeroI64::new(1).unwrap()
+    NonZeroI64::new(1).expect("one is nonzero")
 }
 
 impl CompoundLoftDirection {
@@ -6243,6 +6259,8 @@ pub enum SpringPcurve {
 /// Mutually exclusive spring construction layouts.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+// Variant payloads retain the native layout as one value without separate heap ownership.
+#[allow(clippy::large_enum_variant)]
 pub enum SpringLayout {
     /// Support-first layout with inline null-carrier replacement ranges.
     ContextFirst {
@@ -6977,6 +6995,8 @@ mod curve_offset_range_wire {
     use super::{CurveOffsetRange, CurveOffsetRangeWire};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
     pub fn serialize<S>(range: &Option<CurveOffsetRange>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

@@ -6617,7 +6617,7 @@ fn model_surface_point_by_id_inner(
         let procedural = index.procedural_surface_for_surface(surface_id.as_str());
         let carrier_interval =
             procedural.and_then(|procedural| record_u_interval(procedural.record_bounds));
-        let result = match procedural.map(|procedural| procedural.definition()) {
+        let result = match procedural.map(crate::geometry::ProceduralSurface::definition) {
             Some(ProceduralSurfaceDefinition::AxisRevolution {
                 directrix,
                 axis_origin,
@@ -6940,7 +6940,7 @@ pub fn model_surface_partials_by_id(
         ..
     }) = index
         .procedural_surface_for_surface(surface.as_str())
-        .map(|procedural| procedural.definition())
+        .map(crate::geometry::ProceduralSurface::definition)
     {
         if let Some(partials) = cacheless_constant_rolling_ball_partials(
             index,
@@ -6959,7 +6959,7 @@ pub fn model_surface_partials_by_id(
     }
     if let Some(ProceduralSurfaceDefinition::VariableBlend { construction }) = index
         .procedural_surface_for_surface(surface.as_str())
-        .map(|procedural| procedural.definition())
+        .map(crate::geometry::ProceduralSurface::definition)
     {
         if let Some(partials) = cacheless_ruled_variable_blend_partials(index, construction, u, v) {
             return Some(partials);
@@ -6979,7 +6979,7 @@ pub fn model_surface_partials_by_id(
         native: Some(construction),
     }) = index
         .procedural_surface_for_surface(surface.as_str())
-        .map(|procedural| procedural.definition())
+        .map(crate::geometry::ProceduralSurface::definition)
     {
         if let Some(partials) =
             cacheless_law_sweep_partials(index, profile, spine, construction, u, v)
@@ -7080,7 +7080,7 @@ fn model_surface_mapping(
     let procedural = index.procedural_surface_for_surface(surface.as_str());
     let carrier_interval =
         procedural.and_then(|procedural| record_u_interval(procedural.record_bounds));
-    let result = match procedural.map(|procedural| procedural.definition()) {
+    let result = match procedural.map(crate::geometry::ProceduralSurface::definition) {
         Some(ProceduralSurfaceDefinition::AxisRevolution {
             directrix,
             axis_origin,

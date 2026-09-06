@@ -578,17 +578,13 @@ impl TessellationChannel {
                     "contains a malformed tessellation channel",
                 ));
             }
-        } else if data.len() % item_size_usize != 0 {
+        } else if !data.len().is_multiple_of(item_size_usize) {
             return Err(tessellation_error(
                 "contains a malformed tessellation channel",
             ));
         }
-        let count = if item_size_usize == 0 {
-            0
-        } else {
-            u32::try_from(data.len() / item_size_usize)
-                .map_err(|_| tessellation_error("tessellation channel count overflows u32"))?
-        };
+        let count = u32::try_from(data.len().checked_div(item_size_usize).unwrap_or(0))
+            .map_err(|_| tessellation_error("tessellation channel count overflows u32"))?;
         if addressing.indices().iter().any(|index| *index >= count) {
             return Err(tessellation_error(
                 "contains invalid tessellation channel indices",
@@ -637,11 +633,7 @@ impl TessellationChannel {
     #[must_use]
     pub fn count(&self) -> u32 {
         let item_size = self.item_size as usize;
-        if item_size == 0 {
-            0
-        } else {
-            (self.data.len() / item_size) as u32
-        }
+        self.data.len().checked_div(item_size).unwrap_or(0) as u32
     }
 
     /// Raw channel payload.

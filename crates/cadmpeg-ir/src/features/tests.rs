@@ -208,7 +208,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     }));
     ir.model.configurations[0].feature_states.clear();
 
-    ir.model.configurations[0].active = true.into();
+    ir.model.configurations[0].active = true;
     ir.model.features[0].suppressed = Some(true);
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
@@ -216,7 +216,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             && finding.message
                 == "active configuration suppression disagrees with current feature state"
     }));
-    ir.model.configurations[0].active = false.into();
+    ir.model.configurations[0].active = false;
     ir.model.features[0].suppressed = Some(false);
 
     ir.model.configurations[0].feature_states = BTreeMap::from([(
@@ -291,8 +291,8 @@ fn configuration_body_membership_round_trips_and_validates() {
         feature_states: BTreeMap::new(),
         native_ref: None,
     });
-    ir.model.configurations[0].active = true.into();
-    ir.model.configurations[1].active = true.into();
+    ir.model.configurations[0].active = true;
+    ir.model.configurations[1].active = true;
     ir.finalize();
     let report = validate_neutral(&ir, Vec::new());
     assert!(report

@@ -506,7 +506,7 @@ mod tests {
     fn empty_catalog_refusal_retains_its_format() {
         let refusal = TargetRefusal::unknown_explicit("future", TargetCatalog::empty("cadir"));
         assert_eq!(
-            serde_json::to_value(&refusal).unwrap(),
+            serde_json::to_value(&refusal).expect("serialize target refusal"),
             serde_json::json!({
                 "format": "cadir", "kind": "unknown_explicit", "requested": "future", "available": []
             })

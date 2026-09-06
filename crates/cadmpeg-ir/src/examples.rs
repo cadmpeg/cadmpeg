@@ -298,7 +298,7 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceEr
                     normal: Vector3::new(0.0, 0.0, 1.0),
                     u_axis: Vector3::new(1.0, 0.0, 0.0),
                 })
-                .unwrap(),
+                .expect("solved example surface"),
             ),
         },
         source_object: None,

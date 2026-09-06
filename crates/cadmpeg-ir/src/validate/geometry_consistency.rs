@@ -433,7 +433,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         .filter_map(|surface| {
             ir.model
                 .procedural_surface_owner(&surface.id)
-                .map(|owner| owner.as_str())
+                .map(super::super::ids::SurfaceId::as_str)
         })
         .collect::<HashSet<_>>();
     let pcurves = ir
@@ -829,7 +829,7 @@ fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[
                 .procedural_surface_owner(&procedural.id)
                 == Some(context.surface_id)
         })
-        .map(|procedural| procedural.definition())
+        .map(crate::geometry::ProceduralSurface::definition)
     {
         let [[u_start, u_end], [v_start, v_end]] = *parameter_ranges;
         let u_span = (u_end - u_start).abs();

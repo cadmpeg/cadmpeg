@@ -212,24 +212,28 @@ impl SketchEntity {
     }
 
     /// Set whether this entity is construction geometry.
+    #[must_use]
     pub fn with_construction(mut self, construction: bool) -> Self {
         self.construction = construction;
         self
     }
 
     /// Set the source-native geometry record.
+    #[must_use]
     pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
         self.native_ref = native_ref;
         self
     }
 
     /// Set the source-native curve carrier.
+    #[must_use]
     pub fn with_geometry_ref(mut self, geometry_ref: Option<String>) -> Self {
         self.geometry_ref = geometry_ref;
         self
     }
 
     /// Set the source-native endpoint records.
+    #[must_use]
     pub fn with_endpoint_refs(mut self, endpoint_refs: Vec<String>) -> Self {
         self.endpoint_refs = endpoint_refs;
         self
@@ -429,6 +433,8 @@ mod text_placement_wire {
     use super::{TextPlacement, TextPlacementWire};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
     pub fn serialize<S>(value: &Option<TextPlacement>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -468,13 +474,14 @@ mod angle_bounds_wire {
     use super::{Angle, AngleBoundsWire};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
     pub fn serialize<S>(value: &Option<[Angle; 2]>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let [start_angle, end_angle] = value
-            .clone()
-            .map_or([None, None], |[start, end]| [Some(start), Some(end)]);
+        let [start_angle, end_angle] =
+            (*value).map_or([None, None], |[start, end]| [Some(start), Some(end)]);
         AngleBoundsWire {
             start_angle,
             end_angle,
@@ -510,6 +517,8 @@ mod parameter_bounds_wire {
     use super::ParameterBoundsWire;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
     pub fn serialize<S>(value: &Option<[f64; 2]>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -639,24 +648,28 @@ impl SpatialSketchEntity {
     }
 
     /// Set whether this entity is construction geometry.
+    #[must_use]
     pub fn with_construction(mut self, construction: bool) -> Self {
         self.construction = construction;
         self
     }
 
     /// Set the source-native geometry record.
+    #[must_use]
     pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
         self.native_ref = native_ref;
         self
     }
 
     /// Set the source-native curve carrier.
+    #[must_use]
     pub fn with_geometry_ref(mut self, geometry_ref: Option<String>) -> Self {
         self.geometry_ref = geometry_ref;
         self
     }
 
     /// Set the source-native endpoint records.
+    #[must_use]
     pub fn with_endpoint_refs(mut self, endpoint_refs: Vec<String>) -> Self {
         self.endpoint_refs = endpoint_refs;
         self
@@ -1077,6 +1090,8 @@ mod offset_parameter_wire {
     use super::{OffsetParameter, OffsetParameterWire};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
     pub fn serialize<S>(value: &Option<OffsetParameter>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -1595,6 +1610,8 @@ mod solver_scalar_wire {
     use super::SolverScalarWire;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+    // Serde passes this scalar field by reference.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub fn serialize<const CLASS: u32, S: Serializer>(
         key: &u32,
         serializer: S,
@@ -1679,6 +1696,8 @@ mod internal_alignment_wire {
     };
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+    // Serde passes this alignment field by reference.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub fn serialize<S>(value: &Alignment, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

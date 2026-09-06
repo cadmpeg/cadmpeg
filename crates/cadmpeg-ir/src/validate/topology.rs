@@ -2933,7 +2933,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     findings,
                     &feature.id.0,
                     "Form control cage",
-                    cages.iter().map(|cage| cage.as_str()),
+                    cages.iter().map(super::super::ids::SubdId::as_str),
                     |identity| ids.subds(identity).is_some(),
                 );
             }
@@ -4862,7 +4862,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     findings,
                     &feature.id.0,
                     "profile face",
-                    faces.iter().map(|id| id.as_str()),
+                    faces.iter().map(super::super::ids::FaceId::as_str),
                     |identity| ids.faces(identity).is_some(),
                 ),
                 ProfileRef::HistoricalFaces {
@@ -4936,14 +4936,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     findings,
                     &feature.id.0,
                     "path edge",
-                    edges.iter().map(|id| id.as_str()),
+                    edges.iter().map(super::super::ids::EdgeId::as_str),
                     |identity| ids.edges(identity).is_some(),
                 ),
                 PathRef::Curves(curves) => check_ids(
                     findings,
                     &feature.id.0,
                     "path curve",
-                    curves.iter().map(|id| id.as_str()),
+                    curves.iter().map(super::super::ids::CurveId::as_str),
                     |identity| ids.curves(identity).is_some(),
                 ),
                 PathRef::SketchCurves { curves, .. } => check_ids(
@@ -5005,7 +5005,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     findings,
                     &feature.id.0,
                     "termination face",
-                    faces.iter().map(|id| id.as_str()),
+                    faces.iter().map(super::super::ids::FaceId::as_str),
                     |identity| ids.faces(identity).is_some(),
                 );
             }
@@ -5016,7 +5016,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     findings,
                     &feature.id.0,
                     "termination shape face",
-                    faces.iter().map(|id| id.as_str()),
+                    faces.iter().map(super::super::ids::FaceId::as_str),
                     |identity| ids.faces(identity).is_some(),
                 );
             }
@@ -5081,7 +5081,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     findings,
                     &feature.id.0,
                     "selected edge",
-                    edges.iter().map(|id| id.as_str()),
+                    edges.iter().map(super::super::ids::EdgeId::as_str),
                     |identity| ids.edges(identity).is_some(),
                 ),
                 EdgeSelection::Historical {
@@ -5174,7 +5174,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     findings,
                     &feature.id.0,
                     "selected face",
-                    faces.iter().map(|id| id.as_str()),
+                    faces.iter().map(super::super::ids::FaceId::as_str),
                     |identity| ids.faces(identity).is_some(),
                 ),
                 FaceSelection::Historical {
@@ -5283,7 +5283,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         findings,
                         &feature.id.0,
                         "selected body",
-                        bodies.iter().map(|id| id.as_str()),
+                        bodies.iter().map(super::super::ids::BodyId::as_str),
                         |identity| ids.bodies(identity).is_some(),
                     );
                 }
@@ -5292,7 +5292,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         findings,
                         &feature.id.0,
                         "selected body",
-                        bodies.iter().map(|id| id.as_str()),
+                        bodies.iter().map(super::super::ids::BodyId::as_str),
                         |identity| ids.bodies(identity).is_some(),
                     );
                     if bodies.len() != native.len()
@@ -6651,7 +6651,7 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
         .loops
         .iter()
         .flat_map(crate::topology::Loop::vertices)
-        .map(|vertex| vertex.as_str())
+        .map(super::super::ids::VertexId::as_str)
         .collect::<HashSet<_>>();
     let mut wire_owners = HashMap::<&str, usize>::new();
     let mut free_owners = HashMap::<&str, usize>::new();
@@ -6822,7 +6822,7 @@ pub(super) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) 
         let owned = shell
             .faces
             .iter()
-            .map(|face| face.as_str())
+            .map(super::super::ids::FaceId::as_str)
             .collect::<HashSet<_>>();
         let mut reached = HashSet::from([shell.faces[0].as_str()]);
         let mut pending = vec![shell.faces[0].as_str()];

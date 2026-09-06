@@ -35,7 +35,7 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity
             && finding.entity.as_deref() == Some(owner.as_str())
-            && finding.message.contains(&target.as_str())
+            && finding.message.contains(target.as_str())
     }));
     assert!(!report
         .findings

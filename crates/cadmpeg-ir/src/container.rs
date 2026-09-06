@@ -13,7 +13,7 @@ use std::fmt;
 
 /// Physical envelope of an inspected document.
 ///
-/// Serialize as the historical container_kind string. Deserialize rejects any
+/// Serialize as the historical `container_kind` string. Deserialize rejects any
 /// other string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ContainerKind {
@@ -23,7 +23,7 @@ pub enum ContainerKind {
     Binary,
     /// Compound File Binary.
     Cfb,
-    /// SolidWorks CFB with compound streams.
+    /// `SolidWorks` CFB with compound streams.
     CompoundFileBinary,
     /// IGES compressed ASCII.
     CompressedAscii,
@@ -37,7 +37,7 @@ pub enum ContainerKind {
     Iso10303Zip,
     /// Creo PSB.
     Psb,
-    /// SolidWorks block table.
+    /// `SolidWorks` block table.
     SldprtBlocks,
     /// NX splmsstr.
     Splmsstr,
@@ -50,7 +50,7 @@ pub enum ContainerKind {
 }
 
 impl ContainerKind {
-    /// Parse a container_kind wire string.
+    /// Parse a `container_kind` wire string.
     #[must_use]
     pub fn parse(id: &str) -> Option<Self> {
         Some(match id {

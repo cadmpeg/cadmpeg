@@ -2952,7 +2952,7 @@ impl RevolveConstruction {
         }
     }
 
-    /// Returns the PartDesign fuse ordering, when carried.
+    /// Returns the `PartDesign` fuse ordering, when carried.
     pub const fn fuse_order(&self) -> Option<RevolutionFuseOrder> {
         match self {
             Self::Unresolved(partial) => partial.fuse_order,
@@ -3268,6 +3268,8 @@ mod sketch_feature_wire {
         sketch: Option<SketchId>,
     }
 
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
     pub fn serialize<S>(value: &Option<SketchId>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -4639,7 +4641,7 @@ impl FaceMaker {
         })
     }
 
-    /// Returns the FreeCAD runtime class name.
+    /// Returns the `FreeCAD` runtime class name.
     pub fn as_str(&self) -> &str {
         match self {
             Self::Simple => "Part::FaceMakerSimple",
@@ -4651,7 +4653,7 @@ impl FaceMaker {
         }
     }
 
-    /// Returns the persisted FreeCAD extrusion enumeration value.
+    /// Returns the persisted `FreeCAD` extrusion enumeration value.
     pub const fn mode(&self) -> u32 {
         match self {
             Self::Simple => 0,
@@ -4705,6 +4707,8 @@ mod optional_extrusion_face_maker {
     use super::{ExtrusionFaceMakerWire, FaceMaker};
     use serde::{Deserialize, Serialize};
 
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
     pub(super) fn serialize<S>(value: &Option<FaceMaker>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,

@@ -332,7 +332,7 @@ pub struct Occurrence {
     /// Per-element visibility override.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visible: Option<bool>,
-    /// FreeCAD App::Link-specific occurrence state.
+    /// `FreeCAD` `App::Link`-specific occurrence state.
     #[serde(flatten, with = "link_state_wire")]
     #[cfg_attr(feature = "schema", schemars(with = "LinkStateWire"))]
     pub link: Option<LinkState>,
@@ -341,7 +341,7 @@ pub struct Occurrence {
     pub native_ref: Option<String>,
 }
 
-/// FreeCAD App::Link-specific occurrence state.
+/// `FreeCAD` `App::Link`-specific occurrence state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinkState {
     /// Persisted prototype subelement selection.
@@ -354,7 +354,7 @@ pub struct LinkState {
     pub copy_on_change: Option<CopyOnChange>,
 }
 
-/// Copy-on-change ownership state carried by an App::Link occurrence.
+/// Copy-on-change ownership state carried by an `App::Link` occurrence.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CopyOnChange {
     /// Ownership policy.
@@ -410,6 +410,8 @@ mod linked_prototype_wire {
     use crate::transform::Transform;
     use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
     pub fn serialize<S>(value: &Option<Transform>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -440,6 +442,8 @@ mod link_state_wire {
     use super::{CopyOnChange, LinkState, LinkStateWire};
     use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
     pub fn serialize<S>(value: &Option<LinkState>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -1683,16 +1687,17 @@ impl AssemblyJoint {
     }
 
     fn scalars(&self) -> JointScalars {
-        self.paired_kind()
-            .map(PairedJointKind::scalars)
-            .unwrap_or(JointScalars {
+        self.paired_kind().map_or(
+            JointScalars {
                 angle: None,
                 translation_offset: None,
                 distance: None,
                 distance2: None,
                 angular_limits: None,
                 linear_limits: None,
-            })
+            },
+            PairedJointKind::scalars,
+        )
     }
 
     /// Angular offset in radians.
@@ -1723,10 +1728,12 @@ impl AssemblyJoint {
     #[must_use]
     pub fn angular_limits(&self) -> Option<&JointLimits> {
         match self.paired_kind() {
-            Some(PairedJointKind::Fixed { angular_limits, .. })
-            | Some(PairedJointKind::Revolute { angular_limits, .. })
-            | Some(PairedJointKind::Cylindrical { angular_limits, .. })
-            | Some(PairedJointKind::Native { angular_limits, .. }) => angular_limits.as_ref(),
+            Some(
+                PairedJointKind::Fixed { angular_limits, .. }
+                | PairedJointKind::Revolute { angular_limits, .. }
+                | PairedJointKind::Cylindrical { angular_limits, .. }
+                | PairedJointKind::Native { angular_limits, .. },
+            ) => angular_limits.as_ref(),
             _ => None,
         }
     }
@@ -1735,10 +1742,12 @@ impl AssemblyJoint {
     #[must_use]
     pub fn linear_limits(&self) -> Option<&JointLimits> {
         match self.paired_kind() {
-            Some(PairedJointKind::Fixed { linear_limits, .. })
-            | Some(PairedJointKind::Slider { linear_limits, .. })
-            | Some(PairedJointKind::Cylindrical { linear_limits, .. })
-            | Some(PairedJointKind::Native { linear_limits, .. }) => linear_limits.as_ref(),
+            Some(
+                PairedJointKind::Fixed { linear_limits, .. }
+                | PairedJointKind::Slider { linear_limits, .. }
+                | PairedJointKind::Cylindrical { linear_limits, .. }
+                | PairedJointKind::Native { linear_limits, .. },
+            ) => linear_limits.as_ref(),
             _ => None,
         }
     }

@@ -112,8 +112,10 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
         },
     );
     let child = Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry);
-    let mut model = Model::default();
-    model.features = vec![parent, child];
+    let model = Model {
+        features: vec![parent, child],
+        ..Model::default()
+    };
 
     let value = serde_json::to_value(&model).unwrap();
     assert_eq!(value["features"][1]["parent"], parent_id.0);
@@ -123,11 +125,13 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
     );
     assert_eq!(serde_json::from_value::<Model>(value).unwrap(), model);
 
-    let mut regeneration = Model::default();
-    regeneration.features = vec![
-        Feature::new(parent_id.clone(), 0, FeatureDefinition::StoredGeometry),
-        Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry),
-    ];
+    let mut regeneration = Model {
+        features: vec![
+            Feature::new(parent_id.clone(), 0, FeatureDefinition::StoredGeometry),
+            Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry),
+        ],
+        ..Model::default()
+    };
     regeneration
         .set_feature_regeneration_parent(child_id, parent_id.clone())
         .unwrap();
@@ -146,20 +150,22 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
     let first_id = FeatureId("test:model:feature#first".into());
     let second_id = FeatureId("test:model:feature#second".into());
     let child_id = FeatureId("test:model:feature#child".into());
-    let mut model = Model::default();
-    model.features = vec![
-        Feature::new(
-            first_id,
-            0,
-            FeatureDefinition::TreeNode {
-                role: FeatureTreeNodeRole::History,
-                children: vec![child_id.clone()],
-                active_child: None,
-            },
-        ),
-        Feature::new(second_id.clone(), 1, FeatureDefinition::StoredGeometry),
-        Feature::new(child_id, 2, FeatureDefinition::StoredGeometry),
-    ];
+    let model = Model {
+        features: vec![
+            Feature::new(
+                first_id,
+                0,
+                FeatureDefinition::TreeNode {
+                    role: FeatureTreeNodeRole::History,
+                    children: vec![child_id.clone()],
+                    active_child: None,
+                },
+            ),
+            Feature::new(second_id.clone(), 1, FeatureDefinition::StoredGeometry),
+            Feature::new(child_id, 2, FeatureDefinition::StoredGeometry),
+        ],
+        ..Model::default()
+    };
     let mut value = serde_json::to_value(model).unwrap();
     value["features"][2]["parent"] = serde_json::Value::String(second_id.0);
 
