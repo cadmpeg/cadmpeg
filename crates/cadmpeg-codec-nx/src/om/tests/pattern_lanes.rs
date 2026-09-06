@@ -20,7 +20,7 @@ fn om_pattern_counted_reference_lane_requires_exact_terminator() {
         payload_offset,
         payload: &payload,
         label: OperationLabel {
-            header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+            header: crate::om::header_references::OperationHeader::<usize>::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
             value: "Pattern Feature",
         },
     };

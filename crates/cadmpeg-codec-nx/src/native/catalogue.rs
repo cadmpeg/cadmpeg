@@ -6,6 +6,7 @@
 //! emission order; `phase` splits semantic islands for [`super::attach`].
 //! Stream choice (`nx:container` vs `nx:s{ordinal}`) lives in the `note` fn.
 
+use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
 use std::collections::BTreeMap;
 
 use serde::Serialize;
@@ -359,7 +360,7 @@ impl ContainerNoted for FeatureOperationRecord {
 }
 impl ContainerNoted for FeatureUnlabeledOperationRecord {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.source_offset())
     }
 }
 impl ContainerNoted for FeatureOperationBodyWrite {

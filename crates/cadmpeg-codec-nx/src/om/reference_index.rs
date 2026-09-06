@@ -73,6 +73,16 @@ impl FeatureReferenceToken {
         ReferenceIndexToken::read_feature(bytes).map(Self)
     }
 
+    pub(crate) fn with_width(value: u32, width: u64) -> Option<Self> {
+        let encoding = match (value, width) {
+            (0..=0x7f, 1) => Encoding::Direct(value as u8),
+            (0..=0xfff, 2) => Encoding::Compact([0x80 | (value >> 8) as u8, value as u8]),
+            (0..=0xffff, 3) => Encoding::Word([0x90, (value >> 8) as u8, value as u8]),
+            _ => return None,
+        };
+        Some(Self(ReferenceIndexToken(encoding)))
+    }
+
     pub(crate) fn from_wire(value: u32, raw: &[u8]) -> Result<Self, &'static str> {
         let token = Self::read(raw).ok_or("raw_object_index: invalid feature reference token")?;
         if token.raw().len() != raw.len() || token.value() != value {
@@ -188,4 +198,22 @@ mod tests {
             assert!(ReferenceIndexToken::read_feature(raw).is_none());
         }
     }
+
+    #[test]
+    fn feature_reference_width_constructor_preserves_alternate_encodings() {
+        use super::FeatureReferenceToken;
+
+        for (value, width, raw) in [(0, 1, &[0][..]), (0, 2, &[0x80, 0][..]),
+            (0, 3, &[0x90, 0, 0][..]), (127, 1, &[127][..]),
+            (4095, 2, &[0x8f, 0xff][..]), (65535, 3, &[0x90, 0xff, 0xff][..])] {
+            let token = FeatureReferenceToken::with_width(value, width).unwrap();
+            assert_eq!(token.value(), value);
+            assert_eq!(token.raw(), raw);
+            assert_eq!(FeatureReferenceToken::read(raw), Some(token));
+        }
+        for (value, width) in [(0, 0), (0, 4), (128, 1), (4096, 2), (65536, 3), (0, u64::MAX)] {
+            assert!(FeatureReferenceToken::with_width(value, width).is_none());
+        }
+    }
+
 }

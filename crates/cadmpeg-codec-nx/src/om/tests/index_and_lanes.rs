@@ -368,7 +368,7 @@ fn om_simple_hole_lane_requires_two_identical_nonempty_scalar_runs() {
     payload.extend_from_slice(b"Hole_X");
     payload.push(0x00);
     let label = super::OperationLabel {
-        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+        header: crate::om::header_references::OperationHeader::<usize>::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "SIMPLE HOLE",
     };
     let record = super::OperationRecord {
@@ -421,7 +421,7 @@ fn om_simple_hole_lane_accepts_one_repeated_scalar() {
         payload_offset: 200,
         payload: &payload,
         label: super::OperationLabel {
-            header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+            header: crate::om::header_references::OperationHeader::<usize>::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
             value: "SIMPLE HOLE",
         },
     };
@@ -467,7 +467,7 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     payload.extend_from_slice(b"Hole_X");
     payload.push(0x00);
     let label = super::OperationLabel {
-        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+        header: crate::om::header_references::OperationHeader::<usize>::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "SIMPLE HOLE",
     };
     let record = super::OperationRecord {
@@ -543,7 +543,7 @@ fn om_hole_package_lane_retains_the_exact_four_block_group() {
         payload_offset: 200,
         payload: &payload,
         label: super::OperationLabel {
-            header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+            header: crate::om::header_references::OperationHeader::<usize>::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
             value: "HOLE PACKAGE",
         },
     };
@@ -588,7 +588,7 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
     }
     payload.extend_from_slice(&[0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
     let label = super::OperationLabel {
-        header: crate::om::header_references::OperationHeader::new(10, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+        header: crate::om::header_references::OperationHeader::<usize>::new(10, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "DATUM_CSYS",
     };
     let record = super::OperationRecord {
@@ -651,7 +651,7 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
         0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x03, 0x29, 0x01, 0x02, 0xf1, 0x02, 0xcf,
     ];
     let label = super::OperationLabel {
-        header: crate::om::header_references::OperationHeader::new(10, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+        header: crate::om::header_references::OperationHeader::<usize>::new(10, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "DATUM_PLANE",
     };
     let record = super::OperationRecord {
@@ -1013,7 +1013,7 @@ fn om_draft_binary32_lanes_require_complete_typed_atoms_and_terminator() {
 #[test]
 fn om_operation_primary_body_reference_requires_one_complete_field() {
     let label = super::OperationLabel {
-        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+        header: crate::om::header_references::OperationHeader::<usize>::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "EXTRUDE",
     };
     let bytes = [0x01, 0x02, 0x10, 0x90, 0x19, 0x42, 0xff];
@@ -1062,7 +1062,7 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
 #[test]
 fn om_operation_body_write_is_not_a_direct_primary_body_reference() {
     let label = super::OperationLabel {
-        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+        header: crate::om::header_references::OperationHeader::<usize>::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "EXTRUDE",
     };
     let bytes = [
@@ -1102,7 +1102,7 @@ fn om_operation_body_write_is_not_a_direct_primary_body_reference() {
 #[test]
 fn om_operation_object_relation_requires_complete_canonical_endpoints() {
     let label = super::OperationLabel {
-        header: crate::om::header_references::OperationHeader::new(50, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+        header: crate::om::header_references::OperationHeader::<usize>::new(50, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "EXTRUDE",
     };
     let payload = [
@@ -1178,7 +1178,7 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
         frame
     };
     let label = super::OperationLabel {
-        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+        header: crate::om::header_references::OperationHeader::<usize>::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "FSET",
     };
     let bytes = [
@@ -1200,7 +1200,7 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
     );
 
     let label = super::OperationLabel {
-        header: crate::om::header_references::OperationHeader::new(0, label.header.objects()).unwrap(),
+        header: crate::om::header_references::OperationHeader::<usize>::new(0, label.header.objects()).unwrap(),
         ..label
     };
     let direct = [
@@ -1311,7 +1311,7 @@ fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
             payload_offset: 100,
             payload,
             label: super::OperationLabel {
-                header: crate::om::header_references::OperationHeader::new(0, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+                header: crate::om::header_references::OperationHeader::<usize>::new(0, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
                 value: "FSET",
             },
         }
@@ -1368,7 +1368,7 @@ fn om_delete_reference_field_requires_five_canonical_nullable_slots() {
             payload_offset: 100,
             payload,
             label: super::OperationLabel {
-                header: crate::om::header_references::OperationHeader::new(0, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+                header: crate::om::header_references::OperationHeader::<usize>::new(0, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
                 value: "DELETE",
             },
         }
@@ -1623,7 +1623,7 @@ fn om_operation_records_use_consecutive_validated_headers() {
 #[test]
 fn om_operation_payload_strings_require_complete_utf8_frames() {
     let label = super::OperationLabel {
-        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+        header: crate::om::header_references::OperationHeader::<usize>::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "SIMPLE HOLE",
     };
     let payload = b"\x00\x04\x07BLOCK\0\x04\x04\xc3\x97\0\x04\x07BROKEN";
@@ -1643,7 +1643,7 @@ fn om_operation_payload_strings_require_complete_utf8_frames() {
 #[test]
 fn om_operation_payload_text_frames_retain_marker_and_order() {
     let label = super::OperationLabel {
-        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+        header: crate::om::header_references::OperationHeader::<usize>::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "SYMBOLIC_THREAD",
     };
     let payload = b"\x03\x05CUT\0\x04\x06DONE\0\x03\x0bM Profile\0";

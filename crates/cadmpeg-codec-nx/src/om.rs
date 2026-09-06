@@ -1112,12 +1112,20 @@ impl OperationRecord<'_> {
 /// One unlabeled operation record bounded by validated operation headers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnlabeledOperationRecord<'a> {
-    /// Complete operation header and its exact reference encodings.
-    pub header: OperationHeader,
-    /// Complete record bytes through the next operation header or section end.
-    pub bytes: &'a [u8],
-    /// Serialized payload after the four header slots.
-    pub payload: &'a [u8],
+    header: OperationHeader,
+    bytes: &'a [u8],
+}
+
+impl<'a> UnlabeledOperationRecord<'a> {
+    fn new(header: OperationHeader, bytes: &'a [u8]) -> Option<Self> {
+        bytes.get(usize::from(header.byte_len())..)?;
+        header.offset().checked_add(bytes.len())?;
+        Some(Self { header, bytes })
+    }
+
+    pub(crate) fn header(self) -> OperationHeader { self.header }
+    pub(crate) fn bytes(self) -> &'a [u8] { self.bytes }
+    pub(crate) fn payload(self) -> &'a [u8] { &self.bytes[usize::from(self.header.byte_len())..] }
 }
 
 /// Terminal common-frame suffix with its independently matched preceding frame.
@@ -2321,7 +2329,7 @@ fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<Operatio
             continue;
         };
         let Some(header) = base_offset.checked_add(marker)
-            .and_then(|offset| OperationHeader::new(offset, objects)) else {
+            .and_then(|offset| OperationHeader::<usize>::new(offset, objects)) else {
             continue;
         };
         headers.push(header);
@@ -2418,11 +2426,7 @@ fn unlabeled_operation_records_with_ordinals<'a>(
                 .map_or(bytes.len(), |next| next.offset() - base_offset);
             Some((
                 ordinal,
-                UnlabeledOperationRecord {
-                    header: *header,
-                    bytes: bytes.get(start..end)?,
-                    payload: bytes.get(header.end_offset().checked_sub(base_offset)?..end)?,
-                },
+                UnlabeledOperationRecord::new(*header, bytes.get(start..end)?)?,
             ))
         })
         .collect()
@@ -5133,7 +5137,7 @@ pub fn operation_body_write_frames(record: OperationRecord<'_>) -> Vec<BodyWrite
 pub fn unlabeled_operation_body_write_frames(
     record: UnlabeledOperationRecord<'_>,
 ) -> Vec<BodyWriteFrame<usize>> {
-    body_write_frames(record.payload, record.header.end_offset())
+    body_write_frames(record.payload(), record.header().end_offset())
 }
 
 fn body_write_frames(payload: &[u8], payload_offset: usize) -> Vec<BodyWriteFrame<usize>> {

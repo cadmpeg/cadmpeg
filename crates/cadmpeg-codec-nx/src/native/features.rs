@@ -8,6 +8,8 @@ use reference::{ConstructionReference, NullableConstructionReference};
 use super::*;
 mod common_frame_wire;
 mod body_write_wire;
+pub(crate) mod unlabeled_record;
+use unlabeled_record::FeatureUnlabeledOperationRecord;
 use crate::printable_string::PrintableString;
 use crate::native::om::{
     data_blocks, DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow,
@@ -124,31 +126,6 @@ pub struct FeatureOperationRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable_identity: Option<String>,
     /// Absolute file offset of the first post-label payload byte.
-    pub payload_source_offset: u64,
-    /// Absolute file offset of the fixed operation-header marker.
-    pub source_offset: u64,
-}
-
-/// Exactly bounded feature-history operation record without a label frame.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureUnlabeledOperationRecord {
-    /// Globally unique record identity.
-    pub id: String,
-    /// Zero-based order among all operation headers in the section.
-    pub ordinal: u32,
-    /// Four object-index slots in header order.
-    pub object_indices: [Option<u32>; 4],
-    /// Absolute source offsets of the four object-index tokens.
-    pub object_index_source_offsets: [u64; 4],
-    /// Exact record byte length.
-    pub byte_len: u64,
-    /// SHA-256 of the complete operation record.
-    pub sha256: String,
-    /// Exact serialized post-header payload length.
-    pub payload_byte_len: u64,
-    /// SHA-256 of the post-header serialized operation payload.
-    pub payload_sha256: String,
-    /// Absolute file offset of the first post-header payload byte.
     pub payload_source_offset: u64,
     /// Absolute file offset of the fixed operation-header marker.
     pub source_offset: u64,
@@ -6475,22 +6452,12 @@ pub fn feature_unlabeled_operation_records(
     visit_feature_history_unlabeled_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            records.push(FeatureUnlabeledOperationRecord {
-                id: format!(
-                    "nx:feature-history:unlabeled-operation-record#{section_key}-{operation_ordinal:010}"
-                ),
-                ordinal: operation_ordinal as u32,
-                object_indices: record.header.objects().values(),
-                object_index_source_offsets: record.header
-                    .object_offsets()
-                    .map(|offset| entry_offset + offset as u64),
-                byte_len: record.bytes.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
-                payload_byte_len: record.payload.len() as u64,
-                payload_sha256: cadmpeg_ir::hash::sha256_hex(record.payload),
-                payload_source_offset: entry_offset + record.header.end_offset() as u64,
-                source_offset: entry_offset + record.header.offset() as u64,
-            });
+            if let Some(record) = FeatureUnlabeledOperationRecord::from_source(
+                format!("nx:feature-history:unlabeled-operation-record#{section_key}-{operation_ordinal:010}"),
+                operation_ordinal as u32, entry_offset, record,
+            ) {
+                records.push(record);
+            }
         },
     );
     records

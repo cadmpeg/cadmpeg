@@ -30,9 +30,9 @@ fn unlabeled_operation_header_still_bounds_adjacent_records() {
         panic!("one unlabeled operation record");
     };
     assert_eq!(*ordinal, 1);
-    assert_eq!(record.header.offset(), 100 + 32);
-    assert_eq!(record.header.end_offset(), 100 + 51);
-    assert_eq!(record.header.objects().values(), [None; 4]);
+    assert_eq!(record.header().offset(), 100 + 32);
+    assert_eq!(record.header().end_offset(), 100 + 51);
+    assert_eq!(record.header().objects().values(), [None; 4]);
     let writes = unlabeled_operation_body_write_frames(*record);
     let [write] = writes.as_slice() else {
         panic!("one independently bounded unlabeled body write");
@@ -48,7 +48,7 @@ fn every_body_identity_opens_a_body_write_frame() {
         0x01, 0x02, 0x11, 0x80, 0xa9, 0x97, 0x75, 0x01, 0x02, 0x10, 0x86, 0x93, 0xff,
     ];
     let label = OperationLabel {
-        header: crate::om::header_references::OperationHeader::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
+        header: crate::om::header_references::OperationHeader::<usize>::new(100, crate::om::header_references::HeaderReferences([None; 4])).unwrap(),
         value: "EXTRUDE",
     };
     let record = OperationRecord {
@@ -88,4 +88,20 @@ fn every_body_identity_opens_a_body_write_frame() {
         ..record
     })
     .is_empty());
+}
+
+#[test]
+fn unlabeled_record_payload_requires_a_complete_bounded_header() {
+    use crate::om::header_references::{HeaderReferences, OperationHeader};
+
+    let header = OperationHeader::<usize>::new(100, HeaderReferences([None; 4])).unwrap();
+    assert!(UnlabeledOperationRecord::new(header, &[0; 18]).is_none());
+    let mut bytes = vec![0; 19];
+    bytes.extend_from_slice(b"payload");
+    let record = UnlabeledOperationRecord::new(header, &bytes).unwrap();
+    assert_eq!(record.bytes(), bytes);
+    assert_eq!(record.payload(), b"payload");
+    let last = OperationHeader::<usize>::new(usize::MAX - 19, HeaderReferences([None; 4])).unwrap();
+    assert!(UnlabeledOperationRecord::new(last, &[0; 19]).is_some());
+    assert!(UnlabeledOperationRecord::new(last, &[0; 20]).is_none());
 }

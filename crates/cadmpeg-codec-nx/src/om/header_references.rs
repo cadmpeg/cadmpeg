@@ -73,25 +73,37 @@ impl TryFrom<HeaderReferencesWire> for HeaderReferences {
 
 /// Complete header location with all positions derived from its token widths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct OperationHeader {
-    offset: usize,
+pub(crate) struct OperationHeader<O = usize> {
+    offset: O,
     objects: HeaderReferences,
 }
 
-impl OperationHeader {
-    pub(crate) fn new(offset: usize, objects: HeaderReferences) -> Option<Self> {
-        offset.checked_add(FIXED_HEADER_LEN + objects.byte_len())?;
-        Some(Self { offset, objects })
-    }
+macro_rules! checked_header {
+    ($offset:ty) => {
+        impl OperationHeader<$offset> {
+            pub(crate) fn new(offset: $offset, objects: HeaderReferences) -> Option<Self> {
+                offset.checked_add((FIXED_HEADER_LEN + objects.byte_len()) as $offset)?;
+                Some(Self { offset, objects })
+            }
+        }
+    };
+}
+checked_header!(usize);
+checked_header!(u64);
 
-    pub(crate) fn offset(self) -> usize { self.offset }
+impl<O: Copy + std::ops::Add<Output = O> + From<u8>> OperationHeader<O> {
+    pub(crate) fn offset(self) -> O { self.offset }
     pub(crate) fn objects(self) -> HeaderReferences { self.objects }
-    pub(crate) fn end_offset(self) -> usize { self.offset + FIXED_HEADER_LEN + self.objects.byte_len() }
-    pub(crate) fn object_offsets(self) -> [usize; 4] {
-        let mut at = self.offset + FIXED_HEADER_LEN;
+    pub(crate) fn byte_len(self) -> u8 {
+        // Four tokens of at most three bytes follow the 15-byte fixed prefix.
+        (FIXED_HEADER_LEN + self.objects.byte_len()) as u8
+    }
+    pub(crate) fn end_offset(self) -> O { self.offset + O::from(self.byte_len()) }
+    pub(crate) fn object_offsets(self) -> [O; 4] {
+        let mut at = self.offset + O::from(FIXED_HEADER_LEN as u8);
         self.objects.0.map(|token| {
             let offset = at;
-            at += token.as_ref().map_or(1, |token| token.raw().len());
+            at = at + O::from(token.as_ref().map_or(1, |token| token.raw().len() as u8));
             offset
         })
     }
@@ -107,12 +119,12 @@ mod tests {
         assert_eq!(objects.values(), [None, Some(0), Some(0), Some(0)]);
         assert_eq!(objects.0.map(|token| token.map(|token| token.raw().to_vec())),
             [None, Some(vec![0]), Some(vec![0x80, 0]), Some(vec![0x90, 0, 0])]);
-        let header = OperationHeader::new(100, objects).unwrap();
+        let header = OperationHeader::<usize>::new(100, objects).unwrap();
         assert_eq!(header.offset(), 100);
         assert_eq!(header.object_offsets(), [115, 116, 117, 119]);
         assert_eq!(header.end_offset(), 122);
-        assert_eq!(OperationHeader::new(usize::MAX - 22, objects).unwrap().end_offset(), usize::MAX);
-        assert!(OperationHeader::new(usize::MAX - 21, objects).is_none());
+        assert_eq!(OperationHeader::<usize>::new(usize::MAX - 22, objects).unwrap().end_offset(), usize::MAX);
+        assert!(OperationHeader::<usize>::new(usize::MAX - 21, objects).is_none());
     }
 
     #[test]
