@@ -15,10 +15,13 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
         stable_identity: None,
         source_offset: 40,
     };
-    let pair = crate::native::features::FeatureSketchPayloadCoordinatePair {
+    let pair = crate::native::features::FeaturePayloadScalarPair {
         id: "nx:feature-history:sketch-payload-coordinate-pair#section-9-0000000000".to_string(),
         operation_label: label.id.clone(),
-        construction_payload: "payload".to_string(),
+        payload: crate::native::features::FeatureScalarPairPayload::Construction {
+            construction_payload: "payload".to_string(),
+            discriminator: vec![8, 2, 3, 1, 3, 1],
+        },
         ordinal: 0,
         values: [12.5, -3.0],
         raw_values: [[0; 8]; 2],
@@ -26,7 +29,6 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
         value_payload_offsets: [20, 28],
         source_offset: 51,
         value_source_offsets: [59, 67],
-        discriminator: vec![8, 2, 3, 1, 3, 1],
     };
     let coordinate_pairs = [&pair];
     let mut ir = CadIr::empty();

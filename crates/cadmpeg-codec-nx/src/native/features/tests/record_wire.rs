@@ -45,3 +45,16 @@ fn payload_scalar_preserves_each_payload_owner_key() {
         assert_eq!(serde_json::to_string(&scalar).unwrap(), json);
     }
 }
+
+#[test]
+fn scalar_pair_preserves_payload_key_and_discriminator_presence() {
+    for json in [
+        r#"{"id":"pair","operation_label":"operation","datum_csys_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[1,2,3,4,5,6,7,8],[8,7,6,5,4,3,2,1]],"payload_offset":10,"value_payload_offsets":[11,19],"source_offset":30,"value_source_offsets":[31,39],"discriminator":[4]}"#,
+        r#"{"id":"pair","operation_label":"operation","datum_plane_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[1,2,3,4,5,6,7,8],[8,7,6,5,4,3,2,1]],"payload_offset":10,"value_payload_offsets":[11,19],"source_offset":30,"value_source_offsets":[31,39]}"#,
+        r#"{"id":"pair","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[1,2,3,4,5,6,7,8],[8,7,6,5,4,3,2,1]],"payload_offset":10,"value_payload_offsets":[11,19],"source_offset":30,"value_source_offsets":[31,39],"discriminator":[8,2,3,1,3,1]}"#,
+        r#"{"id":"pair","operation_label":"operation","surface_construction_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[1,2,3,4,5,6,7,8],[8,7,6,5,4,3,2,1]],"payload_offset":10,"value_payload_offsets":[11,19],"source_offset":30,"value_source_offsets":[31,39],"discriminator":[]}"#,
+    ] {
+        let pair: super::FeaturePayloadScalarPair = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&pair).unwrap(), json);
+    }
+}

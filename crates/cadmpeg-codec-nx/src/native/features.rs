@@ -1243,15 +1243,16 @@ pub struct FeatureDatumCsysPayload {
     pub block_source_offsets: [u64; 2],
 }
 
-/// One exactly framed scalar pair in a reconstructed datum-CSYS payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureDatumCsysPayloadScalarPair {
+/// One exactly framed scalar pair in a reconstructed feature payload.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct FeaturePayloadScalarPair {
     /// Globally unique scalar-pair identity.
     pub id: String,
-    /// Owning `DATUM_CSYS` operation label.
+    /// Owning operation label.
     pub operation_label: String,
     /// Reconstructed payload carrying the frame.
-    pub datum_csys_payload: String,
+    #[serde(flatten)]
+    pub payload: FeatureScalarPairPayload,
     /// Zero-based frame order within the payload.
     pub ordinal: u32,
     /// Ordered finite shifted-IEEE values.
@@ -1266,8 +1267,102 @@ pub struct FeatureDatumCsysPayloadScalarPair {
     pub source_offset: u64,
     /// Absolute source offsets of the scalar encodings.
     pub value_source_offsets: [u64; 2],
-    /// Exact discriminator selecting the scalar-pair branch.
-    pub discriminator: Vec<u8>,
+}
+
+/// Payload identity and its scalar-pair branch discriminator.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum FeatureScalarPairPayload {
+    DatumCsys {
+        datum_csys_payload: String,
+        discriminator: Vec<u8>,
+    },
+    DatumPlane {
+        datum_plane_payload: String,
+    },
+    Construction {
+        construction_payload: String,
+        discriminator: Vec<u8>,
+    },
+    SurfaceConstruction {
+        surface_construction_payload: String,
+        discriminator: Vec<u8>,
+    },
+}
+
+impl FeatureScalarPairPayload {
+    #[must_use]
+    pub fn id(&self) -> &str {
+        match self {
+            Self::DatumCsys {
+                datum_csys_payload, ..
+            } => datum_csys_payload,
+            Self::DatumPlane {
+                datum_plane_payload,
+            } => datum_plane_payload,
+            Self::Construction {
+                construction_payload,
+                ..
+            } => construction_payload,
+            Self::SurfaceConstruction {
+                surface_construction_payload,
+                ..
+            } => surface_construction_payload,
+        }
+    }
+}
+
+impl Serialize for FeaturePayloadScalarPair {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let (payload_key, payload_id, discriminator) = match &self.payload {
+            FeatureScalarPairPayload::DatumCsys {
+                datum_csys_payload,
+                discriminator,
+            } => (
+                "datum_csys_payload",
+                datum_csys_payload,
+                Some(discriminator),
+            ),
+            FeatureScalarPairPayload::DatumPlane {
+                datum_plane_payload,
+            } => ("datum_plane_payload", datum_plane_payload, None),
+            FeatureScalarPairPayload::Construction {
+                construction_payload,
+                discriminator,
+            } => (
+                "construction_payload",
+                construction_payload,
+                Some(discriminator),
+            ),
+            FeatureScalarPairPayload::SurfaceConstruction {
+                surface_construction_payload,
+                discriminator,
+            } => (
+                "surface_construction_payload",
+                surface_construction_payload,
+                Some(discriminator),
+            ),
+        };
+        let mut record = serializer.serialize_struct(
+            "FeaturePayloadScalarPair",
+            10 + usize::from(discriminator.is_some()),
+        )?;
+        record.serialize_field("id", &self.id)?;
+        record.serialize_field("operation_label", &self.operation_label)?;
+        record.serialize_field(payload_key, payload_id)?;
+        record.serialize_field("ordinal", &self.ordinal)?;
+        record.serialize_field("values", &self.values)?;
+        record.serialize_field("raw_values", &self.raw_values)?;
+        record.serialize_field("payload_offset", &self.payload_offset)?;
+        record.serialize_field("value_payload_offsets", &self.value_payload_offsets)?;
+        record.serialize_field("source_offset", &self.source_offset)?;
+        record.serialize_field("value_source_offsets", &self.value_source_offsets)?;
+        if let Some(discriminator) = discriminator {
+            record.serialize_field("discriminator", discriminator)?;
+        }
+        record.end()
+    }
 }
 
 /// One exactly framed signed Q1.55 pair in a reconstructed datum-CSYS payload.
@@ -1551,31 +1646,6 @@ impl TryFrom<FeatureDatumPlanePayloadWire> for FeatureDatumPlanePayload {
     }
 }
 
-/// One exactly framed scalar pair in a reconstructed datum-plane payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureDatumPlanePayloadScalarPair {
-    /// Globally unique scalar-pair identity.
-    pub id: String,
-    /// Owning `DATUM_PLANE` operation label.
-    pub operation_label: String,
-    /// Reconstructed payload carrying the frame.
-    pub datum_plane_payload: String,
-    /// Zero-based frame order within the payload.
-    pub ordinal: u32,
-    /// Ordered finite shifted-IEEE values.
-    pub values: [f64; 2],
-    /// Exact shifted-binary64 encodings in value order.
-    pub raw_values: [[u8; 8]; 2],
-    /// Payload-relative offset of the discriminator.
-    pub payload_offset: u64,
-    /// Payload-relative offsets of the scalar encodings.
-    pub value_payload_offsets: [u64; 2],
-    /// Absolute source offset of the discriminator.
-    pub source_offset: u64,
-    /// Absolute source offsets of the scalar encodings.
-    pub value_source_offsets: [u64; 2],
-}
-
 /// Resolved typed descriptor of one datum-plane construction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDatumPlaneDescriptor {
@@ -1695,33 +1765,6 @@ pub struct FeatureSketchConstructionPayload {
     pub block_byte_lengths: Vec<u64>,
     /// Absolute file offset of each source block.
     pub block_source_offsets: Vec<u64>,
-}
-
-/// One exactly framed coordinate pair in a reconstructed sketch payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureSketchPayloadCoordinatePair {
-    /// Globally unique coordinate-pair identity.
-    pub id: String,
-    /// Owning `SKETCH` operation label.
-    pub operation_label: String,
-    /// Reconstructed sketch payload carrying the frame.
-    pub construction_payload: String,
-    /// Zero-based frame order within the payload.
-    pub ordinal: u32,
-    /// Ordered finite shifted-IEEE values.
-    pub values: [f64; 2],
-    /// Exact shifted-binary64 encodings in value order.
-    pub raw_values: [[u8; 8]; 2],
-    /// Payload-relative offset of the discriminator.
-    pub payload_offset: u64,
-    /// Payload-relative scalar offsets.
-    pub value_payload_offsets: [u64; 2],
-    /// Absolute source offset of the discriminator.
-    pub source_offset: u64,
-    /// Absolute source offsets of the scalar encodings.
-    pub value_source_offsets: [u64; 2],
-    /// Exact discriminator selecting the coordinate-pair branch.
-    pub discriminator: Vec<u8>,
 }
 
 /// One exactly framed scaled shifted-binary64 pair in a reconstructed sketch payload.
@@ -3906,33 +3949,6 @@ pub struct FeatureSurfaceConstructionPayload {
     pub block_byte_lengths: [u64; 14],
     /// Absolute source-block offsets.
     pub block_source_offsets: [u64; 14],
-}
-
-/// One exactly framed scalar pair in a reconstructed surface payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureSurfaceConstructionScalarPair {
-    /// Globally unique scalar-pair identity.
-    pub id: String,
-    /// Owning `SKIN` or `Studio Surface` operation label.
-    pub operation_label: String,
-    /// Reconstructed surface payload carrying the frame.
-    pub surface_construction_payload: String,
-    /// Zero-based frame order within the payload.
-    pub ordinal: u32,
-    /// Ordered finite shifted-IEEE values.
-    pub values: [f64; 2],
-    /// Exact shifted-binary64 encodings in value order.
-    pub raw_values: [[u8; 8]; 2],
-    /// Payload-relative offset of the discriminator.
-    pub payload_offset: u64,
-    /// Payload-relative scalar offsets.
-    pub value_payload_offsets: [u64; 2],
-    /// Absolute source offset of the discriminator.
-    pub source_offset: u64,
-    /// Absolute source offsets of the scalar encodings.
-    pub value_source_offsets: [u64; 2],
-    /// Exact discriminator selecting the scalar-pair branch.
-    pub discriminator: Vec<u8>,
 }
 
 /// One printable string frame in a reconstructed surface payload.
@@ -7280,17 +7296,20 @@ fn construction_payload_frames<P, S, R>(
 pub fn feature_datum_csys_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
-) -> Vec<FeatureDatumCsysPayloadScalarPair> {
+) -> Vec<FeaturePayloadScalarPair> {
     construction_payload_frames(
         container,
         payloads,
         |payload| &payload.data_blocks[..],
         crate::om::object_payload_scalar_pairs,
         |payload, ordinal, pair, source_offset| {
-            Some(FeatureDatumCsysPayloadScalarPair {
+            Some(FeaturePayloadScalarPair {
                 id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
                 operation_label: payload.operation_label.clone(),
-                datum_csys_payload: payload.id.clone(),
+                payload: FeatureScalarPairPayload::DatumCsys {
+                    datum_csys_payload: payload.id.clone(),
+                    discriminator: pair.discriminator,
+                },
                 ordinal: ordinal as u32,
                 values: pair.values,
                 raw_values: pair.raw_values,
@@ -7301,7 +7320,6 @@ pub fn feature_datum_csys_payload_scalar_pairs(
                     source_offset(pair.value_offsets[0])?,
                     source_offset(pair.value_offsets[1])?,
                 ],
-                discriminator: pair.discriminator,
             })
         },
     )
@@ -7433,17 +7451,19 @@ pub fn feature_datum_plane_csys_identity_uses(
 pub fn feature_datum_plane_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumPlanePayload],
-) -> Vec<FeatureDatumPlanePayloadScalarPair> {
+) -> Vec<FeaturePayloadScalarPair> {
     construction_payload_frames(
         container,
         payloads,
         |payload| payload.data_blocks.as_slice(),
         crate::om::datum_plane_object_scalar_pairs,
         |payload, ordinal, pair, source_offset| {
-            Some(FeatureDatumPlanePayloadScalarPair {
+            Some(FeaturePayloadScalarPair {
                 id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
                 operation_label: payload.operation_label.clone(),
-                datum_plane_payload: payload.id.clone(),
+                payload: FeatureScalarPairPayload::DatumPlane {
+                    datum_plane_payload: payload.id.clone(),
+                },
                 ordinal: ordinal as u32,
                 values: pair.values,
                 raw_values: pair.raw_values,
@@ -7723,17 +7743,20 @@ pub fn feature_sketch_construction_payloads(
 pub fn feature_sketch_payload_coordinate_pairs(
     container: &Container,
     payloads: &[FeatureSketchConstructionPayload],
-) -> Vec<FeatureSketchPayloadCoordinatePair> {
+) -> Vec<FeaturePayloadScalarPair> {
     construction_payload_frames(
         container,
         payloads,
         |payload| &payload.data_blocks,
         crate::om::sketch_payload_scalar_pairs,
         |payload, ordinal, pair, source_offset| {
-            Some(FeatureSketchPayloadCoordinatePair {
+            Some(FeaturePayloadScalarPair {
                 id: format!("{}-coordinate-pair-{ordinal:010}", payload.id),
                 operation_label: payload.operation_label.clone(),
-                construction_payload: payload.id.clone(),
+                payload: FeatureScalarPairPayload::Construction {
+                    construction_payload: payload.id.clone(),
+                    discriminator: pair.discriminator,
+                },
                 ordinal: ordinal as u32,
                 values: pair.values,
                 raw_values: pair.raw_values,
@@ -7744,7 +7767,6 @@ pub fn feature_sketch_payload_coordinate_pairs(
                     source_offset(pair.value_offsets[0])?,
                     source_offset(pair.value_offsets[1])?,
                 ],
-                discriminator: pair.discriminator,
             })
         },
     )
@@ -10260,7 +10282,7 @@ pub fn feature_surface_construction_payloads(
 pub fn feature_surface_construction_scalar_pairs(
     container: &Container,
     payloads: &[FeatureSurfaceConstructionPayload],
-) -> Vec<FeatureSurfaceConstructionScalarPair> {
+) -> Vec<FeaturePayloadScalarPair> {
     let blocks = offset_data_block_bytes(container);
     payloads
         .iter()
@@ -10274,10 +10296,13 @@ pub fn feature_surface_construction_scalar_pairs(
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, pair)| {
-                    Some(FeatureSurfaceConstructionScalarPair {
+                    Some(FeaturePayloadScalarPair {
                         id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
-                        surface_construction_payload: payload.id.clone(),
+                        payload: FeatureScalarPairPayload::SurfaceConstruction {
+                            surface_construction_payload: payload.id.clone(),
+                            discriminator: pair.discriminator,
+                        },
                         ordinal: ordinal as u32,
                         values: pair.values,
                         raw_values: pair.raw_values,
@@ -10303,7 +10328,6 @@ pub fn feature_surface_construction_scalar_pairs(
                                 &sources,
                             )?,
                         ],
-                        discriminator: pair.discriminator,
                     })
                 })
                 .collect()

@@ -1596,7 +1596,7 @@ fn attach_feature_operations(
             &payload.operation_label
         });
     let mut sketch_coordinate_pairs_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadCoordinatePair>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeaturePayloadScalarPair>>::new();
     for pair in sketch_coordinate_pairs {
         sketch_coordinate_pairs_by_operation
             .entry(pair.operation_label.as_str())
@@ -3890,7 +3890,7 @@ fn attach_sketch_graph(
         for pair in coordinate_pairs {
             if !pair.values.iter().all(|value| value.is_finite())
                 || !pair_ids.insert(pair.id.as_str())
-                || !pair_ordinals.insert((pair.construction_payload.as_str(), pair.ordinal))
+                || !pair_ordinals.insert((pair.payload.id(), pair.ordinal))
             {
                 return None;
             }
@@ -4141,7 +4141,7 @@ struct SketchSources<'a> {
     points: &'a [crate::native::features::FeatureSketchPoint],
     payload_scalars: &'a [crate::native::features::FeaturePayloadScalar],
     fixed_points: &'a [&'a crate::native::features::FeatureSketchFixedPoint],
-    coordinate_pairs: &'a [&'a crate::native::features::FeatureSketchPayloadCoordinatePair],
+    coordinate_pairs: &'a [&'a crate::native::features::FeaturePayloadScalarPair],
 }
 
 fn native_fixed_point_entities(
