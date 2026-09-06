@@ -11,8 +11,9 @@ pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 use branch_items::BranchItems;
 pub(crate) mod parameter_name;
+pub(crate) mod scalar_run;
 pub(crate) mod sketch_scalar;
-use sketch_scalar::{SketchScaledAtom, SketchMixedScalars};
+use sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLane, SketchScalarLaneForm};
 pub(crate) mod fixed;
 use fixed::{Q155, Q155Atom, Q155Marker};
 pub(crate) mod nonempty;
@@ -2470,19 +2471,6 @@ pub struct SketchPayloadFixedPair {
     pub value_offsets: [usize; 2],
     /// Exact discriminator and branch prefix selecting the pair layout.
     pub discriminator: Vec<u8>,
-}
-
-/// Exact scalar-vector frame in a reconstructed sketch payload.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SketchPayloadScalarLane {
-    /// Payload-relative offset of the fixed scalar-lane discriminator.
-    pub offset: usize,
-    /// Exact discriminator selecting the scalar-lane form.
-    pub discriminator: Vec<u8>,
-    /// Ordered finite scalar values after the discriminator.
-    pub values: Vec<scalar::LocatedShiftedScalar>,
-    /// Payload-relative offset of the terminating zero atom.
-    pub terminator_offset: usize,
 }
 
 /// Exact mixed scaled shifted-binary64 and shifted-binary32 pair in a sketch payload.
@@ -6001,24 +5989,12 @@ pub fn sketch_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
 
 /// Decode every complete scalar-vector frame in a reconstructed sketch
 /// payload.
-pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<SketchPayloadScalarLane> {
-    const DISCRIMINATORS: [&[u8]; 2] = [
-        &[
-            0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x04, 0x80, 0x86,
-            0x81, 0x02, 0x00, 0x01, 0x00,
-        ],
-        &[
-            0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86,
-            0x02, 0x00, 0x01, 0x00,
-        ],
-    ];
-
-    let mut lanes = DISCRIMINATORS
+pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<SketchScalarLane<()>> {
+    let mut lanes = [SketchScalarLaneForm::Form03, SketchScalarLaneForm::Form07]
         .into_iter()
-        .flat_map(|discriminator| {
-            bytes
-                .windows(discriminator.len())
-                .enumerate()
+        .flat_map(|form| {
+            let discriminator = form.discriminator();
+            bytes.windows(discriminator.len()).enumerate()
                 .filter_map(move |(offset, window)| {
                     (window == discriminator).then_some(())?;
                     let mut at = offset + discriminator.len();
@@ -6028,23 +6004,14 @@ pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<SketchPayloadScalarLane>
                             break;
                         }
                         let scalar = ShiftedScalar::read(bytes.get(at..)?)?;
-                        let width = scalar.raw().len();
-                        values.push(scalar::LocatedShiftedScalar { scalar, offset: at });
-                        at += width;
+                        at += scalar.raw().len();
+                        values.push((scalar, ()));
                     }
-                    if values.is_empty() {
-                        return None;
-                    }
-                    Some(SketchPayloadScalarLane {
-                        offset,
-                        discriminator: discriminator.to_vec(),
-                        values,
-                        terminator_offset: at,
-                    })
+                    SketchScalarLane::new(form, offset as u64, NonEmpty::new(values)?).ok()
                 })
         })
         .collect::<Vec<_>>();
-    lanes.sort_by_key(|lane| lane.offset);
+    lanes.sort_by_key(SketchScalarLane::offset);
     lanes
 }
 

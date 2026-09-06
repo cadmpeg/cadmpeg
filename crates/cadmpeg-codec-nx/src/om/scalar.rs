@@ -100,12 +100,6 @@ impl ShiftedBinary32 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct LocatedShiftedScalar {
-    pub(crate) scalar: ShiftedScalar,
-    pub(crate) offset: usize,
-}
-
 /// One shifted binary32 or binary64 atom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ShiftedScalar {

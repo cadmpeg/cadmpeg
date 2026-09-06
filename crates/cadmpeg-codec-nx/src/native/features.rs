@@ -15,7 +15,7 @@ use crate::om::swp104_state::Swp104StateLane;
 use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, RepeatedScalar, ShiftedBinary32, ShiftedBinary64, ShiftedScalar};
 use crate::om::branch_items::BranchItems;
 use crate::om::nonempty::NonEmpty;
-use crate::om::sketch_scalar::{SketchScaledAtom, SketchMixedScalars};
+use crate::om::sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLane, SketchScalarLaneForm};
 use crate::om::fixed::{Q155, Q155Atom, Q155Marker};
 use crate::om::pattern::{PatternRow, PatternRows, PatternScalarEncoding, PatternTerminal, PatternValue, PatternWideValues};
 use crate::om::thru_curve_state::ThruCurveBranchItems;
@@ -2172,23 +2172,12 @@ pub struct FeatureSketchPayloadScalarLane {
     pub construction_payload: String,
     /// Zero-based lane order within the reconstructed payload.
     pub ordinal: u32,
-    /// Exact discriminator selecting the lane form.
-    pub discriminator: Vec<u8>,
-    /// Ordered scalar atoms with their source locations.
-    pub values: Vec<FeaturePayloadScalarToken>,
-    /// Payload-relative offset of the terminating zero atom.
-    pub terminator_payload_offset: u64,
+    /// Typed lane form and contiguous atoms with their absolute source locations.
+    pub lane: SketchScalarLane<u64>,
     /// Absolute source offset of the discriminator.
     pub source_offset: u64,
     /// Absolute source offset of the terminating zero atom.
     pub terminator_source_offset: u64,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FeaturePayloadScalarToken {
-    pub scalar: ShiftedScalar,
-    pub payload_offset: u64,
-    pub source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2220,28 +2209,20 @@ struct FeatureSketchPayloadScalarLaneWire {
 }
 
 impl From<FeatureSketchPayloadScalarLane> for FeatureSketchPayloadScalarLaneWire {
-    fn from(lane: FeatureSketchPayloadScalarLane) -> Self {
+    fn from(record: FeatureSketchPayloadScalarLane) -> Self {
         Self {
-            id: lane.id,
-            operation_label: lane.operation_label,
-            construction_payload: lane.construction_payload,
-            ordinal: lane.ordinal,
-            discriminator: lane.discriminator,
-            values: lane.values.iter().map(|token| token.scalar.value()).collect(),
-            raw_values: lane.values.iter().map(|token| token.scalar.raw().to_vec()).collect(),
-            value_payload_offsets: lane
-                .values
-                .iter()
-                .map(|token| token.payload_offset)
-                .collect(),
-            terminator_payload_offset: lane.terminator_payload_offset,
-            source_offset: lane.source_offset,
-            value_source_offsets: lane
-                .values
-                .iter()
-                .map(|token| token.source_offset)
-                .collect(),
-            terminator_source_offset: lane.terminator_source_offset,
+            id: record.id,
+            operation_label: record.operation_label,
+            construction_payload: record.construction_payload,
+            ordinal: record.ordinal,
+            discriminator: record.lane.discriminator().to_vec(),
+            values: record.lane.run().iter().map(|(_, scalar, _)| scalar.value()).collect(),
+            raw_values: record.lane.run().iter().map(|(_, scalar, _)| scalar.raw().to_vec()).collect(),
+            value_payload_offsets: record.lane.run().iter().map(|(offset, _, _)| offset).collect(),
+            terminator_payload_offset: record.lane.run().end(),
+            source_offset: record.source_offset,
+            value_source_offsets: record.lane.run().iter().map(|(_, _, source)| *source).collect(),
+            terminator_source_offset: record.terminator_source_offset,
         }
     }
 }
@@ -2256,27 +2237,27 @@ impl TryFrom<FeatureSketchPayloadScalarLaneWire> for FeatureSketchPayloadScalarL
         {
             return Err("sketch values, raw_values, value_payload_offsets, and value_source_offsets must have equal lengths".into());
         }
+        let form = SketchScalarLaneForm::from_discriminator(&wire.discriminator)?;
+        let offset = wire.value_payload_offsets.first().copied()
+            .ok_or("values must contain a sketch scalar atom")?
+            .checked_sub(wire.discriminator.len() as u64)
+            .ok_or("value_payload_offsets must follow the discriminator")?;
+        let values = wire.values.into_iter().zip(wire.raw_values).zip(wire.value_source_offsets)
+            .map(|((value, raw), source)| Ok((ShiftedScalar::from_wire(value, &raw)?, source)))
+            .collect::<Result<Vec<_>, String>>()?;
+        let lane = SketchScalarLane::new(form, offset, NonEmpty::new(values).ok_or("values must contain a sketch scalar atom")?)?;
+        if !lane.run().iter().map(|(offset, _, _)| offset).eq(wire.value_payload_offsets) {
+            return Err("value_payload_offsets must follow the contiguous scalar atoms".into());
+        }
+        if lane.run().end() != wire.terminator_payload_offset {
+            return Err("terminator_payload_offset must follow the last scalar atom".into());
+        }
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
             construction_payload: wire.construction_payload,
             ordinal: wire.ordinal,
-            discriminator: wire.discriminator,
-            values: wire
-                .values
-                .into_iter()
-                .zip(wire.raw_values)
-                .zip(wire.value_payload_offsets)
-                .zip(wire.value_source_offsets)
-                .map(
-                    |(((value, raw), payload_offset), source_offset)| Ok(FeaturePayloadScalarToken {
-                        scalar: ShiftedScalar::from_wire(value, &raw)?,
-                        payload_offset,
-                        source_offset,
-                    }),
-                )
-                .collect::<Result<Vec<_>, String>>()?,
-            terminator_payload_offset: wire.terminator_payload_offset,
+            lane,
             source_offset: wire.source_offset,
             terminator_source_offset: wire.terminator_source_offset,
         })
@@ -8896,27 +8877,17 @@ pub fn feature_sketch_payload_scalar_lanes(
         |payload| payload.content.blocks(),
         crate::om::sketch_payload_scalar_lanes,
         |payload, ordinal, lane, source_offset| {
-            let values = lane
-                .values
-                .into_iter()
-                .map(|token| {
-                    Some(FeaturePayloadScalarToken {
-                        scalar: token.scalar,
-                        payload_offset: token.offset as u64,
-                        source_offset: source_offset(token.offset)?,
-                    })
-                })
-                .collect::<Option<Vec<_>>>()?;
+            let header_source = source_offset(lane.offset() as usize)?;
+            let terminator_source = source_offset(lane.run().end() as usize)?;
+            let lane = lane.try_map_locations(|offset, ()| source_offset(offset as usize))?;
             Some(FeatureSketchPayloadScalarLane {
                 id: format!("{}-scalar-lane-{ordinal:010}", payload.id),
                 operation_label: payload.operation_label.clone(),
                 construction_payload: payload.id.clone(),
                 ordinal: ordinal as u32,
-                discriminator: lane.discriminator,
-                values,
-                terminator_payload_offset: lane.terminator_offset as u64,
-                source_offset: source_offset(lane.offset)?,
-                terminator_source_offset: source_offset(lane.terminator_offset)?,
+                lane,
+                source_offset: header_source,
+                terminator_source_offset: terminator_source,
             })
         },
     )

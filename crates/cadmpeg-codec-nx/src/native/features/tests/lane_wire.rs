@@ -52,7 +52,7 @@ fn input_identity_group_preserves_parallel_wire_and_requires_complete_members() 
 #[test]
 fn sketch_scalar_lane_preserves_parallel_wire_and_requires_complete_tokens() {
     check_lane_wire::<FeatureSketchPayloadScalarLane>(
-        r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"discriminator":[1,2],"values":[2.5,4.0],"raw_values":[[80,32,0,0],[80,128,0,0]],"value_payload_offsets":[2,6],"terminator_payload_offset":10,"source_offset":100,"value_source_offsets":[102,106],"terminator_source_offset":110}"#,
+        r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"discriminator":[37,37,65,0,4,1,7,1,192,69,16,0,128,134,2,0,1,0],"values":[2.5,4.0],"raw_values":[[80,32,0,0],[80,128,0,0]],"value_payload_offsets":[18,22],"terminator_payload_offset":26,"source_offset":100,"value_source_offsets":[118,122],"terminator_source_offset":126}"#,
         &[
             "values",
             "raw_values",
@@ -265,7 +265,7 @@ fn pattern_rows_reject_scalar_families_outside_their_layout() {
 
 #[test]
 fn sketch_scalar_lane_rejects_inconsistent_or_zero_atoms() {
-    let json = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"discriminator":[1,2],"values":[2.5],"raw_values":[[80,32,0,0]],"value_payload_offsets":[2],"terminator_payload_offset":6,"source_offset":100,"value_source_offsets":[102],"terminator_source_offset":106}"#;
+    let json = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"discriminator":[37,37,65,0,4,1,7,1,192,69,16,0,128,134,2,0,1,0],"values":[2.5],"raw_values":[[80,32,0,0]],"value_payload_offsets":[18],"terminator_payload_offset":22,"source_offset":100,"value_source_offsets":[118],"terminator_source_offset":122}"#;
     let original: serde_json::Value = serde_json::from_str(json).unwrap();
     for (value, raw) in [
         (4.0, vec![80,32,0,0]),
@@ -346,4 +346,22 @@ fn mixed_sketch_pair_preserves_interleaved_atom_wire() {
 fn scaled_sketch_pair_rejects_values_inconsistent_with_its_marker() {
     let invalid = r#"{"id":"pair","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.5,-0.5],"raw_values":[[0,0,0,0,0,0,0],[0,0,0,0,0,0,0]],"discriminator":[4,224,72,14,2,3,128,132],"payload_offset":0,"value_payload_offsets":[8,17],"source_offset":100,"value_source_offsets":[108,117]}"#;
     assert!(serde_json::from_str::<FeatureSketchPayloadFixedPair>(invalid).unwrap_err().to_string().contains("raw_values"));
+}
+
+#[test]
+fn sketch_scalar_run_derives_payload_positions_across_split_source_blocks() {
+    let json = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"discriminator":[37,37,65,0,4,1,7,1,192,69,16,0,128,134,2,0,1,0],"values":[2.5,4.0],"raw_values":[[80,32,0,0],[48,16,0,0,0,0,0,0]],"value_payload_offsets":[18,22],"terminator_payload_offset":30,"source_offset":100,"value_source_offsets":[118,900],"terminator_source_offset":908}"#;
+    check_lane_wire::<FeatureSketchPayloadScalarLane>(json, &["values", "raw_values", "value_payload_offsets", "value_source_offsets"]);
+    let original: serde_json::Value = serde_json::from_str(json).unwrap();
+    for (field, value) in [
+        ("value_payload_offsets", serde_json::json!([18,23])),
+        ("terminator_payload_offset", serde_json::json!(31)),
+        ("discriminator", serde_json::json!([1,2])),
+        ("value_payload_offsets", serde_json::json!([u64::MAX - 1, u64::MAX])),
+    ] {
+        let mut invalid = original.clone();
+        invalid[field] = value;
+        let error = serde_json::from_value::<FeatureSketchPayloadScalarLane>(invalid).unwrap_err();
+        assert!(error.to_string().contains(field), "{error}");
+    }
 }
