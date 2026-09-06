@@ -3,6 +3,7 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::printable_string::PrintableString;
 
 use cadmpeg_core::decode::View;
 
@@ -2839,11 +2840,29 @@ pub struct StringValue {
     /// Zero-based occurrence ordinal within the owning record.
     pub ordinal: u32,
     /// Exact printable value.
-    pub value: String,
+    pub value: PrintableString<String>,
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Absolute file offset of the `66 32 03` marker.
     pub source_offset: u64,
+}
+
+#[cfg(test)]
+mod printable_value_wire_tests {
+    use super::StringValue;
+
+    #[test]
+    fn retained_printable_value_preserves_spaces_and_rejects_invalid_text() {
+        let json = r#"{"id":"value","record":"record","object_id":null,"ordinal":0,"value":"  A ~ ","source_entry":"entry","source_offset":10}"#;
+        let value: StringValue = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        for invalid in ["", "\n", "μ"] {
+            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            wire["value"] = invalid.into();
+            assert!(serde_json::from_value::<StringValue>(wire)
+                .unwrap_err().to_string().contains("value"));
+        }
+    }
 }
 
 /// Canonical UUID text spanning one or more contiguous bounded OM records.
@@ -5205,7 +5224,7 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
                         record,
                         object_id,
                         ordinal: value_ordinal as u32,
-                        value: value.value.to_string(),
+                        value: value.value.into_owned(),
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + value.offset as u64,
                     }
@@ -6952,7 +6971,7 @@ mod tests {
         assert_eq!(strings.len(), 1);
         assert_eq!(strings[0].record, object_records[1].id);
         assert_eq!(strings[0].object_id, Some(0x102));
-        assert_eq!(strings[0].value, "SKETCH_001");
+        assert_eq!(strings[0].value.as_str(), "SKETCH_001");
         let references = result
             .ir()
             .native

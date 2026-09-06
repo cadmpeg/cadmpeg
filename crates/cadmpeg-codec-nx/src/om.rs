@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::num::NonZeroU8;
 
 use cadmpeg_core::decode::{alloc_filled, View};
+use crate::printable_string::PrintableString;
 
 pub(crate) mod compact;
 use compact::{LocatedCompactIndex, NullableCompactIndex, CountedIndexMembers};
@@ -110,7 +111,7 @@ pub struct StringValue<'a> {
     /// Absolute byte offset of the `66 32 03` marker.
     pub offset: usize,
     /// Printable value bytes.
-    pub value: &'a str,
+    pub value: PrintableString<&'a str>,
 }
 
 /// One canonical UUID in the compact NX OM string frame `03 26, text, 00`.
@@ -7987,15 +7988,9 @@ pub fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue<'_>> {
             let start = offset.checked_add(4)?;
             let end = start.checked_add(text_len)?;
             let raw = bytes.get(start..end)?;
-            (!raw.is_empty()
-                && raw
-                    .iter()
-                    .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-                && bytes.get(end) == Some(&0))
-            .then(|| StringValue {
-                offset: base_offset + offset,
-                value: std::str::from_utf8(raw).expect("invariant: printable ASCII is valid UTF-8"),
-            })
+            (bytes.get(end) == Some(&0)).then_some(())?;
+            let value = PrintableString::new(std::str::from_utf8(raw).ok()?).ok()?;
+            Some(StringValue { offset: base_offset + offset, value })
         })
         .collect()
 }

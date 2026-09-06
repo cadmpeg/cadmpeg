@@ -3,6 +3,7 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::printable_string::PrintableString;
 use crate::native::om::{
     data_blocks, DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow,
     DataBlockReference, DataBlockRole, DataBlockTargetIndexRow, Expression, ExpressionDeclaration,
@@ -2794,7 +2795,7 @@ pub struct FeatureProjectedCurveConstructionString {
     /// Zero-based string order within the payload.
     pub ordinal: u32,
     /// Exact printable value.
-    pub value: String,
+    pub value: PrintableString<String>,
     /// Payload-relative offset of the `66 32 03` marker.
     pub payload_offset: u64,
     /// Absolute source offset of the marker.
@@ -3028,7 +3029,7 @@ pub struct FeaturePatternConstructionString {
     /// Zero-based string order within the payload.
     pub ordinal: u32,
     /// Exact printable value.
-    pub value: String,
+    pub value: PrintableString<String>,
     /// Payload-relative offset of the `66 32 03` marker.
     pub payload_offset: u64,
     /// Absolute source offset of the marker.
@@ -4068,7 +4069,7 @@ pub struct FeatureDraftConstructionGraphString {
     /// Zero-based string order in the reconstructed payload.
     pub ordinal: u32,
     /// Exact printable value.
-    pub value: String,
+    pub value: PrintableString<String>,
     /// Payload-relative offset of the `66 32 03` marker.
     pub payload_offset: u64,
     /// Absolute source offset of the marker.
@@ -9860,7 +9861,7 @@ pub fn feature_projected_curve_construction_strings(
                         operation_label: payload.operation_label.clone(),
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        value: value.value.to_string(),
+                        value: value.value.into_owned(),
                         payload_offset,
                         source_offset: joined.source_offset(payload_offset)?,
                     })
@@ -10039,7 +10040,7 @@ pub fn feature_pattern_construction_strings(
                         operation_label: payload.operation_label.clone(),
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        value: value.value.to_string(),
+                        value: value.value.into_owned(),
                         payload_offset,
                         source_offset: joined.source_offset(payload_offset)?,
                     })
@@ -10544,7 +10545,7 @@ pub fn feature_draft_construction_graph_strings(
                         operation_label: payload.operation_label.clone(),
                         graph_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        value: value.value.to_string(),
+                        value: value.value.into_owned(),
                         payload_offset,
                         source_offset: joined.source_offset(payload_offset)?,
                     })

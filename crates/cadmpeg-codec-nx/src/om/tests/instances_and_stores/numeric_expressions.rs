@@ -102,8 +102,8 @@ fn om_string_value_requires_marker_length_printability_and_terminator() {
     let values = super::super::string_values(bytes, 100);
     assert_eq!(values.len(), 2);
     assert_eq!(values[0].offset, 100);
-    assert_eq!(values[0].value, "SKETCH_001");
-    assert_eq!(values[1].value, "A");
+    assert_eq!(values[0].value.as_str(), "SKETCH_001");
+    assert_eq!(values[1].value.as_str(), "A");
 }
 
 #[test]
