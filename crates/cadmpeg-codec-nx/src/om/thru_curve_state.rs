@@ -47,6 +47,13 @@ impl<T> ThruCurveBranchItems<T> {
         }
     }
 
+    pub(crate) fn state_lane_len(&self) -> usize {
+        match self {
+            Self::Standard(members) => members.len() + 4,
+            Self::Extended { .. } => 18,
+        }
+    }
+
     // Names follow the ordered source slots in this fixed-width lane.
     #[allow(clippy::many_single_char_names)]
     pub(crate) fn state_lane(&self) -> Vec<u8> {
@@ -56,13 +63,6 @@ impl<T> ThruCurveBranchItems<T> {
                 values: [[a, b, c, d], [e, f, g, h]],
                 ..
             } => vec![0, 0, 0, 0, 1, 5, *a, *b, *c, *d, 1, 5, *e, *f, *g, *h, 0, 0],
-        }
-    }
-
-    pub(crate) fn into_members(self) -> Vec<T> {
-        match self {
-            Self::Standard(members) => members.into_vec(),
-            Self::Extended { members, .. } => members.into(),
         }
     }
 

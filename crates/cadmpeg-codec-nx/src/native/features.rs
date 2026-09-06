@@ -23,6 +23,7 @@ pub(crate) mod object_frame;
 pub(crate) mod operation_record;
 pub(crate) mod surface_branches;
 pub(crate) mod swp104_branch;
+pub(crate) mod thru_curve_branches;
 pub(crate) mod unlabeled_record;
 use crate::native::om::column_row::{
     DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockTargetIndexRow,
@@ -36,7 +37,6 @@ use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLin
 use crate::om::binary64_pair::{
     Binary64Pair, Binary64PairForm, DatumPlanePairForm, ObjectPairForm, SketchBinary64PairForm,
 };
-use crate::om::branch_items::BranchItems;
 use crate::om::compact::CompactIndexAtom;
 use crate::om::compact::CountedIndexMembers;
 use crate::om::compact::LocatedCompactIndex;
@@ -67,8 +67,6 @@ use crate::om::csys_descriptor::{
 
 use crate::om::plane_descriptor::PlaneDescriptor;
 use crate::om::thru_curve_controls::ThruCurveControls;
-use crate::om::thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
-use crate::om::thru_curve_state::ThruCurveBranchItems;
 
 pub(crate) mod datum_plane_header;
 mod joined_payload;
@@ -2671,131 +2669,6 @@ pub struct FeatureThruCurveConstructionEnvelope {
     pub source_offset: u64,
 }
 
-/// One exact counted branch in a `THRU_CURVE` construction group.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureThruCurveConstructionBranchWire",
-    into = "FeatureThruCurveConstructionBranchWire"
-)]
-pub struct FeatureThruCurveConstructionBranch {
-    /// Zero-based branch order.
-    pub ordinal: u32,
-    /// Serialized nonzero branch mode.
-    pub mode: NonZeroU8,
-    /// Ordered nonterminal references.
-    pub members: ThruCurveBranchItems<FeatureSurfaceBranchReference>,
-    /// Terminal reference.
-    pub terminal: FeatureSurfaceBranchReference,
-    /// Exact two-byte branch suffix.
-    pub suffix: ThruCurveBranchSuffix,
-    /// Absolute source offset of the mode byte.
-    pub source_offset: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-struct FeatureThruCurveConstructionBranchWire {
-    ordinal: u32,
-    mode: NonZeroU8,
-    declared_count: u8,
-    state_lane: Vec<u8>,
-    members: Vec<FeatureSurfaceBranchReference>,
-    terminal: FeatureSurfaceBranchReference,
-    suffix: ThruCurveBranchSuffix,
-    source_offset: u64,
-}
-
-impl From<FeatureThruCurveConstructionBranch> for FeatureThruCurveConstructionBranchWire {
-    fn from(value: FeatureThruCurveConstructionBranch) -> Self {
-        Self {
-            ordinal: value.ordinal,
-            mode: value.mode,
-            declared_count: value.members.declared_count(),
-            state_lane: value.members.state_lane(),
-            members: value.members.into_members(),
-            terminal: value.terminal,
-            suffix: value.suffix,
-            source_offset: value.source_offset,
-        }
-    }
-}
-
-impl TryFrom<FeatureThruCurveConstructionBranchWire> for FeatureThruCurveConstructionBranch {
-    type Error = String;
-    fn try_from(wire: FeatureThruCurveConstructionBranchWire) -> Result<Self, Self::Error> {
-        if usize::from(wire.declared_count) != wire.members.len() + 1 {
-            return Err("declared_count must equal members length plus one".to_owned());
-        }
-        Ok(Self {
-            ordinal: wire.ordinal,
-            mode: wire.mode,
-            members: ThruCurveBranchItems::from_parts(wire.members, &wire.state_lane)?,
-            terminal: wire.terminal,
-            suffix: wire.suffix,
-            source_offset: wire.source_offset,
-        })
-    }
-}
-
-/// Exact counted branch group after a `THRU_CURVE` construction envelope.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureThruCurveConstructionBranchGroupWire",
-    into = "FeatureThruCurveConstructionBranchGroupWire"
-)]
-pub struct FeatureThruCurveConstructionBranchGroup {
-    /// Globally unique branch-group identity.
-    pub id: String,
-    /// Owning `THRU_CURVE` operation label.
-    pub operation_label: String,
-    /// Ordered explicit branches.
-    pub branches: BranchItems<FeatureThruCurveConstructionBranch>,
-    /// Exact group terminator selected by the schema generation.
-    pub terminator: ThruCurveGroupTerminator,
-    /// Absolute source offset of the group count.
-    pub source_offset: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-struct FeatureThruCurveConstructionBranchGroupWire {
-    id: String,
-    operation_label: String,
-    declared_count: u8,
-    branches: BranchItems<FeatureThruCurveConstructionBranch>,
-    terminator: ThruCurveGroupTerminator,
-    source_offset: u64,
-}
-
-impl From<FeatureThruCurveConstructionBranchGroup> for FeatureThruCurveConstructionBranchGroupWire {
-    fn from(value: FeatureThruCurveConstructionBranchGroup) -> Self {
-        Self {
-            id: value.id,
-            operation_label: value.operation_label,
-            declared_count: value.branches.declared_count(),
-            branches: value.branches,
-            terminator: value.terminator,
-            source_offset: value.source_offset,
-        }
-    }
-}
-
-impl TryFrom<FeatureThruCurveConstructionBranchGroupWire>
-    for FeatureThruCurveConstructionBranchGroup
-{
-    type Error = String;
-    fn try_from(wire: FeatureThruCurveConstructionBranchGroupWire) -> Result<Self, Self::Error> {
-        if wire.declared_count != wire.branches.declared_count() {
-            return Err("declared_count must equal branches length plus one".to_owned());
-        }
-        Ok(Self {
-            id: wire.id,
-            operation_label: wire.operation_label,
-            branches: wire.branches,
-            terminator: wire.terminator,
-            source_offset: wire.source_offset,
-        })
-    }
-}
-
 /// Exact logical payload reconstructed from an ordered surface-construction graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSurfaceConstructionPayload {
@@ -2826,21 +2699,6 @@ pub struct FeatureSurfaceConstructionString {
     /// Payload-relative offset of the `66 1b 03` marker.
     pub payload_offset: u64,
     /// Absolute source offset of the marker.
-    pub source_offset: u64,
-}
-
-/// One resolved reference within a surface-construction branch.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSurfaceBranchReference {
-    /// Zero-based member order, or the declared count minus one for the terminal.
-    pub ordinal: u32,
-    /// Checked index retaining the exact serialized token.
-    #[serde(flatten)]
-    pub token: crate::om::reference_index::ReferenceIndexToken,
-    /// Unique target in the native `data_blocks` arena.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_block: Option<String>,
-    /// Absolute file offset of the width marker.
     pub source_offset: u64,
 }
 
@@ -7493,54 +7351,6 @@ pub fn feature_thru_curve_construction_envelopes(
         },
     );
     envelopes
-}
-
-/// Decode and resolve exact counted `THRU_CURVE` construction branches.
-pub fn feature_thru_curve_construction_branch_groups(
-    container: &Container,
-) -> Vec<FeatureThruCurveConstructionBranchGroup> {
-    let indexed = container.indexed_om_sections();
-    let mut groups = Vec::new();
-    visit_feature_history_operation_records(
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(group) = crate::om::thru_curve_payload_branch_group(record.payload_view())
-            else {
-                return;
-            };
-            let operation_key = format!("{section_key}-{operation_ordinal:010}");
-            let resolve = |ordinal: usize, reference: crate::om::PayloadObjectReference| {
-                FeatureSurfaceBranchReference {
-                    ordinal: ordinal as u32,
-                    token: reference.token,
-                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
-                    source_offset: entry_offset + reference.offset as u64,
-                }
-            };
-            let branches = group.branches.map_indexed(|ordinal, branch| {
-                let members = branch.members.map_indexed(&resolve);
-                let terminal = resolve(members.len(), branch.terminal);
-                FeatureThruCurveConstructionBranch {
-                    ordinal: ordinal as u32,
-                    mode: branch.mode,
-                    members,
-                    terminal,
-                    suffix: branch.suffix,
-                    source_offset: entry_offset + branch.offset as u64,
-                }
-            });
-            groups.push(FeatureThruCurveConstructionBranchGroup {
-                id: format!(
-                    "nx:feature-history:thru-curve-construction-branch-group#{operation_key}"
-                ),
-                operation_label: format!("nx:feature-history:operation-label#{operation_key}"),
-                branches,
-                terminator: group.terminator,
-                source_offset: entry_offset + group.offset as u64,
-            });
-        },
-    );
-    groups
 }
 
 /// Decode and resolve each exact leading `SWP104` construction branch.

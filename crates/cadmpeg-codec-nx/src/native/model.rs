@@ -25,6 +25,9 @@ use crate::native::features::surface_branches::{
     feature_surface_construction_branches, FeatureSurfaceConstructionBranch,
 };
 use crate::native::features::swp104_branch::FeatureSwp104LeadingBranch;
+use crate::native::features::thru_curve_branches::{
+    feature_thru_curve_construction_branch_groups, FeatureThruCurveConstructionBranchGroup,
+};
 use crate::native::om::column_row::{
     data_block_index_rows, data_block_linked_index_rows, data_block_target_index_rows,
     DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockTargetIndexRow,

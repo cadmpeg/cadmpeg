@@ -550,7 +550,7 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     append_standard_branch(&mut branched, 0x15, 0x33, 0x34);
     branched.extend([0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]);
     branched.extend([0xaa, 0xbb]);
-    let group = super::thru_curve_payload_branch_group(
+    let group = crate::om::thru_curve_branches::thru_curve_payload_branch_group(
         crate::om::operation_record::OperationPayload::new(
             &branched,
             record.payload_offset(),
@@ -559,24 +559,24 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
         .unwrap(),
     )
     .expect("complete branch group");
-    assert_eq!(group.branches.declared_count(), 3);
-    assert_eq!(group.branches.len(), 2);
-    assert_eq!(group.branches.as_slice()[0].mode.get(), 0x15);
-    assert_eq!(group.branches.as_slice()[0].members.declared_count(), 2);
-    assert_eq!(group.branches.as_slice()[0].members.state_lane(), [0; 5]);
+    assert_eq!(group.branches().declared_count(), 3);
+    assert_eq!(group.branches().len(), 2);
+    assert_eq!(group.branches().as_slice()[0].mode.get(), 0x15);
+    assert_eq!(group.branches().as_slice()[0].members.declared_count(), 2);
+    assert_eq!(group.branches().as_slice()[0].members.state_lane(), [0; 5]);
     assert_eq!(
-        group.branches.as_slice()[0].members.as_slice()[0]
-            .token
+        group.branches().as_slice()[0].members.as_slice()[0]
+            .0
             .value(),
         0x31
     );
-    assert_eq!(group.branches.as_slice()[0].terminal.token.value(), 0x32);
+    assert_eq!(group.branches().as_slice()[0].terminal.0.value(), 0x32);
     assert_eq!(
-        <[u8; 2]>::from(group.branches.as_slice()[0].suffix),
+        <[u8; 2]>::from(group.branches().as_slice()[0].suffix),
         [0x81, 0x58]
     );
     assert_eq!(
-        group.terminator.bytes(),
+        group.terminator().bytes(),
         &[0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]
     );
 
@@ -588,7 +588,7 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     extended.extend([1, 5, 0, 0, 0, 0, 1, 5, 2, 3, 3, 2, 1, 5, 0, 1, 1, 1, 0, 0]);
     extended.extend([0xff, 1, 2, 0xf0, 0x45, 0, 0x81, 0x48]);
     extended.extend([0, 0, 0, 0, 0, 0, 0xff, 0xff, 1]);
-    let group = super::thru_curve_payload_branch_group(
+    let group = crate::om::thru_curve_branches::thru_curve_payload_branch_group(
         crate::om::operation_record::OperationPayload::new(
             &extended,
             record.payload_offset(),
@@ -597,9 +597,15 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
         .unwrap(),
     )
     .expect("extended branch state");
-    assert_eq!(group.branches.as_slice()[0].members.state_lane().len(), 18);
-    assert_eq!(group.branches.as_slice()[0].members.len(), 4);
-    assert_eq!(group.terminator.bytes(), &[0, 0, 0, 0, 0, 0, 0xff, 0xff, 1]);
+    assert_eq!(
+        group.branches().as_slice()[0].members.state_lane().len(),
+        18
+    );
+    assert_eq!(group.branches().as_slice()[0].members.len(), 4);
+    assert_eq!(
+        group.terminator().bytes(),
+        &[0, 0, 0, 0, 0, 0, 0xff, 0xff, 1]
+    );
 }
 
 #[test]

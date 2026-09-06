@@ -98,11 +98,10 @@ use scalar::{
 pub(crate) mod thru_curve_controls;
 pub(crate) mod thru_curve_endings;
 use thru_curve_controls::ThruCurveControls;
+pub(crate) mod thru_curve_branches;
 pub(crate) mod thru_curve_state;
 use discriminators::DraftBinary32Branch;
 use swp104_state::Swp104StateLane;
-use thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
-use thru_curve_state::ThruCurveBranchItems;
 pub(crate) mod audit;
 pub(crate) mod cache;
 pub(crate) mod product;
@@ -779,32 +778,6 @@ pub struct ThruCurvePayloadReferenceField {
     pub trailing_value: [u8; 2],
     /// Absolute offset immediately after the envelope.
     pub end_offset: usize,
-}
-
-/// One exact counted branch in a `THRU_CURVE` payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ThruCurvePayloadBranch {
-    /// Absolute offset of the branch mode byte.
-    pub offset: usize,
-    /// Serialized nonzero branch mode.
-    pub mode: NonZeroU8,
-    /// Ordered nonterminal references.
-    pub members: ThruCurveBranchItems<PayloadObjectReference>,
-    /// Terminal reference.
-    pub terminal: PayloadObjectReference,
-    /// Exact two-byte branch suffix.
-    pub suffix: ThruCurveBranchSuffix,
-}
-
-/// Exact counted branch group after a `THRU_CURVE` reference envelope.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ThruCurvePayloadBranchGroup {
-    /// Absolute offset of the serialized group count.
-    pub offset: usize,
-    /// Ordered explicit branches.
-    pub branches: BranchItems<ThruCurvePayloadBranch>,
-    /// Exact group terminator selected by the schema generation.
-    pub terminator: ThruCurveGroupTerminator,
 }
 
 /// Exact leading construction branch in a `SWP104` payload.
@@ -2332,96 +2305,6 @@ pub fn thru_curve_payload_references(
         trailing_control,
         trailing_value,
         end_offset: record.payload_offset() + at + 7,
-    })
-}
-
-fn thru_curve_payload_branch(
-    record: OperationPayload<'_>,
-    at: usize,
-) -> Option<(ThruCurvePayloadBranch, usize)> {
-    let mode = NonZeroU8::new(*record.payload().get(at)?)?;
-    (*record.payload().get(at + 1)? == 0x01).then_some(())?;
-    let declared_count @ 2.. = *record.payload().get(at + 2)? else {
-        return None;
-    };
-    let mut cursor = at + 3;
-    let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
-    for _ in 1..declared_count {
-        let offset = cursor;
-        let (object_index, width) = payload_object_index(record.payload().get(cursor..)?)?;
-        cursor += width;
-        members.push(PayloadObjectReference {
-            offset: record.payload_offset() + offset,
-            token: object_index,
-        });
-    }
-    (record.payload().get(cursor..cursor + 2) == Some(&[0x01, declared_count])).then_some(())?;
-    cursor += 2;
-
-    let standard_len = usize::from(declared_count) + 3;
-    let lane = record.payload().get(cursor..cursor + standard_len)?;
-    let lane = if lane.iter().all(|&byte| byte == 0) {
-        lane
-    } else {
-        record.payload().get(cursor..cursor + 18)?
-    };
-    let lane_len = lane.len();
-    let members = ThruCurveBranchItems::from_parts(members, lane).ok()?;
-    cursor += lane_len;
-    (record.payload().get(cursor..cursor + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
-    cursor += 3;
-    let terminal_offset = cursor;
-    let (object_index, width) = payload_object_index(record.payload().get(cursor..)?)?;
-    cursor += width;
-    let terminal = PayloadObjectReference {
-        offset: record.payload_offset() + terminal_offset,
-        token: object_index,
-    };
-    (*record.payload().get(cursor)? == 0x00).then_some(())?;
-    cursor += 1;
-    let suffix: [u8; 2] = record.payload().get(cursor..cursor + 2)?.try_into().ok()?;
-    let suffix = ThruCurveBranchSuffix::try_from(suffix).ok()?;
-    cursor += 2;
-
-    Some((
-        ThruCurvePayloadBranch {
-            offset: record.payload_offset() + at,
-            mode,
-            members,
-            terminal,
-            suffix,
-        },
-        cursor,
-    ))
-}
-
-/// Decode the exact counted branch group after a bounded `THRU_CURVE`
-/// reference envelope.
-pub fn thru_curve_payload_branch_group(
-    record: OperationPayload<'_>,
-) -> Option<ThruCurvePayloadBranchGroup> {
-    let envelope = thru_curve_payload_references(record)?;
-    let mut at = envelope.end_offset.checked_sub(record.payload_offset())?;
-    let group_offset = at;
-    let declared_count @ 2.. = *record.payload().get(at)? else {
-        return None;
-    };
-    at += 1;
-    let mut branches = Vec::with_capacity(usize::from(declared_count) - 1);
-    for _ in 1..declared_count {
-        let (branch, next) = thru_curve_payload_branch(record, at)?;
-        branches.push(branch);
-        at = next;
-    }
-    let terminator = ThruCurveGroupTerminator::ALL
-        .into_iter()
-        .find(|terminator| {
-            record.payload().get(at..at + terminator.bytes().len()) == Some(terminator.bytes())
-        })?;
-    Some(ThruCurvePayloadBranchGroup {
-        offset: record.payload_offset() + group_offset,
-        branches: BranchItems::new(branches).ok()?,
-        terminator,
     })
 }
 

@@ -171,40 +171,38 @@ fn block_construction_members_have_eighteen_paired_entries() {
 
 #[test]
 fn surface_branch_counts_are_derived_on_the_wire() {
-    let member = r#"{"ordinal":0,"object_index":1,"raw_object_index":[1],"source_offset":10}"#;
-    let terminal = r#"{"ordinal":1,"object_index":2,"raw_object_index":[2],"source_offset":20}"#;
+    let member = r#"{"ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":8}"#;
+    let terminal =
+        r#"{"ordinal":1,"object_index":2,"raw_object_index":[240,2],"source_offset":20}"#;
     let branch = format!(
         r#"{{"ordinal":0,"mode":21,"declared_count":2,"state_lane":[0,0,0,0,0],"members":[{member}],"terminal":{terminal},"suffix":[129,88],"source_offset":5}}"#
-    );
-    let decoded: super::FeatureThruCurveConstructionBranch = serde_json::from_str(&branch).unwrap();
-    assert_eq!(serde_json::to_string(&decoded).unwrap(), branch);
-    let invalid = branch.replace("[0,0,0,0,0]", "[0,0,0,0]");
-    assert!(
-        serde_json::from_str::<super::FeatureThruCurveConstructionBranch>(&invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("state_lane")
-    );
-    let invalid = branch.replace("\"declared_count\":2", "\"declared_count\":3");
-    assert!(
-        serde_json::from_str::<super::FeatureThruCurveConstructionBranch>(&invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("declared_count")
     );
     let group = format!(
         r#"{{"id":"group","operation_label":"operation","declared_count":2,"branches":[{branch}],"terminator":[0,0,0,0,0,0,255,0,255,1],"source_offset":4}}"#
     );
-    let decoded: super::FeatureThruCurveConstructionBranchGroup =
-        serde_json::from_str(&group).unwrap();
+    let decoded: crate::native::features::thru_curve_branches::FeatureThruCurveConstructionBranchGroup = serde_json::from_str(&group).unwrap();
     assert_eq!(serde_json::to_string(&decoded).unwrap(), group);
+    let invalid = group.replace("[0,0,0,0,0]", "[0,0,0,0]");
+    assert!(serde_json::from_str::<
+        crate::native::features::thru_curve_branches::FeatureThruCurveConstructionBranchGroup,
+    >(&invalid)
+    .unwrap_err()
+    .to_string()
+    .contains("state_lane"));
+    let invalid = group.replace("\"declared_count\":2", "\"declared_count\":3");
+    assert!(serde_json::from_str::<
+        crate::native::features::thru_curve_branches::FeatureThruCurveConstructionBranchGroup,
+    >(&invalid)
+    .unwrap_err()
+    .to_string()
+    .contains("declared_count"));
     let invalid = group.replacen("\"declared_count\":2", "\"declared_count\":3", 1);
-    assert!(
-        serde_json::from_str::<super::FeatureThruCurveConstructionBranchGroup>(&invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("declared_count")
-    );
+    assert!(serde_json::from_str::<
+        crate::native::features::thru_curve_branches::FeatureThruCurveConstructionBranchGroup,
+    >(&invalid)
+    .unwrap_err()
+    .to_string()
+    .contains("declared_count"));
     let member = r#"{"ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":8}"#;
     let terminal =
         r#"{"ordinal":1,"object_index":2,"raw_object_index":[240,2],"source_offset":18}"#;
@@ -441,9 +439,6 @@ fn construction_reference_records_preserve_wire_and_check_tokens() {
     );
     check::<super::FeatureSurfaceConstructionReference>(
         r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#,
-    );
-    check::<super::FeatureSurfaceBranchReference>(
-        r#"{"ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#,
     );
     check::<super::FeatureExtrudeProfileReference>(
         r#"{"id":"r","operation_label":"o","ordinal":0,"field_tag":1,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#,
