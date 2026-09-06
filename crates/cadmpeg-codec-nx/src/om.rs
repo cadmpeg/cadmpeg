@@ -2,7 +2,7 @@
 //! Frame NX object-model entities using external boundary and identity arrays.
 
 pub(crate) mod state_counter;
-use state_counter::StateCounter;
+use state_counter::StateCounterMap;
 pub(crate) mod column_row;
 pub(crate) mod compact_lane;
 pub(crate) mod reference_value;
@@ -612,19 +612,6 @@ impl<'a> UnlabeledOperationRecord<'a> {
 pub struct OperationTerminalFrame {
     pub immediate_common_frame_offset: Option<usize>,
     pub frame: TerminalFrame<usize>,
-}
-
-/// Contiguous object state-counter map at the end of a feature-history area.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationStateCounterMap<'a> {
-    /// Absolute byte offset of the first counter row.
-    pub offset: usize,
-    /// Absolute byte offset after the final counter row.
-    pub end_offset: usize,
-    /// Rows in serialized order.
-    pub rows: Vec<StateCounter<usize>>,
-    /// Exact bytes after the counter rows within the bounded record area.
-    pub trailing_bytes: &'a [u8],
 }
 
 /// One diagnostic/message record in the operation-state block.
@@ -1555,7 +1542,7 @@ impl<'a> Section<'a> {
     ///
     /// The section-role check is intentional. The same byte patterns occur in
     /// ordinary model-store payloads, where they do not carry operation state.
-    pub fn operation_state_counter_map(&self) -> Option<OperationStateCounterMap<'a>> {
+    pub fn operation_state_counter_map(&self) -> Option<StateCounterMap> {
         let is_feature_history = self
             .types
             .iter()
@@ -1568,7 +1555,7 @@ impl<'a> Section<'a> {
             return None;
         }
         let (base_offset, bytes) = self.record_area_parts()?;
-        operation_state_counter_map(bytes, base_offset)
+        StateCounterMap::read(bytes, base_offset)
     }
 
     /// Decode the field-declared `m_rollForwardStates` group table before the
@@ -1583,7 +1570,7 @@ impl<'a> Section<'a> {
         }
         let map = self.operation_state_counter_map()?;
         let (base_offset, bytes) = self.record_area_parts()?;
-        let map_start = map.offset.checked_sub(base_offset)?;
+        let map_start = map.offset().checked_sub(base_offset)?;
         operation_state_group_table_before_counter_map(bytes, map_start, base_offset)
     }
 
@@ -1627,7 +1614,7 @@ impl<'a> Section<'a> {
         let group = self.operation_state_group_table();
         let terminal = group
             .as_ref()
-            .map_or(map.offset, |table| table.offset)
+            .map_or(map.offset(), |table| table.offset)
             .checked_sub(base_offset)?;
         let mut ends = Vec::with_capacity(2);
         if let Some(table) = &group {
@@ -4287,60 +4274,6 @@ fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)>
         0xff => Some((None, at + 1)),
         _ => None,
     }
-}
-
-/// Decode the contiguous operation-state counter-map suffix of a bounded area.
-///
-/// The map is selected by the longest run of complete `05, row_kind, index,
-/// state, state, 4e` rows whose remaining bounded tail is small enough to be
-/// an area footer. This end anchor prevents a syntactically valid short lane in
-/// an operation payload from becoming a state map.
-pub fn operation_state_counter_map(
-    bytes: &[u8],
-    base_offset: usize,
-) -> Option<OperationStateCounterMap<'_>> {
-    const MAX_COUNTER_TAIL_BYTES: usize = 64;
-    let mut best: Option<(usize, usize, usize)> = None;
-    let mut run_start = 0;
-    let mut run_end = 0;
-    let mut run_len = 0;
-    for at in 0..bytes.len().saturating_sub(2) {
-        if bytes.get(at) != Some(&0x05) || !matches!(bytes.get(at + 1), Some(0x01 | 0x02)) {
-            continue;
-        }
-        let Some(row) = StateCounter::read(bytes, at, base_offset) else {
-            continue;
-        };
-        let row_end = at.checked_add(row.byte_len())?;
-        if at == run_end {
-            run_end = row_end;
-            run_len += 1;
-        } else {
-            run_start = at;
-            run_end = row_end;
-            run_len = 1;
-        }
-        if run_len >= 2
-            && bytes.len().saturating_sub(run_end) <= MAX_COUNTER_TAIL_BYTES
-            && best.is_none_or(|(_, _, current_len)| run_len > current_len)
-        {
-            best = Some((run_start, run_end, run_len));
-        }
-    }
-    let (start, end, row_count) = best?;
-    let mut rows = Vec::with_capacity(row_count);
-    let mut cursor = start;
-    while cursor < end {
-        let row = StateCounter::read(bytes, cursor, base_offset)?;
-        cursor = cursor.checked_add(row.byte_len())?;
-        rows.push(row);
-    }
-    (cursor == end).then_some(OperationStateCounterMap {
-        offset: base_offset.checked_add(start)?,
-        end_offset: base_offset.checked_add(end)?,
-        rows,
-        trailing_bytes: bytes.get(end..)?,
-    })
 }
 
 fn operation_state_message_at(

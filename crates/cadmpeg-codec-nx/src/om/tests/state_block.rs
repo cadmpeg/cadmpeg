@@ -55,20 +55,22 @@ fn operation_state_counter_map_anchors_to_the_longest_bounded_suffix() {
         0xed,
     ]);
 
-    let map = super::operation_state_counter_map(&bytes, 1000).expect("counter-map suffix");
-    assert_eq!(map.offset, 1004);
-    assert_eq!(map.rows.len(), 3);
-    assert_eq!(map.end_offset, 1004 + 8 + 8 + 6);
-    assert_eq!(map.trailing_bytes.len(), 16);
-    assert_eq!(u8::from(map.rows[0].kind()), 1);
-    assert_eq!(Some(map.rows[0].object().value()), Some(0x1234));
-    assert_eq!(map.rows[0].introduced(), 0x56);
-    assert_eq!(map.rows[0].modified(), 0x57);
-    assert_eq!(u8::from(map.rows[1].kind()), 2);
-    assert_eq!(Some(map.rows[1].object().value()), Some(0x31f85));
-    assert_eq!(map.rows[1].introduced(), 0x2a);
-    assert_eq!(map.rows[1].modified(), 0x2b);
-    assert_eq!(map.rows[2].object().raw().len(), 1);
+    let map = crate::om::state_counter::StateCounterMap::read(&bytes, 1000).expect("counter-map suffix");
+    assert_eq!(map.offset(), 1004);
+    let rows: Vec<_> = map.into_rows().collect();
+    assert_eq!(rows.len(), 3);
+    let end_offset = rows[2].offset() + rows[2].byte_len();
+    assert_eq!(end_offset, 1004 + 8 + 8 + 6);
+    assert_eq!(bytes.len() - (end_offset - 1000), 16);
+    assert_eq!(u8::from(rows[0].kind()), 1);
+    assert_eq!(Some(rows[0].object().value()), Some(0x1234));
+    assert_eq!(rows[0].introduced(), 0x56);
+    assert_eq!(rows[0].modified(), 0x57);
+    assert_eq!(u8::from(rows[1].kind()), 2);
+    assert_eq!(Some(rows[1].object().value()), Some(0x31f85));
+    assert_eq!(rows[1].introduced(), 0x2a);
+    assert_eq!(rows[1].modified(), 0x2b);
+    assert_eq!(rows[2].object().raw().len(), 1);
 }
 
 #[test]
@@ -80,7 +82,7 @@ fn operation_state_counter_map_rejects_a_short_non_suffix_lane() {
         0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99,
         0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99,
     ];
-    assert!(super::operation_state_counter_map(&bytes, 0).is_none());
+    assert!(crate::om::state_counter::StateCounterMap::read(&bytes, 0).is_none());
 }
 
 fn message_bytes(text: &[u8], value: &[u8], count_or_severity: [u8; 2]) -> Vec<u8> {
@@ -293,11 +295,11 @@ fn operation_state_group_table_anchors_to_counter_map_boundary() {
     ]);
     bytes.extend([0x99; 16]);
 
-    let map = super::operation_state_counter_map(&bytes, 0).expect("counter map");
-    let table = super::operation_state_group_table_before_counter_map(&bytes, map.offset, 0)
+    let map = crate::om::state_counter::StateCounterMap::read(&bytes, 0).expect("counter map");
+    let table = super::operation_state_group_table_before_counter_map(&bytes, map.offset(), 0)
         .expect("group table");
     assert_eq!(table.offset, 3);
-    assert_eq!(table.end_offset, map.offset);
+    assert_eq!(table.end_offset, map.offset());
     assert_eq!(table.groups.len(), 3);
     assert_eq!(table.groups[0].members.rows().len(), 2);
     assert_eq!(table.groups[1].members.rows().len(), 1);

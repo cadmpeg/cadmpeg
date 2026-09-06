@@ -536,8 +536,7 @@ pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCo
             };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
-            map.rows
-                .into_iter()
+            map.into_rows()
                 .enumerate()
                 .filter_map(move |(ordinal, row)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
