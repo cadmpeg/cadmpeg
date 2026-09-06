@@ -1524,7 +1524,7 @@ pub struct PatternPayloadTransformLane {
     pub offset: usize,
     /// Schema index framing every row in the lane.
     pub row_schema_index: NonZeroU8,
-    pub rows: PatternRows<LaneToken<u32>, usize>,
+    pub rows: PatternRows<LocatedCompactIndex, usize>,
 }
 
 /// One multi-instance output row and its compact selector token.
@@ -3329,13 +3329,10 @@ pub fn pattern_payload_transform_lane(
                 .then_some(())?;
             at += scalar_suffix.len();
             let selector_offset = at;
-            let (selector, width) = compact_index(record.payload.get(at..)?)?;
-            let CompactIndex::Value(selector) = selector else {
-                return None;
-            };
-            let selector = LaneToken {
-                value: selector,
-                raw: record.payload[at..at + width].to_vec(),
+            let atom = CompactIndexAtom::read(record.payload.get(at..)?)?;
+            let width = atom.raw().len();
+            let selector = LocatedCompactIndex {
+                atom,
                 offset: record.payload_offset + selector_offset,
             };
             rows.push(PatternRow {
@@ -3403,13 +3400,10 @@ pub fn pattern_payload_transform_lane(
                 .then_some(())?;
             at += 7;
             let selector_offset = at;
-            let (selector, width) = compact_index(record.payload.get(at..)?)?;
-            let CompactIndex::Value(selector) = selector else {
-                return None;
-            };
-            let selector = LaneToken {
-                value: selector,
-                raw: record.payload.get(at..at + width)?.to_vec(),
+            let atom = CompactIndexAtom::read(record.payload.get(at..)?)?;
+            let width = atom.raw().len();
+            let selector = LocatedCompactIndex {
+                atom,
                 offset: record.payload_offset + selector_offset,
             };
             rows.push(PatternRow {

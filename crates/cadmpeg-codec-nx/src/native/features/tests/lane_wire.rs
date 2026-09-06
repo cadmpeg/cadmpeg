@@ -558,3 +558,20 @@ fn operation_body_reference_lane_rejects_unknown_branch() {
     let error = serde_json::from_value::<FeatureOperationBodyReferenceLane>(json).unwrap_err();
     assert!(error.to_string().contains("branch"));
 }
+
+#[test]
+fn pattern_transform_selectors_require_matching_compact_tokens() {
+    let json = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":2,"encodings":["binary32"],"values":[2.5],"raw_values":[[80,32,0,0]],"selectors":[4096],"raw_selectors":[[144,0]],"source_offset":100,"value_source_offsets":[110],"selector_source_offsets":[114]}"#;
+    check_lane_wire::<FeaturePatternTransformLane>(json, &[]);
+    for (field, value) in [
+        ("selectors", serde_json::json!([4097])),
+        ("raw_selectors", serde_json::json!([[144]])),
+        ("raw_selectors", serde_json::json!([[144, 0, 0]])),
+        ("raw_selectors", serde_json::json!([[255]])),
+    ] {
+        let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+        malformed[field] = value;
+        let error = serde_json::from_value::<FeaturePatternTransformLane>(malformed).unwrap_err();
+        assert!(error.to_string().contains("selectors"), "{error}");
+    }
+}

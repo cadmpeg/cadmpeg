@@ -3398,7 +3398,7 @@ pub struct FeaturePatternTransformLane {
     pub id: String,
     pub operation_label: String,
     pub row_schema_index: NonZeroU8,
-    pub rows: PatternRows<FeatureIndexToken, u64>,
+    pub rows: PatternRows<crate::om::compact::LocatedCompactIndex<u64>, u64>,
     pub source_offset: u64,
 }
 
@@ -3441,10 +3441,10 @@ impl FeaturePatternTransformLaneWire {
         self.value_source_offsets.push(source_offset);
     }
 
-    fn push_selector(&mut self, selector: FeatureIndexToken) {
-        self.selectors.push(selector.value);
-        self.raw_selectors.push(selector.raw);
-        self.selector_source_offsets.push(selector.source_offset);
+    fn push_selector(&mut self, selector: crate::om::compact::LocatedCompactIndex<u64>) {
+        self.selectors.push(selector.atom.value());
+        self.raw_selectors.push(selector.atom.raw().to_vec());
+        self.selector_source_offsets.push(selector.offset);
     }
 }
 
@@ -3559,7 +3559,13 @@ impl TryFrom<FeaturePatternTransformLaneWire> for FeaturePatternTransformLane {
             .map(|(((encoding, value), raw), source_offset)| PatternScalarWire { encoding, value, raw, source_offset })
             .collect::<Vec<_>>();
         let selectors = wire.selectors.into_iter().zip(wire.raw_selectors).zip(wire.selector_source_offsets)
-            .map(|((value, raw), source_offset)| FeatureIndexToken { value, raw, source_offset });
+            .map(|((value, raw), offset)| {
+                Ok(crate::om::compact::LocatedCompactIndex {
+                    atom: crate::om::compact::CompactIndexAtom::from_wire(value, &raw)
+                        .map_err(|error| format!("selectors/raw_selectors: {error}"))?,
+                    offset,
+                })
+            }).collect::<Result<Vec<_>, String>>()?;
         let rows = match wire.layout {
             FeaturePatternTransformLayout::ScalarRows => {
                 let rows = values.as_chunks::<1>().0.iter().zip(selectors)
@@ -10228,10 +10234,9 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
                 ),
                 row_schema_index: lane.row_schema_index,
                 rows: lane.rows.map(
-                    |selector| FeatureIndexToken {
-                        value: selector.value,
-                        raw: selector.raw,
-                        source_offset: entry_offset + selector.offset as u64,
+                    |selector| crate::om::compact::LocatedCompactIndex {
+                        atom: selector.atom,
+                        offset: entry_offset + selector.offset as u64,
                     },
                     |offset| entry_offset + offset as u64,
                 ),

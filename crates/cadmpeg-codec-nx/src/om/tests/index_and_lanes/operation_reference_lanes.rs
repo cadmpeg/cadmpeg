@@ -1,4 +1,5 @@
-use crate::om::{LaneToken, PatternPayloadTransformLane};
+use crate::om::PatternPayloadTransformLane;
+use crate::om::compact::LocatedCompactIndex;
 use crate::om::pattern::{PatternRows, PatternScalarEncoding};
 use crate::om::scalar::ShiftedScalar;
 
@@ -9,7 +10,7 @@ struct ObservedPatternScalar {
 }
 
 impl PatternPayloadTransformLane {
-    fn rows(&self) -> impl Iterator<Item = (Vec<ObservedPatternScalar>, &LaneToken<u32>)> {
+    fn rows(&self) -> impl Iterator<Item = (Vec<ObservedPatternScalar>, &LocatedCompactIndex)> {
         match &self.rows {
             PatternRows::Scalar(rows) => rows.as_slice().iter().map(|row| {
                 let encoding = match row.values.scalar {
@@ -297,14 +298,14 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     assert_eq!(
         lane.rows()
             .map(|(_, selector)| selector)
-            .map(|token| token.value)
+            .map(|token| token.atom.value())
             .collect::<Vec<_>>(),
         [2, 8190]
     );
     assert_eq!(
         lane.rows()
             .map(|(_, selector)| selector)
-            .map(|token| token.raw.clone())
+            .map(|token| token.atom.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x02], vec![0x9f, 0xfe]]
     );
@@ -353,14 +354,14 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     assert_eq!(
         lane.rows()
             .map(|(_, selector)| selector)
-            .map(|token| token.value)
+            .map(|token| token.atom.value())
             .collect::<Vec<_>>(),
         [2, 3]
     );
     assert_eq!(
         lane.rows()
             .map(|(_, selector)| selector)
-            .map(|token| token.raw.clone())
+            .map(|token| token.atom.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x02], vec![0x03]]
     );
@@ -406,7 +407,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         relative_lane
             .rows()
             .map(|(_, selector)| selector)
-            .map(|token| token.value)
+            .map(|token| token.atom.value())
             .collect::<Vec<_>>(),
         [2, 3, 4]
     );
@@ -457,7 +458,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         wide_lane
             .rows()
             .map(|(_, selector)| selector)
-            .map(|token| token.value)
+            .map(|token| token.atom.value())
             .collect::<Vec<_>>(),
         [2, 3]
     );
