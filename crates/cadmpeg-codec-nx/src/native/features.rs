@@ -7903,11 +7903,11 @@ pub fn feature_input_column_targets(
                 .filter(|use_| {
                     use_.input_block == input.id
                         && use_.row_slot == 0
-                        && use_.column_table.is_some()
                         && use_.row_kind != ColumnIndexRowKind::Index
                 })
+                .filter_map(|use_| Some((use_, use_.column_table.as_ref()?)))
                 .collect::<Vec<_>>();
-            let [target] = targets.as_slice() else {
+            let [(target, column_table)] = targets.as_slice() else {
                 return None;
             };
             let (row, field_indices, field_data_blocks, field_source_offsets, mode) =
@@ -7965,10 +7965,7 @@ pub fn feature_input_column_targets(
                 field_data_blocks,
                 field_source_offsets,
                 mode,
-                column_table: target
-                    .column_table
-                    .clone()
-                    .expect("complete target use has a table"),
+                column_table: (*column_table).clone(),
                 data_block: input.data_block.clone(),
                 source_offset: target.source_offset,
             })
@@ -8002,13 +7999,10 @@ pub fn feature_datum_csys_constructions(
                         .map(|(prefix, _)| prefix)
                 })
                 .collect::<BTreeSet<_>>();
-            if input_prefixes.len() != 1 {
+            let mut input_prefixes = input_prefixes.into_iter();
+            let (Some(input_prefix), None) = (input_prefixes.next(), input_prefixes.next()) else {
                 return;
-            }
-            let input_prefix = input_prefixes
-                .into_iter()
-                .next()
-                .expect("one checked input store");
+            };
             let resolved = field.references.map(|reference| {
                 unique_offset_data_block(&indexed, reference.object_index).map(|data_block| {
                     (
@@ -8019,9 +8013,10 @@ pub fn feature_datum_csys_constructions(
                     )
                 })
             });
-            let Some(resolved) = resolved.into_iter().collect::<Option<Vec<_>>>() else {
+            let [Some(a), Some(b), Some(c), Some(d), Some(e), Some(f), Some(g), Some(h)] = resolved else {
                 return;
             };
+            let resolved = [a, b, c, d, e, f, g, h];
             if resolved.iter().any(|(_, _, data_block, _)| {
                 data_block
                     .rsplit_once(":block#")
@@ -8035,30 +8030,10 @@ pub fn feature_datum_csys_constructions(
                 ),
                 operation_label,
                 control: field.control,
-                object_indices: resolved
-                    .iter()
-                    .map(|(object_index, _, _, _)| *object_index)
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .expect("eight decoded references"),
-                raw_object_indices: resolved
-                    .iter()
-                    .map(|(_, raw_object_index, _, _)| raw_object_index.clone())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .expect("eight decoded references"),
-                data_blocks: resolved
-                    .iter()
-                    .map(|(_, _, data_block, _)| data_block.clone())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .expect("eight decoded references"),
-                source_offsets: resolved
-                    .iter()
-                    .map(|(_, _, _, source_offset)| *source_offset)
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .expect("eight decoded references"),
+                object_indices: resolved.each_ref().map(|(object_index, _, _, _)| *object_index),
+                raw_object_indices: resolved.each_ref().map(|(_, raw_object_index, _, _)| raw_object_index.clone()),
+                data_blocks: resolved.each_ref().map(|(_, _, data_block, _)| data_block.clone()),
+                source_offsets: resolved.each_ref().map(|(_, _, _, source_offset)| *source_offset),
             });
         },
     );
@@ -9202,8 +9177,11 @@ pub fn feature_sketch_preceding_named_point_uses(
     let mut uses = Vec::new();
     for (operation_label, mut operation_references) in references_by_operation {
         operation_references.sort_by_key(|reference| reference.ordinal);
-        let complete_lane = !operation_references.is_empty()
-            && operation_references
+        let Some((first_reference, first_block)) = operation_references.first()
+            .and_then(|reference| Some((*reference, reference.data_block.as_deref()?))) else {
+            continue;
+        };
+        let complete_lane = operation_references
                 .iter()
                 .enumerate()
                 .all(|(ordinal, reference)| {
@@ -9215,11 +9193,6 @@ pub fn feature_sketch_preceding_named_point_uses(
         if !complete_lane {
             continue;
         }
-        let first_reference = operation_references[0];
-        let first_block = first_reference
-            .data_block
-            .as_deref()
-            .expect("complete lane has resolved references");
         let Some((first_store, first_ordinal)) = block_key(first_block) else {
             continue;
         };
