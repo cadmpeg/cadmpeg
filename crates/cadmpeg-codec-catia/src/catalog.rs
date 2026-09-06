@@ -20,12 +20,6 @@ pub struct Catalog {
     pub entries: Vec<CatalogEntry>,
 }
 
-impl Catalog {
-    pub fn declared_count(&self) -> u32 {
-        u32::try_from(self.entries.len() + 1).unwrap_or(u32::MAX)
-    }
-}
-
 /// One inclusive-length ASCII catalog entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
