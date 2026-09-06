@@ -70,11 +70,29 @@ const EPS_TRANSFORMS_DIMENSIONED_CIRCLE_SURFACE_TRANSFORMS_E8: f64 = 1.0e-8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct MarkerTransform {
-    swap: bool,
-    u_sign: i8,
-    v_sign: i8,
-    affine_matrix: Option<[i64; 4]>,
+    axes: Axes,
     translation: (i64, i64),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Sign {
+    Negative,
+    Positive,
+}
+
+impl Sign {
+    fn value(self) -> i8 {
+        match self {
+            Self::Negative => -1,
+            Self::Positive => 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Axes {
+    Aligned { swap: bool, u: Sign, v: Sign },
+    Affine([i64; 4]),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,21 +103,25 @@ pub(super) enum ProfileAxis {
 
 impl MarkerTransform {
     pub(super) fn apply_axes(self, point: (i64, i64)) -> Option<(i64, i64)> {
-        if let Some([uu, uv, vu, vv]) = self.affine_matrix {
-            const SCALE: i128 = 1_000_000_000_000;
-            let u = i128::from(uu) * i128::from(point.0) + i128::from(uv) * i128::from(point.1);
-            let v = i128::from(vu) * i128::from(point.0) + i128::from(vv) * i128::from(point.1);
-            let rounded = |value: i128| {
-                let adjustment = if value < 0 { -(SCALE / 2) } else { SCALE / 2 };
-                i64::try_from((value + adjustment) / SCALE).ok()
-            };
-            return Some((rounded(u)?, rounded(v)?));
+        match self.axes {
+            Axes::Affine([uu, uv, vu, vv]) => {
+                const SCALE: i128 = 1_000_000_000_000;
+                let u = i128::from(uu) * i128::from(point.0) + i128::from(uv) * i128::from(point.1);
+                let v = i128::from(vu) * i128::from(point.0) + i128::from(vv) * i128::from(point.1);
+                let rounded = |value: i128| {
+                    let adjustment = if value < 0 { -(SCALE / 2) } else { SCALE / 2 };
+                    i64::try_from((value + adjustment) / SCALE).ok()
+                };
+                Some((rounded(u)?, rounded(v)?))
+            }
+            Axes::Aligned { swap, u, v } => {
+                let point = if swap { (point.1, point.0) } else { point };
+                Some((
+                    i64::try_from(i128::from(point.0) * i128::from(u.value())).ok()?,
+                    i64::try_from(i128::from(point.1) * i128::from(v.value())).ok()?,
+                ))
+            }
         }
-        let (u, v) = if self.swap { (point.1, point.0) } else { point };
-        Some((
-            i64::try_from(i128::from(u) * i128::from(self.u_sign)).ok()?,
-            i64::try_from(i128::from(v) * i128::from(self.v_sign)).ok()?,
-        ))
     }
 
     pub(super) fn apply(self, point: (i64, i64)) -> Option<(i64, i64)> {
@@ -111,27 +133,29 @@ impl MarkerTransform {
     }
 
     pub(super) fn profile_axis_for_native(self, native_axis: usize) -> Option<ProfileAxis> {
-        if native_axis > 1 {
-            return None;
+        let native_axis = match native_axis {
+            0 => ProfileAxis::U,
+            1 => ProfileAxis::V,
+            _ => return None,
+        };
+        match self.axes {
+            Axes::Affine([uu, uv, vu, vv]) => {
+                const SCALE: i64 = 1_000_000_000_000;
+                let (u, v) = match native_axis {
+                    ProfileAxis::U => (uu, vu),
+                    ProfileAxis::V => (uv, vv),
+                };
+                match (u, v) {
+                    (u, 0) if u.abs() == SCALE => Some(ProfileAxis::U),
+                    (0, v) if v.abs() == SCALE => Some(ProfileAxis::V),
+                    _ => None,
+                }
+            }
+            Axes::Aligned { swap, .. } => Some(match (swap, native_axis) {
+                (false, ProfileAxis::U) | (true, ProfileAxis::V) => ProfileAxis::U,
+                (false, ProfileAxis::V) | (true, ProfileAxis::U) => ProfileAxis::V,
+            }),
         }
-        if let Some([uu, uv, vu, vv]) = self.affine_matrix {
-            const SCALE: i64 = 1_000_000_000_000;
-            let (u, v) = match native_axis {
-                0 => (uu, vu),
-                1 => (uv, vv),
-                _ => unreachable!("native axis was bounded above"),
-            };
-            return match (u, v) {
-                (u, 0) if u.abs() == SCALE => Some(ProfileAxis::U),
-                (0, v) if v.abs() == SCALE => Some(ProfileAxis::V),
-                _ => None,
-            };
-        }
-        Some(match (self.swap, native_axis) {
-            (false, 0) | (true, 1) => ProfileAxis::U,
-            (false, 1) | (true, 0) => ProfileAxis::V,
-            _ => unreachable!("native axis was bounded above"),
-        })
     }
 }
 
@@ -141,10 +165,11 @@ pub(super) fn sketch_frame_marker_transform(
 ) -> Option<MarkerTransform> {
     if sketch.placement == cadmpeg_ir::sketches::SketchPlacement::Unresolved {
         return Some(MarkerTransform {
-            swap: false,
-            u_sign: 1,
-            v_sign: 1,
-            affine_matrix: None,
+            axes: Axes::Aligned {
+                swap: false,
+                u: Sign::Positive,
+                v: Sign::Positive,
+            },
             translation: (0, 0),
         });
     }
@@ -173,7 +198,16 @@ fn axis_aligned_sketch_frame_marker_transform(
                 (value.abs() - 1.0).abs()
                     <= EPS_TRANSFORMS_AXIS_ALIGNED_SKETCH_FRAME_MARKER_TRANSFORM_E8
             })
-            .map(|(index, value)| (index, if *value < 0.0 { -1 } else { 1 }))
+            .map(|(index, value)| {
+                (
+                    index,
+                    if *value < 0.0 {
+                        Sign::Negative
+                    } else {
+                        Sign::Positive
+                    },
+                )
+            })
             .collect::<Vec<_>>();
         let [(index, sign)] = matches.as_slice() else {
             return None;
@@ -205,13 +239,14 @@ fn axis_aligned_sketch_frame_marker_transform(
         _ => return None,
     };
     Some(MarkerTransform {
-        swap,
-        u_sign,
-        v_sign,
-        affine_matrix: None,
+        axes: Axes::Aligned {
+            swap,
+            u: u_sign,
+            v: v_sign,
+        },
         translation: (
-            (-origin[u_axis_index] * f64::from(u_sign) / quantum).round() as i64,
-            (-origin[v_axis_index] * f64::from(v_sign) / quantum).round() as i64,
+            (-origin[u_axis_index] * f64::from(u_sign.value()) / quantum).round() as i64,
+            (-origin[v_axis_index] * f64::from(v_sign.value()) / quantum).round() as i64,
         ),
     })
 }
@@ -276,10 +311,7 @@ fn affine_sketch_frame_marker_transform(
         + normal[*second_axis] * zero_world_delta[*second_axis])
         / normal[normal_axis];
     Some(MarkerTransform {
-        swap: false,
-        u_sign: 1,
-        v_sign: 1,
-        affine_matrix: Some(matrix),
+        axes: Axes::Affine(matrix),
         translation: (
             (dot(zero_world_delta, u_axis) / quantum).round() as i64,
             (dot(zero_world_delta, v_axis) / quantum).round() as i64,
@@ -407,13 +439,11 @@ pub(super) fn dimensioned_circle_transform(
         return None;
     }
     candidates.iter().copied().min_by_key(|transform| {
-        (
-            transform.swap,
-            transform.u_sign,
-            transform.v_sign,
-            transform.affine_matrix,
-            transform.translation,
-        )
+        let (swap, u, v, matrix) = match transform.axes {
+            Axes::Aligned { swap, u, v } => (swap, u.value(), v.value(), None),
+            Axes::Affine(matrix) => (false, 1, 1, Some(matrix)),
+        };
+        (swap, u, v, matrix, transform.translation)
     })
 }
 
@@ -423,10 +453,11 @@ fn unique_marker_transform(
     locus_points: &HashSet<(i64, i64)>,
 ) -> Option<MarkerTransform> {
     let identity = MarkerTransform {
-        swap: false,
-        u_sign: 1,
-        v_sign: 1,
-        affine_matrix: None,
+        axes: Axes::Aligned {
+            swap: false,
+            u: Sign::Positive,
+            v: Sign::Positive,
+        },
         translation: (0, 0),
     };
     if let Some(transform) = unique_transform_translation(identity, marker_points, locus_points) {
@@ -434,16 +465,17 @@ fn unique_marker_transform(
     }
     let mut scored = Vec::new();
     for swap in [false, true] {
-        for u_sign in [-1, 1] {
-            for v_sign in [-1, 1] {
-                if !swap && u_sign == 1 && v_sign == 1 {
+        for u_sign in [Sign::Negative, Sign::Positive] {
+            for v_sign in [Sign::Negative, Sign::Positive] {
+                if !swap && u_sign == Sign::Positive && v_sign == Sign::Positive {
                     continue;
                 }
                 let transform = MarkerTransform {
-                    swap,
-                    u_sign,
-                    v_sign,
-                    affine_matrix: None,
+                    axes: Axes::Aligned {
+                        swap,
+                        u: u_sign,
+                        v: v_sign,
+                    },
                     translation: (0, 0),
                 };
                 let transformed = marker_points
@@ -529,10 +561,11 @@ pub(super) fn compatible_marker_transform_candidates(
         translations
     };
     let identity = MarkerTransform {
-        swap: false,
-        u_sign: 1,
-        v_sign: 1,
-        affine_matrix: None,
+        axes: Axes::Aligned {
+            swap: false,
+            u: Sign::Positive,
+            v: Sign::Positive,
+        },
         translation: (0, 0),
     };
     if let Some(transform) = unique_scored_transform(identity, score(identity)) {
@@ -540,16 +573,17 @@ pub(super) fn compatible_marker_transform_candidates(
     }
     let mut scored = Vec::new();
     for swap in [false, true] {
-        for u_sign in [-1, 1] {
-            for v_sign in [-1, 1] {
-                if !swap && u_sign == 1 && v_sign == 1 {
+        for u_sign in [Sign::Negative, Sign::Positive] {
+            for v_sign in [Sign::Negative, Sign::Positive] {
+                if !swap && u_sign == Sign::Positive && v_sign == Sign::Positive {
                     continue;
                 }
                 let axes = MarkerTransform {
-                    swap,
-                    u_sign,
-                    v_sign,
-                    affine_matrix: None,
+                    axes: Axes::Aligned {
+                        swap,
+                        u: u_sign,
+                        v: v_sign,
+                    },
                     translation: (0, 0),
                 };
                 scored.extend(score(axes).into_iter().map(|(translation, count)| {

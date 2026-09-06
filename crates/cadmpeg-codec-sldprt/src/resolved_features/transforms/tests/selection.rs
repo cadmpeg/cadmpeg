@@ -23,9 +23,14 @@ fn unique_axis_swap_maps_marker_coordinates_to_profile_loci() {
     let markers = [(0, 0), (2, 1), (7, 4), (3, 9)].into_iter().collect();
     let loci = [(0, 0), (1, 2), (4, 7), (9, 3)].into_iter().collect();
     let transform = unique_marker_transform(&markers, &loci).expect("unique transform");
-    assert!(transform.swap);
-    assert_eq!(transform.u_sign, 1);
-    assert_eq!(transform.v_sign, 1);
+    assert_eq!(
+        transform.axes,
+        Axes::Aligned {
+            swap: true,
+            u: Sign::Positive,
+            v: Sign::Positive
+        }
+    );
     assert!(markers
         .into_iter()
         .all(|point| loci.contains(&transform.apply(point).expect("required invariant"))));
@@ -679,10 +684,11 @@ fn unique_zero_translation_resolves_symmetric_axis_swaps() {
     assert_eq!(
         unique_marker_transform(&markers, &loci),
         Some(MarkerTransform {
-            swap: true,
-            u_sign: 1,
-            v_sign: 1,
-            affine_matrix: None,
+            axes: Axes::Aligned {
+                swap: true,
+                u: Sign::Positive,
+                v: Sign::Positive
+            },
             translation: (0, 0),
         })
     );
@@ -696,23 +702,33 @@ fn marker_kinds_disambiguate_axis_swaps() {
         ((3, 1), HashSet::from([(11, 23)])),
     ]);
     let transform = unique_compatible_marker_transform(&compatible).expect("required invariant");
-    assert!(transform.swap);
-    assert_eq!(transform.u_sign, 1);
-    assert_eq!(transform.v_sign, 1);
+    assert_eq!(
+        transform.axes,
+        Axes::Aligned {
+            swap: true,
+            u: Sign::Positive,
+            v: Sign::Positive
+        }
+    );
     assert_eq!(transform.translation, (10, 20));
 }
 
 #[test]
 fn symmetric_frames_require_the_same_dimensioned_circle_set() {
     let identity = MarkerTransform {
-        swap: false,
-        u_sign: 1,
-        v_sign: 1,
-        affine_matrix: None,
+        axes: Axes::Aligned {
+            swap: false,
+            u: Sign::Positive,
+            v: Sign::Positive,
+        },
         translation: (0, 0),
     };
     let swap = MarkerTransform {
-        swap: true,
+        axes: Axes::Aligned {
+            swap: true,
+            u: Sign::Positive,
+            v: Sign::Positive,
+        },
         ..identity
     };
     assert_eq!(

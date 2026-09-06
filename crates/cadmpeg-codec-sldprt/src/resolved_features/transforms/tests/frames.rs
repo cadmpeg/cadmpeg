@@ -618,8 +618,15 @@ fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
         transform.apply((2_865_000_000, -2_385_000_000)),
         Some((2_420_000_000, 0))
     );
+    let Axes::Aligned { swap, v, .. } = transform.axes else {
+        panic!("axis frame");
+    };
     let other = MarkerTransform {
-        u_sign: 1,
+        axes: Axes::Aligned {
+            swap,
+            u: Sign::Positive,
+            v,
+        },
         ..transform
     };
     assert_eq!(
@@ -649,30 +656,29 @@ fn marker_transform_reports_the_profile_axis_for_each_native_axis() {
     const SCALE: i64 = 1_000_000_000_000;
 
     let swapped = MarkerTransform {
-        swap: true,
-        u_sign: -1,
-        v_sign: 1,
-        affine_matrix: None,
+        axes: Axes::Aligned {
+            swap: true,
+            u: Sign::Negative,
+            v: Sign::Positive,
+        },
         translation: (0, 0),
     };
     assert_eq!(swapped.profile_axis_for_native(0), Some(ProfileAxis::V));
     assert_eq!(swapped.profile_axis_for_native(1), Some(ProfileAxis::U));
 
     let direct = MarkerTransform {
-        swap: false,
-        u_sign: 1,
-        v_sign: -1,
-        affine_matrix: None,
+        axes: Axes::Aligned {
+            swap: false,
+            u: Sign::Positive,
+            v: Sign::Negative,
+        },
         translation: (0, 0),
     };
     assert_eq!(direct.profile_axis_for_native(0), Some(ProfileAxis::U));
     assert_eq!(direct.profile_axis_for_native(1), Some(ProfileAxis::V));
 
     let rotated = MarkerTransform {
-        swap: false,
-        u_sign: 1,
-        v_sign: 1,
-        affine_matrix: Some([SCALE / 2, -SCALE / 2, SCALE / 2, SCALE / 2]),
+        axes: Axes::Affine([SCALE / 2, -SCALE / 2, SCALE / 2, SCALE / 2]),
         translation: (0, 0),
     };
     assert_eq!(rotated.profile_axis_for_native(0), None);
@@ -698,7 +704,7 @@ fn rotated_sketch_frame_projects_native_plane_coordinates() {
     };
     let transform = sketch_frame_marker_transform(&sketch, 1.0e-8).expect("rotated frame");
 
-    assert!(transform.affine_matrix.is_some());
+    assert!(matches!(transform.axes, Axes::Affine(_)));
     assert_eq!(
         transform.apply((1_100_000_000, 1_900_000_000)),
         Some(((std::f64::consts::SQRT_2 / 1.0e-8).round() as i64, 0))
