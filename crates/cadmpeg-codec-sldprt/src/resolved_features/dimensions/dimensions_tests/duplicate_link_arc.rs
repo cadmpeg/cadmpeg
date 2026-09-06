@@ -1,8 +1,7 @@
 use super::super::{dimensioned_relation_carrier, DimensionedCurveNative};
 use crate::records::{
-    FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputOperand,
-    FeatureInputOperandKind, FeatureInputReference, SketchInputEntity, SketchInputKind,
-    SketchInputLink,
+    FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
+    FeatureInputReference, SketchInputEntity, SketchInputKind, SketchInputLink,
 };
 use std::collections::HashMap;
 
@@ -93,7 +92,6 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
             ordinal: 0,
             offset: 112,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),

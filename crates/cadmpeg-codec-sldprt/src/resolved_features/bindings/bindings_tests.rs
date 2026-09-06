@@ -8,10 +8,9 @@ use super::{
 };
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::{
-    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputComponentPathEntry, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane,
-    FeatureInputName, FeatureInputScalar, FeatureInputScalarRole, FeatureInputSurfaceSelection,
-    SketchInputEntity, SketchInputKind,
+    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
+    FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName, FeatureInputScalar,
+    FeatureInputScalarRole, FeatureInputSurfaceSelection, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind, PatternSeed};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
@@ -801,7 +800,6 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         ordinal: 0,
         offset,
         name: name.into(),
-        role: FeatureInputClassRole::Native,
     };
     let name = |index, value: &str| FeatureInputName {
         id: format!("name-{index}"),

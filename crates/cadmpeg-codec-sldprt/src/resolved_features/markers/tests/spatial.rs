@@ -10,9 +10,9 @@ use crate::layout::{
     wide_spatial_marker_coordinate_prefix as wide_spatial,
 };
 use crate::records::{
-    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar,
-    FeatureInputScalarRole, SketchInputKind, SketchRelationKind,
+    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
+    FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar, FeatureInputScalarRole,
+    SketchInputKind, SketchRelationKind,
 };
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
 use cadmpeg_ir::math::Point3;
@@ -71,7 +71,6 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         ordinal: 0,
         offset: 155,
         name: "sgEntHandle".into(),
-        role: FeatureInputClassRole::SketchEntity,
     }];
 
     let references = reference_cells(&scalars, &classes);
@@ -88,7 +87,6 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         ordinal: 1,
         offset: 299,
         name: "sgArcHandle".into(),
-        role: FeatureInputClassRole::SketchEntity,
     });
     assert!(reference_cells(&scalars, &ambiguous_classes)
         .iter()
@@ -627,7 +625,6 @@ fn relation_binding_requires_family_operand_signature() {
         ordinal: 0,
         offset: 10,
         name: "sgLLDist".into(),
-        role: FeatureInputClassRole::SketchConstraint,
     };
     let operand = |kind, entity_index| FeatureInputOperand {
         offset: 0,
@@ -675,7 +672,6 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         ordinal: 0,
         offset,
         name: name.into(),
-        role: FeatureInputClassRole::SketchConstraint,
     };
     let operand = |entity_index| FeatureInputOperand {
         offset: 0,
@@ -714,7 +710,6 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         ordinal: 0,
         offset: 10,
         name: "sgPntPntDist".into(),
-        role: FeatureInputClassRole::SketchConstraint,
     };
     let operand = |entity_index| FeatureInputOperand {
         offset: 0,

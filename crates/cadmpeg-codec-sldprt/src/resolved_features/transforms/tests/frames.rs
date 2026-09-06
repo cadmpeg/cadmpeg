@@ -3,11 +3,10 @@
 use super::super::*;
 use super::marker;
 use crate::records::{
-    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
-    FeatureInputReference, FeatureInputRelationFamily, FeatureInputRelationInstance,
-    FeatureInputScalar, FeatureInputScalarRole, SketchInputKind, SketchInputLink,
-    SketchRelationKind,
+    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
+    FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference,
+    FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
+    FeatureInputScalarRole, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
 use crate::resolved_features::relation_geometry::declared_entity_handle_circular_marker;
 use cadmpeg_ir::features::{
@@ -975,7 +974,6 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         ordinal: 0,
         offset: 112,
         name: "sgEntHandle".into(),
-        role: FeatureInputClassRole::SketchEntity,
     };
     let reference = FeatureInputReference {
         id: operand.reference_ref.clone(),
@@ -1185,7 +1183,6 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         ordinal: 0,
         offset: 312,
         name: "sgEntHandle".into(),
-        role: FeatureInputClassRole::SketchEntity,
     };
     let mut center = marker("center", Some([0.010, 0.020]));
     center.offset = 400;

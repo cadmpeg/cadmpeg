@@ -1327,9 +1327,9 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     );
     assert!(lane.classes[..3]
         .iter()
-        .all(|class| class.role == FeatureInputClassRole::SketchEntity));
+        .all(|class| class.role() == FeatureInputClassRole::SketchEntity));
     assert_eq!(
-        lane.classes[3].role,
+        lane.classes[3].role(),
         FeatureInputClassRole::SketchConstraint
     );
     assert_eq!(

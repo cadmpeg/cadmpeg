@@ -1,7 +1,7 @@
 use super::super::dimensioned_relation_carrier;
 use crate::records::{
-    FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputOperand,
-    FeatureInputOperandKind, FeatureInputReference, SketchInputEntity, SketchInputKind,
+    FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
+    FeatureInputReference, SketchInputEntity, SketchInputKind,
 };
 use crate::resolved_features::relation_geometry::direct_point_dimension_center;
 use std::collections::HashMap;
@@ -152,7 +152,6 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
             ordinal: 0,
             offset: 112,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -241,7 +240,6 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
                 ordinal: 0,
                 offset: 112,
                 name: "sgEntHandle".into(),
-                role: FeatureInputClassRole::SketchEntity,
             },
             FeatureInputClass {
                 id: "line-class".into(),
@@ -249,7 +247,6 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
                 ordinal: 1,
                 offset: 250,
                 name: "sgLineHandle".into(),
-                role: FeatureInputClassRole::SketchEntity,
             },
         ],
         names: Vec::new(),

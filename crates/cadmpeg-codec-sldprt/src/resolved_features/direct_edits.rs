@@ -349,8 +349,8 @@ pub(crate) fn enrich_history_move_body_translations(
 mod tests {
     use super::*;
     use crate::records::{
-        Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputName,
-        FeatureInputScalar, FeatureInputScalarRole,
+        Feature, FeatureHistory, FeatureInputClass, FeatureInputName, FeatureInputScalar,
+        FeatureInputScalarRole,
     };
     use cadmpeg_ir::features::{FaceMotion, FaceSelection, FeatureDefinition, Length};
     use std::collections::BTreeMap;
@@ -404,7 +404,6 @@ mod tests {
                 ordinal: index as u32,
                 offset: 32 + index as u64,
                 name: "moDirectionSpec_c".into(),
-                role: FeatureInputClassRole::Reference,
             })
             .collect::<Vec<_>>();
         classes.push(FeatureInputClass {
@@ -413,7 +412,6 @@ mod tests {
             ordinal: direction_specs as u32,
             offset: 80,
             name: "moLineRef_w".into(),
-            role: FeatureInputClassRole::Reference,
         });
         FeatureInputLane {
             id: "lane".into(),

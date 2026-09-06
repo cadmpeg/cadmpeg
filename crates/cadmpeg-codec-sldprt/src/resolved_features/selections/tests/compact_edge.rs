@@ -7,8 +7,8 @@ use super::super::super::{CLASS_MARKER, LEGACY_SKETCH_MARKER};
 use super::super::*;
 use crate::classification::FeatureClass;
 use crate::records::{
-    Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
+    Feature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
+    FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
 };
 use std::collections::BTreeMap;
 
@@ -648,7 +648,6 @@ fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
             ordinal: 0,
             offset: class_offset as u64,
             name: class_name.into(),
-            role: FeatureInputClassRole::Dimension,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -914,7 +913,6 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
             ordinal: 0,
             offset: class_offset as u64,
             name: class_name.into(),
-            role: FeatureInputClassRole::Dimension,
         }],
         names: vec![FeatureInputName {
             id: "feature-name".into(),

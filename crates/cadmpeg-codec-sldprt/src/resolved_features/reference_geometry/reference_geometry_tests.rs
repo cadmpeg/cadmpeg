@@ -6,8 +6,7 @@ use super::*;
 use crate::layout::constructed_reference_plane_fixed_frame as fixed_plane;
 use crate::layout::constructed_reference_plane_matrix_frame as matrix_plane;
 use crate::records::{
-    Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
-    FeatureInputName,
+    Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, Length, PrincipalPlane};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -901,7 +900,6 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
             ordinal: 0,
             offset: class_offset as u64,
             name: String::from_utf8(class_name.to_vec()).unwrap(),
-            role: FeatureInputClassRole::default(),
         }],
         names: vec![FeatureInputName {
             id: "name".into(),

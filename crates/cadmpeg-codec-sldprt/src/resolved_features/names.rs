@@ -1,10 +1,7 @@
 //! Object name and class declaration records.
 
 use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
-use crate::classification::native_object_class;
-use crate::records::{
-    FeatureInputClass, FeatureInputClassRole, FeatureInputName, FeatureInputOperandKind,
-};
+use crate::records::{FeatureInputClass, FeatureInputName, FeatureInputOperandKind};
 use cadmpeg_core::decode::View;
 
 pub(super) fn operand_kind_name(kind: FeatureInputOperandKind) -> String {
@@ -105,22 +102,14 @@ pub(crate) fn class_declarations(payload: &[u8], parent: &str) -> Vec<FeatureInp
             Some((offset, std::str::from_utf8(bytes).ok()?.to_string()))
         })
         .enumerate()
-        .map(|(ordinal, (offset, name))| {
-            let role = class_role(&name);
-            FeatureInputClass {
-                id: format!("sldprt:feature-input:class#{lane_key}:{offset}"),
-                parent: parent.to_string(),
-                ordinal: ordinal as u32,
-                offset: offset as u64,
-                name,
-                role,
-            }
+        .map(|(ordinal, (offset, name))| FeatureInputClass {
+            id: format!("sldprt:feature-input:class#{lane_key}:{offset}"),
+            parent: parent.to_string(),
+            ordinal: ordinal as u32,
+            offset: offset as u64,
+            name,
         })
         .collect()
-}
-
-fn class_role(name: &str) -> FeatureInputClassRole {
-    native_object_class(name).role
 }
 
 pub(super) fn configuration(section: &str) -> Option<String> {

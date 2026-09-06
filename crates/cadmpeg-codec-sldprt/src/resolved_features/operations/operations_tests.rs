@@ -2,8 +2,7 @@
 
 use super::*;
 use crate::records::{
-    Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
-    FeatureInputName,
+    Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
 use cadmpeg_ir::features::BooleanOp;
 use std::collections::BTreeMap;
@@ -52,7 +51,6 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
             ordinal: 0,
             offset: 100,
             name: "moPLineProject_c".into(),
-            role: FeatureInputClassRole::Auxiliary,
         }],
         names: vec![
             FeatureInputName {
@@ -107,7 +105,6 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         ordinal: 1,
         offset: 120,
         name: "moPLineProject_c".into(),
-        role: FeatureInputClassRole::Auxiliary,
     });
     let mut ambiguous = vec![history.clone()];
     enrich_history_split_lines(&mut ambiguous, &[ambiguous_lane]);
@@ -334,7 +331,6 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
                     ordinal: 0,
                     offset: class_offset as u64,
                     name: class_name.into(),
-                    role: FeatureInputClassRole::Feature,
                 }],
                 names: Vec::new(),
                 scalars: Vec::new(),
@@ -607,7 +603,6 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
             ordinal: 0,
             offset: 33,
             name: "moExtrusion_c".into(),
-            role: FeatureInputClassRole::Feature,
         }],
         names: vec![FeatureInputName {
             id: "name".into(),

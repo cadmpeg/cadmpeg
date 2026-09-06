@@ -117,7 +117,7 @@ pub(crate) fn bind_history_classes(
             let Some(name) = names_by_offset.get(&name_offset) else {
                 continue;
             };
-            if native_object_class(&class.name).role != FeatureInputClassRole::Native {
+            if class.role() != FeatureInputClassRole::Native {
                 direct_classes_by_name
                     .entry(name)
                     .or_default()
@@ -902,7 +902,6 @@ mod idless_history_binding_tests {
                 ordinal: 0,
                 offset: 0,
                 name: "moHoleWzd_c".into(),
-                role: FeatureInputClassRole::Feature,
             }],
             names: vec![
                 FeatureInputName {
@@ -1088,7 +1087,6 @@ mod idless_history_binding_tests {
             ordinal: ordinal as u32,
             offset: ordinal as u64 * 100,
             name: name.into(),
-            role: native_object_class(name).role,
         })
         .collect();
         let lane = FeatureInputLane {
@@ -1149,7 +1147,6 @@ mod idless_history_binding_tests {
             ordinal,
             offset,
             name: name.into(),
-            role: native_object_class(name).role,
         };
         let classes = vec![
             class(0, 100, "moCosmeticThread_c"),
@@ -1216,7 +1213,6 @@ mod idless_history_binding_tests {
             ordinal: 0,
             offset: 100,
             name: "moHoleWzd_c".into(),
-            role: native_object_class("moHoleWzd_c").role,
         };
         let direct_offset = class.offset + 6 + class.name.len() as u64;
         let names = vec![
@@ -1298,7 +1294,6 @@ mod idless_history_binding_tests {
             ordinal: 0,
             offset: 100,
             name: "moCosmeticThread_c".into(),
-            role: native_object_class("moCosmeticThread_c").role,
         };
         let names = histories[0]
             .features

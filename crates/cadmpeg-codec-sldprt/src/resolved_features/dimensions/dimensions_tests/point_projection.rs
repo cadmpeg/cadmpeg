@@ -1,8 +1,8 @@
 use super::super::project_relation_point_dimensioned_circles;
 use crate::records::{
-    FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputOperand,
-    FeatureInputOperandKind, FeatureInputReference, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
+    FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
+    FeatureInputReference, FeatureInputRelationFamily, FeatureInputRelationInstance,
+    SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::features::{
     DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
@@ -45,7 +45,6 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
             ordinal: 0,
             offset: 10,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),

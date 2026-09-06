@@ -1753,7 +1753,7 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
         .flat_map(|lane| {
             lane.classes
                 .iter()
-                .filter(|class| class.role == FeatureInputClassRole::Feature)
+                .filter(|class| class.role() == FeatureInputClassRole::Feature)
                 .filter_map(move |class| {
                     let name_offset = class.offset + 6 + class.name.len() as u64;
                     lane.names

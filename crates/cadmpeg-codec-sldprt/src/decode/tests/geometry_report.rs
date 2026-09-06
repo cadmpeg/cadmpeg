@@ -6,8 +6,8 @@ use super::super::*;
 use crate::container::ContainerScan;
 use crate::native::SldprtNative;
 use crate::records::{
-    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputLane, FeatureInputName, FeatureInputRelationBinding, FeatureInputRelationFamily,
+    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
+    FeatureInputName, FeatureInputRelationBinding, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
     SketchRelationKind,
 };
@@ -273,7 +273,6 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
             ordinal: 0,
             offset: 10,
             name: class_name.into(),
-            role: FeatureInputClassRole::Feature,
         }],
         names: vec![FeatureInputName {
             id: "name".into(),

@@ -5,8 +5,8 @@ use super::super::selection_vector_tail;
 use super::super::*;
 use crate::classification::FeatureClass;
 use crate::records::{
-    Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
-    FeatureInputName, FeatureInputScalar, FeatureInputScalarRole,
+    Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
+    FeatureInputScalar, FeatureInputScalarRole,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -150,7 +150,6 @@ fn operation_surface_selection_finds_marker_inside_class_body() {
             ordinal: 0,
             offset: 0,
             name: class_name.into(),
-            role: FeatureInputClassRole::Reference,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -209,7 +208,6 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
             ordinal: 0,
             offset: 0,
             name: class_name.into(),
-            role: FeatureInputClassRole::Reference,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -623,7 +621,6 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
             ordinal: 0,
             offset: class_offset as u64,
             name: class_name.into(),
-            role: FeatureInputClassRole::Reference,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -699,7 +696,6 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
                 ordinal: 0,
                 offset: component_edge_offset as u64,
                 name: component_edge_name.into(),
-                role: FeatureInputClassRole::Reference,
             },
             FeatureInputClass {
                 id: "edge-ref".into(),
@@ -707,7 +703,6 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
                 ordinal: 1,
                 offset: edge_ref_offset as u64,
                 name: edge_ref_name.into(),
-                role: FeatureInputClassRole::Reference,
             },
         ],
         names: Vec::new(),
@@ -916,7 +911,6 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
             ordinal: 0,
             offset: 0,
             name: "moCompFace_c".into(),
-            role: FeatureInputClassRole::Reference,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1398,7 +1392,6 @@ fn face_reference_plane_owns_its_counted_surface_path() {
             ordinal: 0,
             offset: class_offset as u64,
             name: class_name.into(),
-            role: FeatureInputClassRole::Reference,
         }],
         names: vec![
             FeatureInputName {
@@ -1520,7 +1513,6 @@ fn face_reference_plane_accepts_a_component_face_path() {
             ordinal: 0,
             offset: class_offset as u64,
             name: class_name.into(),
-            role: FeatureInputClassRole::Reference,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1603,7 +1595,6 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
                 ordinal: 0,
                 offset: 0,
                 name: class_name.into(),
-                role: FeatureInputClassRole::Auxiliary,
             },
             FeatureInputClass {
                 id: "projection-class".into(),
@@ -1611,7 +1602,6 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
                 ordinal: 1,
                 offset: payload.len() as u64,
                 name: "moPLineProjIdRep_c".into(),
-                role: FeatureInputClassRole::Auxiliary,
             },
         ],
         names: Vec::new(),
@@ -1682,7 +1672,6 @@ fn generated_surface_identities_are_producer_outputs() {
             ordinal: 0,
             offset: 0,
             name: class_name.into(),
-            role: FeatureInputClassRole::Auxiliary,
         }],
         names: Vec::new(),
         scalars: Vec::new(),

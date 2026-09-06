@@ -3,9 +3,9 @@
 use super::super::*;
 use super::marker;
 use crate::records::{
-    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
-    FeatureInputRelationFamily, FeatureInputRelationInstance,
+    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
+    FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
+    FeatureInputRelationInstance,
 };
 use cadmpeg_ir::features::{
     DesignParameter, Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue,
@@ -373,7 +373,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             ordinal: 0,
             offset: line_ref_offset as u64,
             name: "moLineRef_w".into(),
-            role: FeatureInputClassRole::Reference,
         }],
         names: vec![
             name(50, 5, "SeedFeature"),
@@ -615,7 +614,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             ordinal: 1,
             offset: 200,
             name: "moNumberDim_c".into(),
-            role: FeatureInputClassRole::Dimension,
         },
         FeatureInputClass {
             id: "spacing-dimension".into(),
@@ -623,7 +621,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             ordinal: 2,
             offset: 300,
             name: "ParallelPlaneDistanceDim_c".into(),
-            role: FeatureInputClassRole::Dimension,
         },
     ]);
     derived_lane

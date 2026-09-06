@@ -2,9 +2,8 @@
 
 use super::*;
 use crate::records::{
-    Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
-    FeatureInputSurfaceSelection,
+    Feature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
+    FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName, FeatureInputSurfaceSelection,
 };
 use cadmpeg_ir::features::{
     BodySelection, DatumPlaneReference, FaceSelection, FeatureDefinition, FeatureId, Length,
@@ -1336,7 +1335,6 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
             ordinal: 0,
             offset: class_offset as u64,
             name: class_name.into(),
-            role: FeatureInputClassRole::Dimension,
         }],
         names: vec![
             name("feature-name", 20, 10, "Variable fillet"),
@@ -1471,7 +1469,6 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
             ordinal: 0,
             offset: class_offset as u64,
             name: class_name.into(),
-            role: FeatureInputClassRole::Dimension,
         }],
         names: vec![
             name("feature-name", 20, 10, "Variable fillet"),

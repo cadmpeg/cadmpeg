@@ -14,9 +14,8 @@ use cadmpeg_ir::sketches::{
 
 use super::super::*;
 use crate::records::{
-    FeatureInputClass, FeatureInputClassRole, FeatureInputName, FeatureInputRelationFamily,
-    FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
-    SketchRelationKind,
+    FeatureInputClass, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
+    FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchRelationKind,
 };
 
 #[test]
@@ -1484,7 +1483,6 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         ordinal: 0,
         offset: 100,
         name: "moAngleParameter_c".into(),
-        role: FeatureInputClassRole::Parameter,
     });
     lane.names.push(FeatureInputName {
         id: "angle-name".into(),

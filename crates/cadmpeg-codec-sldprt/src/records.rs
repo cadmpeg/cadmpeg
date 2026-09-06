@@ -711,10 +711,51 @@ pub struct FeatureInputClass {
     /// Byte offset of the `ff ff 01 00` declaration marker.
     pub offset: u64,
     /// Declared native class name.
+    #[serde(flatten, with = "feature_class_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "feature_class_wire::Wire"))]
     pub name: String,
-    /// Design-intent role of this class.
-    #[serde(default)]
-    pub role: FeatureInputClassRole,
+}
+
+impl FeatureInputClass {
+    pub fn role(&self) -> FeatureInputClassRole {
+        crate::classification::native_object_class(&self.name).role
+    }
+}
+
+mod feature_class_wire {
+    use super::FeatureInputClassRole;
+    use crate::classification::native_object_class;
+    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    pub(super) struct Wire {
+        name: String,
+        #[serde(default)]
+        role: Option<FeatureInputClassRole>,
+    }
+
+    pub(super) fn serialize<S: Serializer>(name: &str, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("name", name)?;
+        map.serialize_entry("role", &native_object_class(name).role)?;
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<String, D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        if wire
+            .role
+            .is_some_and(|role| role != native_object_class(&wire.name).role)
+        {
+            return Err(serde::de::Error::custom(
+                "role must match the native class name",
+            ));
+        }
+        Ok(wire.name)
+    }
 }
 
 /// Design-intent role declared by a feature-input class.
@@ -1317,6 +1358,20 @@ impl SketchRelationKind {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn class_role_wire_is_derived_from_name() {
+        let wire = serde_json::json!({
+            "id": "class", "parent": "lane", "ordinal": 0, "offset": 0,
+            "name": "sgEntHandle", "role": "sketch_entity"
+        });
+        let class: super::FeatureInputClass = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(class.role(), super::FeatureInputClassRole::SketchEntity);
+        assert_eq!(serde_json::to_value(class).unwrap(), wire);
+        let mut inconsistent = wire;
+        inconsistent["role"] = serde_json::json!("feature");
+        assert!(serde_json::from_value::<super::FeatureInputClass>(inconsistent).is_err());
+    }
+
     #[test]
     fn scalar_wire_derives_indices_from_d6_operands() {
         #[derive(serde::Serialize, serde::Deserialize)]

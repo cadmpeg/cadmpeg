@@ -351,9 +351,7 @@ pub(super) fn draft_operand_candidates(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::records::{
-        Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputName,
-    };
+    use crate::records::{Feature, FeatureHistory, FeatureInputClass, FeatureInputName};
     use cadmpeg_ir::features::{Angle, FaceSelection, FeatureDefinition, FeatureId};
     use std::collections::BTreeMap;
 
@@ -580,7 +578,6 @@ mod tests {
                 ordinal: 0,
                 offset: class_offset as u64,
                 name: class_name.into(),
-                role: FeatureInputClassRole::Reference,
             }],
             names: vec![FeatureInputName {
                 id: "name".into(),

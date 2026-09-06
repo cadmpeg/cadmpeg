@@ -3,10 +3,9 @@
 use super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::*;
 use crate::records::{
-    FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputOperand,
-    FeatureInputOperandKind, FeatureInputReference, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
-    SketchRelationKind,
+    FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
+    FeatureInputReference, FeatureInputRelationFamily, FeatureInputRelationInstance,
+    SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
 use cadmpeg_ir::features::{
     DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
@@ -54,7 +53,6 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
             ordinal: 0,
             offset: 112,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -207,7 +205,6 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
             ordinal: 0,
             offset: 112,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -318,7 +315,6 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
             ordinal: 0,
             offset: 112,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -461,7 +457,6 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
             ordinal: 0,
             offset: 112,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -692,7 +687,6 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
                 ordinal: 0,
                 offset: 100,
                 name: "sgEntHandle".into(),
-                role: FeatureInputClassRole::SketchEntity,
             },
             FeatureInputClass {
                 id: "slot-class".into(),
@@ -700,7 +694,6 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
                 ordinal: 1,
                 offset: 180,
                 name: "sgSlotHandle".into(),
-                role: FeatureInputClassRole::Native,
             },
             FeatureInputClass {
                 id: "end-class".into(),
@@ -708,7 +701,6 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
                 ordinal: 2,
                 offset: 250,
                 name: "next".into(),
-                role: FeatureInputClassRole::Native,
             },
         ],
         names: Vec::new(),
@@ -783,7 +775,6 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
             ordinal: 2,
             offset: 240,
             name: "sgSlotHandle".into(),
-            role: FeatureInputClassRole::Native,
         },
     );
     let ambiguous_markers = ambiguous_lane
@@ -913,7 +904,6 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
             ordinal: 0,
             offset: 200,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1018,7 +1008,6 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
             ordinal: 0,
             offset: 112,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1161,7 +1150,6 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
                 ordinal: 0,
                 offset: 100,
                 name: "sgEntHandle".into(),
-                role: FeatureInputClassRole::SketchEntity,
             },
             FeatureInputClass {
                 id: "arc-class".into(),
@@ -1169,7 +1157,6 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
                 ordinal: 1,
                 offset: 25,
                 name: "sgArcHandle".into(),
-                role: FeatureInputClassRole::SketchEntity,
             },
         ],
         names: Vec::new(),
@@ -1256,7 +1243,6 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         ordinal: 2,
         offset: 45,
         name: "sgLineHandle".into(),
-        role: FeatureInputClassRole::SketchEntity,
     });
     let multiple_markers = multiple_declared
         .sketch_entities

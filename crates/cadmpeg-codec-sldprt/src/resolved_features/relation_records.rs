@@ -453,8 +453,8 @@ pub(super) fn relation_instances(
 mod relation_records_tests {
     use super::*;
     use crate::records::{
-        Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
-        FeatureInputName, FeatureInputRelationBinding,
+        Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
+        FeatureInputRelationBinding,
     };
     use std::collections::BTreeMap;
 
@@ -465,7 +465,6 @@ mod relation_records_tests {
             ordinal: 0,
             offset,
             name: name.into(),
-            role: FeatureInputClassRole::SketchConstraint,
         }
     }
 

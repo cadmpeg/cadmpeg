@@ -2671,8 +2671,8 @@ mod detached_legacy_sketch_tests {
     use super::*;
     use crate::layout::current_terminal_relation_carrier as terminal;
     use crate::records::{
-        Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-        FeatureInputRelationFamily, FeatureInputRelationInstance,
+        Feature, FeatureHistory, FeatureInputClass, FeatureInputRelationFamily,
+        FeatureInputRelationInstance,
     };
 
     fn feature() -> Feature {
@@ -2789,7 +2789,6 @@ mod detached_legacy_sketch_tests {
                 ordinal: 0,
                 offset: terminal::LEN as u64,
                 name: "sgCircleDim".into(),
-                role: FeatureInputClassRole::SketchConstraint,
             }],
             names: Vec::new(),
             scalars: Vec::new(),
