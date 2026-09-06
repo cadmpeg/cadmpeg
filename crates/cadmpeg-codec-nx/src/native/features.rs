@@ -2,6 +2,7 @@
 //! Feature-history record extractors and their record types.
 
 mod reference;
+use crate::om::header_references::HeaderSlot;
 use reference::{ConstructionReference, NullableConstructionReference};
 
 #[allow(clippy::wildcard_imports)]
@@ -877,7 +878,7 @@ pub struct FeatureInputBlock {
     /// Owning operation-label identity.
     pub operation_label: String,
     /// Zero-based operation-header input slot.
-    pub input_slot: u8,
+    pub input_slot: HeaderSlot,
     /// Required reference with its exact source encoding.
     #[serde(flatten)]
     pub object: crate::om::reference_index::FeatureReferenceToken,
@@ -906,7 +907,7 @@ pub struct FeatureInputBlockIdentityGroup {
 pub struct FeatureInputBlockIdentityMember {
     pub input_block: String,
     pub operation_label: String,
-    pub input_slot: u8,
+    pub input_slot: HeaderSlot,
     pub source_offset: u64,
 }
 
@@ -916,7 +917,7 @@ struct FeatureInputBlockIdentityGroupWire {
     data_block: String,
     input_blocks: Vec<String>,
     operation_labels: Vec<String>,
-    input_slots: Vec<u8>,
+    input_slots: Vec<HeaderSlot>,
     source_offsets: Vec<u64>,
 }
 
@@ -1015,7 +1016,7 @@ pub struct FeatureInputColumnRowUse {
     /// Owning feature operation label.
     pub operation_label: String,
     /// Input slot in the operation header.
-    pub input_slot: u8,
+    pub input_slot: HeaderSlot,
     /// Serialized grammar of the referenced column row.
     pub row_kind: ColumnIndexRowKind,
     /// Native row identity in its grammar-specific arena.
@@ -1059,7 +1060,7 @@ pub struct FeatureInputColumnTarget {
     /// Owning feature operation label.
     pub operation_label: String,
     /// Input slot in the operation header.
-    pub input_slot: u8,
+    pub input_slot: HeaderSlot,
     /// Linked or target-index row whose slot zero is the input block.
     pub column_row: String,
     /// Linked or target-index grammar of `column_row`.
@@ -1085,7 +1086,7 @@ struct FeatureInputColumnTargetWire {
     id: String,
     input_block: String,
     operation_label: String,
-    input_slot: u8,
+    input_slot: HeaderSlot,
     column_row: String,
     row_kind: ColumnIndexRowKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1205,7 +1206,7 @@ pub struct FeatureParameterBinding {
     /// Owning operation-label identity.
     pub operation_label: String,
     /// Zero-based operation-header input slot.
-    pub input_slot: u8,
+    pub input_slot: HeaderSlot,
     /// Input block carrying the object-reference field.
     pub input_block: String,
     /// Zero-based object-reference order within the input block.
@@ -2060,7 +2061,7 @@ pub struct FeatureDatumPlaneBlockUse {
     /// Operation whose header addresses the shared block.
     pub input_operation_label: String,
     /// Zero-based operation-header input slot.
-    pub input_slot: u8,
+    pub input_slot: HeaderSlot,
 }
 
 /// Exact reuse of one datum-coordinate-system construction block by an operation input.
@@ -2081,7 +2082,7 @@ pub struct FeatureDatumCsysBlockUse {
     /// Operation whose header addresses the shared block.
     pub input_operation_label: String,
     /// Zero-based operation-header input slot.
-    pub input_slot: u8,
+    pub input_slot: HeaderSlot,
 }
 
 /// A construction reference paired with its uniquely resolved source block.
@@ -7695,7 +7696,7 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let label = record.label();
-            for (input_slot, object) in label.header.objects().0.into_iter().enumerate() {
+            for (input_slot, object) in HeaderSlot::ALL.into_iter().zip(label.header.objects().0) {
                 let Some(object) = object else {
                     continue;
                 };
@@ -7710,10 +7711,10 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
                         "nx:feature-history:input-block#{section_key}-{operation_ordinal:010}-{input_slot:010}"
                     ),
                     operation_label,
-                    input_slot: input_slot as u8,
+                    input_slot,
                     object,
                     data_block,
-                    source_offset: entry_offset + label.header.object_offsets()[input_slot] as u64,
+                    source_offset: entry_offset + label.header.object_offsets()[input_slot.index()] as u64,
                 });
             }
         },

@@ -124,7 +124,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
     let binding = FeatureParameterBinding {
         id: "binding".into(),
         operation_label: operation.into(),
-        input_slot: 0,
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
         input_block: "input".into(),
         reference_ordinal: 0,
         expression_declaration: "declaration-20".into(),
@@ -535,7 +535,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     let input = |slot, index| FeatureInputBlock {
         id: format!("nx:feature-history:input-block#0-7-{slot}"),
         operation_label: label.id.clone(),
-        input_slot: slot,
+        input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(index, &[index as u8]).unwrap(),
         data_block: format!("nx:om-data-blocks-2:block#{index}"),
         source_offset: 710 + u64::from(slot),
@@ -892,7 +892,7 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
         .arena_as::<super::FeatureInputBlock>("feature_input_blocks")
         .expect("required invariant");
     assert_eq!(inputs.len(), 1);
-    assert_eq!(inputs[0].input_slot, 0);
+    assert_eq!(inputs[0].input_slot.number(), 0);
     assert_eq!(inputs[0].object.value(), 1);
     assert!(inputs[0].data_block.ends_with(":block#1"));
     assert_eq!(
@@ -1136,7 +1136,7 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
     let input = |id: &str, operation: &str, slot: u8, block: &str| super::FeatureInputBlock {
         id: id.to_string(),
         operation_label: operation.to_string(),
-        input_slot: slot,
+        input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(44, &[44]).unwrap(),
         data_block: block.to_string(),
         source_offset: 200,
@@ -1276,7 +1276,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     let input = |operation: &str, data_block: &str| FeatureInputBlock {
         id: format!("input-{operation}"),
         operation_label: operation.to_string(),
-        input_slot: 0,
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(1, &[1]).unwrap(),
         data_block: data_block.to_string(),
         source_offset: 0,
@@ -1484,7 +1484,7 @@ fn feature_input_identity_groups_require_distinct_operations_and_preserve_order(
     let input = |id: &str, operation: &str, slot: u8, block: &str, offset: u64| FeatureInputBlock {
         id: id.to_string(),
         operation_label: operation.to_string(),
-        input_slot: slot,
+        input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7]).unwrap(),
         data_block: block.to_string(),
         source_offset: offset,
@@ -1518,7 +1518,7 @@ fn feature_input_identity_groups_require_distinct_operations_and_preserve_order(
         groups[0]
             .members
             .iter()
-            .map(|member| member.input_slot)
+            .map(|member| member.input_slot.number())
             .collect::<Vec<_>>(),
         [2, 1]
     );
@@ -1540,7 +1540,7 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
     let input = FeatureInputBlock {
         id: "input#0000000001".into(),
         operation_label: "operation#1".into(),
-        input_slot: 2,
+        input_slot: crate::om::header_references::HeaderSlot::Two,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7]).unwrap(),
         data_block: "block#4".into(),
         source_offset: 10,
@@ -1570,7 +1570,7 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
-    assert_eq!(uses[0].input_slot, 2);
+    assert_eq!(uses[0].input_slot.number(), 2);
     assert_eq!(uses[0].row_kind, ColumnIndexRowKind::Index);
     assert_eq!(uses[0].column_row, "row#3");
     assert_eq!(uses[0].row_slot, 0);
@@ -1590,7 +1590,7 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
     let input = FeatureInputBlock {
         id: "input#0000000001".into(),
         operation_label: "operation#1".into(),
-        input_slot: 2,
+        input_slot: crate::om::header_references::HeaderSlot::Two,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(4, &[4]).unwrap(),
         data_block: "block#4".into(),
         source_offset: 10,
@@ -1644,7 +1644,7 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
-    assert_eq!(uses[0].input_slot, 2);
+    assert_eq!(uses[0].input_slot.number(), 2);
     assert_eq!(uses[0].row_kind, ColumnIndexRowKind::LinkedIndex);
     assert_eq!(uses[0].column_row, "linked-row#3");
     assert_eq!(uses[0].row_slot, 0);
@@ -1677,7 +1677,7 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
     let input = FeatureInputBlock {
         id: "input#0000000001".into(),
         operation_label: "operation#1".into(),
-        input_slot: 2,
+        input_slot: crate::om::header_references::HeaderSlot::Two,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(4, &[4]).unwrap(),
         data_block: "block#4".into(),
         source_offset: 10,
@@ -1736,7 +1736,7 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
-    assert_eq!(uses[0].input_slot, 2);
+    assert_eq!(uses[0].input_slot.number(), 2);
     assert_eq!(uses[0].row_kind, ColumnIndexRowKind::TargetIndex);
     assert_eq!(uses[0].column_row, "target-row#3");
     assert_eq!(uses[0].column_table.as_deref(), Some("column-table"));

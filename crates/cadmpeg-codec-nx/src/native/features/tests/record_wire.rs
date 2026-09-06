@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::features::{FeatureInputBlock, FeatureOperationLabel};
+use crate::native::features::{FeatureInputBlock, FeatureInputBlockIdentityGroup, FeatureOperationLabel};
 use super::{FeatureBodyReference, FeatureOperationBodyWrite, FeatureOperationObjectReference};
 
 #[test]
@@ -504,5 +504,22 @@ fn operation_label_wire_preserves_nullable_header_tokens() {
             invalid[field][slot] = value;
             assert!(serde_json::from_value::<FeatureOperationLabel>(invalid).unwrap_err().to_string().contains("object_indices"));
         }
+    }
+}
+
+#[test]
+fn operation_input_wire_requires_one_of_the_four_header_slots() {
+    for slot in 0..4 {
+        let wire = format!(r#"{{"id":"input","operation_label":"operation","input_slot":{slot},"object_index":0,"raw_object_index":[0],"data_block":"block","source_offset":10}}"#);
+        let input: FeatureInputBlock = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&input).unwrap(), wire);
+    }
+    for slot in [4, 255] {
+        let wire = serde_json::json!({"id":"input","operation_label":"operation","input_slot":slot,
+            "object_index":0,"raw_object_index":[0],"data_block":"block","source_offset":10});
+        assert!(serde_json::from_value::<FeatureInputBlock>(wire).unwrap_err().to_string().contains("input_slot"));
+        let group = serde_json::json!({"id":"group","data_block":"block","input_blocks":["input"],
+            "operation_labels":["operation"],"input_slots":[slot],"source_offsets":[10]});
+        assert!(serde_json::from_value::<FeatureInputBlockIdentityGroup>(group).unwrap_err().to_string().contains("input_slots"));
     }
 }

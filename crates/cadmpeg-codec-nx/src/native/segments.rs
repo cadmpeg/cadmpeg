@@ -1348,7 +1348,7 @@ mod tests {
         let inputs = [FeatureInputBlock {
             id: "input#3".to_string(),
             operation_label: "operation#delete".to_string(),
-            input_slot: 0,
+            input_slot: crate::om::header_references::HeaderSlot::Zero,
             object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
             data_block: "block#3".to_string(),
             source_offset: 0,

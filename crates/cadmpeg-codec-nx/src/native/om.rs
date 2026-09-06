@@ -6333,7 +6333,7 @@ mod tests {
         let binding = |id: &str, operation: &str, slot: u8, offset: u64| FeatureParameterBinding {
             id: id.to_string(),
             operation_label: operation.to_string(),
-            input_slot: slot,
+            input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
             input_block: format!("block-{slot}"),
             reference_ordinal: 0,
             expression_declaration: "declaration".to_string(),
@@ -6505,7 +6505,7 @@ mod tests {
         let input = FeatureInputBlock {
             id: "nx:feature-history:input-block#0-7-0".to_string(),
             operation_label: "nx:feature-history:operation-label#0-7".to_string(),
-            input_slot: 0,
+            input_slot: crate::om::header_references::HeaderSlot::Zero,
             object: crate::om::reference_index::FeatureReferenceToken::from_wire(45, &[45]).unwrap(),
             data_block: "nx:om-data-blocks-2:block#45".to_string(),
             source_offset: 700,
@@ -6546,7 +6546,7 @@ mod tests {
             bindings[0].id,
             "nx:feature-history:parameter-binding#0-7-0-0"
         );
-        assert_eq!(bindings[0].input_slot, 0);
+        assert_eq!(bindings[0].input_slot.number(), 0);
         assert_eq!(bindings[0].reference_ordinal, 0);
         assert_eq!(bindings[0].object_id, 201);
         assert_eq!(

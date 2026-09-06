@@ -195,7 +195,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     let input = FeatureInputBlock {
         id: "input#0".into(),
         operation_label: reference.operation_label.clone(),
-        input_slot: 0,
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
         data_block: "block#3".into(),
         source_offset: 80,
@@ -333,7 +333,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     let second_input = FeatureInputBlock {
         id: "input#1".into(),
         operation_label: reference.operation_label.clone(),
-        input_slot: 1,
+        input_slot: crate::om::header_references::HeaderSlot::One,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(4, &[4]).unwrap(),
         data_block: "block#4".into(),
         source_offset: 81,
@@ -443,7 +443,7 @@ fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
     let input = FeatureInputBlock {
         id: "input#0".into(),
         operation_label: reference.operation_label.clone(),
-        input_slot: 0,
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
         data_block: "block#3".into(),
         source_offset: 80,
@@ -493,7 +493,7 @@ fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
     let input = |slot: u8, object_index: u32, data_block: &str| FeatureInputBlock {
         id: format!("input#{slot}"),
         operation_label: reference.operation_label.clone(),
-        input_slot: slot,
+        input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(object_index, &[object_index as u8]).unwrap(),
         data_block: data_block.into(),
         source_offset: 80 + u64::from(slot),
@@ -549,7 +549,7 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
     let input = FeatureInputBlock {
         id: "input#0".into(),
         operation_label: "operation#0".into(),
-        input_slot: 0,
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
         data_block: "nx:om-data-blocks-2:block#3".into(),
         source_offset: 80,

@@ -3,6 +3,41 @@
 
 use super::reference_index::FeatureReferenceToken;
 
+/// Position in the four-reference operation header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+#[repr(u8)]
+pub(crate) enum HeaderSlot { Zero = 0, One = 1, Two = 2, Three = 3 }
+
+impl HeaderSlot {
+    pub(crate) const ALL: [Self; 4] = [Self::Zero, Self::One, Self::Two, Self::Three];
+    pub(crate) fn number(self) -> u8 { self as u8 }
+    pub(crate) fn index(self) -> usize { usize::from(self.number()) }
+}
+
+impl From<HeaderSlot> for u8 {
+    fn from(value: HeaderSlot) -> Self { value.number() }
+}
+
+impl TryFrom<u8> for HeaderSlot {
+    type Error = &'static str;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Zero),
+            1 => Ok(Self::One),
+            2 => Ok(Self::Two),
+            3 => Ok(Self::Three),
+            _ => Err("input_slot/input_slots: expected 0..=3"),
+        }
+    }
+}
+
+impl std::fmt::Display for HeaderSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.number(), f)
+    }
+}
+
 // Five marker bytes, eight scalar bytes, and two ff bytes precede the slots.
 const FIXED_HEADER_LEN: usize = 5 + 8 + 2;
 
@@ -111,7 +146,7 @@ impl<O: Copy + std::ops::Add<Output = O> + From<u8>> OperationHeader<O> {
 
 #[cfg(test)]
 mod tests {
-    use super::{HeaderReferences, OperationHeader};
+    use super::{HeaderReferences, HeaderSlot, OperationHeader};
 
     #[test]
     fn header_reference_widths_determine_every_position() {
@@ -136,4 +171,22 @@ mod tests {
         }
         assert_eq!(HeaderReferences::read(&[0xff; 4]).unwrap().values(), [None; 4]);
     }
+
+    #[test]
+    fn header_slots_keep_numeric_wire_order_and_id_padding() {
+        for (number, slot) in (0u8..4).zip(HeaderSlot::ALL) {
+            assert_eq!(slot.number(), number);
+            assert_eq!(slot.index(), usize::from(number));
+            assert_eq!(HeaderSlot::try_from(number), Ok(slot));
+            assert_eq!(format!("{slot:010}"), format!("{number:010}"));
+            let wire = number.to_string();
+            assert_eq!(serde_json::to_string(&slot).unwrap(), wire);
+            assert_eq!(serde_json::from_str::<HeaderSlot>(&wire).unwrap(), slot);
+        }
+        for number in 4u8..=255 {
+            let error = serde_json::from_str::<HeaderSlot>(&number.to_string()).unwrap_err();
+            assert!(error.to_string().contains("input_slot"));
+        }
+    }
+
 }
